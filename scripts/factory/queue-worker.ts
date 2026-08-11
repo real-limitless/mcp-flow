@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * Factory worker: enrich jobs (normalize → readme → tools) → sharded catalog
+ * Factory worker: enrich jobs (normalize → sourceRepo → readme → tools) → catalog
  *
- *   npx tsx scripts/factory/queue-worker.ts --concurrency 2
- *   npx tsx scripts/factory/queue-worker.ts --once
+ *   npm run factory:worker                 # drain queue, then exit
+ *   npm run factory:worker -- --watch      # keep polling for new jobs
+ *   npm run factory:worker -- --once       # single batch only (CI)
+ *   npm run factory:worker -- --concurrency 6
  */
 import { parseArgs } from "node:util";
 import { runEnrich } from "../../src/catalog/enrich/run-enrich.js";
@@ -157,7 +159,10 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       concurrency: { type: "string" },
+      /** Single claim batch then exit (CI loops) */
       once: { type: "boolean", default: false },
+      /** Keep polling forever after queue is empty */
+      watch: { type: "boolean", default: false },
       interval: { type: "string", default: "1500" },
       help: { type: "boolean", default: false },
     },
@@ -165,8 +170,11 @@ async function main(): Promise<void> {
 
   if (values.help) {
     console.log(
-      "Usage: queue-worker [--concurrency N] [--once] [--interval ms]\n" +
-        "  Runs enrich pipeline: normalize → README → tools/list → catalog/entries",
+      "Usage: queue-worker [--concurrency N] [--once] [--watch] [--interval ms]\n" +
+        "  Default: drain all pending jobs, then exit.\n" +
+        "  --once   process one batch only\n" +
+        "  --watch  keep running and poll for new jobs\n" +
+        "  Pipeline: normalize → sourceRepo → README → tools/list",
     );
     process.exit(0);
   }
@@ -177,10 +185,13 @@ async function main(): Promise<void> {
     values.concurrency ?? settings.concurrency ?? 2,
   );
   const interval = Number(values.interval ?? "1500");
+  const watch = Boolean(values.watch);
+  const once = Boolean(values.once);
 
   writeWorkerPid(process.pid);
   appendLog(
     `worker start pid=${process.pid} concurrency=${concurrency} ` +
+      `mode=${once ? "once" : watch ? "watch" : "drain"} ` +
       `readme=${settings.enrichReadme} tools=${settings.enrichTools}`,
   );
 
@@ -192,24 +203,39 @@ async function main(): Promise<void> {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  if (values.once) {
+  if (once) {
     const n = await processBatch(concurrency);
     console.log(JSON.stringify({ processed: n, counts: queueCounts() }, null, 2));
     clearWorkerPid();
     return;
   }
 
-  console.error(
-    `factory enrich worker running (pid ${process.pid}); Ctrl+C to stop`,
-  );
-  for (;;) {
-    const pending = listQueue("pending").length;
-    if (pending) {
-      await processBatch(concurrency);
-    } else {
-      await new Promise((r) => setTimeout(r, interval));
+  if (watch) {
+    console.error(
+      `factory enrich worker watching (pid ${process.pid}); Ctrl+C to stop`,
+    );
+    for (;;) {
+      const pending = listQueue("pending").length;
+      if (pending) {
+        await processBatch(concurrency);
+      } else {
+        await new Promise((r) => setTimeout(r, interval));
+      }
     }
   }
+
+  // Default: drain entire queue, then exit
+  let total = 0;
+  for (;;) {
+    const n = await processBatch(concurrency);
+    total += n;
+    if (n === 0) break;
+  }
+  console.log(
+    JSON.stringify({ processed: total, counts: queueCounts(), mode: "drain" }, null, 2),
+  );
+  appendLog(`worker drain complete processed=${total}`);
+  clearWorkerPid();
 }
 
 main().catch((err) => {

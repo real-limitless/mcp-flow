@@ -97,7 +97,7 @@ Factory writes **gitignored** `catalog/entries` + `index.json`. Pages reads the 
 ```bash
 # 1) factory as usual
 npm run factory:scrape -- --max-pages 1 --enqueue   # or catalog sync
-npm run factory:worker                              # enrich
+npm run factory:worker                              # enrich (drains queue, exits)
 
 # 2) publish shards to origin/catalog-data (force-updates that branch only)
 npm run catalog:publish-data
