@@ -4,9 +4,39 @@
 
 Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, store env/API keys encrypted, mint agent API keys, and share the same tool library across Cursor, Claude, OpenCode, OpenFlow assistants, and more. Optional **central or edge** runtimes run installable MCPs in a **sandbox** (or bare, if you opt in).
 
+![Hero: one MCP for every agent — keep the keys](docs/images/campaign-hero.png)
+
 Also dual-tracked as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
 
-[PLAN.md](./PLAN.md) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
+[PLAN.md](./PLAN.md) · [Campaign storyboard](docs/campaign/) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
+
+## Visual tour
+
+| | |
+| :---: | :---: |
+| **Why it exists** | **Gateway architecture** |
+| ![Why: every laptop as a secret store vs sealed gateway](docs/images/campaign-why.png) | ![Control plane: harnesses → /mcp → remote, sandbox, edge](docs/images/campaign-gateway.png) |
+| **Admin library** | **Operators** |
+| ![Admin backends with sealed headers](docs/images/campaign-library.png) | ![Operator TUI, CLI, enterprise policy](docs/images/campaign-operator.png) |
+
+Screenshots live in [`docs/images/campaign-*.png`](docs/images/). Re-shoot from [`docs/campaign/`](docs/campaign/) with `./capture.sh`.
+
+---
+
+## Why this exists
+
+Every IDE holding vendor API keys is not a control plane. MCP sprawl with no revoke path is not enterprise policy.
+
+![Without a gateway vs mcp-flow controls](docs/images/campaign-why.png)
+
+**You need this when:**
+
+- Platform admins must own the tool library; employees only get a URL + agent key
+- Upstream secrets must stay sealed on the gateway — never in harness config or model context
+- Cursor, Claude, OpenCode, and OpenFlow should share one workspace library
+- Enterprise defaults matter: deny edge-bare, no unrestricted enable-any-URL
+
+---
 
 ## Status
 

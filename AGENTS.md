@@ -15,6 +15,7 @@ Self-hosted **MCP workspace gateway** + registry catalog. Dual-tracked with Open
 ## Read next
 
 - [PLAN.md](./PLAN.md)
-- [README.md](./README.md)
+- [README.md](./README.md) (campaign embeds under `docs/images/campaign-*.png`)
+- [docs/campaign/](./docs/campaign/) — enterprise storyboard frames; `./capture.sh` to re-shoot
 - [catalog/README.md](./catalog/README.md)
 - Issues #1 (core), #2 (consumers), #3 (edge)
