@@ -1,0 +1,125 @@
+name: catalog-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Registry pages to sync (0 = all)"
+        default: "3"
+        required: false
+      enrich_limit:
+        description: "Max entries to enqueue for enrich this run"
+        default: "300"
+        required: false
+  schedule:
+    - cron: "12 5 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: catalog-build
+  cancel-in-progress: false
+
+jobs:
+  build-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Restore previous catalog-data (incremental)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p catalog/entries
+          if git ls-remote --exit-code --heads origin catalog-data >/dev/null 2>&1; then
+            git fetch origin catalog-data --depth=1
+            rm -rf /tmp/catalog-data-prev
+            mkdir -p /tmp/catalog-data-prev
+            git archive origin/catalog-data | tar -x -C /tmp/catalog-data-prev
+            cp -a /tmp/catalog-data-prev/. catalog/
+            echo "Restored prior catalog-data"
+            cat catalog/meta.json || true
+          else
+            echo "No prior catalog-data"
+          fi
+
+      - name: Sync registry (version=latest)
+        run: npx tsx src/cli.ts catalog sync --max-pages "${{ github.event.inputs.max_pages || '3' }}"
+
+      - name: Incremental enrich
+        run: |
+          set -euo pipefail
+          LIMIT="${{ github.event.inputs.enrich_limit || '300' }}"
+          npm run factory:enqueue-enrich -- --missing-readme --limit "$LIMIT" || true
+          npm run factory:enqueue-enrich -- --missing-tools --limit "$LIMIT" || true
+          pending=$(find scripts/factory/.jobs/queue -name '*.json' 2>/dev/null | wc -l || echo 0)
+          if [ "${pending:-0}" -eq 0 ]; then
+            npm run factory:enqueue-enrich -- --all --limit "$LIMIT" || true
+          fi
+          for i in $(seq 1 200); do
+            pending=$(node -e "
+              const fs=require('fs'),path=require('path');
+              const d='scripts/factory/.jobs/queue';
+              if(!fs.existsSync(d)){console.log(0);process.exit(0)}
+              let n=0;
+              for (const f of fs.readdirSync(d).filter(x=>x.endsWith('.json'))) {
+                const j=JSON.parse(fs.readFileSync(path.join(d,f),'utf8'));
+                if(j.status==='pending'||j.status==='running') n++;
+              }
+              console.log(n);
+            ")
+            echo "enrich remaining=$pending"
+            if [ "$pending" -eq 0 ]; then break; fi
+            npx tsx scripts/factory/queue-worker.ts --once --concurrency 6
+          done
+          cat catalog/meta.json || true
+
+      - name: Pack release tarball
+        run: npm run catalog:bundle
+
+      - name: Publish catalog-data branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          WORK=$(mktemp -d)
+          mkdir -p "$WORK/entries"
+          cp catalog/index.json catalog/meta.json "$WORK/"
+          if [ -d catalog/entries ]; then cp -a catalog/entries/. "$WORK/entries/"; fi
+          cd "$WORK"
+          git init
+          git checkout -b catalog-data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          COUNT=$(jq -r '.counts.total // .entries|length // 0' meta.json index.json 2>/dev/null | head -1)
+          git commit -m "catalog-data: $(date -u +%Y-%m-%dT%H:%MZ) · ${COUNT} entries"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push -f origin catalog-data
+
+      - name: Update catalog-latest release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG=catalog-latest
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh release delete "$TAG" -y 2>/dev/null || true
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+          gh release create "$TAG" \
+            dist/catalog-bundle.tgz \
+            --title "Catalog data (latest)" \
+            --notes "Sharded catalog for Pages / Everflow / OpenFlow. Also on branch catalog-data." \
+            --latest=false

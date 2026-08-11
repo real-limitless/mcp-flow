@@ -2,14 +2,14 @@ name: pages
 
 on:
   workflow_dispatch:
-  schedule:
-    # Nightly UTC — refresh static catalog site
-    - cron: "17 6 * * *"
+  workflow_run:
+    workflows: [catalog-build]
+    types: [completed]
   push:
     branches: [main]
     paths:
+      - "site/**"
       - "scripts/site/**"
-      - "src/catalog/**"
       - ".github/workflows/pages.yml"
       - "package.json"
       - "package-lock.json"
@@ -25,51 +25,54 @@ concurrency:
 
 jobs:
   build:
+    if: >
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
+
       - run: npm ci
-      - name: Sync registry snapshot (bounded)
-        run: npx tsx src/cli.ts catalog sync --max-pages 1
-        env:
-          MCP_FLOW_CATALOG_DIR: catalog
-      - name: Enrich catalog (README + tools/list)
-        # ~100 latest servers per page; soft-fails OK. Raise max-pages later carefully.
+
+      - name: Load catalog from catalog-data branch
+        continue-on-error: true
         run: |
-          npm run factory:enqueue-enrich -- --all --limit 500
-          for i in $(seq 1 120); do
-            pending=$(node -e "
-              const fs=require('fs'),path=require('path');
-              const d='scripts/factory/.jobs/queue';
-              if(!fs.existsSync(d)){console.log(0);process.exit(0)}
-              let n=0;
-              for (const f of fs.readdirSync(d).filter(x=>x.endsWith('.json'))) {
-                const j=JSON.parse(fs.readFileSync(path.join(d,f),'utf8'));
-                if(j.status==='pending'||j.status==='running') n++;
-              }
-              console.log(n);
-            ")
-            echo "enrich remaining=$pending"
-            if [ "$pending" -eq 0 ]; then break; fi
-            npx tsx scripts/factory/queue-worker.ts --once --concurrency 5
-          done
-          cat catalog/meta.json
-      - name: Build static site
+          set -euo pipefail
+          mkdir -p catalog/entries
+          if git ls-remote --exit-code --heads origin catalog-data >/dev/null 2>&1; then
+            git fetch origin catalog-data --depth=1
+            rm -rf /tmp/cd && mkdir -p /tmp/cd
+            git archive origin/catalog-data | tar -x -C /tmp/cd
+            cp -a /tmp/cd/. catalog/
+            echo "catalog-data loaded"
+            cat catalog/meta.json || true
+            ls catalog/entries | wc -l
+          else
+            echo "No catalog-data yet — empty catalog shell"
+          fi
+
+      - name: Build static site (JSON shell)
         run: npm run site:build
         env:
           SITE_BASE: /mcp-flow
           SITE_ORIGIN: https://real-limitless.github.io
           SITE_REPO: https://github.com/real-limitless/mcp-flow
+          CATALOG_DIR: catalog
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site/out
 
   deploy:
     needs: build
+    if: needs.build.result == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -67,15 +67,29 @@ npx mcp-flow catalog show "owner/name" --enrich --pretty
 
 ### Public static site (GitHub Pages)
 
+Campaign-styled **HTML shell** + **individual catalog JSON** (no 20k prebuilt pages).
+
 ```bash
-npm run site:build            # reads catalog/ → site/out/
-# Deploy: .github/workflows/pages.yml (Actions → Pages)
-# Local preview: npx serve site/out
+# Local: uses ./catalog (gitignored shards)
+SITE_BASE= npm run site:build
+npx serve site/out
+
+# Or
+npm run site:preview
 ```
 
-Builder: `scripts/site/build-pages.ts`. Client search over cards; server pages include README + tools preview when enriched.
+| Path | Role |
+| --- | --- |
+| `site/` | Tracked HTML/CSS/JS (library chrome from campaign) |
+| `catalog/index.json` + `entries/*.json` | Data the browser `fetch`es |
+| branch **`catalog-data`** | CI publishes shards for Pages |
+| release **`catalog-latest`** | `catalog-bundle.tgz` for Everflow/OpenFlow |
 
-See consumer plan on issue #2 (Pages + Everflow embed).
+Workflows:
+- `catalog-build.yml` — sync + incremental enrich → push `catalog-data` + release
+- `pages.yml` — copy `site/` + `catalog-data` → deploy (no enrich)
+
+See issue #2.
 
 ### Factory full pipeline
 
