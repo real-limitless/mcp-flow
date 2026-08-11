@@ -63,6 +63,18 @@ npx mcp-flow catalog show "owner/name" --pretty
 npx mcp-flow catalog show "owner/name" --enrich --pretty
 ```
 
+### Public static site (GitHub Pages)
+
+```bash
+npm run site:build            # reads catalog/ → site/out/
+# Deploy: .github/workflows/pages.yml (Actions → Pages)
+# Local preview: npx serve site/out
+```
+
+Builder: `scripts/site/build-pages.ts`. Client search over cards; server pages include README + tools preview when enriched.
+
+See consumer plan on issue #2 (Pages + Everflow embed).
+
 ### Factory full pipeline
 
 ```bash

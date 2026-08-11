@@ -1,0 +1,59 @@
+name: pages
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly UTC — refresh static catalog site
+    - cron: "17 6 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/site/**"
+      - "src/catalog/**"
+      - ".github/workflows/pages.yml"
+      - "package.json"
+      - "package-lock.json"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Sync registry snapshot (bounded)
+        run: npx tsx src/cli.ts catalog sync --max-pages 5
+        env:
+          # keep CI bounded; full enrich is optional offline
+          MCP_FLOW_CATALOG_DIR: catalog
+      - name: Build static site
+        run: npm run site:build
+        env:
+          SITE_BASE: /mcp-flow
+          SITE_ORIGIN: https://real-limitless.github.io
+          SITE_REPO: https://github.com/real-limitless/mcp-flow
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/out
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

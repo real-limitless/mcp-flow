@@ -208,6 +208,10 @@ Scoped keys only see/call matching tool name prefixes (`mf_status` always allowe
 npm test
 npm run typecheck
 npm run catalog:validate
+
+# Static GitHub Pages catalog (from local shards)
+npm run site:build            # → site/out/
+# SITE_BASE=/mcp-flow npm run site:build
 npm run dev   # tsx src/cli.ts serve
 ```
 
