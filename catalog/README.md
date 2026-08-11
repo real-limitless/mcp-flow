@@ -90,6 +90,27 @@ Workflows:
 - `catalog-build.yml` — sync + incremental enrich → push `catalog-data` + release
 - `pages.yml` — copy `site/` + `catalog-data` → deploy (no enrich)
 
+### Push local factory work → `catalog-data` (Pages)
+
+Factory writes **gitignored** `catalog/entries` + `index.json`. Pages reads the **`catalog-data`** branch, not `main`.
+
+```bash
+# 1) factory as usual
+npm run factory:scrape -- --max-pages 1 --enqueue   # or catalog sync
+npm run factory:worker                              # enrich
+
+# 2) publish shards to origin/catalog-data (force-updates that branch only)
+npm run catalog:publish-data
+
+# optional: also refresh GitHub Release asset catalog-latest.tgz
+npm run catalog:publish-data -- --release
+
+# 3) redeploy site (pulls catalog-data)
+gh workflow run pages.yml
+```
+
+CI path (no laptop): **Actions → catalog-build → Run workflow**.
+
 See issue #2.
 
 ### Factory full pipeline
