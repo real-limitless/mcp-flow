@@ -30,6 +30,11 @@ export interface GalleryIndexRow {
   hasToolsPreview?: boolean;
   toolsCount?: number;
   toolsPreviewStatus?: McpGalleryEntry["toolsPreviewStatus"];
+  sourceRepoStatus?: McpGalleryEntry["sourceRepo"] extends
+    | { status: infer S }
+    | undefined
+    ? S
+    : never;
   /** Relative path under catalog/ */
   file: string;
 }
@@ -90,6 +95,7 @@ export function toIndexRow(e: McpGalleryEntry): GalleryIndexRow {
     hasToolsPreview: Boolean(e.toolsPreview?.length),
     toolsCount: e.toolsPreview?.length,
     toolsPreviewStatus: e.toolsPreviewStatus,
+    sourceRepoStatus: e.sourceRepo?.status,
     file: entryRelPath(e.id).replace(/\\/g, "/"),
   };
 }
@@ -189,12 +195,14 @@ function countFlags(
   let incomplete = 0;
   let withReadme = 0;
   let withTools = 0;
+  let inactive = 0;
   for (const e of entries) {
     total++;
     const f = new Set(e.flags ?? []);
     if (f.has("remote")) remote++;
     if (f.has("stdio")) stdio++;
     if (f.has("incomplete")) incomplete++;
+    if (f.has("repo-offline") || e.status === "inactive") inactive++;
     if ("file" in e) {
       // index row
       if (e.hasReadme) withReadme++;
@@ -205,7 +213,7 @@ function countFlags(
       if (full.toolsPreview?.length) withTools++;
     }
   }
-  return { total, remote, stdio, incomplete, withReadme, withTools };
+  return { total, remote, stdio, incomplete, withReadme, withTools, inactive };
 }
 
 export function writeMetaFile(

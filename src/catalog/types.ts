@@ -6,11 +6,22 @@ export type GalleryTransport =
   | "stdio"
   | "unknown";
 
-export type GalleryFlag = "remote" | "stdio" | "incomplete";
+export type GalleryFlag =
+  | "remote"
+  | "stdio"
+  | "incomplete"
+  /** Source GitHub/GitLab repo returned 404/410 */
+  | "repo-offline";
 
 export type GalleryProvenance = "official-registry" | "manual";
 
-export type GalleryStatus = "active" | "deprecated" | "deleted" | "unknown";
+/** registry status + catalog-derived inactive (dead source repo) */
+export type GalleryStatus =
+  | "active"
+  | "deprecated"
+  | "deleted"
+  | "inactive"
+  | "unknown";
 
 export type GalleryPackageKind = "npm" | "pypi" | "oci" | "binary" | "unknown";
 
@@ -83,10 +94,27 @@ export interface GalleryToolPreview {
   description?: string;
 }
 
+export type SourceRepoStatus =
+  | "ok"
+  | "not_found"
+  | "unreachable"
+  | "skipped"
+  | "unsupported";
+
+export interface GallerySourceRepoCheck {
+  status: SourceRepoStatus;
+  url?: string;
+  checkedAt?: string;
+  httpStatus?: number;
+  error?: string;
+  host?: "github" | "gitlab";
+}
+
 export interface GalleryEnrichment {
   normalizedAt?: string;
   readmeAt?: string;
   toolsAt?: string;
+  sourceRepoAt?: string;
   /** All configured stages finished (may include soft-fails) */
   complete?: boolean;
 }
@@ -126,6 +154,11 @@ export interface McpGalleryEntry {
   offersHint?: string;
   /** Cached README from public repo */
   readme?: GalleryReadme;
+  /**
+   * Live check of sourceUrl / repository.url (GitHub/GitLab).
+   * `not_found` → status inactive + flag repo-offline.
+   */
+  sourceRepo?: GallerySourceRepoCheck;
   /** Live tools/list preview (names + descriptions) */
   toolsPreview?: GalleryToolPreview[];
   toolsPreviewAt?: string;
@@ -148,6 +181,7 @@ export interface CatalogMeta {
     incomplete: number;
     withReadme?: number;
     withTools?: number;
+    inactive?: number;
   };
   note?: string;
 }

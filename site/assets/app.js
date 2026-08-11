@@ -52,6 +52,21 @@ export function toolsBadges(row) {
   return badge("tools ?", "off");
 }
 
+export function statusBadges(row) {
+  const bits = [];
+  if (row.status === "inactive" || row.sourceRepoStatus === "not_found" || (row.flags || []).includes("repo-offline")) {
+    bits.push(badge("inactive", "deny"));
+    bits.push(badge("repo offline", "deny"));
+  } else if (row.status === "deprecated") {
+    bits.push(badge("deprecated", "warn"));
+  } else if (row.status === "active") {
+    bits.push(badge("active", "on"));
+  } else if (row.status) {
+    bits.push(badge(row.status, "off"));
+  }
+  return bits.join(" ");
+}
+
 export function transportBadge(t) {
   return badge(t || "unknown", "place");
 }
@@ -118,7 +133,7 @@ function renderHome() {
       <div class="slug">${escapeHtml(r.id)}</div></td>
   <td class="col-hide"><div class="sum">${escapeHtml(r.summary || "")}</div></td>
   <td>${transportBadge(r.transport)}</td>
-  <td><div class="badge-row">${toolsBadges(r)} ${r.hasReadme ? badge("readme", "on") : ""} ${flags}</div></td>
+  <td><div class="badge-row">${statusBadges(r)} ${toolsBadges(r)} ${r.hasReadme ? badge("readme", "on") : ""} ${flags}</div></td>
 </tr>`;
       })
       .join("");
@@ -320,11 +335,16 @@ function renderDossier() {
   <p class="dossier-id">${escapeHtml(e.id)}${e.version ? ` · v${escapeHtml(e.version)}` : ""}</p>
   <div class="badge-row" style="margin-top:12px">
     ${transportBadge(e.transport)}
+    ${statusBadges({ status: e.status, sourceRepoStatus: e.sourceRepo?.status, flags: e.flags })}
     ${toolsBadges({ toolsPreviewStatus: e.toolsPreviewStatus, toolsCount: e.toolsPreview?.length, hasToolsPreview: !!e.toolsPreview?.length })}
     ${e.readme?.markdown ? badge("readme", "on") : ""}
-    ${e.status ? badge(e.status, e.status === "active" ? "on" : "off") : ""}
     ${flags}
   </div>
+  ${
+    e.sourceRepo?.status === "not_found"
+      ? `<p class="lede" style="color:var(--deny);margin-top:12px">Source repository is offline (HTTP ${e.sourceRepo.httpStatus ?? 404})${e.sourceRepo.url ? ` — ${escapeHtml(e.sourceRepo.url)}` : ""}. Marked <strong>inactive</strong>.</p>`
+      : ""
+  }
   <p class="lede" style="max-width:52ch;margin-top:16px">${escapeHtml(e.description || e.summary || "")}</p>
 </div>
 <div class="dossier-grid">

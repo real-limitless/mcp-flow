@@ -50,6 +50,26 @@ function makeHttpHelpers(settings: ReturnType<typeof loadSettings>, pool?: Proxy
         throw err;
       }
     },
+    headOrGet: async (url: string) => {
+      const proxy = pickProxy();
+      try {
+        // Prefer plain fetch for status (including 404); avoid throw-on-error helpers
+        const res = await fetch(url, {
+          method: "GET",
+          redirect: "follow",
+          signal: AbortSignal.timeout(12_000),
+          headers: {
+            Accept: "text/html",
+            "User-Agent": "mcp-flow-catalog/0.1",
+          },
+        });
+        if (proxy) pool?.reportOk(proxy);
+        return { status: res.status, ok: res.ok };
+      } catch (err) {
+        if (proxy) pool?.reportFail(proxy);
+        throw err;
+      }
+    },
   };
 }
 
@@ -82,6 +102,7 @@ async function processJob(
         registryUrl: settings.registryUrl,
         getText: helpers.getText,
         getJson: helpers.getJson,
+        headOrGet: helpers.headOrGet,
         log: (m) => appendLog(m),
       },
     });
@@ -94,6 +115,7 @@ async function processJob(
       error: result.errors.length ? result.errors.join("; ") : undefined,
       stages: {
         normalize: result.stages.normalize,
+        sourceRepo: result.stages.sourceRepo,
         readme: result.stages.readme,
         tools: result.stages.tools,
       },

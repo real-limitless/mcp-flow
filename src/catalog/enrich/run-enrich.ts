@@ -7,7 +7,9 @@ import type { McpGalleryEntry } from "../types.js";
 import { DEFAULT_REGISTRY_URL } from "../types.js";
 import { fetchReadmeFromSourceUrl } from "./readme.js";
 import { fetchRegistryDetail } from "./registry-detail.js";
+import { probeSourceRepo } from "./source-repo.js";
 import { probeToolsList } from "./tools-probe.js";
+import type { GalleryFlag, GalleryStatus, McpGalleryEntry as Entry } from "../types.js";
 
 export interface EnrichOptions {
   catalogDir: string;
@@ -15,15 +17,20 @@ export interface EnrichOptions {
   enrichReadme?: boolean;
   /** Run tools stage (default true) */
   enrichTools?: boolean;
+  /** Probe GitHub/GitLab source repo (default true) */
+  enrichSourceRepo?: boolean;
   readmeMaxBytes?: number;
   toolsTimeoutMs?: number;
+  sourceRepoTimeoutMs?: number;
   /** Skip stage if data fresher than this many days */
   readmeRefreshDays?: number;
   toolsRefreshDays?: number;
+  sourceRepoRefreshDays?: number;
   registryUrl?: string;
   /** Proxied HTTP helpers from factory */
   getText?: (url: string) => Promise<string>;
   getJson?: (url: string) => Promise<unknown>;
+  headOrGet?: (url: string) => Promise<{ status: number; ok: boolean }>;
   log?: (msg: string) => void;
 }
 
@@ -31,10 +38,39 @@ export interface EnrichResult {
   entry: McpGalleryEntry;
   stages: {
     normalize: "done" | "failed" | "skipped";
+    sourceRepo: "done" | "failed" | "skipped";
     readme: "done" | "failed" | "skipped";
     tools: "done" | "failed" | "skipped";
   };
   errors: string[];
+}
+
+function applySourceRepoFlags(
+  entry: Entry,
+  registryStatus: GalleryStatus | undefined,
+): Entry {
+  const flags = new Set<GalleryFlag>(entry.flags ?? []);
+  flags.delete("repo-offline");
+  if (entry.sourceRepo?.status === "not_found") {
+    flags.add("repo-offline");
+    return {
+      ...entry,
+      status: "inactive",
+      flags: [...flags],
+    };
+  }
+  // Repo ok/unknown — drop offline flag; restore registry status if we had forced inactive
+  if (entry.status === "inactive" && entry.sourceRepo?.status === "ok") {
+    return {
+      ...entry,
+      status: registryStatus && registryStatus !== "inactive" ? registryStatus : "active",
+      flags: flags.size ? [...flags] : undefined,
+    };
+  }
+  return {
+    ...entry,
+    flags: flags.size ? [...flags] : undefined,
+  };
 }
 
 function daysOld(iso?: string): number {
@@ -72,6 +108,7 @@ export async function runEnrich(input: {
   const errors: string[] = [];
   const stages: EnrichResult["stages"] = {
     normalize: "skipped",
+    sourceRepo: "skipped",
     readme: "skipped",
     tools: "skipped",
   };
@@ -79,6 +116,9 @@ export async function runEnrich(input: {
   let entry: McpGalleryEntry | null =
     input.existing ??
     (input.id ? readEntryFile(opts.catalogDir, input.id) : null);
+
+  /** Registry status before we force inactive for dead repos */
+  let registryStatus: GalleryStatus | undefined = entry?.status;
 
   // --- normalize ---
   try {
@@ -94,11 +134,13 @@ export async function runEnrich(input: {
     if (item) {
       const normalized = normalizeRegistryItem(item);
       if (normalized) {
+        registryStatus = normalized.status;
         entry = entry
           ? mergeEntry(entry, {
               ...normalized,
               // keep prior enrichment blobs
               readme: entry.readme,
+              sourceRepo: entry.sourceRepo,
               toolsPreview: entry.toolsPreview,
               toolsPreviewAt: entry.toolsPreviewAt,
               toolsPreviewError: entry.toolsPreviewError,
@@ -130,6 +172,66 @@ export async function runEnrich(input: {
 
   if (!entry) {
     throw new Error(errors.join("; ") || "enrich failed: no entry");
+  }
+
+  // --- source repo (404 → inactive) ---
+  if (opts.enrichSourceRepo !== false) {
+    const refreshDays = opts.sourceRepoRefreshDays ?? 7;
+    const fresh =
+      entry.sourceRepo?.status &&
+      entry.sourceRepo.status !== "unreachable" &&
+      daysOld(entry.sourceRepo.checkedAt) < refreshDays;
+    if (fresh) {
+      stages.sourceRepo = "skipped";
+      entry = applySourceRepoFlags(entry, registryStatus);
+      log(`sourceRepo skip fresh ${entry.id} (${entry.sourceRepo?.status})`);
+    } else {
+      try {
+        const sourceUrl = entry.sourceUrl || entry.repository?.url;
+        const probe = await probeSourceRepo(sourceUrl, {
+          timeoutMs: opts.sourceRepoTimeoutMs ?? 12_000,
+          headOrGet: opts.headOrGet,
+        });
+        entry = mergeEntry(entry, {
+          sourceRepo: {
+            status: probe.status,
+            url: probe.url,
+            checkedAt: probe.checkedAt,
+            httpStatus: probe.httpStatus,
+            error: probe.error,
+            host: probe.host,
+          },
+          enrichment: {
+            ...entry.enrichment,
+            sourceRepoAt: probe.checkedAt,
+          },
+        });
+        entry = applySourceRepoFlags(entry, registryStatus);
+        stages.sourceRepo =
+          probe.status === "unreachable" ? "failed" : "done";
+        if (probe.status === "not_found") {
+          errors.push(`sourceRepo: not_found ${probe.url ?? ""}`);
+          log(`sourceRepo NOT FOUND → inactive ${entry.id}`);
+        } else {
+          log(`sourceRepo ${probe.status} ${entry.id}`);
+        }
+      } catch (err) {
+        stages.sourceRepo = "failed";
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`sourceRepo: ${msg}`);
+        entry = mergeEntry(entry, {
+          sourceRepo: {
+            status: "unreachable",
+            checkedAt: new Date().toISOString(),
+            error: msg,
+          },
+          enrichment: {
+            ...entry.enrichment,
+            sourceRepoAt: new Date().toISOString(),
+          },
+        });
+      }
+    }
   }
 
   // --- readme ---
@@ -252,6 +354,11 @@ export function formatEntryPretty(entry: McpGalleryEntry): string {
   lines.push(`# ${entry.title}`);
   lines.push(`${entry.id} · v${entry.version ?? "?"} · ${entry.transport}`);
   if (entry.status) lines.push(`status: ${entry.status}`);
+  if (entry.sourceRepo?.status) {
+    lines.push(
+      `sourceRepo: ${entry.sourceRepo.status}${entry.sourceRepo.url ? ` ${entry.sourceRepo.url}` : ""}${entry.sourceRepo.httpStatus ? ` HTTP ${entry.sourceRepo.httpStatus}` : ""}`,
+    );
+  }
   lines.push("");
   if (entry.summary || entry.description) {
     lines.push(entry.summary || entry.description);

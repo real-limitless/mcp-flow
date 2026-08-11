@@ -25,6 +25,7 @@ export type JobKind = "enrich";
 
 export interface JobStages {
   normalize: StageStatus;
+  sourceRepo: StageStatus;
   readme: StageStatus;
   tools: StageStatus;
 }
@@ -64,6 +65,7 @@ export function newId(prefix: string): string {
 export function defaultStages(): JobStages {
   return {
     normalize: "pending",
+    sourceRepo: "pending",
     readme: "pending",
     tools: "pending",
   };

@@ -50,6 +50,7 @@ catalog/
 **From factory enrichment**
 
 - **`readme`** — public GitHub/GitLab README.md (capped size)
+- **`sourceRepo`** — live check of GitHub/GitLab `sourceUrl`; **`not_found` (404/410) → `status: inactive` + flag `repo-offline`**
 - **`toolsPreview`** — live MCP `tools/list` (names + descriptions) when remote is reachable without secrets
 - Soft statuses: `auth_required`, `unreachable`, `unsupported`
 
