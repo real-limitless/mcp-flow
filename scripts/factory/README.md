@@ -24,14 +24,14 @@ npm run factory:scrape -- --max-pages 5 --enqueue
 # with proxy
 npm run factory:scrape -- --max-pages 5 --enqueue --use-proxy --proxy socks5h://127.0.0.1:1080
 
-# 2) Worker: normalize → README → tools/list → shards
-npm run factory:worker -- --once
-# or long-running:
-npm run factory:worker
+# 2) Worker: normalize → sourceRepo → README → tools/list → shards
+npm run factory:worker              # drain all pending jobs, then exit
+npm run factory:worker -- --watch   # keep polling for new jobs
+npm run factory:worker -- --once    # one batch only (CI loops)
 
 # 3) Re-enrich gaps
 npm run factory:enqueue-enrich -- --missing-tools --limit 20
-npm run factory:worker -- --once
+npm run factory:worker
 ```
 
 One-off without queue:
