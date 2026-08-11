@@ -6,20 +6,11 @@ Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, 
 
 Also dual-tracked as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
 
-| Audience | What you get |
-| --- | --- |
-| **Individuals / teams** | Configure upstream MCPs once; every harness uses one URL + key |
-| **Enterprise** | Corp vault of private + vendor MCPs; employees get scoped keys only |
-| **OpenFlow** | Catalog → palette gallery + single runtime node type |
-| **Everflow** | Marketplace browse/allowlist + optional org gateway |
-
 [PLAN.md](./PLAN.md) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
-
-Not affiliated with Anthropic or the Model Context Protocol project beyond using the **public** registry API and MCP protocol docs.
 
 ## Status
 
-**Planning → implementation.** Gateway-first roadmap in [PLAN.md](./PLAN.md).
+**P1 gateway (remote proxy) implemented.** Catalog sync and edge runtimes are later phases — see [PLAN.md](./PLAN.md).
 
 | Issue | Topic |
 | --- | --- |
@@ -27,7 +18,130 @@ Not affiliated with Anthropic or the Model Context Protocol project beyond using
 | [#2](https://github.com/real-limitless/mcp-flow/issues/2) | Everflow / OpenFlow catalog consumer contract |
 | [#3](https://github.com/real-limitless/mcp-flow/issues/3) | Edge agent + multi-device sandbox/bare |
 
-## Architecture (target)
+## Quickstart
+
+Requirements: **Node.js ≥ 22**.
+
+```bash
+cp .env.example .env
+# set MCP_FLOW_MASTER_KEY and MCP_FLOW_ADMIN_TOKEN
+openssl rand -base64 32   # master key
+openssl rand -hex 32      # admin token
+
+npm install
+npm run build
+
+export $(grep -v '^#' .env | xargs)
+npx mcp-flow serve --port 8787
+```
+
+### TUI (manage upstream MCPs)
+
+```bash
+npx mcp-flow tui
+```
+
+Interactive terminal UI: list/add/enable/disable/test/delete backends, seal auth headers, mint/revoke agent API keys. Arrow keys + enter; `q` quits.
+
+### Mint an agent key
+
+```bash
+npx mcp-flow key create --name cursor
+# → { "key": { "token": "mf_…", "prefix": "mf_…", … } }  # secret shown once
+```
+
+### Add a remote MCP (headers sealed)
+
+```bash
+npx mcp-flow backend add \
+  --slug deepwiki \
+  --url https://mcp.deepwiki.com/mcp \
+  --transport streamable-http \
+  --enable
+
+# Multiple sealed headers (repeat --header). Name=value or Name: value:
+npx mcp-flow backend add \
+  --slug yh-finance \
+  --url https://mcp.rapidapi.com \
+  --header "x-api-host: yahoo-finance15.p.rapidapi.com" \
+  --header "x-api-key: YOUR_RAPIDAPI_KEY" \
+  --enable
+
+# Merge more headers later (does not wipe existing):
+npx mcp-flow backend headers yh-finance \
+  --header "Authorization=Bearer …"
+
+# List header *names* only (values never printed):
+npx mcp-flow backend headers yh-finance
+```
+
+You do **not** need `npx mcp-remote … --header` in the harness — put the URL + headers on the backend; harnesses only get the mcp-flow URL + agent key.
+
+### Point a harness at mcp-flow only
+
+HTTP (Cursor / clients with streamable HTTP):
+
+```json
+{
+  "mcpServers": {
+    "mcp-flow": {
+      "url": "http://127.0.0.1:8787/mcp",
+      "headers": {
+        "Authorization": "Bearer mf_YOUR_AGENT_KEY"
+      }
+    }
+  }
+}
+```
+
+Stdio shim:
+
+```bash
+MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
+```
+
+Tools appear as `{slug}__{tool}` plus meta tools `mf_list_backends`, `mf_list_tools`, `mf_status`.
+
+### Docker Compose
+
+```bash
+export MCP_FLOW_MASTER_KEY=$(openssl rand -base64 32)
+export MCP_FLOW_ADMIN_TOKEN=$(openssl rand -hex 32)
+docker compose up --build -d
+```
+
+### Admin REST
+
+All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
+
+| Method | Path | Notes |
+| --- | --- | --- |
+| `POST` | `/v1/keys` | Mint agent key (token once) |
+| `GET` | `/v1/keys` | List keys (no secrets) |
+| `DELETE` | `/v1/keys/:id` | Revoke |
+| `POST` | `/v1/backends` | Create (GET redacts sealed headers/env) |
+| `GET` | `/v1/backends` | List (redacted) |
+| `PATCH` | `/v1/backends/:id` | Update / enable |
+| `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
+| `ALL` | `/mcp` | Agent MCP (API key) |
+
+## Security
+
+- Upstream headers/env encrypted at rest (`AES-256-GCM` + `MCP_FLOW_MASTER_KEY`)
+- Agent keys stored as SHA-256 hashes; plaintext shown once
+- GET payloads never include decrypted secrets
+- SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
+- Placement modes other than `remote` are rejected until P3+
+
+## Development
+
+```bash
+npm test
+npm run typecheck
+npm run dev   # tsx src/cli.ts serve
+```
+
+## Architecture
 
 ```text
 AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
@@ -35,42 +149,8 @@ AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
                     ┌───────────────────────┼───────────────────────┐
                     ▼                       ▼                       ▼
               Remote MCPs            Central sandbox           Edge agents
-              (SaaS / internal)      (stdio/OCI)               (laptop/desktop)
-              + sealed env/headers                              sandbox | bare
+              (P1)                   (P3)                      (P4–P5 / #3)
 ```
-
-**Placement per backend:** `remote` · `central-sandbox` · `edge-sandbox` · `edge-bare`
-
-## Dual-track catalog
-
-```text
-Official MCP Registry API
-        │
-        ▼
-mcp-flow catalog/ (gallery.json + schema)
-        │
-        ├─► OpenFlow data/mcp-catalog/  → one node type + palette
-        ├─► Everflow marketplace mcps[] → browse all / install allowlisted
-        └─► Gateway “add from gallery” → Backend library rows
-```
-
-## Phases (short)
-
-| Phase | Focus |
-| --- | --- |
-| **P1** | HTTP gateway + keys + remote proxy + encrypted secrets + stdio shim |
-| **P1b** | Catalog sync / live search + schema |
-| **P2** | Scopes, audit, CLI polish |
-| **P3** | Central sandboxed installable MCPs |
-| **P4–P5** | Edge agent; edge-sandbox; optional edge-bare |
-| **P6** | Multi-device routing polish |
-
-## Security (non-negotiable)
-
-- Upstream API keys and env **never** returned to models or harness config  
-- Agent keys are workspace-scoped and revocable  
-- Executable MCPs default to **sandbox**; bare is explicit policy  
-- Enterprise: admin library; employees only get mcp-flow keys  
 
 ## License
 

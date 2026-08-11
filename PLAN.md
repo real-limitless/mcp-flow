@@ -267,7 +267,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 ## Bootstrap status
 
 - [x] Public repo, LICENSE Apache-2.0, README, PLAN stub  
-- [ ] Package layout (TS), CI  
-- [ ] P1 gateway implementation  
+- [x] Package layout (TS), CI, Compose / Dockerfile  
+- [x] P1 gateway: SQLite + crypto, REST keys/backends, remote proxy, `/mcp`, CLI, stdio shim  
 - [ ] Catalog schema + sync  
 - [ ] Edge agent ([#3](https://github.com/real-limitless/mcp-flow/issues/3))  
