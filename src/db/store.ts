@@ -11,6 +11,9 @@ import type {
   ApiKeyCreated,
   ApiKeyPublic,
   ApiKeyRecord,
+  ApiKeyScopes,
+  AuditAction,
+  AuditEvent,
   BackendPublic,
   BackendRecord,
   CreateBackendInput,
@@ -33,6 +36,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   name TEXT NOT NULL,
   token_hash TEXT NOT NULL UNIQUE,
   prefix TEXT NOT NULL,
+  scopes_json TEXT,
   created_at TEXT NOT NULL,
   revoked_at TEXT
 );
@@ -56,12 +60,40 @@ CREATE TABLE IF NOT EXISTS backends (
   UNIQUE(workspace_id, slug)
 );
 
+CREATE TABLE IF NOT EXISTS audit_events (
+  id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  key_id TEXT,
+  action TEXT NOT NULL,
+  backend_slug TEXT,
+  tool TEXT,
+  placement TEXT,
+  detail_json TEXT,
+  ip TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
 CREATE INDEX IF NOT EXISTS idx_backends_ws ON backends(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON audit_events(workspace_id, ts DESC);
 `;
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function parseScopes(raw: unknown): ApiKeyScopes | null {
+  if (raw == null || raw === "") return null;
+  try {
+    const s = JSON.parse(String(raw)) as ApiKeyScopes;
+    if (!s || typeof s !== "object") return null;
+    if (s.toolPrefixAllowlist && !Array.isArray(s.toolPrefixAllowlist)) {
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
 }
 
 function rowKey(r: Record<string, unknown>): ApiKeyRecord {
@@ -71,6 +103,7 @@ function rowKey(r: Record<string, unknown>): ApiKeyRecord {
     name: String(r.name),
     tokenHash: String(r.token_hash),
     prefix: String(r.prefix),
+    scopes: parseScopes(r.scopes_json),
     createdAt: String(r.created_at),
     revokedAt: r.revoked_at == null ? null : String(r.revoked_at),
   };
@@ -103,6 +136,7 @@ function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
     workspaceId: k.workspaceId,
     name: k.name,
     prefix: k.prefix,
+    scopes: k.scopes,
     createdAt: k.createdAt,
     revokedAt: k.revokedAt,
   };
@@ -150,6 +184,16 @@ export class Store {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  private migrate(): void {
+    const cols = this.db
+      .prepare(`PRAGMA table_info(api_keys)`)
+      .all() as Array<{ name: string }>;
+    if (!cols.some((c) => c.name === "scopes_json")) {
+      this.db.exec(`ALTER TABLE api_keys ADD COLUMN scopes_json TEXT`);
+    }
   }
 
   close(): void {
@@ -192,7 +236,11 @@ export class Store {
     };
   }
 
-  createApiKey(workspaceId: string, name: string): ApiKeyCreated {
+  createApiKey(
+    workspaceId: string,
+    name: string,
+    scopes?: ApiKeyScopes | null,
+  ): ApiKeyCreated {
     const { token, prefix, hash } = mintApiToken();
     const rec: ApiKeyRecord = {
       id: newId("key"),
@@ -200,13 +248,14 @@ export class Store {
       name,
       tokenHash: hash,
       prefix,
+      scopes: scopes ?? null,
       createdAt: nowIso(),
       revokedAt: null,
     };
     this.db
       .prepare(
-        `INSERT INTO api_keys (id, workspace_id, name, token_hash, prefix, created_at, revoked_at)
-         VALUES (?, ?, ?, ?, ?, ?, NULL)`,
+        `INSERT INTO api_keys (id, workspace_id, name, token_hash, prefix, scopes_json, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
       )
       .run(
         rec.id,
@@ -214,9 +263,28 @@ export class Store {
         rec.name,
         rec.tokenHash,
         rec.prefix,
+        rec.scopes ? JSON.stringify(rec.scopes) : null,
         rec.createdAt,
       );
     return { ...toPublicKey(rec), token };
+  }
+
+  updateApiKeyScopes(
+    workspaceId: string,
+    id: string,
+    scopes: ApiKeyScopes | null,
+  ): ApiKeyPublic | null {
+    const res = this.db
+      .prepare(
+        `UPDATE api_keys SET scopes_json = ?
+         WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL`,
+      )
+      .run(scopes ? JSON.stringify(scopes) : null, id, workspaceId);
+    if (Number(res.changes) === 0) return null;
+    const row = this.db
+      .prepare(`SELECT * FROM api_keys WHERE id = ?`)
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? toPublicKey(rowKey(row)) : null;
   }
 
   listApiKeys(workspaceId: string): ApiKeyPublic[] {
@@ -238,13 +306,16 @@ export class Store {
     return Number(res.changes) > 0;
   }
 
-  authenticateApiKey(
-    token: string,
-  ): { workspaceId: string; keyId: string; keyName: string } | null {
+  authenticateApiKey(token: string): {
+    workspaceId: string;
+    keyId: string;
+    keyName: string;
+    scopes: ApiKeyScopes | null;
+  } | null {
     const hash = hashToken(token);
     const row = this.db
       .prepare(
-        `SELECT id, workspace_id, name, revoked_at FROM api_keys WHERE token_hash = ?`,
+        `SELECT id, workspace_id, name, revoked_at, scopes_json FROM api_keys WHERE token_hash = ?`,
       )
       .get(hash) as Record<string, unknown> | undefined;
     if (!row || row.revoked_at != null) return null;
@@ -252,7 +323,87 @@ export class Store {
       workspaceId: String(row.workspace_id),
       keyId: String(row.id),
       keyName: String(row.name),
+      scopes: parseScopes(row.scopes_json),
     };
+  }
+
+  writeAudit(input: {
+    workspaceId: string;
+    keyId?: string | null;
+    action: AuditAction | string;
+    backendSlug?: string | null;
+    tool?: string | null;
+    placement?: string | null;
+    detail?: Record<string, unknown> | null;
+    ip?: string | null;
+  }): void {
+    // Never persist obvious secret-looking values
+    let detailJson: string | null = null;
+    if (input.detail) {
+      const safe = { ...input.detail };
+      for (const k of Object.keys(safe)) {
+        if (/secret|token|password|authorization|api[_-]?key/i.test(k)) {
+          safe[k] = "[redacted]";
+        }
+      }
+      detailJson = JSON.stringify(safe);
+    }
+    this.db
+      .prepare(
+        `INSERT INTO audit_events (
+          id, ts, workspace_id, key_id, action, backend_slug, tool, placement, detail_json, ip
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        newId("aud"),
+        nowIso(),
+        input.workspaceId,
+        input.keyId ?? null,
+        input.action,
+        input.backendSlug ?? null,
+        input.tool ?? null,
+        input.placement ?? null,
+        detailJson,
+        input.ip ?? null,
+      );
+  }
+
+  listAudit(
+    workspaceId: string,
+    opts: { limit?: number; before?: string } = {},
+  ): AuditEvent[] {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
+    const rows = (
+      opts.before
+        ? (this.db
+            .prepare(
+              `SELECT * FROM audit_events
+               WHERE workspace_id = ? AND ts < ?
+               ORDER BY ts DESC LIMIT ?`,
+            )
+            .all(workspaceId, opts.before, limit) as Record<string, unknown>[])
+        : (this.db
+            .prepare(
+              `SELECT * FROM audit_events
+               WHERE workspace_id = ?
+               ORDER BY ts DESC LIMIT ?`,
+            )
+            .all(workspaceId, limit) as Record<string, unknown>[])
+    );
+    return rows.map((r) => ({
+      id: String(r.id),
+      ts: String(r.ts),
+      workspaceId: String(r.workspace_id),
+      keyId: r.key_id == null ? null : String(r.key_id),
+      action: String(r.action),
+      backendSlug: r.backend_slug == null ? null : String(r.backend_slug),
+      tool: r.tool == null ? null : String(r.tool),
+      placement: r.placement == null ? null : String(r.placement),
+      detail: r.detail_json
+        ? (JSON.parse(String(r.detail_json)) as Record<string, unknown>)
+        : null,
+      ip: r.ip == null ? null : String(r.ip),
+    }));
   }
 
   createBackend(

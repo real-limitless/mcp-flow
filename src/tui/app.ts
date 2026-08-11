@@ -73,7 +73,15 @@ type Screen =
       name: string;
       status: string;
     }
-  | { id: "confirm-delete"; slug: string; status: string };
+  | { id: "confirm-delete"; slug: string; status: string }
+  | {
+      id: "catalog";
+      query: string;
+      results: Array<{ id: string; title: string; transport: string; endpointUrl?: string }>;
+      cursor: number;
+      status: string;
+      searching: boolean;
+    };
 
 function pairsToRecord(pairs: HeaderPair[]): Record<string, string> {
   const out: Record<string, string> = {};
@@ -84,7 +92,12 @@ function pairsToRecord(pairs: HeaderPair[]): Record<string, string> {
   return out;
 }
 
-const HOME_ITEMS = ["Upstream backends", "API keys", "Quit"] as const;
+const HOME_ITEMS = [
+  "Upstream backends",
+  "API keys",
+  "Catalog (registry)",
+  "Quit",
+] as const;
 
 export async function runTui(cfg: Config): Promise<void> {
   if (!isTty()) {
@@ -155,6 +168,26 @@ export async function runTui(cfg: Config): Promise<void> {
         );
       });
       footer = "↑↓ move · enter select · q quit";
+    }
+
+    if (screen.id === "catalog") {
+      const s = screen;
+      writeLine(`${c.bold}Catalog search${c.reset}  ${c.dim}${s.status}${c.reset}`);
+      writeBlank();
+      writeLine(
+        `  query: ${c.reverse}${s.query || " "}${c.reset}${s.searching ? c.dim + " …" + c.reset : ""}`,
+      );
+      writeBlank();
+      if (!s.results.length) {
+        writeLine(`${c.dim}No results. Type a query and press enter.${c.reset}`);
+      } else {
+        s.results.forEach((r, i) => {
+          const sel = i === s.cursor;
+          const line = `${pad(r.title.slice(0, 28), 29)} ${pad(r.transport, 14)} ${truncate(r.endpointUrl ?? r.id, Math.max(10, w - 50))}`;
+          writeLine(sel ? `${c.reverse} › ${line}${c.reset}` : `   ${line}`);
+        });
+      }
+      footer = "type query · enter search · ↑↓ · + install remote · esc";
     }
 
     if (screen.id === "backends") {
@@ -436,7 +469,8 @@ export async function runTui(cfg: Config): Promise<void> {
       screen.id !== "add" &&
       screen.id !== "headers-editor" &&
       screen.id !== "key-create" &&
-      screen.id !== "confirm-delete"
+      screen.id !== "confirm-delete" &&
+      screen.id !== "catalog"
     ) {
       await quit();
       return;
@@ -454,6 +488,15 @@ export async function runTui(cfg: Config): Promise<void> {
           screen = { id: "backends", cursor: 0, status: "" };
         else if (screen.cursor === 1)
           screen = { id: "keys", cursor: 0, status: "" };
+        else if (screen.cursor === 2)
+          screen = {
+            id: "catalog",
+            query: "",
+            results: [],
+            cursor: 0,
+            status: "type query · enter search · i install selected",
+            searching: false,
+          };
         else await quit();
       }
       schedulePaint();
@@ -1002,6 +1045,121 @@ export async function runTui(cfg: Config): Promise<void> {
           cursor: 0,
           status: `deleted ${screen.slug}`,
         };
+      }
+      schedulePaint();
+    }
+
+    if (screen.id === "catalog") {
+      const s = screen;
+      if (key.name === "escape") {
+        screen = { id: "home", cursor: 2 };
+        schedulePaint();
+        return;
+      }
+      if (key.name === "up")
+        screen = { ...s, cursor: Math.max(0, s.cursor - 1) };
+      if (key.name === "down")
+        screen = {
+          ...s,
+          cursor: Math.min(Math.max(0, s.results.length - 1), s.cursor + 1),
+        };
+      if (key.name === "backspace") {
+        screen = { ...s, query: s.query.slice(0, -1) };
+        schedulePaint();
+        return;
+      }
+      if (
+        key.name === "char" &&
+        key.sequence.length === 1 &&
+        key.sequence >= " " &&
+        key.sequence !== "+"
+      ) {
+        screen = { ...s, query: s.query + key.sequence };
+        schedulePaint();
+        return;
+      }
+      if (key.name === "return") {
+        screen = { ...s, searching: true, status: "searching…" };
+        schedulePaint();
+        try {
+          const { searchRegistryLive } = await import("../catalog/sync.js");
+          const entries = await searchRegistryLive(s.query || "mcp", {
+            limit: 20,
+          });
+          if (screen.id === "catalog") {
+            screen = {
+              ...screen,
+              searching: false,
+              results: entries.map((e) => ({
+                id: e.id,
+                title: e.title,
+                transport: e.transport,
+                endpointUrl: e.endpointUrl,
+              })),
+              cursor: 0,
+              status: `${entries.length} hit(s)`,
+            };
+          }
+        } catch (err) {
+          if (screen.id === "catalog") {
+            screen = {
+              ...screen,
+              searching: false,
+              status: err instanceof Error ? err.message : String(err),
+            };
+          }
+        }
+        schedulePaint();
+        return;
+      }
+      if (key.name === "char" && key.sequence === "+") {
+        const hit = s.results[s.cursor];
+        if (!hit?.endpointUrl) {
+          screen = {
+            ...s,
+            status: hit
+              ? "no remote URL (stdio not installable yet)"
+              : "nothing selected",
+          };
+          schedulePaint();
+          return;
+        }
+        try {
+          const { installFromGallery } = await import("../catalog/install.js");
+          const { searchRegistryLive } = await import("../catalog/sync.js");
+          const live = await searchRegistryLive(hit.id, { limit: 5 });
+          const entry =
+            live.find((e) => e.id === hit.id) ??
+            ({
+              id: hit.id,
+              title: hit.title,
+              description: "",
+              transport: hit.transport as "streamable-http",
+              endpointUrl: hit.endpointUrl,
+              provenance: "official-registry" as const,
+              flags: ["remote" as const],
+            });
+          const result = await installFromGallery(store, ws.id, {
+            entry,
+            enable: true,
+            allowPrivateUrls: cfg.allowPrivateUrls,
+          });
+          store.writeAudit({
+            workspaceId: ws.id,
+            action: "catalog.install",
+            backendSlug: result.backend.slug,
+            detail: { galleryId: hit.id },
+          });
+          screen = {
+            ...s,
+            status: `installed ${result.backend.slug} (enabled)`,
+          };
+        } catch (err) {
+          screen = {
+            ...s,
+            status: err instanceof Error ? err.message : String(err),
+          };
+        }
       }
       schedulePaint();
     }

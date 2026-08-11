@@ -163,11 +163,51 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
 - Placement modes other than `remote` are rejected until P3+
 
+## Catalog (P1b)
+
+```bash
+npm run catalog:sync          # → catalog/entries/*.json + index.json
+npx mcp-flow catalog search github
+npx mcp-flow catalog show 'io.github…/name' --pretty
+npx mcp-flow catalog enrich 'io.github…/name' --pretty   # README + tools/list
+npx mcp-flow catalog install 'io.github…/name' --enable
+# factory bulk enrich:
+npm run factory:scrape -- --enqueue && npm run factory:worker
+```
+
+Stable allowlist id = registry `server.name`. Schema: `catalog/schema.json` (v1.0.0).  
+Each server is **one JSON file** under `catalog/entries/` (plus slim `index.json`). See [catalog/README.md](./catalog/README.md).
+
+### Catalog factory TUI (queue + proxies)
+
+Like ansible-flow-mcp’s Galaxy factory — multi-pane scrape → queue → worker, with SOCKS/HTTP proxy pool:
+
+```bash
+npm run factory:tui
+# headless:
+npm run factory:scrape -- --max-pages 5 --enqueue
+npm run factory:worker -- --once
+```
+
+See [scripts/factory/README.md](./scripts/factory/README.md).
+
+## Scopes + audit (P2)
+
+```bash
+npx mcp-flow key create -n intern --scope-prefix yh-finance__ --scope-prefix mf_
+npx mcp-flow key scopes <id> --scope-prefix demo__
+npx mcp-flow audit --limit 20
+npx mcp-flow doctor
+```
+
+Scoped keys only see/call matching tool name prefixes (`mf_status` always allowed).
+
 ## Development
 
 ```bash
 npm test
 npm run typecheck
+npm run catalog:validate
 npm run dev   # tsx src/cli.ts serve
 ```
 

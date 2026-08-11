@@ -8,7 +8,8 @@ import {
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { AuthContext } from "../types.js";
-import { UpstreamPool } from "./upstream.js";
+import { toolAllowedByScopes } from "../types.js";
+import { parseNamespacedTool, UpstreamPool } from "./upstream.js";
 
 const META_TOOLS: Tool[] = [
   {
@@ -55,6 +56,10 @@ function textResult(data: unknown, isError = false): CallToolResult {
   };
 }
 
+function filterTools(tools: Tool[], auth: AuthContext): Tool[] {
+  return tools.filter((t) => toolAllowedByScopes(t.name, auth.scopes));
+}
+
 export function createGatewayServer(
   store: Store,
   pool: UpstreamPool,
@@ -67,16 +72,39 @@ export function createGatewayServer(
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const upstream = await pool.listNamespacedTools(auth.workspaceId);
-    const tools: Tool[] = [
-      ...META_TOOLS,
-      ...upstream.map(({ upstreamName: _u, backendSlug: _s, backendId: _b, ...tool }) => tool),
-    ];
+    const tools: Tool[] = filterTools(
+      [
+        ...META_TOOLS,
+        ...upstream.map(
+          ({ upstreamName: _u, backendSlug: _s, backendId: _b, ...tool }) =>
+            tool,
+        ),
+      ],
+      auth,
+    );
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
+      action: "tools/list",
+      detail: { count: tools.length },
+    });
     return { tools };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+
+    if (!toolAllowedByScopes(name, auth.scopes)) {
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "tools/call",
+        tool: name,
+        detail: { denied: true, reason: "scope" },
+      });
+      return textResult(`Tool not allowed by API key scopes: ${name}`, true);
+    }
 
     if (name === "mf_list_backends") {
       const backends = store
@@ -96,8 +124,11 @@ export function createGatewayServer(
 
     if (name === "mf_list_tools") {
       const tools = await pool.listNamespacedTools(auth.workspaceId);
+      const filtered = tools.filter((t) =>
+        toolAllowedByScopes(t.name, auth.scopes),
+      );
       return textResult({
-        tools: tools.map((t) => ({
+        tools: filtered.map((t) => ({
           name: t.name,
           description: t.description,
           backend: t.backendSlug,
@@ -113,6 +144,7 @@ export function createGatewayServer(
         workspaceId: auth.workspaceId,
         keyId: auth.keyId ?? null,
         keyName: auth.keyName ?? null,
+        scopes: auth.scopes ?? null,
         backends: {
           total: backends.length,
           enabled: enabled.length,
@@ -125,7 +157,18 @@ export function createGatewayServer(
       return textResult(`Unknown meta tool: ${name}`, true);
     }
 
-    return pool.callTool(auth.workspaceId, name, args);
+    const parsed = parseNamespacedTool(name);
+    const result = await pool.callTool(auth.workspaceId, name, args);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
+      action: "tools/call",
+      tool: name,
+      backendSlug: parsed?.slug ?? null,
+      placement: "remote",
+      detail: { isError: Boolean(result.isError) },
+    });
+    return result;
   });
 
   return server;

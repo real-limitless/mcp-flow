@@ -25,12 +25,19 @@ export interface Workspace {
   createdAt: string;
 }
 
+/** null/undefined scopes = full workspace tool access */
+export interface ApiKeyScopes {
+  /** Match tool names by prefix, e.g. "yh-finance__", "mf_" */
+  toolPrefixAllowlist?: string[];
+}
+
 export interface ApiKeyRecord {
   id: string;
   workspaceId: string;
   name: string;
   tokenHash: string;
   prefix: string;
+  scopes: ApiKeyScopes | null;
   createdAt: string;
   revokedAt: string | null;
 }
@@ -40,6 +47,7 @@ export interface ApiKeyPublic {
   workspaceId: string;
   name: string;
   prefix: string;
+  scopes: ApiKeyScopes | null;
   createdAt: string;
   revokedAt: string | null;
 }
@@ -119,6 +127,45 @@ export interface AuthContext {
   workspaceId: string;
   keyId?: string;
   keyName?: string;
+  scopes?: ApiKeyScopes | null;
+}
+
+export type AuditAction =
+  | "tools/call"
+  | "tools/list"
+  | "backend.create"
+  | "backend.update"
+  | "backend.delete"
+  | "backend.test"
+  | "key.create"
+  | "key.revoke"
+  | "key.update"
+  | "catalog.install"
+  | "catalog.sync";
+
+export interface AuditEvent {
+  id: string;
+  ts: string;
+  workspaceId: string;
+  keyId: string | null;
+  action: AuditAction | string;
+  backendSlug: string | null;
+  tool: string | null;
+  placement: string | null;
+  detail: Record<string, unknown> | null;
+  ip: string | null;
 }
 
 export const DEFAULT_PLACEMENT: Placement = { mode: "remote" };
+
+/** Always allowed even when scopes restrict tools */
+export const ALWAYS_ALLOWED_META_TOOLS = new Set(["mf_status"]);
+
+export function toolAllowedByScopes(
+  toolName: string,
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  if (!scopes?.toolPrefixAllowlist?.length) return true;
+  if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
+  return scopes.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
+}

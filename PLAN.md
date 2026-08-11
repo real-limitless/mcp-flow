@@ -269,5 +269,6 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 - [x] Public repo, LICENSE Apache-2.0, README, PLAN stub  
 - [x] Package layout (TS), CI, Compose / Dockerfile  
 - [x] P1 gateway: SQLite + crypto, REST keys/backends, remote proxy, `/mcp`, CLI, stdio shim  
-- [ ] Catalog schema + sync  
+- [x] P1b catalog: schema.json, normalize/sync/search, install → Backend  
+- [x] P2 scopes (tool prefix allowlist) + audit log + CLI doctor  
 - [ ] Edge agent ([#3](https://github.com/real-limitless/mcp-flow/issues/3))  

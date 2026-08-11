@@ -1,6 +1,18 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { installFromGallery } from "../catalog/install.js";
+import { readEntryFile } from "../catalog/shard.js";
+import {
+  defaultCatalogDir,
+  filterLocalGallery,
+  filterLocalIndex,
+  loadLocalGallery,
+  loadLocalIndex,
+  searchRegistryLive,
+  syncCatalog,
+} from "../catalog/sync.js";
+import type { McpGalleryEntry } from "../catalog/types.js";
 import type { Config } from "../config.js";
 import { safeEqualStr } from "../crypto.js";
 import type { Store } from "../db/store.js";
@@ -9,6 +21,7 @@ import { createGatewayServer } from "../mcp/gateway.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
 import type {
+  ApiKeyScopes,
   AuthContext,
   CreateBackendInput,
   UpdateBackendInput,
@@ -25,8 +38,18 @@ function bearer(header: string | undefined): string | null {
   return m ? m[1]!.trim() : null;
 }
 
+function findEntryById(
+  catalogDir: string,
+  id: string,
+): McpGalleryEntry | undefined {
+  const fromFile = readEntryFile(catalogDir, id);
+  if (fromFile) return fromFile;
+  return loadLocalGallery(catalogDir).find((e) => e.id === id);
+}
+
 export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
   const app = new Hono<{ Variables: Variables }>();
+  const catalogDir = defaultCatalogDir(process.cwd());
 
   app.use(
     "*",
@@ -68,9 +91,24 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
 
   admin.post("/keys", async (c) => {
     const auth = c.get("auth");
-    const body = (await c.req.json().catch(() => ({}))) as { name?: string };
+    const body = (await c.req.json().catch(() => ({}))) as {
+      name?: string;
+      scopes?: ApiKeyScopes | null;
+      toolPrefixAllowlist?: string[];
+    };
     const name = body.name?.trim() || "default";
-    const created = store.createApiKey(auth.workspaceId, name);
+    const scopes: ApiKeyScopes | null =
+      body.scopes !== undefined
+        ? body.scopes
+        : body.toolPrefixAllowlist?.length
+          ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
+          : null;
+    const created = store.createApiKey(auth.workspaceId, name, scopes);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "key.create",
+      detail: { keyId: created.id, name: created.name, scopes },
+    });
     return c.json({ key: created }, 201);
   });
 
@@ -79,10 +117,45 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     return c.json({ keys: store.listApiKeys(auth.workspaceId) });
   });
 
+  admin.patch("/keys/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      scopes?: ApiKeyScopes | null;
+      toolPrefixAllowlist?: string[] | null;
+    };
+    let scopes: ApiKeyScopes | null;
+    if (body.scopes !== undefined) scopes = body.scopes;
+    else if (body.toolPrefixAllowlist !== undefined) {
+      scopes =
+        body.toolPrefixAllowlist && body.toolPrefixAllowlist.length
+          ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
+          : null;
+    } else {
+      return c.json({ error: "scopes or toolPrefixAllowlist required" }, 400);
+    }
+    const key = store.updateApiKeyScopes(
+      auth.workspaceId,
+      c.req.param("id"),
+      scopes,
+    );
+    if (!key) return c.json({ error: "not found" }, 404);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "key.update",
+      detail: { keyId: key.id, scopes },
+    });
+    return c.json({ key });
+  });
+
   admin.delete("/keys/:id", (c) => {
     const auth = c.get("auth");
     const ok = store.revokeApiKey(auth.workspaceId, c.req.param("id"));
     if (!ok) return c.json({ error: "not found" }, 404);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "key.revoke",
+      detail: { keyId: c.req.param("id") },
+    });
     return c.json({ ok: true });
   });
 
@@ -132,6 +205,12 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         transport,
         placement,
       });
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        action: "backend.create",
+        backendSlug: backend.slug,
+        placement: backend.placement.mode,
+      });
       return c.json({ backend }, 201);
     } catch (err) {
       return c.json(
@@ -168,9 +247,13 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       body,
     );
     if (!backend) return c.json({ error: "not found" }, 404);
-    pool.invalidate(
-      store.getBackend(auth.workspaceId, backend.id)?.id,
-    );
+    pool.invalidate(store.getBackend(auth.workspaceId, backend.id)?.id);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "backend.update",
+      backendSlug: backend.slug,
+      placement: backend.placement.mode,
+    });
     return c.json({ backend });
   });
 
@@ -180,6 +263,11 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     const ok = store.deleteBackend(auth.workspaceId, c.req.param("id"));
     if (!ok) return c.json({ error: "not found" }, 404);
     if (existing) pool.invalidate(existing.id);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "backend.delete",
+      backendSlug: existing?.slug,
+    });
     return c.json({ ok: true });
   });
 
@@ -188,7 +276,172 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     const backend = store.getBackend(auth.workspaceId, c.req.param("id"));
     if (!backend) return c.json({ error: "not found" }, 404);
     const result = await pool.testBackend(backend);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "backend.test",
+      backendSlug: backend.slug,
+      detail: { ok: result.ok, toolCount: result.toolCount },
+    });
     return c.json(result, result.ok ? 200 : 502);
+  });
+
+  // --- Catalog (P1b) ---
+  admin.get("/catalog/search", async (c) => {
+    const q = c.req.query("q")?.trim() ?? "";
+    const live = c.req.query("live") !== "0";
+    let entries: McpGalleryEntry[] = [];
+    let source: "live" | "local" | "local-index" = "local";
+    try {
+      if (live && q) {
+        entries = await searchRegistryLive(q, { limit: 25 });
+        source = "live";
+      } else {
+        const index = loadLocalIndex(catalogDir);
+        if (index.length) {
+          const rows = filterLocalIndex(index, q || "");
+          // return index-shaped objects (full description in summary fields)
+          entries = rows.map((r) => ({
+            id: r.id,
+            title: r.title,
+            description: r.summary,
+            summary: r.summary,
+            transport: r.transport,
+            flags: r.flags,
+            version: r.version,
+            status: r.status,
+            endpointUrl: r.endpointUrl,
+            provenance: "official-registry" as const,
+          }));
+          source = "local-index";
+        } else {
+          entries = filterLocalGallery(loadLocalGallery(catalogDir), q || "");
+          source = "local";
+        }
+      }
+    } catch (err) {
+      const index = loadLocalIndex(catalogDir);
+      if (index.length) {
+        entries = filterLocalIndex(index, q).map((r) => ({
+          id: r.id,
+          title: r.title,
+          description: r.summary,
+          summary: r.summary,
+          transport: r.transport,
+          flags: r.flags,
+          version: r.version,
+          status: r.status,
+          endpointUrl: r.endpointUrl,
+          provenance: "official-registry" as const,
+        }));
+        source = "local-index";
+      } else {
+        entries = filterLocalGallery(loadLocalGallery(catalogDir), q);
+        source = "local";
+      }
+      return c.json({
+        entries,
+        source,
+        warning: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return c.json({ entries, source });
+  });
+
+  admin.get("/catalog/entries/:id", async (c) => {
+    const id = decodeURIComponent(c.req.param("id"));
+    let entry = findEntryById(catalogDir, id);
+    if (!entry) {
+      try {
+        const live = await searchRegistryLive(id, { limit: 10 });
+        entry = live.find((e) => e.id === id) ?? live[0];
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!entry) return c.json({ error: "not found" }, 404);
+    return c.json({ entry });
+  });
+
+  admin.post("/catalog/sync", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      maxPages?: number;
+    };
+    try {
+      const result = await syncCatalog({
+        catalogDir,
+        maxPages: body.maxPages ?? 5,
+        latestOnly: true,
+      });
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        action: "catalog.sync",
+        detail: { total: result.meta.counts.total },
+      });
+      return c.json({ meta: result.meta });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        502,
+      );
+    }
+  });
+
+  admin.post("/catalog/install", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      id?: string;
+      slug?: string;
+      enable?: boolean;
+      headers?: Record<string, string>;
+      entry?: McpGalleryEntry;
+    };
+
+    let entry = body.entry;
+    if (!entry && body.id) {
+      entry = findEntryById(catalogDir, body.id);
+      if (!entry) {
+        try {
+          const live = await searchRegistryLive(body.id, { limit: 15 });
+          entry =
+            live.find((e) => e.id === body.id) ??
+            (live.length === 1 ? live[0] : undefined);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (!entry) return c.json({ error: "gallery entry required (id or entry)" }, 400);
+
+    try {
+      const result = await installFromGallery(store, auth.workspaceId, {
+        entry,
+        slug: body.slug,
+        enable: body.enable,
+        headers: body.headers,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+      });
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        action: "catalog.install",
+        backendSlug: result.backend.slug,
+        detail: { galleryId: entry.id, warnings: result.warnings },
+      });
+      return c.json(result, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.get("/audit", (c) => {
+    const auth = c.get("auth");
+    const limit = Number(c.req.query("limit") ?? "50");
+    const before = c.req.query("before") ?? undefined;
+    const events = store.listAudit(auth.workspaceId, { limit, before });
+    return c.json({ events });
   });
 
   app.route("/v1", admin);
@@ -209,6 +462,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       workspaceId: key.workspaceId,
       keyId: key.keyId,
       keyName: key.keyName,
+      scopes: key.scopes,
     };
 
     const transport = new WebStandardStreamableHTTPServerTransport({
@@ -224,7 +478,6 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       void server.close().catch(() => undefined);
     };
 
-    // Do not close until the body is fully consumed (stateless per-request transport).
     if (!response.body) {
       cleanup();
       return response;
@@ -259,7 +512,6 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     });
   });
 
-  // Convenience: never leak secrets in accidental dumps
   app.notFound((c) => c.json({ error: "not found" }, 404));
 
   return app;
@@ -267,5 +519,4 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
 
 export type AppType = ReturnType<typeof createApp>;
 
-// re-export for tests
 export { toPublicBackend };
