@@ -34,10 +34,30 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Sync registry snapshot (bounded)
-        run: npx tsx src/cli.ts catalog sync --max-pages 5
+        run: npx tsx src/cli.ts catalog sync --max-pages 1
         env:
-          # keep CI bounded; full enrich is optional offline
           MCP_FLOW_CATALOG_DIR: catalog
+      - name: Enrich catalog (README + tools/list)
+        # ~100 latest servers per page; soft-fails OK. Raise max-pages later carefully.
+        run: |
+          npm run factory:enqueue-enrich -- --all --limit 500
+          for i in $(seq 1 120); do
+            pending=$(node -e "
+              const fs=require('fs'),path=require('path');
+              const d='scripts/factory/.jobs/queue';
+              if(!fs.existsSync(d)){console.log(0);process.exit(0)}
+              let n=0;
+              for (const f of fs.readdirSync(d).filter(x=>x.endsWith('.json'))) {
+                const j=JSON.parse(fs.readFileSync(path.join(d,f),'utf8'));
+                if(j.status==='pending'||j.status==='running') n++;
+              }
+              console.log(n);
+            ")
+            echo "enrich remaining=$pending"
+            if [ "$pending" -eq 0 ]; then break; fi
+            npx tsx scripts/factory/queue-worker.ts --once --concurrency 5
+          done
+          cat catalog/meta.json
       - name: Build static site
         run: npm run site:build
         env:
