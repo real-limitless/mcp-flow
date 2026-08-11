@@ -52,9 +52,16 @@ if (!entries.length && existsSync(galleryPath)) {
   }
 }
 
+// Empty catalog is OK in CI/git: entries/index are gitignored and filled by sync/factory.
 if (source === "none" && !existsSync(indexPath)) {
-  console.error("missing catalog/entries or catalog/gallery.json");
-  process.exit(1);
+  if (!existsSync(schemaPath) || !existsSync(metaPath)) {
+    console.error("missing catalog/schema.json or catalog/meta.json");
+    process.exit(1);
+  }
+  console.log(
+    "ok: 0 entries (empty sharded catalog — run catalog sync / factory to populate)",
+  );
+  process.exit(0);
 }
 
 let failed = 0;
