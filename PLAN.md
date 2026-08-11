@@ -1,161 +1,273 @@
-# [PLAN] mcp-flow — dual-track MCP gallery + session plane
+# [PLAN] mcp-flow — workspace MCP gateway + dual-track catalog
 
 ## Summary
 
-Build **mcp-flow** as the catalog source of truth and standalone MCP control plane, dual-tracked with **OpenFlow** the same way **ansible-flow-mcp** pairs with the OpenFlow Ansible gallery:
+**mcp-flow** is a self-hosted **MCP workspace gateway**: one URL and one auth for many AI harnesses, with upstream MCP servers (private + vendor), encrypted env/API keys, and optional **sandboxed or bare** runtimes on **central or edge (local machine)** devices.
 
-1. **mcp-flow** — registry snapshot + MCP tools for agents/IDEs  
-2. **OpenFlow** — **one** runtime node + palette gallery over that catalog (not N node types)
+It remains dual-tracked with:
 
-Related OpenFlow issue: see dual-track `[PLAN]` on `real-limitless/OpenFlow`.
+| Consumer | Role |
+| --- | --- |
+| **Agents / IDEs** | Single MCP endpoint (HTTP or stdio shim); never see upstream secrets |
+| **[OpenFlow](https://github.com/real-limitless/OpenFlow)** | Catalog → one runtime node gallery ([OpenFlow#57](https://github.com/real-limitless/OpenFlow/issues/57)); assistant may use workspace mcp-flow |
+| **[ProjectEverflow](https://github.com/real-limitless/ProjectEverflow)** | Marketplace MCP tab + org allowlist → library backends ([Everflow#5](https://github.com/real-limitless/ProjectEverflow/issues/5)) |
+
+**Priority: gateway-first (P1+).** Full registry snapshot catalog is valuable but secondary to the shared proxy.
+
+GitHub: [#1](https://github.com/real-limitless/mcp-flow/issues/1) · consumer [#2](https://github.com/real-limitless/mcp-flow/issues/2) · edge [#3](https://github.com/real-limitless/mcp-flow/issues/3)
 
 ---
 
-## Decisions
+## Locked decisions
 
 | Concern | Choice |
 | --- | --- |
-| Catalog source | Official MCP Registry API `v0.1` (`registry.modelcontextprotocol.io`) snapshot |
-| Scope | **Remote HTTP/SSE + stdio/installable** metadata |
-| OpenFlow shape | **One** type `openflow-node-base.mcp` (+ optional `mcpTool` later); gallery = discovery layer |
-| Agent v1 | Discovery tools only (`search` / `get_server`) |
-| Agent v2 | Enable / lock / switch + `tools/list_changed` or namespaced `call_tool` proxy |
-| Policy | Allowlist + max slots; no unrestricted enable of arbitrary URLs by default |
-| Dual-track | Shared `catalog/` artifacts; OpenFlow syncs like ansible-catalog |
+| Language | **TypeScript / Node ≥ 22** |
+| Runtime | **HTTP service** (`/mcp` + `/v1/*`) **+ stdio wrapper** for stdio-only hosts |
+| Upstream P1 | **Remote** streamable-http / SSE |
+| Secrets | Encrypted at rest; injected only on outbound upstream calls; **never** returned to models/tools list |
+| Multi-agent | Many API keys → same workspace library |
+| Catalog | Thin at first (live registry search and/or sync); full `gallery.json` for OpenFlow/Everflow offline |
+| Placement | First-class: `remote` \| `central-sandbox` \| `edge-sandbox` \| `edge-bare` |
+| Enterprise default | Deny **edge-bare**; sandbox required for executable MCPs |
+| OpenFlow canvas | May call upstream **direct** for a fixed node; agents prefer gateway hop |
 
 ---
 
-## Why dual-track
+## Product thesis
 
-| Consumer | Needs |
-| --- | --- |
-| OpenFlow users | Palette browse thousands of servers, one node, credentials, workflow runData |
-| Agent/IDE users | MCP meta-tools without OpenFlow |
-| Us | One place to fix normalize/dedupe/blocklist/sync |
+```text
+Enterprise or power user
+  installs mcp-flow (Compose)
+  adds private + vendor MCP servers
+  sets upstream env / API keys (vault)
+  mints employee or personal API keys
+        │
+Employee / user AI harnesses (Cursor, Claude, OpenCode, …)
+  configure ONLY: mcp-flow URL + API key
+        │
+  tools appear namespaced (slug__tool)
+  upstream secrets never enter the harness or model context
+```
 
-Avoid forking gallery JSON shapes between repos.
+Optional: multiple desktops enroll as **edge devices**; local-only MCPs run **sandboxed or bare** on those machines under the same control plane.
 
 ---
 
 ## Architecture
 
-```
-Official Registry API (paginate)
-        │
-        ▼
-scripts/sync_registry.*
-        │
-        ▼
-catalog/gallery.json + meta.json
-        │
-        ├──────────────────────┐
-        ▼                      ▼
-mcp-flow MCP server      OpenFlow data/mcp-catalog/
-  search_servers           GET /api/v1/mcp/servers
-  get_server               palette virtual cards
-  (later) enable/…         type: openflow-node-base.mcp
-        │                  parameters: { serverId, endpointUrl, toolName, … }
-        ▼                      │
-IDE / OpenCode                 ▼
-                         executor → MCP client session (remote)
+### Control plane vs data planes
+
+```text
+                    CONTROL PLANE (mcp-flow-api)
+                    catalog, backends, vault, keys,
+                    placement policy, audit, /mcp gateway
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        Central runtime   Edge agent A    Edge agent B
+        (VPC / home host) (laptop)        (desktop / lab)
+              │               │               │
+         sandbox/remote    sandbox|bare    sandbox|bare
 ```
 
-### Why not N real OpenFlow node types
+### Agent connection
 
-Same as Ansible: static registry would explode the bundle. Gallery = discovery; one executor + one description.
+```text
+Harness ──HTTP Bearer──► mcp-flow /mcp
+Harness ──stdio shim───► mcp-flow /mcp   (same auth)
+```
 
-### Why not force every call through mcp-flow in OpenFlow
+### Tool surface
 
-Canvas **MCP** node talks **direct** to the chosen remote endpoint (simpler debug). mcp-flow gateway hop is for **agents** and optional later “router” resource—not required for v1 gallery execute.
+- Proxied tools: `{slug}__{upstreamToolName}`
+- Meta tools (examples): `mf_list_backends`, `mf_list_tools`, `mf_status`
+- Admin add/enable backends: **REST/CLI first**; agent-driven enable only with scopes later
+- On enable/disable: refresh tools; `notifications/tools/list_changed` when supported
 
 ---
 
-## Work breakdown — Track B (this repo)
+## Placement (per backend)
 
-### Phase 0 — Bootstrap
-- [x] Create public repo + README + PLAN
-- [ ] LICENSE Apache-2.0
-- [ ] Minimal package layout (TS or Python — TBD; prefer TS if sharing types with OpenFlow, or Python for MCP SDK speed)
-- [ ] CI: lint + catalog schema validate
+| Mode | Where it runs | Typical use |
+| --- | --- | --- |
+| `remote` | Vendor or internal URL; called from control plane | SaaS / internal HTTP MCP |
+| `central-sandbox` | Container/microVM on mcp-flow workers | Untrusted or installable stdio/OCI |
+| `edge-sandbox` | Container on enrolled device | Local files/tools with isolation |
+| `edge-bare` | Host process on device (opt-in) | Trusted local tools; weaker isolation |
 
-### Phase 1 — Catalog pipeline
-- [ ] Paginate registry `GET /v0.1/servers`
-- [ ] Dedupe by `server.name` (prefer latest / `isLatest`)
-- [ ] Normalize → `McpGalleryEntry` (id, title, description, transport, endpointUrl?, install?, provenance)
-- [ ] Split/filter flags: `remote` | `stdio` | `incomplete`
-- [ ] Blocklist file for known junk ids
-- [ ] Commit snapshot **or** release artifact + sync script (size-dependent)
-- [ ] `catalog/README.md` + `meta.json`
+**Device fields (edge):** id, name, tags, capabilities (`docker`/`podman`/`none`, bare allowed), online status.
 
-### Phase 2 — Discovery MCP (safe default)
-- [ ] Tools: `search_servers`, `get_server`, `list_stats` / transports
-- [ ] Stdio entrypoint + example OpenCode/Claude config
-- [ ] Tests on normalize + search scoring
+**Affinity (later):** `harness-local` \| `pinned` \| `any-online` \| failover; optional `mf_use_device`.
 
-### Phase 3 — Session plane (opt-in profile)
-- [ ] `enable` / `disable` / `switch` / `status` with allowlist + max slots
-- [ ] Optional namespaced proxy `call_tool(server, name, args)`
-- [ ] Emit tool list changes when host supports it
-- [ ] Audit log hooks
-- [ ] Secrets via env/credential slots — never model-supplied raw keys in logs
-
-### Phase 4 — Polish
-- [ ] Featured/curated overlay
-- [ ] Optional GitHub stars enrichment
-- [ ] Site or Schema Lab (optional, ansible-flow style)
+**Edge connectivity:** outbound tunnel/WebSocket to control plane (NAT-friendly). Details: [#3](https://github.com/real-limitless/mcp-flow/issues/3).
 
 ---
 
-## Shared catalog contract
+## Data model (v1+)
 
 ```ts
-type McpGalleryEntry = {
-  id: string;                 // registry name e.g. io.github.foo/bar
-  title: string;
-  description: string;
-  version?: string;
-  status?: string;
-  transport: "streamable-http" | "sse" | "stdio" | "unknown";
-  endpointUrl?: string;       // remote
-  install?: {
-    kind: "npm" | "pypi" | "docker" | "binary" | "unknown";
-    package?: string;
-    command?: string[];
-  };
-  homepage?: string;
-  sourceUrl?: string;
-  categories?: string[];
-  updatedAt?: string;
-  provenance: "official-registry" | "manual";
-};
+Workspace { id, name }
+
+ApiKey {
+  id, workspaceId, name, tokenHash, prefix
+  scopes?: { toolPrefixAllowlist?: string[] }
+}
+
+Backend {
+  id, workspaceId, slug, title
+  transport: "streamable-http" | "sse" | "stdio" | "oci"
+  url?: string
+  image?: string
+  command?: string[]
+  headersEnc?, envEnc?     // sealed secrets
+  enabled: boolean
+  toolAllowlist?: string[]
+  placement: {
+    mode: "remote" | "central-sandbox" | "edge-sandbox" | "edge-bare"
+    deviceId?: string
+    deviceTags?: string[]
+    affinity?: "harness-local" | "pinned" | "any-online"
+  }
+  sandbox?: { mounts?, egress?, cpuMem? }
+}
+
+Device {
+  id, workspaceId, name, tags[]
+  capabilities: { sandbox: "docker" | "podman" | "none", bare: boolean }
+  status: "online" | "offline"
+  lastSeen?: string
+}
+
+// Catalog (shared with OpenFlow / Everflow)
+McpGalleryEntry {
+  id, title, description, version?, status?
+  transport: "streamable-http" | "sse" | "stdio" | "unknown"
+  endpointUrl?, remotes?: { type, url }[]
+  install?: { kind, package?, command? }
+  flags?: ("remote" | "stdio" | "incomplete")[]
+  homepage?, sourceUrl?, categories?, updatedAt?
+  provenance: "official-registry" | "manual"
+}
 ```
 
-OpenFlow and mcp-flow **must** consume this shape (or a versioned schema file in `catalog/schema.json`).
+Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
+
+---
+
+## Admin / CLI surface
+
+| Interface | Purpose |
+| --- | --- |
+| `POST /v1/keys` | Mint agent API key (secret shown once) |
+| `POST/PATCH/GET /v1/backends` | Library CRUD (GET redacts secrets) |
+| `POST /v1/backends/:id/test` | Connectivity + tools/list smoke |
+| `GET /mcp` | MCP Streamable HTTP for agents |
+| `mcp-flow serve` | Run API |
+| `mcp-flow stdio` | Stdio bridge → HTTP `/mcp` |
+| `mcp-flow backend add\|list` | CLI library ops |
+| `mcp-flow key create` | CLI key mint |
+| `mcp-flow edge` | Device agent (P4+) |
+
+---
+
+## Phases
+
+| Phase | Deliverable | Unlocks |
+| --- | --- | --- |
+| **P0** | Repo bootstrap, types, schema stubs, Compose skeleton | — |
+| **P1** | HTTP gateway + API keys + **remote** proxy + encrypted secrets + namespaced tools + stdio shim | **One auth, many agents; upstream keys hidden** |
+| **P1b** | Thin catalog: live registry search and/or `catalog:sync` + `schema.json` | Browse → add; OpenFlow/Everflow contract |
+| **P2** | Scopes, audit log basics, richer CLI; optional small admin UI | Enterprise hygiene |
+| **P3** | **Central-sandbox** stdio/OCI backends | Safe installable MCPs on gateway host |
+| **P4** | **Edge agent** + device enrollment + **edge-sandbox** | Multi-desktop local tools, isolated |
+| **P5** | **edge-bare** (workspace policy opt-in) | Power-user friction reduction |
+| **P6** | Routing polish: tags, pin, failover, `mf_use_device` | Multi-machine workflows |
+
+**Implementation order for next coding pass:** P0 → P1 (gateway-first). Stub `placement.mode = "remote"` in schema from day one.
+
+---
+
+## Catalog contract (OpenFlow / Everflow)
+
+- Versioned `catalog/schema.json` for `McpGalleryEntry`
+- SoT for offline gallery: `catalog/gallery.json` + `meta.json` (sync from official Registry API v0.1)
+- Release artifact optional for CI without sibling checkout ([#2](https://github.com/real-limitless/mcp-flow/issues/2))
+- Everflow: browse all / **install allowlisted only** → creates **Backend** rows (or marketplace pack), not unbounded enable
+- OpenFlow: palette virtual cards → `openflow-node-base.mcp` (or equivalent); sync like ansible-catalog
 
 ---
 
 ## Security
 
-- Default profile: **discovery only**
-- Enable only allowlisted catalog ids (or admin-approved custom)
-- Stdio children (phase 3+): package allowlist, no shell, resource limits
-- No secret commit; redact tokens in logs
-- Document supply-chain risk of third-party MCP servers
+- Bearer API keys hashed at rest; upstream secrets sealed with master key
+- SSRF guards on backend URLs (private ranges opt-in via env)
+- Enterprise: admin-only library edits; employees get keys only
+- Executable MCPs: sandbox default; bare requires explicit policy
+- Edge: short-lived sealed runtime secrets; wipe on disable
+- Audit: key_id, backend, tool, device_id, placement
+- No secrets in gallery JSON, logs, or tool schemas/results
+- Document third-party MCP supply-chain risk
 
 ---
 
-## Success criteria (mcp-flow)
+## Dual-track notes
 
-1. `catalog:sync` produces searchable gallery with remote + stdio entries  
-2. Agent can `search_servers` / `get_server` over stdio MCP  
-3. OpenFlow can sync `catalog/` and drive one-node gallery (Track A)  
-4. Phase 3: agent enable → tools available under policy without host JSON edit  
+### OpenFlow
+
+- Gallery/catalog independent of gateway hop for canvas execute
+- Assistant/OpenCode may attach to workspace mcp-flow (recommended for multi-server agents)
+- See [OpenFlow#57](https://github.com/real-limitless/OpenFlow/issues/57)
+
+### ProjectEverflow
+
+- Marketplace MCP tab from mcp-flow catalog
+- Allowlist install aligns with Backend library + scopes
+- Everflow project microVM complementary to edge-sandbox (heavier project isolation)
+- Ansible hub/spoke is **ansible-flow-mcp**, not mcp-flow ([ansible-flow-mcp#44](https://github.com/real-limitless/ansible-flow-mcp/issues/44))
+- See [Everflow#5](https://github.com/real-limitless/ProjectEverflow/issues/5)
 
 ---
 
-## Non-goals (v1)
+## Success criteria
 
-- Replacing the official registry
-- Unrestricted “enable any URL”
-- Vendoring foreign workflow-engine source into OpenFlow
-- Claiming drop-in compatibility with other vendors’ node packages
+### P1 gateway
+
+1. Compose up mcp-flow; create API key  
+2. Add one remote MCP with auth header (encrypted)  
+3. Enable → `/mcp` tools/list shows `slug__…` tools  
+4. tools/call proxies successfully  
+5. Second API key same workspace sees same tools  
+6. Harness config is **only** mcp-flow URL (or stdio shim)  
+7. Secrets never appear in list/get payloads  
+
+### Catalog / dual-track
+
+8. `catalog:sync` or live search yields usable entries for OpenFlow/Everflow  
+9. Schema stable enough for allowlists (`id` stability)  
+
+### Edge (P4+)
+
+10. Two devices enrolled; edge-sandbox backend runs on pinned device  
+11. Employee key still only talks to control plane  
+
+---
+
+## Non-goals
+
+- Replacing the official MCP Registry  
+- Unrestricted “enable any URL” in enterprise mode  
+- Multi-tenant public SaaS (self-hosted workspace first)  
+- Vendoring foreign workflow-engine source into OpenFlow  
+- Claiming drop-in compatibility with other vendors’ node packages  
+- Building Everflow UI or ansible-flow hub inside this repo  
+
+---
+
+## Bootstrap status
+
+- [x] Public repo, LICENSE Apache-2.0, README, PLAN stub  
+- [ ] Package layout (TS), CI  
+- [ ] P1 gateway implementation  
+- [ ] Catalog schema + sync  
+- [ ] Edge agent ([#3](https://github.com/real-limitless/mcp-flow/issues/3))  

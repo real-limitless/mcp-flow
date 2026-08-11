@@ -1,64 +1,76 @@
 # mcp-flow
 
-**MCP registry gallery + controlled session plane — dual-tracked with OpenFlow.**
+**One MCP endpoint for every AI harness — upstream secrets stay on the gateway.**
 
-Browse thousands of MCP servers from the [official MCP Registry](https://registry.modelcontextprotocol.io/), expose them to agents via a small control-plane MCP, and feed the same catalog into OpenFlow as **one runtime node** with a palette gallery (same pattern as [ansible-flow-mcp](https://github.com/real-limitless/ansible-flow-mcp) + OpenFlow Ansible).
+Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, store env/API keys encrypted, mint agent API keys, and share the same tool library across Cursor, Claude, OpenCode, OpenFlow assistants, and more. Optional **central or edge** runtimes run installable MCPs in a **sandbox** (or bare, if you opt in).
 
-| Track | What you get |
+Also dual-tracked as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
+
+| Audience | What you get |
 | --- | --- |
-| **Agent loop** | `search → describe → enable/lock/switch → list_tools → call` (policy-gated) |
-| **OpenFlow** | One node type + catalog gallery (remote HTTP/SSE + installable/stdio metadata) |
+| **Individuals / teams** | Configure upstream MCPs once; every harness uses one URL + key |
+| **Enterprise** | Corp vault of private + vendor MCPs; employees get scoped keys only |
+| **OpenFlow** | Catalog → palette gallery + single runtime node type |
+| **Everflow** | Marketplace browse/allowlist + optional org gateway |
 
-[OpenFlow dual-track](https://github.com/real-limitless/OpenFlow) · Apache-2.0
+[PLAN.md](./PLAN.md) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
 
 Not affiliated with Anthropic or the Model Context Protocol project beyond using the **public** registry API and MCP protocol docs.
 
 ## Status
 
-**Planning.** See [PLAN.md](./PLAN.md) and the GitHub `[PLAN]` issue.
+**Planning → implementation.** Gateway-first roadmap in [PLAN.md](./PLAN.md).
 
-## Dual-track
+| Issue | Topic |
+| --- | --- |
+| [#1](https://github.com/real-limitless/mcp-flow/issues/1) | Core plan: gateway + catalog + placement |
+| [#2](https://github.com/real-limitless/mcp-flow/issues/2) | Everflow / OpenFlow catalog consumer contract |
+| [#3](https://github.com/real-limitless/mcp-flow/issues/3) | Edge agent + multi-device sandbox/bare |
 
-```
-mcp-flow/catalog/          ← source of truth (registry snapshot)
-        │
-        ├─► mcp-flow MCP server (IDE / agents)
-        │
-        └─► OpenFlow sync → data/mcp-catalog/
-                 │
-                 └─► palette gallery + openflow-node-base.mcp (single runtime type)
-```
-
-## Catalog (planned)
-
-```bash
-# Sync from official registry (v0.1 API freeze)
-npm run catalog:sync   # or: python scripts/sync_registry.py
-```
-
-Outputs under `catalog/`:
-
-- `gallery.json` — normalized server entries (remote + stdio/installable)
-- `meta.json` — sync time, counts by transport
-
-## Agent ritual (planned)
+## Architecture (target)
 
 ```text
-search_servers → get_server → enable(server_id) → list_tools → call_tool → disable | switch
+AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
+                                            │
+                    ┌───────────────────────┼───────────────────────┐
+                    ▼                       ▼                       ▼
+              Remote MCPs            Central sandbox           Edge agents
+              (SaaS / internal)      (stdio/OCI)               (laptop/desktop)
+              + sealed env/headers                              sandbox | bare
 ```
 
-- **Discovery-only** profile by default (search/describe)
-- **Session** profile: allowlisted enable/lock/switch + optional namespaced proxy
-- Max active slots (e.g. 1–3); no open-internet god-mode enable
+**Placement per backend:** `remote` · `central-sandbox` · `edge-sandbox` · `edge-bare`
 
-## OpenFlow (planned)
+## Dual-track catalog
 
-Same UX model as Ansible:
+```text
+Official MCP Registry API
+        │
+        ▼
+mcp-flow catalog/ (gallery.json + schema)
+        │
+        ├─► OpenFlow data/mcp-catalog/  → one node type + palette
+        ├─► Everflow marketplace mcps[] → browse all / install allowlisted
+        └─► Gateway “add from gallery” → Backend library rows
+```
 
-- Palette shows many **virtual cards** (one per gallery server)
-- Workflow stores **one** type: `openflow-node-base.mcp`
-- Drop presets `parameters.serverId` / endpoint / transport
-- Executor connects to remote MCP or documents stdio install (bridge later)
+## Phases (short)
+
+| Phase | Focus |
+| --- | --- |
+| **P1** | HTTP gateway + keys + remote proxy + encrypted secrets + stdio shim |
+| **P1b** | Catalog sync / live search + schema |
+| **P2** | Scopes, audit, CLI polish |
+| **P3** | Central sandboxed installable MCPs |
+| **P4–P5** | Edge agent; edge-sandbox; optional edge-bare |
+| **P6** | Multi-device routing polish |
+
+## Security (non-negotiable)
+
+- Upstream API keys and env **never** returned to models or harness config  
+- Agent keys are workspace-scoped and revocable  
+- Executable MCPs default to **sandbox**; bare is explicit policy  
+- Enterprise: admin library; employees only get mcp-flow keys  
 
 ## License
 

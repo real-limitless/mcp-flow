@@ -1,17 +1,20 @@
 # mcp-flow — agent guide
 
-Dual-track MCP **catalog + session plane** with [OpenFlow](https://github.com/real-limitless/OpenFlow).
+Self-hosted **MCP workspace gateway** + registry catalog. Dual-tracked with OpenFlow and ProjectEverflow.
 
 ## Rules
 
-1. Catalog SoT is `catalog/` — OpenFlow syncs from here; do not diverge shapes without a versioned schema bump.
-2. Public registry API + MCP protocol docs only for upstream data — no vendoring foreign workflow-engine source.
-3. Default MCP profile is **discovery-only**. Enable/proxy is allowlisted and opt-in.
-4. Never commit secrets, tokens, or live credential payloads.
-5. Prefer shared golden fixtures with OpenFlow over silent contract drift.
+1. **Gateway-first** — shared `/mcp` + API keys + sealed upstream secrets; catalog supports gallery consumers.
+2. Catalog SoT for offline gallery is `catalog/` — do not diverge `McpGalleryEntry` without a schema version bump (`catalog/schema.json`).
+3. Consumers: OpenFlow (one-node gallery), Everflow (marketplace allowlist → backends), agents (gateway).
+4. **Placement** is first-class: `remote` | `central-sandbox` | `edge-sandbox` | `edge-bare`. Stub `remote` until runtimes exist.
+5. Never commit secrets, live API keys, or decrypted env payloads. Redact secrets in logs and tool results.
+6. Enterprise defaults: deny edge-bare; no unrestricted enable-any-URL.
+7. Prefer shared golden fixtures/contracts with OpenFlow over silent drift.
 
 ## Read next
 
 - [PLAN.md](./PLAN.md)
+- [README.md](./README.md)
 - [catalog/README.md](./catalog/README.md)
-- OpenFlow dual-track `[PLAN]` issue (MCP gallery, one runtime node)
+- Issues #1 (core), #2 (consumers), #3 (edge)
