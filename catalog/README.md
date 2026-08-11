@@ -8,7 +8,7 @@ Normalized gallery of MCP servers (official registry snapshot and/or live search
 - OpenFlow — palette gallery  
 - ProjectEverflow — marketplace `mcps[]` (browse all / install allowlisted)
 
-**Contract:** `McpGalleryEntry` — `schema.json` (**schemaVersion 1.0.0**).  
+**Contract:** `McpGalleryEntry` — `schema.json` (**schemaVersion 1.2.0**).  
 Stable allowlist key: **`id`** (= official registry `server.name`).
 
 ## Storage layout (sharded — default)
@@ -35,14 +35,16 @@ catalog/
 
 ### What is saved (and what is not)
 
-**From the official registry (normalize)**
+**From the official registry (normalize)** — full detail, secrets stripped
 
-- Identity: `id`, `title`, `version`, `status`
+- Identity: `id`, `title`, `version`, `status`, `publishedAt`
 - **Description / summary** — registry prose  
-- **`offersHint`**, `headerDocs` (names + descriptions, never secret values)
-- Connect: `transport`, `endpointUrl`, `remotes[]`
-- Install: `install.kind` / `package`
-- Links: `homepage`, `sourceUrl`
+- **`packages[]`**: npm/pypi/oci + version + package env var *names/docs* (`isSecret` flag, never values)
+- **`install`**: preferred primary package (npm > pypi > first)
+- **`environmentVariables`**: aggregated env docs across packages
+- **`remotes[]`**: url/type + per-remote `headers` with `valueTemplate` (e.g. `Bearer {api_key}`) + `variables`
+- **`headerDocs` / `requiresHeaders`**: only *required* names go in `requiresHeaders`
+- **`repository`**: url, source, id · `homepage` / `sourceUrl`
 - `flags`: `remote` | `stdio` | `incomplete`
 
 **From factory enrichment**

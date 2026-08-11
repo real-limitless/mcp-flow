@@ -48,11 +48,20 @@ function loadBlocklist(catalogDir: string): Set<string> {
 
 export async function fetchRegistryPage(
   baseUrl: string,
-  opts: { cursor?: string; limit?: number; search?: string },
+  opts: {
+    cursor?: string;
+    limit?: number;
+    search?: string;
+    /** Registry filter — default "latest" so each name appears once with full detail */
+    version?: string;
+  },
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ items: RegistryListItem[]; nextCursor?: string }> {
   const u = new URL(baseUrl);
   u.searchParams.set("limit", String(opts.limit ?? 100));
+  // Without version=latest the API returns every historical publish (thin + full mixed).
+  const version = opts.version === "" ? undefined : (opts.version ?? "latest");
+  if (version) u.searchParams.set("version", version);
   if (opts.cursor) u.searchParams.set("cursor", opts.cursor);
   if (opts.search) u.searchParams.set("search", opts.search);
 

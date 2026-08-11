@@ -1,4 +1,4 @@
-export const CATALOG_SCHEMA_VERSION = "1.1.0";
+export const CATALOG_SCHEMA_VERSION = "1.2.0";
 
 export type GalleryTransport =
   | "streamable-http"
@@ -12,21 +12,54 @@ export type GalleryProvenance = "official-registry" | "manual";
 
 export type GalleryStatus = "active" | "deprecated" | "deleted" | "unknown";
 
+export type GalleryPackageKind = "npm" | "pypi" | "oci" | "binary" | "unknown";
+
+/** Env/header variable docs — names + descriptions only, never secret values */
+export interface GallerySecretFieldDoc {
+  name: string;
+  description?: string;
+  /** True when registry marks isSecret */
+  secret?: boolean;
+  /** True only when registry marks required / isRequired */
+  required?: boolean;
+  /** Default non-secret value from registry if any (rare) */
+  default?: string;
+}
+
+export interface GalleryHeaderDoc extends GallerySecretFieldDoc {
+  /**
+   * Registry header value *template* only, e.g. `Bearer {api_key}`.
+   * Never a resolved credential.
+   */
+  valueTemplate?: string;
+  /** Placeholder variables inside the template */
+  variables?: GallerySecretFieldDoc[];
+}
+
 export interface GalleryRemote {
   type: "streamable-http" | "sse" | "unknown";
   url: string;
+  headers?: GalleryHeaderDoc[];
 }
 
 export interface GalleryInstall {
-  kind: "npm" | "pypi" | "oci" | "binary" | "unknown";
+  kind: GalleryPackageKind;
   package?: string;
+  version?: string;
+  transport?: GalleryTransport;
   command?: string[];
+  environmentVariables?: GallerySecretFieldDoc[];
 }
 
-export interface GalleryHeaderDoc {
-  name: string;
-  description?: string;
-  required?: boolean;
+/** Full package list from registry (stdio npm/pypi/oci, etc.) */
+export interface GalleryPackage extends GalleryInstall {}
+
+export interface GalleryRepository {
+  url?: string;
+  source?: string;
+  /** Registry/GitHub numeric or string id when present */
+  id?: string;
+  subfolder?: string;
 }
 
 export interface GalleryReadme {
@@ -74,12 +107,18 @@ export interface McpGalleryEntry {
   flags?: GalleryFlag[];
   homepage?: string;
   sourceUrl?: string;
+  repository?: GalleryRepository;
+  /** All registry packages (npm/pypi/…); `install` is the preferred primary */
+  packages?: GalleryPackage[];
+  /** Aggregated env var docs across packages (names only) */
+  environmentVariables?: GallerySecretFieldDoc[];
   categories?: string[];
   updatedAt?: string;
+  publishedAt?: string;
   provenance: GalleryProvenance;
-  /** Header *names* only — never values */
+  /** Header names marked required — never values */
   requiresHeaders?: string[];
-  /** Header docs from registry (names + descriptions, never secret values) */
+  /** Header docs from registry (names + templates + variable docs; never secrets) */
   headerDocs?: GalleryHeaderDoc[];
   /**
    * Human-oriented capabilities hint from registry text (not live tools/list).

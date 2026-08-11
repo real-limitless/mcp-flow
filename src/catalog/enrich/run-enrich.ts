@@ -269,21 +269,47 @@ export function formatEntryPretty(entry: McpGalleryEntry): string {
   }
   if (entry.install?.package) {
     lines.push(
-      `install: ${entry.install.kind} ${entry.install.package}`,
+      `install: ${entry.install.kind} ${entry.install.package}${entry.install.version ? `@${entry.install.version}` : ""}`,
     );
   }
   lines.push("");
+  if (entry.packages?.length) {
+    lines.push("## Packages");
+    for (const p of entry.packages) {
+      lines.push(
+        `- ${p.kind}:${p.package ?? "?"}${p.version ? `@${p.version}` : ""}${p.transport ? ` (${p.transport})` : ""}`,
+      );
+      for (const ev of p.environmentVariables ?? []) {
+        lines.push(
+          `  - env ${ev.name}${ev.secret ? " [secret]" : ""}${ev.required ? " required" : ""}${ev.description ? ` — ${ev.description}` : ""}`,
+        );
+      }
+    }
+    lines.push("");
+  }
   if (entry.headerDocs?.length || entry.requiresHeaders?.length) {
-    lines.push("## Headers required");
+    lines.push("## Headers");
     if (entry.headerDocs?.length) {
       for (const h of entry.headerDocs) {
         lines.push(
-          `- ${h.name}${h.required ? " (required)" : ""}${h.description ? ` — ${h.description}` : ""}`,
+          `- ${h.name}${h.required ? " (required)" : " (optional)"}${h.secret ? " [secret]" : ""}${h.valueTemplate ? ` \`${h.valueTemplate}\`` : ""}${h.description ? ` — ${h.description}` : ""}`,
         );
+        for (const v of h.variables ?? []) {
+          lines.push(
+            `  - {${v.name}}${v.secret ? " [secret]" : ""}${v.description ? ` — ${v.description}` : ""}`,
+          );
+        }
       }
     } else {
       for (const n of entry.requiresHeaders ?? []) lines.push(`- ${n}`);
     }
+    lines.push("");
+  }
+  if (entry.repository?.url || entry.repository?.id) {
+    lines.push("## Repository");
+    lines.push(
+      `- ${entry.repository.source ?? "repo"}: ${entry.repository.url ?? ""}${entry.repository.id ? ` (${entry.repository.id})` : ""}`,
+    );
     lines.push("");
   }
   if (entry.toolsPreviewStatus || entry.toolsPreview?.length) {

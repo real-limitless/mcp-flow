@@ -42,7 +42,7 @@ writeFileSync(
   join(CATALOG_DIR, "meta.json"),
   `${JSON.stringify(
     {
-      schemaVersion: "1.1.0",
+      schemaVersion: "1.2.0",
       syncedAt: null,
       source: "https://registry.modelcontextprotocol.io/v0.1/servers",
       apiVersion: "v0.1",

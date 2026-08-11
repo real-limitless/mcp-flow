@@ -31,6 +31,8 @@ export class RegistryClient {
   }): Promise<PageResult> {
     const u = new URL(this.settings.registryUrl);
     u.searchParams.set("limit", String(opts.limit ?? this.settings.pageLimit));
+    // Prefer latest publish per name (full packages/headers); omit historical noise
+    u.searchParams.set("version", "latest");
     if (opts.cursor) u.searchParams.set("cursor", opts.cursor);
     if (opts.search) u.searchParams.set("search", opts.search);
 

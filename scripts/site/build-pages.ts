@@ -179,20 +179,75 @@ function serverPage(e: McpGalleryEntry): string {
   const headers =
     e.headerDocs?.length || e.requiresHeaders?.length
       ? `<section>
-  <h2>Headers required</h2>
+  <h2>Headers</h2>
   <ul class="docs">
     ${(
       e.headerDocs?.length
         ? e.headerDocs
-        : (e.requiresHeaders || []).map((name) => ({ name, required: true }))
+        : (e.requiresHeaders || []).map((name) => ({
+            name,
+            required: true as boolean | undefined,
+          }))
     )
-      .map(
-        (h) =>
-          `<li><code>${escapeHtml(h.name)}</code>${h.required ? " (required)" : ""}${h.description ? ` — ${escapeHtml(h.description)}` : ""}</li>`,
-      )
+      .map((h) => {
+        const bits = [
+          h.required ? "required" : "optional",
+          "secret" in h && h.secret ? "secret" : "",
+        ].filter(Boolean);
+        const vars =
+          "variables" in h && h.variables?.length
+            ? `<ul class="sub">${h.variables
+                .map(
+                  (v) =>
+                    `<li><code>{${escapeHtml(v.name)}}</code>${v.secret ? " secret" : ""}${v.description ? ` — ${escapeHtml(v.description)}` : ""}</li>`,
+                )
+                .join("")}</ul>`
+            : "";
+        const tmpl =
+          "valueTemplate" in h && h.valueTemplate
+            ? `<div class="tmpl"><code>${escapeHtml(h.valueTemplate)}</code></div>`
+            : "";
+        return `<li><code>${escapeHtml(h.name)}</code> <span class="muted">(${bits.join(", ")})</span>${h.description ? ` — ${escapeHtml(h.description)}` : ""}${tmpl}${vars}</li>`;
+      })
       .join("\n")}
   </ul>
-  <p class="muted">Names only — never store secrets in the public catalog.</p>
+  <p class="muted">Templates and names only — never store secrets in the public catalog.</p>
+</section>`
+      : "";
+
+  const packages =
+    e.packages?.length || e.environmentVariables?.length
+      ? `<section>
+  <h2>Packages</h2>
+  ${
+    e.packages?.length
+      ? `<ul class="docs">${e.packages
+          .map(
+            (p) =>
+              `<li><code>${escapeHtml(p.kind)}</code> <code>${escapeHtml(p.package || "")}</code>${p.version ? ` @ ${escapeHtml(p.version)}` : ""}${p.transport ? ` · ${escapeHtml(p.transport)}` : ""}${
+                p.environmentVariables?.length
+                  ? `<ul class="sub">${p.environmentVariables
+                      .map(
+                        (ev) =>
+                          `<li><code>${escapeHtml(ev.name)}</code>${ev.secret ? " secret" : ""}${ev.required ? " required" : " optional"}${ev.description ? ` — ${escapeHtml(ev.description)}` : ""}</li>`,
+                      )
+                      .join("")}</ul>`
+                  : ""
+              }</li>`,
+          )
+          .join("\n")}</ul>`
+      : ""
+  }
+  ${
+    e.environmentVariables?.length && !e.packages?.some((p) => p.environmentVariables?.length)
+      ? `<h3>Environment variables</h3><ul class="docs">${e.environmentVariables
+          .map(
+            (ev) =>
+              `<li><code>${escapeHtml(ev.name)}</code>${ev.secret ? " secret" : ""}${ev.description ? ` — ${escapeHtml(ev.description)}` : ""}</li>`,
+          )
+          .join("")}</ul>`
+      : ""
+  }
 </section>`
       : "";
 
@@ -267,6 +322,7 @@ function serverPage(e: McpGalleryEntry): string {
     <button type="button" class="btn" data-copy-target="cfg">Copy JSON</button>
   </section>
 
+  ${packages}
   ${headers}
   ${toolsBlock}
   ${readme}
