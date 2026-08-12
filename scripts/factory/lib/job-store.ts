@@ -85,18 +85,38 @@ export function tailLog(maxLines = 80): string[] {
 }
 
 /** Enqueue enrich job from registry list item */
-export function enqueue(item: RegistryListItem): FactoryJob {
+export function enqueue(item: RegistryListItem): FactoryJob | null {
   return enqueueEnrich({
     galleryId: item.server?.name,
     item,
+    skipIfQueued: true,
   });
+}
+
+/** True if galleryId already has pending or running job. */
+export function hasActiveJob(galleryId: string): boolean {
+  const id = galleryId.trim();
+  if (!id) return false;
+  for (const j of listQueue("pending")) {
+    if ((j.galleryId || j.item?.server?.name) === id) return true;
+  }
+  for (const j of listQueue("running")) {
+    if ((j.galleryId || j.item?.server?.name) === id) return true;
+  }
+  return false;
 }
 
 export function enqueueEnrich(input: {
   galleryId?: string;
   item?: RegistryListItem;
-}): FactoryJob {
+  /** If true, skip when pending/running already exists for this id */
+  skipIfQueued?: boolean;
+}): FactoryJob | null {
   ensureJobsDirs();
+  const galleryId = input.galleryId ?? input.item?.server?.name;
+  if (input.skipIfQueued !== false && galleryId && hasActiveJob(galleryId)) {
+    return null;
+  }
   const id = newId("job");
   const ts = nowIso();
   const job: FactoryJob = {
@@ -105,7 +125,7 @@ export function enqueueEnrich(input: {
     status: "pending",
     createdAt: ts,
     updatedAt: ts,
-    galleryId: input.galleryId ?? input.item?.server?.name,
+    galleryId,
     item: input.item,
     stages: defaultStages(),
   };

@@ -9,6 +9,7 @@
  */
 import { parseArgs } from "node:util";
 import { runEnrich } from "../../src/catalog/enrich/run-enrich.js";
+import { readEntryFile } from "../../src/catalog/shard.js";
 import { httpGetJson, httpGetText } from "./lib/http-util.js";
 import {
   appendLog,
@@ -24,6 +25,17 @@ import {
 import { CATALOG_DIR, ensureJobsDirs } from "./lib/paths.js";
 import { ProxyPool } from "./lib/proxy-pool.js";
 import { loadSettings, resolveProxyUrl } from "./lib/settings.js";
+
+function entryAlreadyComplete(id: string | undefined): boolean {
+  if (!id) return false;
+  const e = readEntryFile(CATALOG_DIR, id);
+  if (!e) return false;
+  return (
+    e.enrichment?.complete === true &&
+    Boolean(e.toolsPreviewStatus) &&
+    Boolean(e.sourceRepo?.status)
+  );
+}
 
 /** Hard wall-clock limit per enrich job (includes tools probe). */
 const DEFAULT_JOB_TIMEOUT_MS = 90_000;
@@ -118,6 +130,19 @@ async function processJob(
   }
 
   const label = id || job.id;
+
+  // Skip re-work when catalog already has a full enrich (duplicate enqueue)
+  if (id && entryAlreadyComplete(id)) {
+    updateJob(job.id, {
+      status: "done",
+      galleryId: id,
+      startedAt: undefined,
+      error: "skipped: entry already enrich-complete",
+    });
+    appendLog(`job ${job.id} skip already-complete ${id}`);
+    return;
+  }
+
   try {
     const toolsTimeoutMs = Math.min(
       settings.toolsTimeoutMs ?? 15_000,

@@ -90,12 +90,14 @@ async function main(): Promise<void> {
   appendLog(`scan ${scanId}: ${items.length} items`);
 
   let enqueued = 0;
+  let skippedQueued = 0;
   if (values.enqueue) {
     for (const item of items) {
-      enqueue(item);
-      enqueued++;
+      const job = enqueue(item);
+      if (job) enqueued++;
+      else skippedQueued++;
     }
-    appendLog(`scan ${scanId}: enqueued ${enqueued}`);
+    appendLog(`scan ${scanId}: enqueued ${enqueued} skippedQueued=${skippedQueued}`);
   }
 
   console.log(
@@ -104,6 +106,8 @@ async function main(): Promise<void> {
         scanId,
         items: items.length,
         enqueued,
+        skippedQueued,
+        skippedKnown: known.size ? "skip-known on" : "off",
         useProxy: settings.useProxy,
       },
       null,
