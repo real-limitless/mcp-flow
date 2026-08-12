@@ -133,36 +133,38 @@ async function renderKeys() {
     ${surface(
       "Create key",
       `
-      <p class="muted" style="margin-bottom:12px">
-        Agent keys use <span class="mono">/mcp</span>. Operator keys get <span class="mono">mf_admin_*</span> tools and can call <span class="mono">/v1/*</span>.
-      </p>
       <div class="form-grid">
         <div class="form-field">
           <label class="field-label" for="keyName">Name</label>
-          <input id="keyName" placeholder="default" />
+          <input id="keyName" placeholder="cursor / openflow-ops" autocomplete="off" />
         </div>
-        <div class="form-field">
-          <label class="field-label" for="keyScope">Scope prefix</label>
-          <input id="keyScope" placeholder="e.g. demo__ (optional)" />
-        </div>
-        <div class="form-field">
+        <div class="form-field" style="grid-column: span 2">
           <span class="field-label">Role</span>
-          <label class="form-check">
-            <input type="checkbox" id="keyAdmin" />
-            <span>Operator (admin MCP)</span>
-          </label>
+          <div class="seg role-seg" id="keyRoleSeg" role="group" aria-label="Key role">
+            <button type="button" class="seg-btn active" data-role="agent">Agent</button>
+            <button type="button" class="seg-btn" data-role="operator">Operator</button>
+          </div>
+          <p class="dim role-hint" id="keyRoleHint" style="font-size:12px;margin-top:8px;max-width:42rem">
+            Agent: use upstream tools on <span class="mono">/mcp</span> only (optional tool-prefix scopes).
+          </p>
+          <input type="hidden" id="keyAdmin" value="0" />
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="keyScope">Tool scope prefix</label>
+          <input id="keyScope" placeholder="optional e.g. demo__" autocomplete="off" />
         </div>
         <div class="form-field">
           <span class="field-label">&nbsp;</span>
-          <button type="button" id="createKey" class="pill-btn primary">Create</button>
+          <button type="button" id="createKey" class="pill-btn primary">Create key</button>
         </div>
       </div>
       <div id="keyOnce" class="once-callout" hidden>
-        <div class="once-label">Token · shown once</div>
+        <div class="once-label" id="keyOnceLabel">Token · shown once</div>
         <pre id="keyOnceText"></pre>
+        <p class="muted" id="keyOnceHint" style="margin-top:8px;font-size:12px"></p>
       </div>
     `,
-      "mf_*",
+      "mf_* · operator optional",
     )}
     ${surface(
       "Keys",
@@ -194,21 +196,55 @@ async function renderKeys() {
     `,
       `${keys.length} total`,
     )}`;
+
+  const roleSeg = $("#keyRoleSeg");
+  const roleHint = $("#keyRoleHint");
+  const keyAdmin = $("#keyAdmin");
+  const setRole = (role) => {
+    const isOp = role === "operator";
+    keyAdmin.value = isOp ? "1" : "0";
+    roleSeg?.querySelectorAll("[data-role]").forEach((b) => {
+      b.classList.toggle("active", b.getAttribute("data-role") === role);
+    });
+    if (roleHint) {
+      roleHint.innerHTML = isOp
+        ? `Operator: full <span class="mono">mf_admin_*</span> management tools on <span class="mono">/mcp</span> and access to <span class="mono">/v1/*</span>. Treat like root — revocable unlike the env admin token.`
+        : `Agent: use upstream tools on <span class="mono">/mcp</span> only (optional tool-prefix scopes).`;
+    }
+  };
+  roleSeg?.querySelectorAll("[data-role]").forEach((btn) => {
+    btn.addEventListener("click", () => setRole(btn.getAttribute("data-role") || "agent"));
+  });
+
   $("#createKey")?.addEventListener("click", async () => {
     try {
       const name = $("#keyName").value.trim() || "default";
       const scope = $("#keyScope").value.trim();
+      const isOp = $("#keyAdmin")?.value === "1";
       const body = { name };
       if (scope) body.toolPrefixAllowlist = [scope];
-      if ($("#keyAdmin")?.checked) body.admin = true;
+      if (isOp) body.admin = true;
       const res = await api("/v1/keys", { method: "POST", body: JSON.stringify(body) });
       const onceToken = res.key.token;
+      const wasOp = Boolean(res.key.scopes?.admin);
       await renderKeys();
       const box = $("#keyOnce");
       const text = $("#keyOnceText");
+      const label = $("#keyOnceLabel");
+      const hint = $("#keyOnceHint");
       if (box && text) {
         box.hidden = false;
         text.textContent = onceToken;
+        if (label) {
+          label.textContent = wasOp
+            ? "Operator token · shown once"
+            : "Agent token · shown once";
+        }
+        if (hint) {
+          hint.textContent = wasOp
+            ? "Point your AI harness at /mcp with this bearer token to manage backends, keys, and catalog."
+            : "Point your AI harness at /mcp with this bearer token for tool access only.";
+        }
       }
     } catch (e) {
       showErr(e.message);
