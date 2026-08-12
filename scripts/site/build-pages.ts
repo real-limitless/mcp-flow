@@ -12,14 +12,15 @@ import {
   cpSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   rmSync,
   writeFileSync,
   readdirSync,
   statSync,
 } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildBrowse } from "../catalog/build-browse.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "../..");
@@ -70,27 +71,43 @@ function main(): void {
   mkdirSync(catOut, { recursive: true });
 
   let entryCount = 0;
+  let browseShards = 0;
   const indexPath = join(catalogDir, "index.json");
   const metaPath = join(catalogDir, "meta.json");
   const entriesPath = join(catalogDir, "entries");
+  const browsePath = join(catalogDir, "browse");
 
+  // Ensure browse shards exist for lazy site load
   if (existsSync(indexPath)) {
-    cpSync(indexPath, join(catOut, "index.json"));
-  } else {
-    writeFileSync(
-      join(catOut, "index.json"),
-      JSON.stringify(
-        {
-          schemaVersion: "1.2.0",
-          storage: "sharded",
-          updatedAt: new Date().toISOString(),
-          entries: [],
-        },
-        null,
-        2,
-      ) + "\n",
-    );
+    try {
+      const m = buildBrowse(catalogDir);
+      browseShards = m.shardCount;
+      console.error(
+        `browse shards: ${m.shardCount} · rows ${m.total} · inactive ${m.inactive}`,
+      );
+    } catch (err) {
+      console.error(
+        "browse build failed (site will fall back if possible):",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
+
+  // Slim pointer only — full index.json is huge; site uses browse/*
+  writeFileSync(
+    join(catOut, "index.json"),
+    JSON.stringify(
+      {
+        schemaVersion: "1.2.0",
+        storage: "sharded",
+        browse: "browse/manifest.json",
+        updatedAt: new Date().toISOString(),
+        note: "Full entry list is in browse/shards; dossier data in entries/*",
+      },
+      null,
+      2,
+    ) + "\n",
+  );
 
   if (existsSync(metaPath)) {
     cpSync(metaPath, join(catOut, "meta.json"));
@@ -112,12 +129,34 @@ function main(): void {
     );
   }
 
+  if (existsSync(browsePath)) {
+    mkdirSync(join(catOut, "browse"), { recursive: true });
+    for (const f of readdirSync(browsePath)) {
+      cpSync(join(browsePath, f), join(catOut, "browse", f));
+    }
+    browseShards = readdirSync(join(catOut, "browse")).filter((f) =>
+      f.startsWith("shard-"),
+    ).length;
+  }
+
   if (existsSync(entriesPath)) {
     mkdirSync(join(catOut, "entries"), { recursive: true });
-    for (const f of readdirSync(entriesPath)) {
-      if (!f.endsWith(".json")) continue;
-      cpSync(join(entriesPath, f), join(catOut, "entries", f));
-      entryCount++;
+    // Prefer system cp for 20k files
+    const r = spawnSync(
+      "cp",
+      ["-a", `${entriesPath}/.`, join(catOut, "entries")],
+      { encoding: "utf8" },
+    );
+    if (r.status !== 0) {
+      for (const f of readdirSync(entriesPath)) {
+        if (!f.endsWith(".json")) continue;
+        cpSync(join(entriesPath, f), join(catOut, "entries", f));
+        entryCount++;
+      }
+    } else {
+      entryCount = readdirSync(join(catOut, "entries")).filter((f) =>
+        f.endsWith(".json"),
+      ).length;
     }
   } else {
     mkdirSync(join(catOut, "entries"), { recursive: true });
@@ -143,42 +182,26 @@ function main(): void {
     "utf8",
   );
 
-  let indexEntries = 0;
-  try {
-    const idx = JSON.parse(readFileSync(join(catOut, "index.json"), "utf8")) as {
-      entries?: { id: string }[];
-    };
-    indexEntries = idx.entries?.length ?? 0;
-    const urls = [
-      `${origin}${base}/`,
-      `${origin}${base}/about.html`,
-      ...((idx.entries || []).map(
-        (e) =>
-          `${origin}${base}/server.html?id=${encodeURIComponent(e.id)}`,
-      )),
-    ];
-    const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+  // Lightweight sitemap (full 20k URLs optional later via browse shards)
+  const urls = [`${origin}${base}/`, `${origin}${base}/about.html`];
+  writeFileSync(
+    join(outDir, "sitemap.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${urls.map((u) => `  <url><loc>${u.replace(/&/g, "&amp;")}</loc></url>`).join("\n")}
 </urlset>
-`;
-    writeFileSync(join(outDir, "sitemap.xml"), sitemap, "utf8");
-  } catch {
-    writeFileSync(
-      join(outDir, "sitemap.xml"),
-      `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>\n`,
-      "utf8",
-    );
-  }
+`,
+    "utf8",
+  );
 
   console.log(
     JSON.stringify(
       {
         outDir,
         base,
-        indexEntries,
+        browseShards,
         entryFiles: entryCount,
-        mode: "json-shell",
+        mode: "json-shell-browse",
       },
       null,
       2,

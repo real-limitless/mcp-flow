@@ -82,6 +82,9 @@ const work = join(tmpdir(), `mcp-flow-catalog-data-${process.pid}`);
 rmSync(work, { recursive: true, force: true });
 mkdirSync(join(work, "entries"), { recursive: true });
 
+console.error("building browse shards…");
+run("npx", ["tsx", "scripts/catalog/build-browse.ts"], { inherit: true });
+
 console.error("copying catalog shards…");
 cpSync(indexPath, join(work, "index.json"));
 if (existsSync(metaPath)) cpSync(metaPath, join(work, "meta.json"));
@@ -92,16 +95,29 @@ const cpr = spawnSync("cp", ["-a", `${entriesPath}/.`, join(work, "entries")], {
 if (cpr.status !== 0) {
   cpSync(entriesPath, join(work, "entries"), { recursive: true });
 }
+const browseSrc = join(catalogDir, "browse");
+if (existsSync(browseSrc)) {
+  mkdirSync(join(work, "browse"), { recursive: true });
+  spawnSync("cp", ["-a", `${browseSrc}/.`, join(work, "browse")], {
+    encoding: "utf8",
+  });
+}
 
 const entryFiles = run("bash", ["-c", "find entries -name '*.json' | wc -l"], {
   cwd: work,
 });
+const browseShards = existsSync(join(work, "browse"))
+  ? run("bash", ["-c", "ls browse/shard-*.json 2>/dev/null | wc -l"], {
+      cwd: work,
+    })
+  : "0";
 
 console.log(
   JSON.stringify(
     {
       catalogDir,
       entries: Number(entryFiles.trim()),
+      browseShards: Number(browseShards.trim()),
       remote: values.remote,
       dryRun: Boolean(values["dry-run"]),
       release: Boolean(values.release),

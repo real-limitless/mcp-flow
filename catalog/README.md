@@ -82,9 +82,14 @@ npm run site:preview
 | Path | Role |
 | --- | --- |
 | `site/` | Tracked HTML/CSS/JS (library chrome from campaign) |
-| `catalog/index.json` + `entries/*.json` | Data the browser `fetch`es |
-| branch **`catalog-data`** | CI publishes shards for Pages |
+| `catalog/browse/` | **Lazy** slim shards + `manifest.json` (site search; generated) |
+| `catalog/entries/*.json` | Full dossiers (fetched per server page) |
+| branch **`catalog-data`** | CI publishes shards + browse for Pages |
 | release **`catalog-latest`** | `catalog-bundle.tgz` for Everflow/OpenFlow |
+
+```bash
+npm run catalog:browse    # rebuild browse/ from index.json
+```
 
 Workflows:
 - `catalog-build.yml` — sync + incremental enrich → push `catalog-data` + release
