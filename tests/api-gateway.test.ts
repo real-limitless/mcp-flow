@@ -349,4 +349,98 @@ describe("api + gateway", () => {
     const html = await res.text();
     expect(html).toContain("mcp-flow");
   });
+
+  it("operator mf_* key gets mf_admin_* and can use /v1", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "ops", admin: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key
+      .token;
+
+    // dual-auth REST
+    const beRes = await fetch(`${base}/v1/backends`, {
+      headers: { Authorization: `Bearer ${opToken}` },
+    });
+    expect(beRes.status).toBe(200);
+
+    const agentRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "agent-only" }),
+    });
+    const agentToken = (
+      (await agentRes.json()) as { key: { token: string } }
+    ).key.token;
+
+    const deniedRest = await fetch(`${base}/v1/backends`, {
+      headers: { Authorization: `Bearer ${agentToken}` },
+    });
+    expect(deniedRest.status).toBe(401);
+
+    const opClient = new Client(
+      { name: "ops", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await opClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const opTools = await opClient.listTools();
+    const opNames = opTools.tools.map((t) => t.name);
+    expect(opNames).toContain("mf_admin_status");
+    expect(opNames).toContain("mf_admin_create_backend");
+
+    const st = await opClient.callTool({
+      name: "mf_admin_status",
+      arguments: {},
+    });
+    expect(st.isError).not.toBe(true);
+    const stText = JSON.stringify(st);
+    expect(stText.includes("admin") && stText.includes("true")).toBe(true);
+
+    const created = await opClient.callTool({
+      name: "mf_admin_create_backend",
+      arguments: {
+        slug: "via-admin-tool",
+        transport: "stdio",
+        command: ["npx", "-y", "fake-pkg"],
+        placement: { mode: "central-sandbox" },
+        enabled: false,
+      },
+    });
+    expect(created.isError).not.toBe(true);
+    expect(JSON.stringify(created)).toContain("via-admin-tool");
+    await opClient.close();
+
+    const agentClient = new Client(
+      { name: "agent", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await agentClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${agentToken}` } },
+      }),
+    );
+    const agentTools = await agentClient.listTools();
+    expect(agentTools.tools.map((t) => t.name)).not.toContain("mf_admin_status");
+    const denied = await agentClient.callTool({
+      name: "mf_admin_status",
+      arguments: {},
+    });
+    expect(denied.isError).toBe(true);
+    await agentClient.close();
+  }, 60_000);
 });

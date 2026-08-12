@@ -85,13 +85,30 @@ keyCmd
     },
     [] as string[],
   )
+  .option(
+    "--admin",
+    "operator key: mf_admin_* tools + /v1 REST (manage gateway)",
+    false,
+  )
   .option("--db <path>", "sqlite path")
-  .action((opts: { name: string; scopePrefix: string[]; db?: string }) => {
+  .action(
+    (opts: {
+      name: string;
+      scopePrefix: string[];
+      admin?: boolean;
+      db?: string;
+    }) => {
     const { store, workspaceId } = openStore(opts.db);
     try {
-      const scopes = opts.scopePrefix.length
-        ? { toolPrefixAllowlist: opts.scopePrefix }
-        : null;
+      const scopes =
+        opts.admin || opts.scopePrefix.length
+          ? {
+              ...(opts.admin ? { admin: true as const } : {}),
+              ...(opts.scopePrefix.length
+                ? { toolPrefixAllowlist: opts.scopePrefix }
+                : {}),
+            }
+          : null;
       const created = store.createApiKey(workspaceId, opts.name, scopes);
       store.writeAudit({
         workspaceId,
@@ -102,7 +119,8 @@ keyCmd
     } finally {
       store.close();
     }
-  });
+  },
+  );
 
 keyCmd
   .command("scopes")
@@ -117,22 +135,44 @@ keyCmd
     },
     [] as string[],
   )
+  .option("--admin", "grant operator (admin) scope", false)
+  .option("--no-admin", "clear operator scope")
   .option("--clear", "remove all scopes (full access)", false)
   .option("--db <path>", "sqlite path")
   .action(
     (
       id: string,
-      opts: { scopePrefix: string[]; clear?: boolean; db?: string },
+      opts: {
+        scopePrefix: string[];
+        clear?: boolean;
+        admin?: boolean;
+        db?: string;
+      },
     ) => {
       const { store, workspaceId } = openStore(opts.db);
       try {
-        const scopes = opts.clear
+        let scopes = opts.clear
           ? null
-          : opts.scopePrefix.length
+          : opts.scopePrefix.length || opts.admin
+            ? {
+                ...(opts.admin ? { admin: true as const } : {}),
+                ...(opts.scopePrefix.length
+                  ? { toolPrefixAllowlist: opts.scopePrefix }
+                  : {}),
+              }
+            : null;
+        // commander --no-admin sets admin: false
+        if (opts.admin === false && !opts.clear) {
+          scopes = opts.scopePrefix.length
             ? { toolPrefixAllowlist: opts.scopePrefix }
             : null;
-        if (!opts.clear && !opts.scopePrefix.length) {
-          console.error("pass --scope-prefix and/or --clear");
+        }
+        if (
+          !opts.clear &&
+          !opts.scopePrefix.length &&
+          opts.admin === undefined
+        ) {
+          console.error("pass --scope-prefix, --admin, and/or --clear");
           process.exit(1);
         }
         const key = store.updateApiKeyScopes(workspaceId, id, scopes);

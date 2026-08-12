@@ -77,7 +77,7 @@ Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN`, optiona
 
 - **Serve:** `npx mcp-flow serve --port 8787` → `POST/GET /mcp`, admin under `/v1/*` with Bearer admin token.
 - **Tools:** `{slug}__{upstreamTool}`; meta `mf_*`.
-- **Keys:** hashed at rest; optional tool-prefix scopes; audit log.
+- **Keys:** hashed at rest; optional tool-prefix scopes; optional `scopes.admin` operator keys (`mf_admin_*` + `/v1`); audit log.
 - **Backends:** remote streamable-http / SSE; multi-header seal; SSRF guards.
 - **Install from gallery:** `npx mcp-flow catalog install '<id>' --enable` → remote or central-sandbox Backend.
 

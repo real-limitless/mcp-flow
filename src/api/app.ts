@@ -41,7 +41,8 @@ import type {
   UpdateBackendInput,
   WorkspacePolicy,
 } from "../types.js";
-import { DEFAULT_PLACEMENT } from "../types.js";
+import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
+import { buildScopesFromArgs } from "../mcp/admin-tools.js";
 
 type Variables = {
   auth: AuthContext;
@@ -161,12 +162,31 @@ export function createApp(
 
   admin.use("*", async (c, next) => {
     const token = bearer(c.req.header("authorization"));
-    if (!token || !safeEqualStr(token, cfg.adminToken)) {
-      return c.json({ error: "unauthorized" }, 401);
+    if (!token) return c.json({ error: "unauthorized" }, 401);
+
+    // Break-glass env admin token
+    if (cfg.adminToken && safeEqualStr(token, cfg.adminToken)) {
+      const ws = store.ensureWorkspace(cfg.workspaceName);
+      c.set("auth", { kind: "admin", workspaceId: ws.id });
+      await next();
+      return;
     }
-    const ws = store.ensureWorkspace(cfg.workspaceName);
-    c.set("auth", { kind: "admin", workspaceId: ws.id });
-    await next();
+
+    // Operator agent key (scopes.admin)
+    const key = store.authenticateApiKey(token);
+    if (key && isAdminScopes(key.scopes)) {
+      c.set("auth", {
+        kind: "api_key",
+        workspaceId: key.workspaceId,
+        keyId: key.keyId,
+        keyName: key.keyName,
+        scopes: key.scopes,
+      });
+      await next();
+      return;
+    }
+
+    return c.json({ error: "unauthorized" }, 401);
   });
 
   admin.get("/workspace", (c) => {
@@ -200,17 +220,24 @@ export function createApp(
       name?: string;
       scopes?: ApiKeyScopes | null;
       toolPrefixAllowlist?: string[];
+      admin?: boolean;
     };
     const name = body.name?.trim() || "default";
-    const scopes: ApiKeyScopes | null =
+    let scopes: ApiKeyScopes | null =
       body.scopes !== undefined
         ? body.scopes
-        : body.toolPrefixAllowlist?.length
-          ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
-          : null;
+        : buildScopesFromArgs({
+            admin: body.admin === true,
+            toolPrefixAllowlist: body.toolPrefixAllowlist,
+          });
+    // Only env admin or existing admin keys reach here — both may grant admin
+    if (scopes?.admin !== true && body.admin === true) {
+      scopes = { ...(scopes ?? {}), admin: true };
+    }
     const created = store.createApiKey(auth.workspaceId, name, scopes);
     store.writeAudit({
       workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
       action: "key.create",
       detail: { keyId: created.id, name: created.name, scopes },
       ip: clientIp(c),
@@ -228,16 +255,32 @@ export function createApp(
     const body = (await c.req.json()) as {
       scopes?: ApiKeyScopes | null;
       toolPrefixAllowlist?: string[] | null;
+      admin?: boolean;
     };
     let scopes: ApiKeyScopes | null;
     if (body.scopes !== undefined) scopes = body.scopes;
-    else if (body.toolPrefixAllowlist !== undefined) {
-      scopes =
-        body.toolPrefixAllowlist && body.toolPrefixAllowlist.length
-          ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
-          : null;
+    else if (
+      body.toolPrefixAllowlist !== undefined ||
+      body.admin !== undefined
+    ) {
+      scopes = buildScopesFromArgs({
+        admin: body.admin === true,
+        toolPrefixAllowlist:
+          body.toolPrefixAllowlist === null
+            ? undefined
+            : (body.toolPrefixAllowlist ?? undefined),
+      });
+      if (body.admin === false) {
+        scopes =
+          body.toolPrefixAllowlist && body.toolPrefixAllowlist.length
+            ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
+            : null;
+      }
     } else {
-      return c.json({ error: "scopes or toolPrefixAllowlist required" }, 400);
+      return c.json(
+        { error: "scopes, toolPrefixAllowlist, or admin required" },
+        400,
+      );
     }
     const key = store.updateApiKeyScopes(
       auth.workspaceId,
@@ -247,6 +290,7 @@ export function createApp(
     if (!key) return c.json({ error: "not found" }, 404);
     store.writeAudit({
       workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
       action: "key.update",
       detail: { keyId: key.id, scopes },
       ip: clientIp(c),
@@ -710,6 +754,7 @@ export function createApp(
       store,
       pool,
       auth,
+      cfg,
       edgeHub,
       edgeRouter,
       ip: clientIp(c),

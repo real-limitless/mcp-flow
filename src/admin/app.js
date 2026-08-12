@@ -133,6 +133,9 @@ async function renderKeys() {
     ${surface(
       "Create key",
       `
+      <p class="muted" style="margin-bottom:12px">
+        Agent keys use <span class="mono">/mcp</span>. Operator keys get <span class="mono">mf_admin_*</span> tools and can call <span class="mono">/v1/*</span>.
+      </p>
       <div class="form-grid">
         <div class="form-field">
           <label class="field-label" for="keyName">Name</label>
@@ -140,7 +143,14 @@ async function renderKeys() {
         </div>
         <div class="form-field">
           <label class="field-label" for="keyScope">Scope prefix</label>
-          <input id="keyScope" placeholder="e.g. demo__" />
+          <input id="keyScope" placeholder="e.g. demo__ (optional)" />
+        </div>
+        <div class="form-field">
+          <span class="field-label">Role</span>
+          <label class="form-check">
+            <input type="checkbox" id="keyAdmin" />
+            <span>Operator (admin MCP)</span>
+          </label>
         </div>
         <div class="form-field">
           <span class="field-label">&nbsp;</span>
@@ -159,7 +169,7 @@ async function renderKeys() {
       `
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>name</th><th>prefix</th><th>scopes</th><th></th></tr></thead>
+          <thead><tr><th>name</th><th>prefix</th><th>role</th><th>scopes</th><th></th></tr></thead>
           <tbody>
             ${
               keys.length
@@ -168,6 +178,7 @@ async function renderKeys() {
                       (k) => `<tr>
               <td>${esc(k.name)}</td>
               <td class="mono">${esc(k.prefix)}</td>
+              <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}</td>
               <td class="mono">${esc(JSON.stringify(k.scopes))}</td>
               <td class="row-actions">
                 <button type="button" class="pill-btn danger" data-revoke="${esc(k.id)}">Revoke</button>
@@ -175,7 +186,7 @@ async function renderKeys() {
             </tr>`,
                     )
                     .join("")
-                : `<tr><td colspan="4" class="muted">No keys yet</td></tr>`
+                : `<tr><td colspan="5" class="muted">No keys yet</td></tr>`
             }
           </tbody>
         </table>
@@ -189,6 +200,7 @@ async function renderKeys() {
       const scope = $("#keyScope").value.trim();
       const body = { name };
       if (scope) body.toolPrefixAllowlist = [scope];
+      if ($("#keyAdmin")?.checked) body.admin = true;
       const res = await api("/v1/keys", { method: "POST", body: JSON.stringify(body) });
       const onceToken = res.key.token;
       await renderKeys();

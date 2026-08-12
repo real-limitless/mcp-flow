@@ -116,7 +116,16 @@ function parseScopes(raw: unknown): ApiKeyScopes | null {
     if (s.toolPrefixAllowlist && !Array.isArray(s.toolPrefixAllowlist)) {
       return null;
     }
-    return s;
+    const out: ApiKeyScopes = {};
+    if (Array.isArray(s.toolPrefixAllowlist) && s.toolPrefixAllowlist.length) {
+      out.toolPrefixAllowlist = s.toolPrefixAllowlist.map(String);
+    }
+    if (s.admin === true) out.admin = true;
+    if (!out.toolPrefixAllowlist && !out.admin) {
+      // empty object → treat as full non-admin access (null)
+      return null;
+    }
+    return out;
   } catch {
     return null;
   }

@@ -28,6 +28,25 @@ describe("scopes", () => {
       false,
     );
     expect(toolAllowedByScopes("anything", null)).toBe(true);
+    expect(toolAllowedByScopes("mf_admin_list_backends", null)).toBe(false);
+    expect(
+      toolAllowedByScopes("mf_admin_list_backends", { admin: true }),
+    ).toBe(true);
+    expect(
+      toolAllowedByScopes("mf_admin_status", {
+        toolPrefixAllowlist: ["x__"],
+      }),
+    ).toBe(false);
+  });
+
+  it("stores admin scope on keys", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    const created = store.createApiKey(ws.id, "ops", { admin: true });
+    expect(created.scopes?.admin).toBe(true);
+    const auth = store.authenticateApiKey(created.token);
+    expect(auth?.scopes?.admin).toBe(true);
+    store.close();
   });
 
   it("stores scopes on keys", () => {

@@ -83,10 +83,21 @@ export interface SandboxConfig {
   networkMode?: string;
 }
 
-/** null/undefined scopes = full workspace tool access */
+/** null/undefined scopes = full workspace tool access (non-admin) */
 export interface ApiKeyScopes {
   /** Match tool names by prefix, e.g. "yh-finance__", "mf_" */
   toolPrefixAllowlist?: string[];
+  /**
+   * Operator key: may call mf_admin_* tools and (when dual-auth is on) /v1/* REST.
+   * Only mintable by env admin token or another admin key.
+   */
+  admin?: boolean;
+}
+
+export function isAdminScopes(
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  return Boolean(scopes?.admin);
 }
 
 export interface ApiKeyRecord {
@@ -233,7 +244,13 @@ export function toolAllowedByScopes(
   toolName: string,
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
+  // Admin tools only for operator keys
+  if (toolName.startsWith("mf_admin_")) {
+    return isAdminScopes(scopes);
+  }
   if (!scopes?.toolPrefixAllowlist?.length) return true;
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
+  // Admin keys may still use other mf_* metas when prefixes are set
+  if (isAdminScopes(scopes) && toolName.startsWith("mf_")) return true;
   return scopes.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
 }

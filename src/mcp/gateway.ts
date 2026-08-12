@@ -6,13 +6,15 @@ import {
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import { toolCallAuditDetail } from "../audit/sanitize.js";
+import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { CONTROL_PLANE_MODES, supportedPlacementModes } from "../placement.js";
 import type { AuthContext } from "../types.js";
-import { toolAllowedByScopes } from "../types.js";
+import { isAdminScopes, toolAllowedByScopes } from "../types.js";
+import { ADMIN_META_TOOLS, handleAdminTool } from "./admin-tools.js";
 import { parseNamespacedTool, UpstreamPool } from "./upstream.js";
 
 const META_TOOLS: Tool[] = [
@@ -83,6 +85,7 @@ export interface GatewayDeps {
   store: Store;
   pool: UpstreamPool;
   auth: AuthContext;
+  cfg: Config;
   edgeHub?: EdgeHub | null;
   edgeRouter?: EdgeRouter | null;
   /** Client IP for audit */
@@ -90,10 +93,11 @@ export interface GatewayDeps {
 }
 
 export function createGatewayServer(deps: GatewayDeps): Server {
-  const { store, pool: upstream, auth: ctx } = deps;
+  const { store, pool: upstream, auth: ctx, cfg } = deps;
   const ip = deps.ip ?? null;
   const edgeHub = deps.edgeHub ?? null;
   const edgeRouter = deps.edgeRouter ?? null;
+  const adminTools = isAdminScopes(ctx.scopes) ? ADMIN_META_TOOLS : [];
 
   const server = new Server(
     { name: "mcp-flow", version: "0.1.0" },
@@ -107,6 +111,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     const tools: Tool[] = filterTools(
       [
         ...META_TOOLS,
+        ...adminTools,
         ...upstreamTools.map(
           ({ upstreamName: _u, backendSlug: _s, backendId: _b, ...tool }) =>
             tool,
@@ -277,6 +282,37 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       }
       if (ctx.keyId) edgeRouter.sticky.set(ctx.keyId, deviceId);
       const result = textResult({ ok: true, stickyDeviceId: deviceId });
+      auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (name.startsWith("mf_admin_")) {
+      if (!isAdminScopes(ctx.scopes)) {
+        const result = textResult(`admin key required for ${name}`, true);
+        store.writeAudit({
+          workspaceId: ctx.workspaceId,
+          keyId: ctx.keyId,
+          action: "tools/call",
+          tool: name,
+          detail: toolCallAuditDetail({
+            denied: true,
+            reason: "admin_required",
+            arguments: args,
+            durationMs: Date.now() - started,
+          }),
+          ip,
+        });
+        return result;
+      }
+      const result = await handleAdminTool(name, args, {
+        store,
+        pool: upstream,
+        cfg,
+        auth: ctx,
+        edgeHub,
+        ip,
+        edgeEnabled,
+      });
       auditCall(result, { meta: true });
       return result;
     }

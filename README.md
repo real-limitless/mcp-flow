@@ -80,6 +80,20 @@ npx mcp-flow key create --name cursor
 # → { "key": { "token": "mf_…", "prefix": "mf_…", … } }  # secret shown once
 ```
 
+### Operator key (AI manages the gateway)
+
+Mint a key with `scopes.admin` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). Env `MCP_FLOW_ADMIN_TOKEN` remains break-glass for humans/UI.
+
+```bash
+npx mcp-flow key create --name openflow-ops --admin
+# Point the harness at http://127.0.0.1:8787/mcp with that mf_* token.
+```
+
+Examples of operator tools: `mf_admin_status`, `mf_admin_create_backend`, `mf_admin_create_key`,
+`mf_admin_list_audit`, `mf_admin_catalog_install`, devices/policy helpers. Normal agent keys never see these tools.
+
+Prefer operator keys over pasting the env admin token into IDE config (revocable, audited by key id).
+
 ### Add a remote MCP (headers sealed)
 
 ```bash
