@@ -266,6 +266,54 @@ export const ADMIN_META_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "mf_admin_list_projects",
+    description: "List projects (tool collections). Requires admin key.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "mf_admin_create_project",
+    description:
+      "Create a project collection of backend slugs. Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string" },
+        title: { type: "string" },
+        description: { type: "string" },
+        backendSlugs: { type: "array", items: { type: "string" } },
+        isDefault: { type: "boolean" },
+      },
+      required: ["slug"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_update_project",
+    description: "Update project membership/title. Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        idOrSlug: { type: "string" },
+        title: { type: "string" },
+        description: { type: "string" },
+        backendSlugs: { type: "array", items: { type: "string" } },
+        isDefault: { type: "boolean" },
+      },
+      required: ["idOrSlug"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_delete_project",
+    description: "Delete a non-default project. Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: { idOrSlug: { type: "string" } },
+      required: ["idOrSlug"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 function textResult(data: unknown, isError = false): CallToolResult {
@@ -714,6 +762,49 @@ export async function handleAdminTool(
           { backendSlug: result.backend.slug },
         );
         return textResult(result);
+      }
+
+      case "mf_admin_list_projects":
+        return textResult({ projects: store.listProjects(wsId) });
+
+      case "mf_admin_create_project": {
+        const project = store.createProject(wsId, {
+          slug: String(args.slug ?? ""),
+          title: typeof args.title === "string" ? args.title : undefined,
+          description:
+            typeof args.description === "string" ? args.description : undefined,
+          backendSlugs: Array.isArray(args.backendSlugs)
+            ? (args.backendSlugs as string[])
+            : [],
+          isDefault: args.isDefault === true,
+        });
+        audit("project.create", { via: "mf_admin", slug: project.slug });
+        return textResult({ project });
+      }
+
+      case "mf_admin_update_project": {
+        const project = store.updateProject(wsId, String(args.idOrSlug ?? ""), {
+          title: typeof args.title === "string" ? args.title : undefined,
+          description:
+            typeof args.description === "string" ? args.description : undefined,
+          backendSlugs: Array.isArray(args.backendSlugs)
+            ? (args.backendSlugs as string[])
+            : undefined,
+          isDefault:
+            args.isDefault === undefined ? undefined : args.isDefault === true,
+        });
+        if (!project) return textResult("not found", true);
+        audit("project.update", { via: "mf_admin", slug: project.slug });
+        return textResult({ project });
+      }
+
+      case "mf_admin_delete_project": {
+        const idOrSlug = String(args.idOrSlug ?? "");
+        const existing = store.getProject(wsId, idOrSlug);
+        const ok = store.deleteProject(wsId, idOrSlug);
+        if (!ok) return textResult("not found", true);
+        audit("project.delete", { via: "mf_admin", slug: existing?.slug });
+        return textResult({ ok: true });
       }
 
       default:

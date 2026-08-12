@@ -765,6 +765,168 @@ async function renderDevices() {
   });
 }
 
+async function renderProjects() {
+  const [{ projects }, { backends }] = await Promise.all([
+    api("/v1/projects"),
+    api("/v1/backends"),
+  ]);
+  const beOpts = backends
+    .map(
+      (b) =>
+        `<label class="form-check"><input type="checkbox" data-be-slug="${esc(b.slug)}" /> <span class="mono">${esc(b.slug)}</span></label>`,
+    )
+    .join("");
+
+  $("#tab-projects").innerHTML = `
+    ${surface(
+      "Create project",
+      `
+      <p class="muted" style="margin-bottom:12px">
+        Projects are tool collections. Agents call <span class="mono">mf_use_project</span> to switch;
+        only member backends appear in tools/list.
+      </p>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="field-label" for="projSlug">Slug</label>
+          <input id="projSlug" placeholder="webdevelopment" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="projTitle">Title</label>
+          <input id="projTitle" placeholder="Web development" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column:1/-1">
+          <span class="field-label">Backends</span>
+          <div class="proj-be-grid" id="projBeGrid">${beOpts || '<span class="muted">No backends yet</span>'}</div>
+        </div>
+        <div class="form-field">
+          <span class="field-label">&nbsp;</span>
+          <button type="button" id="projCreate" class="pill-btn primary">Create project</button>
+        </div>
+      </div>
+    `,
+      "collections",
+    )}
+    ${surface(
+      "Projects",
+      `
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>slug</th><th>title</th><th>backends</th><th></th><th></th></tr>
+          </thead>
+          <tbody>
+            ${
+              projects.length
+                ? projects
+                    .map(
+                      (p) => `<tr>
+              <td class="mono">${esc(p.slug)}${p.isDefault ? ' <span class="pill on">default</span>' : ""}</td>
+              <td>${esc(p.title)}</td>
+              <td class="mono">${esc((p.backendSlugs || []).join(", ") || "—")}</td>
+              <td class="row-actions">
+                <button type="button" class="pill-btn ghost" data-proj-edit="${esc(p.id)}" data-slug="${esc(p.slug)}">Edit backends</button>
+              </td>
+              <td>
+                ${
+                  p.slug === "default" || p.isDefault
+                    ? '<span class="dim">—</span>'
+                    : `<button type="button" class="pill-btn danger" data-proj-del="${esc(p.id)}" data-slug="${esc(p.slug)}">Delete</button>`
+                }
+              </td>
+            </tr>`,
+                    )
+                    .join("")
+                : `<tr><td colspan="5" class="muted">No projects</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+      <div id="projEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px">
+        <div class="once-label" style="color:var(--accent-hot)">Edit · <span id="projEditSlug"></span></div>
+        <div class="proj-be-grid" id="projEditGrid"></div>
+        <div class="row-actions" style="margin-top:12px">
+          <button type="button" id="projSaveEdit" class="pill-btn primary">Save</button>
+          <button type="button" id="projCancelEdit" class="pill-btn ghost">Cancel</button>
+        </div>
+        <input type="hidden" id="projEditId" />
+      </div>
+    `,
+      `${projects.length} total`,
+    )}`;
+
+  $("#projCreate")?.addEventListener("click", async () => {
+    try {
+      const slug = $("#projSlug").value.trim();
+      if (!slug) throw new Error("slug required");
+      const backendSlugs = [
+        ...document.querySelectorAll("#projBeGrid [data-be-slug]:checked"),
+      ].map((el) => el.getAttribute("data-be-slug"));
+      await api("/v1/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          slug,
+          title: $("#projTitle").value.trim() || slug,
+          backendSlugs,
+        }),
+      });
+      await renderProjects();
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  document.querySelectorAll("[data-proj-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm(`Delete project “${btn.getAttribute("data-slug")}”?`)) return;
+      try {
+        await api(`/v1/projects/${btn.getAttribute("data-proj-del")}`, {
+          method: "DELETE",
+        });
+        await renderProjects();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-proj-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-proj-edit");
+      const p = projects.find((x) => x.id === id);
+      if (!p) return;
+      $("#projEdit").hidden = false;
+      $("#projEditId").value = id;
+      $("#projEditSlug").textContent = p.slug;
+      const set = new Set(p.backendSlugs || []);
+      $("#projEditGrid").innerHTML = backends
+        .map(
+          (b) =>
+            `<label class="form-check"><input type="checkbox" data-edit-be="${esc(b.slug)}" ${set.has(b.slug) ? "checked" : ""}/> <span class="mono">${esc(b.slug)}</span></label>`,
+        )
+        .join("");
+    });
+  });
+
+  $("#projCancelEdit")?.addEventListener("click", () => {
+    $("#projEdit").hidden = true;
+  });
+  $("#projSaveEdit")?.addEventListener("click", async () => {
+    try {
+      const id = $("#projEditId").value;
+      const backendSlugs = [
+        ...document.querySelectorAll("#projEditGrid [data-edit-be]:checked"),
+      ].map((el) => el.getAttribute("data-edit-be"));
+      await api(`/v1/projects/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ backendSlugs }),
+      });
+      await renderProjects();
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+}
+
 function prettyJson(v) {
   if (v === undefined) return null;
   try {
@@ -964,6 +1126,7 @@ async function refresh() {
     if (tab === "status") await renderStatus();
     if (tab === "keys") await renderKeys();
     if (tab === "backends") await renderBackends();
+    if (tab === "projects") await renderProjects();
     if (tab === "devices") await renderDevices();
     if (tab === "audit") await renderAudit();
   } catch (e) {

@@ -94,6 +94,18 @@ Examples of operator tools: `mf_admin_status`, `mf_admin_create_backend`, `mf_ad
 
 Prefer operator keys over pasting the env admin token into IDE config (revocable, audited by key id).
 
+### Projects (per-chat tool collections)
+
+One agent key can span multiple **projects** — named sets of backends. Agents switch with MCP tools:
+
+```text
+mf_list_projects → mf_use_project({ project: "webdevelopment" }) → tools/list
+```
+
+- **`default`** project is auto-created and gains new backends automatically.
+- `mf_use_project` binds the chat (session sticky) and returns an optional **`mf_sess_*` session token** for project-scoped calls.
+- Admin UI → **Projects** tab, or `GET/POST /v1/projects`.
+
 ### Add a remote MCP (headers sealed)
 
 ```bash

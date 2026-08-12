@@ -3,6 +3,7 @@ import {
   deriveMasterKey,
   hashToken,
   mintApiToken,
+  mintSessionToken,
   newId,
   seal,
   unseal,
@@ -17,12 +18,16 @@ import type {
   BackendPublic,
   BackendRecord,
   CreateBackendInput,
+  CreateProjectInput,
   DeviceCapabilities,
   DeviceEnrolled,
   DevicePublic,
   Placement,
+  Project,
+  ProjectSessionCreated,
   SandboxConfig,
   UpdateBackendInput,
+  UpdateProjectInput,
   Workspace,
   WorkspacePolicy,
 } from "../types.js";
@@ -97,11 +102,39 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  slug TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  backend_slugs_json TEXT NOT NULL DEFAULT '[]',
+  tool_prefix_json TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS project_sessions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
 CREATE INDEX IF NOT EXISTS idx_backends_ws ON backends(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON audit_events(workspace_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_devices_ws ON devices(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token_hash);
+CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
 `;
 
 function nowIso(): string {
@@ -121,14 +154,56 @@ function parseScopes(raw: unknown): ApiKeyScopes | null {
       out.toolPrefixAllowlist = s.toolPrefixAllowlist.map(String);
     }
     if (s.admin === true) out.admin = true;
-    if (!out.toolPrefixAllowlist && !out.admin) {
-      // empty object → treat as full non-admin access (null)
+    if (Array.isArray(s.projects) && s.projects.length) {
+      out.projects = s.projects.map(String);
+    }
+    if (typeof s.defaultProject === "string" && s.defaultProject.trim()) {
+      out.defaultProject = s.defaultProject.trim();
+    }
+    if (
+      !out.toolPrefixAllowlist &&
+      !out.admin &&
+      !out.projects &&
+      !out.defaultProject
+    ) {
       return null;
     }
     return out;
   } catch {
     return null;
   }
+}
+
+function rowProject(r: Record<string, unknown>): Project {
+  let backendSlugs: string[] = [];
+  try {
+    const raw = r.backend_slugs_json;
+    backendSlugs = raw ? (JSON.parse(String(raw)) as string[]) : [];
+  } catch {
+    backendSlugs = [];
+  }
+  let toolPrefixAllowlist: string[] | null = null;
+  try {
+    const raw = r.tool_prefix_json;
+    if (raw != null && raw !== "") {
+      const p = JSON.parse(String(raw)) as string[];
+      if (Array.isArray(p) && p.length) toolPrefixAllowlist = p.map(String);
+    }
+  } catch {
+    toolPrefixAllowlist = null;
+  }
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    slug: String(r.slug),
+    title: String(r.title),
+    description: r.description == null ? null : String(r.description),
+    backendSlugs,
+    toolPrefixAllowlist,
+    isDefault: Boolean(r.is_default),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
 }
 
 function rowKey(r: Record<string, unknown>): ApiKeyRecord {
@@ -312,6 +387,36 @@ export class Store {
     if (!audCols.some((c) => c.name === "device_id")) {
       this.db.exec(`ALTER TABLE audit_events ADD COLUMN device_id TEXT`);
     }
+
+    // Ensure schema tables exist on older DBs (CREATE IF NOT EXISTS in SCHEMA)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        backend_slugs_json TEXT NOT NULL DEFAULT '[]',
+        tool_prefix_json TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, slug)
+      );
+      CREATE TABLE IF NOT EXISTS project_sessions (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        prefix TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+    `);
   }
 
   close(): void {
@@ -325,7 +430,9 @@ export class Store {
       )
       .get(name) as Record<string, unknown> | undefined;
     if (existing) {
-      return rowWorkspace(existing);
+      const ws = rowWorkspace(existing);
+      this.ensureDefaultProject(ws.id);
+      return ws;
     }
     const ws: Workspace = {
       id: newId("ws"),
@@ -343,6 +450,7 @@ export class Store {
         ws.createdAt,
         JSON.stringify(ws.policy),
       );
+    this.ensureDefaultProject(ws.id);
     return ws;
   }
 
@@ -604,6 +712,7 @@ export class Store {
         rec.createdAt,
         rec.updatedAt,
       );
+    this.addBackendToDefaultProject(workspaceId, slug);
     return toPublicBackend(rec);
   }
 
@@ -895,5 +1004,243 @@ export class Store {
     this.db
       .prepare(`UPDATE devices SET status = 'offline' WHERE id = ?`)
       .run(deviceId);
+  }
+
+  // --- Projects (collections) ---
+
+  ensureDefaultProject(workspaceId: string): Project {
+    const existing = this.getProjectBySlug(workspaceId, "default");
+    if (existing) return existing;
+    const slugs = this.listBackends(workspaceId).map((b) => b.slug);
+    return this.createProject(workspaceId, {
+      slug: "default",
+      title: "Default",
+      description: "All backends (auto-maintained membership for new backends)",
+      backendSlugs: slugs,
+      isDefault: true,
+    });
+  }
+
+  private addBackendToDefaultProject(
+    workspaceId: string,
+    slug: string,
+  ): void {
+    const def = this.getDefaultProject(workspaceId);
+    if (!def) return;
+    if (def.backendSlugs.includes(slug)) return;
+    this.updateProject(workspaceId, def.id, {
+      backendSlugs: [...def.backendSlugs, slug],
+    });
+  }
+
+  listProjects(workspaceId: string): Project[] {
+    this.ensureDefaultProject(workspaceId);
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? ORDER BY is_default DESC, slug ASC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map(rowProject);
+  }
+
+  getProject(workspaceId: string, idOrSlug: string): Project | null {
+    const byId = this.db
+      .prepare(`SELECT * FROM projects WHERE workspace_id = ? AND id = ?`)
+      .get(workspaceId, idOrSlug) as Record<string, unknown> | undefined;
+    if (byId) return rowProject(byId);
+    return this.getProjectBySlug(workspaceId, idOrSlug);
+  }
+
+  getProjectBySlug(workspaceId: string, slug: string): Project | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? AND slug = ?`,
+      )
+      .get(workspaceId, slug) as Record<string, unknown> | undefined;
+    return row ? rowProject(row) : null;
+  }
+
+  getDefaultProject(workspaceId: string): Project | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? AND is_default = 1 LIMIT 1`,
+      )
+      .get(workspaceId) as Record<string, unknown> | undefined;
+    if (row) return rowProject(row);
+    return this.getProjectBySlug(workspaceId, "default");
+  }
+
+  createProject(workspaceId: string, input: CreateProjectInput): Project {
+    const slug = input.slug.trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+      throw new Error(
+        "project slug must be lowercase alphanumeric/underscore/hyphen",
+      );
+    }
+    const ts = nowIso();
+    const id = newId("proj");
+    const isDefault = Boolean(input.isDefault);
+    if (isDefault) {
+      this.db
+        .prepare(
+          `UPDATE projects SET is_default = 0 WHERE workspace_id = ?`,
+        )
+        .run(workspaceId);
+    }
+    this.db
+      .prepare(
+        `INSERT INTO projects (
+          id, workspace_id, slug, title, description, backend_slugs_json,
+          tool_prefix_json, is_default, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        workspaceId,
+        slug,
+        input.title?.trim() || slug,
+        input.description ?? null,
+        JSON.stringify(input.backendSlugs ?? []),
+        input.toolPrefixAllowlist?.length
+          ? JSON.stringify(input.toolPrefixAllowlist)
+          : null,
+        isDefault ? 1 : 0,
+        ts,
+        ts,
+      );
+    return this.getProject(workspaceId, id)!;
+  }
+
+  updateProject(
+    workspaceId: string,
+    idOrSlug: string,
+    input: UpdateProjectInput,
+  ): Project | null {
+    const existing = this.getProject(workspaceId, idOrSlug);
+    if (!existing) return null;
+    if (input.isDefault === true) {
+      this.db
+        .prepare(
+          `UPDATE projects SET is_default = 0 WHERE workspace_id = ?`,
+        )
+        .run(workspaceId);
+    }
+    const title = input.title ?? existing.title;
+    const description =
+      input.description !== undefined ? input.description : existing.description;
+    const backendSlugs =
+      input.backendSlugs !== undefined
+        ? input.backendSlugs
+        : existing.backendSlugs;
+    const toolPrefix =
+      input.toolPrefixAllowlist !== undefined
+        ? input.toolPrefixAllowlist
+        : existing.toolPrefixAllowlist;
+    const isDefault =
+      input.isDefault !== undefined ? input.isDefault : existing.isDefault;
+    this.db
+      .prepare(
+        `UPDATE projects SET title = ?, description = ?, backend_slugs_json = ?,
+         tool_prefix_json = ?, is_default = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(
+        title,
+        description,
+        JSON.stringify(backendSlugs),
+        toolPrefix?.length ? JSON.stringify(toolPrefix) : null,
+        isDefault ? 1 : 0,
+        nowIso(),
+        existing.id,
+        workspaceId,
+      );
+    return this.getProject(workspaceId, existing.id);
+  }
+
+  deleteProject(workspaceId: string, idOrSlug: string): boolean {
+    const existing = this.getProject(workspaceId, idOrSlug);
+    if (!existing) return false;
+    if (existing.slug === "default" || existing.isDefault) {
+      throw new Error("cannot delete the default project");
+    }
+    const res = this.db
+      .prepare(`DELETE FROM projects WHERE id = ? AND workspace_id = ?`)
+      .run(existing.id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  /** Mint short-lived mf_sess_* bound to key + project */
+  createProjectSession(
+    workspaceId: string,
+    keyId: string,
+    projectId: string,
+    ttlMs = 12 * 60 * 60 * 1000,
+  ): ProjectSessionCreated {
+    const project = this.getProject(workspaceId, projectId);
+    if (!project) throw new Error("project not found");
+    const { token, prefix, hash } = mintSessionToken();
+    const id = newId("mss");
+    const createdAt = nowIso();
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO project_sessions (
+          id, workspace_id, key_id, project_id, token_hash, prefix,
+          expires_at, created_at, revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        workspaceId,
+        keyId,
+        project.id,
+        hash,
+        prefix,
+        expiresAt,
+        createdAt,
+      );
+    return {
+      id,
+      keyId,
+      projectId: project.id,
+      projectSlug: project.slug,
+      expiresAt,
+      createdAt,
+      token,
+    };
+  }
+
+  authenticateProjectSession(token: string): {
+    workspaceId: string;
+    keyId: string;
+    keyName: string;
+    scopes: ApiKeyScopes | null;
+    projectId: string;
+    projectSlug: string;
+    projectSessionId: string;
+  } | null {
+    if (!token.startsWith("mf_sess_")) return null;
+    const hash = hashToken(token);
+    const row = this.db
+      .prepare(
+        `SELECT s.*, k.name AS key_name, k.scopes_json, k.revoked_at AS key_revoked,
+                p.slug AS project_slug
+         FROM project_sessions s
+         JOIN api_keys k ON k.id = s.key_id
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.token_hash = ?`,
+      )
+      .get(hash) as Record<string, unknown> | undefined;
+    if (!row || row.revoked_at != null || row.key_revoked != null) return null;
+    if (String(row.expires_at) < nowIso()) return null;
+    return {
+      workspaceId: String(row.workspace_id),
+      keyId: String(row.key_id),
+      keyName: String(row.key_name),
+      scopes: parseScopes(row.scopes_json),
+      projectId: String(row.project_id),
+      projectSlug: String(row.project_slug),
+      projectSessionId: String(row.id),
+    };
   }
 }

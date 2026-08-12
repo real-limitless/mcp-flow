@@ -92,12 +92,66 @@ export interface ApiKeyScopes {
    * Only mintable by env admin token or another admin key.
    */
   admin?: boolean;
+  /**
+   * Project slugs this key may activate. Empty/undefined = all projects.
+   */
+  projects?: string[];
+  /** Default project slug when no session has selected one */
+  defaultProject?: string;
 }
 
 export function isAdminScopes(
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
   return Boolean(scopes?.admin);
+}
+
+/** Named collection of backends for multi-project tool views */
+export interface Project {
+  id: string;
+  workspaceId: string;
+  slug: string;
+  title: string;
+  description: string | null;
+  /** Backend slugs included in this project */
+  backendSlugs: string[];
+  /** Extra tool prefixes (optional fine filter) */
+  toolPrefixAllowlist: string[] | null;
+  isDefault: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProjectInput {
+  slug: string;
+  title?: string;
+  description?: string | null;
+  backendSlugs?: string[];
+  toolPrefixAllowlist?: string[] | null;
+  isDefault?: boolean;
+}
+
+export interface UpdateProjectInput {
+  title?: string;
+  description?: string | null;
+  backendSlugs?: string[];
+  toolPrefixAllowlist?: string[] | null;
+  isDefault?: boolean;
+}
+
+/** Short-lived project session (mf_sess_*) */
+export interface ProjectSessionPublic {
+  id: string;
+  keyId: string;
+  projectId: string;
+  projectSlug: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface ProjectSessionCreated extends ProjectSessionPublic {
+  /** Shown once */
+  token: string;
 }
 
 export interface ApiKeyRecord {
@@ -196,11 +250,18 @@ export interface UpdateBackendInput {
 }
 
 export interface AuthContext {
-  kind: "admin" | "api_key";
+  kind: "admin" | "api_key" | "project_session";
   workspaceId: string;
   keyId?: string;
   keyName?: string;
   scopes?: ApiKeyScopes | null;
+  /** Active project when bound via session token or MCP session sticky */
+  projectId?: string | null;
+  projectSlug?: string | null;
+  /** MCP transport session id when present */
+  mcpSessionId?: string | null;
+  /** Project session row id when auth is mf_sess_* */
+  projectSessionId?: string | null;
 }
 
 export type AuditAction =
@@ -219,7 +280,11 @@ export type AuditAction =
   | "device.revoke"
   | "device.connect"
   | "bare_exec"
-  | "workspace.policy";
+  | "workspace.policy"
+  | "project.create"
+  | "project.update"
+  | "project.delete"
+  | "project.use";
 
 export interface AuditEvent {
   id: string;
@@ -238,7 +303,12 @@ export interface AuditEvent {
 export const DEFAULT_PLACEMENT: Placement = { mode: "remote" };
 
 /** Always allowed even when scopes restrict tools */
-export const ALWAYS_ALLOWED_META_TOOLS = new Set(["mf_status"]);
+export const ALWAYS_ALLOWED_META_TOOLS = new Set([
+  "mf_status",
+  "mf_list_projects",
+  "mf_use_project",
+  "mf_current_project",
+]);
 
 export function toolAllowedByScopes(
   toolName: string,
@@ -248,9 +318,47 @@ export function toolAllowedByScopes(
   if (toolName.startsWith("mf_admin_")) {
     return isAdminScopes(scopes);
   }
-  if (!scopes?.toolPrefixAllowlist?.length) return true;
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
+  if (!scopes?.toolPrefixAllowlist?.length) return true;
   // Admin keys may still use other mf_* metas when prefixes are set
   if (isAdminScopes(scopes) && toolName.startsWith("mf_")) return true;
   return scopes.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
+}
+
+/**
+ * Filter upstream tools by active project (backend membership).
+ * Meta tools (mf_*) always pass here — scopes handle admin.
+ */
+export function toolAllowedByProject(
+  toolName: string,
+  project: Project | null | undefined,
+): boolean {
+  if (toolName.startsWith("mf_")) return true;
+  if (!project) return true;
+  const slug = toolName.split("__")[0] ?? "";
+  if (!project.backendSlugs.length) return false;
+  if (!project.backendSlugs.includes(slug)) return false;
+  if (project.toolPrefixAllowlist?.length) {
+    return project.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
+  }
+  return true;
+}
+
+/** Whether a key may activate a project slug */
+export function keyMayUseProject(
+  scopes: ApiKeyScopes | null | undefined,
+  projectSlug: string,
+): boolean {
+  if (isAdminScopes(scopes)) return true;
+  const allowed = scopes?.projects;
+  if (!allowed?.length) return true;
+  return allowed.includes(projectSlug);
+}
+
+export function resolveDefaultProjectSlug(
+  scopes: ApiKeyScopes | null | undefined,
+  workspaceDefaultSlug: string | null,
+): string | null {
+  if (scopes?.defaultProject) return scopes.defaultProject;
+  return workspaceDefaultSlug;
 }

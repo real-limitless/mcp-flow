@@ -74,11 +74,26 @@ export function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
-export function mintApiToken(): { token: string; prefix: string; hash: string } {
+export function mintApiToken(tokenKindPrefix = TOKEN_PREFIX): {
+  token: string;
+  prefix: string;
+  hash: string;
+} {
   const secret = randomBytes(TOKEN_BYTES).toString("base64url");
-  const token = `${TOKEN_PREFIX}${secret}`;
-  const prefix = token.slice(0, 10);
+  const token = `${tokenKindPrefix}${secret}`;
+  // Display prefix length scales slightly for longer kinds (mf_sess_)
+  const prefixLen = tokenKindPrefix.length >= 7 ? 12 : 10;
+  const prefix = token.slice(0, Math.min(prefixLen, token.length));
   return { token, prefix, hash: hashToken(token) };
+}
+
+/** Short-lived project session tokens (mf_sess_…) */
+export function mintSessionToken(): {
+  token: string;
+  prefix: string;
+  hash: string;
+} {
+  return mintApiToken("mf_sess_");
 }
 
 export function safeEqualStr(a: string, b: string): boolean {

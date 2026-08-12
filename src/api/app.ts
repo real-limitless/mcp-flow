@@ -24,6 +24,8 @@ import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
 import { createGatewayServer } from "../mcp/gateway.js";
+import { buildScopesFromArgs } from "../mcp/admin-tools.js";
+import { globalSessionProjects } from "../mcp/session-project.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
   assertBackendShape,
@@ -36,13 +38,14 @@ import type {
   ApiKeyScopes,
   AuthContext,
   CreateBackendInput,
+  CreateProjectInput,
   DeviceCapabilities,
   TransportKind,
   UpdateBackendInput,
+  UpdateProjectInput,
   WorkspacePolicy,
 } from "../types.js";
 import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
-import { buildScopesFromArgs } from "../mcp/admin-tools.js";
 
 type Variables = {
   auth: AuthContext;
@@ -725,26 +728,142 @@ export function createApp(
     return c.json({ events });
   });
 
+  // Projects (collections)
+  admin.get("/projects", (c) => {
+    const auth = c.get("auth");
+    return c.json({ projects: store.listProjects(auth.workspaceId) });
+  });
+
+  admin.get("/projects/:id", (c) => {
+    const auth = c.get("auth");
+    const p = store.getProject(auth.workspaceId, c.req.param("id"));
+    if (!p) return c.json({ error: "not found" }, 404);
+    return c.json({ project: p });
+  });
+
+  admin.post("/projects", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreateProjectInput;
+    if (!body.slug) return c.json({ error: "slug required" }, 400);
+    try {
+      const project = store.createProject(auth.workspaceId, body);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "project.create",
+        detail: { slug: project.slug },
+        ip: clientIp(c),
+      });
+      return c.json({ project }, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.patch("/projects/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as UpdateProjectInput;
+    try {
+      const project = store.updateProject(
+        auth.workspaceId,
+        c.req.param("id"),
+        body,
+      );
+      if (!project) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "project.update",
+        detail: { slug: project.slug },
+        ip: clientIp(c),
+      });
+      return c.json({ project });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.delete("/projects/:id", (c) => {
+    const auth = c.get("auth");
+    try {
+      const existing = store.getProject(auth.workspaceId, c.req.param("id"));
+      const ok = store.deleteProject(auth.workspaceId, c.req.param("id"));
+      if (!ok) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "project.delete",
+        detail: { slug: existing?.slug },
+        ip: clientIp(c),
+      });
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
   app.route("/v1", admin);
 
-  // MCP Streamable HTTP — agent API keys only
+  // MCP Streamable HTTP — agent API keys or project session tokens
   app.all("/mcp", async (c) => {
     const token = bearer(c.req.header("authorization"));
     if (!token) {
       return c.json({ error: "missing bearer token" }, 401);
     }
-    const key = store.authenticateApiKey(token);
-    if (!key) {
-      return c.json({ error: "invalid api key" }, 401);
-    }
 
-    const auth: AuthContext = {
-      kind: "api_key",
-      workspaceId: key.workspaceId,
-      keyId: key.keyId,
-      keyName: key.keyName,
-      scopes: key.scopes,
-    };
+    const mcpSessionId =
+      c.req.header("mcp-session-id") ||
+      c.req.header("x-mcp-flow-session") ||
+      null;
+
+    let auth: AuthContext;
+
+    const sess = store.authenticateProjectSession(token);
+    if (sess) {
+      auth = {
+        kind: "project_session",
+        workspaceId: sess.workspaceId,
+        keyId: sess.keyId,
+        keyName: sess.keyName,
+        scopes: sess.scopes,
+        projectId: sess.projectId,
+        projectSlug: sess.projectSlug,
+        projectSessionId: sess.projectSessionId,
+        mcpSessionId,
+      };
+    } else {
+      const key = store.authenticateApiKey(token);
+      if (!key) {
+        return c.json({ error: "invalid api key" }, 401);
+      }
+      // Resolve sticky project from MCP session or key fallback
+      const sticky =
+        globalSessionProjects.get(mcpSessionId) ||
+        (key.keyId
+          ? globalSessionProjects.get(`key:${key.keyId}`)
+          : null);
+      auth = {
+        kind: "api_key",
+        workspaceId: key.workspaceId,
+        keyId: key.keyId,
+        keyName: key.keyName,
+        scopes: key.scopes,
+        mcpSessionId: mcpSessionId || (key.keyId ? `key:${key.keyId}` : null),
+        projectId:
+          sticky && sticky.keyId === key.keyId ? sticky.projectId : null,
+        projectSlug:
+          sticky && sticky.keyId === key.keyId ? sticky.projectSlug : null,
+      };
+    }
 
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
