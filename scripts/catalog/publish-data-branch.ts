@@ -4,12 +4,9 @@
  *
  *   npm run catalog:publish-data
  *   npm run catalog:publish-data -- --dry-run
- *   npm run catalog:publish-data -- --release   # also refresh catalog-latest tarball release
- *
- * Requires: catalog/index.json + catalog/entries/, git push access to origin.
- * Does NOT touch main — only force-updates the catalog-data branch.
+ *   npm run catalog:publish-data -- --release
  */
-import { existsSync, mkdirSync, cpSync, rmSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, cpSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -29,23 +26,29 @@ const { values } = parseArgs({
 });
 
 if (values.help) {
-  console.log(`Usage: publish-data-branch [--dry-run] [--release] [--remote origin] [--message msg]`);
+  console.log(
+    `Usage: publish-data-branch [--dry-run] [--release] [--remote origin] [--message msg]`,
+  );
   process.exit(0);
 }
 
 function run(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; inherit?: boolean } = {},
+  opts: { cwd?: string; inherit?: boolean; env?: NodeJS.ProcessEnv } = {},
 ): string {
   const r = spawnSync(cmd, args, {
     cwd: opts.cwd ?? root,
     encoding: "utf8",
     stdio: opts.inherit ? "inherit" : "pipe",
+    env: { ...process.env, ...opts.env, GIT_TERMINAL_PROMPT: "0" },
+    maxBuffer: 64 * 1024 * 1024,
   });
   if (r.status !== 0) {
     const err = (r.stderr || r.stdout || "").trim();
-    throw new Error(`${cmd} ${args.join(" ")} failed: ${err || r.status}`);
+    throw new Error(
+      `${cmd} ${args.slice(0, 4).join(" ")}… failed (${r.status}): ${err.slice(0, 2000)}`,
+    );
   }
   return (r.stdout || "").trim();
 }
@@ -78,24 +81,30 @@ const msg =
 const work = join(tmpdir(), `mcp-flow-catalog-data-${process.pid}`);
 rmSync(work, { recursive: true, force: true });
 mkdirSync(join(work, "entries"), { recursive: true });
+
+console.error("copying catalog shards…");
 cpSync(indexPath, join(work, "index.json"));
 if (existsSync(metaPath)) cpSync(metaPath, join(work, "meta.json"));
-cpSync(entriesPath, join(work, "entries"), { recursive: true });
+// Prefer cp -a for speed/size with many files
+const cpr = spawnSync("cp", ["-a", `${entriesPath}/.`, join(work, "entries")], {
+  encoding: "utf8",
+});
+if (cpr.status !== 0) {
+  cpSync(entriesPath, join(work, "entries"), { recursive: true });
+}
 
-const entryFiles = run("bash", [
-  "-c",
-  `find entries -name '*.json' | wc -l`,
-], { cwd: work });
+const entryFiles = run("bash", ["-c", "find entries -name '*.json' | wc -l"], {
+  cwd: work,
+});
 
 console.log(
   JSON.stringify(
     {
       catalogDir,
-      work,
-      entries: entryFiles.trim(),
+      entries: Number(entryFiles.trim()),
       remote: values.remote,
-      dryRun: values.dryRun,
-      release: values.release,
+      dryRun: Boolean(values["dry-run"]),
+      release: Boolean(values.release),
       message: msg,
     },
     null,
@@ -103,28 +112,50 @@ console.log(
   ),
 );
 
-if (values.dryRun) {
+if (values["dry-run"]) {
   console.log("dry-run: not pushing");
+  rmSync(work, { recursive: true, force: true });
   process.exit(0);
 }
 
-run("git", ["init"], { cwd: work });
-run("git", ["checkout", "-b", "catalog-data"], { cwd: work });
+console.error("git init + commit…");
+run("git", ["init", "-q"], { cwd: work });
+run("git", ["checkout", "-q", "-b", "catalog-data"], { cwd: work });
 run("git", ["config", "user.name", "mcp-flow-catalog"], { cwd: work });
 run(
   "git",
   ["config", "user.email", "mcp-flow-catalog@users.noreply.github.com"],
   { cwd: work },
 );
-run("git", ["add", "-A"], { cwd: work });
-run("git", ["commit", "-m", msg], { cwd: work });
+// Quieter add for tens of thousands of files
+run("git", ["-c", "core.safecrlf=false", "add", "-A"], { cwd: work });
+// Avoid printing every path: use --quiet where supported
+const commit = spawnSync(
+  "git",
+  ["commit", "-q", "-m", msg],
+  { cwd: work, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+);
+if (commit.status !== 0) {
+  throw new Error(`git commit failed: ${(commit.stderr || commit.stdout || "").slice(0, 1500)}`);
+}
 
 const remoteUrl = run("git", ["remote", "get-url", values.remote ?? "origin"]);
 run("git", ["remote", "add", "origin", remoteUrl], { cwd: work });
-run("git", ["push", "-f", "origin", "catalog-data"], {
-  cwd: work,
-  inherit: true,
-});
+
+console.error("pushing origin/catalog-data (force)…");
+// Increase http buffer for large push
+run(
+  "git",
+  [
+    "-c",
+    "http.postBuffer=524288000",
+    "push",
+    "-f",
+    "origin",
+    "catalog-data",
+  ],
+  { cwd: work, inherit: true },
+);
 
 rmSync(work, { recursive: true, force: true });
 console.log("pushed origin/catalog-data");
@@ -154,5 +185,5 @@ if (values.release) {
 }
 
 console.log(
-  "Next: GitHub Actions pages workflow will pick this up on next run, or:\n  gh workflow run pages.yml",
+  "Next: gh workflow run pages.yml   # redeploy site from catalog-data",
 );
