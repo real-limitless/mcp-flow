@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -17,14 +20,26 @@ import type { Config } from "../config.js";
 import { safeEqualStr } from "../crypto.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import type { EdgeHub } from "../edge/hub.js";
+import type { EdgeRouter } from "../edge/router.js";
+import { clientIp } from "../http/client-ip.js";
 import { createGatewayServer } from "../mcp/gateway.js";
 import { UpstreamPool } from "../mcp/upstream.js";
+import {
+  assertBackendShape,
+  assertPlacementAllowed,
+  PlacementError,
+  supportedPlacementModes,
+} from "../placement.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
 import type {
   ApiKeyScopes,
   AuthContext,
   CreateBackendInput,
+  DeviceCapabilities,
+  TransportKind,
   UpdateBackendInput,
+  WorkspacePolicy,
 } from "../types.js";
 import { DEFAULT_PLACEMENT } from "../types.js";
 
@@ -47,9 +62,32 @@ function findEntryById(
   return loadLocalGallery(catalogDir).find((e) => e.id === id);
 }
 
-export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
+function resolveAdminDir(): string | null {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(here, "../admin"),
+    join(here, "../../src/admin"),
+    join(process.cwd(), "src/admin"),
+    join(process.cwd(), "dist/admin"),
+    join(process.cwd(), "admin"),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, "index.html"))) return dir;
+  }
+  return null;
+}
+
+export function createApp(
+  store: Store,
+  cfg: Config,
+  pool: UpstreamPool,
+  edge?: { edgeHub?: EdgeHub | null; edgeRouter?: EdgeRouter | null },
+) {
   const app = new Hono<{ Variables: Variables }>();
   const catalogDir = defaultCatalogDir(process.cwd());
+  const edgeHub = edge?.edgeHub ?? null;
+  const edgeRouter = edge?.edgeRouter ?? null;
+  const edgeEnabled = Boolean(edgeHub);
 
   app.use(
     "*",
@@ -68,8 +106,56 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
   );
 
   app.get("/health", (c) =>
-    c.json({ ok: true, service: "mcp-flow", version: "0.1.0" }),
+    c.json({
+      ok: true,
+      service: "mcp-flow",
+      version: "0.1.0",
+      placementModes: supportedPlacementModes({ edgeEnabled }),
+    }),
   );
+
+  // Static admin UI (local branch / built package)
+  const adminDir = resolveAdminDir();
+  app.get("/admin", (c) => c.redirect("/admin/"));
+  app.get("/admin/", (c) => {
+    if (!adminDir) {
+      return c.json(
+        {
+          error: "admin UI not found",
+          hint: "Run from repo: npm run dev  (or npm run build && npm start). npx of an old publish has no /admin.",
+        },
+        404,
+      );
+    }
+    try {
+      const html = readFileSync(join(adminDir, "index.html"), "utf8");
+      return c.html(html);
+    } catch {
+      return c.text("admin UI not found", 404);
+    }
+  });
+  app.get("/admin/app.js", (c) => {
+    if (!adminDir) return c.text("not found", 404);
+    try {
+      const js = readFileSync(join(adminDir, "app.js"), "utf8");
+      return c.body(js, 200, {
+        "Content-Type": "application/javascript; charset=utf-8",
+      });
+    } catch {
+      return c.text("not found", 404);
+    }
+  });
+  app.get("/admin/styles.css", (c) => {
+    if (!adminDir) return c.text("not found", 404);
+    try {
+      const css = readFileSync(join(adminDir, "styles.css"), "utf8");
+      return c.body(css, 200, {
+        "Content-Type": "text/css; charset=utf-8",
+      });
+    } catch {
+      return c.text("not found", 404);
+    }
+  });
 
   const admin = new Hono<{ Variables: Variables }>();
 
@@ -86,6 +172,25 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
   admin.get("/workspace", (c) => {
     const auth = c.get("auth");
     const ws = store.getWorkspace(auth.workspaceId);
+    return c.json({
+      workspace: ws,
+      placementModes: supportedPlacementModes({ edgeEnabled }),
+    });
+  });
+
+  admin.patch("/workspace/policy", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as WorkspacePolicy;
+    const ws = store.updateWorkspacePolicy(auth.workspaceId, {
+      allowEdgeBare: Boolean(body.allowEdgeBare),
+    });
+    if (!ws) return c.json({ error: "not found" }, 404);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "workspace.policy",
+      detail: { policy: ws.policy },
+      ip: clientIp(c),
+    });
     return c.json({ workspace: ws });
   });
 
@@ -108,6 +213,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       workspaceId: auth.workspaceId,
       action: "key.create",
       detail: { keyId: created.id, name: created.name, scopes },
+      ip: clientIp(c),
     });
     return c.json({ key: created }, 201);
   });
@@ -143,6 +249,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       workspaceId: auth.workspaceId,
       action: "key.update",
       detail: { keyId: key.id, scopes },
+      ip: clientIp(c),
     });
     return c.json({ key });
   });
@@ -155,6 +262,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       workspaceId: auth.workspaceId,
       action: "key.revoke",
       detail: { keyId: c.req.param("id") },
+      ip: clientIp(c),
     });
     return c.json({ ok: true });
   });
@@ -171,12 +279,54 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     return c.json({ backend: b });
   });
 
+  function validateBackendWrite(
+    workspaceId: string,
+    transport: TransportKind,
+    body: CreateBackendInput | UpdateBackendInput,
+    placement = body.placement ?? { ...DEFAULT_PLACEMENT },
+  ): string | null {
+    try {
+      const command =
+        "command" in body
+          ? body.command
+          : undefined;
+      const image = "image" in body ? body.image : undefined;
+      const url = "url" in body ? body.url : undefined;
+      assertBackendShape({
+        transport,
+        url: url as string | null | undefined,
+        image: image as string | null | undefined,
+        command: command as string[] | null | undefined,
+      });
+      const ws = store.getWorkspace(workspaceId);
+      const deviceId = placement.deviceId;
+      const device = deviceId
+        ? store.getDevice(workspaceId, deviceId)
+        : null;
+      assertPlacementAllowed(placement, {
+        transport,
+        policy: ws?.policy,
+        edgeEnabled,
+        deviceExists: Boolean(device),
+        deviceBare: Boolean(device?.capabilities.bare),
+        deviceSandbox: Boolean(
+          device && device.capabilities.sandbox !== "none",
+        ),
+      });
+      return null;
+    } catch (err) {
+      return err instanceof PlacementError || err instanceof Error
+        ? err.message
+        : String(err);
+    }
+  }
+
   admin.post("/backends", async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateBackendInput;
     if (!body.slug) return c.json({ error: "slug required" }, 400);
 
-    const transport = body.transport ?? "streamable-http";
+    const transport = (body.transport ?? "streamable-http") as TransportKind;
     if (
       (transport === "streamable-http" || transport === "sse") &&
       body.url
@@ -190,14 +340,13 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
     }
 
     const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
-    if (placement.mode !== "remote") {
-      return c.json(
-        {
-          error: `placement.mode=${placement.mode} not implemented; use remote`,
-        },
-        400,
-      );
-    }
+    const verr = validateBackendWrite(
+      auth.workspaceId,
+      transport,
+      body,
+      placement,
+    );
+    if (verr) return c.json({ error: verr }, 400);
 
     try {
       const backend = store.createBackend(auth.workspaceId, {
@@ -210,6 +359,8 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         action: "backend.create",
         backendSlug: backend.slug,
         placement: backend.placement.mode,
+        deviceId: backend.placement.deviceId ?? null,
+        ip: clientIp(c),
       });
       return c.json({ backend }, 201);
     } catch (err) {
@@ -223,6 +374,8 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
   admin.patch("/backends/:id", async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as UpdateBackendInput;
+    const existing = store.getBackend(auth.workspaceId, c.req.param("id"));
+    if (!existing) return c.json({ error: "not found" }, 404);
 
     if (body.url) {
       try {
@@ -232,14 +385,29 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         return c.json({ error: msg }, 400);
       }
     }
-    if (body.placement && body.placement.mode !== "remote") {
-      return c.json(
-        {
-          error: `placement.mode=${body.placement.mode} not implemented; use remote`,
-        },
-        400,
-      );
-    }
+
+    const transport = (body.transport ?? existing.transport) as TransportKind;
+    const placement =
+      body.placement ??
+      (JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT);
+    const merged: UpdateBackendInput = {
+      ...body,
+      url: body.url !== undefined ? body.url : existing.url,
+      image: body.image !== undefined ? body.image : existing.image,
+      command:
+        body.command !== undefined
+          ? body.command
+          : existing.commandJson
+            ? (JSON.parse(existing.commandJson) as string[])
+            : null,
+    };
+    const verr = validateBackendWrite(
+      auth.workspaceId,
+      transport,
+      merged,
+      placement,
+    );
+    if (verr) return c.json({ error: verr }, 400);
 
     const backend = store.updateBackend(
       auth.workspaceId,
@@ -247,12 +415,14 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       body,
     );
     if (!backend) return c.json({ error: "not found" }, 404);
-    pool.invalidate(store.getBackend(auth.workspaceId, backend.id)?.id);
+    pool.invalidate(existing.id);
     store.writeAudit({
       workspaceId: auth.workspaceId,
       action: "backend.update",
       backendSlug: backend.slug,
       placement: backend.placement.mode,
+      deviceId: backend.placement.deviceId ?? null,
+      ip: clientIp(c),
     });
     return c.json({ backend });
   });
@@ -267,6 +437,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       workspaceId: auth.workspaceId,
       action: "backend.delete",
       backendSlug: existing?.slug,
+      ip: clientIp(c),
     });
     return c.json({ ok: true });
   });
@@ -281,11 +452,71 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       action: "backend.test",
       backendSlug: backend.slug,
       detail: { ok: result.ok, toolCount: result.toolCount },
+      ip: clientIp(c),
     });
     return c.json(result, result.ok ? 200 : 502);
   });
 
-  // --- Catalog (P1b) ---
+  // Devices
+  admin.get("/devices", (c) => {
+    const auth = c.get("auth");
+    const devices = store.listDevices(auth.workspaceId).map((d) => ({
+      ...d,
+      status: edgeHub?.isOnline(d.id) ? "online" : d.status,
+    }));
+    return c.json({ devices });
+  });
+
+  admin.post("/devices", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      name?: string;
+      tags?: string[];
+      capabilities?: DeviceCapabilities;
+    };
+    const enrolled = store.enrollDevice(auth.workspaceId, {
+      name: body.name?.trim() || "edge-device",
+      tags: body.tags,
+      capabilities: body.capabilities,
+    });
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "device.enroll",
+      deviceId: enrolled.id,
+      detail: { name: enrolled.name },
+      ip: clientIp(c),
+    });
+    return c.json({ device: enrolled }, 201);
+  });
+
+  admin.patch("/devices/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      name?: string;
+      tags?: string[];
+      capabilities?: DeviceCapabilities;
+    };
+    const device = store.updateDevice(auth.workspaceId, c.req.param("id"), body);
+    if (!device) return c.json({ error: "not found" }, 404);
+    return c.json({ device });
+  });
+
+  admin.delete("/devices/:id", (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const ok = store.revokeDevice(auth.workspaceId, id);
+    if (!ok) return c.json({ error: "not found" }, 404);
+    if (edgeHub?.isOnline(id)) edgeHub.detach(id);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      action: "device.revoke",
+      deviceId: id,
+      ip: clientIp(c),
+    });
+    return c.json({ ok: true });
+  });
+
+  // Catalog
   admin.get("/catalog/search", async (c) => {
     const q = c.req.query("q")?.trim() ?? "";
     const live = c.req.query("live") !== "0";
@@ -299,7 +530,6 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         const index = loadLocalIndex(catalogDir);
         if (index.length) {
           const rows = filterLocalIndex(index, q || "");
-          // return index-shaped objects (full description in summary fields)
           entries = rows.map((r) => ({
             id: r.id,
             title: r.title,
@@ -377,6 +607,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         workspaceId: auth.workspaceId,
         action: "catalog.sync",
         detail: { total: result.meta.counts.total },
+        ip: clientIp(c),
       });
       return c.json({ meta: result.meta });
     } catch (err) {
@@ -394,6 +625,7 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       slug?: string;
       enable?: boolean;
       headers?: Record<string, string>;
+      env?: Record<string, string>;
       entry?: McpGalleryEntry;
     };
 
@@ -411,7 +643,9 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         }
       }
     }
-    if (!entry) return c.json({ error: "gallery entry required (id or entry)" }, 400);
+    if (!entry) {
+      return c.json({ error: "gallery entry required (id or entry)" }, 400);
+    }
 
     try {
       const result = await installFromGallery(store, auth.workspaceId, {
@@ -419,13 +653,16 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
         slug: body.slug,
         enable: body.enable,
         headers: body.headers,
+        env: body.env,
         allowPrivateUrls: cfg.allowPrivateUrls,
       });
       store.writeAudit({
         workspaceId: auth.workspaceId,
         action: "catalog.install",
         backendSlug: result.backend.slug,
+        placement: result.backend.placement.mode,
         detail: { galleryId: entry.id, warnings: result.warnings },
+        ip: clientIp(c),
       });
       return c.json(result, 201);
     } catch (err) {
@@ -469,7 +706,14 @@ export function createApp(store: Store, cfg: Config, pool: UpstreamPool) {
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
     });
-    const server = createGatewayServer(store, pool, auth);
+    const server = createGatewayServer({
+      store,
+      pool,
+      auth,
+      edgeHub,
+      edgeRouter,
+      ip: clientIp(c),
+    });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);
 

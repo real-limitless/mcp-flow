@@ -7,8 +7,6 @@ import { startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
-import { DEFAULT_PLACEMENT } from "./types.js";
-
 const program = new Command();
 
 program
@@ -180,6 +178,11 @@ keyCmd
         console.error("not found or already revoked");
         process.exit(1);
       }
+      store.writeAudit({
+        workspaceId,
+        action: "key.revoke",
+        detail: { keyId: id },
+      });
       console.log(JSON.stringify({ ok: true }));
     } finally {
       store.close();
@@ -192,15 +195,48 @@ const backendCmd = program
 
 backendCmd
   .command("add")
-  .description("Add a remote MCP backend")
+  .description("Add an MCP backend (remote | stdio | oci)")
   .requiredOption("--slug <slug>", "stable slug (namespaced as slug__tool)")
   .option("--title <title>", "display title")
   .option("--url <url>", "remote MCP URL")
   .option(
     "--transport <kind>",
-    "streamable-http | sse",
+    "streamable-http | sse | stdio | oci",
     "streamable-http",
   )
+  .option(
+    "--command <argv>",
+    "stdio command argv piece (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option("--image <image>", "oci image")
+  .option(
+    "--env <name=value>",
+    "env var sealed at rest (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option(
+    "--tool-allowlist <name>",
+    "upstream tool name allowlist (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option(
+    "--placement <mode>",
+    "remote | central-sandbox | edge-sandbox | edge-bare",
+  )
+  .option("--device-id <id>", "edge device id")
   .option(
     "--header <name=value>",
     "HTTP header (repeatable). Name=value or Name: value — sealed at rest",
@@ -218,6 +254,12 @@ backendCmd
       title?: string;
       url?: string;
       transport: string;
+      command: string[];
+      image?: string;
+      env: string[];
+      toolAllowlist: string[];
+      placement?: string;
+      deviceId?: string;
       header: string[];
       enable?: boolean;
       db?: string;
@@ -228,23 +270,83 @@ backendCmd
         await assertSafeUrl(opts.url, cfg.allowPrivateUrls);
       }
       let headers: Record<string, string> = {};
+      let env: Record<string, string> = {};
       try {
         headers = parseHeaderFlags(opts.header);
+        env = parseHeaderFlags(opts.env);
       } catch (err) {
         console.error(err instanceof Error ? err.message : err);
         process.exit(1);
       }
+      const transport = opts.transport as
+        | "streamable-http"
+        | "sse"
+        | "stdio"
+        | "oci";
+      let placementMode =
+        opts.placement ??
+        (transport === "stdio" || transport === "oci"
+          ? "central-sandbox"
+          : "remote");
+      const placement = {
+        mode: placementMode as
+          | "remote"
+          | "central-sandbox"
+          | "edge-sandbox"
+          | "edge-bare",
+        deviceId: opts.deviceId,
+      };
       const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
+        const { assertBackendShape, assertPlacementAllowed } = await import(
+          "./placement.js"
+        );
+        try {
+          assertBackendShape({
+            transport,
+            url: opts.url,
+            image: opts.image,
+            command: opts.command.length ? opts.command : undefined,
+          });
+          const device = opts.deviceId
+            ? store.getDevice(ws.id, opts.deviceId)
+            : null;
+          assertPlacementAllowed(placement, {
+            transport,
+            policy: ws.policy,
+            edgeEnabled: true,
+            deviceExists: Boolean(device),
+            deviceBare: Boolean(device?.capabilities.bare),
+            deviceSandbox: Boolean(
+              device && device.capabilities.sandbox !== "none",
+            ),
+          });
+        } catch (err) {
+          console.error(err instanceof Error ? err.message : err);
+          process.exit(1);
+        }
         const backend = store.createBackend(ws.id, {
           slug: opts.slug,
           title: opts.title,
           url: opts.url,
-          transport: opts.transport as "streamable-http" | "sse",
+          image: opts.image,
+          command: opts.command.length ? opts.command : undefined,
+          transport,
           headers: Object.keys(headers).length ? headers : undefined,
+          env: Object.keys(env).length ? env : undefined,
+          toolAllowlist: opts.toolAllowlist.length
+            ? opts.toolAllowlist
+            : undefined,
           enabled: Boolean(opts.enable),
-          placement: { ...DEFAULT_PLACEMENT },
+          placement,
+        });
+        store.writeAudit({
+          workspaceId: ws.id,
+          action: "backend.create",
+          backendSlug: backend.slug,
+          placement: backend.placement.mode,
+          deviceId: backend.placement.deviceId ?? null,
         });
         console.log(JSON.stringify({ backend }, null, 2));
       } finally {
@@ -284,6 +386,12 @@ backendCmd
             console.error("not found");
             process.exit(1);
           }
+          store.writeAudit({
+            workspaceId,
+            action: "backend.update",
+            backendSlug: backend.slug,
+            detail: { headers: "cleared" },
+          });
           console.log(JSON.stringify({ backend }, null, 2));
           return;
         }
@@ -316,6 +424,12 @@ backendCmd
           console.error("not found");
           process.exit(1);
         }
+        store.writeAudit({
+          workspaceId,
+          action: "backend.update",
+          backendSlug: backend.slug,
+          detail: { headers: opts.replace ? "replaced" : "merged" },
+        });
         console.log(JSON.stringify({ backend }, null, 2));
       } finally {
         store.close();
@@ -353,6 +467,12 @@ backendCmd
         console.error("not found");
         process.exit(1);
       }
+      store.writeAudit({
+        workspaceId,
+        action: "backend.update",
+        backendSlug: backend.slug,
+        detail: { enabled: true },
+      });
       console.log(JSON.stringify({ backend }, null, 2));
     } finally {
       store.close();
@@ -374,6 +494,12 @@ backendCmd
         console.error("not found");
         process.exit(1);
       }
+      store.writeAudit({
+        workspaceId,
+        action: "backend.update",
+        backendSlug: backend.slug,
+        detail: { enabled: false },
+      });
       console.log(JSON.stringify({ backend }, null, 2));
     } finally {
       store.close();
@@ -395,6 +521,12 @@ backendCmd
         process.exit(1);
       }
       const result = await pool.testBackend(backend);
+      store.writeAudit({
+        workspaceId,
+        action: "backend.test",
+        backendSlug: backend.slug,
+        detail: { ok: result.ok, toolCount: result.toolCount },
+      });
       console.log(JSON.stringify(result, null, 2));
       if (!result.ok) process.exit(2);
     } finally {
@@ -411,11 +543,17 @@ backendCmd
   .action((idOrSlug: string, opts: { db?: string }) => {
     const { store, workspaceId } = openStore(opts.db);
     try {
+      const existing = store.getBackend(workspaceId, idOrSlug);
       const ok = store.deleteBackend(workspaceId, idOrSlug);
       if (!ok) {
         console.error("not found");
         process.exit(1);
       }
+      store.writeAudit({
+        workspaceId,
+        action: "backend.delete",
+        backendSlug: existing?.slug,
+      });
       console.log(JSON.stringify({ ok: true }));
     } finally {
       store.close();
@@ -696,14 +834,149 @@ program
   .command("audit")
   .description("List recent audit events")
   .option("--limit <n>", "max events", "50")
+  .option("--before <iso>", "cursor: events strictly before this ISO timestamp")
   .option("--db <path>", "sqlite path")
-  .action((opts: { limit?: string; db?: string }) => {
+  .action((opts: { limit?: string; before?: string; db?: string }) => {
     const { store, workspaceId } = openStore(opts.db);
     try {
       const events = store.listAudit(workspaceId, {
         limit: Number(opts.limit ?? "50"),
+        before: opts.before,
       });
       console.log(JSON.stringify({ events }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+const deviceCmd = program.command("device").description("Edge devices (P4+)");
+
+deviceCmd
+  .command("enroll")
+  .description("Enroll a device (token shown once)")
+  .option("-n, --name <name>", "device name", "edge")
+  .option(
+    "--tag <tag>",
+    "device tag (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option("--bare", "allow bare capability", false)
+  .option("--db <path>", "sqlite path")
+  .action(
+    (opts: { name: string; tag: string[]; bare?: boolean; db?: string }) => {
+      const { store, workspaceId } = openStore(opts.db);
+      try {
+        const device = store.enrollDevice(workspaceId, {
+          name: opts.name,
+          tags: opts.tag,
+          capabilities: {
+            sandbox: "docker",
+            bare: Boolean(opts.bare),
+          },
+        });
+        store.writeAudit({
+          workspaceId,
+          action: "device.enroll",
+          deviceId: device.id,
+          detail: { name: device.name },
+        });
+        console.log(JSON.stringify({ device }, null, 2));
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+deviceCmd
+  .command("list")
+  .description("List devices")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      console.log(
+        JSON.stringify({ devices: store.listDevices(workspaceId) }, null, 2),
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+deviceCmd
+  .command("revoke")
+  .description("Revoke/delete a device")
+  .argument("<id>", "device id")
+  .option("--db <path>", "sqlite path")
+  .action((id: string, opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const ok = store.revokeDevice(workspaceId, id);
+      if (!ok) {
+        console.error("not found");
+        process.exit(1);
+      }
+      store.writeAudit({
+        workspaceId,
+        action: "device.revoke",
+        deviceId: id,
+      });
+      console.log(JSON.stringify({ ok: true }));
+    } finally {
+      store.close();
+    }
+  });
+
+program
+  .command("edge")
+  .description("Run edge device agent (outbound WS to control plane)")
+  .requiredOption("--url <url>", "control plane base URL", process.env.MCP_FLOW_URL)
+  .requiredOption(
+    "--token <token>",
+    "device token from enroll",
+    process.env.MCP_FLOW_DEVICE_TOKEN,
+  )
+  .option("--name <name>", "local display name")
+  .action(async (opts: { url: string; token: string; name?: string }) => {
+    const { runEdgeAgent } = await import("./edge/agent.js");
+    await runEdgeAgent({
+      url: opts.url,
+      token: opts.token,
+      name: opts.name,
+    });
+  });
+
+const wsCmd = program.command("workspace").description("Workspace settings");
+
+wsCmd
+  .command("policy")
+  .description("Show or set workspace policy")
+  .option("--allow-edge-bare <bool>", "true|false")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { allowEdgeBare?: string; db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      if (opts.allowEdgeBare !== undefined) {
+        const allow = ["1", "true", "yes", "on"].includes(
+          opts.allowEdgeBare.toLowerCase(),
+        );
+        const ws = store.updateWorkspacePolicy(workspaceId, {
+          allowEdgeBare: allow,
+        });
+        store.writeAudit({
+          workspaceId,
+          action: "workspace.policy",
+          detail: { policy: ws?.policy },
+        });
+        console.log(JSON.stringify({ workspace: ws }, null, 2));
+      } else {
+        console.log(
+          JSON.stringify({ workspace: store.getWorkspace(workspaceId) }, null, 2),
+        );
+      }
     } finally {
       store.close();
     }
@@ -778,8 +1051,20 @@ program
   .command("doctor")
   .description("Check local config / db / listen readiness")
   .option("--db <path>", "sqlite path")
-  .action((opts: { db?: string }) => {
+  .action(async (opts: { db?: string }) => {
+    const { existsSync } = await import("node:fs");
+    const { defaultCatalogDir } = await import("./catalog/sync.js");
+    const { containerRuntimeAvailable, containerRuntime } = await import(
+      "./mcp/runners/oci.js"
+    );
     const cfg = loadConfig({ dbPath: opts.db });
+    const catalogDir = defaultCatalogDir(process.cwd());
+    const warnings: string[] = [];
+    if (cfg.adminToken && cfg.adminToken.length < 16) {
+      warnings.push("admin token looks short (<16 chars)");
+    }
+    if (!cfg.adminToken) warnings.push("MCP_FLOW_ADMIN_TOKEN missing");
+    if (!cfg.masterKeyRaw) warnings.push("MCP_FLOW_MASTER_KEY missing");
     const report: Record<string, unknown> = {
       node: process.version,
       dbPath: cfg.dbPath,
@@ -788,14 +1073,21 @@ program
       masterKey: Boolean(cfg.masterKeyRaw),
       adminToken: Boolean(cfg.adminToken),
       allowPrivateUrls: cfg.allowPrivateUrls,
+      catalogDir,
+      catalogDirExists: existsSync(catalogDir),
+      containerRuntime: containerRuntime(),
+      containerRuntimeOk: await containerRuntimeAvailable(),
+      warnings,
     };
     try {
       if (cfg.masterKeyRaw) {
         const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;
+        report.policy = ws.policy;
         report.backends = store.listBackends(ws.id).length;
         report.keys = store.listApiKeys(ws.id).length;
+        report.devices = store.listDevices(ws.id).length;
         store.close();
         report.dbOk = true;
       } else {
