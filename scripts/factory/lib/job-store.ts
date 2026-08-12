@@ -36,6 +36,8 @@ export interface FactoryJob {
   status: JobStatus;
   createdAt: string;
   updatedAt: string;
+  /** When claimPending moved job to running */
+  startedAt?: string;
   galleryId?: string;
   error?: string;
   /** Registry payload when available (from scrape) */
@@ -194,11 +196,51 @@ export function dropDone(): number {
 export function claimPending(limit: number): FactoryJob[] {
   const pending = listQueue("pending").slice(0, limit);
   const claimed: FactoryJob[] = [];
+  const startedAt = nowIso();
   for (const j of pending) {
-    const u = updateJob(j.id, { status: "running" });
+    const u = updateJob(j.id, { status: "running", startedAt, error: undefined });
     if (u) claimed.push(u);
   }
   return claimed;
+}
+
+/**
+ * Re-queue jobs stuck in `running` longer than maxAgeMs (crashed worker / hung probe).
+ * Returns number requeued.
+ */
+export function requeueStaleRunning(maxAgeMs = 90_000): number {
+  const cutoff = Date.now() - maxAgeMs;
+  let n = 0;
+  for (const j of listQueue("running")) {
+    const started = Date.parse(j.startedAt || j.updatedAt || j.createdAt);
+    if (Number.isNaN(started) || started > cutoff) continue;
+    updateJob(j.id, {
+      status: "pending",
+      startedAt: undefined,
+      error: `requeued: stale running (>${Math.round(maxAgeMs / 1000)}s)`,
+      stages: defaultStages(),
+    });
+    n++;
+  }
+  return n;
+}
+
+/** Force-fail specific running jobs by gallery id substring (ops escape hatch). */
+export function failRunningMatching(
+  pred: (j: FactoryJob) => boolean,
+  error: string,
+): number {
+  let n = 0;
+  for (const j of listQueue("running")) {
+    if (!pred(j)) continue;
+    updateJob(j.id, {
+      status: "failed",
+      error,
+      startedAt: undefined,
+    });
+    n++;
+  }
+  return n;
 }
 
 export function saveScan(

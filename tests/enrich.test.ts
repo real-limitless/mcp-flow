@@ -56,6 +56,16 @@ describe("probeToolsList", () => {
     const r = await probeToolsList(undefined, "streamable-http");
     expect(r.status).toBe("unsupported");
   });
+
+  it("times out hanging endpoints without hanging the test", async () => {
+    const r = await probeToolsList(
+      "http://127.0.0.1:1/mcp",
+      "streamable-http",
+      { timeoutMs: 800 },
+    );
+    expect(r.status).toBe("unreachable");
+    expect(r.error).toBeTruthy();
+  }, 15_000);
 });
 
 describe("probeSourceRepo", () => {
