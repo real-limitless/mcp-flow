@@ -95,48 +95,189 @@ async function loadEntry(id) {
   return res.json();
 }
 
+/** Inactive = dead source repo / catalog-marked inactive */
+export function isInactiveRow(r) {
+  if (!r) return false;
+  if (r.status === "inactive" || r.status === "deleted") return true;
+  if (r.sourceRepoStatus === "not_found") return true;
+  if ((r.flags || []).includes("repo-offline")) return true;
+  return false;
+}
+
+function readFiltersFromDom() {
+  return {
+    q: (document.getElementById("q")?.value || "").trim().toLowerCase(),
+    hideInactive: Boolean(
+      document.getElementById("f-hide-inactive")?.checked ?? true,
+    ),
+    transport: document.getElementById("f-transport")?.value || "",
+    flag: document.getElementById("f-flag")?.value || "",
+    tools: document.getElementById("f-tools")?.value || "",
+    onlyRemote: Boolean(document.getElementById("f-only-remote")?.checked),
+    onlyActiveStatus: Boolean(
+      document.getElementById("f-only-active-status")?.checked,
+    ),
+  };
+}
+
+function applyFiltersFromUrl() {
+  const sp = new URLSearchParams(location.search);
+  const q = document.getElementById("q");
+  const hide = document.getElementById("f-hide-inactive");
+  const transport = document.getElementById("f-transport");
+  const flag = document.getElementById("f-flag");
+  const tools = document.getElementById("f-tools");
+  const onlyRemote = document.getElementById("f-only-remote");
+  const onlyActive = document.getElementById("f-only-active-status");
+
+  if (q && sp.has("q")) q.value = sp.get("q") || "";
+  // default hide inactive unless showInactive=1
+  if (hide) {
+    hide.checked = !(
+      sp.get("showInactive") === "1" ||
+      sp.get("inactive") === "1" ||
+      sp.get("hideInactive") === "0"
+    );
+  }
+  if (transport && sp.get("transport")) transport.value = sp.get("transport");
+  if (flag && sp.get("flag")) flag.value = sp.get("flag");
+  if (tools && sp.get("tools")) tools.value = sp.get("tools");
+  if (onlyRemote) onlyRemote.checked = sp.get("remote") === "1";
+  if (onlyActive) onlyActive.checked = sp.get("activeOnly") === "1";
+
+  if (
+    sp.get("showInactive") === "1" ||
+    sp.get("remote") === "1" ||
+    sp.get("activeOnly") === "1" ||
+    sp.get("flag") ||
+    sp.get("tools")
+  ) {
+    const adv = document.getElementById("f-advanced");
+    const tog = document.getElementById("f-adv-toggle");
+    if (adv) adv.classList.remove("hidden");
+    if (tog) tog.setAttribute("aria-expanded", "true");
+  }
+}
+
+function writeFiltersToUrl(f) {
+  const sp = new URLSearchParams();
+  if (f.q) sp.set("q", f.q);
+  if (!f.hideInactive) sp.set("showInactive", "1");
+  if (f.transport) sp.set("transport", f.transport);
+  if (f.flag) sp.set("flag", f.flag);
+  if (f.tools) sp.set("tools", f.tools);
+  if (f.onlyRemote) sp.set("remote", "1");
+  if (f.onlyActiveStatus) sp.set("activeOnly", "1");
+  const qs = sp.toString();
+  const next = `${location.pathname}${qs ? `?${qs}` : ""}${location.hash || ""}`;
+  history.replaceState(null, "", next);
+}
+
+function filterRows(rows, f) {
+  return rows.filter((r) => {
+    if (f.hideInactive && isInactiveRow(r)) return false;
+    if (f.onlyActiveStatus && r.status && r.status !== "active") return false;
+    if (f.onlyRemote && !r.endpointUrl && !(r.flags || []).includes("remote"))
+      return false;
+    if (f.transport && r.transport !== f.transport) return false;
+    if (f.flag && !(r.flags || []).includes(f.flag)) return false;
+    if (f.tools === "ok" && r.toolsPreviewStatus !== "ok") return false;
+    if (f.tools === "auth_required" && r.toolsPreviewStatus !== "auth_required")
+      return false;
+    if (f.tools === "unreachable" && r.toolsPreviewStatus !== "unreachable")
+      return false;
+    if (f.tools === "unsupported" && r.toolsPreviewStatus !== "unsupported")
+      return false;
+    if (f.tools === "has" && !(r.toolsCount > 0 || r.hasToolsPreview))
+      return false;
+    if (f.tools === "readme" && !r.hasReadme) return false;
+    if (f.q) {
+      const hay = [
+        r.id,
+        r.title,
+        r.summary,
+        r.transport,
+        r.status,
+        ...(r.flags || []),
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (!hay.includes(f.q)) return false;
+    }
+    return true;
+  });
+}
+
 function renderHome() {
   const tbody = document.getElementById("rows");
   const empty = document.getElementById("empty");
   const status = document.getElementById("status");
+  const resultCount = document.getElementById("result-count");
   const q = document.getElementById("q");
   if (!tbody) return;
 
   let rows = [];
+  let inactiveTotal = 0;
+
+  applyFiltersFromUrl();
 
   const paint = () => {
-    const term = (q?.value || "").trim().toLowerCase();
-    const filtered = !term
-      ? rows
-      : rows.filter((r) => {
-          const hay = [r.id, r.title, r.summary, r.transport, ...(r.flags || [])]
-            .join(" ")
-            .toLowerCase();
-          return hay.includes(term);
-        });
+    const f = readFiltersFromDom();
+    writeFiltersToUrl(f);
+    const filtered = filterRows(rows, f);
+
+    if (resultCount) {
+      const hidden = f.hideInactive ? inactiveTotal : 0;
+      resultCount.textContent =
+        hidden > 0
+          ? `${filtered.length} shown · ${hidden} inactive hidden`
+          : `${filtered.length} shown`;
+    }
 
     if (!filtered.length) {
       tbody.innerHTML = "";
       empty?.classList.remove("hidden");
+      if (empty) {
+        empty.textContent = f.hideInactive
+          ? "No servers match. Try clearing filters or enable inactive."
+          : "No servers match.";
+      }
       return;
     }
     empty?.classList.add("hidden");
-    tbody.innerHTML = filtered
-      .map((r) => {
-        const href = serverPageHref(r.id);
-        const flags = (r.flags || [])
-          .slice(0, 3)
-          .map((f) => badge(f, f === "remote" ? "place" : "off"))
-          .join(" ");
-        return `<tr class="row-link" data-href="${escapeHtml(href)}">
+
+    // Cap DOM for large catalogs
+    const MAX = 500;
+    const slice = filtered.slice(0, MAX);
+    const more = filtered.length - slice.length;
+
+    tbody.innerHTML =
+      slice
+        .map((r) => {
+          const href = serverPageHref(r.id);
+          const inactive = isInactiveRow(r);
+          const flags = (r.flags || [])
+            .filter((fl) => fl !== "repo-offline" || inactive)
+            .slice(0, 3)
+            .map((fl) =>
+              badge(
+                fl,
+                fl === "remote" ? "place" : fl === "repo-offline" ? "deny" : "off",
+              ),
+            )
+            .join(" ");
+          return `<tr class="row-link${inactive ? " row-inactive" : ""}" data-href="${escapeHtml(href)}">
   <td><div class="title-cell">${escapeHtml(r.title)}</div>
       <div class="slug">${escapeHtml(r.id)}</div></td>
   <td class="col-hide"><div class="sum">${escapeHtml(r.summary || "")}</div></td>
   <td>${transportBadge(r.transport)}</td>
   <td><div class="badge-row">${statusBadges(r)} ${toolsBadges(r)} ${r.hasReadme ? badge("readme", "on") : ""} ${flags}</div></td>
 </tr>`;
-      })
-      .join("");
+        })
+        .join("") +
+      (more > 0
+        ? `<tr><td colspan="4" class="empty-state">Showing first ${MAX} of ${filtered.length}. Refine search to narrow results.</td></tr>`
+        : "");
 
     tbody.querySelectorAll("tr.row-link").forEach((tr) => {
       tr.addEventListener("click", () => {
@@ -149,7 +290,9 @@ function renderHome() {
   Promise.all([loadIndex(), loadMeta()])
     .then(([index, meta]) => {
       rows = index.entries || [];
+      inactiveTotal = rows.filter(isInactiveRow).length;
       const parts = [`${rows.length} servers`];
+      if (inactiveTotal) parts.push(`${inactiveTotal} inactive`);
       if (meta?.counts?.withReadme != null)
         parts.push(`${meta.counts.withReadme} readme`);
       if (meta?.counts?.withTools != null)
@@ -166,7 +309,43 @@ function renderHome() {
         empty.innerHTML = `No catalog data. Run <code class="mono">catalog sync</code> / factory, or deploy with <code class="mono">catalog-data</code> branch.<br/><span class="dim">${escapeHtml(String(err.message))}</span>`;
     });
 
-  q?.addEventListener("input", paint);
+  const onFilter = () => paint();
+  q?.addEventListener("input", onFilter);
+  [
+    "f-hide-inactive",
+    "f-transport",
+    "f-flag",
+    "f-tools",
+    "f-only-remote",
+    "f-only-active-status",
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", onFilter);
+  });
+
+  document.getElementById("f-reset")?.addEventListener("click", () => {
+    if (q) q.value = "";
+    const hide = document.getElementById("f-hide-inactive");
+    if (hide) hide.checked = true;
+    const transport = document.getElementById("f-transport");
+    if (transport) transport.value = "";
+    const flag = document.getElementById("f-flag");
+    if (flag) flag.value = "";
+    const tools = document.getElementById("f-tools");
+    if (tools) tools.value = "";
+    const onlyRemote = document.getElementById("f-only-remote");
+    if (onlyRemote) onlyRemote.checked = false;
+    const onlyActive = document.getElementById("f-only-active-status");
+    if (onlyActive) onlyActive.checked = false;
+    paint();
+  });
+
+  document.getElementById("f-adv-toggle")?.addEventListener("click", () => {
+    const adv = document.getElementById("f-advanced");
+    const tog = document.getElementById("f-adv-toggle");
+    if (!adv) return;
+    const open = adv.classList.toggle("hidden") === false;
+    tog?.setAttribute("aria-expanded", open ? "true" : "false");
+  });
 }
 
 function copyConfigSnippet(e) {
