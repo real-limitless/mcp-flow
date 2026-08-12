@@ -220,64 +220,213 @@ function truncateUrl(u, n = 48) {
   return s.slice(0, n - 1) + "…";
 }
 
-function collectHeaderPairs(root) {
+function backendTargetLabel(b) {
+  if (b.url) return b.url;
+  if (b.image) return b.image;
+  if (b.command?.length) return b.command.join(" ");
+  return "—";
+}
+
+function collectKvPairs(root, rowSel, nameSel, valueSel) {
   const out = {};
-  root.querySelectorAll("[data-hdr-row]").forEach((row) => {
-    const name = row.querySelector("[data-hdr-name]")?.value?.trim();
-    const value = row.querySelector("[data-hdr-value]")?.value ?? "";
+  root.querySelectorAll(rowSel).forEach((row) => {
+    const name = row.querySelector(nameSel)?.value?.trim();
+    const value = row.querySelector(valueSel)?.value ?? "";
     if (name) out[name] = value;
   });
   return out;
 }
 
-function headerRowHtml(name = "", value = "") {
+function collectHeaderPairs(root) {
+  return collectKvPairs(root, "[data-hdr-row]", "[data-hdr-name]", "[data-hdr-value]");
+}
+
+function collectEnvPairs(root) {
+  return collectKvPairs(root, "[data-env-row]", "[data-env-name]", "[data-env-value]");
+}
+
+function kvRowHtml(kind, name = "", value = "", namePh = "NAME", valuePh = "value") {
+  const n = kind === "env" ? "env" : "hdr";
+  const type = kind === "env" || kind === "hdr" ? "password" : "text";
   return `
-    <div class="hdr-row" data-hdr-row>
-      <input data-hdr-name type="text" placeholder="Header-Name" value="${esc(name)}" autocomplete="off" />
-      <input data-hdr-value type="password" placeholder="value (sealed at rest)" value="${esc(value)}" autocomplete="off" />
-      <button type="button" class="pill-btn ghost" data-hdr-rm title="Remove">×</button>
+    <div class="hdr-row" data-${n}-row>
+      <input data-${n}-name type="text" placeholder="${esc(namePh)}" value="${esc(name)}" autocomplete="off" />
+      <input data-${n}-value type="${type}" placeholder="${esc(valuePh)}" value="${esc(value)}" autocomplete="off" />
+      <button type="button" class="pill-btn ghost" data-${n}-rm title="Remove">×</button>
     </div>`;
 }
 
-function wireHeaderEditor(container) {
-  const list = container.querySelector("[data-hdr-list]");
-  const addBtn = container.querySelector("[data-hdr-add]");
+function wireKvEditor(container, kind) {
+  if (!container) return;
+  const n = kind === "env" ? "env" : "hdr";
+  const list = container.querySelector(`[data-${n}-list]`);
+  const addBtn = container.querySelector(`[data-${n}-add]`);
+  const bindRm = (btn) => {
+    btn.addEventListener("click", () => btn.closest(`[data-${n}-row]`)?.remove());
+  };
   addBtn?.addEventListener("click", () => {
-    list.insertAdjacentHTML("beforeend", headerRowHtml());
-    list.querySelector("[data-hdr-row]:last-child [data-hdr-rm]")?.addEventListener(
+    const ph =
+      kind === "env"
+        ? kvRowHtml("env", "", "", "ENV_NAME", "value (sealed)")
+        : kvRowHtml("hdr", "", "", "Header-Name", "value (sealed)");
+    list.insertAdjacentHTML("beforeend", ph);
+    list.querySelector(`[data-${n}-row]:last-child [data-${n}-rm]`)?.addEventListener(
       "click",
-      (ev) => ev.currentTarget.closest("[data-hdr-row]")?.remove(),
+      (ev) => ev.currentTarget.closest(`[data-${n}-row]`)?.remove(),
     );
   });
-  list.querySelectorAll("[data-hdr-rm]").forEach((btn) => {
-    btn.addEventListener("click", () => btn.closest("[data-hdr-row]")?.remove());
-  });
+  list?.querySelectorAll(`[data-${n}-rm]`).forEach(bindRm);
+}
+
+function parseCommandLine(raw) {
+  const s = raw.trim();
+  if (!s) return [];
+  // simple whitespace split; support basic double-quoted tokens
+  const out = [];
+  let cur = "";
+  let q = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === '"') {
+      q = !q;
+      continue;
+    }
+    if (!q && /\s/.test(ch)) {
+      if (cur) out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+function syncBackendFormFields() {
+  const mode = $("#beMode")?.value || "remote";
+  const isRemote = mode === "remote";
+  const isEdge = mode === "edge-sandbox" || mode === "edge-bare";
+  const localSel = $("#beLocalTransport");
+  if (localSel && !isRemote) {
+    [...localSel.options].forEach((opt) => {
+      if (mode === "edge-bare") {
+        opt.disabled = opt.value !== "stdio";
+      } else {
+        opt.disabled = false;
+      }
+    });
+    if (mode === "edge-bare" && localSel.value !== "stdio") {
+      localSel.value = "stdio";
+    }
+  }
+  const transport = isRemote
+    ? $("#beTransport")?.value || "streamable-http"
+    : localSel?.value || "stdio";
+  const isOci = transport === "oci";
+  const isStdio = transport === "stdio" || mode === "edge-bare";
+
+  const show = (sel, on) => {
+    const el = $(sel);
+    if (el) el.hidden = !on;
+  };
+
+  show("#beFieldUrl", isRemote);
+  show("#beFieldRemoteTransport", isRemote);
+  show("#beHdrEditor", isRemote);
+  show("#beFieldDevice", isEdge);
+  show("#beFieldLocalTransport", !isRemote && mode !== "edge-bare");
+  show("#beFieldCommand", !isRemote && isStdio);
+  show("#beFieldImage", !isRemote && isOci);
+  show("#beEnvEditor", !isRemote);
+
+  const hint = $("#beModeHint");
+  if (hint) {
+    const hints = {
+      remote: "HTTP/SSE upstream. Headers sealed at rest.",
+      "central-sandbox": "Spawn stdio/oci on the gateway host.",
+      "edge-sandbox": "Run on an enrolled edge device (sandbox cap required).",
+      "edge-bare": "Host process on edge — needs allowEdgeBare + device bare.",
+    };
+    hint.textContent = hints[mode] || "";
+  }
+}
+
+function backendEndpointCell(b) {
+  const label = backendTargetLabel(b);
+  return `<td class="mono" title="${esc(label)}">${esc(truncateUrl(label, 40))}</td>`;
 }
 
 async function renderBackends() {
-  const { backends } = await api("/v1/backends");
+  const [{ backends }, devicesRes, wsRes] = await Promise.all([
+    api("/v1/backends"),
+    api("/v1/devices").catch(() => ({ devices: [] })),
+    api("/v1/workspace").catch(() => ({ placementModes: ["remote", "central-sandbox"] })),
+  ]);
+  const devices = devicesRes.devices || [];
+  const modes = wsRes.placementModes || ["remote", "central-sandbox"];
+  const modeOpts = ["remote", "central-sandbox", "edge-sandbox", "edge-bare"]
+    .filter((m) => modes.includes(m) || m === "remote" || m === "central-sandbox")
+    .map((m) => `<option value="${m}">${m}</option>`)
+    .join("");
+
+  const deviceOpts =
+    devices.length === 0
+      ? `<option value="">— enroll a device first —</option>`
+      : devices
+          .map(
+            (d) =>
+              `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.status)}) · ${esc(d.id.slice(0, 8))}…</option>`,
+          )
+          .join("");
+
   $("#tab-backends").innerHTML = `
     ${surface(
       "Add backend",
       `
-      <p class="muted" style="margin-bottom:12px">
-        Remote MCP over streamable-http or SSE. Headers are sealed; values are never listed back.
+      <p class="muted" id="beModeHint" style="margin-bottom:12px">
+        HTTP/SSE upstream. Headers sealed at rest.
       </p>
       <div class="form-grid">
         <div class="form-field">
           <label class="field-label" for="beSlug">Slug</label>
           <input id="beSlug" placeholder="my-server" autocomplete="off" />
         </div>
-        <div class="form-field" style="grid-column: span 2">
-          <label class="field-label" for="beUrl">URL</label>
-          <input id="beUrl" placeholder="https://mcp.example.com/mcp" autocomplete="off" />
-        </div>
         <div class="form-field">
+          <label class="field-label" for="beMode">Placement</label>
+          <select id="beMode">${modeOpts}</select>
+        </div>
+        <div class="form-field" id="beFieldRemoteTransport">
           <label class="field-label" for="beTransport">Transport</label>
           <select id="beTransport">
             <option value="streamable-http">streamable-http</option>
             <option value="sse">sse</option>
           </select>
+        </div>
+        <div class="form-field" id="beFieldLocalTransport" hidden>
+          <label class="field-label" for="beLocalTransport">Transport</label>
+          <select id="beLocalTransport">
+            <option value="stdio">stdio</option>
+            <option value="oci">oci</option>
+          </select>
+        </div>
+        <div class="form-field" id="beFieldDevice" hidden style="grid-column: span 2">
+          <label class="field-label" for="beDevice">Edge device</label>
+          <select id="beDevice">${deviceOpts}</select>
+        </div>
+        <div class="form-field" id="beFieldUrl" style="grid-column: 1 / -1">
+          <label class="field-label" for="beUrl">URL</label>
+          <input id="beUrl" placeholder="https://mcp.example.com/mcp" autocomplete="off" />
+        </div>
+        <div class="form-field" id="beFieldCommand" hidden style="grid-column: 1 / -1">
+          <label class="field-label" for="beCommand">Command</label>
+          <input id="beCommand" class="mono" placeholder='npx -y @modelcontextprotocol/server-filesystem /tmp' autocomplete="off" />
+          <span class="dim" style="font-size:11px;margin-top:4px">argv · quote tokens with "double quotes"</span>
+        </div>
+        <div class="form-field" id="beFieldImage" hidden style="grid-column: 1 / -1">
+          <label class="field-label" for="beImage">OCI image</label>
+          <input id="beImage" class="mono" placeholder="ghcr.io/org/mcp-server:latest" autocomplete="off" />
+          <label class="field-label" for="beImageCmd" style="margin-top:10px">Image command (optional)</label>
+          <input id="beImageCmd" class="mono" placeholder="node dist/index.js" autocomplete="off" />
         </div>
         <div class="form-field">
           <span class="field-label">Enabled</span>
@@ -293,14 +442,21 @@ async function renderBackends() {
           <button type="button" class="pill-btn ghost" data-hdr-add>+ Add header</button>
         </div>
         <div data-hdr-list class="hdr-list">
-          ${headerRowHtml("Authorization", "")}
+          ${kvRowHtml("hdr", "Authorization", "", "Header-Name", "value (sealed)")}
         </div>
+      </div>
+      <div class="hdr-editor" id="beEnvEditor" hidden style="margin-top:12px">
+        <div class="hdr-editor-head">
+          <span class="field-label" style="margin:0">Environment (sealed)</span>
+          <button type="button" class="pill-btn ghost" data-env-add>+ Add env</button>
+        </div>
+        <div data-env-list class="hdr-list"></div>
       </div>
       <div class="row-actions" style="margin-top:14px">
         <button type="button" id="beCreate" class="pill-btn primary">Create backend</button>
       </div>
     `,
-      "remote · TUI parity",
+      "remote · stdio · edge",
     )}
     ${surface(
       "Backends",
@@ -310,10 +466,10 @@ async function renderBackends() {
           <thead>
             <tr>
               <th>slug</th>
-              <th>url</th>
+              <th>target</th>
               <th>transport</th>
               <th>placement</th>
-              <th>headers</th>
+              <th>secrets</th>
               <th>enabled</th>
               <th></th>
             </tr>
@@ -322,21 +478,27 @@ async function renderBackends() {
             ${
               backends.length
                 ? backends
-                    .map(
-                      (b) => `<tr>
+                    .map((b) => {
+                      const secrets = [
+                        b.hasHeaders ? "hdr" : null,
+                        b.hasEnv ? "env" : null,
+                      ]
+                        .filter(Boolean)
+                        .join("+");
+                      return `<tr>
               <td class="mono">${esc(b.slug)}</td>
-              <td class="mono" title="${esc(b.url || "")}">${esc(truncateUrl(b.url || b.image || "—"))}</td>
+              ${backendEndpointCell(b)}
               <td>${esc(b.transport)}</td>
-              <td class="mono">${esc(b.placement?.mode)}${b.placement?.deviceId ? " @" + esc(b.placement.deviceId) : ""}</td>
-              <td>${b.hasHeaders ? '<span class="pill vault">sealed</span>' : '<span class="pill off">none</span>'}</td>
+              <td class="mono">${esc(b.placement?.mode)}${b.placement?.deviceId ? " @" + esc(String(b.placement.deviceId).slice(0, 8)) : ""}</td>
+              <td>${secrets ? `<span class="pill vault">${esc(secrets)}</span>` : '<span class="pill off">none</span>'}</td>
               <td><span class="pill ${b.enabled ? "on" : "off"}">${b.enabled ? "on" : "off"}</span></td>
               <td class="row-actions">
                 <button type="button" class="pill-btn" data-test="${esc(b.id)}">Test</button>
                 <button type="button" class="pill-btn ghost" data-toggle="${esc(b.id)}" data-en="${b.enabled ? "0" : "1"}">${b.enabled ? "Disable" : "Enable"}</button>
                 <button type="button" class="pill-btn danger" data-del="${esc(b.id)}" data-slug="${esc(b.slug)}">Delete</button>
               </td>
-            </tr>`,
-                    )
+            </tr>`;
+                    })
                     .join("")
                 : `<tr><td colspan="7" class="muted">No backends — add one above</td></tr>`
             }
@@ -351,23 +513,53 @@ async function renderBackends() {
       `${backends.length} registered`,
     )}`;
 
-  const hdrRoot = $("#beHdrEditor");
-  if (hdrRoot) wireHeaderEditor(hdrRoot);
+  wireKvEditor($("#beHdrEditor"), "hdr");
+  wireKvEditor($("#beEnvEditor"), "env");
+  $("#beMode")?.addEventListener("change", () => syncBackendFormFields());
+  $("#beLocalTransport")?.addEventListener("change", () => syncBackendFormFields());
+  syncBackendFormFields();
 
   $("#beCreate")?.addEventListener("click", async () => {
     try {
       const slug = $("#beSlug").value.trim();
-      const url = $("#beUrl").value.trim();
       if (!slug) throw new Error("slug required");
-      if (!url) throw new Error("url required");
-      const headers = collectHeaderPairs(hdrRoot || document);
-      const body = {
-        slug,
-        url,
-        transport: $("#beTransport").value || "streamable-http",
-        enabled: $("#beEnable").checked,
-      };
-      if (Object.keys(headers).length) body.headers = headers;
+      const mode = $("#beMode").value || "remote";
+      const enabled = $("#beEnable").checked;
+      const body = { slug, enabled, placement: { mode } };
+
+      if (mode === "remote") {
+        const url = $("#beUrl").value.trim();
+        if (!url) throw new Error("url required");
+        body.url = url;
+        body.transport = $("#beTransport").value || "streamable-http";
+        const headers = collectHeaderPairs($("#beHdrEditor") || document);
+        if (Object.keys(headers).length) body.headers = headers;
+      } else {
+        const transport =
+          mode === "edge-bare"
+            ? "stdio"
+            : $("#beLocalTransport")?.value || "stdio";
+        body.transport = transport;
+        if (mode === "edge-sandbox" || mode === "edge-bare") {
+          const deviceId = $("#beDevice")?.value?.trim();
+          if (!deviceId) throw new Error("edge device required");
+          body.placement.deviceId = deviceId;
+        }
+        if (transport === "oci") {
+          const image = $("#beImage")?.value?.trim();
+          if (!image) throw new Error("image required for oci");
+          body.image = image;
+          const extra = parseCommandLine($("#beImageCmd")?.value || "");
+          if (extra.length) body.command = extra;
+        } else {
+          const command = parseCommandLine($("#beCommand")?.value || "");
+          if (!command.length) throw new Error("command required for stdio");
+          body.command = command;
+        }
+        const env = collectEnvPairs($("#beEnvEditor") || document);
+        if (Object.keys(env).length) body.env = env;
+      }
+
       await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
       await renderBackends();
     } catch (e) {
