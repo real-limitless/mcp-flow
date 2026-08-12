@@ -104,7 +104,16 @@ export function isInactiveRow(r) {
   return false;
 }
 
+const PAGE_SIZES = [24, 48, 96];
+const DEFAULT_PAGE_SIZE = 48;
+
 function readFiltersFromDom() {
+  const psRaw = Number(document.getElementById("f-page-size")?.value || DEFAULT_PAGE_SIZE);
+  const pageSize = PAGE_SIZES.includes(psRaw) ? psRaw : DEFAULT_PAGE_SIZE;
+  const view =
+    document.getElementById("results-body")?.dataset.view === "cards"
+      ? "cards"
+      : "list";
   return {
     q: (document.getElementById("q")?.value || "").trim().toLowerCase(),
     hideInactive: Boolean(
@@ -117,10 +126,12 @@ function readFiltersFromDom() {
     onlyActiveStatus: Boolean(
       document.getElementById("f-only-active-status")?.checked,
     ),
+    pageSize,
+    view,
   };
 }
 
-function applyFiltersFromUrl() {
+function applyFiltersFromUrl(state) {
   const sp = new URLSearchParams(location.search);
   const q = document.getElementById("q");
   const hide = document.getElementById("f-hide-inactive");
@@ -129,6 +140,7 @@ function applyFiltersFromUrl() {
   const tools = document.getElementById("f-tools");
   const onlyRemote = document.getElementById("f-only-remote");
   const onlyActive = document.getElementById("f-only-active-status");
+  const pageSizeEl = document.getElementById("f-page-size");
 
   if (q && sp.has("q")) q.value = sp.get("q") || "";
   // default hide inactive unless showInactive=1
@@ -145,6 +157,15 @@ function applyFiltersFromUrl() {
   if (onlyRemote) onlyRemote.checked = sp.get("remote") === "1";
   if (onlyActive) onlyActive.checked = sp.get("activeOnly") === "1";
 
+  const ps = Number(sp.get("pageSize") || DEFAULT_PAGE_SIZE);
+  if (pageSizeEl && PAGE_SIZES.includes(ps)) pageSizeEl.value = String(ps);
+
+  const page = Math.max(1, Number(sp.get("page") || 1) || 1);
+  if (state) state.page = page;
+
+  const view = sp.get("view") === "cards" ? "cards" : "list";
+  setViewMode(view);
+
   if (
     sp.get("showInactive") === "1" ||
     sp.get("remote") === "1" ||
@@ -159,7 +180,7 @@ function applyFiltersFromUrl() {
   }
 }
 
-function writeFiltersToUrl(f) {
+function writeFiltersToUrl(f, page) {
   const sp = new URLSearchParams();
   if (f.q) sp.set("q", f.q);
   if (!f.hideInactive) sp.set("showInactive", "1");
@@ -168,9 +189,102 @@ function writeFiltersToUrl(f) {
   if (f.tools) sp.set("tools", f.tools);
   if (f.onlyRemote) sp.set("remote", "1");
   if (f.onlyActiveStatus) sp.set("activeOnly", "1");
+  if (f.pageSize && f.pageSize !== DEFAULT_PAGE_SIZE)
+    sp.set("pageSize", String(f.pageSize));
+  if (f.view === "cards") sp.set("view", "cards");
+  if (page > 1) sp.set("page", String(page));
   const qs = sp.toString();
   const next = `${location.pathname}${qs ? `?${qs}` : ""}${location.hash || ""}`;
   history.replaceState(null, "", next);
+}
+
+function setViewMode(view) {
+  const body = document.getElementById("results-body");
+  const list = document.getElementById("list-view");
+  const cards = document.getElementById("card-grid");
+  const btnList = document.getElementById("view-list");
+  const btnCards = document.getElementById("view-cards");
+  const v = view === "cards" ? "cards" : "list";
+  if (body) body.dataset.view = v;
+  list?.classList.toggle("hidden", v !== "list");
+  cards?.classList.toggle("hidden", v !== "cards");
+  btnList?.classList.toggle("on", v === "list");
+  btnCards?.classList.toggle("on", v === "cards");
+}
+
+function rowSignalsHtml(r) {
+  const inactive = isInactiveRow(r);
+  const flags = (r.flags || [])
+    .filter((fl) => fl !== "repo-offline" || inactive)
+    .slice(0, 3)
+    .map((fl) =>
+      badge(
+        fl,
+        fl === "remote" ? "place" : fl === "repo-offline" ? "deny" : "off",
+      ),
+    )
+    .join(" ");
+  return `${statusBadges(r)} ${toolsBadges(r)} ${r.hasReadme ? badge("readme", "on") : ""} ${flags}`;
+}
+
+function renderListRows(slice) {
+  return slice
+    .map((r) => {
+      const href = serverPageHref(r.id);
+      const inactive = isInactiveRow(r);
+      return `<tr class="row-link${inactive ? " row-inactive" : ""}" data-href="${escapeHtml(href)}">
+  <td><div class="title-cell">${escapeHtml(r.title)}</div>
+      <div class="slug">${escapeHtml(r.id)}</div></td>
+  <td class="col-hide"><div class="sum">${escapeHtml(r.summary || "")}</div></td>
+  <td>${transportBadge(r.transport)}</td>
+  <td><div class="badge-row">${rowSignalsHtml(r)}</div></td>
+</tr>`;
+    })
+    .join("");
+}
+
+function renderCards(slice) {
+  return slice
+    .map((r) => {
+      const href = serverPageHref(r.id);
+      const inactive = isInactiveRow(r);
+      return `<button type="button" class="server-card${inactive ? " inactive" : ""}" data-href="${escapeHtml(href)}">
+  <div class="card-title">${escapeHtml(r.title)}</div>
+  <div class="card-id">${escapeHtml(r.id)}</div>
+  <div class="badge-row">${transportBadge(r.transport)} ${rowSignalsHtml(r)}</div>
+  <div class="card-sum">${escapeHtml(r.summary || "")}</div>
+</button>`;
+    })
+    .join("");
+}
+
+function bindNavClicks(root) {
+  root?.querySelectorAll("[data-href]").forEach((el) => {
+    el.addEventListener("click", () => {
+      const h = el.getAttribute("data-href");
+      if (h) location.href = h;
+    });
+  });
+}
+
+function updatePager(pager, page, totalPages, totalFiltered) {
+  if (!pager) return;
+  if (totalFiltered === 0 || totalPages <= 1) {
+    pager.hidden = true;
+    return;
+  }
+  pager.hidden = false;
+  const info = document.getElementById("page-info");
+  const prev = document.getElementById("page-prev");
+  const next = document.getElementById("page-next");
+  const jump = document.getElementById("page-jump");
+  if (info) info.textContent = `Page ${page} / ${totalPages}`;
+  if (prev) prev.disabled = page <= 1;
+  if (next) next.disabled = page >= totalPages;
+  if (jump) {
+    jump.max = String(totalPages);
+    jump.value = String(page);
+  }
 }
 
 function filterRows(rows, f) {
@@ -210,81 +324,76 @@ function filterRows(rows, f) {
 
 function renderHome() {
   const tbody = document.getElementById("rows");
+  const cardGrid = document.getElementById("card-grid");
   const empty = document.getElementById("empty");
   const status = document.getElementById("status");
   const resultCount = document.getElementById("result-count");
+  const pager = document.getElementById("pager");
   const q = document.getElementById("q");
-  if (!tbody) return;
+  if (!tbody && !cardGrid) return;
 
   let rows = [];
   let inactiveTotal = 0;
+  const state = { page: 1 };
 
-  applyFiltersFromUrl();
+  applyFiltersFromUrl(state);
 
-  const paint = () => {
+  const paint = (opts = {}) => {
+    if (opts.resetPage) state.page = 1;
     const f = readFiltersFromDom();
-    writeFiltersToUrl(f);
+    setViewMode(f.view);
     const filtered = filterRows(rows, f);
+    const totalPages = Math.max(1, Math.ceil(filtered.length / f.pageSize) || 1);
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+
+    writeFiltersToUrl(f, state.page);
 
     if (resultCount) {
       const hidden = f.hideInactive ? inactiveTotal : 0;
+      const start =
+        filtered.length === 0 ? 0 : (state.page - 1) * f.pageSize + 1;
+      const end = Math.min(state.page * f.pageSize, filtered.length);
+      const range =
+        filtered.length === 0 ? "0" : `${start}–${end} of ${filtered.length}`;
       resultCount.textContent =
         hidden > 0
-          ? `${filtered.length} shown · ${hidden} inactive hidden`
-          : `${filtered.length} shown`;
+          ? `${range} · ${hidden} inactive hidden`
+          : range;
     }
 
     if (!filtered.length) {
-      tbody.innerHTML = "";
+      if (tbody) tbody.innerHTML = "";
+      if (cardGrid) cardGrid.innerHTML = "";
       empty?.classList.remove("hidden");
       if (empty) {
         empty.textContent = f.hideInactive
-          ? "No servers match. Try clearing filters or enable inactive."
+          ? "No servers match. Try clearing filters or show inactive."
           : "No servers match.";
       }
+      updatePager(pager, 1, 1, 0);
       return;
     }
     empty?.classList.add("hidden");
 
-    // Cap DOM for large catalogs
-    const MAX = 500;
-    const slice = filtered.slice(0, MAX);
-    const more = filtered.length - slice.length;
+    const startIdx = (state.page - 1) * f.pageSize;
+    const slice = filtered.slice(startIdx, startIdx + f.pageSize);
 
-    tbody.innerHTML =
-      slice
-        .map((r) => {
-          const href = serverPageHref(r.id);
-          const inactive = isInactiveRow(r);
-          const flags = (r.flags || [])
-            .filter((fl) => fl !== "repo-offline" || inactive)
-            .slice(0, 3)
-            .map((fl) =>
-              badge(
-                fl,
-                fl === "remote" ? "place" : fl === "repo-offline" ? "deny" : "off",
-              ),
-            )
-            .join(" ");
-          return `<tr class="row-link${inactive ? " row-inactive" : ""}" data-href="${escapeHtml(href)}">
-  <td><div class="title-cell">${escapeHtml(r.title)}</div>
-      <div class="slug">${escapeHtml(r.id)}</div></td>
-  <td class="col-hide"><div class="sum">${escapeHtml(r.summary || "")}</div></td>
-  <td>${transportBadge(r.transport)}</td>
-  <td><div class="badge-row">${statusBadges(r)} ${toolsBadges(r)} ${r.hasReadme ? badge("readme", "on") : ""} ${flags}</div></td>
-</tr>`;
-        })
-        .join("") +
-      (more > 0
-        ? `<tr><td colspan="4" class="empty-state">Showing first ${MAX} of ${filtered.length}. Refine search to narrow results.</td></tr>`
-        : "");
+    if (f.view === "cards") {
+      if (tbody) tbody.innerHTML = "";
+      if (cardGrid) {
+        cardGrid.innerHTML = renderCards(slice);
+        bindNavClicks(cardGrid);
+      }
+    } else {
+      if (cardGrid) cardGrid.innerHTML = "";
+      if (tbody) {
+        tbody.innerHTML = renderListRows(slice);
+        bindNavClicks(tbody);
+      }
+    }
 
-    tbody.querySelectorAll("tr.row-link").forEach((tr) => {
-      tr.addEventListener("click", () => {
-        const h = tr.getAttribute("data-href");
-        if (h) location.href = h;
-      });
-    });
+    updatePager(pager, state.page, totalPages, filtered.length);
   };
 
   Promise.all([loadIndex(), loadMeta()])
@@ -309,7 +418,7 @@ function renderHome() {
         empty.innerHTML = `No catalog data. Run <code class="mono">catalog sync</code> / factory, or deploy with <code class="mono">catalog-data</code> branch.<br/><span class="dim">${escapeHtml(String(err.message))}</span>`;
     });
 
-  const onFilter = () => paint();
+  const onFilter = () => paint({ resetPage: true });
   q?.addEventListener("input", onFilter);
   [
     "f-hide-inactive",
@@ -318,8 +427,41 @@ function renderHome() {
     "f-tools",
     "f-only-remote",
     "f-only-active-status",
+    "f-page-size",
   ].forEach((id) => {
     document.getElementById(id)?.addEventListener("change", onFilter);
+  });
+
+  document.getElementById("view-list")?.addEventListener("click", () => {
+    setViewMode("list");
+    paint();
+  });
+  document.getElementById("view-cards")?.addEventListener("click", () => {
+    setViewMode("cards");
+    paint();
+  });
+
+  document.getElementById("page-prev")?.addEventListener("click", () => {
+    state.page = Math.max(1, state.page - 1);
+    paint();
+    document.getElementById("results-body")?.scrollIntoView({ block: "start" });
+  });
+  document.getElementById("page-next")?.addEventListener("click", () => {
+    state.page += 1;
+    paint();
+    document.getElementById("results-body")?.scrollIntoView({ block: "start" });
+  });
+  document.getElementById("page-go")?.addEventListener("click", () => {
+    const jump = Number(document.getElementById("page-jump")?.value || 1);
+    state.page = Math.max(1, jump || 1);
+    paint();
+  });
+  document.getElementById("page-jump")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      const jump = Number(ev.target.value || 1);
+      state.page = Math.max(1, jump || 1);
+      paint();
+    }
   });
 
   document.getElementById("f-reset")?.addEventListener("click", () => {
@@ -336,7 +478,11 @@ function renderHome() {
     if (onlyRemote) onlyRemote.checked = false;
     const onlyActive = document.getElementById("f-only-active-status");
     if (onlyActive) onlyActive.checked = false;
-    paint();
+    const pageSizeEl = document.getElementById("f-page-size");
+    if (pageSizeEl) pageSizeEl.value = String(DEFAULT_PAGE_SIZE);
+    setViewMode("list");
+    state.page = 1;
+    paint({ resetPage: true });
   });
 
   document.getElementById("f-adv-toggle")?.addEventListener("click", () => {
