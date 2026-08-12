@@ -19,10 +19,68 @@ export interface Placement {
   affinity?: Affinity;
 }
 
+export interface WorkspacePolicy {
+  /** Enterprise default false — host process on edge devices */
+  allowEdgeBare?: boolean;
+}
+
+export const DEFAULT_WORKSPACE_POLICY: WorkspacePolicy = {
+  allowEdgeBare: false,
+};
+
 export interface Workspace {
   id: string;
   name: string;
   createdAt: string;
+  policy: WorkspacePolicy;
+}
+
+export type DeviceSandboxCap = "docker" | "podman" | "none";
+
+export interface DeviceCapabilities {
+  sandbox: DeviceSandboxCap;
+  bare: boolean;
+}
+
+export type DeviceStatus = "online" | "offline";
+
+export interface Device {
+  id: string;
+  workspaceId: string;
+  name: string;
+  tags: string[];
+  capabilities: DeviceCapabilities;
+  status: DeviceStatus;
+  lastSeen: string | null;
+  createdAt: string;
+  /** Hashed device credential — never returned on public list as hash */
+  tokenHash?: string;
+}
+
+export interface DevicePublic {
+  id: string;
+  workspaceId: string;
+  name: string;
+  tags: string[];
+  capabilities: DeviceCapabilities;
+  status: DeviceStatus;
+  lastSeen: string | null;
+  createdAt: string;
+}
+
+export interface DeviceEnrolled extends DevicePublic {
+  /** Shown once at enrollment */
+  token: string;
+}
+
+/** Optional runtime limits for central/edge sandbox */
+export interface SandboxConfig {
+  /** e.g. "512m" */
+  memory?: string;
+  /** e.g. "1.0" */
+  cpus?: string;
+  /** docker/podman network mode; default bridge */
+  networkMode?: string;
 }
 
 /** null/undefined scopes = full workspace tool access */
@@ -71,6 +129,7 @@ export interface BackendRecord {
   enabled: boolean;
   toolAllowlistJson: string | null;
   placementJson: string;
+  sandboxJson: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -91,6 +150,7 @@ export interface BackendPublic {
   enabled: boolean;
   toolAllowlist: string[] | null;
   placement: Placement;
+  sandbox: SandboxConfig | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -107,6 +167,7 @@ export interface CreateBackendInput {
   enabled?: boolean;
   toolAllowlist?: string[];
   placement?: Placement;
+  sandbox?: SandboxConfig | null;
 }
 
 export interface UpdateBackendInput {
@@ -120,6 +181,7 @@ export interface UpdateBackendInput {
   enabled?: boolean;
   toolAllowlist?: string[] | null;
   placement?: Placement;
+  sandbox?: SandboxConfig | null;
 }
 
 export interface AuthContext {
@@ -141,7 +203,12 @@ export type AuditAction =
   | "key.revoke"
   | "key.update"
   | "catalog.install"
-  | "catalog.sync";
+  | "catalog.sync"
+  | "device.enroll"
+  | "device.revoke"
+  | "device.connect"
+  | "bare_exec"
+  | "workspace.policy";
 
 export interface AuditEvent {
   id: string;
@@ -152,6 +219,7 @@ export interface AuditEvent {
   backendSlug: string | null;
   tool: string | null;
   placement: string | null;
+  deviceId: string | null;
   detail: Record<string, unknown> | null;
   ip: string | null;
 }

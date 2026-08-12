@@ -1,4 +1,5 @@
 import type { Store } from "../db/store.js";
+import { synthesizeFromGallery } from "../mcp/runners/catalog-command.js";
 import { assertSafeUrl } from "../ssrf.js";
 import { DEFAULT_PLACEMENT, type BackendPublic } from "../types.js";
 import { slugFromGalleryId } from "./normalize.js";
@@ -9,6 +10,7 @@ export interface InstallFromGalleryInput {
   slug?: string;
   enable?: boolean;
   headers?: Record<string, string>;
+  env?: Record<string, string>;
   allowPrivateUrls: boolean;
 }
 
@@ -18,8 +20,7 @@ export interface InstallFromGalleryResult {
 }
 
 /**
- * Create a remote Backend from a gallery entry.
- * Stdio-only entries are rejected until P3.
+ * Create a Backend from a gallery entry (remote URL or central-sandbox stdio/oci).
  */
 export async function installFromGallery(
   store: Store,
@@ -34,43 +35,61 @@ export async function installFromGallery(
     entry.remotes?.find((r) => r.type === "streamable-http")?.url ??
     entry.remotes?.find((r) => r.type === "sse")?.url;
 
-  if (!url) {
-    throw new Error(
-      `gallery entry ${entry.id} has no remote URL (stdio/OCI install is P3+)`,
-    );
-  }
-
-  await assertSafeUrl(url, input.allowPrivateUrls);
-
-  let transport: "streamable-http" | "sse" = "streamable-http";
-  if (entry.transport === "sse") transport = "sse";
-  else if (
-    entry.remotes?.some((r) => r.type === "sse") &&
-    entry.transport !== "streamable-http"
-  ) {
-    transport = "sse";
-  }
-
   const slug = (input.slug?.trim() || slugFromGalleryId(entry.id)).toLowerCase();
 
-  if (entry.requiresHeaders?.length) {
-    const have = new Set(Object.keys(input.headers ?? {}));
-    const missing = entry.requiresHeaders.filter((h) => !have.has(h));
-    if (missing.length) {
-      warnings.push(
-        `entry may require headers (not provided): ${missing.join(", ")}`,
-      );
+  if (url) {
+    await assertSafeUrl(url, input.allowPrivateUrls);
+
+    let transport: "streamable-http" | "sse" = "streamable-http";
+    if (entry.transport === "sse") transport = "sse";
+    else if (
+      entry.remotes?.some((r) => r.type === "sse") &&
+      entry.transport !== "streamable-http"
+    ) {
+      transport = "sse";
     }
+
+    if (entry.requiresHeaders?.length) {
+      const have = new Set(Object.keys(input.headers ?? {}));
+      const missing = entry.requiresHeaders.filter((h) => !have.has(h));
+      if (missing.length) {
+        warnings.push(
+          `entry may require headers (not provided): ${missing.join(", ")}`,
+        );
+      }
+    }
+
+    const backend = store.createBackend(workspaceId, {
+      slug,
+      title: entry.title,
+      url,
+      transport,
+      headers: input.headers,
+      env: input.env,
+      enabled: input.enable ?? false,
+      placement: { ...DEFAULT_PLACEMENT },
+    });
+
+    return { backend, warnings };
   }
+
+  const synth = synthesizeFromGallery(entry);
+  if (!synth) {
+    throw new Error(
+      `gallery entry ${entry.id} has no remote URL and no installable package/command`,
+    );
+  }
+  warnings.push(...synth.warnings);
 
   const backend = store.createBackend(workspaceId, {
     slug,
     title: entry.title,
-    url,
-    transport,
-    headers: input.headers,
+    transport: synth.transport,
+    command: synth.command,
+    image: synth.image,
+    env: input.env,
     enabled: input.enable ?? false,
-    placement: { ...DEFAULT_PLACEMENT },
+    placement: { mode: "central-sandbox" },
   });
 
   return { backend, warnings };
