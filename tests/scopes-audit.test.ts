@@ -64,4 +64,24 @@ describe("audit", () => {
     expect(events[0]!.detail?.authorization).toBe("[redacted]");
     store.close();
   });
+
+  it("records deviceId and workspace policy", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    expect(ws.policy.allowEdgeBare).toBe(false);
+    const updated = store.updateWorkspacePolicy(ws.id, { allowEdgeBare: true });
+    expect(updated?.policy.allowEdgeBare).toBe(true);
+    store.writeAudit({
+      workspaceId: ws.id,
+      action: "bare_exec",
+      deviceId: "dev_1",
+      placement: "edge-bare",
+    });
+    const events = store.listAudit(ws.id);
+    expect(events[0]!.deviceId).toBe("dev_1");
+    const dev = store.enrollDevice(ws.id, { name: "x" });
+    expect(dev.token.startsWith("mf_")).toBe(true);
+    expect(store.listDevices(ws.id)).toHaveLength(1);
+    store.close();
+  });
 });

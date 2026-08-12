@@ -270,5 +270,9 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 - [x] Package layout (TS), CI, Compose / Dockerfile  
 - [x] P1 gateway: SQLite + crypto, REST keys/backends, remote proxy, `/mcp`, CLI, stdio shim  
 - [x] P1b catalog: schema.json, normalize/sync/search, install → Backend  
-- [x] P2 scopes (tool prefix allowlist) + audit log + CLI doctor  
-- [ ] Edge agent ([#3](https://github.com/real-limitless/mcp-flow/issues/3))  
+- [x] P2 scopes (tool prefix allowlist) + audit log + CLI doctor + admin UI  
+- [x] P3 central-sandbox: stdio + OCI runners, catalog install packages  
+- [x] P4 edge-sandbox: device enroll, WS hub, `mcp-flow edge`, pin deviceId  
+- [x] P5 edge-bare: workspace `allowEdgeBare` policy (default false)  
+- [x] P6 routing: tags / any-online / `mf_use_device` sticky + richer `mf_status`  
+

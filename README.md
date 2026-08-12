@@ -153,6 +153,10 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 | `GET` | `/v1/backends` | List (redacted) |
 | `PATCH` | `/v1/backends/:id` | Update / enable |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
+| `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
+| `GET/POST/DELETE` | `/v1/devices` | Edge device enroll / list / revoke |
+| `WS` | `/v1/edge/connect` | Edge agent (device token) |
+| `GET` | `/admin/` | Operator admin UI |
 | `ALL` | `/mcp` | Agent MCP (API key) |
 
 ## Security
@@ -161,7 +165,29 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - Agent keys stored as SHA-256 hashes; plaintext shown once
 - GET payloads never include decrypted secrets
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
-- Placement modes other than `remote` are rejected until P3+
+- Placement: `remote`, `central-sandbox`, `edge-sandbox`, `edge-bare` (bare needs workspace policy)
+- Admin UI at `/admin/` (browser holds admin token in sessionStorage)
+
+## Placement (P3–P6)
+
+```bash
+# Central stdio / OCI
+npx mcp-flow backend add --slug local --transport stdio \
+  --command npx --command -y --command some-mcp --enable
+npx mcp-flow backend add --slug boxed --transport oci --image ghcr.io/example/mcp:latest
+
+# Edge device
+npx mcp-flow device enroll -n laptop
+npx mcp-flow edge --url http://127.0.0.1:8787 --token <device-token>
+npx mcp-flow backend add --slug on-laptop --transport stdio \
+  --command npx --command -y --command some-mcp \
+  --placement edge-sandbox --device-id <dev_id> --enable
+
+# Bare (opt-in)
+npx mcp-flow workspace policy --allow-edge-bare true
+```
+
+Catalog install maps npm/pypi/oci packages to `central-sandbox` when no remote URL.
 
 ## Catalog (P1b)
 
@@ -201,6 +227,8 @@ npx mcp-flow doctor
 ```
 
 Scoped keys only see/call matching tool name prefixes (`mf_status` always allowed).
+
+Tool-call audit rows store **redacted request arguments** and **response bodies** (size-capped; secrets scrubbed). Treat the SQLite DB as sensitive. Cap via `MCP_FLOW_AUDIT_MAX_DETAIL_BYTES`.
 
 ## Development
 

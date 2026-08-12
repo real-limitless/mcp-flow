@@ -25,7 +25,7 @@ Stack: **TypeScript / Node ≥ 22**, Hono HTTP, MCP SDK, SQLite (`node:sqlite`),
 2. **Catalog never stores secret values** — header *names*, `valueTemplate` (e.g. `Bearer {api_key}`), env *names* only.
 3. **Schema bumps** — changing `McpGalleryEntry` requires `catalog/schema.json` + `CATALOG_SCHEMA_VERSION` in `src/catalog/types.ts` (and consumer awareness). Current: **1.2.0**.
 4. **Stable allowlist id** = registry `server.name` → entry `id`.
-5. **Placement** is first-class: `remote` | `central-sandbox` | `edge-sandbox` | `edge-bare`. Only **`remote` is implemented**; stub others.
+5. **Placement** is first-class: `remote` | `central-sandbox` | `edge-sandbox` | `edge-bare`. Edge-bare requires workspace `allowEdgeBare`.
 6. **Enterprise defaults** — deny edge-bare; no unrestricted enable-any-URL in enterprise mode.
 7. **Do not scrape competitor marketplaces** (e.g. mcpmarket) as catalog SoT — official registry + public GitHub/GitLab + live MCP probe only.
 8. **Do not commit** `catalog/entries/`, `catalog/index.json`, or `site/out/` (gitignored). Publish data via **`catalog-data` branch** or CI.
@@ -39,14 +39,18 @@ Stack: **TypeScript / Node ≥ 22**, Hono HTTP, MCP SDK, SQLite (`node:sqlite`),
 ```text
 src/
   api/app.ts          # REST admin + /mcp + catalog routes
-  mcp/gateway.ts      # aggregate MCP server, scopes, audit
-  mcp/upstream.ts     # upstream client pool
-  db/store.ts         # SQLite keys/backends/scopes/audit
+  mcp/gateway.ts      # aggregate MCP server, scopes, audit, mf_*
+  mcp/upstream.ts     # upstream pool (remote + central-sandbox + edge route)
+  mcp/runners/        # stdio + oci central/edge runners
+  edge/               # hub, router, protocol, agent daemon
+  admin/              # static /admin UI
+  db/store.ts         # SQLite keys/backends/devices/scopes/audit
   crypto.ts           # seal/unseal
+  placement.ts        # placement + transport validation
   catalog/            # types, normalize, sync, shard, install, enrich/*
-  cli.ts              # serve, tui, key, backend, catalog, factory, doctor
+  cli.ts              # serve, tui, key, backend, device, edge, catalog, doctor
   tui/app.ts          # operator TUI
-  types.ts            # Backend, ApiKey, placement, scopes
+  types.ts            # Backend, ApiKey, Device, placement, scopes
 scripts/
   factory/            # scrape, queue-worker, TUI, proxy pool, enqueue-enrich
   site/build-pages.ts # assemble site/out = site shell + catalog JSON
@@ -75,7 +79,7 @@ Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN`, optiona
 - **Tools:** `{slug}__{upstreamTool}`; meta `mf_*`.
 - **Keys:** hashed at rest; optional tool-prefix scopes; audit log.
 - **Backends:** remote streamable-http / SSE; multi-header seal; SSRF guards.
-- **Install from gallery:** `npx mcp-flow catalog install '<id>' --enable` → Backend row (stdio/OCI = P3+).
+- **Install from gallery:** `npx mcp-flow catalog install '<id>' --enable` → remote or central-sandbox Backend.
 
 Tests: `npm test` · typecheck: `npm run typecheck` · build: `npm run build`.
 
