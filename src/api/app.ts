@@ -224,6 +224,8 @@ export function createApp(
       scopes?: ApiKeyScopes | null;
       toolPrefixAllowlist?: string[];
       admin?: boolean;
+      projects?: string[];
+      defaultProject?: string | null;
     };
     const name = body.name?.trim() || "default";
     let scopes: ApiKeyScopes | null =
@@ -232,10 +234,21 @@ export function createApp(
         : buildScopesFromArgs({
             admin: body.admin === true,
             toolPrefixAllowlist: body.toolPrefixAllowlist,
+            projects: body.projects,
+            defaultProject: body.defaultProject ?? undefined,
           });
     // Only env admin or existing admin keys reach here — both may grant admin
     if (scopes?.admin !== true && body.admin === true) {
       scopes = { ...(scopes ?? {}), admin: true };
+    }
+    if (body.projects?.length) {
+      scopes = { ...(scopes ?? {}), projects: body.projects.map(String) };
+    }
+    if (body.defaultProject != null && String(body.defaultProject).trim()) {
+      scopes = {
+        ...(scopes ?? {}),
+        defaultProject: String(body.defaultProject).trim(),
+      };
     }
     const created = store.createApiKey(auth.workspaceId, name, scopes);
     store.writeAudit({
@@ -259,29 +272,74 @@ export function createApp(
       scopes?: ApiKeyScopes | null;
       toolPrefixAllowlist?: string[] | null;
       admin?: boolean;
+      projects?: string[] | null;
+      defaultProject?: string | null;
     };
     let scopes: ApiKeyScopes | null;
     if (body.scopes !== undefined) scopes = body.scopes;
     else if (
       body.toolPrefixAllowlist !== undefined ||
-      body.admin !== undefined
+      body.admin !== undefined ||
+      body.projects !== undefined ||
+      body.defaultProject !== undefined
     ) {
-      scopes = buildScopesFromArgs({
-        admin: body.admin === true,
-        toolPrefixAllowlist:
-          body.toolPrefixAllowlist === null
+      // Merge with existing key scopes when partially updating projects
+      const existing = store
+        .listApiKeys(auth.workspaceId)
+        .find((k) => k.id === c.req.param("id"));
+      const prev = existing?.scopes ?? null;
+      const adminFlag =
+        body.admin !== undefined ? body.admin === true : Boolean(prev?.admin);
+      const prefixes =
+        body.toolPrefixAllowlist !== undefined
+          ? body.toolPrefixAllowlist === null
             ? undefined
-            : (body.toolPrefixAllowlist ?? undefined),
+            : body.toolPrefixAllowlist
+          : prev?.toolPrefixAllowlist;
+      const projects =
+        body.projects !== undefined
+          ? body.projects === null
+            ? undefined
+            : body.projects
+          : prev?.projects;
+      const defaultProject =
+        body.defaultProject !== undefined
+          ? body.defaultProject
+          : prev?.defaultProject ?? undefined;
+      scopes = buildScopesFromArgs({
+        admin: adminFlag,
+        toolPrefixAllowlist: prefixes ?? undefined,
+        projects: projects ?? undefined,
+        defaultProject:
+          defaultProject === null ? undefined : defaultProject ?? undefined,
       });
-      if (body.admin === false) {
-        scopes =
-          body.toolPrefixAllowlist && body.toolPrefixAllowlist.length
-            ? { toolPrefixAllowlist: body.toolPrefixAllowlist }
-            : null;
+      if (body.admin === false && scopes) {
+        delete scopes.admin;
+        if (
+          !scopes.toolPrefixAllowlist?.length &&
+          !scopes.projects?.length &&
+          !scopes.defaultProject
+        ) {
+          scopes = null;
+        }
+      }
+      // Explicit empty projects array = all projects (clear restriction)
+      if (body.projects !== undefined && Array.isArray(body.projects) && body.projects.length === 0 && scopes) {
+        delete scopes.projects;
+        if (
+          !scopes.admin &&
+          !scopes.toolPrefixAllowlist?.length &&
+          !scopes.defaultProject
+        ) {
+          scopes = null;
+        }
       }
     } else {
       return c.json(
-        { error: "scopes, toolPrefixAllowlist, or admin required" },
+        {
+          error:
+            "scopes, toolPrefixAllowlist, admin, projects, or defaultProject required",
+        },
         400,
       );
     }

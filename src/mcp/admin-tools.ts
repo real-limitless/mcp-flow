@@ -154,6 +154,15 @@ export const ADMIN_META_TOOLS: Tool[] = [
           type: "array",
           items: { type: "string" },
         },
+        projects: {
+          type: "array",
+          items: { type: "string" },
+          description: "Project slugs this key may use (empty = all)",
+        },
+        defaultProject: {
+          type: "string",
+          description: "Default project slug when no session switch",
+        },
       },
       additionalProperties: false,
     },
@@ -170,6 +179,11 @@ export const ADMIN_META_TOOLS: Tool[] = [
           type: "array",
           items: { type: "string" },
         },
+        projects: {
+          type: "array",
+          items: { type: "string" },
+        },
+        defaultProject: { type: "string" },
         clear: { type: "boolean", description: "Clear all scopes (full tool access, non-admin)" },
       },
       required: ["id"],
@@ -340,6 +354,8 @@ function findEntryById(
 export function buildScopesFromArgs(args: {
   admin?: boolean;
   toolPrefixAllowlist?: string[];
+  projects?: string[];
+  defaultProject?: string | null;
   clear?: boolean;
 }): ApiKeyScopes | null {
   if (args.clear) return null;
@@ -348,7 +364,20 @@ export function buildScopesFromArgs(args: {
   if (args.toolPrefixAllowlist?.length) {
     scopes.toolPrefixAllowlist = args.toolPrefixAllowlist.map(String);
   }
-  if (!scopes.admin && !scopes.toolPrefixAllowlist?.length) return null;
+  if (args.projects?.length) {
+    scopes.projects = args.projects.map(String);
+  }
+  if (typeof args.defaultProject === "string" && args.defaultProject.trim()) {
+    scopes.defaultProject = args.defaultProject.trim();
+  }
+  if (
+    !scopes.admin &&
+    !scopes.toolPrefixAllowlist?.length &&
+    !scopes.projects?.length &&
+    !scopes.defaultProject
+  ) {
+    return null;
+  }
   return scopes;
 }
 
@@ -585,6 +614,13 @@ export async function handleAdminTool(
           toolPrefixAllowlist: Array.isArray(args.toolPrefixAllowlist)
             ? (args.toolPrefixAllowlist as string[])
             : undefined,
+          projects: Array.isArray(args.projects)
+            ? (args.projects as string[])
+            : undefined,
+          defaultProject:
+            typeof args.defaultProject === "string"
+              ? args.defaultProject
+              : undefined,
         });
         const created = store.createApiKey(wsId, name, scopes);
         audit("key.create", {
@@ -609,25 +645,26 @@ export async function handleAdminTool(
             toolPrefixAllowlist: Array.isArray(args.toolPrefixAllowlist)
               ? (args.toolPrefixAllowlist as string[])
               : undefined,
+            projects: Array.isArray(args.projects)
+              ? (args.projects as string[])
+              : undefined,
+            defaultProject:
+              typeof args.defaultProject === "string"
+                ? args.defaultProject
+                : undefined,
           });
-          if (
-            args.admin === false &&
-            scopes &&
-            !Array.isArray(args.toolPrefixAllowlist)
-          ) {
-            // explicit admin:false with no prefixes
-            scopes = null;
-          }
           if (args.admin === false && scopes?.admin) {
             delete scopes.admin;
-            if (!scopes.toolPrefixAllowlist?.length) scopes = null;
           }
-        }
-        // allow setting admin:false by passing admin:false and prefixes
-        if (args.admin === false && Array.isArray(args.toolPrefixAllowlist)) {
-          scopes = args.toolPrefixAllowlist.length
-            ? { toolPrefixAllowlist: args.toolPrefixAllowlist as string[] }
-            : null;
+          if (
+            scopes &&
+            !scopes.admin &&
+            !scopes.toolPrefixAllowlist?.length &&
+            !scopes.projects?.length &&
+            !scopes.defaultProject
+          ) {
+            scopes = null;
+          }
         }
         const key = store.updateApiKeyScopes(wsId, id, scopes);
         if (!key) return textResult("not found", true);

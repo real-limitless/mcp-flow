@@ -127,8 +127,61 @@ async function renderStatus() {
   });
 }
 
+function collectCheckedSlugs(rootSel, attr) {
+  return [...document.querySelectorAll(`${rootSel} [${attr}]:checked`)].map(
+    (el) => el.getAttribute(attr),
+  );
+}
+
+function projectCheckboxesHtml(projects, selected, attr = "data-key-proj") {
+  if (!projects.length) {
+    return '<span class="muted">No projects yet — create one under Projects</span>';
+  }
+  const set = new Set(selected || []);
+  return projects
+    .map(
+      (p) =>
+        `<label class="form-check"><input type="checkbox" ${attr}="${esc(p.slug)}" ${set.has(p.slug) ? "checked" : ""}/> <span class="mono">${esc(p.slug)}</span>${p.isDefault ? ' <span class="pill on">default</span>' : ""}</label>`,
+    )
+    .join("");
+}
+
+function projectSelectOptions(projects, selected) {
+  const opts = [
+    `<option value="">— workspace default —</option>`,
+    ...projects.map(
+      (p) =>
+        `<option value="${esc(p.slug)}" ${selected === p.slug ? "selected" : ""}>${esc(p.slug)}${p.isDefault ? " (default)" : ""}</option>`,
+    ),
+  ];
+  return opts.join("");
+}
+
+function formatKeyProjects(scopes) {
+  if (!scopes) return '<span class="pill off">all projects</span>';
+  const parts = [];
+  if (scopes.projects?.length) {
+    parts.push(
+      scopes.projects.map((s) => `<span class="pill accent">${esc(s)}</span>`).join(" "),
+    );
+  } else {
+    parts.push('<span class="pill off">all</span>');
+  }
+  if (scopes.defaultProject) {
+    parts.push(
+      `<span class="muted">start:</span> <span class="pill vault">${esc(scopes.defaultProject)}</span>`,
+    );
+  }
+  return `<div class="key-proj-cell">${parts.join(" ")}</div>`;
+}
+
 async function renderKeys() {
-  const { keys } = await api("/v1/keys");
+  const [{ keys }, projRes] = await Promise.all([
+    api("/v1/keys"),
+    api("/v1/projects").catch(() => ({ projects: [] })),
+  ]);
+  const projects = projRes.projects || [];
+
   $("#tab-keys").innerHTML = `
     ${surface(
       "Create key",
@@ -153,6 +206,21 @@ async function renderKeys() {
           <label class="field-label" for="keyScope">Tool scope prefix</label>
           <input id="keyScope" placeholder="optional e.g. demo__" autocomplete="off" />
         </div>
+        <div class="form-field" style="grid-column:1/-1">
+          <span class="field-label">Projects</span>
+          <p class="dim" style="font-size:12px;margin-bottom:6px">
+            Leave unchecked = key may use <strong>all</strong> projects. Check to restrict.
+          </p>
+          <div class="proj-be-grid" id="keyProjGrid">
+            ${projectCheckboxesHtml(projects, [], "data-key-proj")}
+          </div>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="keyDefaultProj">Default project</label>
+          <select id="keyDefaultProj">
+            ${projectSelectOptions(projects, "")}
+          </select>
+        </div>
         <div class="form-field">
           <span class="field-label">&nbsp;</span>
           <button type="button" id="createKey" class="pill-btn primary">Create key</button>
@@ -164,14 +232,23 @@ async function renderKeys() {
         <p class="muted" id="keyOnceHint" style="margin-top:8px;font-size:12px"></p>
       </div>
     `,
-      "mf_* · operator optional",
+      "mf_* · projects",
     )}
     ${surface(
       "Keys",
       `
       <div class="table-wrap">
         <table class="data-table">
-          <thead><tr><th>name</th><th>prefix</th><th>role</th><th>scopes</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>name</th>
+              <th>prefix</th>
+              <th>role</th>
+              <th>projects</th>
+              <th>scopes</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody>
             ${
               keys.length
@@ -181,17 +258,42 @@ async function renderKeys() {
               <td>${esc(k.name)}</td>
               <td class="mono">${esc(k.prefix)}</td>
               <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}</td>
-              <td class="mono">${esc(JSON.stringify(k.scopes))}</td>
+              <td>${formatKeyProjects(k.scopes)}</td>
+              <td class="mono">${esc(
+                JSON.stringify({
+                  toolPrefixAllowlist: k.scopes?.toolPrefixAllowlist,
+                  admin: k.scopes?.admin,
+                }),
+              )}</td>
               <td class="row-actions">
+                <button type="button" class="pill-btn ghost" data-key-edit="${esc(k.id)}">Projects</button>
                 <button type="button" class="pill-btn danger" data-revoke="${esc(k.id)}">Revoke</button>
               </td>
             </tr>`,
                     )
                     .join("")
-                : `<tr><td colspan="5" class="muted">No keys yet</td></tr>`
+                : `<tr><td colspan="6" class="muted">No keys yet</td></tr>`
             }
           </tbody>
         </table>
+      </div>
+      <div id="keyEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px">
+        <div class="once-label" style="color:var(--accent-hot)">
+          Attach projects · <span id="keyEditName"></span>
+        </div>
+        <p class="muted" style="margin-bottom:8px;font-size:12px">
+          Uncheck all = allow every project. Default project is used until the agent calls mf_use_project.
+        </p>
+        <div class="proj-be-grid" id="keyEditProjGrid"></div>
+        <div class="form-field" style="margin-top:12px;max-width:16rem">
+          <label class="field-label" for="keyEditDefault">Default project</label>
+          <select id="keyEditDefault"></select>
+        </div>
+        <div class="row-actions" style="margin-top:12px">
+          <button type="button" id="keySaveEdit" class="pill-btn primary">Save</button>
+          <button type="button" id="keyCancelEdit" class="pill-btn ghost">Cancel</button>
+        </div>
+        <input type="hidden" id="keyEditId" />
       </div>
     `,
       `${keys.length} total`,
@@ -209,7 +311,7 @@ async function renderKeys() {
     if (roleHint) {
       roleHint.innerHTML = isOp
         ? `Operator: full <span class="mono">mf_admin_*</span> management tools on <span class="mono">/mcp</span> and access to <span class="mono">/v1/*</span>. Treat like root — revocable unlike the env admin token.`
-        : `Agent: use upstream tools on <span class="mono">/mcp</span> only (optional tool-prefix scopes).`;
+        : `Agent: use upstream tools on <span class="mono">/mcp</span> only (optional tool-prefix + project attachments).`;
     }
   };
   roleSeg?.querySelectorAll("[data-role]").forEach((btn) => {
@@ -221,9 +323,13 @@ async function renderKeys() {
       const name = $("#keyName").value.trim() || "default";
       const scope = $("#keyScope").value.trim();
       const isOp = $("#keyAdmin")?.value === "1";
+      const projSlugs = collectCheckedSlugs("#keyProjGrid", "data-key-proj");
+      const defaultProject = $("#keyDefaultProj")?.value?.trim() || "";
       const body = { name };
       if (scope) body.toolPrefixAllowlist = [scope];
       if (isOp) body.admin = true;
+      if (projSlugs.length) body.projects = projSlugs;
+      if (defaultProject) body.defaultProject = defaultProject;
       const res = await api("/v1/keys", { method: "POST", body: JSON.stringify(body) });
       const onceToken = res.key.token;
       const wasOp = Boolean(res.key.scopes?.admin);
@@ -241,15 +347,66 @@ async function renderKeys() {
             : "Agent token · shown once";
         }
         if (hint) {
+          const projNote = res.key.scopes?.projects?.length
+            ? ` Projects: ${res.key.scopes.projects.join(", ")}.`
+            : " All projects allowed.";
           hint.textContent = wasOp
-            ? "Point your AI harness at /mcp with this bearer token to manage backends, keys, and catalog."
-            : "Point your AI harness at /mcp with this bearer token for tool access only.";
+            ? "Point your AI harness at /mcp with this bearer token to manage backends, keys, and catalog." +
+              projNote
+            : "Point your AI harness at /mcp with this bearer token." + projNote;
         }
       }
     } catch (e) {
       showErr(e.message);
     }
   });
+
+  document.querySelectorAll("[data-key-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-key-edit");
+      const k = keys.find((x) => x.id === id);
+      if (!k) return;
+      $("#keyEdit").hidden = false;
+      $("#keyEditId").value = id;
+      $("#keyEditName").textContent = k.name;
+      $("#keyEditProjGrid").innerHTML = projectCheckboxesHtml(
+        projects,
+        k.scopes?.projects || [],
+        "data-edit-key-proj",
+      );
+      $("#keyEditDefault").innerHTML = projectSelectOptions(
+        projects,
+        k.scopes?.defaultProject || "",
+      );
+    });
+  });
+
+  $("#keyCancelEdit")?.addEventListener("click", () => {
+    $("#keyEdit").hidden = true;
+  });
+
+  $("#keySaveEdit")?.addEventListener("click", async () => {
+    try {
+      const id = $("#keyEditId").value;
+      const k = keys.find((x) => x.id === id);
+      if (!k) throw new Error("key not found");
+      const projSlugs = collectCheckedSlugs("#keyEditProjGrid", "data-edit-key-proj");
+      const defaultProject = $("#keyEditDefault")?.value?.trim() || null;
+      await api(`/v1/keys/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          admin: Boolean(k.scopes?.admin),
+          toolPrefixAllowlist: k.scopes?.toolPrefixAllowlist ?? null,
+          projects: projSlugs,
+          defaultProject,
+        }),
+      });
+      await renderKeys();
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
   document.querySelectorAll("[data-revoke]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
