@@ -1,0 +1,58 @@
+{
+  "id": "io.github.baodq06/memocall",
+  "title": "memocall",
+  "description": "Recall past Claude Code conversations from any project as clean, compact Markdown.",
+  "summary": "Recall past Claude Code conversations from any project as clean, compact Markdown.",
+  "offersHint": "Recall past Claude Code conversations from any project as clean, compact Markdown. · Packages: npm:memocall",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "memocall",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "memocall",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/baodq06/memocall",
+  "repository": {
+    "url": "https://github.com/baodq06/memocall",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-18T22:42:30.581187Z",
+  "publishedAt": "2026-06-18T22:42:30.581187Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:23.243Z",
+    "sourceRepoAt": "2026-08-11T23:55:36.568Z",
+    "readmeAt": "2026-08-11T23:55:37.098Z",
+    "toolsAt": "2026-08-12T01:29:23.243Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/baodq06/memocall",
+    "checkedAt": "2026-08-11T23:55:36.568Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/baodq06/memocall/main/README.md",
+    "markdown": "# MemoCall\n\nAn MCP server that lets Claude Code **recall the context of your past conversations — from any project — on demand.**\n\nClaude Code can *resume* a session, but getting *another* conversation's context into the one you're in is a chore — copy-pasting exports or digging through raw transcript files by hand — and resume only sees the current directory anyway. **MemoCall** turns it into a single ask: *\"what was I working on?\"* or *\"load the session where we set up X\"*, and it pulls that transcript in as clean, compact Markdown — even from a totally different project.\n\nIt's **read-only**. Claude Code already records every session to `~/.claude/projects/<project>/<id>.jsonl`; this server just reads those files, strips the noise, collapses tool calls, and hands back a readable transcript. It never writes, hooks, or touches a live session.\n\n## What you get\n\nFive tools, available in **every** session once installed. Claude picks the right one from the request:\n\n| Tool | What it does |\n|------|--------------|\n| `list_sessions` | Your recent conversations across all projects, **grouped by directory**. \"What was I working on?\" |\n| `search_sessions` | Find a past conversation by keyword (matches titles + first messages + paths). |\n| `load_session` | Load one conversation as compact Markdown — by `id` or `query`. Optionally a turn window via `turns`. |\n| `session_outline` | A cheap **map** of one conversation: the numbered list of your prompts. Great for huge sessions. |\n| `search_in_session` | Return only the turns **within** one conversation that match a keyword. |\n\nYou don't call these directly — you talk normally and Claude reaches for them:\n\n```\nYou:  what sessions have i worked on recently?\nYou:  load the one where we set up the license invitation system\nYou:  which session did we debug the keychain SIGKILL thing in?\n```\n\n## How the transcript is rendered\n\nRaw transcripts are a verbose event log (one big file hit 11 MB). `memocall` reduces each turn to the essentials, Conductor-style:\n\n```\n**You:** right now i need to set up a system to invite prospects...\n↳ 12 tool calls (Bash ×5, Read ×4, Edit ×3)\n**Claude:** I've set up the invitation flow. Key decisions: ...\n```\n\nTool-call *outputs* are elided (the big token win, and a privacy win — see below). Abandoned/edited message branches are dropped so you get the conversation as it actually played out. A token budget keeps even an 11 MB session well under Claude Code's MCP output cap via middle-out truncation.\n\n### Navigating large sessions\n\nA single response can't hold a 1,000-turn session, so for big ones you don't dump — you navigate:\n\n1. `session_outline` → a numbered map of every prompt (tiny, fits any session).\n2. `search_in_session` → jump straight to the turns about a topic, **or** `load_session` with `turns: \"300-340\"` to pull an exact window (turn numbers come from the outline).\n\nSo you never lose access to the middle of a huge conversation — `load_session` alone would middle-out-truncate it, but the outline + range/search tools let Claude reach any part on demand.\n\n## Install\n\nRequires the Claude Code CLI (and Node 18+). One line — `npx` fetches and runs the published package:\n\n```bash\nclaude mcp add --scope user memocall -- npx -y memocall\n```\n\n`--scope user` makes it available in every session, in every directory. Restart Claude Code (or open a new session) and ask it to list your sessions. Verify with `claude mcp list` — you should see `memocall: … ✔ Connected`.\n\n<details>\n<summary>Or run from source (for development)</summary>\n\n```bash\ngit clone https://github.com/baodq06/memocall.git\ncd memocall && npm install && npm run build\nclaude mcp add --scope user memocall -- node \"$(pwd)/dist/index.js\"\n```\n</details>\n\n## Privacy & security\n\n- **Local only.** No network, no auth, no telemetry. It reads files under `~/.claude/projects/` and nothing else.\n- **Compact mode elides tool outputs**, which is where secrets (tokens, keys, env) usually live — so the default output is much safer than the raw transcript.\n- **`format: \"full\"` includes brief tool inputs** and may surface sensitive strings. Use it deliberately.\n- Transcripts can contain secrets regardless; treat loaded context as you would the original conversation.\n\n## Limitations\n\n- Recall is best-effort: Claude Code deletes transcripts after `cleanupPeriodDays` (default 30).\n- Forked sessions may only contain post-fork turns.\n- The transcript format is undocumented and can change between Claude Code versions; all format knowledge is isolated in `src/jsonl.ts` so it's a one-file patch if it does.\n\n## Development\n\n```bash\nnpm run build           # compile TypeScript -> dist/\nnpm test                # unit suite (node:test) on synthetic fixtures\nnpm run smoke           # optional: checks all YOUR real sessions stay under the output cap\nnode dist/parser.js <file.jsonl> [--full|--outline] [--turns 10-20] [--search \"kw\"] [--max N] [--think]   # test the parser\nnode test-client.mjs    # drive the server over stdio like Claude Code does\nnpm run inspect         # open the MCP Inspector UI\n```\n\nLayout:\n\n- `src/jsonl.ts` — all knowledge of the transcript format (helpers, ordering, classification).\n- `src/parser.ts` — JSONL → compact Markdown (the core transform).\n- `src/locator.ts` — session enumeration + cached metadata index.\n- `src/index.ts` — the MCP server wiring the three tools.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:55:37.098Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:23.243Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

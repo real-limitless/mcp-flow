@@ -1,0 +1,59 @@
+{
+  "id": "io.github.pooriaarab/vibelive",
+  "title": "vibelive",
+  "description": "Multiplayer for agentic coding terminals: live cursors, presence, chat.",
+  "summary": "Multiplayer for agentic coding terminals: live cursors, presence, chat.",
+  "offersHint": "Multiplayer for agentic coding terminals: live cursors, presence, chat. · Packages: npm:vibelive",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "vibelive",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "vibelive",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/pooriaarab/vibelive",
+  "repository": {
+    "url": "https://github.com/pooriaarab/vibelive",
+    "source": "github",
+    "id": "1312340800"
+  },
+  "updatedAt": "2026-07-29T21:53:37.161613Z",
+  "publishedAt": "2026-07-29T21:53:37.161613Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:33.340Z",
+    "sourceRepoAt": "2026-08-11T23:25:53.193Z",
+    "readmeAt": "2026-08-11T23:25:53.697Z",
+    "toolsAt": "2026-08-12T01:05:33.340Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/pooriaarab/vibelive",
+    "checkedAt": "2026-08-11T23:25:53.193Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/pooriaarab/vibelive/main/README.md",
+    "markdown": "# vibelive\n\nMultiplayer for agentic coding terminals — shared Claude Code/Codex/Gemini sessions with live Figma-style cursors, presence, and in-terminal chat.\n\nPart of the **Vibe Suite** — companion tools for agentic coding CLIs (Claude Code, Codex, Gemini, Grok/pi, Kimi). Ships as **CLI + npm package + MCP server**.\n\n**Local-first: runs on your own machine.** v0 is a **host-authoritative local/LAN** session: one machine hosts a wrapped agent and owns the truth; peers join over a local WebSocket. Full end-to-end-encrypted relay fan-out to ~1,000 participants is on the roadmap (see [`docs/tech-spec.md`](docs/tech-spec.md)). Session sharing is gated by the consent ledger in [`@pooriaarab/vibe-core`](https://www.npmjs.com/package/@pooriaarab/vibe-core) (scope `share:session`), and is revocable.\n\n## Install\n\n```bash\nnpm install -g vibelive\n# or use it as a library / MCP server without the global install:\nnpm install vibelive\n```\n\nRequires Node ≥ 18.\n\n## Quick start\n\nShare a wrapped agent (anything you'd run in a terminal) and print a join URL:\n\n```bash\nvibelive host -- claude          # share a Claude Code session\nvibelive host -- python -i       # share a REPL\nvibelive host --port 4474 --name ada -- claude\n```\n\nThe host prints something like:\n\n```\nvibelive host ready — sharing claude\n  join: ws://localhost:54157\n  lan:  ws://10.0.0.179:54157\n  you are the driver. /release to hand off, /drive to take back, /quit to end.\n```\n\nFrom another terminal (or another machine on the LAN):\n\n```bash\nvibelive join ws://localhost:54157 --name ada\n```\n\nThe joiner sees the live agent output plus a presence/chat line. Slash commands while joined:\n\n- `/drive` — request the write token (queued FIFO behind other drivers)\n- `/release` — relinquish the token\n- `/type <text>` — send input to the wrapped agent (**driver only**)\n- `/quit` — leave the session\n\nEverything else you type is sent as chat.\n\n### Who can write to the agent?\n\nExactly one participant — the **driver** — holds the write token at any time (see `src/arbitration.ts`). Everyone else always has **read + chat + cursor**; only agent-write is arbitrated, so two people never interleave garbage into one stdin. The host user starts as the driver.\n\n## MCP server\n\nRun vibelive as a Model Context Protocol server over stdio:\n\n```bash\nvibelive mcp\n```\n\nIt exposes two tools an agent can call:\n\n| tool | description |\n| --- | --- |\n| `host_session` | Start a host+relay wrapping a command; returns the `ws://` join URL. |\n| `session_status` | List active sessions (id, url, participants, current driver). |\n\nExample (Claude Code / any MCP client config):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"vibelive\": { \"command\": \"vibelive\", \"args\": [\"mcp\"] }\n  }\n}\n```\n\n## Library\n\n```bash\nnpm install vibelive\n```\n\n```ts\nimport { createHost, createRelay, joinSession, WriteArbiter } from 'vibelive';\n\n// Host-authoritative session on an ephemeral port.\nconst host = createHost({ command: ['claude'] });\nconst relay = await createRelay({ port: 0, hostHandle: host, initialDriver: 'host' });\nconsole.log(relay.url); // ws://localhost:<port>\n\nconst client = joinSession({ url: relay.url, name: 'ada' });\nclient.onOutput((text) => process.stdout.write(text));\nclient.requestControl(); // ask to drive\n```\n\n## How it works (v0)\n\nThree channels over one WebSocket, each with the guarantees its data needs (details in [`docs/tech-spec.md`](docs/tech-spec.md)):\n\n1. **Agent output** — ordered, sequence-numbered append-log; the host is the sole author; late joiners get snapshot + tail.\n2. **Presence / cursors** — ephemeral, high-frequency, lossy is fine (coalesced/interpolated client-side; the relay forwards for v0).\n3. **Chat + control** — reliable, ordered; agent-write is mediated by the `WriteArbiter` so there is never more than one driver.\n\nThe correctness-critical piece is `src/arbitration.ts` — a pure, fully unit-tested state machine enforcing *\"never two concurrent agent-writers,\"* FIFO turn-taking, and *\"release when not driver is a no-op.\"*\n\n## Prototype\nInteractive, self-contained UX prototype (no build, no network): open [`docs/prototype.html`](docs/prototype.html) in a browser.\n\n## Specs\n- [`docs/tech-spec.md`](docs/tech-spec.md) — scale (10/100/1000), transport tiers, tests.\n- [`docs/vibe-core-spec.md`](docs/vibe-core-spec.md) — shared suite spine (cascade, hooks, consent).\n\n## Roadmap\n\n- **v0 (this release):** host-authoritative local/LAN multiplayer — host + relay + arbitration + CLI + MCP, all over plain pipes/WebSocket.\n- **Next:** real PTY wrapping (`node-pty`) for full TTY semantics (resize, raw-mode programs, signals), cursor interpolation, and a richer terminal renderer.\n- **Scale:** the dumb, e2e-encrypted, self-hostable relay (pub/sub fan-out to ~1,000, relay reads only ciphertext) — see tech-spec §2 \"Large\" tier.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:25:53.697Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:33.340Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,82 @@
+{
+  "id": "io.github.sandsower/kronan-mcp",
+  "title": "kronan-mcp",
+  "description": "MCP server for the Krónan grocery store API (Iceland)",
+  "summary": "MCP server for the Krónan grocery store API (Iceland)",
+  "offersHint": "MCP server for the Krónan grocery store API (Iceland) · Packages: npm:kronan-mcp · Env vars: KRONAN_ACCESS_TOKEN",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "kronan-mcp",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "KRONAN_ACCESS_TOKEN",
+        "description": "Krónan API access token (act_ prefix). Created via Audkenni login in customer group settings.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "kronan-mcp",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "KRONAN_ACCESS_TOKEN",
+          "description": "Krónan API access token (act_ prefix). Created via Audkenni login in customer group settings.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "KRONAN_ACCESS_TOKEN",
+      "description": "Krónan API access token (act_ prefix). Created via Audkenni login in customer group settings.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sandsower/kronan-mcp",
+  "repository": {
+    "url": "https://github.com/sandsower/kronan-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-19T23:13:30.58297Z",
+  "publishedAt": "2026-04-19T23:13:30.58297Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:53.976Z",
+    "sourceRepoAt": "2026-08-11T23:22:46.820Z",
+    "readmeAt": "2026-08-11T23:22:47.329Z",
+    "toolsAt": "2026-08-12T01:02:53.976Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sandsower/kronan-mcp",
+    "checkedAt": "2026-08-11T23:22:46.820Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sandsower/kronan-mcp/main/README.md",
+    "markdown": "# kronan-mcp\n\nMCP server for the [Krónan](https://kronan.is) grocery store API. Claude can browse products, manage shopping notes, handle checkout, and track orders from Krónan's Snjallverslun (smart store) in Iceland.\n\n## Tools\n\n25 tools over the Model Context Protocol:\n\n| Category | Tools |\n|----------|-------|\n| Products | `search_products`, `get_product`, `get_category_products`, `list_categories` |\n| Checkout | `get_checkout`, `add_checkout_lines` |\n| Orders | `list_orders`, `get_order`, `delete_order_lines`, `set_order_substitution`, `lower_order_quantity` |\n| Shopping notes | `get_shopping_note`, `add_shopping_note_line`, `change_shopping_note_line`, `reorder_shopping_note_lines`, `delete_shopping_note_line`, `set_line_completion`, `clear_shopping_note`, `check_store_order_eligibility`, `apply_store_product_order`, `list_archived_lines`, `delete_archived_line` |\n| Product lists | `list_product_lists`, `create_product_list`, `get_product_list`, `update_product_list`, `delete_product_list`, `clear_product_list`, `sort_product_list`, `update_product_list_item` |\n| Purchase stats | `list_purchase_stats`, `set_purchase_stat_ignored` |\n| Account | `get_me` |\n\n## Install\n\n```bash\nnpm install -g kronan-mcp\n```\n\nOr run directly with npx (no install needed):\n\n```bash\nnpx kronan-mcp\n```\n\n### Getting a token\n\nTokens are created in the Krónan Snjallverslun user settings. You need an account with Audkenni (Iceland's electronic ID) login. Go to your user or customer group settings page and create an access token. Tokens are prefixed with `act_`.\n\n## Usage with Claude Code\n\nAdd to your project's `.claude/settings.local.json` or global `~/.claude/settings.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"kronan\": {\n      \"command\": \"npx\",\n      \"args\": [\"kronan-mcp\"],\n      \"env\": {\n        \"KRONAN_ACCESS_TOKEN\": \"act_your_token_here\"\n      }\n    }\n  }\n}\n```\n\nThen ask Claude things like:\n\n- \"Search for milk on Krónan\"\n- \"What's in my shopping note?\"\n- \"Add 2x of SKU 02500188 to my checkout\"\n- \"Show my recent orders\"\n\n## Architecture\n\n```\nsrc/\n├── client.ts   HTTP client wrapping all Krónan API endpoints\n├── index.ts    MCP server registering tools via @modelcontextprotocol/sdk\n└── types.ts    TypeScript interfaces matching the OpenAPI schema\n```\n\nAuth is `Authorization: AccessToken <token>` on every request. Rate limit is 200 requests per 200 seconds per user. The client detects 429 responses and tells the caller to wait.\n\nAll prices are integers in ISK (no decimals). 230 means 230 kr.\n\nErrors go through a typed `KronanApiError` with status codes. The token is scrubbed from error messages so it doesn't leak to the LLM. Auth failures and rate limits get their own user-facing messages.\n\n`set_order_substitution` and `set_line_completion` use read-then-toggle patterns. They're not idempotent. Don't retry on timeout without checking current state first.\n\n## API reference\n\nFull OpenAPI schema at `openapi-schema.yaml`.\n\n## Development\n\n```bash\nnpm install && npm run build   # Build from source\nnpm run dev                    # Watch mode (recompiles on change)\nnpm test                       # Run tests\nnpm run test:watch             # Watch mode tests\n```\n\n## Tests\n\n31 tests on the HTTP client: constructor validation, error paths (429, timeouts, JSON parse failures), token scrubbing, toggle method validation, eligibility endpoint edge cases.\n\n```bash\nnpm test\n```\n",
+    "fetchedAt": "2026-08-11T23:22:47.329Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:53.976Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

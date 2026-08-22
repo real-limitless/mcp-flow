@@ -1,0 +1,44 @@
+{
+  "id": "io.github.detection-forge/agentic-detection-lookups",
+  "title": "Agentic Detection Lookups",
+  "description": "LOLBAS, GTFOBins, and process parent-child lookups for detection engineering agents.",
+  "summary": "LOLBAS, GTFOBins, and process parent-child lookups for detection engineering agents.",
+  "offersHint": "LOLBAS, GTFOBins, and process parent-child lookups for detection engineering agents.",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/detection-forge/agentic-detection-lookups",
+  "repository": {
+    "url": "https://github.com/detection-forge/agentic-detection-lookups",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-13T02:59:56.934487Z",
+  "publishedAt": "2026-05-13T02:59:56.934487Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:43.907Z",
+    "sourceRepoAt": "2026-08-11T23:49:41.465Z",
+    "readmeAt": "2026-08-11T23:49:42.186Z",
+    "toolsAt": "2026-08-12T01:24:43.907Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/detection-forge/agentic-detection-lookups",
+    "checkedAt": "2026-08-11T23:49:41.465Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/detection-forge/agentic-detection-lookups/main/README.md",
+    "markdown": "# Agentic Detection Lookups\n\nMachine-readable detection lookups for SIEM enrichment and AI agents. MCP-native.\n\n> Stop regex-matching 200+ binaries. Enrich in one `match()` call.  \n> Feed it to your SIEM, your SOAR, your agent, or your LLM.\n\n## What is this?\n\nA collection of structured CSV lookup files purpose-built for:\n- **SIEM enrichment** — one `match()`/`lookup`/`join` replaces entire rule categories\n- **AI agent tooling** — MCP server included, agents query detection context in real-time\n- **Detection automation** — consistent schema, CI-updated, deploy-ready\n\n## Lookup Files\n\n| File | Entries | OS | Description |\n|------|---------|-----|-------------|\n| [`lolbas_binaries.csv`](lookups/lolbas_binaries.csv) | 232 | Windows | Living Off The Land Binaries and Scripts — risk-scored, categorized, MITRE-mapped |\n| [`gtfobins.csv`](lookups/gtfobins.csv) | 477 | Linux | GTFOBins Unix binaries — shell escape, priv-esc, file ops, MITRE-mapped |\n| [`parent_child_baselines.csv`](lookups/parent_child_baselines.csv) | 97 | Both | Expected/suspicious process parent→child relationships for Windows and Linux |\n\n### Schema Contract\n\nEvery lookup file follows:\n1. First column = **match key** (the field you join on)\n2. Always includes `risk` or `risk_if_unexpected` column\n3. Always includes MITRE ATT&CK technique mapping\n4. No nested data — flat columns, pipe-delimited for multi-value\n5. UTF-8, no BOM, Unix line endings, header row always present\n\n## Quick Start\n\n### SIEM (copy-paste)\n\n**CrowdStrike NG-SIEM:**\n```cql\n#event_simpleName=ProcessRollup2\n| binary := lower(FileName)\n| match(file=\"lolbas_binaries.csv\", field=binary, column=filename, include=[categories, mitre_ids, risk])\n| risk=\"high\"\n```\n\n**Splunk:**\n```spl\nindex=crowdstrike event_simpleName=ProcessRollup2\n| rex field=FileName \"(?<binary>[^\\\\\\\\]+)$\"\n| lookup lolbas_binaries.csv filename AS binary OUTPUT categories mitre_ids risk\n| where risk=\"high\"\n```\n\n**Elastic (ES|QL):**\n```esql\nFROM logs-endpoint.events.process-*\n| WHERE event.action == \"start\"\n| ENRICH lolbas-policy ON process.name = filename WITH categories, risk\n| WHERE risk == \"high\"\n```\n\n**Microsoft Sentinel:**\n```kql\nDeviceProcessEvents\n| extend binary = tolower(FileName)\n| join kind=inner (_GetWatchlist('lolbas_binaries')) on $left.binary == $right.filename\n| where risk == \"high\"\n```\n\nSee [`queries/`](queries/) for full query libraries per platform.\n\n### MCP Server (AI agents)\n\n```json\n{\n  \"servers\": {\n    \"detection-lookups\": {\n      \"type\": \"stdio\",\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"mcp_server\"],\n      \"cwd\": \"/path/to/agentic-detection-lookups\"\n    }\n  }\n}\n```\n\nThen your agent can:\n```\n→ detection_lookup_binary(\"certutil.exe\")\n← {source: \"lolbas\", risk: \"medium\", categories: [\"Download\"], mitre_ids: [\"T1105\"]}\n\n→ detection_lookup_binary(\"python\")\n← {source: \"gtfobins\", risk: \"high\", categories: [\"shell\", \"reverse-shell\", ...], mitre_ids: [\"T1059\"]}\n\n→ detection_check_parent_child(\"winword.exe\", \"cmd.exe\")\n← {expected: false, risk_if_unexpected: \"critical\", mitre_id: \"T1204.002\"}\n```\n\n## MCP Tools\n\n| Tool | Input | Output |\n|------|-------|--------|\n| `detection_lookup_binary` | filename | Risk, categories, MITRE IDs, source (lolbas/gtfobins) |\n| `detection_check_parent_child` | parent, child, os_filter | Expected/suspicious, risk level, triage guidance |\n| `detection_list_by_category` | category, limit, offset | Paginated binaries in that abuse category (cross-platform) |\n| `detection_list_by_mitre` | technique_id, limit, offset | Paginated binaries mapped to that technique (cross-platform) |\n| `detection_search` | query, limit | Matches across all lookup data with total/has_more |\n| `detection_list_lookups` | — | All files with row counts and columns |\n\n## Data Sources\n\n| Lookup | Source | Update Frequency |\n|--------|--------|-----------------|\n| LOLBAS binaries | [LOLBAS Project](https://lolbas-project.github.io) | Weekly (automated) || GTFOBins | [GTFOBins](https://gtfobins.github.io) | Weekly (automated) || Parent-child baselines | MITRE ATT&CK, SANS, Microsoft docs, public threat reports | Manual curation |\n\n## Installation\n\n### Prerequisites\n- Python 3.10+\n- VS Code with GitHub Copilot (for MCP integration)\n\n### Install\n\n```bash\ngit clone https://github.com/detection-forge/agentic-detection-lookups.git\ncd agentic-detection-lookups\npython -m venv .venv\n# Windows:\n.venv\\Scripts\\activate\n# Linux/macOS:\nsource .venv/bin/activate\npip install -e .\n```\n\n### Configure MCP Client (VS Code)\n\nAdd to your VS Code User settings (`Ctrl+Shift+P` → \"Preferences: Open User Settings (JSON)\") or `~/.vscode/mcp.json`:\n\n```json\n{\n  \"servers\": {\n    \"detection-lookups\": {\n      \"type\": \"stdio\",\n      \"command\": \"/absolute/path/to/.venv/bin/python\",\n      \"args\": [\"-m\", \"mcp_server\"],\n      \"cwd\": \"/absolute/path/to/agentic-detection-lookups\"\n    }\n  }\n}\n```\n\n> **Windows example:**\n> ```json\n> {\n>   \"servers\": {\n>     \"detection-lookups\": {\n>       \"type\": \"stdio\",\n>       \"command\": \"C:\\\\Code\\\\.venv\\\\Scripts\\\\python.exe\",\n>       \"args\": [\"-m\", \"mcp_server\"],\n>       \"cwd\": \"C:\\\\Code\\\\agentic-detection-lookups\"\n>     }\n>   }\n> }\n> ```\n\nReload VS Code: `Ctrl+Shift+P` → \"Reload Window\"\n\n### Verify\n\nIn Copilot Chat (Agent mode):\n```\nIs certutil.exe a LOLBAS binary?\n```\n\n✅ Returns risk, categories, and MITRE mappings = working!\n\n### Run standalone (CLI)\n\n```bash\ndetection-lookups\n```\n\nThis starts the MCP server on stdio transport (useful for piping JSON-RPC or connecting other MCP clients).\n\n### Upload to your SIEM\n\n- **CrowdStrike NG-SIEM:** Upload via API or UI (Settings → Lookup Files)\n- **Splunk:** Settings → Lookups → Lookup table files → Add new\n- **Elastic:** Create enrich index + ingest pipeline\n- **Sentinel:** Configuration → Watchlist → Add new\n\n## Project Structure\n\n```\nagentic-detection-lookups/\n├── lookups/                    # The data (CSV files)\n│   ├── lolbas_binaries.csv\n│   ├── gtfobins.csv\n│   └── parent_child_baselines.csv\n├── queries/                    # Copy-paste detection queries\n│   ├── crowdstrike_ngsiem.md\n│   ├── splunk.md\n│   ├── elastic.md\n│   └── microsoft_sentinel.md\n├── mcp_server/                 # MCP server for AI agents\n│   ├── server.py\n│   └── __init__.py\n├── scripts/                    # Update/maintenance scripts\n├── LICENSE                     # Apache 2.0\n├── NOTICE\n└── pyproject.toml\n```\n\n## Contributing\n\nPRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.\n\nTo add a new lookup file:\n1. Follow the schema contract (match key first, include risk + MITRE columns)\n2. Include at least one query example per SIEM platform\n3. Add a tool to the MCP server\n\n## License\n\nApache 2.0 — See [LICENSE](LICENSE) and [NOTICE](NOTICE).\n\n---\n\nBuilt by [Gene Kazimiarovich](https://github.com/gkazimiarovich) | Part of [Detection Forge](https://github.com/detection-forge)\n",
+    "fetchedAt": "2026-08-11T23:49:42.186Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:43.907Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

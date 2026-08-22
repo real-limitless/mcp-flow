@@ -1,0 +1,58 @@
+{
+  "id": "io.github.capan/isochrone",
+  "title": "isochrone",
+  "description": "Berlin pedestrian isochrones: streets reachable on foot in N minutes (walk/stroller/wheelchair).",
+  "summary": "Berlin pedestrian isochrones: streets reachable on foot in N minutes (walk/stroller/wheelchair).",
+  "offersHint": "Berlin pedestrian isochrones: streets reachable on foot in N minutes (walk/stroller/wheelchair). · Packages: npm:isochrone-mcp",
+  "version": "0.1.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "isochrone-mcp",
+    "version": "0.1.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "isochrone-mcp",
+      "version": "0.1.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/capan/isochrone",
+  "repository": {
+    "url": "https://github.com/capan/isochrone",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T07:52:53.850854Z",
+  "publishedAt": "2026-08-07T07:52:53.850854Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:00.163Z",
+    "sourceRepoAt": "2026-08-11T23:53:53.775Z",
+    "readmeAt": "2026-08-11T23:53:54.302Z",
+    "toolsAt": "2026-08-12T01:28:00.164Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/capan/isochrone",
+    "checkedAt": "2026-08-11T23:53:53.775Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/capan/isochrone/main/README.md",
+    "markdown": "# isochrone\n\n[![demo](https://img.shields.io/website?url=https%3A%2F%2Fiso.huseyincapan.dev%2Fhealthz&up_message=live&down_message=down&label=demo)](https://iso.huseyincapan.dev)\n[![uptime](https://github.com/capan/isochrone/actions/workflows/uptime.yml/badge.svg)](https://github.com/capan/isochrone/actions/workflows/uptime.yml)\n\n**Live: [iso.huseyincapan.dev](https://iso.huseyincapan.dev)**\n\nClick anywhere on the map and see the street network you can actually reach on\nfoot within 15 minutes — coloured by arrival time, with mobility profiles that\naccount for stairs and unpaved paths.\n\nOSM data → PostGIS + pgRouting → Express → Leaflet.\n\n## How it works\n\n`pgr_drivingDistance` walks the street graph from the vertex nearest your click\nuntil the time budget runs out, and returns every reachable edge with its\narrival time. Those edges are grouped into 10 equal time bands and drawn\ndirectly — no hull, so the map shows the streets you can reach rather than a\nblob implying you can cross the middle of a block.\n\nEdge cost is `length / speed` in seconds, computed per request from the\nselected profile, so a profile is a few numbers rather than a schema change:\n\n| profile | speed | stairs | unpaved |\n|---|---|---|---|\n| `walk` | 1.4 m/s | half speed | normal |\n| `stroller` | 1.2 m/s | impassable | 0.6× |\n| `wheelchair` | 0.9 m/s | impassable | impassable |\n\nThese factors are estimates, not measurements — see *Calibration* below.\n\n## Ask Claude about it (MCP)\n\nThe [`isochrone-mcp`](https://www.npmjs.com/package/isochrone-mcp) package lets\nany MCP client answer reachability questions against this API:\n\n```bash\nclaude mcp add isochrone -- npx -y isochrone-mcp\n```\n\n<!-- 1320px source shown at 660 — 2x density, so it stays sharp on retina -->\n<img src=\"mcp/demo.gif\" width=\"660\" alt=\"Claude answering a reachability question, then the isochrone drawn on the map\">\n\n\nOne tool, `reachable_area`: origin + minutes + profile, optional target\n(\"can I get there in time?\"). Returns a prose summary and a map link, not\ncoordinate soup. Details in [mcp/](mcp/).\n\n## Dev\n\nNeeds Postgres (PostGIS + pgRouting) on 5454 and Redis on 6363:\n\n    docker compose up -d db redis\n\nImport a city (needs `osm2pgrouting`, `osmium-tool` and `libpq` on PATH —\n`export PATH=\"/opt/homebrew/opt/libpq/bin:$PATH\"` on macOS):\n\n    cd overpass/osm-imports && ./import_city.sh germany berlin\n\nThen:\n\n    cd isochrone-backend && npm i && npm start   # :3001\n    cd isochrone-ui && npm i && npm run dev      # :5173, proxies /api\n\n## Deploy\n\n    cp .env.example .env      # change PGPASSWORD, set SITE_ADDRESS\n    docker compose up -d --build\n\nCaddy terminates TLS on 80/443 (automatic Let's Encrypt once `SITE_ADDRESS` is\na real hostname), compresses responses, and proxies to the app — which serves\nthe API and the built UI together, so there's no separate web server. The app\nport is not published; it is reachable only through Caddy. Postgres and Redis\nbind to `127.0.0.1` so the import script works from the host without exposing\nthem publicly.\n\n`CITY` selects which schema to query and must match the imported one\n(`import_city.sh greater-london` creates schema `greater_london`).\n\n### Getting a city into the deployment\n\nThe database starts empty. Rather than running `osm2pgrouting` on the server —\nwhich needs `osmium`, a 1.6GB intermediate file, and a long import — dump the\nschema from a machine that already has it and restore:\n\n    pg_dump -h 127.0.0.1 -p 5454 -U postgres -d osm_db \\\n      --schema=berlin -Fc -Z6 -f berlin.dump          # ~105MB, ~10s\n\n    # on the target, extensions first — a --schema dump doesn't carry them\n    psql -h 127.0.0.1 -p 5454 -U postgres -d osm_db -c \\\n      \"CREATE EXTENSION IF NOT EXISTS postgis;\n       CREATE EXTENSION IF NOT EXISTS pgrouting;\n       CREATE EXTENSION IF NOT EXISTS hstore;\"\n\n    pg_restore -h 127.0.0.1 -p 5454 -U postgres -d osm_db \\\n      --no-owner -j4 berlin.dump                       # ~5s\n\nBerlin restores to ~587MB (the source schema is larger only because of dead\ntuples from the cost UPDATEs). The `db` image is pinned to the major version the\ndump came from — a dump will not restore into an older Postgres.\n\n### Verifying a deployment\n\n    API=https://iso.example.com node scripts/check.mjs\n\n## Checks\n\n    node scripts/check.mjs     # needs the backend running\n\nAsserts every time band comes back and that reach is non-increasing across\n`walk` → `stroller` → `wheelchair`.\n\n## Warming the cache\n\n`scripts/precompute.ts` and the RabbitMQ `producer.ts`/`worker.ts` pair drive\nthe backend over HTTP rather than reimplementing the routing SQL, so they can't\ndrift out of sync with it. Live queries are ~0.4s, so this is only worth\nrunning for a city-wide sweep.\n\n## Known gaps\n\n- **Graph islands.** The vertex nearest a click can sit on a disconnected\n  fragment — `52.515,13.400` reaches 13 nodes. Fix is a one-time\n  `pgr_connectedComponents` table for the vertex lookup to join against.\n- **Calibration.** The speeds above are guesses. Google's Isochrones API\n  (Preview) supports `WALK` and returns GeoJSON, so the `walk` profile could be\n  calibrated against it. It has no stroller/wheelchair mode, so those stay\n  unvalidated.\n- **Stranded origins** render as a tiny blob rather than saying \"unreachable\n  with this profile\".\n",
+    "fetchedAt": "2026-08-11T23:53:54.302Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:28:00.164Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

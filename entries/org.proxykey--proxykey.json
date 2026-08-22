@@ -1,0 +1,71 @@
+{
+  "id": "org.proxykey/proxykey",
+  "title": "proxykey",
+  "description": "Issue, rotate and revoke scoped API-key passes for 25+ providers — the agent never sees a real key",
+  "summary": "Issue, rotate and revoke scoped API-key passes for 25+ providers — the agent never sees a real key",
+  "offersHint": "Issue, rotate and revoke scoped API-key passes for 25+ providers — the agent never sees a real key · Remote MCP (streamable-http) at https://mcp.proxykey.org/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.proxykey.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.proxykey.org/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token minted in the proxykey panel (https://app.proxykey.org, MCP section). Format: 'Bearer mcp_...'",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://proxykey.org/en/",
+  "sourceUrl": "https://github.com/neostorm112-boop/proxykey-mcp",
+  "repository": {
+    "url": "https://github.com/neostorm112-boop/proxykey-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-05T13:24:57.80332Z",
+  "publishedAt": "2026-07-05T13:24:57.80332Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token minted in the proxykey panel (https://app.proxykey.org, MCP section). Format: 'Bearer mcp_...'",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:50:58.892Z",
+    "sourceRepoAt": "2026-08-11T23:08:15.899Z",
+    "readmeAt": "2026-08-11T23:08:16.348Z",
+    "toolsAt": "2026-08-12T00:50:58.892Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/neostorm112-boop/proxykey-mcp",
+    "checkedAt": "2026-08-11T23:08:15.899Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/neostorm112-boop/proxykey-mcp/main/README.md",
+    "markdown": "# proxykey MCP server\n\n> Issue, rotate and revoke API-key passes from your AI agent — without the\n> agent ever seeing a real key.\n\n**proxykey** is a credential vault and proxy: your real API keys (OpenAI,\nAnthropic, Telegram, Stripe, 25+ providers) are encrypted with AES-256-GCM\nand never leave the server. Apps and agents use revocable virtual keys —\n**passes** (`vlt_…`) — with per-pass IP binding, rate limits and full request\nlogs. This MCP server lets an agent manage those passes.\n\n- Website: https://proxykey.org/en/\n- Panel: https://app.proxykey.org\n- Docs: https://app.proxykey.org/docs.html\n- MCP endpoint (Streamable HTTP): `https://mcp.proxykey.org/mcp`\n\n## Why give an agent this instead of a key\n\nAnything that enters a model's context can leak — through logs, traces or\nprompt injection. With proxykey the agent gets a *tool*, not a secret:\n\n- the agent can **create / rotate / revoke / inspect** passes;\n- a **\"read the real key\" operation does not exist** in the toolset;\n- only a human can enter the original key, in the panel;\n- a leaked pass is a non-event: wrong IP → 403, over limit → 429,\n  revocation is one click and doesn't touch the original.\n\n## Quick start\n\n1. Sign in at https://app.proxykey.org (GitHub OAuth or email magic link, free).\n2. Open **MCP** → create a token (`mcp_…`).\n3. Connect your client:\n\n**Claude Code**\n```bash\nclaude mcp add --transport http proxykey https://mcp.proxykey.org/mcp \\\n  --header \"Authorization: Bearer mcp_YOUR_TOKEN\"\n```\n\n**Claude Desktop / Cursor (mcp.json)**\n```json\n{\n  \"mcpServers\": {\n    \"proxykey\": {\n      \"url\": \"https://mcp.proxykey.org/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer mcp_YOUR_TOKEN\" }\n    }\n  }\n}\n```\n\n## Tools (13)\n\n| Tool | What it does |\n|---|---|\n| `list_providers` | Provider catalogue (slugs, auth models) |\n| `list_secrets` | Stored keys (metadata only — never values) |\n| `get_manual_secret_setup` | Link for a human to enter a key |\n| `list_passes` | All passes with status, limits, binding |\n| `create_pass` | Issue a pass for an existing secret |\n| `create_pending_pass` | Issue a pass *before* the key exists; a human fills the key in later, the pass activates automatically |\n| `update_pass` | Change limits, IP mode, expiry |\n| `revoke_pass` / `delete_pass` | Kill a pass instantly / remove a revoked one |\n| `rotate_pass` | Reissue the token, same settings |\n| `rebind_pass_ip` | Reset IP learning |\n| `get_pass_logs` / `get_pass_stats` | Per-pass request log and usage stats |\n\n## The proxy itself\n\nPoint your client at the proxy and use the pass as the API key — only the\nhost and the key change:\n\n```bash\n# before\ncurl https://api.openai.com/v1/chat/completions -H \"Authorization: Bearer sk-...\"\n# after\ncurl https://api.proxykey.org/p/openai/v1/chat/completions -H \"Authorization: Bearer vlt_openai_...\"\n```\n\nStreaming (SSE), request bodies and headers pass through unchanged.\nTelegram bots keep their URL shape (`/p/telegram-bot/<pass>/getMe`).\nFull reference: https://app.proxykey.org/docs.html\n\n## Security model (short version)\n\n- Secrets: AES-256-GCM envelope encryption, decrypted in memory per request,\n  never logged, never returned by any API after creation.\n- Pass tokens and MCP tokens are stored hashed (SHA-256).\n- MCP surface cannot create or read secret values, or toggle body logging —\n  those stay human-only in the panel.\n- Request logs contain metadata only — no auth headers, no key material.\n",
+    "fetchedAt": "2026-08-11T23:08:16.348Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:50:58.892Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"MCP bearer token required\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

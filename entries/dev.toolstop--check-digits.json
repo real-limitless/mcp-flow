@@ -1,0 +1,80 @@
+{
+  "id": "dev.toolstop/check-digits",
+  "title": "Check Digits",
+  "description": "Catch a mistyped barcode, ISBN, VIN, NPI or LEI before a bad identifier corrupts a record.",
+  "summary": "Catch a mistyped barcode, ISBN, VIN, NPI or LEI before a bad identifier corrupts a record.",
+  "offersHint": "Catch a mistyped barcode, ISBN, VIN, NPI or LEI before a bad identifier corrupts a record. · Remote MCP (streamable-http) at https://check-digits.toolstop.dev · Packages: npm:@toolstop/check-digits",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://check-digits.toolstop.dev",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://check-digits.toolstop.dev"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@toolstop/check-digits",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@toolstop/check-digits",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://check-digits.toolstop.dev",
+  "sourceUrl": "https://github.com/toolstop/toolstop",
+  "repository": {
+    "url": "https://github.com/toolstop/toolstop",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T04:06:13.621567Z",
+  "publishedAt": "2026-08-11T04:06:13.621567Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:24.242Z",
+    "sourceRepoAt": "2026-08-12T00:21:53.951Z",
+    "readmeAt": "2026-08-12T00:21:54.401Z",
+    "toolsAt": "2026-08-12T00:21:54.480Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/toolstop/toolstop",
+    "checkedAt": "2026-08-12T00:21:53.951Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/toolstop/toolstop/main/README.md",
+    "markdown": "# toolstop\n\nSmall, stateless MCP servers. Each one does a single narrow job exactly, so an\nassistant can call it instead of guessing.\n\nEvery server runs on Cloudflare Workers at `<name>.toolstop.dev`, holds no\nstate, and can also run locally over stdio.\n\n## Servers\n\n| Server | Does | Endpoint |\n|---|---|---|\n| [check-digits](packages/mcp-check-digits) | Validates check digits for IBAN, LEI, ISBN, GTIN/UPC/EAN, VIN, NPI, ISIN, ABA routing numbers and payment cards | `https://check-digits.toolstop.dev` |\n\n## Connecting\n\nRemote, over streamable HTTP. No install, no account:\n\n```json\n{\n  \"mcpServers\": {\n    \"check-digits\": {\n      \"type\": \"url\",\n      \"url\": \"https://check-digits.toolstop.dev\"\n    }\n  }\n}\n```\n\nLocal, over stdio:\n\n```bash\nnpx @toolstop/check-digits\n```\n\n## Design\n\n**Stateless.** No database, no vector index, no metered upstream API. A request\nis answered from its arguments alone. Servers scale to zero and an idle one\ncosts nothing.\n\n**Zero runtime dependencies.** No MCP SDK, no schema library. MCP over\nstreamable HTTP is request/response, which makes hand-rolled dispatch small\nenough to be worth it: faster cold starts, and no supply chain.\n\n**Telemetry records shape and outcome, never argument values.** A check-digit\nserver that logged its input would be storing real IBANs and card numbers. The\ntransport emits one row per request describing *what kind* of call happened and\nwhether it succeeded. `packages/_shared/transport.test.mjs` asserts that no raw\nargument value can reach it.\n\nThe row also carries a session id, and it is derived from the **network** the\nrequest came from, truncated to a /24 or /48 before hashing, never the full\naddress. Hashing the whole IP would not have anonymised it: the IPv4 space is 32\nbits and the other inputs are public, so the id was walkable back to one address\nuntil this was fixed on 2026-08-10. Each server's README states the complete\nrecorded row rather than only what is left out.\n\n**Every tool declares `readOnlyHint`, a complete `inputSchema` and an\n`outputSchema`**, so a client can tell what a call will do before making it and\nwhat shape comes back. The transport refuses to start a server whose tools do\nnot state their annotations, rather than defaulting them to something reassuring.\n\n## Repo layout\n\n```\npackages/_shared/     shared transport, dispatch and telemetry\npackages/mcp-<name>/  one server\nscripts/discover.mjs  derives the CI matrix from the filesystem\nscripts/smoke.mjs     protocol check against a live endpoint\n```\n\nSee [CLAUDE.md](CLAUDE.md) for the operating manual.\n\n## Development\n\n```bash\nnpm install\nnpm test                                # every server plus the shared transport\nnode scripts/smoke.mjs mcp-check-digits # protocol check against the live endpoint\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:21:54.401Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "validate_identifier",
+      "description": "Verify a number when you already know what it is supposed to be. Use this whenever someone gives you a product barcode (GTIN, UPC or EAN), a book number (ISBN-10 or ISBN-13), a vehicle VIN, a US healthcare provider NPI, a security ISIN, or a legal entity LEI, and acting on a wrong one would cost something: a bounced claim, a rejected listing, a record that quietly corrupts a dataset.\n\nEvery supported format is a public identifier. Bank accounts, IBANs, routing numbers and payment cards are not supported and must not be sent.\n\nReturns whether the checksum passes and, when it fails, the specific reason. If you do not already know the format, call identify_format first rather than guessing a `kind`, since a valid identifier checked against the wrong format comes back invalid. A passing checksum proves only that the digits are internally consistent: it does not mean the book, product, vehicle or provider exists, is active, or belongs to any particular person."
+    },
+    {
+      "name": "identify_format",
+      "description": "Identify a bare number whose type was never recorded. Tests it against every supported format and reports which ones its check digit satisfies. Use it for an unlabeled spreadsheet column, a value pulled out of a log line or a scanned document, or any number handed over without being named.\n\nReports every format that matches rather than choosing between them. Several matches is normal and does not mean the answer is unclear: some formats are subsets of others, so every ISBN-13 is also a valid EAN-13, and a short value can satisfy two unrelated formats by chance. Read one match as strong evidence and several as a set to narrow from context. As with validation, a match means the arithmetic is consistent, not that the identifier is registered or real."
+    },
+    {
+      "name": "compute_luhn_digit",
+      "description": "Given digits with the final check digit omitted, return the one that completes them. US healthcare NPIs and securities ISINs use the Luhn formula.\n\nUse it to build valid test fixtures, to recover a last digit that was lost or illegible, or to check an implementation against a reference. To test a number you already have in full, use validate_identifier instead. Input must reduce to digits only once spaces and dashes are stripped; anything else is an error. Payment cards also use Luhn, and are deliberately out of scope here: do not pass card digits, partial or complete. This constructs a well-formed number and nothing more: it does not create, reserve or verify a real provider or security."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:21:54.480Z",
+  "toolsPreviewStatus": "ok"
+}

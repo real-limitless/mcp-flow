@@ -1,0 +1,83 @@
+{
+  "id": "io.github.sv-number/mcp-server",
+  "title": "mcp-server",
+  "description": "Phone numbers for AI agents: order a private number, read the SMS verification code, hand it back.",
+  "summary": "Phone numbers for AI agents: order a private number, read the SMS verification code, hand it back.",
+  "offersHint": "Phone numbers for AI agents: order a private number, read the SMS verification code, hand it back. · Packages: npm:sv-number-mcp · Env vars: SVN_API_KEY",
+  "version": "1.0.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "sv-number-mcp",
+    "version": "1.0.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SVN_API_KEY",
+        "description": "API key from the sms-verification-number.com profile page",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "sv-number-mcp",
+      "version": "1.0.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SVN_API_KEY",
+          "description": "API key from the sms-verification-number.com profile page",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SVN_API_KEY",
+      "description": "API key from the sms-verification-number.com profile page",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://sms-verification-number.com/en/number-for-ai-agents/",
+  "sourceUrl": "https://github.com/sv-number/mcp-server",
+  "repository": {
+    "url": "https://github.com/sv-number/mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T13:30:24.552417Z",
+  "publishedAt": "2026-08-09T13:30:24.552417Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:46.487Z",
+    "sourceRepoAt": "2026-08-11T23:19:21.939Z",
+    "readmeAt": "2026-08-11T23:19:22.228Z",
+    "toolsAt": "2026-08-12T00:59:46.488Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sv-number/mcp-server",
+    "checkedAt": "2026-08-11T23:19:21.939Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sv-number/mcp-server/main/README.md",
+    "markdown": "# SV Number MCP server\n\nPhone numbers as tools. Your agent orders a private number in the country a service\nexpects, reads the SMS verification code straight from the API, and hands the number back.\nNine tools over stdio, no SDK to learn.\n\n200+ countries, the widest coverage in this category. Every other claim on this page is\ncheckable too, but this one takes a single call: run `list_countries` and count the rows.\n\n```\norder_number(service=\"tg\", country=6)   ->  +62 838 1234 5678\nwait_for_code(activationId)             ->  123456\nfinish_activation(activationId)         ->  done\n```\n\n## Install\n\nClaude Code:\n\n```bash\nclaude mcp add sv-number --env SVN_API_KEY=your_key_here -- npx -y sv-number-mcp\n```\n\nAnything that reads a JSON config (Codex, Cursor, Claude Desktop):\n\n```json\n{\n  \"mcpServers\": {\n    \"sv-number\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"sv-number-mcp\"],\n      \"env\": { \"SVN_API_KEY\": \"your_key_here\" }\n    }\n  }\n}\n```\n\nThe key comes from [your profile](https://sms-verification-number.com/en/user/profile/)\nafter [signup](https://sms-verification-number.com/en/register/). The balance has to be\nfunded: there is no free tier on this API. The key is read from the environment and never\nleaves the process, no tool returns it and no error message quotes it.\n\n## Tools\n\n| Tool | What it does |\n| --- | --- |\n| `get_balance` | what is left on the account |\n| `list_countries` | every country with its id and operators |\n| `list_services` | find the code for a site: search by name or domain, best match first, price, how many are online, and the share of codes that actually arrived |\n| `order_number` | order a private number for one service in one country |\n| `wait_for_code` | poll until the code lands and return it, already parsed out of the SMS |\n| `finish_activation` | close a successful activation |\n| `cancel_activation` | cancel and get the money back |\n| `request_another_sms` | ask for one more code on the same number |\n| `totp_code` | compute the authenticator code locally, by RFC 6238 |\n\n`list_services` answers with `matches` ranked best first plus `notInList`, the fallback\nservice. It takes a site name or a URL, so `discord.com` finds `Discord`, and it ranks a\nwhole word above a substring so `x` puts `X.com (Twitter)` above `Maxim`. Codes are\narbitrary and must never be recalled from memory: `uk` is Airbnb, `re` is Coinbase, `tn` is\nLinkedIn. When nothing matches, the answer says so and points at another country, because\nthe catalogue is not the same everywhere, and at `ot` (\"Not on list\"), which receives SMS\nfrom any sender that is not in the list. A site that has its own code sends to that code,\nso `ot` is a fallback and not a wildcard.\n\n`deliveredPercent` is the delivery rate for that service and country, and `null` when the\npair has no statistics yet, which is the common case. Where there is a number, pick by it\ninstead of by price; where there is not, `online` shows how big the live pool is, which is\nthe next best signal.\n\n## What the server handles for you\n\nEvery call carries `lang`. The API answers without it, but then it prices in another\ncurrency, so the server never leaves it out. Text markers that the API returns\ninstead of JSON are checked before anything is parsed, and turned into a sentence an agent\ncan act on: `NO_NUMBERS` becomes \"change country, or set operator to any\" rather than a\nbare token. Polling runs at a sane interval instead of hammering `getStatus`, and\n`wait_for_code` stops at the 20 minute life of a number.\n\n## What it is not\n\nReceiving verification codes is the whole job. These numbers do not send SMS, do not take\ncalls, and are not meant for banking, payment or government accounts. An agent that needs a\npermanent number to hold a conversation wants a carrier product instead.\n\n## Config\n\n| Variable | Default |\n| --- | --- |\n| `SVN_API_KEY` | required |\n| `SVN_API_BASE` | `https://sms-verification-number.com/stubs/handler_api` |\n| `SVN_LANG` | `en`, sets both the language and the currency of the answers |\n| `SVN_POLL_SECONDS` | `4` |\n\n## Related\n\n- The same product as a markdown skill: https://github.com/sv-number/skills\n- API reference: https://sms-verification-number.com/en/api-sms-activate/\n- Coverage and prices: https://sms-verification-number.com/en/number-for-ai-agents/\n\nMIT. The service behind it is commercial.\n",
+    "fetchedAt": "2026-08-11T23:19:22.228Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:46.488Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,45 @@
+{
+  "id": "io.github.segentic-lab/codelens-mcp",
+  "title": "codelens-mcp",
+  "description": "Deterministic code maps for AI agents: 7 tree-sitter tools for TS/JS/Py — map, find, function_body",
+  "summary": "Deterministic code maps for AI agents: 7 tree-sitter tools for TS/JS/Py — map, find, function_body",
+  "offersHint": "Deterministic code maps for AI agents: 7 tree-sitter tools for TS/JS/Py — map, find, function_body",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://github.com/segentic-lab/codelens-mcp",
+  "sourceUrl": "https://github.com/segentic-lab/codelens-mcp",
+  "repository": {
+    "url": "https://github.com/segentic-lab/codelens-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T11:42:47.589039Z",
+  "publishedAt": "2026-07-06T11:42:47.589039Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:15.168Z",
+    "sourceRepoAt": "2026-08-11T23:21:59.374Z",
+    "readmeAt": "2026-08-11T23:21:59.923Z",
+    "toolsAt": "2026-08-12T01:02:15.168Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/segentic-lab/codelens-mcp",
+    "checkedAt": "2026-08-11T23:21:59.374Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/segentic-lab/codelens-mcp/main/README.md",
+    "markdown": "# codelens-mcp\n\n> ## ⚠️ Superseded by [lens-mcp](https://github.com/segentic-lab/lens-mcp)\n>\n> **codelens has merged into [`lens-mcp`](https://github.com/segentic-lab/lens-mcp)** — one MCP\n> server that maps **both code *and* markdown docs**. It carries every codelens\n> tool (`map`, `overview`, `functions`, `function_body`, `comments`, `find`, `info`)\n> unchanged, plus doc tools (`outline`, `heading`, `links`, `search`) and a unified\n> `map` that returns a whole project's code structure *and* doc outlines in one call.\n>\n> **Use lens-mcp instead** — `git clone https://github.com/segentic-lab/lens-mcp`.\n> This repo remains only so existing links resolve; it is no longer developed.\n>\n> _(The description below is retained for reference.)_\n\n---\n\nDeterministic structural code maps for AI agents. An MCP server (stdio) that\ngives agents the shape of a codebase — imports, exports, classes, functions,\nsignatures, comments, TODO-markers — without reading whole files into context.\nPowered by tree-sitter WASM grammars: no native build step, installs anywhere\nNode 18+ runs.\n\n**The contract:** codelens is a navigation map. Use it to *locate* code, then\n`Read` the actual source before judging or modifying it. A signature is not\nthe body; an outline is not the section.\n\n## Tools\n\n7 read-only tools. Every list in every response is capped, and every cap is\nreported with an explicit `truncated` flag — no silent cutoffs.\n\n| Tool | What it does |\n|------|--------------|\n| `map` | Per-file structural overview of a whole directory tree in one call. Skips `node_modules`, `dist`, `venv`, hidden dirs, etc. The orientation tool. |\n| `overview` | One file's top-level structure: imports, exports, classes (with method names), functions — all with 1-based `line`/`endLine`. |\n| `functions` | Every *addressable* function in a file — nested functions, methods, getters/setters, class-field arrows, object-literal properties, default exports — with reconstructed signatures, param types, return type, `async`/`exported` flags, and `parent` scope. (Anonymous callbacks passed as arguments and Python lambdas are not listed — they have no name to navigate to.) |\n| `comments` | All comments with line ranges, kind (`line`/`block`/`doc`), and TODO/FIXME/FIX/BUG/HACK/NOTE/XXX marker detection (uppercase-only, no prose false-positives). `markersOnly: true` returns just the debt list. |\n| `function_body` | Verbatim source of *one* function (with decorators) by bare or dotted name (`Widget.render`) — the focused read that replaces whole-file Reads. Ambiguous names fail listing the candidates; it never guesses. |\n| `find` | \"Where is X defined?\" — locate function/method/class definitions by name across a directory. Definitions only, not call sites. |\n| `info` | Server self-description: version, working directory (the path sandbox root), languages, caps. |\n\n`overview`, `functions`, and `comments` accept a single path or an array of up\nto 20 paths per call.\n\n## Languages\n\n| Extension | Language | Grammar |\n|-----------|----------|---------|\n| `.ts`, `.mts`, `.cts` | TypeScript | tree-sitter-typescript |\n| `.tsx` | TypeScript + JSX | tree-sitter-tsx (dedicated grammar — JSX parses correctly) |\n| `.js`, `.jsx`, `.mjs`, `.cjs` | JavaScript | tree-sitter-javascript |\n| `.py` | Python | tree-sitter-python |\n\n## Path sandbox\n\nThe server only reads files **under its own working directory** (the directory\nit was launched from). Relative paths resolve against it; absolute paths are\naccepted only if they point inside it; symlinks that escape it are rejected.\nThe `info` tool reports the root, and every rejection names it. Launch the\nserver from the project you want mapped.\n\n## Honesty guarantees\n\n- A file with syntax errors is never reported as a clean success:\n  `hasErrors: true` plus `parseErrors` line ranges, because tree-sitter\n  error-recovery can drop code near the error.\n- Errors set `isError` on the MCP result and return\n  `{error, path, hint}` — the hint says how to fix the call.\n- Batch calls return per-file results plus an honest\n  `{requested, succeeded, failed}` summary; `isError` only when every file failed.\n- Every cap is visible: `truncated` flags carry the true totals.\n\n## Install & run\n\n```bash\nnpm install\nnpm run build    # tsc → dist/\nnpm test         # build + 62 tests (51 unit, 11 stdio e2e)\nnode dist/index.js   # stdio MCP server (launch from the project to analyze)\n```\n\nMCP client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"codelens\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/codelens-mcp/dist/index.js\"],\n      \"cwd\": \"/path/to/project-to-analyze\"\n    }\n  }\n}\n```\n\n## For agent authors\n\n`AGENTS.md` in this repo is a paste-ready guide for teaching an agent to use\nthese tools well — core model, per-tool tips, and the pitfalls (path sandbox,\nlanguage coverage, the map-vs-territory rule).\n\n## License\n\nAGPL-3.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:21:59.923Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:15.168Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

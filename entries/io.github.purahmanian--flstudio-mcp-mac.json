@@ -1,0 +1,58 @@
+{
+  "id": "io.github.purahmanian/flstudio-mcp-mac",
+  "title": "FL Studio MCP Mac",
+  "description": "macOS-first MCP bridge for FL Studio using CoreMIDI and FL Studio Python MIDI scripts.",
+  "summary": "macOS-first MCP bridge for FL Studio using CoreMIDI and FL Studio Python MIDI scripts.",
+  "offersHint": "macOS-first MCP bridge for FL Studio using CoreMIDI and FL Studio Python MIDI scripts. · Packages: pypi:flstudio-mcp-mac",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "flstudio-mcp-mac",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "flstudio-mcp-mac",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/purahmanian/flstudio-mcp-mac",
+  "repository": {
+    "url": "https://github.com/purahmanian/flstudio-mcp-mac",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-05T18:39:11.085246Z",
+  "publishedAt": "2026-06-05T18:39:11.085246Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:09.103Z",
+    "sourceRepoAt": "2026-08-11T23:25:23.084Z",
+    "readmeAt": "2026-08-11T23:25:23.586Z",
+    "toolsAt": "2026-08-12T01:05:09.103Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/purahmanian/flstudio-mcp-mac",
+    "checkedAt": "2026-08-11T23:25:23.084Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/purahmanian/flstudio-mcp-mac/main/README.md",
+    "markdown": "# FL Studio MCP Mac\n\n<!-- mcp-name: io.github.purahmanian/flstudio-mcp-mac -->\n\nmacOS-first MCP bridge for FL Studio. It exposes FL Studio transport, mixer, channel, MIDI export, and Piano Roll note-apply workflows to MCP clients such as Claude Desktop, Claude Code, Cursor, and other MCP-capable tools.\n\nThis is an alpha MVP. It is intentionally scoped around FL Studio's documented Python MIDI scripting and Piano Roll scripting APIs. It does not promise full headless FL Studio automation.\n\n## Why This Exists\n\nMost FL Studio MCP work today is Windows-oriented. macOS has a cleaner CoreMIDI path for virtual ports, and FL Studio supports Python-based MIDI scripts on macOS. This project turns that into a small local MCP server plus companion FL Studio scripts.\n\n## What Works\n\n- Live bridge over macOS virtual MIDI ports.\n- FL Studio status and health checks.\n- Transport: play, stop, record toggle, rewind, song/pattern mode, metronome toggle.\n- Tempo changes.\n- Mixer track reads and explicit track mutations.\n- Channel Rack reads and explicit channel mutations.\n- Standard MIDI file generation for import into FL Studio.\n- Piano Roll queue file plus an included `.pyscript` to insert persistent notes.\n\n## Known Limits\n\n- FL Studio's MIDI scripting API is not a complete DAW API.\n- Loading plugins, loading arbitrary audio files, and rendering/exporting are not implemented here.\n- Persistent note writing goes through the included Piano Roll script. The MCP server queues notes; you run `Scripts > FL Studio MCP Apply` in the target Piano Roll.\n- Live bridge setup requires FL Studio's MIDI settings to map the request/response ports. The MCP server starts a singleton local MIDI daemon so Claude Desktop, Claude Code, and terminal tests share the same CoreMIDI endpoints.\n\n## Install\n\nFrom this repo:\n\n```bash\npython3 -m pip install .\nflstudio-mcp-mac-install\n```\n\nThe installer copies:\n\n- `device_FLStudioMCP.py` to `~/Documents/Image-Line/FL Studio/Settings/Hardware/FLStudioMCP/`\n- `FL Studio MCP Apply.pyscript` to `~/Documents/Image-Line/FL Studio/Settings/Piano roll scripts/`\n\n## Configure FL Studio on macOS\n\n1. Start the MCP server once so it starts the local MIDI daemon and creates the virtual CoreMIDI ports:\n\n   ```bash\n   flstudio-mcp-mac\n   ```\n\n   You can stop this foreground MCP process after the ports appear. The background daemon keeps the `FLStudioMCP Request` and `FLStudioMCP Response` ports available for all MCP clients.\n\n2. Open FL Studio and go to `Options > MIDI Settings`.\n3. In the input list, choose `FLStudioMCP Request`.\n4. Set `Controller type` to `FL Studio MCP Mac`.\n5. Set the controller output to `FLStudioMCP Response`.\n6. Restart the MCP client if needed. If duplicate `FLStudioMCP` ports appear, quit old MCP server processes and start the v0.1.1+ daemon again.\n\n## MCP Client Config\n\nFor detailed setup across Claude Desktop, Claude Code, Cursor, Windsurf, PyPI, and the MCP Registry, see [docs/publishing.md](docs/publishing.md).\n\nExample Claude Desktop config:\n\n```json\n{\n  \"mcpServers\": {\n    \"flstudio-mcp-mac\": {\n      \"command\": \"flstudio-mcp-mac\"\n    }\n  }\n}\n```\n\nFor source installs where the command is not on PATH:\n\n```json\n{\n  \"mcpServers\": {\n    \"flstudio-mcp-mac\": {\n      \"command\": \"python3\",\n      \"args\": [\"-m\", \"flstudio_mcp_mac\"]\n    }\n  }\n}\n```\n\n## MIDI Note Workflow\n\nUse `fl_create_midi_file` when you want a normal `.mid` file to import.\n\nUse `fl_queue_piano_roll_notes` when you want to apply notes into the currently open Piano Roll:\n\n1. Ask the MCP client to queue notes.\n2. In FL Studio, open the target channel's Piano Roll.\n3. Run `Scripts > FL Studio MCP Apply`.\n\nNote shape:\n\n```json\n[\n  { \"pitch\": 60, \"start\": 0, \"duration\": 1, \"velocity\": 100 },\n  { \"pitch\": 64, \"start\": 1, \"duration\": 1, \"velocity\": 96 },\n  { \"pitch\": 67, \"start\": 2, \"duration\": 2, \"velocity\": 96 }\n]\n```\n\nTimes are in beats. MIDI pitch uses the standard 0-127 scale.\n\n## Development\n\n```bash\npython3 -m pip install \".[dev]\"\nPYTHONPATH=src pytest\n```\n\nSet `FLSTUDIO_MCP_BRIDGE=mock` to run the MCP server with deterministic in-memory FL Studio responses for protocol tests:\n\n```bash\nFLSTUDIO_MCP_BRIDGE=mock python3 -m flstudio_mcp_mac\n```\n\nNormal live mode uses a background daemon. For low-level debugging, set `FLSTUDIO_MCP_BRIDGE=direct` to make one MCP process own the virtual MIDI ports directly.\n\nFor live FL Studio validation steps, see [docs/testing.md](docs/testing.md).\n\n## Protocol\n\nThe bridge sends base64 JSON over MIDI control-change frames on channel 16:\n\n- CC 120: frame start\n- CC 121: one base64 character\n- CC 122: frame end\n\nThe FL script only accepts whitelisted command names and returns one JSON response for each request.\n\n## Privacy\n\nThis server runs entirely on your machine. It collects no telemetry and stores\nno data on any remote service. It communicates only with your local FL Studio\ninstance over macOS virtual MIDI ports (CoreMIDI), and writes files only where\nyou ask: generated MIDI files and the Piano Roll queue JSON under your local\nMusic folder. No account, API key, or network connection is required, and\nnothing you do in FL Studio leaves your computer.\n\n## Built by\n\nBuilt by **Puya Ventures LLC**. I build custom MCP servers and AI integrations.\nGet in touch: purahmanian@gmail.com | Portfolio: https://puyarahmanian.com\n\n## License\n\nMIT. See [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:25:23.586Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:09.103Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

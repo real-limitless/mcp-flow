@@ -1,0 +1,84 @@
+{
+  "id": "io.github.projecttron/numproof",
+  "title": "NumProof",
+  "description": "Deterministic signed verification of numeric & financial claims for AI agents & spreadsheets.",
+  "summary": "Deterministic signed verification of numeric & financial claims for AI agents & spreadsheets.",
+  "offersHint": "Deterministic signed verification of numeric & financial claims for AI agents & spreadsheets. · Remote MCP (streamable-http) at https://numproof.com/mcp · Packages: pypi:numproof",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://numproof.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://numproof.com/mcp"
+    }
+  ],
+  "install": {
+    "kind": "pypi",
+    "package": "numproof",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "numproof",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://numproof.com",
+  "sourceUrl": "https://github.com/projecttron/numproof",
+  "repository": {
+    "url": "https://github.com/projecttron/numproof",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-26T20:13:22.947411Z",
+  "publishedAt": "2026-06-26T20:13:22.947411Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:16.848Z",
+    "sourceRepoAt": "2026-08-11T23:25:28.385Z",
+    "readmeAt": "2026-08-11T23:25:28.944Z",
+    "toolsAt": "2026-08-11T23:25:29.168Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/projecttron/numproof",
+    "checkedAt": "2026-08-11T23:25:28.385Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/projecttron/numproof/main/README.md",
+    "markdown": "# NumProof\n\n[![ci](https://github.com/projecttron/numproof/actions/workflows/ci.yml/badge.svg)](https://github.com/projecttron/numproof/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n<!-- mcp-name: io.github.projecttron/numproof -->\n\n**The deterministic numeric truth layer for AI agents and spreadsheets.**\n\nYour agent writes *\"gross margin improved from 42.1% to 44.8%\"* or *\"the workbook is internally\nconsistent\"* — NumProof tells you, deterministically, whether that number is **VERIFY**, **REFUTE**,\nor **ABSTAIN**, with a counterexample, cell/formula provenance, and a signed, machine-checkable\naudit bundle. It's exact arithmetic and symbolic math — **not an LLM judging another LLM.**\n\n- ✅ Verify a single math/finance claim, or batch thousands in CI\n- ✅ Audit `xlsx/csv` rows: footing, cross-footing, balance-sheet ties, margins, formula cells — with provenance\n- ✅ Diff two report versions; evaluate covenant rule packs (DSCR, Debt/EBITDA, current ratio, …)\n- ✅ Signed evidence bundle (JSON + HTML/PDF/ZIP) anyone can re-verify offline\n- ✅ API · CLI · **MCP server** · optional **x402** pay-per-call\n\n> This repo is the **open-source client** (SDK + MCP). The verification engine runs as a hosted\n> service — `pip install numproof`, point it at the API, done. (Same shape as `stripe-python`:\n> the SDK is open, the engine is the service.)\n\nLive demo (no key): **https://numproof.com** · Docs: **https://numproof.com/docs**\n\n---\n\n## 30-second start\n\n```bash\npip install numproof\n```\n\n```python\nfrom numproof import NumProof\n\nnp = NumProof.from_env()              # NUMPROOF_API_KEY (get a free key: see below)\n\nprint(np.verify(\"120 + 90 + 340 + 15 == 565\"))\n# {'verdict': 'VERIFY', 'certificate': 'EXACT_ARITHMETIC', ...}\n\nprint(np.verify(\"a 50% loss needs a 100% gain to break even\"))   # VERIFY: (1-0.5)*(1+1.0)==1\nprint(np.verify(\"two 10% raises equal a 21% total increase\"))    # VERIFY\nprint(np.verify(\"operating margin is 18% when EBIT is 180 and revenue is 1000\"))  # VERIFY\n```\n\nNo install? It's just HTTP:\n\n```bash\ncurl -s https://numproof.com/demo -H 'Content-Type: application/json' \\\n  -d '{\"claim\":\"gross margin is 60% when gross profit is 600 and revenue is 1000\"}'\n```\n\nFree API key:\n\n```bash\ncurl -s https://numproof.com/signup -X POST -H 'Content-Type: application/json' -d '{}'\n```\n\n---\n\n## Audit a spreadsheet (with provenance)\n\n```python\nrows = [[\"Revenue\", 1000], [\"COGS\", 400], [\"Gross Profit\", 600], [\"Gross Margin\", \"60%\"]]\nprint(np.audit_rows(rows)[\"verdict\"])          # PASS  (600/1000 == 60%, footing, ties, ...)\n\n# covenant rule packs: DSCR, Debt/EBITDA, current ratio, custom thresholds\nprint(np.covenant_rows(\n    [[\"EBITDA\", 500], [\"Debt Service\", 300], [\"Debt\", 1200]],\n    rule_pack=\"credit_covenants_basic\",\n)[\"verdict\"])\n```\n\nEvery audit/diff/covenant result can be returned as a **signed bundle** + human-readable HTML/PDF\nreport (`format=\"zip\"`). Recipients verify it **without trusting you or NumProof**:\n\n```bash\ncurl -s https://numproof.com/audit/verify -H 'Content-Type: application/json' -d @bundle.json\n# {\"valid\": true, \"verdict\": \"PASS\", \"signer\": \"0x...\", ...}\n```\n\n---\n\n## Use it from an AI agent (MCP)\n\nNumProof ships an MCP server so Claude / OpenAI-style agents can call it as a tool — gate every\nnumeric claim before it reaches a user, report, or auditor.\n\n```bash\npython -m numproof.mcp\n```\n\n```json\n{ \"mcpServers\": { \"numproof\": { \"command\": \"python\", \"args\": [\"-m\", \"numproof.mcp\"] } } }\n```\n\nOr point any MCP client at the hosted descriptor: `https://numproof.com/mcp.json`.\n\nSee [`examples/`](examples/) for runnable scripts (verify, audit, covenants, agent-gate, MCP).\n\n---\n\n## Drop-in guardrails for agent frameworks\n\nVerify the numbers your agent emits **before it acts**, in the framework you already use\n(`numproof/integrations/` — each lazily imports its framework, so the `numproof` client stays stdlib-only):\n\n```python\n# OpenAI Agents SDK — output guardrail that trips on REFUTE\nfrom agents import Agent\nfrom numproof.integrations.openai_agents import numproof_output_guardrail\nagent = Agent(name=\"...\", instructions=\"...\", output_guardrails=[numproof_output_guardrail()])\n```\n\n- **OpenAI Agents SDK** — `numproof.integrations.openai_agents` (output guardrail / tripwire)\n- **Pydantic AI** — `numproof.integrations.pydantic_ai` (output validator; raises `ModelRetry` with the counterexample so the model self-corrects)\n- **LangChain** — `numproof.integrations.langchain` (a NumProof `Tool` + an output checker)\n- **DeepEval (Confident AI)** — `numproof.integrations.deepeval` (a deterministic `NumProofMetric`: VERIFY → score 1.0, REFUTE → score 0.0 with the counterexample on `.reason`)\n- **Guardrails AI** — `numproof.integrations.guardrails` (a Hub `Validator`: REFUTE → `FailResult` with the counterexample, so your `on_fail` action — reask/fix/exception — fires)\n\n`VERIFY` → pass · `REFUTE` → block/retry with the counterexample · `ABSTAIN` → pass-through (configurable). Runnable examples in [`examples/`](examples/); install only the framework you use.\n\n## Independently re-checkable receipts (the part you can't fake)\n\nAny verdict can be returned as a **signed Verification Receipt** — and you re-check it **offline,\ntrusting neither the transport nor NumProof**:\n\n```bash\npip install \"numproof[verify]\"\nnumproof-verify receipt.json --signer 0x<published-NumProof-signer>\n# OK   independently re-derived + signature valid\n```\n\nIt recovers the EIP-191 signer (tamper-evident) **and**, for `value`/`agg`/`identity`/`sequence`\nclaims, independently **re-derives the verdict** with stdlib `Fraction` + `sympy`. A tampered\nfield, a wrong signer, or a verdict that doesn't actually hold all fail loudly — even a receipt\nNumProof itself mis-signed is caught by the re-derivation. An agent can recompute a number for\nitself; it **cannot** issue an independent, signed attestation a *second party* will accept. That\nindependence — not the arithmetic — is the product. Format + spec: [`RECEIPT_FORMAT.md`](RECEIPT_FORMAT.md).\n\n---\n\n## Why deterministic (and why it matters)\n\nGeneric \"AI guardrails\" use a model to grade a model — probabilistic, and itself can hallucinate.\nNumProof recomputes the math **exactly** (rational arithmetic + symbolic identity checking) and\nreturns a reproducible verdict with a trace. When it can't prove something it says **ABSTAIN**\nrather than guess. For finance, regulated, and agent workflows, *\"the number is provably right\"*\nbeats *\"another model thinks it looks right.\"* Full table: [`comparison.md`](comparison.md).\n\n---\n\n## Pricing\n\n| Plan | Price | For |\n|---|---|---|\n| Sandbox | **$0** | web demo + free credits |\n| x402 PAYG | **$0.005 / call** | agent-to-tool, no subscription |\n| Builder | **$29/mo** | API + MCP + CLI, 2k credits |\n| Pro | **$99/mo** | batch, webhooks, CI, signed exports, 10k credits |\n| Finance Team | **$299/mo** | 5 seats, version diff, covenant packs, branded exports |\n\n---\n\n## What's in this repo\n\nThe `numproof` Python SDK (`NumProof` client), the MCP server, and runnable examples — all thin\nHTTP clients to the hosted API. **MIT licensed.** The verification engine, finance audit logic,\nformal (Lean) proof tier, and signing are the hosted service and are **not** in this repo.\n\nFound a wrong verdict? Open an issue with the exact claim — correctness is the whole product.\n",
+    "fetchedAt": "2026-08-11T23:25:28.944Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "verify_claim",
+      "description": "Exactly verify a math/finance claim (VERIFY/REFUTE/ABSTAIN) with a counterexample when false. Use before trusting any AI-produced number, sum, percentage, or formula."
+    },
+    {
+      "name": "audit_rows",
+      "description": "Audit spreadsheet-like rows for footing, balance-sheet ties, common margins, and cell provenance."
+    },
+    {
+      "name": "diff_rows",
+      "description": "Compare two report versions by numeric row labels with provenance."
+    },
+    {
+      "name": "covenant_rules",
+      "description": "Evaluate threshold/covenant rules over spreadsheet-like rows with provenance. Use either rules or rule_pack."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:25:29.168Z",
+  "toolsPreviewStatus": "ok"
+}

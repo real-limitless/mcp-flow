@@ -1,0 +1,73 @@
+{
+  "id": "io.github.markopolovic/kubik-tools",
+  "title": "kubik-tools",
+  "description": "Freight calculators (weight, metres, vehicle fit) and authenticated team packing-library tools.",
+  "summary": "Freight calculators (weight, metres, vehicle fit) and authenticated team packing-library tools.",
+  "offersHint": "Freight calculators (weight, metres, vehicle fit) and authenticated team packing-library tools. · Remote MCP (streamable-http) at https://mcp.kubik.tools/mcp",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.kubik.tools/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.kubik.tools/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://kubik.tools",
+  "updatedAt": "2026-07-20T19:38:40.991381Z",
+  "publishedAt": "2026-07-20T19:38:40.991381Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:15:14.825Z",
+    "sourceRepoAt": "2026-08-11T23:35:56.750Z",
+    "readmeAt": "2026-08-12T01:15:14.825Z",
+    "toolsAt": "2026-08-11T23:35:56.750Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:35:56.750Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:15:14.825Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "calculate_chargeable_weight",
+      "description": "Calculates chargeable (billable) weight -- frachtpflichtiges Gewicht, Frachtgewicht -- for a freight shipment (Stückgut or Sammelgut) from a list of cargo pieces, for one of four transport modes. Answers questions like \"wie viel wiegt die Sendung frachtpflichtig\" or \"was ist das Volumengewicht\".\n\nFor each mode, chargeable weight is the greater of the actual (scale) weight and the volumetric weight (Volumengewicht), where volumetric weight is derived from total volume using a mode-specific default divisor (overridable via volumetric_divisor):\n- air (Luftfracht): volume_cm3 / 6000 (IATA standard, 167 kg/m3)\n- courier: volume_cm3 / 5000 (common express-carrier convention, e.g. DHL/FedEx/UPS)\n- road: volume_m3 * 333 (simple volumetric \"1:3\" convention; does not model Lademeter/LDM-based road pricing -- for loading-metre, Stellplätze, or vehicle-fit questions, use calculate_loading_metres and check_truck_fit instead, both on this server)\n- sea_lcl (Seefracht): volume_m3 * 1000 (W/M -- weight or measurement, 1 revenue tonne per m3)\n\nWorked example: 2 pieces, 60x40x50cm, 45 kg each, air mode -> total actual weight 90 kg, total volume 0.24 m3, volumetric weight 40 kg (240,000 cm3 / 6000) -> chargeable weight 90 kg (actual weight governs, since it exceeds the volumetric weight).\n\nRounding: air and courier chargeable/volumetric weight round UP to the nearest 0.5 kg (chargeable_weight_raw_kg gives the unrounded value, chargeable_weight_kg the rounded one). Road and sea_lcl are not rounded up, just reported to 1 decimal place.\n\nEdge cases: missing or invalid mode, more than 100 pieces, or any non-positive dimension/weight/quantity returns a clear, structured explanation rather than an error stack -- never a guessed default mode or divisor.\n\nReturns total actual weight, total volume, volumetric weight, raw and rounded chargeable weight, which one governs, the divisor used, and a one-line human-readable summary."
+    },
+    {
+      "name": "resolve_quantities",
+      "description": "Resolves an ordered quantity of a Library article into concrete packed units (boxes/pallets), using that article's own logged packing history -- never a generic guess.\n\nCheck resolution_status first: \"resolved\" means units/tier are a real answer, safe to use directly. \"ambiguous\" means the article has more than one viable packaging family (e.g. logged both as pallets and as crates) with meaningfully different pack counts -- units and tier are both null, and alternatives lists every viable option with no default among them. When resolution_status is \"ambiguous\", do not select an alternative autonomously -- present the options to the user and ask which packaging family they mean; do not guess based on which one appears first. \"not_found\" means the article has no packed-form data logged at all -- there is nothing to resolve, alternatives is absent, and units/tier are null. needs_confirmation (boolean) is kept only for backward compatibility with callers written before resolution_status existed -- new integrations should check resolution_status.\n\nWhen resolution_status is \"resolved\", tier is one of: \"observed\" (an exact match against a real logged pack), \"estimated\" (interpolated between two real logged points), or \"verify\" (extrapolated beyond the highest -- or below the lowest -- quantity ever actually logged for this article; still returns a real number, but flagged as needing a human's eyes before it's trusted).\n\nDoes not resolve prepack-table or consolidation-group quantities -- those use the same tier engine but a different lookup key (a table/group id, not a free-text article search) and are not covered by this tool.\n\nRequires an MCP API key (Authorization: Bearer <key>) issued for a kubik.tools team. Looks the article up by article number or name within that team's own Library -- never across teams."
+    },
+    {
+      "name": "create_article_profile",
+      "description": "Creates a new article in your team's kubik.tools Library -- team-scoped from creation, visible to the whole team immediately (not a personal draft).\n\nTwo-step by design, never a silent write: call once WITHOUT confirm to get a preview of exactly what would be created (including a check for an existing article that looks like a likely duplicate); call again with confirm=true and the preview_id from the first response to actually create it. A confirmed creation can be undone within 15 minutes via undo_change -- after that, edit or delete it directly in the app.\n\nOn the confirm call, only api_key, confirm, and preview_id are actually read -- every other field is required/optional per the schema for shape-consistency but ignored if resupplied, since the values captured during the preview call are what gets created; to change any of them, call again without confirm for a fresh preview.\n\nDo not use this to log a real packing observation for an article that already exists -- use log_pack_observation instead; this tool only creates the article record itself, never packing data. Do not skip the unconfirmed preview call even if you are confident there is no duplicate -- the duplicate check only runs on that first call, and confirm=true without a fresh preview_id will be rejected.\n\nRequired: name, supplier. Optional: article_number, hs_code (exactly 8 digits if given), description_de, description_en."
+    },
+    {
+      "name": "log_pack_observation",
+      "description": "Logs a real, observed consolidation pack -- \"these articles, at these quantities, actually packed onto N pallets at these dims/weight\" -- against an existing consolidation group in your team's Library. This is ground truth: it becomes a new data point resolve_quantities and the app's own resolve flow learn from (PRINCIPLES.md P-13).\n\nTwo-step by design: call once WITHOUT confirm to preview exactly what would be logged; call again with confirm=true and the preview_id to actually log it. A confirmed log can be undone within 15 minutes via undo_change -- after that it's permanent (append-only ground truth, by design -- see PRINCIPLES.md P-17/P-18 for why).\n\nOn the confirm call, only api_key, confirm, and preview_id are actually read -- every other field is required by the schema for shape-consistency but ignored if resupplied, since the values captured during the preview call are what gets logged; to change any of them, call again without confirm for a fresh preview.\n\nDo not use this for a single article's own packing history outside a consolidation group -- that data comes from the app's own data entry, not this tool. Do not use this to correct a mistaken past observation after the 15-minute undo window -- log a new, correct observation instead; past ones are never edited. Requires an EXISTING consolidation_groups id -- this tool cannot create a new consolidation group.\n\nRequires an existing consolidation_groups id (from the app's Consolidation Groups screen) and each member article's number (resolved to its profile automatically)."
+    },
+    {
+      "name": "undo_change",
+      "description": "Undoes a create_article_profile or log_pack_observation call, but only within 15 minutes of when it was confirmed, and only if nothing else now depends on it.\n\nFor article_profiles: refuses if any packed_forms, consolidation_group_members, or edit-history rows now reference the article (edit it or delete it manually in the app instead of undoing).\n\nFor consolidation_pack_observations: append-only ground truth past the 15-minute window, by design (PRINCIPLES.md P-17/P-18) -- undo only exists for a mistake caught immediately after logging it, never as a general edit/delete capability."
+    },
+    {
+      "name": "calculate_loading_metres",
+      "description": "Calculates loading metres (Lademeter, LDM) -- the floor-space unit (Ladefläche) that governs European road freight -- for a list of cargo pieces, plus the equivalent number of pallet places (Palettenstellplätze, Stellplätze). Answers questions like \"wie viele Lademeter\" or \"wieviel Platz brauche ich im Lkw\".\n\nUnits: length_cm and width_cm (Länge/Breite in cm) per piece. weight_kg_per_piece (Gewicht in kg) is optional. Formula: LDM = sum(length_cm x width_cm x quantity) / reference_deck_width_cm / 100. Height is irrelevant here -- LDM is a floor-footprint metric, not a volume one (for volumetric/chargeable weight, use calculate_chargeable_weight instead).\n\nReference width: Lademeter (LDM) is always computed at the fixed 240cm (2.4m) reference lane -- this is a commercial road-freight convention, not a DIN/EN/ISO/VDI standard, and does not vary by vehicle. If vehicle_id names one of the loadable vehicle profiles (e.g. \"semi_136\" = Sattelzug 13,6 m, \"rigid_75\" = 7,5-Tonner), the response additionally reports deck_length_m: how much of that specific vehicle's own deck length the cargo occupies -- a different, vehicle-specific quantity, not the LDM figure. Pallet-place equivalents are also computed at the 240cm reference lane.\n\nWorked example: 8 Europaletten/EUR-Paletten (120cm x 80cm) at the standard 240cm width = (120*80*8)/240/100 = 3.2 LDM, equivalent to 8 Palettenstellplätze (one Europalette occupies 0.4 LDM at this width). An Industriepalette (120x100cm) occupies more floor space per unit: 0.5 LDM at the same width.\n\nEdge cases: an unknown vehicle_id returns the list of available vehicles instead of guessing -- it never silently picks one. If any piece omits weight_kg_per_piece, total_weight_kg is returned as null rather than an incomplete partial sum. Maximum 100 piece lines (use quantity to combine identical pieces)."
+    },
+    {
+      "name": "check_truck_fit",
+      "description": "Checks whether a list of cargo pieces fits a named vehicle by loading metres (Lademeter, LDM, Stellplätze) and, if weight is given, by payload (Zuladung, Nutzlast) too -- the two capacity limits that actually govern road freight (\"passt das auf...\"), not full 3D placement or Ladungssicherung (load securing).\n\nVehicle profiles (vehicle_id -> German name): \"semi_136\" = Sattelzug/Sattelauflieger 13,6 m (colloquially also \"40-Tonner\"), \"curtain_136\" = Planensattel 13,6 m, \"flatbed_136\" = Pritsche 13,6 m, \"rigid_75\" = 7,5-Tonner, \"midi_12\" = 12-Tonner/Koffer-Lkw, \"rigid_18\" = 18-Tonner, \"rigid_26\" = 26-Tonner (3-Achser), \"drawbar_40\" = Hängerzug, \"sprinter_l3h2\" = Mercedes Sprinter L3H2 (3,5t), \"ducato_l4h2\" = Fiat Ducato L4H2 (3,5t), \"cont_20\"/\"cont_40\"/\"cont_40hc\" = 20-/40-/40-Fuß-HC-Container. Cargo like a Gitterbox/Rollbehälter is just another piece by footprint -- no separate cargo-type parameter needed.\n\nUnits: length_cm and width_cm per piece in centimetres (Länge/Breite in cm), weight_kg_per_piece in kilograms (Gewicht in kg, optional -- if omitted, only the floor-space/LDM check runs; the payload check is honestly skipped, not guessed).\n\nThree modes, by what's given: (1) vehicle_id + pieces -> full fit check; if it does NOT fit, the response additionally includes recommended_vehicles -- the smallest fitting alternatives by payload, e.g. cargo that overloads a 7,5-Tonner might fit a 12-Tonner or 18-Tonner instead (suggest, never auto-pick). (2) vehicle_id alone, no pieces -> that vehicle's own payload_kg/max_ldm_m/deck_width_cm, a plain spec lookup (e.g. \"wie viele Stellplätze hat ein Standard-Sattelzug\" or \"maximale Zuladung Sattelzug\"). (3) neither given, or pieces given with no vehicle_id -> the full vehicle list, filtered to fitting ones when pieces were given. An unrecognized vehicle_id also returns the full list -- it never assumes which vehicle you mean.\n\nWorked example: 6 Europaletten (120x80cm), 4.8 tonnes total, against vehicle_id \"rigid_75\" -- loading metres (2.5 LDM) are well within the 6.2m limit, but 4800kg exceeds the 3500kg payload, so fits=false, limiting_constraint=\"payload\", recommended_vehicles lists \"midi_12\" (12-Tonner) and \"rigid_18\" (18-Tonner) first -- the smallest vehicles that hold 4.8t.\n\nEdge cases: if no vehicle profile fits the given cargo at all, says so honestly (\"exceeds all vehicle profiles\") rather than recommending an impossible option. Utilisation percentages are uncapped on purpose (an overloaded plan reads \"137%\", not a reassuring clamped \"100%\"). Maximum 100 piece lines."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:35:56.750Z",
+  "toolsPreviewStatus": "ok"
+}

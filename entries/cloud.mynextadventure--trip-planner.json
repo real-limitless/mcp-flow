@@ -1,0 +1,57 @@
+{
+  "id": "cloud.mynextadventure/trip-planner",
+  "title": "My Next Adventure",
+  "description": "Create trips, compare variants side by side, and add accommodation, transport and event options.",
+  "summary": "Create trips, compare variants side by side, and add accommodation, transport and event options.",
+  "offersHint": "Create trips, compare variants side by side, and add accommodation, transport and event options. · Remote MCP (streamable-http) at https://mcp.mynextadventure.cloud/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.mynextadventure.cloud/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.mynextadventure.cloud/mcp"
+    },
+    {
+      "type": "sse",
+      "url": "https://mcp.mynextadventure.cloud/sse"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mynextadventure.cloud",
+  "sourceUrl": "https://github.com/MantaCodeDevs/mcp-mynextadventure",
+  "repository": {
+    "url": "https://github.com/MantaCodeDevs/mcp-mynextadventure",
+    "source": "github",
+    "id": "901469449"
+  },
+  "updatedAt": "2026-07-31T06:16:44.873544Z",
+  "publishedAt": "2026-07-31T06:16:44.873544Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:40:04.688Z",
+    "sourceRepoAt": "2026-08-12T00:40:04.688Z",
+    "readmeAt": "2026-08-12T00:40:05.343Z",
+    "toolsAt": "2026-08-12T00:40:05.580Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MantaCodeDevs/mcp-mynextadventure",
+    "checkedAt": "2026-08-12T00:40:04.688Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MantaCodeDevs/mcp-mynextadventure/main/README.md",
+    "markdown": "# MyNextAdventure MCP server\n\nA remote [Model Context Protocol](https://modelcontextprotocol.io) server that lets an AI\nassistant plan trips in [MyNextAdventure](https://mynextadventure.cloud) — create a trip,\nlay out the itinerary, propose flights and hotels, add things to do, and share the result.\n\nIt runs as a Cloudflare Worker (Durable Object backed) and is a thin, authenticated proxy in\nfront of the MyNextAdventure public API: it holds no trip data of its own, and forwards every\ncall to the API under the caller's own API key.\n\n- **Production:** `https://mcp.mynextadventure.cloud/sse` (also `…/mcp` for Streamable HTTP)\n- **Upstream API:** `https://api.mynextadventure.cloud` (v1 public API)\n\n## Authentication\n\nEvery request needs a MyNextAdventure API key. Create one in the app under\n**Settings → API keys**, then send it as either:\n\n- `Authorization: Bearer <api-key>` — what most MCP clients send, and what `mcp-remote` does, or\n- `X-API-Key: <api-key>` — for clients that only let you set custom headers.\n\nThe worker forwards it to the API as `X-API-Key`. Requests without a key get a `401`.\nWhatever the key can do, the assistant can do: keys are per-user, so the assistant only ever\nsees that user's trips.\n\n**Where your key lives.** Each MCP connection gets its own Durable Object session, and the\nagents SDK persists that session's props — including your key — to the session's storage so it\nsurvives the worker hibernating between messages. In other words the key is held for the\nduration of your session in isolated per-session storage, and passed through to the\nMyNextAdventure API; it is never logged and is not shared between sessions or users. Revoke a\nkey any time in the app under Settings → API keys.\n\n## Tools\n\n24 tools, covering the operations conversational planning actually needs. Each one is a\ncurated view over a MyNextAdventure API operation — see [Regenerating the tools](#regenerating-the-tools).\n\n| Tool | What it does |\n| --- | --- |\n| `whoami` | Which account the API key belongs to (handy for checking the connection). |\n| `list_trips` | List the user's trips; filter by status (`planning`, `ready`, `finished`, `cancelled`). |\n| `get_trip` | One trip in full — variants, destinations, options, events. Needed before any edit. |\n| `create_trip` | Create a new, empty trip. |\n| `update_trip` | Rename, set a cover photo, or move the trip through its lifecycle. |\n| `create_trip_share_link` | Create/refresh a public read-only share link. |\n| `create_variant` | Add an alternative plan (dates live here: exact or flexible). |\n| `duplicate_variant` | Copy a variant with everything in it. |\n| `update_variant` | Rename a variant, change its dates or notes. |\n| `select_variant` | Mark a variant as the chosen plan. |\n| `add_destination` | Add a stop to a variant, in itinerary order. |\n| `update_destination` | Change a stop's place name, dates or notes. |\n| `reorder_destinations` | Reorder the stops in a variant. |\n| `add_accommodation_option` | Propose a place to stay at a destination. |\n| `add_transport_option` | Propose a way of getting to a destination. |\n| `add_getting_around_option` | Propose local mobility (public transport, rental car, …). |\n| `update_destination_option` | Edit an existing option of any of the three kinds. |\n| `select_destination_option` | Select — or, with no `optionId`, deselect — an option. |\n| `add_event` | Add an activity (museum, concert, restaurant, tour) to a variant. |\n| `update_event` | Edit an activity. |\n| `toggle_event` | Flip an activity between committed and \"just an idea\". |\n| `delete_trip_item` | Permanently delete a variant, destination, option or event. Deleting a whole variant additionally requires `confirm: true`. |\n| `list_goals` | List the user's travel goals / bucket list. |\n| `add_goal` | Add a goal from a name or a URL. |\n\nThe server also ships MCP `instructions` describing the data model\n(`trip → variants → destinations → options`, with events on the variant) and the usual\norder of operations, so a client does not have to guess the workflow.\n\nNot exposed yet, though the API supports them: collaborator access management and invites,\nvoting, collections, invite tokens, goal↔trip linking, API key management, and trip deletion.\n\n## Connecting\n\n### Claude Desktop\n\nSettings → Developer → Edit Config, then add:\n\n```json\n{\n  \"mcpServers\": {\n    \"mynextadventure\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"https://mcp.mynextadventure.cloud/sse\",\n        \"--header\",\n        \"Authorization: Bearer ${MNA_API_KEY}\"\n      ],\n      \"env\": { \"MNA_API_KEY\": \"your-api-key\" }\n    }\n  }\n}\n```\n\nRestart Claude Desktop; the tools appear under the connector.\n\n### claude.ai / Claude Code\n\nAdd a custom connector pointing at `https://mcp.mynextadventure.cloud/mcp` and set the\n`Authorization: Bearer <api-key>` header. From Claude Code:\n\n```bash\nclaude mcp add --transport http mynextadventure https://mcp.mynextadventure.cloud/mcp \\\n  --header \"Authorization: Bearer <api-key>\"\n```\n\n### ChatGPT\n\nSettings → Connectors → Add custom connector, MCP server URL\n`https://mcp.mynextadventure.cloud/mcp`, authentication \"custom header\" with\n`X-API-Key: <api-key>` (or `Authorization: Bearer <api-key>`).\n\n### Any other MCP client\n\nStreamable HTTP at `/mcp`, legacy SSE at `/sse`. `GET /` returns a small JSON health\ndocument with the endpoint list and tool count.\n\n## Development\n\n```bash\nnpm install\nnpm run dev              # wrangler dev on http://localhost:8787\nnpm test                 # vitest: request building, schemas, generator freshness\nnpm run type-check       # tsc --noEmit\nnpm run generate:tools   # regenerate src/generated/tools.ts from the OpenAPI spec\nnpx tsx scripts/smoke.ts # drive the MCP protocol against localhost:8787\n```\n\n`scripts/smoke.ts` performs a real handshake (initialize → `tools/list` → one `tools/call`),\nreading the API key from `$MNA_API_KEY` or `~/.config/mna/credentials`. It refuses to call\nmutating tools unless `--force` is passed. To exercise write tools without touching real\ndata, point the worker at a local mock:\n\n```bash\nnpx wrangler dev --var MNA_API_BASE_URL:http://localhost:8899\n```\n\n### Regenerating the tools\n\nTool schemas are **generated**, not hand-written:\n\n```\napps/server/openapi-v1.json   (the API's OpenAPI snapshot, kept fresh by server CI)\n        +\nscripts/tool-manifest.ts      (which operations become tools, their names and descriptions)\n        ↓  scripts/generator.ts\nsrc/generated/tools.ts        (committed; zod input schemas + request builders)\n```\n\nTo add or change a tool, edit `scripts/tool-manifest.ts` and run `npm run generate:tools`.\nNever edit `src/generated/tools.ts` by hand — a test fails if it drifts from the spec.\n\nA manifest entry names one API operation, or groups several body-less operations behind a\ndiscriminator argument (`delete_trip_item`'s `target`, `select_destination_option`'s\n`action`) to keep the tool count down. Path params can be renamed (`id` → `tripId`), query\nparams can be narrowed to enums, and descriptions can be overridden — everything else,\nincluding the request-body schemas, comes from the spec.\n\n### Deployment\n\n`npm run deploy` (wrangler) — production only, so it is gated on a maintainer; CI never\ndeploys this worker.\n\n## Development\n\n```\nnpm ci\nnpm run type-check\nnpm test        # includes a drift test: src/generated/tools.ts must match the generator output\nnpm run dev     # wrangler dev\n```\n\nTools are generated from the vendored OpenAPI snapshot in `spec/openapi-v1.json`\n(canonical live spec: https://api.mynextadventure.cloud/api/v1/openapi.json) via\n`scripts/generate-tools.ts`. Regenerate after refreshing the snapshot.\n\nThis repo is the deployable source for `mcp.mynextadventure.cloud`. Development also\nhappens in the My Next Adventure monorepo and is synced here on release. Issues and\nPRs welcome.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:40:05.343Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:40:05.580Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid_token\",\"error_description\":\"Missing or invalid access token\"}",
+  "toolsPreviewStatus": "unreachable"
+}

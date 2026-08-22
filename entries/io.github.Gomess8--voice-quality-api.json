@@ -1,0 +1,51 @@
+{
+  "id": "io.github.Gomess8/voice-quality-api",
+  "title": "voice-quality-api",
+  "description": "Measure voice/VoIP path quality -> estimated MOS + live network metrics",
+  "summary": "Measure voice/VoIP path quality -> estimated MOS + live network metrics",
+  "offersHint": "Measure voice/VoIP path quality -> estimated MOS + live network metrics · Remote MCP (streamable-http) at https://mcp.voice-quality.com/",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.voice-quality.com/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.voice-quality.com/"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Gomess8/API",
+  "repository": {
+    "url": "https://github.com/Gomess8/API",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T00:55:49.278747Z",
+  "publishedAt": "2026-07-01T00:55:49.278747Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:41:04.450Z",
+    "sourceRepoAt": "2026-08-12T00:10:37.178Z",
+    "readmeAt": "2026-08-12T00:10:37.879Z",
+    "toolsAt": "2026-08-12T01:41:04.450Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Gomess8/API",
+    "checkedAt": "2026-08-12T00:10:37.178Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Gomess8/API/main/README.md",
+    "markdown": "# Voice Quality API\n\n![status](https://img.shields.io/badge/status-live-brightgreen)\n![MCP](https://img.shields.io/badge/MCP-server-blue)\n![x402](https://img.shields.io/badge/x402-pay--per--call-blue)\n![model](https://img.shields.io/badge/MOS-ITU--T%20G.107%20E--model-informational)\n![G.113](https://img.shields.io/badge/Ie%2FBpl-G.113%20verified-brightgreen)\n![SSRF](https://img.shields.io/badge/SSRF-guarded-brightgreen)\n\n**Measure the network path quality to a voice/VoIP destination and get an\nestimated MOS (1–5) — live, from an API.** Built for AI voice agents. Available\nas REST and as an **MCP tool**, paid per call via\n**[x402](https://github.com/coinbase/x402)** (USDC on Base).\n\n🌐 **Live:** [voice-quality.com](https://voice-quality.com) · REST\n`api.voice-quality.com` · MCP `mcp.voice-quality.com`\n\n---\n\n## Try it\n\n```bash\ncurl https://api.voice-quality.com/health          # {\"status\":\"ok\"}\n\ncurl -s https://api.voice-quality.com/v1/voice-quality \\\n  -H 'content-type: application/json' \\\n  -d '{ \"target\": \"your-voice-endpoint.example\", \"target_port\": 10000, \"codec\": \"G711\" }'\n```\n\nYou get an **estimated MOS** + live **RTT / jitter / packet loss**. Point it at an\nendpoint that answers media — your own voice infra, or a tiny reflector you run\n([`probe-agent/cmd/reflector`](./probe-agent/cmd/reflector)). **20 free/day**;\nbeyond that it's pay-per-call via x402 (no account needed).\n\n```jsonc\n{\n  \"request_id\": \"vq_2ibc6qqq\",\n  \"target\": \"your-voice-endpoint.example\",\n  \"codec\": \"G711\",\n  \"measured_at\": \"2026-07-01T10:15:13.795Z\",\n  \"summary\": { \"mos_estimate\": 4.38, \"mos_class\": \"excellent\", \"r_factor\": 91.8 },\n  \"by_probe\": [ /* per-probe metrics + R-factor + MOS */ ],\n  \"methodology\": {\n    \"model\": \"ITU-T G.107 E-model\",\n    \"confidence\": \"estimate\",\n    \"assumptions\": [\"owd = rtt/2 (symmetric path)\", \"adaptive jitter buffer = 2x jitter\"]\n  },\n  \"credits_used\": 0\n}\n```\n\n## Why it exists\n\nFree network-measurement platforms (Globalping, RIPE Atlas) measure\nping/traceroute/DNS/HTTP — they do **not** measure RTP media quality or estimate\nMOS. The tools that do (Cyara, Spearline) are enterprise sales motions. This\nfills the gap: **voice path quality as a clean, self-serve, agent-native API** —\ncheck it before you route a call, or monitor the path to your voice endpoints.\n\n## Trustworthy by design\n\n- **Honest metric.** An *objective* G.107 E-model estimate from measured network\n  metrics — never sold as a perceptual (PESQ/POLQA) score. Every response carries\n  `methodology.confidence: \"estimate\"` and its assumptions.\n- **Verified constants.** The codec `Ie`/`Bpl` values are verified against\n  **ITU-T G.113 (09/2024), App. I, Table I.4** — rows matched to the probe profile\n  (no PLC, no VAD/DTX). Not \"representative\"; cited.\n- **SSRF-guarded.** ~36.7% of public MCP servers ship SSRF issues — this one\n  blocks internal/private targets by default (orchestrator **and** probe), plus a\n  per-target allowlist and rate limit.\n- **Hardened.** TLS/mTLS on the probe channel, non-root containers,\n  `pnpm audit` clean, structured machine-readable errors, `Idempotency-Key`,\n  Prometheus `/metrics`, per-identity API keys.\n\n## Pricing\n\n| Tier | What you get |\n|------|--------------|\n| **Free** | 20 measurements/day per identity (`credits_used: 0`). |\n| **Pay-per-call** | Beyond that, a sub-cent–cents micropayment per call via **x402** (USDC on Base). Unpaid → `402` with the payment requirements; pay and retry. Agents pay transparently. |\n\n## Agent-native (MCP + x402)\n\nOne MCP tool, `measure_voice_quality`. The server wraps the REST API and pays\nx402 transparently from a configured wallet once the free tier is exhausted — no\nhuman in the loop.\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"voice-quality\": {\n      \"url\": \"https://mcp.voice-quality.com/\",\n      \"env\": { \"MCP_CLIENT_PRIVATE_KEY\": \"0x…\" }   // optional; only for paid calls\n    }\n  }\n}\n```\n\n## Architecture\n\n```\n[AI agent / dev] ──(HTTP + x402 / MCP)──► [Orchestrator] ──► [E-model (G.107): R → MOS]\n                                              └──► [regional probe] ──(emulated UDP/RTP)──► target\n```\n\n| Component | Stack | Role |\n|-----------|-------|------|\n| **Orchestrator** ([`packages/orchestrator`](./packages/orchestrator)) | TypeScript + Hono | REST API, E-model, x402 paywall, AUP, rate limit, probe dispatch |\n| **MCP server** ([`packages/mcp-server`](./packages/mcp-server)) | TypeScript + MCP SDK | `measure_voice_quality`; wraps REST + transparent x402 |\n| **Probe agent** ([`probe-agent`](./probe-agent)) | Go | UDP/RTP emulation + RFC 3550 metrics; cheap regional VPS |\n| **Shared** ([`packages/shared`](./packages/shared)) | TypeScript | Zod schemas, types, G.113 codec constants |\n\n## Self-host\n\n```bash\ncp .env.example .env                 # fill in values\ndocker compose up --build -d         # orchestrator + MCP + probe + reflector + landing\ncurl localhost:8080/health\n```\n\nFull deploy (public HTTPS via Caddy or Cloudflare Tunnel, regional probes with\nmTLS): [`docs/deploy.md`](./docs/deploy.md). Going to production (mainnet x402,\ncodec verification, registries): [`docs/go-live.md`](./docs/go-live.md).\n\n## Docs\n\n[Methodology](./docs/methodology.md) · [OpenAPI](./docs/openapi.yaml) ·\n[Deploy](./docs/deploy.md) · [Go-live](./docs/go-live.md) ·\n[Discovery & registries](./docs/registration.md)\n\n---\n\n*The MOS is an objective estimate from network conditions, not a guarantee of\ncall quality. Maintained actively.*\n",
+    "fetchedAt": "2026-08-12T00:10:37.879Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:41:04.450Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"type\":\"https://developers.cloudflare.com/support/troubleshooting/http-status-codes/cloudflare-1xxx-errors/error-1033/\",\"title\":\"Error 1033: Cloudflare Tunnel error\",\"status\":530,\"detail\":\"The host is configured as a Cloudflare Tunnel, but Cloudflare is currently unable to reach it.\",\"instance\":\"a29bc693ca6ef009\",\"error_code\":1033,\"error_name\":\"tunnel_error\",\"error_category\":\"config\",\"ray_id\":\"a29bc693ca6ef009\",\"timestamp\":\"2026-08-12T01:41:05Z\",\"zone\":\"mcp.voice-quality.com\",\"cloudflare_error\":true,\"retryable\":true,\"retry_after\":120,\"owner_action_required\":true,\"what_you_should_do\":\"**Wait and retry.** The tunnel may be temporarily disconnected. Try again in a few minutes.\",\"footer\":\"This error was generated by Cloudflare on behalf of the website owner.\"}\n",
+  "toolsPreviewStatus": "unreachable"
+}

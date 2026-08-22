@@ -1,0 +1,59 @@
+{
+  "id": "io.github.stefanoshea/rlm-tools",
+  "title": "RLM Tools",
+  "description": "Persistent Python sandbox for token-efficient codebase exploration in MCP clients",
+  "summary": "Persistent Python sandbox for token-efficient codebase exploration in MCP clients",
+  "offersHint": "Persistent Python sandbox for token-efficient codebase exploration in MCP clients · Packages: pypi:rlm-tools",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "rlm-tools",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "rlm-tools",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/stefanoshea/rlm-tools",
+  "sourceUrl": "https://github.com/stefanoshea/rlm-tools",
+  "repository": {
+    "url": "https://github.com/stefanoshea/rlm-tools",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-13T05:48:44.377363Z",
+  "publishedAt": "2026-02-13T05:48:44.377363Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:19.149Z",
+    "sourceRepoAt": "2026-08-11T23:19:42.594Z",
+    "readmeAt": "2026-08-11T23:19:43.175Z",
+    "toolsAt": "2026-08-12T01:00:19.149Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/stefanoshea/rlm-tools",
+    "checkedAt": "2026-08-11T23:19:42.594Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/stefanoshea/rlm-tools/main/README.md",
+    "markdown": "# RLM Tools\n\nYour AI coding agent spends most of its token budget just *reading* your code — not reasoning about it. Every grep, file read, and glob result gets dumped into the conversation. On a large codebase, that's 25-35% of your context (and cost) burned on raw data the model never needed to see.\n\nRLM Tools gives your agent a persistent sandbox to explore code in. Data stays server-side. Only the conclusions come back.\n\n```bash\n# Install in one line (Claude Code)\nclaude mcp add rlm-tools -- uvx rlm-tools\n\n# Or Codex\ncodex mcp add rlm-tools -- uvx rlm-tools\n```\n\nThat's it. Your agent automatically uses the sandbox for exploration. No config, no prompting changes.\n\n## What Changes\n\n**Without RLM Tools** — agent greps for `import UIKit`, gets 500 matches dumped into context. Reads 10 files, burns all their content as tokens. Context window fills up. Agent forgets what it was doing.\n\n**With RLM Tools** — agent runs the same exploration in a server-side Python sandbox. Data stays in sandbox memory. Only the `print()` output enters context:\n\n```python\nmatches = grep(\"import UIKit\")\nby_module = {}\nfor m in matches:\n    module = m[\"file\"].split(\"/\")[0]\n    by_module.setdefault(module, []).append(m)\nfor module, ms in sorted(by_module.items(), key=lambda x: -len(x[1]))[:5]:\n    print(f\"{module}: {len(ms)} files\")\n```\n\n500 lines of grep results become 5 lines of summary. The agent sees what it needs, nothing more.\n\n## Real-World Impact\n\nIn typical coding workflows: **25-35% context reduction.** That means your agent can explore roughly 40-50% more code before hitting context limits.\n\nIn heavy exploration tasks (reading many files, broad searches), savings go much further:\n\n| Scenario | Standard Tools | RLM Tools | Saved |\n|---|---:|---:|---:|\n| Grep across full app | 40,045 chars | 1,644 chars | 95.9% |\n| Read 10 large files | 1,493,720 chars | 13,588 chars | 99.1% |\n| Multi-step exploration | 136,102 chars | 5,285 chars | 96.1% |\n| Grep then read matches | 340,408 chars | 6,022 chars | 98.2% |\n| Find all usages of a pattern | 13,478 chars | 3,691 chars | 72.6% |\n| Understand a module | 94,745 chars | 16,925 chars | 82.1% |\n\nFull benchmark methodology and reproduction steps: [`docs/benchmarks.md`](docs/benchmarks.md)\n\n## How It Works\n\nThree MCP tools. That's the entire API:\n\n| Tool | Purpose |\n|---|---|\n| `rlm_start(path, query)` | Open a session on a directory |\n| `rlm_execute(session_id, code)` | Run Python in the sandbox |\n| `rlm_end(session_id)` | Close session, free resources |\n\nThe sandbox provides built-in helpers:\n\n- `read_file(path)` / `read_files(paths)` — Read files into variables (cached across calls)\n- `grep(pattern)` / `grep_summary(pattern)` / `grep_read(pattern)` — Search\n- `glob_files(pattern)` — Find files by pattern\n- `tree(path, max_depth)` — Directory structure\n- `llm_query(prompt, context)` — Sub-LLM analysis (optional, requires API key)\n\nVariables persist across `rlm_execute` calls within a session. The agent can build up understanding incrementally — search, filter, read, analyze — without any intermediate data touching the context window.\n\n## Works With\n\nRLM Tools is a standard [MCP](https://modelcontextprotocol.io) server. It works with any MCP-compatible client: **Claude Code**, **Codex**, **Cursor**, and others.\n\n<details>\n<summary><strong>Other installation methods</strong></summary>\n\n### JSON MCP config (Cursor, Windsurf, etc.)\n\n```json\n{\n  \"mcpServers\": {\n    \"rlm-tools\": {\n      \"command\": \"uvx\",\n      \"args\": [\"rlm-tools\"]\n    }\n  }\n}\n```\n\n### Direct run\n\n```bash\nuvx rlm-tools\n```\n\n### From source\n\n```bash\ngit clone https://github.com/stefanoshea/rlm-tools.git\ncd rlm-tools\nuv sync\nuv run rlm-tools\n```\n\nThen point your MCP client to `command: uv`, `args: [\"--directory\", \"/path/to/rlm-tools\", \"run\", \"rlm-tools\"]`.\n\n</details>\n\n## Configuration\n\nCopy `.env.example` to `.env` to customize. All settings are optional — RLM Tools works out of the box with zero config.\n\nThe core exploration features (read, grep, glob, tree) require no API key. The optional `llm_query()` helper calls the Anthropic API for semantic analysis within the sandbox — this is the only feature that requires a key.\n\n| Variable | Default | Description |\n|----------|---------|-------------|\n| `ANTHROPIC_API_KEY` | — | Required for `llm_query()` only. Uses Anthropic's API (Claude). |\n| `RLM_SUB_MODEL` | `claude-haiku-4-5-20251001` | Claude model used for `llm_query()` |\n| `RLM_MAX_SESSIONS` | `5` | Max concurrent sessions |\n| `RLM_SESSION_TIMEOUT` | `10` | Session timeout in minutes |\n\n## Security\n\nThe sandbox is read-only and restricted:\n\n- **Imports**: Safe stdlib only (re, json, collections, math, etc.)\n- **Builtins**: Blocks exec, eval, compile, `__import__`, breakpoint\n- **File access**: Read-only, scoped to session directory, path traversal blocked\n- **Execution**: Configurable per-call timeout (default 30s)\n- **Rate limits**: Configurable max calls per session\n\n## Background\n\nRLM Tools implements an [RLM-style](https://arxiv.org/abs/2512.24601) exploration loop: keep raw data in tool-side memory, send only compact outputs to the model. Built on the [Model Context Protocol](https://modelcontextprotocol.io).\n\n## Development\n\n```bash\ngit clone https://github.com/stefanoshea/rlm-tools.git\ncd rlm-tools\nuv sync --dev\npytest tests\n```\n\nRun comparative benchmarks (requires a local project checkout):\n\n```bash\nRLM_EVAL_PROJECT_PATH=/path/to/project pytest evals -q -s\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:19:43.175Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:19.149Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

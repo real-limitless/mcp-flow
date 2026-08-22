@@ -1,0 +1,91 @@
+{
+  "id": "io.github.chaelynet/chainmemory",
+  "title": "chainmemory",
+  "description": "Permanent blockchain memory for AI agents.",
+  "summary": "Permanent blockchain memory for AI agents.",
+  "offersHint": "Permanent blockchain memory for AI agents. · Packages: npm:chainmemory-mcp · Env vars: AICHAIN_KEY, AICHAIN_RPC",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "chainmemory-mcp",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AICHAIN_KEY",
+        "description": "Private key for AICHAIN wallet",
+        "secret": true
+      },
+      {
+        "name": "AICHAIN_RPC",
+        "description": "RPC endpoint (default: https://rpc.chainmemory.ai)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "chainmemory-mcp",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AICHAIN_KEY",
+          "description": "Private key for AICHAIN wallet",
+          "secret": true
+        },
+        {
+          "name": "AICHAIN_RPC",
+          "description": "RPC endpoint (default: https://rpc.chainmemory.ai)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AICHAIN_KEY",
+      "description": "Private key for AICHAIN wallet",
+      "secret": true
+    },
+    {
+      "name": "AICHAIN_RPC",
+      "description": "RPC endpoint (default: https://rpc.chainmemory.ai)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chaelynet/chainmemory-mcp",
+  "repository": {
+    "url": "https://github.com/chaelynet/chainmemory-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-17T00:13:52.168539Z",
+  "publishedAt": "2026-04-17T00:13:52.168539Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:16.325Z",
+    "sourceRepoAt": "2026-08-11T23:53:03.335Z",
+    "readmeAt": "2026-08-11T23:53:03.918Z",
+    "toolsAt": "2026-08-12T01:27:16.325Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chaelynet/chainmemory-mcp",
+    "checkedAt": "2026-08-11T23:53:03.335Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chaelynet/chainmemory-mcp/main/README.md",
+    "markdown": "# ChainMemory MCP Server\n\n[![npm version](https://img.shields.io/npm/v/chainmemory-mcp.svg)](https://www.npmjs.com/package/chainmemory-mcp)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n[![Node.js Version](https://img.shields.io/node/v/chainmemory-mcp.svg)](https://nodejs.org)\n\n> Cross-model, cryptographically verifiable memory for Claude, ChatGPT, and any AI agent — own your AI's memory and carry it across every model.\n\nChainMemory MCP exposes the [ChainMemory](https://chainmemory.ai) protocol to any AI agent that speaks the Model Context Protocol. Memories are encrypted at rest (AES-256-GCM, per-user), verifiable with Merkle proofs, and portable across ChatGPT, Claude, Gemini, Perplexity, and any other LLM. No vendor lock-in, ever.\n\n## What's new in v2.5.6\n\nThree defects that made tools report confidently wrong things. No new tools.\n\n- **`list_project_templates` never listed anything.** It read `templates` / `template_id` from a response that returns `defaults` / `project_id`, so it always answered \"No templates available\" — which meant nobody could learn the id that `add_project_from_template` needs. The whole template flow was unreachable.\n- **`chainmemory_profile` got five of eight fields wrong.** It read `wallet`, `memory_count`, `trust_score`, `registration_block` and `sealed`; the API returns `owner`, `chain_memories` / `local_memories`, `reputation` and `active`. Every profile came back with an empty wallet, zero memories, `?` reputation and `Sealed: no`, regardless of the real state. It also had no handling for an API key with no registered identity, printing `AI Profile #undefined`.\n- **`update_project_state` hid the reason when every op was rejected.** Rejections were only rendered on the success path, but rejecting *all* ops leaves the state unchanged and takes the other branch — so the reply said `Rejected: 3` and nothing else. The only way to find out why was to guess again and pay the fee again.\n\n## What's new in v2.5.5\n\n- **`audit_memory`** and **`audit_state`** — the two forensic audit endpoints, now reachable from any MCP client. Both accept **`dry_run: true`**, which returns the identical result **without charging**: an audit you can run as often as you like, and pay for only when you need the receipt on record. `audit_state` costs 5 AIC in its paid form, so the tools default to the dry run.\n- Both endpoints were fixed server-side first: they used to charge **before** validating, so a mistyped id or project name cost the fee and returned 404.\n\n## What's new in v2.5.4\n\n**Search and full reads**\n\n- **`search_memories`** — semantic search over your memories (cosine similarity over cached embeddings, blended with recency and importance), returning the **full text** of each match. Previous versions exposed no search at all\n- **`get_memory`** — read one memory in full, decrypted from chain, with an integrity check: the server recomputes the event hash from the plaintext and compares it against the hash anchored on-chain\n- `chainmemory_recall` and `list_memories_filtered` now state plainly that they return **80-character previews**, and point to `get_memory` / `search_memories` for the full text\n\n**Verification — free, and the point of the product**\n\n- **`verify_project_state`** — public, unauthenticated proof of a Project Brain: every anchored version with its `state_hash` and on-chain coordinates, plus how to check them yourself in the `ProjectStateAnchor` contract. No content is exposed\n- **`get_memory_proof`** — the shareable anchoring proof of a single memory: `event_hash` plus its on-chain coordinates. A third party verifies it **without your API key**, and the content is never revealed\n\n**Cost control**\n\n- **`quote_inject`** — price an inject before paying: which ids exist, which don't, tokens, exact cost with its burn/treasury split, and whether your balance covers it\n- **Correct inject fee** — the client now takes the price and the remaining-injects count **from the server** instead of recomputing them. Previous versions divided by the pre-2026-06-30 price of 0.001 AIC and promised 100× more injects than the balance actually allowed\n\n**Roles and hardening**\n\n- **`list_role_contracts`** — discover a project's roles (id, version, status) before reading a contract or assuming a role. Role ids are not guessable; this removes the failed-call round trip\n- **`include_roles` on `get_project_state`** — set to `false` to get the state without the full text of every signed role contract\n- **Input hardening** — every user-supplied value that reaches a URL is now validated or escaped. Numeric path parameters must be integers, string path parameters are percent-encoded, and query limits are clamped. Invalid input fails locally with a clear message instead of going out to the network\n- **`CHAINMEMORY_API_KEY` declared in the MCP manifest** — the only mandatory variable was missing from `server.json`, so registries and installers never prompted for it\n\n## What's new in v2.5\n\n- **Project Brain** — `get_project_state` consolidates your atomic memories into a structured, versioned, verifiable project state (decisions, risks, constraints, metrics, and environment: where and how you work), and delivers active role contracts with it in a single call\n- **Verifiable Role Contracts (VRC)** — human-signed role contracts for AI agents: `get_role_contract` (read the contract), `assume_role` (open an audited Role Session), `release_role` (close with a summary)\n- **34 tools total** — memory ops, semantic search, verification proofs, projects, Project Brain, role contracts with audited sessions, selective inject\n\n## Quick start\n\n### 1. Get an API key\n\nVisit [https://faucet.chainmemory.ai](https://faucet.chainmemory.ai). You receive an API key (`aic_...`) and a starter balance of AIC. ChainMemory collects no personal data — your key is your identity.\n\n### 2. Add to Claude Desktop\n\nEdit your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"chainmemory\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"chainmemory-mcp\"],\n      \"env\": {\n        \"CHAINMEMORY_API_KEY\": \"aic_your_key_here\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude Desktop. The 34 tools are now available.\n\n### 3. Try it\n\n- *\"What do you remember about my projects?\"* → `chainmemory_recall`\n- *\"Save this decision: switching to Postgres for the next sprint\"* → `chainmemory_remember`\n- *\"Load the project state for my-app\"* → `get_project_state` (Brain + active role contracts)\n- *\"Which roles exist for my-app?\"* → `list_role_contracts`\n- *\"Assume the architect role for my-app\"* → `assume_role` (audited Role Session)\n\n## All 34 tools\n\n### Memory ops (8)\n| Tool | Description |\n|---|---|\n| `chainmemory_remember` | Write a permanent encrypted memory. Auto-tagged by content. |\n| `chainmemory_recall` | Recall the user's recent memories, newest first (80-character previews) |\n| `search_memories` | **Semantic** search over your memories — returns the full text of each match |\n| `get_memory` | Read one memory in full, decrypted from chain, with an on-chain integrity check |\n| `list_memories_filtered` | Filter by project tag and archived status (80-character previews) |\n| `update_memory_tags` | Change tags on an existing memory |\n| `archive_memory` | Hide a memory from recall (reversible) |\n| `unarchive_memory` | Restore an archived memory |\n\n### Verification (4)\n| Tool | Description |\n|---|---|\n| `verify_project_state` | Public, unauthenticated proof of a Project Brain: every anchored version, its `state_hash` and on-chain coordinates, and how to check them yourself. No content exposed |\n| `get_memory_proof` | Shareable anchoring proof of one memory: `event_hash` + on-chain coordinates. A third party verifies it without your API key |\n| `audit_memory` | Forensic audit of one memory: recomputes its `event_hash` from the stored plaintext and compares it against the anchored one. **0.1 AIC**, or free with `dry_run: true` |\n| `audit_state` | Full audit of a Project Brain: recomputes the `state_hash` with the deterministic engine, returns the on-chain anchor and the version history. **5 AIC**, or free with `dry_run: true` |\n\n### Project Brain (2)\n| Tool | Description |\n|---|---|\n| `get_project_state` | Consolidated, verifiable project state + active role contracts (state_hash, anchored on-chain). Pass `include_roles: false` to omit the contract bodies |\n| `update_project_state` | Propose structured ops (29-op grammar, incl. environment); server validates, builds, hashes, persists |\n\n### Verifiable Role Contracts (6)\n| Tool | Description |\n|---|---|\n| `list_role_contracts` | List a project's roles with version and status — call it first when you don't know the `role_id` |\n| `get_role_contract` | Read a role's contract: purpose, rules with checks and severity, working protocol. Accepts `version` to audit a past one, and flags a hash mismatch if the stored body no longer matches its `contract_hash` |\n| `assume_role` | Open an audited Role Session under an active contract (pins contract + Brain hashes), and delivers the owner declared working environment |\n| `release_role` | Close a Role Session with a summary of work done and pending |\n| `list_role_sessions` | Audit trail: who assumed which role, when, how it closed, and the closing summary |\n| `get_role_session` | One session in full, with the contract and Brain hashes it was pinned to |\n\n### Projects (5)\n| Tool | Description |\n|---|---|\n| `list_projects` | List the user's projects |\n| `create_project` | Create a custom project tag with optional auto-tag keywords |\n| `delete_project` | Delete a project tag |\n| `list_project_templates` | List built-in templates |\n| `add_project_from_template` | Instantiate a built-in template |\n\n### Identity & stats (4)\n| Tool | Description |\n|---|---|\n| `chainmemory_stats` | Network stats (AIs, memories, blocks, AIC supply) |\n| `chainmemory_register` | Register a new AI identity on-chain |\n| `chainmemory_profile` | Get an AI's profile and trust score |\n| `chainmemory_seal` | Seal a memory permanently (requires `AICHAIN_KEY`) |\n\n### Cross-platform context (1)\n| Tool | Description |\n|---|---|\n| `get_my_context` | Portable verified context across all platforms |\n\n### Selective inject — paid (4)\n| Tool | Description |\n|---|---|\n| `get_inject_balance` | Check AIC balance and how many injects it covers |\n| `quote_inject` | Price an inject **before** paying: ids found/missing, tokens, exact cost, sufficiency. Free |\n| `inject_memories` | Inject 1-50 memories into current chat context (0.1 AIC, optimistic) |\n| `get_inject_history` | History of inject operations |\n\n## Environment variables\n\n| Var | Required | Description |\n|---|---|---|\n| `CHAINMEMORY_API_KEY` | **Yes** | Your API key from the faucet |\n| `CHAINMEMORY_API_BASE` | No | Default `https://api.chainmemory.ai` |\n| `AICHAIN_KEY` | No | Wallet private key — only required by `chainmemory_seal` |\n| `AICHAIN_RPC` | No | Default `https://rpc.chainmemory.ai` — only for `chainmemory_seal` |\n\nFor most users only `CHAINMEMORY_API_KEY` is needed.\n\n## How selective inject works\n\n1. User (or AI) calls `inject_memories` with a list of IDs\n2. Backend checks balance (≥ 0.1 AIC required — Fee Schedule v1.0)\n3. **Optimistic response (<500ms)**: plaintexts returned immediately, transactions queued\n4. Background: 50% of the fee goes to the ecosystem treasury, 50% is burned\n5. `get_inject_history` shows confirmation status\n\n## Architecture\n\n```\n┌─────────────────────────────────────────────────────────────┐\n│  AI Agent (Claude Desktop, ChatGPT, any MCP client)         │\n└──────────────────┬──────────────────────────────────────────┘\n                   │ MCP stdio\n                   ↓\n┌─────────────────────────────────────────────────────────────┐\n│  chainmemory-mcp v2.5  (this package)                       │\n└──────────────────┬──────────────────────────────────────────┘\n                   │ HTTPS + x-api-key\n                   ↓\n┌─────────────────────────────────────────────────────────────┐\n│  api.chainmemory.ai                                         │\n│  - per-user encryption at rest (AES-256-GCM)                │\n│  - Project Brain (deterministic builder + state_hash)       │\n│  - Role contracts + audited Role Sessions                   │\n│  - SQLite + Merkle proofs                                   │\n└──────────────────┬──────────────────────────────────────────┘\n                   │ JSON-RPC\n                   ↓\n┌─────────────────────────────────────────────────────────────┐\n│  ChainMemory L1 — Chain ID 202604                           │\n│  - Geth PoA Clique, 3 validators                            │\n│  - Memory contract + daily checkpoint anchoring             │\n│  - Project State anchoring (public verification)            │\n└─────────────────────────────────────────────────────────────┘\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:53:03.918Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:16.325Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

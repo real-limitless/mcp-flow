@@ -1,0 +1,63 @@
+{
+  "id": "io.github.Shreyas-Profile/cron-mcp",
+  "title": "cron-mcp",
+  "description": "Cron-as-a-service MCP. Schedule prompts; when the cron fires we POST to your callback URL.",
+  "summary": "Cron-as-a-service MCP. Schedule prompts; when the cron fires we POST to your callback URL.",
+  "offersHint": "Cron-as-a-service MCP. Schedule prompts; when the cron fires we POST to your callback URL. · Remote MCP (streamable-http) at https://cron.regiq.in/api/mcp · Optional headers: Authorization",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://cron.regiq.in/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://cron.regiq.in/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <apiKey> — get yours at https://cron.regiq.in after Google sign-in."
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/globalion/cron-mcp",
+  "repository": {
+    "url": "https://github.com/globalion/cron-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-16T17:32:21.657068Z",
+  "publishedAt": "2026-07-16T17:32:21.657068Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <apiKey> — get yours at https://cron.regiq.in after Google sign-in."
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:56.909Z",
+    "sourceRepoAt": "2026-08-12T00:02:42.458Z",
+    "readmeAt": "2026-08-12T00:02:43.195Z",
+    "toolsAt": "2026-08-12T01:34:56.909Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/globalion/cron-mcp",
+    "checkedAt": "2026-08-12T00:02:42.458Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/globalion/cron-mcp/main/README.md",
+    "markdown": "# cron-mcp\n\n> Built by [**Shreyas**](https://github.com/Shreyas-Profile) · Shipped by [**Globalion**](https://github.com/globalion)\n\n**Cron-as-a-service MCP. Schedule any prompt on any cron expression; when it fires we POST the job to your callback URL. No LLM in our stack.**\n\nYour agent (Claude Desktop, Cursor, a custom script) does the thinking. We just:\n- store the schedule + prompt + your callback URL\n- match minutes against the cron expression\n- POST the job body to your callback, signed with `X-Cron-Signature`\n\nThat's it. Perfect for daily briefings, hourly polls, weekly digests, or anything else that repeats on a fixed schedule and needs to run through an LLM.\n\nHosted at **[cron.regiq.in](https://cron.regiq.in)** or self-host with the Docker Compose below.\n\n## Use it (hosted)\n\n1. Visit https://cron.regiq.in, sign in with Google or GitHub.\n2. Generate an MCP API key on the dashboard, copy it.\n3. Add to Claude Desktop's `claude_desktop_config.json` (or Cursor / any MCP client):\n\n    ```json\n    {\n      \"mcpServers\": {\n        \"cron\": {\n          \"url\": \"https://cron.regiq.in/api/mcp\",\n          \"headers\": {\n            \"Authorization\": \"Bearer YOUR_KEY_HERE\"\n          }\n        }\n      }\n    }\n    ```\n\n4. Have your agent call `schedule_job` with a cron expression, a prompt, and the URL you want us to POST to when it fires.\n\n## Tools\n\n| Tool | Purpose |\n|------|---------|\n| `schedule_job(name, cron, prompt, callbackUrl, ...)` | Create a scheduled prompt. |\n| `list_jobs()` | Return every job owned by the calling key. |\n| `get_job(id)` | One job + the last 20 fire attempts. |\n| `update_job(id, ...)` | Partial update. Set `isActive: false` to pause. |\n| `delete_job(id)` | Permanent delete. |\n\n## Webhook payload\n\nWhen a job fires, we POST:\n\n```\nPOST <your callbackUrl>\nContent-Type: application/json\nX-Cron-Signature: <hex-hmac-sha256-of-body>\n\n{\n  \"jobId\":    \"clx...\",\n  \"name\":     \"daily AI news briefing\",\n  \"prompt\":   \"summarise the top 5 AI news items from the last 24h\",\n  \"metadata\": { ... },\n  \"firedAt\":  \"2026-07-16T08:00:00.412Z\"\n}\n```\n\n**Verify the signature** by re-hashing the raw body with your shared signing secret (env `CRON_WEBHOOK_SIGNING_SECRET`) and comparing to the `X-Cron-Signature` header. Return any 2xx to mark the fire as ok — anything else is logged as a failure and the schedule still advances (so a failing callback won't stop future runs).\n\n## Self-host\n\nYou'll need:\n- Docker + Compose\n- A Google OAuth client — [Cloud Console](https://console.cloud.google.com/apis/credentials). Scopes: `openid`, `email`, `profile`. Redirect: `<PUBLIC_BASE_URL>/api/auth/callback/google`\n- A public HTTPS domain (Cloudflare Tunnel or `ngrok http 3015` locally)\n\n**No LLM key required.** Your callback is where inference happens.\n\n```bash\ngit clone https://github.com/globalion/cron-mcp\ncd cron-mcp\ncp .env.example .env\n# fill NEXTAUTH_SECRET, GOOGLE_*, PUBLIC_BASE_URL, CRON_WEBHOOK_SIGNING_SECRET\ndocker compose up -d\n# open http://localhost:3015\n```\n\n## Architecture\n\n```\n  Your agent                                Your callback\n     │                                            ▲\n     │ schedule_job(cron, prompt,                 │\n     │              callback_url)                 │\n     ▼                                            │\n   ┌──────────────────────────────────────────────────┐\n   │  cron-mcp (Hetzner)                              │\n   │  - /api/mcp     Bearer-auth JSON-RPC             │\n   │    · schedule_job, list, get, update, delete     │\n   │  - Postgres: User, ApiKey, Job, JobRun           │\n   │  - Scheduler loop (60s tick) — matches cron,     │\n   │    POSTs signed webhook to callback_url,         │\n   │    logs a JobRun row per fire.                   │\n   └──────────────────────────────────────────────────┘\n                             │\n                             │  POST (signed)\n                             ▼\n                    Your callback runs the\n                    prompt through the LLM +\n                    tools and delivers the result.\n```\n\n## License\n\nMIT. See `LICENSE`.\n",
+    "fetchedAt": "2026-08-12T00:02:43.195Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:56.909Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

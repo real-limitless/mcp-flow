@@ -1,0 +1,256 @@
+{
+  "id": "io.github.lonniev/tollbooth-sample",
+  "title": "tollbooth-sample",
+  "description": "Educational Weather Stats MCP Service — Tollbooth DPYC monetization sample",
+  "summary": "Educational Weather Stats MCP Service — Tollbooth DPYC monetization sample",
+  "offersHint": "Educational Weather Stats MCP Service — Tollbooth DPYC monetization sample · Remote MCP (streamable-http) at https://tollbooth-sample.fastmcp.app/mcp",
+  "version": "0.4.3",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://tollbooth-sample.fastmcp.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://tollbooth-sample.fastmcp.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/lonniev/tollbooth-sample",
+  "repository": {
+    "url": "https://github.com/lonniev/tollbooth-sample",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T18:14:16.431075Z",
+  "publishedAt": "2026-08-10T18:14:16.431075Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:33.333Z",
+    "sourceRepoAt": "2026-08-11T23:37:32.862Z",
+    "readmeAt": "2026-08-11T23:37:33.404Z",
+    "toolsAt": "2026-08-11T23:37:33.616Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonniev/tollbooth-sample",
+    "checkedAt": "2026-08-11T23:37:32.862Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonniev/tollbooth-sample/main/README.md",
+    "markdown": "# tollbooth-sample\n\nEducational Weather Stats MCP Service — the reference implementation for building\nTollbooth DPYC monetized API services with Bitcoin Lightning micropayments.\n\nThis service wraps the free [Open-Meteo](https://open-meteo.com) weather API\nand gates paid tool calls through the [Tollbooth](https://github.com/lonniev/tollbooth-dpyc)\ncredit system using the `@runtime.paid_tool()` decorator. Domain tools contain\nonly business logic; debit, rollback, balance warnings, and constraint evaluation\nare handled automatically by the `OperatorRuntime`. Standard DPYC tools\n(balance, purchase, Secure Courier, Oracle, pricing, constraints) are delegated\nto the wheel via `register_standard_tools()`.\n\n**Version:** 0.4.2\n\n## Build your own operator — the `bootstrap-dpyc-operator` skill\n\nThis repo doubles as a **Claude Code plugin**. The `bootstrap-dpyc-operator` skill turns your\n**existing REST API, stdio MCP, or HTTP MCP** into a monetized DPYC Operator MCP: it clones this\ntemplate live, wraps your domain logic, and generates a deploy-ready project. You keep writing\nbusiness logic — the SDK handles payments, identity, vault, audit, and pricing.\n\nInstall it in Claude Code:\n\n```\n/plugin marketplace add lonniev/tollbooth-sample\n/plugin install bootstrap-dpyc-operator@tollbooth-dpyc\n```\n\nThen ask Claude to *\"make my API a paid DPYC operator\"* — the skill activates automatically by\nits description. It never touches your original code (it emits a sibling `<slug>-mcp/` project)\nand reads this repo's live wheel pin on every run, so it can't go stale.\n\nSee [`skills/bootstrap-dpyc-operator/`](skills/bootstrap-dpyc-operator/) for the skill and its\nreference guides (canonical pattern, source adapters, sessions & vaults, onboarding checklist).\n\n## The DPYC Economy\n\n**DPYC** stands for **Don't Pester Your Customer**. It's a philosophy and\nprotocol for API monetization that eliminates mid-session payment popups,\nsubscription nag screens, and KYC friction.\n\n### How it works\n\n1. **Pre-funded balances** — Users buy credits via Bitcoin Lightning *before*\n   using tools. Each tool call silently debits from their balance. No\n   interruptions, no \"please upgrade\" modals.\n\n2. **Nostr keypair identity** — Users are identified by a Nostr public key\n   (`npub`), not an email or password. One keypair per role, managed by the\n   user. No account creation forms.\n\n3. **UUID-keyed tool identity** — Every tool is a `ToolIdentity` object with\n   a deterministic UUID v5 derived from a capability name. Pricing hints come\n   from the `category` field:\n\n   | Category | Pricing hint | Use case                    |\n   |----------|--------------|-----------------------------|\n   | `free`   | 0 sats       | Balance checks, status      |\n   | `read`   | 1 sat        | Simple lookups              |\n   | `write`  | 5 sats       | Multi-step operations       |\n   | `heavy`  | 10 sats      | Expensive queries           |\n\n   Actual prices are set dynamically by the operator's pricing model in Neon.\n\n4. **Rollback on failure** — If the downstream API fails after a debit,\n   credits are automatically rolled back via a compensating tranche. The\n   user never pays for a failed call.\n\n5. **Social Contract** — The DPYC ecosystem is a voluntary community bound\n   by transparent, auditable economic rules, with a Certification Chain that\n   cascades trust from the root:\n   - **Citizens** — Users who consume API services\n   - **Operators** — Developers who run MCP services (like this one)\n   - **Authorities** — Certify operators and collect a small tax on purchases\n   - **First Curator** — The root of the chain, mints the initial cert-sat supply\n\n## How Tollbooth Monetization Works\n\n### ToolIdentity and the frozen `tool_id`\n\nEach domain tool is registered as a `ToolIdentity` with a **frozen `tool_id`**\n(an opaque UUID), a capability name, a category (pricing hint), and an intent\ndescription. Mint the UUID **once** at the tool's birth — run\n`capability_uuid(\"get_current_weather\")` at a REPL (or `uuid.uuid4()`), then\npaste the result as a literal constant and never change it again. Freezing the\nliteral is what lets you rename a capability later without orphaning its pricing\nrows in Neon. Do **not** call `capability_uuid(...)` at runtime; the identity\nmust live in exactly one place:\n\n```python\nfrom tollbooth.tool_identity import ToolIdentity, STANDARD_IDENTITIES\nfrom tollbooth.runtime import OperatorRuntime, register_standard_tools\nfrom tollbooth.credential_templates import CredentialTemplate, FieldSpec\nfrom tollbooth.credential_validators import validate_btcpay_creds\n\n# Frozen UUIDs — minted once at tool birth, never recomputed.\nGET_CURRENT_WEATHER_UUID    = \"b7327eb8-92b4-5252-84e0-ba3f437a16ed\"\nGET_WEATHER_FORECAST_UUID   = \"b6d0e596-3aec-5a62-980b-7875aa04d079\"\nGET_HISTORICAL_WEATHER_UUID = \"5608f3e9-44c4-5b28-9744-704af6d701f0\"\n\n# 1. Define domain tool identities\n_DOMAIN_TOOLS = [\n    ToolIdentity(\n        tool_id=GET_CURRENT_WEATHER_UUID,\n        capability=\"get_current_weather\",\n        category=\"read\",\n        intent=\"Get current weather conditions\",\n    ),\n    ToolIdentity(\n        tool_id=GET_WEATHER_FORECAST_UUID,\n        capability=\"get_weather_forecast\",\n        category=\"write\",\n        intent=\"Get weather forecast\",\n    ),\n    ToolIdentity(\n        tool_id=GET_HISTORICAL_WEATHER_UUID,\n        capability=\"get_historical_weather\",\n        category=\"heavy\",\n        intent=\"Get historical weather data\",\n    ),\n]\n\nTOOL_REGISTRY: dict[str, ToolIdentity] = {ti.tool_id: ti for ti in _DOMAIN_TOOLS}\n```\n\n### The `@runtime.paid_tool()` decorator\n\nEvery paid tool is a single decorator away from full DPYC monetization.\nThe decorator takes the tool's frozen `tool_id` constant and handles debit,\nbalance checks, constraint evaluation, rollback on failure, and low-balance\nwarnings automatically. Your tool function contains only domain logic:\n\n```python\nfrom typing import Annotated, Any\nfrom pydantic import Field\nfrom fastmcp import FastMCP\n\nmcp = FastMCP(\"tollbooth-sample\", ...)\n\n# Create the runtime with merged standard + domain identities\nruntime = OperatorRuntime(\n    tool_registry={**STANDARD_IDENTITIES, **TOOL_REGISTRY},\n    operator_credential_template=CredentialTemplate(\n        service=\"tollbooth-sample-operator\",\n        version=2,\n        description=\"Operator credentials for BTCPay Lightning payments\",\n        fields={\n            \"btcpay_host\": FieldSpec(required=True, sensitive=True, ...),\n            \"btcpay_api_key\": FieldSpec(required=True, sensitive=True, ...),\n            \"btcpay_store_id\": FieldSpec(required=True, sensitive=True, ...),\n        },\n    ),\n    credential_validator=validate_btcpay_creds,\n    ...\n)\n\n# Delegate all standard DPYC tools to the wheel.\n# register_standard_tools returns the slug-prefixed @tool decorator —\n# use it for the operator's own paid tools below.\ntool = register_standard_tools(mcp, \"weather\", runtime, ...)\n\n# Decorate each paid domain tool\n@tool\n@runtime.paid_tool(GET_CURRENT_WEATHER_UUID)\nasync def current(\n    latitude: float,\n    longitude: float,\n    npub: Annotated[str, Field(\n        description=\"Required. Your Nostr public key (npub1...) for credit billing.\"\n    )] = \"\",\n    dpop_token: str = \"\",\n) -> dict[str, Any]:\n    \"\"\"Get current weather conditions for a location.\n\n    Returns temperature, wind speed, and weather code from Open-Meteo.\n    \"\"\"\n    return await weather.get_current(latitude, longitude)\n```\n\nThat is the complete paid tool. No manual debit calls, no try/except\nrollback blocks, no balance-warning plumbing. The decorator:\n\n- Looks up the tool's pricing from the `ToolIdentity` registry by UUID\n- Extracts `npub` from the function arguments for billing\n- Validates `dpop_token` for operator proof verification\n- Debits before calling your function (respecting ConstraintGate discounts)\n- Rolls back automatically if your function raises an exception\n- Appends a low-balance warning to the response when funds are running low\n- Skips all gating in STDIO mode so local development works without credits\n\n### Key patterns\n\n**`register_standard_tools(mcp, \"weather\", runtime, …)`** — Registers all\nstandard DPYC tools (balance, purchase, payment, pricing, Secure Courier,\nOracle, constraints) from the tollbooth-dpyc wheel, mounts oracle\ndelegations under `<slug>_oracle_*`, and **returns** the slug-prefixed\n`@tool` decorator. Capture the return so you can use the same decorator\nfor your own paid tools — every wire-exposed name on this operator then\nshares one slug prefix.\n\n**`validate_btcpay_creds`** — Credential validator that checks BTCPay\ncredentials at receive time, not at first use. Invalid credentials are\nrejected immediately during the Secure Courier exchange.\n\n**`CredentialTemplate`** — Declares the operator's required secrets\n(BTCPay host, API key, store ID) so the Secure Courier flow can prompt\nfor the right fields and validate them on delivery.\n\n### The `npub` and `dpop_token` parameters\n\nEvery paid tool must accept `npub` and `dpop_token` keyword arguments. The\n`npub` tells the runtime which patron to bill; `dpop_token` carries the\noperator proof for verification:\n\n```python\nnpub: Annotated[str, Field(\n    description=\"Required. Your Nostr public key (npub1...) for credit billing.\"\n)] = \"\"\ndpop_token: str = \"\"\n```\n\nThe defaults of `\"\"` keep both parameters optional in STDIO/dev mode.\n\n### What the runtime handles under the hood\n\n```\nTool call arrives\n    |\n    v\n@runtime.paid_tool(GET_CURRENT_WEATHER_UUID)\n    |\n    +-- UUID lookup in tool_registry -> ToolIdentity + pricing\n    +-- npub + dpop_token extraction from kwargs\n    +-- STDIO mode? --yes--> Skip gating, call function directly\n    |\n    +-- ConstraintGate evaluation (discounts, surge, supply caps)\n    +-- Balance check + debit\n    |       |\n    |       insufficient --> Return error (no function call)\n    |\n    +-- Call your function\n    |       |\n    |       exception --> Automatic rollback, return error\n    |\n    +-- Append low-balance warning if needed\n    |\n    v\nReturn result to caller\n```\n\n## Constraint Engine\n\nThe ConstraintGate is an opt-in dynamic pricing layer. Enable it by setting:\n\n```bash\nCONSTRAINTS_ENABLED=true\nCONSTRAINTS_CONFIG='{\"tool_constraints\": {...}}'\n```\n\nCommon constraint types (the SDK registry holds more — `weather_list_constraint_types`\nenumerates the full set live):\n\n| Type              | Effect                                            |\n|-------------------|---------------------------------------------------|\n| `free_trial`      | First N calls are free                            |\n| `happy_hour`      | Discount during specific hours                    |\n| `temporal_window` | Allow calls only during a time window             |\n| `finite_supply`   | Cap total invocations globally                    |\n| `loyalty_discount`| Discount after spending N sats                    |\n| `bulk_bonus`      | Discount after N invocations                      |\n| `surge_pricing`   | Demand-elastic multiplier during high demand      |\n\nUse `weather_check_price` to preview constraint effects without spending credits.\n\nSee [`constraints/example_basic.json`](constraints/example_basic.json),\n[`constraints/example_advanced.json`](constraints/example_advanced.json), and\n[`constraints/example_surge.json`](constraints/example_surge.json)\nfor configuration examples.\n\n## Becoming an Operator\n\nNew to Tollbooth? See **[GETTING-STARTED.md](GETTING-STARTED.md)** for a\nstep-by-step guide covering Nostr keypair setup, Authority enrollment,\nBTCPay configuration, and deploying your first monetized MCP service.\n\n## Quick Start\n\n### Local development (no gating)\n\n```bash\ngit clone https://github.com/lonniev/tollbooth-sample.git\ncd tollbooth-sample\npip install -e \".[dev]\"\npython -m tollbooth_sample.server\n```\n\nIn STDIO mode, all tools work without credits — great for development.\n\n### Deploy on Prefect Horizon\n\nThe hosting platform is **Prefect Horizon** (FastMCP is the runtime/framework\nthe server is built on).\n\n1. Push to GitHub\n2. Connect the repo on Prefect Horizon\n3. Set environment variables:\n   - `TOLLBOOTH_NOSTR_OPERATOR_NSEC` — Nostr key for identity bootstrap\n     (the only env var required to boot; all other secrets are delivered\n     via Secure Courier credential templates)\n   - (Optional) `CONSTRAINTS_ENABLED=true` + `CONSTRAINTS_CONFIG=...`\n\n> **Heads-up for operators with long-running tools.** By default, claim-check /\n> async jobs run in-memory (`async_jobs.backend: \"memory\"`), which means **they do\n> not survive a Horizon recycle** (`durable_across_recycles: false`). That's fine for\n> this reference sample, which has no long-runners — but if you add a tool that defers\n> work to a background job, pin the `[prefect]` extra and deliver the durable-executor\n> secrets (`prefect_api_url` / `prefect_api_key` / `closure_seal_key`, the\n> `LONGRUNNER_CREDENTIAL_FIELDS`) via Secure Courier so jobs settle across redeploys.\n> Check your live state anytime with `service_status.async_jobs`.\n\n### Run tests\n\n```bash\npip install -e \".[dev]\"\npytest -v\n```\n\n## Tool Reference\n\n| MCP tool name              | Cost     | Description                           |\n|----------------------------|----------|---------------------------------------|\n| `weather_current`          | read     | Current weather for lat/lon           |\n| `weather_forecast`         | write    | Multi-day forecast (1-16 days)        |\n| `weather_historical`       | heavy    | Historical weather for a date range   |\n| `weather_check_balance`    | free     | Check credit balance                  |\n| `weather_purchase_credits` | free     | Buy credits via Lightning             |\n| `weather_check_payment`    | free     | Check invoice status                  |\n| `weather_request_adoption` | free     | Request adoption by an Authority (deferred-courtship onboarding) |\n| `weather_check_price`      | free     | Preview cost (shows constraint effects)|\n| `weather_service_status`   | free     | Health + constraint config summary    |\n| `weather_oracle_how_to_join`      | free | DPYC onboarding instructions          |\n| `weather_oracle_get_tax_rate`     | free | Current certification tax rate        |\n| `weather_oracle_lookup_member`    | free | Look up a DPYC member                 |\n| `weather_oracle_about`            | free | DPYC ecosystem description            |\n| `weather_oracle_network_advisory` | free | Active network advisories             |\n\n## DPYC Ecosystem\n\n**Core**\n\n- [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) — Python SDK (vault, auth, pricing, Lightning, Nostr identity)\n- [dpyc-community](https://github.com/lonniev/dpyc-community) — Governance registry: membership, advisories, threat model\n- [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) — Community concierge (free onboarding + member lookup)\n- [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) — Certification backbone (Schnorr-signed certificates)\n- [tollbooth-sample](https://github.com/lonniev/tollbooth-sample) — Sample Operator (this canonical template)\n- [tollbooth-pricing-studio](https://github.com/lonniev/tollbooth-pricing-studio) — iOS pricing-model editor / operator console\n\n**Operators**\n\n- [cypher-mcp](https://github.com/lonniev/cypher-mcp) — Monetized graph answers: named Cypher templates over Neo4j/AuraDB\n- [schwab-mcp](https://github.com/lonniev/schwab-mcp) — Charles Schwab brokerage data\n- [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) — TheBrain personal knowledge graph\n- [excalibur-mcp](https://github.com/lonniev/excalibur-mcp) — X/Twitter posting\n- [taxsort-mcp](https://github.com/lonniev/taxsort-mcp) — Tax classification + Cloudflare Pages UI\n- [optionality-mcp](https://github.com/lonniev/optionality-mcp) — Options analytics (brokerage-data operator)\n\n**Advocates & utilities**\n\n- [tollbooth-oauth2-collector](https://github.com/lonniev/tollbooth-oauth2-collector) — OAuth2 callback handler (advocate service)\n- [tollbooth-shortlinks](https://github.com/lonniev/tollbooth-shortlinks) — URL shortener utility\n\n## License\n\nApache-2.0\n",
+    "fetchedAt": "2026-08-11T23:37:33.404Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "weather_check_balance",
+      "description": "Check a patron's credit balance at this operator.\n\nThis is the patron's spending balance — credits purchased via\nLightning for tool calls at this operator. For the operator's\nown balance at the Authority (needed to certify patron purchases),\nuse authority_check_balance instead.\n\nFree — no credits required. Proof of npub ownership is required\nto prevent anyone-with-the-registry from enumerating balances."
+    },
+    {
+      "name": "weather_purchase_credits",
+      "description": "Buy credits via Bitcoin Lightning.\n\nCreates a Lightning invoice. Pay it with any Lightning wallet,\nthen call check_payment to confirm. Proof of npub ownership is\nrequired so credits land in the correct ledger.\n\nFree — no credits required to call."
+    },
+    {
+      "name": "weather_check_payment",
+      "description": "Check the payment status of a Lightning invoice.\n\nCall after paying the invoice from purchase_credits.\nFree — no credits required. Proof of npub ownership is required\nto prevent credit-grant front-running by an observer of the\ninvoice ID."
+    },
+    {
+      "name": "weather_restore_credits",
+      "description": "Credit a patron's ledger from a BTCPay-settled invoice.\n\n**RESTRICTED to the operator** — the operator owns the books and is\nthe only party who can issue a manual credit grant. Patrons who\nbelieve they paid but never got credits must escalate to the\noperator's support, who then invokes this tool on their behalf.\n\nUse cases: cold-start vault races during check_payment, ncred\ndelivery hiccups, patrons closing Top-Off sheets before settle,\nany infrastructure incident that left an invoice settled at BTCPay\nbut uncredited on the operator's ledger.\n\nIdempotent — if the invoice is already credited (in the patron's\n``credited_invoices``), returns success with credits_granted=0."
+    },
+    {
+      "name": "weather_account_statement",
+      "description": "Generate a patron's account statement at this operator.\n\nReturns the patron's purchase history, active credit tranches,\nper-tool usage breakdown, and recent daily usage logs. This is\nthe patron's spending account — not the operator's Authority\ntax balance.\n\nFree — no credits consumed. Proof of npub ownership is required\nto prevent statement-scraping of arbitrary patrons."
+    },
+    {
+      "name": "weather_account_statement_infographic",
+      "description": "Generate a visual SVG infographic of your account statement.\n\nReturns the same data as account_statement, rendered as a dark-themed\nSVG graphic with balance hero, metrics cards, health gauge, tranche\ntable, and tool usage breakdown. Costs 1 api_sat per call. Proof is\nverified by ``debit_or_deny`` before any cost is incurred."
+    },
+    {
+      "name": "weather_report_issue",
+      "description": "File a field report about this service as a GitHub issue on the operator's repo.\n\nFound a tool's metadata or response wrong or confusing? Report it where the tool\nlives. The **author of record is your npub** — no npub / no proof, no issue — and it\nis stamped into the issue so the report is attributed to you, not the operator. Costs\na small fee (a free write to an issue tracker would be abused). The report is PUBLIC\nand goes to the maintainers' normal triage; nothing is verified here.\n\nReturns the filed issue's repo, number, and url. If this operator has not enabled\nfield reports, returns an \"issue reporting not configured\" situation and you are not\ncharged."
+    },
+    {
+      "name": "weather_service_status",
+      "description": "Check the health and configuration of this service. Free."
+    },
+    {
+      "name": "weather_get_operator_onboarding_status",
+      "description": "Report this operator's configuration readiness.\n\nShows which operator settings are configured, which are missing,\nand how to deliver each missing value. For patron-level credential\nstatus, use get_patron_onboarding_status instead. Free."
+    },
+    {
+      "name": "weather_get_patron_onboarding_status",
+      "description": "Report a patron's credential readiness for this operator.\n\nFor set-once services (eXcalibur, TheBrain), shows which patron\nsecrets are configured and which are missing. For dynamic/OAuth2\nservices (Schwab), reports that no patron credentials are needed.\nFree. Proof of npub ownership is required because credential\npresence is sensitive information about the patron's setup."
+    },
+    {
+      "name": "weather_session_status",
+      "description": "Check operator readiness. Returns the operator lifecycle\nstate and clear guidance on what to do next. Free.\n\nLifecycle states:\n- ready: Operator is warm and fully operational — vault AND pricing\n  model verified. Proceed with tool calls.\n- warming_up: Operator is initializing (cold start). Try a tool call — it will warm up on demand.\n- misconfigured: Persistence rejected a query with a permanent SQL\n  error (permission denied, missing relation). Paid tools will fail\n  until the operator repairs the database — retrying does not help.\n- quota_exceeded: The persistence provider (Neon) answered HTTP 402 —\n  the operator's database has exhausted its compute/storage quota, so\n  the books are locked for billing. Paid tools fail; retrying does NOT\n  help. The operator's Authority must restore capacity (upgrade the\n  plan or wait for the quota reset). Free tools remain available.\n- not_registered: Operator has no Authority relationship yet. Call register_operator first.\n- no_identity: Operator nsec is not configured. Deployment issue."
+    },
+    {
+      "name": "weather_request_credential_channel",
+      "description": "Open a Secure Courier channel for credential delivery.\n\nThis is the CREDENTIAL-DELIVERY flow — use it to hand over a service\nsecret (API keys, tokens). To merely prove you control an npub (the\nusual answer to a ``proof_required`` error), use ``request_npub_proof``\ninstead. Note: dynamic/OAuth2 services (e.g. Schwab) need NO couriered\nsecret — check ``service_status`` first.\n\nSends a welcome DM with a credential template. The recipient\nmust read the DM in their Nostr client, fill in the fields,\nand reply manually. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user what to do.\nWait for the user to confirm they have replied before calling\n``receive_credentials``. Do NOT poll or retry — each\n``receive_credentials`` call destructively drains the relay\nmailbox."
+    },
+    {
+      "name": "weather_receive_credentials",
+      "description": "Pick up credentials from the Secure Courier.\n\nCompletes the CREDENTIAL-DELIVERY flow (the ownership-proof\ncounterpart is ``receive_npub_proof``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response you want with\n``(sender_npub, service, dpop_token)`` and the tool drains ONLY the\nrendezvous relay that channel was pinned to. Every popped DM with the\nwrong session phrase is deleted and its sender is NACK'd; the first DM\nwith the matching phrase is accepted (ACK'd) and the scan stops. If\nnone match, the queue is drained and a ``courier_not_found`` result is\nreturned. Do NOT poll, loop, or retry.\n\nIf a credential_card (ncred1...) is provided, it is redeemed directly\nwithout any relay access (dpop_token not required for that path). On\nsuccess, the payment processor client is reinitialized from the new\ncredentials — no server restart needed."
+    },
+    {
+      "name": "weather_forget_credentials",
+      "description": "Delete vaulted credentials for a specific service and npub.\n\nFor operator credentials, pass the operator's own npub. For patron\ncredentials, pass the patron's npub. Always requires proof of\nnpub ownership — a deletion is as destructive as a write."
+    },
+    {
+      "name": "weather_update_patron_credential",
+      "description": "Add or update a single patron credential field.\n\nMerges into existing stored credentials without affecting\nother fields. Useful for setting an account identifier\nafter OAuth, changing a default brain, etc. Free. Proof of\nnpub ownership is required — this is a write to the patron's\nsensitive credential vault."
+    },
+    {
+      "name": "weather_update_operator_credential",
+      "description": "Add or update a single operator secret field.\n\nMerges into the operator's stored credentials without touching the\nothers — the field-level counterpart to re-delivering the whole\nbundle over Secure Courier. Use it to rotate one secret (a reissued\n``btcpay_api_key``, say) without restating the six you did not\nchange, where any field omitted from a courier reply is destroyed.\n\nThe value is never echoed back. RESTRICTED to the operator —\nrequires proof (nsec-signed kind-27235 or a cached dpop_token\nphrase); patron proofs are rejected."
+    },
+    {
+      "name": "weather_delete_patron_credential",
+      "description": "Remove a single patron credential field.\n\nDeletes one field from stored credentials without affecting\nother fields. Free. Proof of npub ownership is required —\nthis is a write to the patron's sensitive credential vault."
+    },
+    {
+      "name": "weather_get_patron_credential_fields",
+      "description": "List stored patron credential field names (not values).\n\nReturns the names of fields stored for a patron, plus each\nfield's ``delivered_at`` ISO-8601 timestamp when known (null\nfor secrets vaulted before timestamps were recorded). Values\nare never exposed — use this to verify which fields are\nconfigured and how old each one is. Free. Proof of npub\nownership is required: the list of configured fields is itself\nsensitive (reveals which integrations a patron has set up)."
+    },
+    {
+      "name": "weather_request_npub_proof",
+      "description": "Request npub ownership proof from a patron via Nostr DM.\n\nThis is the npub-OWNERSHIP-PROOF flow — use it when a call returns\n``proof_required``. It proves the caller controls an npub; it does\nNOT deliver any service secret. To hand an operator its API keys or\nOAuth secrets, use ``request_credential_channel`` instead.\n\nSends a challenge DM that the patron must sign and reply to\nusing their Nostr client. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user to check their\nNostr client and reply to the challenge. Wait for the user to\nconfirm they have replied before calling ``receive_npub_proof``.\nDo NOT poll or retry — each ``receive_npub_proof`` call\ndestructively drains the relay mailbox.\n\n**Returns** a ``dpop_token`` — the demonstrated-proof-of-possession\ntoken that the calling application MUST remember and pass as the\n``dpop_token`` parameter on every subsequent paid tool call. The MCP\ndoes not retain this value across restarts.\n\n**Lifecycle:** The cached proof expires after the patron's\nchosen duration. When it expires, call ``request_npub_proof``\nagain for a fresh challenge, then wait for the user, then\ncall ``receive_npub_proof``.\n\nFree."
+    },
+    {
+      "name": "weather_receive_npub_proof",
+      "description": "Receive npub ownership confirmation from a patron.\n\nCompletes the npub-OWNERSHIP-PROOF flow (the credential-delivery\ncounterpart is ``receive_credentials``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response with\n``(patron_npub, dpop_token)`` — the ``dpop_token`` being the value\nreturned by ``request_npub_proof``. The tool drains ONLY the pinned\nrendezvous relay that challenge was published on, stopping at the DM\nwhose phrase matches. Mismatched DMs are deleted and NACK'd (without\nrevealing the expected phrase). If called before the user replies,\ntheir message will never be found. Do NOT poll, loop, or retry.\n\nThe signed DM itself proves npub ownership (the patron's nsec\nsigned it). On success, returns the ``dpop_token`` — the same\ntoken. The calling application MUST remember it and pass it as the\n``dpop_token`` parameter on every subsequent paid tool call. The\nproof (a hash of the token) is stored in the vault keyed by that\nhash — the MCP never stores the raw token itself. Free."
+    },
+    {
+      "name": "weather_check_proof_status",
+      "description": "Check whether a previously-cached dpop_token is still valid.\n\nMirrors ``check_oauth_status`` for the npub-proof flow: a calling\nagent can ask \"will my next paid call accept this dpop_token?\"\nbefore burning credits on a guaranteed failure.\n\nFree, no side effects — does not evict the cache or touch relays."
+    },
+    {
+      "name": "weather_oracle_how_to_join",
+      "description": "Get DPYC onboarding instructions from the Oracle. Free."
+    },
+    {
+      "name": "weather_oracle_get_tax_rate",
+      "description": "Get the current DPYC certification tax rate. Free."
+    },
+    {
+      "name": "weather_oracle_lookup_member",
+      "description": "Look up a DPYC community member by npub. Free."
+    },
+    {
+      "name": "weather_oracle_about",
+      "description": "Describe the DPYC ecosystem via the Oracle. Free."
+    },
+    {
+      "name": "weather_oracle_network_advisory",
+      "description": "Get active network advisories from the Oracle. Free."
+    },
+    {
+      "name": "weather_check_authority_balance",
+      "description": "Check this operator's tax balance at the Authority.\n\nReturns the sats available for certifying patron credit purchases.\nWhen this balance reaches zero, patron top-ups cannot be certified\nand the operator must call purchase_credits on the Authority.\n\nThis is the operator's own funding — not a patron balance. Free."
+    },
+    {
+      "name": "weather_get_pricing_model",
+      "description": "Get the active pricing model for this operator. Free.\n\nIf no model exists, self-initializes a scaffold with all\nregistered tools at 0 sats.  No economic data from code."
+    },
+    {
+      "name": "weather_set_pricing_model",
+      "description": "Set the active pricing model. RESTRICTED to operator.\n\nRequires a valid proof (Schnorr-signed kind-27235 event)\nproving the caller holds the operator's nsec."
+    },
+    {
+      "name": "weather_reset_pricing_model",
+      "description": "Erase all pricing models and restore a viable default.\n\nDeletes every stored model, then self-initializes a fresh one\nfrom the tool registry — all tools at 0 sats with proper UUIDs.\nReturns the new model.\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "weather_request_adoption",
+      "description": "Ask a chosen Authority to adopt this operator (deferred courtship).\n\nRESTRICTED to the operator — requires proof the caller controls this\noperator's npub. Resolves the Authority's MCP endpoint from the\ncommunity registry, mints an inline ownership proof with this\noperator's nsec, and delivers the request MCP-to-MCP. The Authority\nrecords it as pending; its owner approves on their own time. Poll\n``adoption_status`` for progress; the operator flips to ``ready``\nonce the Authority provisions it."
+    },
+    {
+      "name": "weather_adoption_status",
+      "description": "Check this operator's adoption-request status at a chosen Authority.\n\nFree. Polls the Authority MCP-to-MCP for the status of this operator's\nrequest (pending / approved / rejected / provisioned)."
+    },
+    {
+      "name": "weather_restore_neon_schema",
+      "description": "Re-run ``ensure_schema()`` on every NeonVault this operator uses.\n\nDiagnostic / recovery tool for the case where the Neon HTTP SQL API\nis returning persistent 4xx errors and the operator suspects the\nschema isn't there or grants are wrong. Idempotent — uses\n``CREATE TABLE IF NOT EXISTS`` so a successful re-run is harmless.\n\nReturns the per-step result. If any step raises, surfaces the Neon\nerror message inline (0.31.0 reads the SQL error body that earlier\nwheels swallowed behind ``raise_for_status``).\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "weather_list_canonical_identities",
+      "description": "Return canonical (tool_id, mcp_name, …) for every tool the wheel exposes.\n\nThe authoritative source for any client (Studio, agents, FE)\nthat needs to know how this MCP identifies its tools.\nReconcile uses this output to UUID-join against the stored\npricing model — no name-based UUID derivation, no guessing.\n\nIncludes both ToolIdentity-seeded tools and any UUID recorded by\n``@paid_tool`` that is missing from the registry. The latter appear\nwith ``registered: false`` (and in the top-level ``unregistered``\narray) so Reconcile can flag deploy drift instead of silently\nreporting clean when a live tool was never seeded (#174).\n\nIf the operator renames a function or rebrands a slug, the\nmcp_name in this output changes but tool_id stays. That's the\nwhole point of the canonical-UUID design.\n\nAlso diffs the live FastMCP wire surface against the registry.\nTools exposed on the wire but absent from the registry appear in\n``unregistered`` so Reconcile can flag deploy drift instead of\nsilently under-reporting (issue #175).\n\nFree, no side effects."
+    },
+    {
+      "name": "weather_get_nostr_profile",
+      "description": "Read an npub's public Nostr profile (NIP-01 kind-0 metadata).\n\nFree, no proof — the data is already public on relays. Returns the\nlatest metadata fields (name, display_name, about, picture, banner,\nnip05, website, lud16) or an empty profile if none is published."
+    },
+    {
+      "name": "weather_publish_nostr_profile",
+      "description": "Publish a CLIENT-SIGNED kind-0 profile to relays for an npub.\n\nThe wheel never holds a patron nsec. The frontend signs the kind-0\nmetadata event with the patron's session key or a NIP-07 extension and\npasses the signed event (JSON) here; the wheel verifies the signature\nmatches the npub, then relays it to public relays. The signature is the\nauthorization — no proof token, no key custody. Free."
+    },
+    {
+      "name": "weather_check_price",
+      "description": "Preview the effective cost of a tool call.\n\nShows the base cost and any constraint effects (discounts, free\ntrials, surge pricing). Free — no credits required."
+    },
+    {
+      "name": "weather_list_constraint_types",
+      "description": "List all available constraint types and their parameter schemas.\n\nReturns the type, category, description, and parameter specs for\nevery constraint that can be used in a pricing pipeline.\nFree — no credits required."
+    },
+    {
+      "name": "weather_mint_coupon",
+      "description": "Create a new operator-owned discount coupon."
+    },
+    {
+      "name": "weather_list_coupons",
+      "description": "List every coupon this operator has minted (newest first).\n\nEach row carries the current ``times_redeemed`` counter — the\nStudio renders a progress bar from this against ``total_uses``.\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "weather_update_coupon",
+      "description": "Patch a coupon's editable fields.\n\nPass only the fields you want to change.  To set a cap to\nunlimited (NULL in the schema), pass ``clear_uses_per_patron=true``\nor ``clear_total_uses=true``.  Renaming the code is allowed —\nexisting patron redemption rows survive (they key on coupon id).\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "weather_delete_coupon",
+      "description": "Delete a coupon.  Cascades to all patron redemptions.\n\nAny chain step referencing the deleted coupon_id becomes a\nno-op (the constraint returns neutral on unknown ids) — the\nStudio surfaces orphan references as warnings.\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "weather_redeem_coupon",
+      "description": "Claim a coupon by its name (the code the operator shared).\n\nLooks up the operator's coupon by ``code``, validates the window\nand total cap, and records a per-patron redemption row.\nSubsequent paid tool calls on this MCP auto-apply the discount\nuntil ``uses_per_patron`` is exhausted.\n\nFree — no credits required.  Requires proof of ``npub``.\nIdempotent: redeeming the same code twice returns the existing\nredemption."
+    },
+    {
+      "name": "weather_list_my_coupons",
+      "description": "List the coupons this patron has redeemed on this operator.\n\nReturns both active and exhausted redemptions with a per-row\n``status`` (``active`` / ``window_closed`` / ``patron_limit`` /\n``total_limit``).  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "weather_forget_coupon",
+      "description": "Remove a coupon from this patron's redemption list.\n\nCosmetic only — the coupon itself still exists at the operator,\nand the patron can re-redeem the same code later while the\nwindow allows.  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "weather_notarize_ledger",
+      "description": "Build a Merkle tree of all patron balances and submit the root\nto Bitcoin via OpenTimestamps.\n\nOperator-only background task. Bitcoin confirmation takes 1-6 hours.\nFree — no credits required."
+    },
+    {
+      "name": "weather_get_notarization_proof",
+      "description": "Generate a Merkle inclusion proof that a patron's balance was\nincluded in a Bitcoin-notarized snapshot."
+    },
+    {
+      "name": "weather_list_notarizations",
+      "description": "List recent Bitcoin notarization records."
+    },
+    {
+      "name": "weather_current",
+      "description": "Get current weather conditions for a location.\n\nReturns temperature, wind speed, and weather code from Open-Meteo."
+    },
+    {
+      "name": "weather_forecast",
+      "description": "Get a multi-day weather forecast for a location.\n\nReturns daily high/low temperatures and precipitation for 1-16 days."
+    },
+    {
+      "name": "weather_historical",
+      "description": "Get historical weather data for a location and date range.\n\nReturns daily temperature and precipitation from the Open-Meteo archive."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:33.616Z",
+  "toolsPreviewStatus": "ok"
+}

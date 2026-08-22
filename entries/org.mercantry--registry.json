@@ -1,0 +1,89 @@
+{
+  "id": "org.mercantry/registry",
+  "title": "Mercantry Registry",
+  "description": "Agent-native registry: 168k+ real restaurants in LA, Hong Kong & Tokyo. Unranked, honest signals.",
+  "summary": "Agent-native registry: 168k+ real restaurants in LA, Hong Kong & Tokyo. Unranked, honest signals.",
+  "offersHint": "Agent-native registry: 168k+ real restaurants in LA, Hong Kong & Tokyo. Unranked, honest signals. · Remote MCP (streamable-http) at https://mercantry.org/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mercantry.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mercantry.org/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mercantry.org",
+  "sourceUrl": "https://github.com/mercantry/registry",
+  "repository": {
+    "url": "https://github.com/mercantry/registry",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T02:47:08.066947Z",
+  "publishedAt": "2026-07-24T02:47:08.066947Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:50:59.056Z",
+    "sourceRepoAt": "2026-08-11T23:08:33.836Z",
+    "readmeAt": "2026-08-11T23:08:34.317Z",
+    "toolsAt": "2026-08-11T23:08:34.401Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mercantry/registry",
+    "checkedAt": "2026-08-11T23:08:33.836Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mercantry/registry/main/README.md",
+    "markdown": "# Mercantry\n\n**Mercantry is an open commerce registry for AI agents — structured merchant data, honest signals, and real-world booking fulfillment.**\n\n> **Current status — read this first.**\n> Mercantry is **pre-launch**. What is real and what is not, precisely:\n> - **The merchant data is real**: 168,000+ restaurants across **Los Angeles, Hong Kong, and Tokyo**, built exclusively from openly licensed sources (Overture Maps CDLA-P-2.0 + official government registers), conflated with per-field provenance and QA-gated versioned releases. Live counts: `get_registry_meta`.\n> - **Real merchants are discovery-only for now**: `place_booking` against a real merchant returns the structured rejection `fulfillment_not_live`. A booking guard makes it structurally impossible for our booking simulator to dial a real restaurant.\n> - **The booking loop is testable end-to-end** against `sandbox: true` merchants — fictional records with deterministic outcomes (\"test cards for bookings\"). Do not call sandbox phone numbers; they are not real businesses.\n> - **Fulfillment, when it launches, is human-operated phone booking** on a phone-verified merchant tranche (voice automation is deferred). Outbound-calling sections of the spec **operate only after legal review** — publication of the spec is not operation.\n> - Mercantry is **built and operated by a team of AI agents with human oversight**, stated here as a fact rather than a gimmick.\n\n## Connect your agent\n\nThe live endpoint serves MCP over Streamable HTTP:\n\n```bash\nclaude mcp add --transport http mercantry https://agentic-commerce-registry.fly.dev/mcp\n```\n\n- **REST mirror:** `/v1` — self-describing via [`/v1/openapi.json`](https://agentic-commerce-registry.fly.dev/v1/openapi.json)\n- **Discovery manifest:** [`/.well-known/mcp.json`](https://agentic-commerce-registry.fly.dev/.well-known/mcp.json) · agent card: [`/.well-known/agent-card.json`](https://agentic-commerce-registry.fly.dev/.well-known/agent-card.json) · health: `/healthz` · PII-free ops stats: `/v1/stats` · privacy policy: [`/privacy`](https://agentic-commerce-registry.fly.dev/privacy) · demo & reviewer guide: [`/demo`](https://agentic-commerce-registry.fly.dev/demo)\n- **Keys are optional** (abuse control, not gating): `POST /v1/keys` with `developer_name` + `contact`. All reads are free and unauthenticated.\n- **Bulk export encouraged:** `GET /v1/export/merchants.ndjson` — caching, embedding, and training on the data are permitted under the open license.\n\nCopy-paste integrations — curl, Claude Code/Desktop, raw MCP JSON-RPC, OpenAI Agents SDK, LangChain, webhook receiver: [`examples/`](examples/README.md). Agent-first tool documentation with example transcripts: [`docs/mcp-tools.md`](docs/mcp-tools.md). If you are an agent working in this repo, read [`AGENTS.md`](AGENTS.md).\n\n## MCP tools\n\n`search_merchants` (filter-based, **never ranked**, deterministic documented order) · `get_merchant` (full signal dump: every field, raw feedback history, operational stats, per-field provenance) · `get_availability` (honest: `performed_at_booking`) · `place_booking` (async) · `get_booking_status` · `modify_booking` · `cancel_booking` (mandatory when plans change — no-shows are tracked per developer key) · `submit_feedback` (confirmed bookings only, once, within 14 days) · `get_registry_meta` (evaluate the registry itself, staleness included)\n\n## Run it yourself\n\n```bash\nnpm install\nnpm run dev        # seeds a sandbox corpus on first boot; everything in one process\n```\n\n| Surface | Where |\n|---|---|\n| MCP (Streamable HTTP) | `http://localhost:4100/mcp` |\n| REST mirror + OpenAPI | `http://localhost:4100/v1` |\n| Landing page (public fact page) | `http://localhost:4100/` |\n| Ops Console (gate with `OPS_TOKEN`) | `http://localhost:4100/ops/` |\n| Booking status pages | `http://localhost:4100/status/:booking_id` |\n\n```bash\nnpm test           # full suite\nnpm run typecheck\n```\n\nDeployment (Docker/Fly.io), agent onboarding, and the security checklist: [`docs/deployment.md`](docs/deployment.md).\n\n## Architecture\n\n```\n┌─────────────┐     ┌──────────────┐     ┌────────────────────┐\n│  Agent      │────▶│  MCP Server   │────▶│ Fulfillment        │\n│  (customer) │◀────│ src/mcp       │◀────│ Orchestrator       │\n└─────────────┘     └──────┬───────┘     │ src/orchestrator   │\n                           │             │  └─ human operator │\n                    ┌──────▼───────┐     └─────────┬──────────┘\n                    │  Registry DB  │◀──────────────┘\n                    │  src/db       │     ┌────────────────────┐\n                    └──────▲───────┘     │  Ops Console       │\n                           │             │  src/ops + src/api │\n                    ┌──────┴───────┐     └────────────────────┘\n                    │  Ingestion    │ src/ingest — LA · HK · Tokyo,\n                    │  & QA gate    │ openly licensed sources only\n                    └──────────────┘\n```\n\nThe customer is the agent, not the human. One uniform interface with swappable fulfillment backends: agents integrate once; behind the interface, fulfillment can graduate from human phone calls to native merchant integrations without the agent changing a line.\n\n## Hard rules encoded in this codebase\n\n- **No ranking, ever.** No score fields exist in the schema; search order is deterministic and documented. The registry returns signals, never ordered opinions.\n- **No scraped review text.** The only feedback served is transaction-verified, submitted by agents against confirmed bookings.\n- **Openly licensed data only.** Overture Maps (CDLA-P-2.0) + official government registers; per-field provenance with timestamps; QA-gated releases with published drop counts.\n- **Opt-out is immediate and permanent.** A merchant requesting removal is hard-excluded from discovery and booking the same day.\n- **Every booking is auditable.** Full event log: tool calls, transcripts, timestamped state transitions.\n- **PII is minimal.** Reservation name/contact stored only for the booking, never exposed via read tools.\n- **Honesty over polish.** `get_availability` says `performed_at_booking` instead of pretending; `get_registry_meta` exposes our own staleness; sandbox vs. real is labeled per merchant.\n\n## Spec\n\nThe full product spec lives at [`docs/requirements.md`](docs/requirements.md). Sections describing outbound calling are published for openness but **nothing in them operates until legal review is complete** — see the banner at the top of that document.\n\n## License\n\n[Apache-2.0](LICENSE). The registry spec, code, and data schema are open — openness is the strategy, not a concession.\n",
+    "fetchedAt": "2026-08-11T23:08:34.317Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_merchants",
+      "description": "Filter-based search over the restaurant registry (coverage cities + timezones in get_registry_meta). NOT ranked: results come back in deterministic order (merchant_id ASC by default; distance ASC when lat/lng given and order_by=\"distance\"). Returns compact records with pagination. Use get_merchant for the full signal dump on a specific merchant. All filters are optional and combinable."
+    },
+    {
+      "name": "get_merchant",
+      "description": "Every field the registry holds on one merchant: schema fields, structured hours, raw feedback history, platform-observed operational stats, and per-field provenance with timestamps. Maximal data, zero opinion — the registry never scores or ranks."
+    },
+    {
+      "name": "get_availability",
+      "description": "V1 does NOT hold live table availability — availability is checked on the phone call at booking time. This tool returns the merchant's reservation policy, structured hours, and holiday exceptions so you can pick a plausible time before calling place_booking."
+    },
+    {
+      "name": "place_booking",
+      "description": "Request a table reservation. Returns booking_id with state 'queued' immediately; fulfillment is asynchronous (a call is placed to the merchant). Poll get_booking_status or supply callback_url for webhooks. RETRY SAFETY: pass a unique client_reference_id (recommended: always); if this call times out or errors ambiguously, retry with the SAME client_reference_id and the registry returns the already-created booking instead of double-booking the restaurant. Never re-call place_booking after a timeout without one. If the merchant counter-offers a time within window_minutes and accept_within_window=true, it is auto-accepted (recommended). Otherwise the booking pauses in needs_input for you to resolve via modify_booking. Merchants on the human_call channel are fulfilled by a human operator during the operator window published in get_registry_meta — those bookings queue until worked (up to the channel SLA), so book ahead rather than for the next hour."
+    },
+    {
+      "name": "get_booking_status",
+      "description": "State machine position for a booking: pending → queued → in_progress → confirmed | failed | needs_input (plus cancelled). Includes structured details on confirmation (confirmed_time, confirmation_code, merchant_instructions), structured failure reason (no_answer | fully_booked | closed | policy_mismatch | merchant_declined | bad_data), or needs_input options awaiting your decision. include_events=true returns the full audit log."
+    },
+    {
+      "name": "modify_booking",
+      "description": "Amend a booking before or after the call. For a booking in needs_input: pass accept_option_index to take one of the merchant's offered times (confirms immediately), or pass a new datetime/party_size to re-queue an amended request. Modifying an already-confirmed booking cancels it and books the new request (new booking_id returned)."
+    },
+    {
+      "name": "cancel_booking",
+      "description": "Cancel a booking in any non-terminal state, or a confirmed reservation (the registry notifies the merchant). Cancellation is mandatory when the human no longer wants the table — no-shows destroy merchant trust and are tracked per developer key."
+    },
+    {
+      "name": "submit_feedback",
+      "description": "Report how a confirmed reservation actually went. Accepted only against a confirmed booking_id, once per booking, within 14 days of confirmation. Structured fields first; optional free text ≤ 500 chars. This corpus is served raw to all agents via get_merchant — it is never editorialized or turned into a score."
+    },
+    {
+      "name": "get_registry_meta",
+      "description": "Evaluate the registry itself: per-city coverage (with each city's IANA timezone), merchant/bookable counts, verification and freshness stats, feedback corpus size, schema version, and the documented deterministic ordering rule. Honest by design — including how stale the data is."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:08:34.401Z",
+  "toolsPreviewStatus": "ok"
+}

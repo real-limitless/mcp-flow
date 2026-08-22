@@ -1,0 +1,688 @@
+{
+  "id": "io.github.BigRedCloud/red-mcp-server",
+  "title": "Red by Big Red Cloud",
+  "description": "Secure MCP access to Big Red Cloud accounting data, workflows, help and training.",
+  "summary": "Secure MCP access to Big Red Cloud accounting data, workflows, help and training.",
+  "offersHint": "Secure MCP access to Big Red Cloud accounting data, workflows, help and training. · Remote MCP (streamable-http) at https://red.bigredcloud.com/mcp",
+  "version": "1.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://red.bigredcloud.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://red.bigredcloud.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/BigRedCloud/red-mcp-server",
+  "repository": {
+    "url": "https://github.com/BigRedCloud/red-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T13:13:11.244911Z",
+  "publishedAt": "2026-07-30T13:13:11.244911Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:24.550Z",
+    "sourceRepoAt": "2026-08-12T00:16:24.528Z",
+    "readmeAt": "2026-08-12T00:16:25.002Z",
+    "toolsAt": "2026-08-12T00:16:25.414Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/BigRedCloud/red-mcp-server",
+    "checkedAt": "2026-08-12T00:16:24.528Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/BigRedCloud/red-mcp-server/main/README.md",
+    "markdown": "# Red MCP Server\n\n**Release:** 1.5.0 — 5 August 2026\n\nRed is an open-source [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server that connects AI assistants and MCP clients to [Big Red Cloud](https://www.bigredcloud.com) accounting data through a set of controlled MCP tools.\n\nSupported customer platforms today are **ChatGPT**, **Claude**, and **Mistral** (including [Vibe](https://chat.mistral.ai/chat)). Other MCP clients may work technically, but they are not treated as officially supported platforms. Red uses platform detection only for anonymous operational telemetry (see [Privacy-safe telemetry](#privacy-safe-telemetry)).\n\nInstead of calling the Big Red Cloud REST API directly, users work in plain language. The server translates requests into structured API calls and applies safety checks around anything that changes data.\n\nWith Red, a connected user can:\n\n- **Review** Big Red Cloud data with read-only lookups (customers, suppliers, products, invoices, quotes, nominal reports, and more).\n- **Review before posting** — see a plain-English preview of new or changed records before anything is written to Big Red Cloud.\n- **Create, update, delete, batch, or email** records only after explicit confirmation (and only when those capabilities are enabled for the deployment).\n- **Ask Big Red Cloud how-to and training questions** — Red answers using official support articles, customer documentation, screenshots, and webinar resources. These help tools do not require a connected company.\n\n---\n\n## Why open source?\n\nWe believe AI infrastructure should be transparent. Customers should be able to inspect the software that connects their accounting data to AI assistants.\n\nOur competitive advantage is not the connector itself; it is our accounting platform, our expert bookkeeping advice, our customer experience, and the value we build on top of it.\n\nBy open-sourcing Red, we hope to encourage trust, community contributions, and wider adoption of open standards.\n\n---\n\n## Features\n\n- Secure company connection flow (one-time connection page; no credentials in chat)\n- Pre-confirm validation of company connection credentials on the connection page (single-company form or multi-company CSV upload)\n- Partial connection results — invalid keys are rejected before confirm and reported in `failedCompanies`\n- Hosted HTTP `connectionRef` / `activeConnectionRef` so MCP clients can silently reuse a confirmed connection across supported session changes; kept in tool JSON, not shown to end users\n- Request routing for transactional work — the assistant/client obtains a short-lived `routeToken` from `brc_route_request` before create/update/delete/batch/email workflows proceed. End users never type or paste a route token.\n- Privacy-safe anonymous operational telemetry (platform, environment, tool name, connected-company count) — see [docs/TELEMETRY.md](docs/TELEMETRY.md)\n- Company readiness check (`brc_company_readiness_check`) for connected companies\n- Read-only Big Red Cloud lookups\n- Customer, supplier, product, sales rep, VAT, and analysis category tools\n- Sales quotes, invoices, credit notes, purchases, payments, and cash tools\n- Preview-before-posting confirmation flow for create, update, delete, and batch actions (email tools use an explicit send confirmation)\n- VAT and transaction safety checks\n- Sales invoice safeguards, including multi-line generated-reference validation, Gross Price Entry `priceBasis` handling, Sales VAT category validation, placeholder product ID blocking, and related preflight checks\n- Session audit log of writes made through the MCP session\n- Official Big Red Cloud help answers from Freshdesk articles, customer documentation, screenshots, and webinars — no company connection required\n- Local stdio and hosted HTTP transports\n\n---\n\n## Security and safety model\n\nRed is designed so that AI-driven access to accounting data stays controlled and auditable.\n\n- **No credentials in the repository.** Company connection credentials and secrets are never committed. Configuration is supplied at runtime through environment variables.\n- **No credentials in chat.** Company connection credentials must not be pasted into chat. Companies are connected through the secure Red connection page, where credentials are entered directly — not in the chat window.\n- **Session-scoped connections.** A connected company stays available for about the configured session duration and is held in session memory (or an optional shared connection store in hosted deployments). Where supported, connection handling is resilient across MCP session rotation so clients can reuse `connectionRef` / `activeConnectionRef` without asking the user to reconnect.\n- **Pre-confirm validation.** Company connection credentials submitted on the connection page are validated against Big Red Cloud before they are stored. Invalid or expired credentials are not saved; they appear in `failedCompanies` at confirmation time.\n- **Credential invalidation.** Only confirmed authentication failures clear a stored company credential. Endpoint, validation, permission, timeout, and server failures are not treated as an expired API key.\n- **User-facing presentation.** `connectionRef`, session IDs, and other MCP diagnostics are for tool arguments only. Assistants must not show `redconn_…` values or internal connection metadata to normal users unless the user explicitly asks for technical details.\n- **Configurable session duration.** How long connections last is controlled by `BRC_API_KEY_TTL_MINUTES`. User-facing wording (connection page, getting-started text, connection status) is derived from that value — not hardcoded.\n- **Request routing for writes.** Create, update, delete, batch, and email tools require a valid short-lived `routeToken` issued by the request router for the matching workflow. The assistant or MCP client obtains and passes that token — end users do not provide it. A route token is not permission to post — preview and confirmation still apply. After a preview, short confirmations such as “yes” or “delete it” continue the pending workflow with the same token.\n- **Explicit confirmation for writes.** Create, update, delete, and batch actions require an explicit confirmation flag after a preview before posting has been shown. Email tools require an explicit send confirmation after an email preview.\n- **Preview before posting.** The first call to a write tool returns a payload preview rather than performing the action. Nothing is written to Big Red Cloud until you confirm.\n- **Read and write are separated.** Read-only lookups are clearly distinct from actions that change data.\n- **Audit log.** Writes made through the MCP session are recorded in a session audit log; read-only calls are not logged.\n- **Deployment flags.** Update, delete, email, batch, and operator/dev tools can each be disabled per deployment. Disabled skill groups are **not registered** with the MCP client for that process, so those tools are hidden rather than callable.\n\n### Sales invoice safety checks\n\nSales invoice handling includes:\n\n- **Gross Price Entry** requires an explicit `priceBasis` of `gross` or `net` so VAT is never guessed.\n- **Sales VAT rates only.** Sales invoices must use a Sales VAT category; purchase VAT rates are blocked, even when the percentage matches.\n- **Placeholder product IDs** (`productId` `0` and `1`) are treated as placeholders and blocked before preview-before-posting and post.\n- **Multi-line generated-reference invoices** (`brc_create_sales_invoice_gen_ref`) require each `productTrans` line to include its own `acEntries` analysis allocation. Line net/VAT/gross reconciliation, analysis allocation totals, header totals, and required product/VAT/analysis fields are validated before posting; failures return structured field-level errors.\n- **`note`** defaults to the customer name unless a note is explicitly provided, and is never set to a product name.\n- **`deliveryTo`** is included only when a delivery address is explicitly provided.\n- **Plain-language results.** Technical HTTP status codes are translated into plain-language messages for users.\n\n---\n\n## Architecture\n\nTwo entry points share one tool registry:\n\n| Entry | File | Transport | Use case |\n| ----- | ---- | --------- | -------- |\n| Local stdio | `src/index.ts` | `StdioServerTransport` | An MCP client spawns `node build/index.js` |\n| Hosted HTTP | `src/remote.ts` | Streamable HTTP on `/mcp` | `npm run start` — one MCP server per session |\n\nKey shared modules:\n\n- `src/server.ts` — MCP server factory and stdio singleton\n- `src/register_all_tools.ts` — central tool registration; skips tools whose skill group is disabled, and wraps write tools with routing and preview-before-posting/confirmation handling\n- `src/config/server_config.ts` — deployment skill gating driven by the `BRC_ALLOW_*` flags\n- `src/config/mcp_config.ts` — MCP server instructions, connection-safety rules, help-answer rules, and connectionRef presentation rules\n- `src/routing/` — request classification and short-lived `routeToken` issuance/validation for transactional tools\n- `src/shared.ts` — Big Red Cloud HTTP client, session-scoped connections, audit log, and helpers\n- `src/read_connection_metadata.ts` — connection status metadata echoed on tool responses (including `activeConnectionRef` for hosted clients)\n- `src/auth/connection_presentation.ts` — user-facing TTL wording and assistant presentation hints\n- `src/auth/credential_validation.ts` — BRC read validation before storing company connection credentials\n- `src/guards/` — transaction, reference, VAT category, product line, and write-confirmation safety checks\n- `src/auth/` — secure connection flow, connection store (memory or Cosmos), connection page, and credential persistence\n- `src/telemetry/` — anonymous client/session identity and platform detection for hosted operational telemetry\n- `src/brc-edu/` — Freshdesk articles, customer documentation, webinar indexes, screenshots, and unified help search\n- `src/edu/` — shared help-resource loading, enrichment, workbook parsing, and storage configuration\n- `src/tools/edu/` — read-only help tools\n- `src/tools/routing/` — request-routing tool registration\n\nDomain logic lives under `src/tools/`, with generic create/update/delete/list/batch helpers in `src/tools/general/`.\n\n### Technology\n\n- TypeScript / Node.js (ES modules)\n- `@modelcontextprotocol/sdk`\n- Zod for tool input validation\n- Express + Streamable HTTP for hosted mode\n\n---\n\n## Requirements\n\n- Use a current LTS version of Node.js.\n- npm (bundled with Node.js).\n\n---\n\n## Installation\n\n```bash\nnpm install\nnpm run build\n```\n\nIf a `.env.example` file is provided, copy it to `.env` and adjust the values:\n\n```bash\ncp .env.example .env\n```\n\nNever commit your `.env` file or any real credentials.\n\n---\n\n## Running\n\nHosted HTTP server:\n\n```bash\nnpm run start\n# Serves the MCP endpoint at http://localhost:3000/mcp\n```\n\nLocal stdio server:\n\n```bash\nnpm run start:local\n```\n\nOpening the HTTP endpoint in a browser without an MCP session returns an error — that is expected.\n\n### MCP client configuration\n\nLocal stdio (the client spawns the process):\n\n```json\n{\n  \"mcpServers\": {\n    \"red-mcp-server\": {\n      \"command\": \"node\",\n      \"args\": [\"build/index.js\"],\n      \"env\": {\n        \"BRC_API_BASE_URL\": \"https://app.bigredcloud.com/api\"\n      }\n    }\n  }\n}\n```\n\nHosted HTTP (production):\n\nFor the hosted Big Red Cloud Red service, customers should use:\n\n`https://red.bigredcloud.com/mcp`\n\n```json\n{\n  \"mcpServers\": {\n    \"red-mcp-server\": {\n      \"url\": \"https://red.bigredcloud.com/mcp\"\n    }\n  }\n}\n```\n\nHosted HTTP (local development):\n\n```json\n{\n  \"mcpServers\": {\n    \"red-mcp-server\": {\n      \"url\": \"http://localhost:3000/mcp\"\n    }\n  }\n}\n```\n\n---\n\n## Development and regression testing\n\n| Script | Command | Purpose |\n| ------ | ------- | ------- |\n| Build | `npm run build` | Compile TypeScript to `build/` |\n| Dev HTTP | `npm run dev` | Run the HTTP server from source with `tsx` |\n| Dev stdio | `npm run dev:local` | Run the stdio server from source with `tsx` |\n| All tests | `npm test` | Build, then run the full test suite |\n| Unit tests | `npm run test:unit` | Unit tests only |\n| Security tests | `npm run test:security` | Security-focused tests |\n| Config tests | `npm run test:config` | Deployment/config tests |\n| Integration tests | `npm run test:integration` | Integration tests |\n| Production audit | `npm run audit:prod` | `npm audit` for production dependencies |\n\nTests cover the safety guards described above, including sales invoice checks, transaction date validation, the secure connection flow (CSV validation, partial confirm, credential invalidation), connectionRef presentation rules, request routing, TTL wording, and response wording.\n\n---\n\n## Environment variables\n\nConfigure the server with environment variables (for example via a `.env` file). The values below are **examples only** and must never contain real secrets or be committed.\n\n```env\n# Big Red Cloud API base URL\nBRC_API_BASE_URL=https://app.bigredcloud.com/api\n\n# HTTP port for hosted mode\nPORT=3000\n\n# Public URL for the secure /connect page (required for hosted deployments)\nBRC_PUBLIC_BASE_URL=https://your-mcp-host.example.com\n\n# MCP session binding lifetime (minutes)\nBRC_MCP_SESSION_TTL_MINUTES=120\n\n# How long stored company credentials stay valid (minutes).\n# Drives credential expiry and user-facing duration wording (e.g. 240 → \"about 4 hours\").\nBRC_API_KEY_TTL_MINUTES=120\n\n# Rate limiting (requests per minute per IP)\nBRC_RATE_LIMIT_REQUESTS_PER_MINUTE=300\n\n# SHA-256 hashes of blocked API keys, comma separated (hashes only, never raw keys)\nBRC_API_KEY_BLACKLIST_SHA256=\n\n# Hosted connection persistence (optional)\n# memory = in-process; cosmos = shared store for multi-instance HTTP\nRED_CONNECT_CONNECTION_STORE=memory\nRED_CONNECT_COSMOS_CONNECTION_STRING=\nRED_CONNECT_COSMOS_DATABASE=red-connect\nRED_CONNECT_COSMOS_CONTAINER=connections\nRED_CONNECT_ENCRYPTION_KEY=\n\n# Set automatically when running the HTTP server (remote.ts)\nRED_CONNECT_HTTP_MODE=true\n```\n\nDeployment skill flags control which categories of tools are registered. When a flag is off, tools in that skill group are skipped at registration and do not appear to MCP clients:\n\n```env\nBRC_ALLOW_READ_SKILLS=true\nBRC_ALLOW_UPDATE_SKILLS=true\nBRC_ALLOW_DELETE_SKILLS=true\nBRC_ALLOW_EMAIL_SKILLS=true\nBRC_ALLOW_BATCH_SKILLS=true\n# Operator-only diagnostics; keep off for normal deployments\nBRC_ALLOW_DEV_MODE=false\n```\n\nYou can review the active customer-facing capability summary at runtime with the `brc_get_deployment_policy` tool (plain-language availability of read, create/change, delete, email, and batch — not a full tool catalogue).\n\n---\n\n## Connecting a company\n\nCustomers should connect companies through the **secure Red connection page**. Company connection credentials must not be sent through chat — they are entered only on the secure Red connection page, not in the chat window.\n\nCustomers can get or regenerate their company API keys in Big Red Cloud under **Administration → API Keys**.\n\nThe flow is:\n\n1. Ask the assistant to start a company connection. It returns a secure connection page link.\n2. On that page, enter a single company **or upload a CSV** for several companies at once. Company connection credentials are entered on the secure page, not in chat.\n3. The server validates each credential against Big Red Cloud **before storing it**. Credentials that fail validation are not saved.\n4. Return to the chat and confirm using the success page. Prefer **Copy message for chat** (it copies a ready-to-paste confirmation message), or paste `Confirm connection code …` with the code shown on the page.\n5. After confirm, the assistant reports which companies connected and which failed (if any). Invalid credentials appear in `failedCompanies` immediately — you do not need to run a lookup first to discover a bad key.\n\nConnection links are **one-time use**. Connected companies stay available for about the configured session duration (`BRC_API_KEY_TTL_MINUTES`, for example 240 minutes → about four hours), unless you disconnect or the connection expires.\n\n### Hosted HTTP and `connectionRef`\n\nIn hosted HTTP mode (for example Mistral/Vibe), `brc_confirm_company_connection` returns an opaque `connectionRef` in the tool JSON. MCP clients should preserve and silently reuse `connectionRef` / `activeConnectionRef` on later tool calls when the platform rotates session IDs. Connection persistence survives MCP session rotation where supported. This is an implementation detail for the client — **assistants should not show `connectionRef` or `redconn_…` values to end users**. Tool responses include `assistantInstruction` / `presentationHint` fields to reinforce that rule.\n\nHelper tools:\n\n- List connected companies in the session\n- Clear one company connection\n- Clear all company connections\n\n---\n\n## Privacy-safe telemetry\n\nOn hosted deployments, Red may record anonymous operational telemetry so operators can understand approximate usage. Typical dimensions include anonymous client and connection-session identifiers, detected platform, deployment environment, tool name, and connected-company count.\n\nTelemetry does **not** include API keys, credentials, raw `connectionRef` values, authorisation headers, customer data, or invoice data. These metrics are not verified Big Red Cloud user identities (OAuth user identity is not implemented).\n\nDetails for operators and developers: [docs/TELEMETRY.md](docs/TELEMETRY.md).\n\n---\n\n## Tool coverage\n\nRed exposes a focused set of MCP tools, grouped by domain. Exact tool names and their endpoint mappings live in the source code under `src/tools/` and are summarised for developers in [docs/TOOLS.md](docs/TOOLS.md).\n\n- **Company setup and readiness** — company setup configuration, financial year, options, readiness checks, transaction date validation, and getting-started guidance.\n- **Customers and suppliers** — list/get/create/update/delete plus opening balances and account transactions.\n- **Products and sales reps** — list/get/create/update/delete and product types.\n- **Sales documents** — quotes, sales invoices, sales credit notes, and sales entries, including generated-reference variants and generating an invoice from a quote.\n- **Purchases and payments** — purchases, payments, cash payments, cash receipts, and bank accounts.\n- **VAT and analysis lookups** — VAT rates, VAT categories, VAT types, analysis categories, accounts, and related reference data.\n- **Nominal reports** — nominal account listings and grouped/multi-company nominal reporting.\n- **Audit and session** — session connection management and the session audit log.\n- **Help and training** — Freshdesk articles, customer documentation, recorded webinars, upcoming webinars, and screenshot links through read-only help tools. No company connection is required.\n\nBatch variants exist for the main create workflows and apply the same safety checks as the single-record tools.\n\n### Company readiness check\n\n`brc_company_readiness_check` is a read-only overall health check for a connected company. Overall statuses are:\n\n- `ready`\n- `ready_with_warnings`\n- `not_ready`\n- `connection_problem`\n\nIt reviews connection status plus relevant setup such as financial year, transaction date position, active Sales VAT rates, Sales Analysis categories, products, and sales representatives. Missing suppliers is reported as a purchase-setup warning and does **not** block sales-invoice readiness. Manual reference settings are treated as a warning / preflight consideration, not necessarily a blocker.\n\nFor a specific VAT-sensitive workflow (sales invoice, purchase, cash receipt, statement), use `brc_check_transaction_settings` instead — that tool checks one workflow’s processing settings, while readiness scores overall company readiness. Narrower helpers such as `brc_validate_transaction_date`, `brc_get_company_processing_settings`, and `brc_get_company_reference_settings` remain available for focused lookups.\n\n---\n\n## Help and training resources\n\nRed includes read-only MCP tools for Big Red Cloud help and training questions. They do not require a connected company.\n\nTypical capabilities:\n\n- search official articles, customer documentation, recorded webinars, and upcoming webinars;\n- load full details for a selected resource, including step-by-step guidance and relevant screenshot links where available;\n- answer reserved help-style questions (including `red-help` / `/red-help` style commands) through the help pipeline.\n\nHelp answers may include:\n\n- official Freshdesk articles;\n- customer documentation;\n- relevant screenshots;\n- recorded YouTube training videos;\n- upcoming webinar links.\n\nHelp-resource indexes are supplied by the deployment operator. The public repository does not include Big Red Cloud’s internal content-management or resource-upload workflow.\n\n**Help questions versus actions.** Ask how-to or training questions when you want guidance or documentation. Ask for an action when you want Red to perform a create, update, delete, batch, or email workflow against a connected company. Help tools do not change company data.\n\n---\n\n## Emailing documents\n\nWhen email skills are enabled, Red can send sales invoice emails, quote emails, and customer statement emails after an explicit send confirmation.\n\nSupported tool fields cover recipients, optional message body, and send confirmation. The BRC email API used by Red does **not** expose a subject-line override. The email subject is controlled by Big Red Cloud (company email templates / defaults), not by Red MCP tool arguments.\n\n---\n\n## Known limitations\n\n- Some features depend on how the company is configured in Big Red Cloud.\n- Email sending and some bank write operations may require additional tenant configuration and may be disabled by deployment flags.\n- Generated-reference behaviour can depend on Big Red Cloud tenant settings, and some generated-document endpoints may apply the tenant's current transaction date.\n- Tool availability may vary by deployment policy (disabled skill groups are not registered).\n- Anonymous telemetry counts approximate clients (for example browser/device cookies), not verified individual people.\n- Platform detection may be `unknown` when a client does not provide enough identifying information.\n- Officially supported customer platforms are ChatGPT, Claude, and Mistral/Vibe; other MCP clients are not claimed as supported platforms.\n\n---\n\n## Maintainers\n\nThis project is maintained by the Big Red Cloud software development team.\n\n---\n\n## Status\n\nRed **1.5.0** (5 August 2026) is in BETA.\nRed is an open-source MCP integration for Big Red Cloud and is under active development. Tool availability and behaviour may change between releases, and some capabilities are gated by deployment policy.\n\nSee [RELEASE.md](RELEASE.md) and [CHANGELOG.md](CHANGELOG.md) for this release.\n\n---\n\n## License\n\nThis project is licensed under the Apache License 2.0. See LICENSE for details.\n\n---\n\n## Support and responsible disclosure\n\nIf you believe you have found a security issue, please report it to Big Red Cloud's support team.\n",
+    "fetchedAt": "2026-08-12T00:16:25.002Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "brc_start_company_connection",
+      "description": "Starts the secure Red company connection flow and generates a fresh one-time secure Red connection link and confirmation code. Use only when there is no active company connection, no valid connectionRef, the user explicitly asks to connect or reconnect, try again after a failed connection, expired session credentials, or when an old, used, or stale secure connection link no longer works. Do not call this tool when a valid connectionRef from brc_confirm_company_connection is already available and recent tool calls succeeded with it. Do not call this tool because a lookup returned no rows, partial data, or an empty list — that means no matching records, not an expired connection. Do not call this tool after successful company data retrieval unless the user explicitly asks to connect, reconnect, or add more companies. Always call this tool again to generate a new link — never reuse a previous connection link. Returns a one-time connection page URL (no time expiry, but each link works only once). On that page the user can enter a single company or upload a CSV for multiple companies — never in chat. After completing the secure page, the user should return to this chat and provide (copy/paste) the confirmation code shown on the success page. Do not paste an API key into chat."
+    },
+    {
+      "name": "brc_confirm_company_connection",
+      "description": "Claims a completed secure Red connection code for the current MCP session. Use after the user has submitted the secure connection page and returns to this chat with the confirmation code shown on the success page (for example when the MCP session changed after opening the browser). Returns an opaque connectionRef for later tool calls when the MCP client rotates session ids (for example Vibe/Mistral). Pass it silently in tool arguments — do not show connectionRef or redconn_ values to normal users. After confirm succeeds, keep passing the same connectionRef on every later tool call — do not call brc_start_company_connection while that connectionRef still works. Never exposes connection credentials."
+    },
+    {
+      "name": "brc_get_company_api_key_status",
+      "description": "Use when the user asks for an API key, secret, or what key was used. Also use for connection duration or time-left questions when listing all companies. Returns connection status only — never the key. The assistant must not repeat keys from chat history."
+    },
+    {
+      "name": "brc_list_company_contexts",
+      "description": "Lists company contexts currently connected in this MCP server session. Use this when the user asks which companies are connected, how long the connection lasts, how much time is left, when companies disconnect, when the session expires, or what timezone the expiry is in. Present the result to the user with the customerMessage text, company names, and expiryMessage when connected. Answer duration and time-left questions using connectionDurationText, timeRemainingText, expiryTimeWithTimezoneText, expiryTimezoneName, expiryTimezoneAbbreviation, expiryUtcOffset, and expiryMessage from the response — do not say you do not know the current time or that you lack a live clock when timeRemainingText is present. Do not ask the user to check their device clock. Do not say local time on its own. Customer duration answers should explain how long the connection lasts, that a fresh secure link is needed after expiry, and that the one-time connection link itself cannot be reused. Do not mention authentication classifications, empty-result logic, connectionRef, rehydration, HTTP status codes, session bindings, or other internal diagnostics in customer answers. Do not show connectionRef, activeConnectionRef, redconn_ values, session IDs, or diagnostic metadata to normal users. Do not show raw ISO expiresAt or credentialType to normal users unless they specifically ask or dev mode is enabled. Connection credentials are never returned. If you have connectionRef from brc_confirm_company_connection, pass it silently on this call when the MCP client rotates session ids. An empty list with a working connectionRef means no companies are bound yet — not a reason to start a new connection if other tools already succeeded with the same connectionRef."
+    },
+    {
+      "name": "brc_clear_company_api_key",
+      "description": "Clears the API key for a named company context from MCP server memory."
+    },
+    {
+      "name": "brc_clear_all_company_api_keys",
+      "description": "Clears all connection credentials for all company contexts from MCP server memory."
+    },
+    {
+      "name": "brc_list_accounts",
+      "description": "Lists BRC accounts."
+    },
+    {
+      "name": "brc_list_customers",
+      "description": "Lists BRC customers."
+    },
+    {
+      "name": "brc_get_customer",
+      "description": "Gets one BRC customer by id."
+    },
+    {
+      "name": "brc_list_customers_without_dormant",
+      "description": "Lists BRC customers without dormant records."
+    },
+    {
+      "name": "brc_list_suppliers",
+      "description": "Lists BRC suppliers."
+    },
+    {
+      "name": "brc_get_supplier",
+      "description": "Gets one BRC supplier by id."
+    },
+    {
+      "name": "brc_list_products",
+      "description": "Lists BRC products."
+    },
+    {
+      "name": "brc_list_product_types",
+      "description": "Lists BRC product types."
+    },
+    {
+      "name": "brc_list_products_without_dormant",
+      "description": "Lists BRC products without dormant records."
+    },
+    {
+      "name": "brc_list_sales_entries",
+      "description": "Lists BRC sales entries."
+    },
+    {
+      "name": "brc_get_sales_entry",
+      "description": "Gets one BRC sales entry by id."
+    },
+    {
+      "name": "brc_list_sales_invoices",
+      "description": "Lists BRC sales invoices."
+    },
+    {
+      "name": "brc_get_sales_invoice",
+      "description": "Gets one BRC sales invoice by id."
+    },
+    {
+      "name": "brc_list_purchases",
+      "description": "Lists BRC purchases."
+    },
+    {
+      "name": "brc_get_purchase",
+      "description": "Gets one BRC purchase by id."
+    },
+    {
+      "name": "brc_list_analysis_categories",
+      "description": "Lists BRC analysis categories. For sales invoice and sales credit note product lines, choose a Sales analysis category that matches the income type. Do not default to a CR/customer category such as CR01 Customer — CR categories are customer control categories, not sales categories. If no clearly correct Sales category stands out, ask the user instead of picking the first plausible-looking one."
+    },
+    {
+      "name": "brc_list_vat_rates",
+      "description": "Lists BRC VAT rates. Each rate belongs to a VAT category via vatCategoryId (for example Sales, Purchases for Resale, Purchases not for Resale). For a sales invoice or sales credit note line, use a VAT rate whose vatCategoryId is a Sales VAT category, even if a purchase rate has the same percentage. Cross-reference brc_list_vat_categories to group rates by Sales vs Purchase category before choosing."
+    },
+    {
+      "name": "brc_list_vat_analysis_types",
+      "description": "Lists BRC VAT analysis types."
+    },
+    {
+      "name": "brc_list_vat_categories",
+      "description": "Lists BRC VAT categories (for example Sales, Purchases for Resale, Purchases not for Resale). Use this to tell which VAT category a VAT rate belongs to. Sales invoices and sales credit notes must use VAT rates from a Sales VAT category, not a purchase category."
+    },
+    {
+      "name": "brc_list_vat_types",
+      "description": "Lists BRC VAT types."
+    },
+    {
+      "name": "brc_list_company_settings",
+      "description": "Lists BRC company settings."
+    },
+    {
+      "name": "brc_list_category_types",
+      "description": "Lists BRC category types."
+    },
+    {
+      "name": "brc_list_owner_type_groups",
+      "description": "Lists BRC owner type groups."
+    },
+    {
+      "name": "brc_list_owner_types",
+      "description": "Lists BRC owner types."
+    },
+    {
+      "name": "brc_list_user_defined_fields",
+      "description": "Lists BRC user defined fields."
+    },
+    {
+      "name": "brc_list_book_tran_types",
+      "description": "Lists BRC book transaction types."
+    },
+    {
+      "name": "brc_list_nominal_accounts",
+      "description": "Lists BRC nominal accounts. Month 1–Month 12 nominal figures are period movements for each financial month, not balances. Running balance = opening balance + cumulative monthly movements. Do not describe individual monthly movement values as monthly balances. If the user asks for balances over time, calculate them from opening balance plus cumulative movements, or explain that only movements are available."
+    },
+    {
+      "name": "brc_get_nominal_account_ledger_by_id",
+      "description": "Gets one BRC nominal account by id. Month 1–Month 12 nominal figures are period movements for each financial month, not balances. Running balance = opening balance + cumulative monthly movements. Do not describe individual monthly movement values as monthly balances. If the user asks for balances over time, calculate them from opening balance plus cumulative movements, or explain that only movements are available."
+    },
+    {
+      "name": "brc_list_quotes",
+      "description": "Lists BRC quotes."
+    },
+    {
+      "name": "brc_get_quote",
+      "description": "Gets one BRC quote by id."
+    },
+    {
+      "name": "brc_list_sales_credit_notes",
+      "description": "Lists BRC sales credit notes."
+    },
+    {
+      "name": "brc_get_sales_credit_note",
+      "description": "Gets one BRC sales credit note by id."
+    },
+    {
+      "name": "brc_list_sales_reps",
+      "description": "Lists BRC sales reps."
+    },
+    {
+      "name": "brc_get_sales_rep",
+      "description": "Gets one BRC sales rep by id."
+    },
+    {
+      "name": "brc_get_company_setup_config",
+      "description": "Gets full BRC company setup configuration, including general details, financial year, reference settings, and processing options."
+    },
+    {
+      "name": "brc_get_company_logo",
+      "description": "Gets the company logo from BRC."
+    },
+    {
+      "name": "brc_get_financial_year",
+      "description": "Gets BRC company financial year."
+    },
+    {
+      "name": "brc_get_company_options",
+      "description": "Gets raw BRC company processing/options settings, including nominal ledger, VAT on cash receipts, gross price entry, margin VAT, reverse charge VAT, VAT discrepancy tolerance, and ageing options. Read-only in Red; changes must be made in Big Red Cloud."
+    },
+    {
+      "name": "brc_create_customer",
+      "description": "Creates a BRC customer using a raw BRC payload. Required payload fields: code and name — ask the user if either is missing and return without inventing values. Omit optional fields the user did not provide (address, contact, phone, email, credit terms, VAT registration, and similar). Do not invent placeholders such as Test Address, Dublin, Ireland, creditTerms=30, or vatRegistered=false. Does not create or update opening balance transactions. If the user provides an opening balance, warn them that it must be entered directly in Big Red Cloud. Before creating, check whether the customer email appears to match the customer name; if it may be a mismatch, warn the user and ask for confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_customer",
+      "description": "Updates a BRC customer using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_customer",
+      "description": "Deletes a BRC customer by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_get_customer_opening_balance",
+      "description": "Gets a customer's opening balance."
+    },
+    {
+      "name": "brc_list_customer_op_bal_trans",
+      "description": "Gets a customer's opening balance transaction list."
+    },
+    {
+      "name": "brc_list_customer_account_trans",
+      "description": "Gets a customer's account transactions."
+    },
+    {
+      "name": "brc_list_customer_quotes",
+      "description": "Gets quotes for a specific customer."
+    },
+    {
+      "name": "brc_create_supplier",
+      "description": "Creates a BRC supplier using a raw BRC payload. Does not create or update opening balance transactions. If the user provides an opening balance, warn them that it must be entered directly in Big Red Cloud. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_supplier",
+      "description": "Updates a BRC supplier using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_supplier",
+      "description": "Deletes a BRC supplier by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_get_supplier_opening_balance",
+      "description": "Gets a supplier's opening balance."
+    },
+    {
+      "name": "brc_list_supplier_op_bal_trans",
+      "description": "Gets a supplier's opening balance transaction list."
+    },
+    {
+      "name": "brc_list_supplier_account_trans",
+      "description": "Gets a supplier's account transactions."
+    },
+    {
+      "name": "brc_create_purchase",
+      "description": "Creates a BRC purchase using structured MCP fields. Requires a reference when the company is configured for manual purchase references; otherwise prefer brc_create_purchase_gen_ref. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_create_purchase_gen_ref",
+      "description": "Creates a Purchases Book purchase with a generated reference using structured fields. Use when the company is configured for auto-generated purchase references. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_purchase",
+      "description": "Updates a BRC purchase using structured MCP fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_purchase",
+      "description": "Deletes a BRC purchase by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_create_sales_entry",
+      "description": "Creates a BRC sales entry using structured MCP fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_sales_entry",
+      "description": "Updates a BRC sales entry using structured safe text/reference fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_sales_entry",
+      "description": "Deletes a BRC sales entry by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_create_sales_invoice",
+      "description": "Creates a BRC sales invoice using structured MCP fields. Requires a reference when the company is configured for manual sales references; otherwise prefer brc_create_sales_invoice_gen_ref. Previews before posting include a Missing or not provided section for blank customer phone or email only — warnings only, do not invent values. Nothing is written to Big Red Cloud until you confirm. Optional. BRC \"Note\" field on the sales document (JSON field `note`). Leave blank to default it to the customer name (BRC customer \"Name\" / JSON `name`). Do not use the product name as the note. Only set this when the user explicitly provides a note. Optional. BRC \"Delivery To\" address (JSON field `deliveryTo`). Leave blank unless the user explicitly provides a delivery address. Do not invent or default a delivery address (for example \"MCP Test\"). Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. When Gross Price Entry is enabled for sales invoicing, this tool requires priceBasis. Use priceBasis \"gross\" when unit prices are VAT-inclusive/gross, or priceBasis \"net\" when unit prices are VAT-exclusive/net. Do not tell the user to disable Gross Price Entry if they have provided priceBasis. Do not invent productId values and do not use productId 0 or 1 as placeholders. productId 0 and 1 are treated as placeholders and are blocked at runtime before preview-before-posting and before posting. If a product line is needed, first call brc_list_products and use a real product from the connected company. If no suitable product exists, ask the user whether to create/select a product, or use a service/non-product line only if the endpoint supports it. Sales invoices must use Sales VAT rates. Purchase/non-Sales VAT rates are blocked before preview-before-posting and before posting, even if the VAT percentage matches. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_create_sales_invoice_gen_ref",
+      "description": "Creates a BRC sales invoice with an auto-generated reference using a raw BRC payload. Use when the company is configured for auto-generated sales references. Previews before posting include a Missing or not provided section for blank customer phone or email only — warnings only, do not invent values. Nothing is written to Big Red Cloud until you confirm. In the raw payload, the BRC \"Note\" field (JSON `note`) defaults to the customer name (BRC customer \"Name\" / JSON `name`) when omitted and must never be set to the product name; the BRC \"Delivery To\" address (JSON `deliveryTo`) is only included when explicitly provided. Raw BRC payloads for multi-line sales invoices must use `productTrans[]` (one object per product line). Each product line must include its own nested `acEntries[]` for Sales analysis posting — do not send a top-level `acEntries` array on the invoice. Required header fields include customerId, acCode, entryDate, procDate, saleRepId, saleRepCode, bookTranTypeId, totalNet, totalVAT, total, and unpaid. Red validates line amounts, nested analysis values, qty × unit price (using useTaxInclusiveUnitPrice), and header totals before posting, and returns all validation issues together when the payload does not reconcile. Preview-before-posting still shows what Red will post and waits for confirmation before anything is written to Big Red Cloud. Optional. BRC \"Note\" field on the sales document (JSON field `note`). Leave blank to default it to the customer name (BRC customer \"Name\" / JSON `name`). Do not use the product name as the note. Only set this when the user explicitly provides a note. Optional. BRC \"Delivery To\" address (JSON field `deliveryTo`). Leave blank unless the user explicitly provides a delivery address. Do not invent or default a delivery address (for example \"MCP Test\"). Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. When Gross Price Entry is enabled for sales invoicing, this tool requires priceBasis. Use priceBasis \"gross\" when unit prices are VAT-inclusive/gross, or priceBasis \"net\" when unit prices are VAT-exclusive/net. Do not tell the user to disable Gross Price Entry if they have provided priceBasis. Do not invent productId values and do not use productId 0 or 1 as placeholders. productId 0 and 1 are treated as placeholders and are blocked at runtime before preview-before-posting and before posting. If a product line is needed, first call brc_list_products and use a real product from the connected company. If no suitable product exists, ask the user whether to create/select a product, or use a service/non-product line only if the endpoint supports it. Sales invoices must use Sales VAT rates. Purchase/non-Sales VAT rates are blocked before preview-before-posting and before posting, even if the VAT percentage matches. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_sales_invoice",
+      "description": "Updates a BRC sales invoice using structured safe text/reference fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_sales_invoice",
+      "description": "Deletes a BRC sales invoice by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_create_quote",
+      "description": "Creates a BRC quote using structured MCP fields. Requires a quote reference when quote references are manual or unknown. Do not use when Quotes reference setting is Unknown unless the user has provided a quote reference. Previews before posting include a Missing or not provided section for blank customer phone or email only — warnings only, do not invent values. Nothing is written to Big Red Cloud until you confirm. Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_create_quote_gen_ref",
+      "description": "Creates a BRC quote with a generated reference using structured MCP fields. Use only when quote references are auto-generated in Big Red Cloud, or when the user has confirmed auto-generate after Quotes reference setting was Unknown. Previews before posting include a Missing or not provided section for blank customer phone or email only — warnings only, do not invent values. Nothing is written to Big Red Cloud until you confirm. Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_quote",
+      "description": "Updates a BRC quote using structured safe text/reference fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_close_quote",
+      "description": "Closes a BRC quote. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_reopen_quote",
+      "description": "Reopens a BRC quote. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_quote",
+      "description": "Deletes a BRC quote by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_generate_sales_invoice_from_quote",
+      "description": "Generates a sales invoice from a BRC quote. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_create_sales_credit_note",
+      "description": "Creates a BRC sales credit note using structured MCP fields. Requires a reference when the company is configured for manual sales references; otherwise prefer brc_create_sales_credit_note_gen_ref. Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_create_sales_credit_note_gen_ref",
+      "description": "Creates a BRC sales credit note with an auto-generated reference using a raw BRC payload. Use when the company is configured for auto-generated sales references. Requires saleRepId and saleRepCode. Do not use default or demo sales rep values. If missing, list sales reps or ask the user to choose one before creating. Requires analysisCategoryId and accountCode from a Sales Analysis category on each product line. Do not default to CR01/Customer or the first listed category. Set confirmCrAnalysisCategory=true only after the user confirms a CR account code is intentional. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_sales_credit_note",
+      "description": "Updates a BRC sales credit note using structured safe text/reference fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_sales_credit_note",
+      "description": "Deletes a BRC sales credit note by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_create_sales_rep",
+      "description": "Creates a BRC sales rep using structured MCP fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_sales_rep",
+      "description": "Updates a BRC sales rep using structured MCP fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_sales_rep",
+      "description": "Deletes a BRC sales rep by id using timestamp confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_get_nom_ac_ledger_by_ids",
+      "description": "Gets nominal accounts for specific ids by calling GET /v1/nominalAccounts/{id} for each id. Month 1–Month 12 nominal figures are period movements for each financial month, not balances. Running balance = opening balance + cumulative monthly movements. Do not describe individual monthly movement values as monthly balances. If the user asks for balances over time, calculate them from opening balance plus cumulative movements, or explain that only movements are available."
+    },
+    {
+      "name": "brc_grouped_nominal_accounts_report",
+      "description": "Creates a grouped nominal accounts report from GET /v1/nominalAccounts, grouping by account group/type fields when available. Month 1–Month 12 nominal figures are period movements for each financial month, not balances. Running balance = opening balance + cumulative monthly movements. Do not describe individual monthly movement values as monthly balances. If the user asks for balances over time, calculate them from opening balance plus cumulative movements, or explain that only movements are available."
+    },
+    {
+      "name": "brc_multi_company_nom_ac_report",
+      "description": "Creates a grouped nominal accounts report for multiple companies using GET /v1/nominalAccounts for each company. Month 1–Month 12 nominal figures are period movements for each financial month, not balances. Running balance = opening balance + cumulative monthly movements. Do not describe individual monthly movement values as monthly balances. If the user asks for balances over time, calculate them from opening balance plus cumulative movements, or explain that only movements are available."
+    },
+    {
+      "name": "brc_list_cash_payments",
+      "description": "Lists BRC cash payments."
+    },
+    {
+      "name": "brc_get_cash_payment",
+      "description": "Gets one BRC cash payment by id."
+    },
+    {
+      "name": "brc_create_cash_payment",
+      "description": "Creates a BRC cash payment. Use supplierId + ledger for supplier payments, bankAccountId + lodgement for bank lodgements, or analysisCategoryId + accountCode for analysed expenses. Analysis categories must be from the Cash Payments book (CP01-CP03) and accountCode must match the category. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_cash_payment",
+      "description": "Updates a BRC cash payment using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_cash_payment",
+      "description": "Deletes a BRC cash payment by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_cash_payments",
+      "description": "Processes a batch of BRC cash payments. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_list_cash_receipts",
+      "description": "Lists BRC cash receipts."
+    },
+    {
+      "name": "brc_get_cash_receipt",
+      "description": "Gets one BRC cash receipt by id."
+    },
+    {
+      "name": "brc_create_cash_receipt",
+      "description": "Creates a BRC cash receipt. Accepts either a raw payload object or common flat fields. entryDate/procDate default to today. VAT rate fields are only sent when the company's VAT on Cash Receipt setting is enabled. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_cash_receipt",
+      "description": "Updates a BRC cash receipt using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_cash_receipt",
+      "description": "Deletes a BRC cash receipt by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_cash_receipts",
+      "description": "Processes a batch of BRC cash receipts. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_list_payments",
+      "description": "Lists BRC payments."
+    },
+    {
+      "name": "brc_get_payment",
+      "description": "Gets one BRC payment by id."
+    },
+    {
+      "name": "brc_create_payment",
+      "description": "Creates a BRC payment from the Payments book. Use supplierId for supplier payments, or analysisCategoryId + accountCode for analysed bank payments. Analysis categories must be from the bank's Payments book (BP01-BP06) and accountCode must match the category. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_update_payment",
+      "description": "Updates a BRC payment using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_payment",
+      "description": "Deletes a BRC payment by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_payments",
+      "description": "Processes a batch of BRC payments. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_list_bank_accounts",
+      "description": "Lists BRC bank accounts."
+    },
+    {
+      "name": "brc_get_bank_account",
+      "description": "Gets one BRC bank account by id."
+    },
+    {
+      "name": "brc_create_bank_account",
+      "description": "Creates a BRC bank account. Do not call this tool with confirmCreate=true until the user has reviewed a plain-English summary and explicitly confirmed creation. Required fields: acCode, details, lastChq, and nominalAcCode. categoryId is optional; BRC may create the Bank Payments category automatically when categoryId is omitted. nominalAcCode must reference an existing balance-sheet bank nominal account created in BRC setup. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_bank_account",
+      "description": "Updates a BRC bank account using merged fields. Before calling this tool, show the user a plain-English summary of the changes and ask for explicit confirmation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_bank_account",
+      "description": "Deletes a BRC bank account by id. Only call this after the user has explicitly confirmed deletion. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_get_product",
+      "description": "Gets one BRC product by id."
+    },
+    {
+      "name": "brc_create_product",
+      "description": "Creates a BRC product using a raw BRC payload. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_product",
+      "description": "Updates a BRC product using merged fields. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_product",
+      "description": "Deletes a BRC product by id. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_purchases",
+      "description": "Processes a batch of purchases. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_batch_quotes",
+      "description": "Processes a batch of quotes. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_batch_sales_credit_notes",
+      "description": "Processes a batch of sales credit notes. Do not invent productId values and do not use productId 0 or 1 as placeholders. productId 0 and 1 are treated as placeholders and are blocked at runtime before preview-before-posting and before posting. If a product line is needed, first call brc_list_products and use a real product from the connected company. If no suitable product exists, ask the user whether to create/select a product, or use a service/non-product line only if the endpoint supports it. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_batch_sales_entries",
+      "description": "Processes a batch of sales entries. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_batch_sales_invoices",
+      "description": "Processes a batch of sales invoices. Batch sales invoices apply the same safety checks as single sales invoices: productId 0/1 placeholder blocking before preview-before-posting and posting; Sales VAT category validation before preview-before-posting and posting; Gross Price Entry priceBasis handling; CR analysis category confirmation; and counterparty confirmation covering all listed customers. If the batch includes multiple customers, confirming means confirming all listed customers, not just one. Set confirmCrAnalysisCategory=true at batch level only after the user confirms CR sales analysis account codes are intentional. Per item, the BRC \"Note\" field (JSON `note`) defaults to the customer name when omitted (never the product name), and the BRC \"Delivery To\" address (JSON `deliveryTo`) is only included when explicitly provided. Do not invent productId values and do not use productId 0 or 1 as placeholders. productId 0 and 1 are treated as placeholders and are blocked at runtime before preview-before-posting and before posting. If a product line is needed, first call brc_list_products and use a real product from the connected company. If no suitable product exists, ask the user whether to create/select a product, or use a service/non-product line only if the endpoint supports it. Sales invoices must use Sales VAT rates. Purchase/non-Sales VAT rates are blocked before preview-before-posting and before posting, even if the VAT percentage matches. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply. Also requires confirmCounterpartyExplicit: true once the user has explicitly named or confirmed the customer/supplier in the current conversation. Do not reuse a counterparty from an earlier preview without that confirmation."
+    },
+    {
+      "name": "brc_batch_sales_reps",
+      "description": "Processes a batch of sales reps. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_suppliers",
+      "description": "Processes a batch of suppliers. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_customers",
+      "description": "Processes a batch of customers. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_batch_products",
+      "description": "Processes a batch of products. Maximum 20 items per batch request. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_list_sales",
+      "description": "Lists combined BRC sales entries, sales invoices and sales credit notes."
+    },
+    {
+      "name": "brc_process_vat_category_rates",
+      "description": "Processes VAT rates for VAT categories via POST /v1/vatCategories/vatRates. Requires a full vatCategoryRates array and confirmProcess=true. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_getting_started",
+      "description": "Use this whenever the user asks how to start, says start or getting started, wants to connect or reconnect companies, or asks for a concise overview of Red. Return the current customer-friendly overview, connection steps, help options, safe workflow, and example prompts. For a specific tutorial, screenshot, article, YouTube video, or webinar question — or any red-help / /red-help command — use brc_red_help (or brc_find_help_resources for compatibility). If the user asks what they can do or what permissions they have, call brc_get_deployment_policy instead and state only current permissions — do not list tool names or counts."
+    },
+    {
+      "name": "brc_get_deployment_policy",
+      "description": "Authoritative customer-facing permission and output policy summary for this Red session. Use when the user asks what they can do, what tools they have, what permissions are enabled, or whether technical details/code should be shown. Summarise the currently enabled read, write, delete, email, and batch capabilities in plain business language. Do not list MCP tool names, endpoint names, tool counts, JSON, schemas, local file paths, terminal commands, environment variables, or a full capability catalogue. Customer-facing answers must be plain-English business responses with evidence, assumptions, uncertainty, and limitations. Internal analysis is allowed, but code/scripts/commands/intermediate files must not be exposed to customer users unless dev mode is enabled. Assistant-only connection diagnostics (never include in customer answers): a missing result or empty list does not by itself mean the connection has expired; only a confirmed authentication failure should be treated as an invalid company credential."
+    },
+    {
+      "name": "brc_validate_transaction_date",
+      "description": "Checks whether a proposed transaction date is inside the connected BRC company's current financial year."
+    },
+    {
+      "name": "brc_company_readiness_check",
+      "description": "Read-only company health and readiness check for a connected Big Red Cloud company. Reports connection status, financial year, sample reference data (customers, products, suppliers, sales reps), Sales VAT rates, Sales Analysis categories, processing settings, and reference settings. Use this for overall company readiness before starting work. For warnings about a specific VAT-sensitive workflow (sales invoice, purchase, cash receipt, statement), use brc_check_transaction_settings instead — that tool checks one workflow's processing settings, while this tool scores overall company readiness."
+    },
+    {
+      "name": "brc_route_request",
+      "description": "MANDATORY FIRST STEP for Red requests that may create, update, delete, post, email, or batch-write company data. Classify and route a user request between Red's two main behaviours: action (perform the accounting workflow) and help (manual Big Red Cloud instructions). Also returns connection, read, unsupported_action, or unknown when those specialised modes apply. Pass the user's complete original message — never only a confirmation word such as yes or delete it when starting a new action. Action mode always returns a non-empty preferredTools list, allowedTools, and an opaque short-lived routeToken — pass that routeToken on every subsequent transactional tool call for the permitted workflow, including after lookup and preview. unsupported_action means Red cannot map the request to an enabled workflow — explain that to the user; do not invent a routeToken. Help mode runs the unified help search, returns manual resources, sets blockTransactionalTools true, and never issues a transactional routeToken. How-to wording (how do I, how can I, show me how, tell me how, where do I, what are the steps, manual steps for, red-help, /red-help) → mode help. Explicit action wording (add a customer, create a sales invoice, delete customer ABC, can you add a customer for me) → mode action with routeToken. A routeToken does not replace preview-before-posting or user confirmation (confirmWrite). Help mode does not persist — each brc_route_request call is classified independently unless returning confirmation continuation for a pending preview. Read-only classification and help search. Does not require a connected company. When a company is already connected, pass connectionRef silently so the routeToken can bind to that connection and survive MCP session rotation."
+    },
+    {
+      "name": "brc_red_help",
+      "description": "MANDATORY FOR RED-HELP COMMANDS: When the user's message starts with red-help or /red-help, call this tool before searching for or calling any accounting action tool. Red Help — Manual Instructions and Resources. This tool gives manual Big Red Cloud instructions and searches Freshdesk, YouTube, BRC Edu, webinars, screenshots and other available help resources. red-help means the user does not want Red to perform the accounting action — never replace a red-help request with create, update, delete or post tools. Pass the text after red-help as the query. Examples: User: \"red-help how do I add a sales invoice\" Call: brc_red_help({ query: \"how do I add a sales invoice\" }) User: \"/red-help add a customer manually\" Call: brc_red_help({ query: \"add a customer manually\" }) Searchable for common accounting-help topics: manual instructions, how to, help article, tutorial, screenshots, sales invoice, purchase invoice, customer, supplier, bank reconciliation, credit note, payment, receipt, VAT, reports and company setup. Read-only. Does not require a connected company, companyName, connectionRef, or accounting record details. After results, call brc_get_help_resource_details for the best Freshdesk match with includeImages=true and imagePresentation=links. Recommended entry point for reserved red-help / /red-help commands. brc_find_help_resources remains available for backward compatibility."
+    },
+    {
+      "name": "brc_find_help_resources",
+      "description": "Find Big Red Cloud customer help across Freshdesk support articles, customer documentation, recorded webinar videos, and upcoming live webinars. Use when the customer asks a support question or how-to question about Big Red Cloud. For reserved red-help / /red-help commands, prefer brc_red_help (this tool remains for backward compatibility). When the user's message begins with the reserved red-help command (red-help, red-help:, red-help,, or /red-help), treat it as a request for manual instructions — not permission to perform the accounting action. red-help is Red's reserved manual-help command. When a user begins a message with red-help, provide customer-help resources and manual instructions instead of performing the accounting action. Pass the user's question (including the red-help command); the server strips the command and searches with the cleaned query. In red-help mode: do not ask for customer details first; do not call create, update, delete, email, or batch tools unless the user later explicitly asks Red to perform the action. Use brc_start_company_connection only when the cleaned red-help query is specifically about connecting companies. Ordinary wording such as help me, how do I, or show me how does not by itself activate red-help mode — follow normal model-driven routing for those messages. Do not use for connecting companies, listing connected companies, clearing connections, or any company books data. Read-only. Does not require a connected company. Return a concise synthesized answer for the customer: direct answer, clear steps where applicable, then a Sources section with Articles / Videos groupings and exact public links from customerFacingSourcesMarkdown or the sources array. Use only publicUrl or registrationUrl values returned in resources for hyperlinks. Freshdesk links use bigredcloud.freshdesk.com — never rewrite them onto bigredcloud.com/support. Keep screenshot Markdown links beside their related steps — never move them into Sources. Prefer customer documentation for procedural questions, Freshdesk for detailed step-by-step instructions, recorded webinars for video walkthroughs, and upcoming webinars for training/onboarding/live help requests. When the customer asks about upcoming webinars and no upcoming_webinar resources are returned, use customerFacingEmptyUpcomingWebinarMarkdown — do not claim no webinars are scheduled, and do not present recorded webinars as upcoming. Do not show internal resource IDs, Azure blob names, storage URLs, relevance scores, or sync metadata to the customer. For Big Red Cloud how-to or tutorial questions, automatically open the best matching Freshdesk article from usedResourceIds with brc_get_help_resource_details using includeImages=true and imagePresentation=links. Place each relevant screenshot beside its step even when the user did not explicitly ask for images. Never claim no Freshdesk article exists when usedResourceIds includes a matching Freshdesk resource. Sources must list only usedResourceIds — never unrelated login, API-key, user, or webinar search hits. Under Sources, group Freshdesk / documentation under Articles and recorded webinars under Videos — omit an empty Videos heading. For procedural how-tos, automatically include the strongest topic-aligned training video under Videos when one exists — do not require the user to ask for a video. Always emit Sources before any Do this through Red section. When redActionAvailable is true, include customerFacingRedActionMarkdown after Sources and before support — do not start the action unless the user asks. Manual guidance must appear before any offer to perform the action through Red. Always end every help answer with Still need help? and [Contact Big Red Cloud Support](https://bigredcloud.com/contact/) — support must be last. Never claim company data was changed by a tutorial answer."
+    },
+    {
+      "name": "brc_get_help_resource_details",
+      "description": "Load full help-resource details for a resourceId returned by brc_red_help or brc_find_help_resources. For Big Red Cloud how-to or tutorial questions, call this automatically for the best matching Freshdesk article with includeImages=true and imagePresentation=links — even when the user did not explicitly ask for screenshots. Freshdesk resources return cleaned article text, the canonical Freshdesk publicUrl when available, preferred instructionBlocks, ready-to-use customerFacingScreenshotMarkdown / customerFacingInstructionMarkdown, screenshotUrls for backward compatibility, Sources fields, optional Red-action fields, and optional MCP image content. When includeImages is true, use imagePresentation='links' unless the user explicitly asks for inline image content. Copy the exact Markdown links returned in customerFacingScreenshotMarkdown or customerFacingInstructionMarkdown into the final answer. Place each link after its related step. Use the short View image link text (or View image N when one step has multiple images) — do not paste the descriptive caption as link text or as a second instruction sentence. Never omit valid returned screenshot links after telling the user screenshots are available. Do not merely describe the screenshots. Do not say Here are the screenshots without including the links. Do not replace links with Screenshot 1, Tool result, Show Image, or invent different URLs. Do not depend on tool-result image previews being visible to the user — the final answer must contain the exact signed Markdown links. If no links are returned, clearly say that no matching screenshot was found. Pass the customer question when available so Freshdesk screenshots are selected from the matching workflow branch (for example existing customer versus add customer). Prefer instructionBlocks / customerFacingInstructionMarkdown when present: follow them in order and keep every screenshot Markdown link exact. Never label screenshot links Show Image. Do not invent captions or URLs. Do not group screenshots under a Relevant screenshots section when step-and-link Markdown is available. Omit screenshots from unused workflow branches. Omit unclear screenshots rather than guessing. Do not repeat a screenshot. When instructionBlocks are absent, use customerFacingScreenshotMarkdown with [View image](URL) links and place each after the most relevant paragraph where possible. Do not rewrite or alter supplied screenshot URLs. Copy customerFacingSourcesMarkdown into a Sources section using the exact publicUrl or registrationUrl returned by this tool. Group Freshdesk / documentation under Articles and recorded webinars under Videos — omit an empty Videos heading. Keep screenshot links beside steps — do not move them into Sources. When redActionAvailable is true, include customerFacingRedActionMarkdown after Sources. Do not start the Red action unless the user asks. Mention preview-before-posting for write actions. Always end with customerFacingSupportMarkdown (Still need help?) after Sources and any Red-action section. Freshdesk links use bigredcloud.freshdesk.com — never rewrite them onto bigredcloud.com/support. Customer documentation returns cleaned article text and the public docs URL. Recorded webinars return title, description, public video URL, and category. Upcoming webinars return title, weekday, description, topics, registration URL, and webinar-series page URL. Read-only. Does not require a connected company. MCP image content blocks are optional compatibility content when imagePresentation is inline or both. Do not claim screenshots were supplied when imageCount is 0 or when no Markdown links are returned. Do not expose Azure blob names, storage URLs, private Freshdesk image URLs, image hashes, or sync metadata in customer-facing text. Never claim company data was changed by a tutorial answer."
+    },
+    {
+      "name": "brc_open_edu_admin",
+      "description": "Return the protected URL for Red's content administration page (Freshdesk articles, YouTube videos, and visibility controls). Use when a Big Red Book / Big Red Cloud staff member asks to open Red's admin page, the BRC Edu admin page, or the content resources admin. Returns only the customer-facing protected admin URL — never a shared secret, query parameter, token, or bypass link. Opening the link still requires Microsoft Entra sign-in; only authorised staff can access the page. Does not bypass authentication. Does not require a connected company. Do not invent or append secret query parameters. Do not expose BRC_EDU_ADMIN_UPLOAD_SECRET or any upload secret."
+    },
+    {
+      "name": "brc_list_audit_log",
+      "description": "Show a record of data changes (create, update, delete, batch, quote close/reopen, emails, etc.) made through this Red MCP server session. Read-only API calls are not logged. Use this as the source of truth for \"what did I do today in Red?\" style questions. When the user asks what they did \"in Red\" (or in Big Red Cloud), answer only from Red/BRC activity for the current Red session and for companies currently connected in this session: the Red/BRC audit log, BRC session actions, and connector-visible BRC activity. Never include activity from other MCP sessions, other users, other connections, or companies that are not currently connected (including ones that were disconnected or cleared). For \"what did I do today/yesterday/last week in Red\", only summarise current-session audit entries for currently connected companies; if older entries exist outside this scope, ignore them completely rather than reporting them. Do not include unrelated Claude chat history such as MCP debugging, Mistral debugging, coding work, or other non-BRC conversations unless the user explicitly asks for broader chat history."
+    },
+    {
+      "name": "brc_clear_audit_log",
+      "description": "Clear the Red audit log for this MCP server session. First call without confirmWrite: true returns confirmation_required and a payload preview — show a plain-English preview before posting in chat, then retry with confirmWrite: true only after explicit user confirmation in a later message. Red shows what it will post and waits for confirmation. Passing preflight is not confirmation."
+    },
+    {
+      "name": "brc_send_sales_invoice_email",
+      "description": "Sends a sales invoice email. Supported document type only. Red email sending is available for sales invoices, quotes, and customer statements — not for cash receipts, purchases, payments, bank accounts, customers, suppliers, products, reports, or other document types. If the user asks to email an unsupported document type, say Red cannot email it through the current MCP tools, list the supported types, and stop without preparing an email preview or attempting a workaround. Do not call this tool with confirmSend=true until the user has reviewed a plain-English email preview and explicitly confirmed they want to send it. The email preview must show the recipient email address clearly before asking for send confirmation. If there is no customer email on file and no recipient override, stop and ask for a recipient email address — do not send. Create/post confirmation and email send confirmation are separate steps. If the user provides multiple recipient addresses, ask whether to send one email using BCC or separate individual emails. Only use sendMode='separate' when the user explicitly chooses separate emails. Do not ask about BCC unless the user provides multiple recipients or asks to copy another address. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_send_email_statement",
+      "description": "Sends a customer statement email. Supported document type only. Red email sending is available for sales invoices, quotes, and customer statements — not for cash receipts, purchases, payments, bank accounts, customers, suppliers, products, reports, or other document types. If the user asks to email an unsupported document type, say Red cannot email it through the current MCP tools, list the supported types, and stop without preparing an email preview or attempting a workaround. Do not call this tool with confirmSend=true until the user has reviewed a plain-English email preview and explicitly confirmed they want to send it. The email preview must show the recipient email address clearly before asking for send confirmation. If there is no customer email on file and no recipient override, stop and ask for a recipient email address — do not send. Create/post confirmation and email send confirmation are separate steps. If the user provides multiple recipient addresses, ask whether to send one email using BCC or separate individual emails. Only use sendMode='separate' when the user explicitly chooses separate emails. Do not ask about BCC unless the user provides multiple recipients or asks to copy another address. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_send_quote_email",
+      "description": "Sends a quote email. Supported document type only. Red email sending is available for sales invoices, quotes, and customer statements — not for cash receipts, purchases, payments, bank accounts, customers, suppliers, products, reports, or other document types. If the user asks to email an unsupported document type, say Red cannot email it through the current MCP tools, list the supported types, and stop without preparing an email preview or attempting a workaround. Do not call this tool with confirmSend=true until the user has reviewed a plain-English email preview and explicitly confirmed they want to send it. The email preview must show the recipient email address clearly before asking for send confirmation. If there is no customer email on file and no recipient override, stop and ask for a recipient email address — do not send. Create/post confirmation and email send confirmation are separate steps. If the user provides multiple recipient addresses, ask whether to send one email using BCC or separate individual emails. Only use sendMode='separate' when the user explicitly chooses separate emails. Do not ask about BCC unless the user provides multiple recipients or asks to copy another address. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_get_company_processing_settings",
+      "description": "Reads BRC company processing/options settings that affect VAT, cash receipts, payment terms, debtor statements, gross price entry, and transaction creation behaviour. Use this before VAT-sensitive write workflows where possible. These settings are read-only in Red; changes must be made in Big Red Cloud."
+    },
+    {
+      "name": "brc_get_company_reference_settings",
+      "description": "Reads BRC reference auto-generation settings for sales, purchases, quotes, debtors journal, and creditors journal. Use this before preparing or creating quotes, invoices, purchases, or other reference-sensitive records. If Quotes is Unknown, do not assume auto-generate; ask for a quote reference or user confirmation first. These settings are read-only in Red; changes must be made in Big Red Cloud."
+    },
+    {
+      "name": "brc_check_transaction_settings",
+      "description": "Checks BRC company processing settings before a VAT-sensitive or payment-terms-sensitive transaction workflow. Returns warnings that should be shown before creating or changing records. Use this for one workflow (sales invoice, purchase, cash receipt, or statement). For overall company readiness (connection, financial year, Sales VAT, Sales Analysis, reference data), use brc_company_readiness_check instead."
+    },
+    {
+      "name": "brc_list_allocation_resolvers",
+      "description": "Returns transactions eligible for allocation from the specified sender book transaction. Use this before updating allocations so the user can see which receiver transactions are available. Requires bookTranId."
+    },
+    {
+      "name": "brc_update_allocations",
+      "description": "Creates or updates allocations for a sender book transaction. Use brc_list_allocation_resolvers first to identify eligible receiver transactions. Do not call with confirmWrite=true until the user has reviewed the allocation preview and explicitly confirmed posting. Required fields: bookTranId and allocationResolvers with allocated amounts and receiver book transaction ids. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_list_allocated_transactions",
+      "description": "Returns transactions already allocated from the specified sender book transaction. Use this to review existing allocations before reversing/deleting one. Requires bookTranId."
+    },
+    {
+      "name": "brc_delete_allocation_resolver",
+      "description": "Reverses/deletes a single allocation by allocation resolver id. Use brc_list_allocated_transactions first to find the allocation id. Do not call with confirmWrite=true until the user explicitly confirms the reversal/deletion. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_list_nominal_journal_batches",
+      "description": "Returns a list of the company's Nominal Journal Batches. Supports optional OData filtering by entryDate and ordering by id. Use this before updating or deleting a nominal journal batch so the user can identify the correct id and timestamp."
+    },
+    {
+      "name": "brc_get_nominal_journal_batch",
+      "description": "Returns information about a single Nominal Journal Batch by id."
+    },
+    {
+      "name": "brc_create_nominal_journal_batch",
+      "description": "Creates a new Nominal Journal Batch. The journal should contain balanced debit and credit lines. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed creation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_nominal_journal_batch",
+      "description": "Updates an existing Nominal Journal Batch by id. Use brc_get_nominal_journal_batch first to retrieve the current batch, including timestamp and account transaction line timestamps. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed the update. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_nominal_journal_batch",
+      "description": "Removes an existing Nominal Journal Batch by id. Requires the batch timestamp in Base64 string format. Use brc_get_nominal_journal_batch first to retrieve the current timestamp. Do not call with confirmWrite=true until the user explicitly confirms deletion. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_list_accruals",
+      "description": "Returns a list of the company's Accruals. Supports optional OData filtering by entryDate. Supports optional ordering by id."
+    },
+    {
+      "name": "brc_get_accrual",
+      "description": "Returns information about a single parent Accrual by id. Child accruals are not exposed by the public API."
+    },
+    {
+      "name": "brc_create_accrual",
+      "description": "Creates a new parent Accrual. The API accepts only the parent transaction shape and relies on shared logic to generate the reversing child transaction. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed creation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_accrual",
+      "description": "Updates an existing parent Accrual by id. Use brc_get_accrual first to retrieve the current accrual and timestamp. Child accruals are not exposed by the public API. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed the update. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_accrual",
+      "description": "Removes an existing parent Accrual by id. Requires the accrual timestamp in Base64 string format. Use brc_get_accrual first to retrieve the current timestamp. Do not call with confirmWrite=true until the user explicitly confirms deletion. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_list_prepayments",
+      "description": "Returns a list of the company's Prepayments. Supports optional OData filtering by entryDate. Supports optional ordering by id."
+    },
+    {
+      "name": "brc_get_prepayment",
+      "description": "Returns information about a single parent Prepayment by id. Child prepayments are not exposed by the public API."
+    },
+    {
+      "name": "brc_create_prepayment",
+      "description": "Creates a new parent Prepayment. The API accepts only the parent transaction shape and relies on shared logic to generate the reversing child transaction. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed creation. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_update_prepayment",
+      "description": "Updates an existing parent Prepayment by id. Use brc_get_prepayment first to retrieve the current prepayment and timestamp. Child prepayments are not exposed by the public API. Do not call with confirmWrite=true until the user has reviewed the preview and explicitly confirmed the update. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    },
+    {
+      "name": "brc_delete_prepayment",
+      "description": "Removes an existing parent Prepayment by id. Requires the prepayment timestamp in Base64 string format. Use brc_get_prepayment first to retrieve the current timestamp. Do not call with confirmWrite=true until the user explicitly confirms deletion. Requires routeToken from brc_route_request for the matching action workflow. Call brc_route_request first with the user's complete original action request. Retain the returned routeToken through lookup, preview, and confirmation, and pass the same token on the final permitted transactional tool call. Never invent a placeholder token. A routeToken is not permission to post — preview-before-posting and confirmWrite/confirmDelete still apply."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:16:25.414Z",
+  "toolsPreviewStatus": "ok"
+}

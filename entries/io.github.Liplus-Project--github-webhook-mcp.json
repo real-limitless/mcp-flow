@@ -1,0 +1,90 @@
+{
+  "id": "io.github.Liplus-Project/github-webhook-mcp",
+  "title": "github-webhook-mcp",
+  "description": "MCP server bridging GitHub webhooks via Cloudflare Worker for real-time event streaming",
+  "summary": "MCP server bridging GitHub webhooks via Cloudflare Worker for real-time event streaming",
+  "offersHint": "MCP server bridging GitHub webhooks via Cloudflare Worker for real-time event streaming · Packages: npm:github-webhook-mcp · Env vars: WEBHOOK_CHANNEL, WEBHOOK_WORKER_URL",
+  "version": "0.8.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "github-webhook-mcp",
+    "version": "0.8.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WEBHOOK_WORKER_URL",
+        "description": "URL of your deployed Cloudflare Worker endpoint (default: https://github-webhook.smgjp.com)"
+      },
+      {
+        "name": "WEBHOOK_CHANNEL",
+        "description": "Set to '0' to disable SSE channel notifications (default: enabled)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "github-webhook-mcp",
+      "version": "0.8.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WEBHOOK_WORKER_URL",
+          "description": "URL of your deployed Cloudflare Worker endpoint (default: https://github-webhook.smgjp.com)"
+        },
+        {
+          "name": "WEBHOOK_CHANNEL",
+          "description": "Set to '0' to disable SSE channel notifications (default: enabled)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WEBHOOK_CHANNEL",
+      "description": "Set to '0' to disable SSE channel notifications (default: enabled)"
+    },
+    {
+      "name": "WEBHOOK_WORKER_URL",
+      "description": "URL of your deployed Cloudflare Worker endpoint (default: https://github-webhook.smgjp.com)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Liplus-Project/github-webhook-mcp",
+  "repository": {
+    "url": "https://github.com/Liplus-Project/github-webhook-mcp",
+    "source": "github",
+    "id": "1175626622",
+    "subfolder": "mcp-server"
+  },
+  "updatedAt": "2026-04-02T10:26:44.048641Z",
+  "publishedAt": "2026-04-02T10:26:44.048641Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:25.307Z",
+    "sourceRepoAt": "2026-08-12T00:08:12.294Z",
+    "readmeAt": "2026-08-12T00:08:12.891Z",
+    "toolsAt": "2026-08-12T01:39:25.307Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Liplus-Project/github-webhook-mcp",
+    "checkedAt": "2026-08-12T00:08:12.294Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Liplus-Project/github-webhook-mcp/main/README.md",
+    "markdown": "# github-webhook-mcp\n\nReal-time GitHub webhook notifications for Claude via Cloudflare Worker + Durable Object.\n\n## Architecture\n\n```\nGitHub ──POST──▶ Cloudflare Worker ──▶ Durable Object (SQLite)\n                                           │\n                                           ├── MCP tools (Streamable HTTP)\n                                           ├── WebSocket real-time stream\n                                           │\n                          ┌────────────────┘\n                          │\n     Desktop / Codex: .mcpb local bridge ──▶ polling via MCP tools\n     Claude Code CLI: .mcpb local bridge ──▶ WebSocket → channel notifications\n```\n\n- **Cloudflare Worker** receives GitHub webhooks, verifies signatures, stores events in a Durable Object with SQLite.\n- **Local MCP bridge** (.mcpb) proxies tool calls to the Worker and optionally connects via WebSocket for real-time channel notifications.\n- No local webhook receiver or tunnel required.\n\n## Breaking change: MCP protocol revision 2026-07-28\n\nFrom this release the Worker serves **MCP protocol revision 2026-07-28 only**. It keeps no compatibility lane for the previous revision.\n\n- **Bridge versions older than this release stop working.** They open a session with `initialize`, which the Worker no longer answers. The failure is quiet: the bridge does not crash, it returns the protocol error as tool output text.\n- **Real-time channel notifications keep arriving, which hides the breakage.** The `/events` stream is not MCP and is unaffected, so a stale bridge still pushes event summaries while every tool call — including `mark_processed` — fails. The pending queue stops being cleared even though notifications look healthy.\n- **Restart the MCP client to pick up the new bridge.** The bridge is launched with `npx`, and `@latest` is resolved at process start — an already-running Claude Desktop, Claude Code, or Codex keeps the copy it started with, however new the published version is. Quit it fully and reopen.\n- **Pinning the bridge version leaves you stuck.** If your MCP client config pins a version older than this release, restarting does not help; remove the pin (or move it forward) first.\n\nThe Worker and the bridge ship together, so a bridge from this release or later needs no configuration change.\n\n## Prerequisites\n\n| Component | Required |\n|-----------|----------|\n| **Node.js 18+** | MCP server |\n| **Cloudflare account** | Worker deployment (self-hosting) |\n\n## Getting Started\n\n### 1. Install the GitHub App\n\nInstall the **GitHub Webhook MCP** app on your GitHub organization or account:\n\n1. Visit the [GitHub App installation page](https://github.com/apps/liplus-webhook-mcp)\n2. Select the organization or account to install on\n3. Choose which repositories to grant access to (or all repositories)\n4. Approve the requested permissions\n\n> **Note:** When the app requests new permissions after an update, you must approve them in your GitHub notification or the app's installation settings. Webhooks will not be delivered until permissions are accepted.\n\n> **Important:** Do not create a separate repository webhook for the same endpoint. The GitHub App handles all webhook delivery — a repository webhook would cause duplicate or malformed requests.\n\n### 2. Set up the MCP client\n\nContinue to the [Installation guide](https://github.com/Liplus-Project/github-webhook-mcp/wiki/Installation) to connect your AI assistant to the webhook service.\n\n## Installation\n\nSee the [Installation wiki page](https://github.com/Liplus-Project/github-webhook-mcp/wiki/Installation) for the full setup guide, including:\n\n- **Quick Start** with the preview instance\n- **MCP Client Setup** for Claude Desktop, Claude Code CLI, and Codex\n- **Self-Hosting Guide** for Cloudflare Workers deployment\n\n## Updating\n\nA published release does not reach a running client on its own. npx resolves the package version\nonce, when the process starts — including when the client config pins `@latest` — so an MCP client\nthat is already running keeps the version it started with no matter what the registry serves.\n**Restart the MCP client (Claude Desktop, Claude Code, Codex) to pick up a new release.** The\nrestart is what moves the client onto the new version.\n\nCheck what the registry actually has with `--prefer-online`. The npm CLI caches registry metadata,\nso a bare `npm view` can still report the previous version shortly after a publish:\n\n```bash\nnpm view github-webhook-mcp version --prefer-online\n```\n\n## Usage Examples\n\n### Example 1: Check pending webhook status\n\n**User prompt:**\n> \"Are there any new GitHub notifications?\"\n\n**Expected output:**\nThe AI calls `get_pending_status` and returns a summary:\n\n```\nYou have 3 pending webhook events:\n- 2 push events\n- 1 pull_request event\n```\n\n### Example 2: Inspect a specific event\n\n**User prompt:**\n> \"Show me the details of the latest pull request event.\"\n\n**Expected output:**\nThe AI calls `list_pending_events` to find the PR event, then `get_event` with the event ID to retrieve the full payload:\n\n```\nPR #42 \"Fix login timeout\" was opened by @alice in repo acme/web-app\n  Branch: fix/login-timeout → main\n  Status: open\n  Changed files: 3\n```\n\n### Example 3: Process events after review\n\n**User prompt:**\n> \"I've reviewed all the push notifications, mark them as done.\"\n\n**Expected output:**\nThe AI calls `list_pending_events` to find push events, then clears them with a single\n`mark_processed({ event_ids: [...] })` call:\n\n```\nMarked 2 push events as processed:\n- Push to main by @bob (3 commits)\n- Push to develop by @alice (1 commit)\n```\n\n### Example 4: Monitor CI status via webhooks\n\n**User prompt:**\n> \"Did the CI checks pass on my latest PR?\"\n\n**Expected output:**\nThe AI calls `list_pending_events` to find `check_run` events related to the PR, then `get_event` for details:\n\n```\nCI results for PR #42 \"Fix login timeout\":\n- build (ubuntu-latest): ✓ passed\n- lint: ✓ passed\n- test (node-18): ✓ passed\nAll checks passed.\n```\n\n## MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `get_pending_status` | Lightweight snapshot of pending event counts by type |\n| `list_pending_events` | Summaries of pending events (no full payloads) |\n| `get_event` | Full payload for a single event by ID |\n| `get_webhook_events` | Full payloads for all pending events |\n| `mark_processed` | Mark events as processed (`event_id` for one, `event_ids` for a batch) |\n\n## Event Retention\n\nStored events are purged automatically to bound Durable Object storage. The Worker\nruns a time-based sweep on a Durable Object Alarm (daily), so cleanup happens even\nfor tenants that never call `mark_processed`:\n\n| Event class | Retention window | Env var | Default |\n|-------------|------------------|---------|---------|\n| Processed (`mark_processed` called) | older than the window is deleted | `PURGE_AFTER_DAYS` | `3` days |\n| Unprocessed (never marked) | older than the window is deleted | `UNPROCESSED_PURGE_AFTER_DAYS` | `90` days |\n\n- The longer window for unprocessed events is intentional: unprocessed means\n  user-unseen, so the safety margin before dropping is wide (the 3-day vs 90-day\n  asymmetry is by design).\n- The sweep runs via a Durable Object Alarm on a daily cadence and reschedules\n  itself, so it fires independently of consumption. Processed events are also\n  purged immediately on `mark_processed` for promptness; the Alarm sweep is the\n  guarantee that covers abandoned tenants.\n- Both windows are configurable in `worker/wrangler.toml` (`[vars]`). Setting a\n  value to `0` purges that class immediately on sweep.\n- Known limitation: the windows bound event *age*, not *volume*. A high-rate,\n  never-consumed tenant can still reach Cloudflare's 1 GB-per-DO ceiling before\n  the 90-day window applies. A volume-based hard cap is tracked separately.\n\n## Monorepo Structure\n\n```\nworker/       — Cloudflare Worker + Durable Objects\nlocal-mcp/    — Local stdio MCP bridge (TypeScript, dev)\nmcp-server/   — .mcpb package for Claude Desktop\nshared/       — Shared types and utilities\n```\n\n## Privacy Policy\n\nEvents are stored in a Cloudflare Durable Object (edge storage). The local MCP bridge proxies tool calls to the Worker and does not store event data locally.\n\n- Extension privacy policy: https://smgjp.com/privacy-policy-github-webhook-mcp/\n\n## Support\n\n- GitHub Issues: https://github.com/Liplus-Project/github-webhook-mcp/issues\n- [Wiki](https://github.com/Liplus-Project/github-webhook-mcp/wiki) (EN / JA)\n- Requirements: [docs/0-requirements.md](docs/0-requirements.md)\n\n## Related\n\n- [Liplus-Project/liplus-language](https://github.com/Liplus-Project/liplus-language) — Li+ language specification\n",
+    "fetchedAt": "2026-08-12T00:08:12.891Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:25.307Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

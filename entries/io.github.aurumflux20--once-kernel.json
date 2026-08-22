@@ -1,0 +1,58 @@
+{
+  "id": "io.github.aurumflux20/once-kernel",
+  "title": "once",
+  "description": "Run a side effect exactly once under retries, redelivery, and concurrent workers.",
+  "summary": "Run a side effect exactly once under retries, redelivery, and concurrent workers.",
+  "offersHint": "Run a side effect exactly once under retries, redelivery, and concurrent workers. · Packages: pypi:once-kernel",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "once-kernel",
+    "version": "0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "once-kernel",
+      "version": "0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/aurumflux20/once-kernel",
+  "repository": {
+    "url": "https://github.com/aurumflux20/once-kernel",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T08:33:42.332946Z",
+  "publishedAt": "2026-08-07T08:33:42.332946Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:31.100Z",
+    "sourceRepoAt": "2026-08-11T23:55:42.390Z",
+    "readmeAt": "2026-08-11T23:55:42.909Z",
+    "toolsAt": "2026-08-12T01:29:31.100Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aurumflux20/once-kernel",
+    "checkedAt": "2026-08-11T23:55:42.390Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aurumflux20/once-kernel/main/README.md",
+    "markdown": "# once\n\n<!-- mcp-name: io.github.aurumflux20/once-kernel -->\n\n**Run any side effect exactly once — even when 1,000 callers demand it at the same instant.**\n\n![1,000 concurrent duplicate charges, one execution](https://raw.githubusercontent.com/aurumflux20/once-kernel/main/docs/storm.gif)\n\n```\n⚡ once — STORM DEMO\n1,000 concurrent attempts to charge order #777 ($49.00)\n\nACTUAL EXECUTIONS   :      1   ← the whole point\nserved same answer  :  1,000 / 1,000\nelapsed             :   0.1s\n\n💰 double-spend prevented this run: $48,951.00\n```\n\nThat's not a mock — it's a live attack you can run right now:\n\n```bash\npip install once-kernel\npython -m once.demo\n```\n\n## The problem\n\nNetworks retry. Users double-click. Queues redeliver. **AI agents re-fire tools at machine speed.** Any of these turns one payment into two, one email into three, one server into two hundred.\n\nMost teams hand-roll an idempotency table — and most of those are [quietly broken under concurrent load](https://dev.to/chaitanya_srivastav_9bd5a/why-your-idempotency-implementation-is-probably-broken-under-concurrent-load-5b22): two identical requests both pass the \"already done?\" check, then both execute. The bugs are subtle, the failures are money.\n\n`once` is that table done right, once, for everyone — a tiny **idempotency kernel** with the four defenses hand-rolled versions miss:\n\n1. **Atomic leader election** — concurrent duplicates can't all pass the check; exactly one executes, the rest coalesce onto its result.\n2. **Payload fingerprinting (RFC 8785)** — same key with a *different* body is a hard `IdempotencyConflict`, never someone else's cached answer.\n3. **Fence tokens + generations** — a crashed worker's lease can be taken over, and when the \"dead\" worker wakes up late, it is *locked out* of corrupting the record.\n4. **Honest failure states** — a failed attempt frees the key for retry; an unknown outcome never silently re-runs.\n\n## Use it\n\n```python\nfrom once import Once\n\no = Once()\n\ndef charge():\n    return gateway.charge(order_id=\"ord_1\", amount_cents=4900)\n\n# Retries, double submits, webhook redelivery, agent fan-out → runs ONCE\nresult = o.run(\"pay:ord_1\", {\"order\": \"ord_1\", \"amount_cents\": 4900}, charge)\n```\n\nOne box, several processes, no database server — SQLite, nothing to install:\n\n```python\nfrom once import Once\nfrom once.sqlite import SqliteStore\n\no = Once(SqliteStore(\"/var/lib/myapp/once.db\"))  # schema auto-created\n```\n\nSurvives restarts and works across processes (WAL mode). The default `MemoryStore` does neither — it is per-process, so the moment you run a second worker each one keeps its own private idea of what already ran, and the guard silently stops guarding.\n\nSeveral machines — share state through the Postgres you already run:\n\n```python\nfrom once import Once\nfrom once.pg import PostgresStore\n\no = Once(PostgresStore(\"postgresql://user:pass@host/db\"))  # table auto-created\n```\n\nAsync (FastAPI, agents) — sync side effects go to a worker thread, waiters park on the event loop (no thread-pool starvation under duplicate storms; there's a test that proves it):\n\n```python\nfrom once import AsyncOnce\n\nao = AsyncOnce()\nresult = await ao.run(\"pay:ord_1\", payload, charge)\n```\n\n**[→ The full 5-minute guide](https://github.com/aurumflux20/once-kernel/blob/main/docs/FIVE_MINUTE_GUIDE.md)**\n\n## What you can rely on\n\n| If this happens | You get |\n|---|---|\n| Same key + same payload, again | The stored result — **no second execution** |\n| Same key + **different** payload | `IdempotencyConflict` — never a silent wrong answer |\n| 1,000 concurrent first requests | **One** executor; everyone else coalesces (`wait=True`) or is told to wait |\n| Executing worker dies | Lease expires → another caller takes over |\n| \"Dead\" worker wakes up late | **Fenced out** — cannot complete, cannot fail, cannot corrupt |\n| Long job outliving its lease | `heartbeat()` keeps it protected |\n| Your function raises | Key freed — a later retry may execute |\n\n**The honest model** (put this on a poster): **exactly-once execution + at-least-once result delivery.** True network exactly-once is physically impossible — libraries claiming it are lying to you. We execute once and re-*deliver* the answer as many times as asked.\n\n## Tested like money depends on it\n\nBecause it does. Every claim above is enforced by the chaos suite — barrier-forced thread storms, dead-lease reclaim stampedes, zombie-writer fencing, frozen-clock timeout attacks, event-loop-starvation detection — **run against both the in-memory store and real PostgreSQL on every commit** (CI fails loudly if the Postgres bench is skipped). Silence in CI never means \"untested.\"\n\nAnd we run it on our own production mailer — a double-approved send replays instead of double-emailing a real prospect. Dogfood first.\n\n## Not this\n\n- Not a payment provider — it guards *your* calls to one\n- Not a workflow engine (no sagas, no multi-key transactions — [by decision](https://github.com/aurumflux20/once-kernel/blob/main/LOCKED.md))\n- Not magic \"exactly-once everywhere\" — see the honest model above\n\n## Docs\n\n- [Examples: FastAPI webhook · Celery task](https://github.com/aurumflux20/once-kernel/tree/main/examples/) — and the three decisions that actually take judgement (key, payload, store)\n- [5-minute integration guide](https://github.com/aurumflux20/once-kernel/blob/main/docs/FIVE_MINUTE_GUIDE.md)\n- [Full API reference](https://github.com/aurumflux20/once-kernel/blob/main/docs/API.md)\n- [State machine — legal & illegal transitions](https://github.com/aurumflux20/once-kernel/blob/main/docs/STATE_MACHINE.md)\n- [What we store: result size + PII policy](https://github.com/aurumflux20/once-kernel/blob/main/docs/PII_AND_RESULT_POLICY.md)\n- [Architecture decisions](https://github.com/aurumflux20/once-kernel/blob/main/LOCKED.md)\n\n## Sibling project — EffectFence (Rust)\n\n[**EffectFence**](https://github.com/aurumflux20/effectfence) (`cargo add effectfence`) is the Rust half of the same idea: a causal fence for tool side effects, with content-addressed certificates and an MCP proxy mode — `effectfence wrap -- <any mcp server>` fences another server's tool calls with zero code change (proven against `once-mcp`).\n\nUse `once` when the side effect is Python and you want a durable store; use EffectFence when the fence lives in Rust or in front of an MCP server.\n\n## Commercial support\n\nFree and Apache-2.0, and staying that way. If you want help applying it to a\ncodebase that already moves money — side-effecting paths inventoried,\nstorm-tested, fenced, with a CI test that keeps them fenced — email\n**hello@aurumflux.co**. Details:\n[the Fence Audit](https://github.com/aurumflux20/effectfence/blob/main/SUPPORT.md).\n\n## License\n\nApache-2.0\n",
+    "fetchedAt": "2026-08-11T23:55:42.909Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:31.100Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

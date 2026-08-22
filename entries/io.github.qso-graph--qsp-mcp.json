@@ -1,0 +1,58 @@
+{
+  "id": "io.github.qso-graph/qsp-mcp",
+  "title": "qsp-mcp",
+  "description": "QSP — relay MCP tools to any OpenAI-compatible local LLM (llama.cpp, Ollama, vLLM)",
+  "summary": "QSP — relay MCP tools to any OpenAI-compatible local LLM (llama.cpp, Ollama, vLLM)",
+  "offersHint": "QSP — relay MCP tools to any OpenAI-compatible local LLM (llama.cpp, Ollama, vLLM) · Packages: pypi:qsp-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "qsp-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "qsp-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/qso-graph/qsp-mcp",
+  "repository": {
+    "url": "https://github.com/qso-graph/qsp-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-11T02:27:57.860407Z",
+  "publishedAt": "2026-03-11T02:27:57.860407Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:03.412Z",
+    "sourceRepoAt": "2026-08-11T23:24:58.455Z",
+    "readmeAt": "2026-08-11T23:24:59.031Z",
+    "toolsAt": "2026-08-12T01:05:03.412Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/qso-graph/qsp-mcp",
+    "checkedAt": "2026-08-11T23:24:58.455Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/qso-graph/qsp-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.qso-graph/qsp-mcp -->\n# qsp-mcp\n\n**QSP** — relay MCP tools to any OpenAI-compatible local LLM endpoint.\n\nNamed after the Q-signal **QSP** (\"Will you relay?\"), qsp-mcp relays tool calls between a local LLM and [MCP](https://modelcontextprotocol.io/) servers. Any model with function calling capability gains access to the full [qso-graph](https://qso-graph.io) tool ecosystem — 80 tools across 14 packages — from local weights, not from cloud.\n\n## Install\n\n```bash\npip install qsp-mcp\n```\n\n## Quick Start\n\n```bash\n# Interactive mode\nqsp-mcp --config ~/.config/qsp-mcp/config.json\n\n# Single query\nqsp-mcp --query \"What bands are open from DN13 to JN48 right now?\"\n\n# Direct endpoint (no config file needed if no MCP servers configured)\nqsp-mcp --endpoint http://localhost:8000/v1/chat/completions --api-key sk-xxx\n```\n\n## Configuration\n\nThe config format is **Claude Desktop compatible** — copy your existing `mcpServers` block directly:\n\n```json\n{\n  \"mcpServers\": {\n    \"ionis\": {\n      \"command\": \"ionis-mcp\",\n      \"env\": { \"IONIS_DATA_DIR\": \"/path/to/datasets/v1.0\" }\n    },\n    \"solar\": {\n      \"command\": \"solar-mcp\"\n    },\n    \"wspr\": {\n      \"command\": \"wspr-mcp\"\n    }\n  },\n  \"bridge\": {\n    \"endpoint\": \"http://localhost:8000/v1/chat/completions\",\n    \"model\": \"AstroSage-70B\",\n    \"temperature\": 0.3,\n    \"system_prompt\": \"You are an expert ham radio operator and RF engineer.\",\n    \"max_tool_calls_per_turn\": 5,\n    \"profiles\": {\n      \"contest\": {\n        \"servers\": [\"n1mm\", \"ionis\", \"solar\", \"wspr\"],\n        \"temperature\": 0.2,\n        \"system_prompt\": \"You are a contest advisor. Be concise.\"\n      },\n      \"propagation\": {\n        \"servers\": [\"ionis\", \"solar\", \"wspr\"],\n        \"temperature\": 0.3\n      },\n      \"full\": {\n        \"servers\": \"*\",\n        \"temperature\": 0.3\n      }\n    },\n    \"server_timeouts\": {\n      \"ionis\": 1,\n      \"solar\": 8,\n      \"qrz\": 5\n    }\n  }\n}\n```\n\nThe `mcpServers` block uses the exact same format as Claude Desktop. The `bridge` section is qsp-mcp specific (ignored by Claude Desktop).\n\n## CLI Options\n\n```\nqsp-mcp [OPTIONS]\n\nOptions:\n  -c, --config PATH       Config file path (default: ~/.config/qsp-mcp/config.json)\n  -e, --endpoint URL      LLM endpoint URL (overrides config)\n  -k, --api-key KEY       API key for the LLM endpoint\n  -m, --model NAME        Model name (overrides config)\n  -p, --profile NAME      Tool profile (contest, dx, propagation, full)\n  -q, --query TEXT        Single query mode — ask one question and exit\n  --enable-writes         Enable write-capable tools (disabled by default)\n  --list-tools            List available tools and exit\n  --version               Show version\n```\n\n## Interactive Commands\n\n| Command | Action |\n|---------|--------|\n| `/tools` | List available tools |\n| `/help` | Show help |\n| `quit` | Exit (also: `exit`, `q`, `73`) |\n\n## Design\n\nqsp-mcp is a **strict, stateless pipe** between an LLM and MCP tools:\n\n- No caching, no shared state, no health polling\n- All state lives in MCP servers\n- All inference optimization lives in the inference server (prefix caching, KV-cache)\n- qsp-mcp just connects the two sides\n\nWorks with any OpenAI-compatible endpoint: [llama.cpp](https://github.com/ggml-org/llama.cpp), [Ollama](https://ollama.ai), [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang).\n\n## Security\n\n- Write-capable tools disabled by default (`--enable-writes` opt-in)\n- Credentials stay inside MCP servers (OS keyring) — never exposed to qsp-mcp or the LLM\n- No subprocess, no shell execution, no eval\n- All external connections HTTPS only (LAN endpoints exempted)\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\n## Part of the qso-graph ecosystem\n\n[qso-graph.io](https://qso-graph.io) — MCP servers for amateur radio.\n",
+    "fetchedAt": "2026-08-11T23:24:59.031Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:03.412Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

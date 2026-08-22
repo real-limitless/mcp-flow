@@ -1,0 +1,82 @@
+{
+  "id": "io.github.chrischall/simplisafe-mcp",
+  "title": "simplisafe-mcp",
+  "description": "Check SimpliSafe system state and sensors, review events, arm/disarm, and control smart locks",
+  "summary": "Check SimpliSafe system state and sensors, review events, arm/disarm, and control smart locks",
+  "offersHint": "Check SimpliSafe system state and sensors, review events, arm/disarm, and control smart locks · Packages: npm:simplisafe-mcp · Env vars: SIMPLISAFE_REFRESH_TOKEN",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "simplisafe-mcp",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SIMPLISAFE_REFRESH_TOKEN",
+        "description": "OAuth refresh token from the one-time browser login (scripts/bootstrap-auth.mjs)",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "simplisafe-mcp",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SIMPLISAFE_REFRESH_TOKEN",
+          "description": "OAuth refresh token from the one-time browser login (scripts/bootstrap-auth.mjs)",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SIMPLISAFE_REFRESH_TOKEN",
+      "description": "OAuth refresh token from the one-time browser login (scripts/bootstrap-auth.mjs)",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chrischall/simplisafe-mcp",
+  "repository": {
+    "url": "https://github.com/chrischall/simplisafe-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T21:02:07.411586Z",
+  "publishedAt": "2026-08-09T21:02:07.411586Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:06.926Z",
+    "sourceRepoAt": "2026-08-11T23:52:46.564Z",
+    "readmeAt": "2026-08-11T23:52:47.105Z",
+    "toolsAt": "2026-08-12T01:27:06.926Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chrischall/simplisafe-mcp",
+    "checkedAt": "2026-08-11T23:52:46.564Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chrischall/simplisafe-mcp/main/README.md",
+    "markdown": "# simplisafe-mcp\n\nMCP server for [SimpliSafe](https://simplisafe.com) home security. Check whether\nthe system is armed, review sensors and events, arm/disarm, and control smart\nlocks — from Claude.\n\n> **This server can disarm a home alarm and unlock doors.** Every tool that\n> changes physical state, plus the tool that reads alarm PINs, is gated behind an\n> explicit `confirm: true`. Without it, no request is sent at all and you get a\n> dry-run preview of exactly what would happen. Install it only where you'd be\n> comfortable with that capability.\n\nDeveloped and maintained by AI (Claude Code).\n\n## What you get\n\n| Tool | |\n| --- | --- |\n| `simplisafe_list_systems` | Systems on the account with current alarm state |\n| `simplisafe_get_system` | One system's state, connectivity, base-station messages |\n| `simplisafe_list_sensors` | Sensors with battery / offline / triggered status, filterable |\n| `simplisafe_list_locks` | Smart locks with locked / unlocked / jammed state |\n| `simplisafe_get_events` | Recent base-station events (arm, disarm, opens, alarms) |\n| `simplisafe_get_settings` | Entry/exit delays, volumes, base-station health |\n| `simplisafe_get_pins` | Alarm PINs — **cleartext, confirm-gated** |\n| `simplisafe_set_alarm_state` | Arm home / arm away / disarm — **confirm-gated** |\n| `simplisafe_set_lock_state` | Lock / unlock a door — **confirm-gated** |\n| `simplisafe_healthcheck` | Auth + API reachability |\n\nSupports **SimpliSafe 3** systems. Legacy SS2 systems are rejected with an\nexplanation rather than an opaque upstream 404.\n\n## Install\n\n```bash\nnpm install -g simplisafe-mcp\n```\n\nOr add to `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"simplisafe\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"simplisafe-mcp\"],\n      \"env\": { \"SIMPLISAFE_REFRESH_TOKEN\": \"${SIMPLISAFE_REFRESH_TOKEN}\" }\n    }\n  }\n}\n```\n\n## Authentication — one browser login, once\n\nSimpliSafe issues no API keys. The credential is an OAuth2 refresh token, minted\nby a browser login you perform **one time**:\n\n```bash\ngit clone https://github.com/chrischall/simplisafe-mcp && cd simplisafe-mcp\nnode scripts/bootstrap-auth.mjs             # prints an authorize URL\n# sign in (MFA included), then copy the com.simplisafe.mobile:// URL\nnode scripts/bootstrap-auth.mjs \"<that URL>\"\n```\n\nThe token is written to `.env` (mode 0600) after being verified against the live\nAPI. **SimpliSafe does not rotate refresh tokens**, so it stays valid until you\nsign out of all devices in the SimpliSafe app — which is how you revoke it.\n\nCapturing the code: open DevTools → Network and tick **Preserve log** *before*\nsigning in; afterwards the browser fails to open a `com.simplisafe.mobile://…`\nlink, and that failed entry's link address is what you paste. The code is\nsingle-use and expires in about two minutes.\n\nTreat the resulting token like a house key: it grants full control of the alarm.\n\n## Writes are gated, and verified\n\nCalling a write tool without `confirm: true` sends **nothing** and returns a\npreview, including a plain statement of the physical consequence:\n\n```json\n{\n  \"dryRun\": true,\n  \"action\": \"set alarm state to away\",\n  \"method\": \"POST\",\n  \"path\": \"/ss3/subscriptions/7858153/state/away\",\n  \"currentState\": \"OFF\",\n  \"warning\": \"Arms ALL sensors including interior motion. Starts an exit delay; anyone still moving inside when it expires can trigger the siren and a monitoring-center dispatch.\",\n  \"note\": \"Nothing was sent. Re-run with confirm: true to execute.\"\n}\n```\n\nWith `confirm: true`, the tool executes and then **re-reads the system** to check\nwhat actually happened, reporting `confirmed`, `in_progress` (the exit delay is\ncounting down), or `unconfirmed`. A `2xx` is never treated as proof.\n\n## Shell access without the server\n\nFor quick one-off queries there's a `curl`-based skill in\n[`skills/simplisafe-api/`](skills/simplisafe-api/SKILL.md) — same API, no MCP\nprocess, sharing the same refresh token.\n\n## Development\n\n```bash\nnpm install\nnpm run build\nnpm test\n```\n\nVerified endpoint shapes live in\n[docs/SIMPLISAFE-API.md](docs/SIMPLISAFE-API.md), including several things that\nare easy to get backwards:\n\n- lock state is encoded **1 = locked, 2 = unlocked**;\n- system version for routing is at `location.system.version`, not the top-level\n  `systemVersion`;\n- events and doorlock control are **not** under the `ss3/` prefix;\n- `numEvents` has an undocumented hard ceiling of **50**;\n- `settings.pins` returns alarm codes in cleartext alongside harmless settings.\n\n## Disclaimer\n\nUnofficial. Not affiliated with or endorsed by SimpliSafe. It uses the same\nprivate API the SimpliSafe mobile app uses, with your own account credentials.\nUse at your own discretion.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:52:47.105Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:06.926Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

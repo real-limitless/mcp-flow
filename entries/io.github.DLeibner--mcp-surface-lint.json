@@ -1,0 +1,58 @@
+{
+  "id": "io.github.DLeibner/mcp-surface-lint",
+  "title": "MCP Surface Lint",
+  "description": "Statically audits MCP tool surfaces for token cost, schema quality, and design issues.",
+  "summary": "Statically audits MCP tool surfaces for token cost, schema quality, and design issues.",
+  "offersHint": "Statically audits MCP tool surfaces for token cost, schema quality, and design issues. · Remote MCP (streamable-http) at https://mcplint-web.vercel.app/api/mcp",
+  "version": "0.3.3",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcplint-web.vercel.app/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcplint-web.vercel.app/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mcplint-web.vercel.app/install",
+  "sourceUrl": "https://github.com/DLeibner/mcp-surface-lint",
+  "repository": {
+    "url": "https://github.com/DLeibner/mcp-surface-lint",
+    "source": "github",
+    "subfolder": "apps/web"
+  },
+  "updatedAt": "2026-08-11T14:21:24.472955Z",
+  "publishedAt": "2026-08-11T14:21:24.472955Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:31.253Z",
+    "sourceRepoAt": "2026-08-12T00:14:15.094Z",
+    "readmeAt": "2026-08-12T00:14:15.633Z",
+    "toolsAt": "2026-08-12T00:14:15.771Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/DLeibner/mcp-surface-lint",
+    "checkedAt": "2026-08-12T00:14:15.094Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/DLeibner/mcp-surface-lint/main/README.md",
+    "markdown": "# mcp-surface-lint\n\nStatic, design-level linting for MCP tool surfaces. Deterministic, offline, and it never calls an LLM.\n\nThis is a monorepo:\n\n| Package | What it is |\n| --- | --- |\n| [`packages/core`](packages/core) | The linter — 19 rules, the scoring engine, and the `mcplint` CLI (`mcp-surface-lint` on npm). Publishable to npm. |\n| [`apps/web`](apps/web) | The hosted playground (`mcp-surface-lint-web`): paste a `tools/list` dump or point it at a remote MCP URL, get a score and an audit. |\n\n## Quick start\n\n```bash\nnpm install\nnpm run build          # builds core (the web app imports it)\n\nnpm test               # every package\nnpm run dev            # the web app on http://localhost:3000\n```\n\nThe web app runs with no cloud accounts configured: reports are held in memory, rate limiting is off,\nand no analytics are sent. Copy `apps/web/.env.example` to `.env.local` to wire up the real services.\nSee [`DEPLOYMENT.md`](DEPLOYMENT.md) for the production account, migration, publishing, and smoke-test\nchecklist.\n\n## Releases\n\nProduction releases are semver Git tags (bare `X.Y.Z`, no `v` prefix — see `.npmrc`). From a clean\n`main` branch:\n\n```bash\nnpm version patch\n# or: npm version minor\n# or: npm version major\n```\n\nThat bumps the root version, runs `preversion` (`npm run typecheck`), then the `version` lifecycle\nsyncs `mcp-surface-lint` and `mcp-surface-lint-web` to the same semver, stages workspace `package.json` files and\n`package-lock.json`, commits, and tags. `postversion` pushes the branch and tags to `origin`.\n\n### Advanced: bump one workspace only\n\nWhen only the web app or CLI changed, you may want a partial bump. The default `version` hook syncs\n**all** workspaces to the root version, so partial bumps need `--ignore-scripts` and manual staging:\n\n```bash\nnpm version patch -w mcp-surface-lint-web --include-workspace-root --ignore-scripts\n# or: npm version patch -w mcp-surface-lint --include-workspace-root --ignore-scripts\ngit add package.json apps/*/package.json packages/*/package.json package-lock.json\ngit commit -m \"$(node -p \\\"require('./package.json').version\\\")\"\ngit tag \"$(node -p \\\"require('./package.json').version\\\")\"\ngit push origin HEAD --follow-tags\n```\n\nThe release tag still follows the root version; deploy always runs, and npm/Registry publication is\nskipped when `packages/core` was not bumped.\n\n`npm version` has no `--dry-run`; inspect `npm help version` or run on a throwaway clone before\ncutting a real release.\n\nFull runbook: [`DEPLOYMENT.md`](DEPLOYMENT.md).\n\n## The CLI\n\n```bash\nnpm run mcplint -- --stdio \"node dist/server.js\"\nnpm run mcplint -- https://example.com/mcp\nnpm run mcplint -- snapshot.json\n```\n\nSee [`packages/core/README.md`](packages/core/README.md) for the full CLI, config, and scoring model,\nand [`packages/core/docs/rules.md`](packages/core/docs/rules.md) for the rule catalogue.\n\n## Hosted MCP server\n\nThe web app also serves a stateless Streamable HTTP MCP endpoint at `/api/mcp`. It exposes one\nread-only tool, `check_mcp_server`, which accepts either a public HTTPS MCP URL (plus optional\nheaders) or an inline `tools/list` snapshot. To audit another MCP server already installed in the\nclient, agents should forward that server's tool definitions as `snapshot` (MCP `name` or\nCursor-style `tool` on each entry). The result includes structured composite/category scores,\nfootprint stats, and findings.\n\nEach protocol request gets a fresh MCP server and transport. Tool inputs and captured schemas are\nnot written to the report store. See `/install` in the running web app for current Cursor, VS Code,\nClaude, Windsurf, and generic client configurations.\n\n## What the web app does and does not do\n\n- **Ingest** is paste-a-dump or connect-to-an-https-URL. It never spawns a process, so stdio servers\n  are a job for the CLI.\n- **Remote capture is SSRF-guarded** ([`apps/web/lib/ssrf.ts`](apps/web/lib/ssrf.ts)): https only, every\n  resolved address must be public unicast, the socket is pinned to the vetted IP so DNS rebinding\n  cannot move it, and redirects are re-validated at every hop.\n- **Reports are unlisted by default** — an unguessable URL, `noindex`, deleted after 30 days unless\n  the owner opts them public. Anyone with an unlisted URL can view it.\n- **The MCP endpoint is stateless** — unlike the interactive report workflow, it returns a report\n  directly and does not persist the input, captured schemas, or result.\n- **Everything is free.** The `GATE_FINDINGS` flag and `projectReport()` exist so a paid tier *could*\n  withhold the audit while leaving the score free. It is off, and no billing exists.\n",
+    "fetchedAt": "2026-08-12T00:14:15.633Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_mcp_server",
+      "description": "Statically audit an MCP tool surface from a public HTTPS URL or tools/list snapshot. Returns deterministic scores and findings without invoking any target tool or making LLM calls. When the user asks to check another installed MCP server, read that server's complete tool definitions from client context and pass them as snapshot (MCP `name` or Cursor-style `tool` both work; do not use file paths or $ref). If those definitions are unavailable, ask the user for its public endpoint or tools/list JSON instead of inventing an audit."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:14:15.771Z",
+  "toolsPreviewStatus": "ok"
+}

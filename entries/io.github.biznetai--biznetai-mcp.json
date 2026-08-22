@@ -1,0 +1,70 @@
+{
+  "id": "io.github.biznetai/biznetai-mcp",
+  "title": "BizNetAI",
+  "description": "Routes natural-language shopping queries to merchant storefronts, returns normalized results.",
+  "summary": "Routes natural-language shopping queries to merchant storefronts, returns normalized results.",
+  "offersHint": "Routes natural-language shopping queries to merchant storefronts, returns normalized results. · Remote MCP (streamable-http) at https://biznetaimcp.consumergenie.net/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://biznetaimcp.consumergenie.net/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://biznetaimcp.consumergenie.net/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token — request a key via POST /api/developer-keys (see README), format: Bearer <api_key>",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/biznetai/biznetai-mcp",
+  "repository": {
+    "url": "https://github.com/biznetai/biznetai-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-13T22:59:21.044479Z",
+  "publishedAt": "2026-07-13T22:59:21.044479Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token — request a key via POST /api/developer-keys (see README), format: Bearer <api_key>",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:58.360Z",
+    "sourceRepoAt": "2026-08-11T23:55:05.478Z",
+    "readmeAt": "2026-08-11T23:55:05.904Z",
+    "toolsAt": "2026-08-12T01:28:58.360Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/biznetai/biznetai-mcp",
+    "checkedAt": "2026-08-11T23:55:05.478Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/biznetai/biznetai-mcp/main/README.md",
+    "markdown": "# BizNetAI MCP Server\n\nA hosted [Model Context Protocol](https://modelcontextprotocol.io) server that routes\nnatural-language shopping queries to live, independent merchant storefronts and\nreturns normalized product and merchant results — built for AI agents and shopping\nassistants that need real-time commerce data without integrating each merchant\nindividually.\n\nThis repository documents the **hosted service** — there is nothing to install or\nrun locally. Point your MCP client at the endpoint below with an API key and start\ncalling tools.\n\n---\n\n## Merchant Coverage\n\n18,000+ live merchants and growing, across the US and Canada.\n\nCurrent focus verticals:\n\n`skincare` · `haircare` · `cosmetics` · `personal_care` · `sports_active_wear` · `clothing` · `accessories` · `fine_jewelry` · `fashion_jewelry` · `specialty_food` · `gourmet_food` · `food_and_beverage` · `home_decor` · `home_furnishings` · `candles_fragrance` · `wellness` · `luxury` · `electronics` · `consumer_goods` · `pet` · `baby_kids`\n\nUse `list_categories` for the authoritative, up-to-date list at query time — new verticals are added periodically.\n\nUse `find_merchants` for live merchant coverage — also updated periodically.\n\n---\n\n## Endpoint\n\n| | |\n|---|---|\n| **URL** | `https://biznetaimcp.consumergenie.net/mcp` |\n| **Transport** | `streamable-http` |\n| **Auth** | Required — `Authorization: Bearer <api_key>` on every request |\n\nThe server is stateless per request — there is no session handshake to perform first.\n\n---\n\n## Getting an API Key\n\nAccess is self-serve:\n\n1. Submit a request with your email, name, and a short description of your use case:\n   ```bash\n   curl -X POST https://api.merchant.registration.consumergenie.net/api/developer-keys \\\n     -H \"Content-Type: application/json\" \\\n     -d '{\"email\": \"you@example.com\", \"name\": \"Your Name\", \"reason\": \"Building an AI shopping assistant\"}'\n   ```\n2. Once approved, you'll receive an email with your key (`bnai_live_...`). It's shown\n   once and never stored in plaintext anywhere — if you lose it, request a new one.\n\nEach key has its own rate limit (default 60 requests/minute). Exceeding it returns\n`429` with a `Retry-After` header; a missing, invalid, or revoked key returns `401`.\n\n---\n\n## Connecting\n\n### MCP client (Claude Desktop, Claude Code, etc.)\n\nMost clients speak stdio, so bridge through\n[`mcp-remote`](https://www.npmjs.com/package/mcp-remote), passing your key as a header:\n\n```json\n{\n  \"mcpServers\": {\n    \"biznetai\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\", \"mcp-remote\",\n        \"https://biznetaimcp.consumergenie.net/mcp\",\n        \"--header\", \"Authorization:Bearer ${BIZNETAI_API_KEY}\"\n      ]\n    }\n  }\n}\n```\n\n### Raw HTTP\n\n```bash\nBASE_URL=\"https://biznetaimcp.consumergenie.net/mcp\"\nAPI_KEY=\"bnai_live_...\"\n\ncurl -X POST \"$BASE_URL\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -H \"Authorization: Bearer $API_KEY\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"list_categories\",\"arguments\":{}}}'\n```\n\n---\n\n## Tools\n\n\n### `list_categories`\nReturn the full BizNetAI merchant category vocabulary. Useful for understanding what\nkinds of merchants are available before querying.\n\n\n### `find_merchants`\nFind live merchants matching a query — useful when you want merchant identity before\ndoing a custom product lookup.\n\n```\nquery    str   required   Natural language search query\ncountry  str   required   ISO country code (e.g. US, CA)\nlimit    int   0          Max merchants to return (0 = all live matches)\n```\n\n\n### `list_product_varieties`\nList the product varieties available for a country, with how many results each has.\n`find_products` always resolves your query to one of these, so this is useful for\ndiscovering what specific product searches are likely to succeed — and how many\nresults to expect — before calling it.\n\n```\ncountry  str   required   ISO country code (e.g. US, CA)\n```\n\nReturns a list of variety objects:\n```json\n{\n  \"variety\": \"wireless headphones\",\n  \"product_count\": 50\n}\n```\n\nVarieties are country-specific — the same product type can exist under a\ndifferently-worded variety, or not at all, in a different country.\n\n\n### `find_products`\nSearch for products by matching your query to one of BizNetAI's curated product\nvarieties (e.g. `\"wireless headphones\"`, `\"vitamin c serum\"`) and returning that\nvariety's already-ranked top results. Call `list_product_varieties` first if you\nwant to see upfront what's available for a country before searching.\n\n```\nquery    str   required   Natural language product search query\ncountry  str   required   ISO country code (e.g. US, CA)\nlimit    int   0          Page size (0 = server default)\noffset   int   0          Results to skip, for paging beyond the first page\n```\n\nResults are capped by how many products the matched variety has (usually around 50,\nsometimes fewer for a niche search) — `offset`/`limit` beyond that returns whatever's\nleft, not an error. A query that doesn't match any known variety returns `[]`.\n\nReturns a list of normalized product objects:\n```json\n{\n  \"title\": \"Vitamin C Brightening Serum\",\n  \"description\": \"...\",\n  \"price_min\": 24.60,\n  \"price_max\": 24.60,\n  \"currency\": \"USD\",\n  \"available\": true,\n  \"url\": \"https://merchant.com/products/vitamin-c-serum\",\n  \"image_url\": \"https://cdn.shopify.com/...\",\n  \"store_domain\": \"merchant.com\",\n  \"mcp_endpoint\": \"https://merchant.com/api/mcp\",\n  \"merchant_position\": 0,\n  \"relevance_score\": 0.79\n}\n```\n\n`available` reflects whether at least one product variant was in stock as of the last\ncatalog refresh (boolean only — exact stock counts aren't available from all merchant\nbackends). `relevance_score` is a similarity score (higher is more relevant) — there's\nno cutoff applied, so you can use it yourself to judge what's a good enough match for\nyour use case.\n\n\n---\n\n## Rate Limits & Errors\n\n| Status | Meaning |\n|---|---|\n| `401` | Missing, malformed, invalid, or revoked API key |\n| `429` | Rate limit exceeded — see `Retry-After` header for when to retry |\n\n---\n\n## Support\n\nQuestions or issues with the API — email the address you used to request your key,\nor open an issue on this repository.\n\n## License\n\n[MIT](./LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:55:05.904Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:28:58.360Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\": \"Missing or malformed Authorization header. Expected: Bearer <api_key>\"}",
+  "toolsPreviewStatus": "auth_required"
+}

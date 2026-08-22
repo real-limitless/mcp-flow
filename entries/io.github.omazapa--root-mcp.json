@@ -1,0 +1,57 @@
+{
+  "id": "io.github.omazapa/root-mcp",
+  "title": "ROOT MCP Server",
+  "description": "ROOT-based MCP server exposing root_python and root_cpp tools (stdio transport).",
+  "summary": "ROOT-based MCP server exposing root_python and root_cpp tools (stdio transport).",
+  "offersHint": "ROOT-based MCP server exposing root_python and root_cpp tools (stdio transport). · Packages: oci:docker.io/omazapa/root-mcp:1.0.0",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/omazapa/root-mcp:1.0.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/omazapa/root-mcp:1.0.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/omazapa/root_mcp_server",
+  "sourceUrl": "https://github.com/omazapa/root_mcp_server",
+  "repository": {
+    "url": "https://github.com/omazapa/root_mcp_server",
+    "source": "github"
+  },
+  "updatedAt": "2025-11-22T23:34:42.723177Z",
+  "publishedAt": "2025-11-22T23:34:42.723177Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:14.272Z",
+    "sourceRepoAt": "2026-08-11T23:30:57.249Z",
+    "readmeAt": "2026-08-11T23:30:57.730Z",
+    "toolsAt": "2026-08-12T01:10:14.272Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/omazapa/root_mcp_server",
+    "checkedAt": "2026-08-11T23:30:57.249Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/omazapa/root_mcp_server/master/README.md",
+    "markdown": "<div align=\"center\">\n\n<img src=\"https://root.cern/img/logos/ROOT_Logo/misc/generic-logo-color-512.png\" alt=\"ROOT Logo\" width=\"200\"/>\n\n# root_mcp_server: MCP Server for ROOT\n\n**Model Context Protocol server for executing Python and C++ code with PyROOT**\n\n[![ROOT](https://img.shields.io/badge/ROOT-6.x-blue.svg)](https://root.cern/)\n[![MCP](https://img.shields.io/badge/MCP-Protocol-green.svg)](https://modelcontextprotocol.io/)\n[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)\n\n</div>\n\n---\n\nMinimal MCP (Model Context Protocol) server that allows LLMs and other MCP clients to execute Python and C++ code directly using PyROOT, without HTTP endpoints or external APIs.\n\n## Features\n\n- **Direct Python execution**: Run Python code with PyROOT available automatically\n- **Direct C++ execution**: Run C++ code via ROOT's cling interpreter\n- **In-process**: All code runs in the same process (no subprocess isolation)\n- **Error detection**: Automatic detection of C++ compilation errors via return codes and stderr\n- **Console logging**: Pretty-printed code execution with results in MCP console\n- **Graphics support**: TCanvas and ROOT graphics objects with event loop support\n\n## Architecture\n\nBelow is the architecture diagram for the `root_mcp_server` project. The image contains a visual representation of the components and their interactions.\n\n![Architecture Diagram](./diagram.png)\n\nDescription:\n\n- **MCP Client (VS Code / CLI / Programmatic)**: connects to the MCP server and sends execution requests. Clients can be interactive (e.g. VS Code + Copilot Chat) or scripted CLI clients.\n- **FastMCP Server**: receives MCP tool calls (`root_python`, `root_cpp`) and dispatches them to the in-process executor.\n- **RootExecutor (in-process PyROOT)**: runs Python or C++ code with the ROOT runtime, manages graphics mode, and can expose an embedded HTTP server (THttpServer) for interactive canvases.\n- **ROOT Web Canvas (THttpServer / JSROOT)**: when graphics are enabled, canvases created in the ROOT session are available via the embedded HTTP server; clients can open the provided URL to inspect plots interactively.\n- **Artifacts & Outputs**: execution results (stdout/stderr and error metadata) are returned to the MCP client; interactive canvases are accessible via the HTTP endpoint.\n\nThis architecture keeps ROOT running in-process for low-latency execution while providing a web-backed path for interactive visualization.\n\n## Installation\n\n### Prerequisites\n\n- ROOT (6.x or later) with PyROOT enabled\n- Python 3.10+\n\n### Install the package\n\n```bash\npip install -e .\n```\n\n## Usage\n\n### Option 1: VS Code with GitHub Copilot Chat\n\nThe easiest way to use this MCP server is through VS Code with GitHub Copilot Chat.\n\n#### 1. Install GitHub Copilot Chat extension\n\nMake sure you have the **GitHub Copilot Chat** extension installed in VS Code.\n\n#### 2. Configure MCP server in VS Code\n\nAdd the MCP server configuration to your VS Code settings. Open your `settings.json` (Ctrl/Cmd + Shift + P → \"Preferences: Open User Settings (JSON)\") and add:\n\n```json\n{\n  \"github.copilot.chat.codeGeneration.instructions\": [\n    {\n      \"text\": \"Use ROOT MCP server for data analysis\"\n    }\n  ],\n  \"mcp.servers\": {\n\t\t\"root/mcp-server\": {\n\t\t\t\"type\": \"stdio\",\n\t\t\t\"command\": \"root_mcp_server\",\n\t\t\t\"args\": []\n\t\t}\n  }\n}\n```\n\n**Important**: Replace `/path/to/ROOT/build/bin/thisroot.sh` with the actual path to your ROOT installation's `thisroot.sh` script.\n\n#### 3. Use in Copilot Chat\n\nOnce configured, you can use the MCP tools in GitHub Copilot Chat:\n\n```\n@workspace Use #root_python to execute Python code with PyROOT\n```\n\n```\n@workspace Use #root_cpp to execute C++ code with ROOT\n```\n\nThe server will automatically log executed code and results to the MCP console (visible in VS Code's Output panel).\n\n### Option 2: Command line\n\nStart the MCP server directly:\n\n```bash\nroot_mcp_server\n```\n\n### Option 3: Programmatic usage\n\n```python\nfrom mcp.client.stdio import stdio_client, StdioServerParameters\nfrom mcp.client.session import ClientSession\n\nserver_params = StdioServerParameters(\n    command=\"bash\",\n    args=[\"-lc\", \"source /path/to/thisroot.sh && python3 -m root_mcp_server.cli\"],\n    env=None\n)\n\nasync with stdio_client(server_params) as (read, write):\n    async with ClientSession(read, write) as session:\n        await session.initialize()\n\n        # Execute Python code\n        result = await session.call_tool(\"root_python\", arguments={\n            \"code\": \"import ROOT; print(ROOT.gROOT.GetVersion())\"\n        })\n        print(result)\n```\n\n## Available Tools\n\nThe server exposes two MCP tools:\n\n### 1. `root_python`\n\nExecute Python code with `ROOT` automatically available in scope.\n\n**Arguments:**\n- `code` (string): Python code to execute\n\n**Returns:**\n```json\n{\n  \"ok\": boolean,\n  \"stdout\": string,\n  \"stderr\": string,\n  \"error\": string | null,\n  \"error_type\": string | null\n}\n```\n\n**Example:**\n```python\ncode = \"\"\"\nimport ROOT\nh = ROOT.TH1F(\"h\", \"Gaussian\", 100, -5, 5)\nfor i in range(10000):\n    h.Fill(ROOT.gRandom.Gaus(0, 1))\nprint(f\"Mean: {h.GetMean():.3f}\")\n\"\"\"\n```\n\n### 2. `root_cpp`\n\nExecute C++ code via ROOT's cling interpreter.\n\n**Arguments:**\n- `code` (string): C++ code to execute\n\n**Returns:**\n```json\n{\n  \"ok\": boolean,\n  \"stdout\": string,\n  \"stderr\": string,\n  \"error\": string | null,\n  \"error_type\": string | null\n}\n```\n\n**Example:**\n```cpp\nTH1F* h = new TH1F(\"h\", \"Gaussian;X;Y\", 100, -5, 5);\nfor(int i=0; i<10000; i++) h->Fill(gRandom->Gaus(0,1));\nTCanvas* c = new TCanvas(\"c\", \"Canvas\", 900, 600);\nh->Draw();\nc->Update();\nstd::cout << \"Mean: \" << h->GetMean() << std::endl;\n```\n\n## Features in Detail\n\n### Error Detection\n\nThe server automatically detects C++ compilation errors by:\n- Checking the return code from `ROOT.gInterpreter.ProcessLine()`\n- Scanning stderr for error keywords (`error:`, `Error:`, `fatal error:`)\n\nErrors are reported with `ok=false` and detailed error messages.\n\n### Console Logging\n\nAll code execution is logged to stderr (MCP console) with:\n- Pretty-printed code with line numbers\n- Execution status (✓ success / ❌ failure)\n- Complete stdout, stderr, and error details\n\nExample output:\n```\n============================================================\nEXECUTING PYTHON CODE:\n  1 | import ROOT\n  2 | print(ROOT.gROOT.GetVersion())\n============================================================\n✓ EXECUTION SUCCESS\nSTDOUT:\n6.39/01\n```\n\n### Graphics Support\n\nThe server initializes `TApplication` and supports ROOT graphics:\n- TCanvas windows (batch mode can be disabled)\n- Histogram plotting\n- ROOT event loop for interactive graphics\n- Object persistence to prevent garbage collection\n\n## Development\n\n### Running tests\n\n```bash\n# Test basic functionality\npython test_mcp_client.py\n\n# Test persistent graphics\npython test_persistent_window.py\n\n# Test histogram creation\npython test_histogram.py\n```\n\n### Project Structure\n\n```\nroot_mcp_server/\n├── root_mcp_server/\n│   ├── __init__.py\n│   ├── cli.py          # Entry point\n│   ├── executor.py     # Code execution \n│   └── server.py       # MCP server definition\n├── test_mcp_client.py\n├── test_persistent_window.py\n├── test_histogram.py\n└── README.md\n```\n\n## License\n\nSee LICENSE file.\n\n## Contributing\n\nContributions are welcome! Please feel free to submit a Pull Request.\n\n## Acknowledgments\n\n- Built with the [Model Context Protocol](https://modelcontextprotocol.io/)\n- Powered by [ROOT](https://root.cern/) from CERN\n",
+    "fetchedAt": "2026-08-11T23:30:57.730Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:14.272Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

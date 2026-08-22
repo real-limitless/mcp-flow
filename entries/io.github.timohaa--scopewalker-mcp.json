@@ -1,0 +1,76 @@
+{
+  "id": "io.github.timohaa/scopewalker-mcp",
+  "title": "scopewalker-mcp",
+  "description": "Codebase analysis tools for AI agents: complexity, prop drilling, doc coverage, code smells.",
+  "summary": "Codebase analysis tools for AI agents: complexity, prop drilling, doc coverage, code smells.",
+  "offersHint": "Codebase analysis tools for AI agents: complexity, prop drilling, doc coverage, code smells. · Packages: npm:scopewalker-mcp · Env vars: SCOPEWALKER_ALLOWED_ROOTS",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "scopewalker-mcp",
+    "version": "1.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SCOPEWALKER_ALLOWED_ROOTS",
+        "description": "Comma-separated absolute paths the tools may analyze. Defaults to the current working directory and the system temp directory."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "scopewalker-mcp",
+      "version": "1.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SCOPEWALKER_ALLOWED_ROOTS",
+          "description": "Comma-separated absolute paths the tools may analyze. Defaults to the current working directory and the system temp directory."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SCOPEWALKER_ALLOWED_ROOTS",
+      "description": "Comma-separated absolute paths the tools may analyze. Defaults to the current working directory and the system temp directory."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/timohaa/scopewalker-mcp",
+  "repository": {
+    "url": "https://github.com/timohaa/scopewalker-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T01:25:05.168764Z",
+  "publishedAt": "2026-08-09T01:25:05.168764Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:55.986Z",
+    "sourceRepoAt": "2026-08-11T23:18:24.557Z",
+    "readmeAt": "2026-08-11T23:18:25.070Z",
+    "toolsAt": "2026-08-12T00:58:55.986Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/timohaa/scopewalker-mcp",
+    "checkedAt": "2026-08-11T23:18:24.557Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/timohaa/scopewalker-mcp/main/README.md",
+    "markdown": "# Scopewalker MCP\n\n[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-ffdd00?logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/thaanpaa)\n\nAI agents will happily create 1000+ line source files and add a 20th parameter to a function call, even if there's a rule file telling them not to. Scopewalker exists to enforce stricter codebase standards.\n\nIt's a local MCP server (open source, runs over stdio, makes no network calls) that exposes 8 read-only tools:\n\n- `get_line_counts` - per-file line counts (total, code, blank, comment) with sorting, extension filters, and project-wide totals\n- `get_functions` - function and method detection; per-file counts, or per-function line metrics via `detail=lines` with a `min_lines` filter for hunting oversized functions\n- `get_complexity_metrics` - max/average nesting depth and parameter counts (JSX props included), import counts, a per-file cognitive-complexity score, and per-function cyclomatic complexity with high/extreme severity bands, plus hotspots flagged for deeply nested or over-parameterized functions\n- `check_thresholds` - flags files and functions exceeding size thresholds (defaults: 300 lines per file, 100 per function)\n- `get_code_inventory` - classes with their methods, functions, interfaces/types, enums, and constants, each marked exported or not; private symbols hidden by default\n- `get_documentation_coverage` - coverage percentage plus every function, class, or method missing a doc comment (JSDoc, Python docstrings, Rust `///`, and other per-language formats)\n- `get_code_smells` - TODO/FIXME/HACK/XXX/BUG/UNUSED/DEPRECATED markers found by scanning actual comments via the AST (no false positives from string literals), plus `as unknown as` / `as any as` double casts in TypeScript\n- `get_prop_drilling` - parameter names threaded through many functions and files, with forwarding evidence and a high/medium/low risk rating\n\nIt's tree-sitter (parsing) + tokei (line counting) + fast-glob (file discovery) under the hood; nothing is custom-parsed. Tested on macOS with Claude Code, but should work with Cursor, VS Code, Windsurf, Antigravity CLI, Codex, or anything else that speaks MCP.\n\nSee [TOOLS.md](TOOLS.md) for the quick reference, [docs/](docs/) for per-tool parameters and example responses, and [docs/usage-examples.md](docs/usage-examples.md) for a guide to wiring Scopewalker into skills, subagents, and AGENTS.md.\n\n## Safety Defaults\n\n- **No network access:** All analysis runs locally over stdio: no data leaves your machine, no API keys or external services involved.\n- **Path scoping:** All tools only operate inside allowed roots (defaults: current working directory and system temp). Override with `SCOPEWALKER_ALLOWED_ROOTS=/abs/path1,/abs/path2`.\n- **Large file guard:** AST-based tools skip files larger than 1 MB to avoid excessive memory/CPU use. Tokei-based line counts do not enforce this limit.\n- **Output limits:** Tools default to returning 20 files/items unless `limit` is set.\n- **Comment redaction:** `get_code_smells` redacts comment text by default; pass `include_text: true` to return snippets explicitly.\n\n## Requirements\n\n- Node.js 22+\n- [tokei](https://github.com/XAMPPRocky/tokei) - Install via `brew install tokei` or `cargo install tokei`\n\n## Installation\n\nScopewalker is published to npm as [`scopewalker-mcp`](https://www.npmjs.com/package/scopewalker-mcp); no clone or build needed. Configure your MCP client to run it via `npx` (examples below), or install it globally with `npm install -g scopewalker-mcp`.\n\nTo build from source instead, see [Development](#development).\n\n## Configuration\n\n### Claude Code\n\n```bash\nclaude mcp add scopewalker-mcp --scope user -- npx -y scopewalker-mcp\n```\n\nOr add to `~/.claude.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"scopewalker-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"scopewalker-mcp\"]\n    }\n  }\n}\n```\n\nSee [Claude Code MCP documentation](https://code.claude.com/docs/en/mcp) for details.\n\n### Claude Desktop\n\nDownload `scopewalker-mcp.mcpb` from the [latest release](https://github.com/timohaa/scopewalker-mcp/releases/latest) and open it with Claude Desktop (or drag it into Settings > Extensions) for one-click installation.\n\n### Cursor\n\nAdd to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):\n\n```json\n{\n  \"mcpServers\": {\n    \"scopewalker-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"scopewalker-mcp\"]\n    }\n  }\n}\n```\n\nOr configure via File > Preferences > Cursor Settings > MCP.\n\nSee [Cursor MCP documentation](https://cursor.com/docs/mcp) for details.\n\n### VS Code (GitHub Copilot)\n\nAdd to `.vscode/mcp.json` in your workspace:\n\n```json\n{\n  \"servers\": {\n    \"scopewalker-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"scopewalker-mcp\"]\n    }\n  }\n}\n```\n\nRequires VS Code 1.102+ with Agent Mode enabled.\n\nSee [VS Code MCP documentation](https://code.visualstudio.com/docs/agent-customization/mcp-servers) for details.\n\n### Windsurf\n\nAdd to `~/.codeium/windsurf/mcp_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"scopewalker-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"scopewalker-mcp\"]\n    }\n  }\n}\n```\n\nOr configure via Windsurf Settings > Cascade > Manage MCPs.\n\nSee [Windsurf MCP documentation](https://docs.devin.ai/desktop/cascade/mcp) for details.\n\n### Antigravity CLI\n\nAntigravity CLI (`agy`) replaced Gemini CLI in June 2026; MCP servers now\nlive in a dedicated config file instead of `~/.gemini/settings.json`. Add\nto `~/.gemini/config/mcp_config.json` (global) or `.agents/mcp_config.json`\n(per project):\n\n```json\n{\n  \"mcpServers\": {\n    \"scopewalker-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"scopewalker-mcp\"]\n    }\n  }\n}\n```\n\nUse `/mcp` inside the prompt panel to check server status and reload the\nconfig.\n\nSee [Antigravity CLI MCP documentation](https://antigravity.google/docs/cli/mcp)\nfor details, and the [migration guide](https://antigravity.google/docs/cli/gcli-migration)\nif you're coming from Gemini CLI.\n\n### OpenAI Codex CLI\n\nAdd to `~/.codex/config.toml`:\n\n```toml\n[mcp_servers.scopewalker-mcp]\ncommand = \"npx\"\nargs = [\"-y\", \"scopewalker-mcp\"]\n```\n\nOr use the CLI:\n\n```bash\ncodex mcp add scopewalker-mcp -- npx -y scopewalker-mcp\n```\n\nSee [Codex MCP documentation](https://developers.openai.com/codex/mcp/) for details.\n\n## Usage\n\nOnce configured, the assistant calls Scopewalker's tools on its own; no special syntax needed. Ask things like:\n\n- \"Check this repo against our size thresholds before I commit\"\n- \"Which functions in `src/` have the highest cognitive complexity?\"\n- \"Find undocumented exports in `src/auth`\"\n- \"Are there any TODO/FIXME/HACK markers left in this module?\"\n- \"Show me functions that take more than 5 parameters\"\n\nIt picks the right tool and parameters for the request.\n\nThis repo also dogfoods its own tools via Claude Code skills and agents:\n\n- [`.claude/skills/review-changes/SKILL.md`](.claude/skills/review-changes/SKILL.md): runs `check_thresholds` and `get_code_smells` as part of the pre-commit review and full quality gate\n- [`.claude/agents/standards-enforcer.md`](.claude/agents/standards-enforcer.md): uses the full tool set to find and fix standards violations\n- [`.claude/agents/docs-reality-sync.md`](.claude/agents/docs-reality-sync.md): uses `get_code_inventory` and `get_functions` to keep docs in sync with code\n\n## Development\n\nTo run from source instead of npm:\n\n```bash\ngit clone https://github.com/timohaa/scopewalker-mcp.git\ncd scopewalker-mcp\nnpm install\nnpm run build\n```\n\nThen point your MCP client at the build output, e.g. `claude mcp add scopewalker-mcp --scope user -- node /path/to/scopewalker-mcp/dist/index.js`.\n\n```bash\nnpm run build          # Build the project\nnpm run check          # Version sync + lint + typecheck\nnpm run test           # Run tests\nnpm run test:coverage  # Run tests with coverage\n```\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [docs/patterns.md](docs/patterns.md) for tool registration, error handling, and testing patterns.\n\n## Supported Languages\n\nThe AST-based tools (everything except `get_line_counts`) parse:\n\n- TypeScript/JavaScript (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`)\n- Python (`.py`)\n- Go (`.go`)\n- Rust (`.rs`)\n- Java (`.java`)\n- C/C++ (`.c`, `.h`, `.cpp`, `.cc`, `.cxx`, `.hpp`)\n- Ruby (`.rb`)\n\n`get_line_counts` runs through tokei, so it reports on every language tokei recognizes. See [docs/tools-overview.md](docs/tools-overview.md#supported-languages) for what is detected per language.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:18:25.070Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:55.986Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.mdfifty50-boop/a2a-bridge",
+  "title": "a2a-bridge",
+  "description": "Agent-to-agent communication bridge for multi-agent systems",
+  "summary": "Agent-to-agent communication bridge for multi-agent systems",
+  "offersHint": "Agent-to-agent communication bridge for multi-agent systems · Packages: npm:a2a-bridge-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "a2a-bridge-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "a2a-bridge-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mdfifty50-boop/a2a-bridge-mcp",
+  "repository": {
+    "url": "https://github.com/mdfifty50-boop/a2a-bridge-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-24T13:35:36.35102Z",
+  "publishedAt": "2026-04-24T13:35:36.35102Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:34.249Z",
+    "sourceRepoAt": "2026-08-11T23:34:49.516Z",
+    "readmeAt": "2026-08-11T23:34:50.112Z",
+    "toolsAt": "2026-08-12T01:13:34.249Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mdfifty50-boop/a2a-bridge-mcp",
+    "checkedAt": "2026-08-11T23:34:49.516Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mdfifty50-boop/a2a-bridge-mcp/main/README.md",
+    "markdown": "# a2a-bridge-mcp\n\nMCP server for agent-to-agent communication -- capability discovery, task delegation, and result aggregation across MCP agents.\n\nMCP connects agents to tools, but not to each other. This server adds a standardized agent-to-agent layer within the MCP protocol -- register agents, discover capabilities, delegate tasks, and broadcast work to multiple agents. Inspired by Google's A2A protocol.\n\n## Install\n\n```bash\nnpx a2a-bridge-mcp\n```\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"a2a-bridge\": {\n      \"command\": \"npx\",\n      \"args\": [\"a2a-bridge-mcp\"]\n    }\n  }\n}\n```\n\n### From source\n\n```bash\ngit clone https://github.com/mdfifty50-boop/a2a-bridge-mcp.git\ncd a2a-bridge-mcp\nnpm install\nnode src/index.js\n```\n\n## Tools\n\n### register_agent\n\nRegister an agent with capabilities for discovery by other agents.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `agent_id` | string | required | Unique agent identifier |\n| `capabilities` | string[] | required | Capability strings (e.g. `[\"code-review\", \"summarization\"]`) |\n| `description` | string | `\"\"` | Human-readable description |\n| `input_schema` | object | `{}` | JSON schema for accepted input |\n| `output_schema` | object | `{}` | JSON schema for produced output |\n| `endpoint` | string | `\"\"` | Optional endpoint or transport hint |\n\n### discover_agents\n\nFind agents matching a capability need with fuzzy text similarity scoring.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `capability_needed` | string | required | Capability to search for |\n| `min_score` | number | 0.3 | Minimum similarity score (0-1) |\n\nReturns scored matches sorted by relevance.\n\n### delegate_task\n\nDelegate a task to a specific registered agent. Creates a tracked task with status lifecycle.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `from_agent` | string | required | Delegating agent ID |\n| `to_agent` | string | required | Target agent ID |\n| `task_description` | string | required | What the target should do |\n| `input_data` | object | `{}` | Input data for the task |\n| `timeout_ms` | number | 30000 | Timeout in milliseconds |\n\nReturns a `task_id` for tracking.\n\n### get_task_result\n\nGet status and result of a delegated task. Also used by executing agents to submit results.\n\n| Param | Type | Description |\n|-------|------|-------------|\n| `task_id` | string | Task ID from delegate_task or broadcast_task |\n| `submit_result` | object | (Optional) Submit completion result |\n| `submit_error` | string | (Optional) Submit failure error |\n\nStatus lifecycle: `pending` -> `running` -> `completed` / `failed`.\n\n### broadcast_task\n\nSend a task to ALL agents matching a capability. Creates individual tracked tasks for each match.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `from_agent` | string | required | Broadcasting agent ID |\n| `capability_needed` | string | required | Capability to match |\n| `task_description` | string | required | What matched agents should do |\n| `input_data` | object | `{}` | Input data |\n| `min_score` | number | 0.3 | Minimum match score |\n| `timeout_ms` | number | 30000 | Timeout per agent |\n\nReturns list of task IDs for aggregation via get_task_result.\n\n### get_agent_card\n\nGet an agent's full capability card with schemas, stats, and task history.\n\n| Param | Type | Description |\n|-------|------|-------------|\n| `agent_id` | string | Agent identifier |\n\nReturns capabilities, input/output schemas, success rate, and task counts. Inspired by Google A2A agent cards.\n\n### list_agents\n\nList all registered agents, optionally filtered by capability.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `filter` | string | `\"\"` | Capability keyword to filter by (empty = all) |\n\n## Resources\n\n| URI | Description |\n|-----|-------------|\n| `a2a://agents` | All registered agents with capabilities and stats |\n\n## Usage Pattern\n\n```\n1. register_agent    -- each agent registers at startup\n2. discover_agents   -- find who can handle a task\n3. delegate_task     -- send work to a specific agent\n   OR broadcast_task -- send work to all matching agents\n4. get_task_result   -- poll for completion or submit results\n5. get_agent_card    -- inspect an agent's full profile\n6. list_agents       -- overview of the agent network\n```\n\n### Multi-agent workflow example\n\n```\nAgent A (orchestrator):\n  1. register_agent(agent_id=\"orchestrator\", capabilities=[\"planning\", \"coordination\"])\n  2. discover_agents(capability_needed=\"code review\")\n     -> finds Agent B (score: 0.95)\n  3. delegate_task(from=\"orchestrator\", to=\"agent-b\", task=\"Review PR #42\")\n     -> task_id: \"task_1234\"\n  4. get_task_result(task_id=\"task_1234\")\n     -> status: \"completed\", result: { approved: true, comments: [...] }\n\nAgent B (worker):\n  1. register_agent(agent_id=\"agent-b\", capabilities=[\"code-review\", \"linting\"])\n  2. (receives task via external notification or polling)\n  3. get_task_result(task_id=\"task_1234\", submit_result={ approved: true })\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:34:50.112Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:34.249Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

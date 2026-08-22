@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-log",
+  "title": "Hive Log",
+  "description": "Tamper-evident audit log service for agent-to-agent transactions",
+  "summary": "Tamper-evident audit log service for agent-to-agent transactions",
+  "offersHint": "Tamper-evident audit log service for agent-to-agent transactions · Remote MCP (streamable-http) at https://hive-mcp-log.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-log.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-log.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-log",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-log",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:47:51.624069Z",
+  "publishedAt": "2026-04-28T23:47:51.624069Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:38.019Z",
+    "sourceRepoAt": "2026-08-11T23:20:04.925Z",
+    "readmeAt": "2026-08-11T23:20:05.448Z",
+    "toolsAt": "2026-08-12T01:00:38.019Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-log",
+    "checkedAt": "2026-08-11T23:20:04.925Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-log/main/README.md",
+    "markdown": "# hive-mcp-log\n\n[![srotzin/hive-mcp-log MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-log/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-log)\n\n**Inbound structured-log ingestion shim — Hive Civilization**\n\nNDJSON log ingestion at $0.0001/line via x402. Retention tiers (1d free, 7d $0.005/MB, 30d $0.02/MB). Tail + search endpoints. Pure protocol — inbound only, no outbound calls.\n\n> Council provenance: Tier A inbound metering shim. Companion to `hive-mcp-auction` and `hive-mcp-barter`.\n\n---\n\n## What this is\n\n`hive-mcp-log` is a Model Context Protocol server exposing a metered log ingestion surface for autonomous agents. Agents POST structured logs (NDJSON) and pay $0.0001/line in USDC on Base L2. They read their own logs back via tail/search at Tier 0 (free). Retention tier governs how long lines persist; the default 1-day tier is free, longer tiers carry a per-MB surcharge.\n\n- **Protocol:** MCP 2024-11-05 over Streamable-HTTP / JSON-RPC 2.0\n- **Transport:** `POST /mcp`\n- **Discovery:** `GET /.well-known/mcp.json`\n- **Health:** `GET /health`\n- **Settlement:** USDC on Base L2 — real rails, no mock, no simulated\n- **Brand gold:** Pantone 1245 C / `#C08D23`\n- **Inbound only:** the service never reaches out, never DMs, never pulls\n\n## MCP tools\n\n| Tool | Tier | Description |\n|---|---|---|\n| `log_ingest` | metered | Ingest NDJSON batch (max 4 MB / 10k lines). $0.0001/line + retention surcharge. |\n| `log_tail` | 0 (free) | Return last N log lines for the calling DID. |\n| `log_search` | 0 (free) | Search own-DID logs by time/severity/tag/free-text. |\n| `log_retention_get` | 0 (free) | Return current tier + bytes stored. |\n| `log_retention_set` | 0 (free) | Change retention tier (1d/7d/30d). |\n| `log_today` | 0 (free) | Today aggregate — ingests, lines, bytes, charge_usd. |\n\n## REST endpoints\n\n| Method | Path | Purpose |\n|---|---|---|\n| `POST` | `/v1/log/ingest` | Ingest NDJSON batch. Returns 402 envelope first, accepts `tx_hash` to settle. |\n| `GET` | `/v1/log/tail` | Last N lines for `did`. |\n| `GET` | `/v1/log/search` | Search by time/severity/tag/`q`. Cursor pagination. |\n| `GET` | `/v1/log/retention` | Current retention tier + monthly cost projection. |\n| `PATCH` | `/v1/log/retention` | Change retention tier for a DID. |\n| `GET` | `/v1/log/today` | Today aggregate (Tier 0, free). |\n| `POST` | `/mcp` | MCP JSON-RPC 2.0 surface. |\n| `GET` | `/health` | Service health. |\n\n## Pricing\n\n```\nIngest:    $0.0001 per log line\nRetention:\n  1d   (default)   free\n  7d               $0.005 / MB\n  30d              $0.02  / MB\nTail / search (own-DID):  Tier 0 — free\n```\n\n## NDJSON ingest example\n\n```bash\ncurl -X POST https://hive-mcp-log.onrender.com/v1/log/ingest \\\n  -H 'content-type: application/json' \\\n  -H 'x-hive-did: did:hive:agent-foo' \\\n  -d '{\n    \"did\": \"did:hive:agent-foo\",\n    \"retention_class\": \"7d\",\n    \"lines\": [\n      { \"ts\": \"2026-04-27T20:00:00Z\", \"severity\": \"info\",  \"tag\": \"tool\", \"msg\": \"tool_call ok\" },\n      { \"ts\": \"2026-04-27T20:00:01Z\", \"severity\": \"error\", \"tag\": \"llm\",  \"msg\": \"rate_limited\" }\n    ]\n  }'\n```\n\nThe first call returns a `402` with the payment envelope (Base L2 USDC). Settle, then resend with `x-hive-tx: <hash>` for synchronous verification.\n\n## Tail / search example\n\n```bash\ncurl 'https://hive-mcp-log.onrender.com/v1/log/tail?did=did:hive:agent-foo&n=20'\ncurl 'https://hive-mcp-log.onrender.com/v1/log/search?did=did:hive:agent-foo&severity=error&q=rate'\n```\n\n## Retention\n\n```bash\ncurl -X PATCH https://hive-mcp-log.onrender.com/v1/log/retention \\\n  -H 'content-type: application/json' \\\n  -d '{ \"did\": \"did:hive:agent-foo\", \"tier\": \"7d\" }'\n```\n\nA periodic sweep (default hourly) prunes lines older than each DID's retention window.\n\n## Environment\n\n| Var | Default | Notes |\n|---|---|---|\n| `PORT` | `3000` | |\n| `ENABLE` | `true` | Flip to `false` to disable ingestion (returns 503 with `log_ingestion_disabled`). |\n| `WALLET_ADDRESS` | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` | W1 MONROE on Base L2. |\n| `SOLANA_WALLET` | `B1N61cuL35fhskWz5dw8XqDyP6LWi3ZWmq8CNA9L3FVn` | B1 SPL recipient. |\n| `USDC_BASE` | canonical | USDC contract on Base. |\n| `BASE_RPC` | `https://mainnet.base.org` | |\n| `PUBLIC_BASE_URL` | `https://hive-mcp-log.onrender.com` | |\n| `MAX_LINES_PER_INGEST` | `10000` | |\n| `MAX_BYTES_PER_INGEST` | `4194304` | 4 MB. |\n| `RETENTION_SWEEP_MS` | `3600000` | 1 hour. |\n\n## Security & scope\n\n- Cross-DID reads are not exposed in v1 (own-DID only via tail/search).\n- No PII detection in v1; client-side discipline assumed. Schema check is a v1.1 candidate.\n- ZK cardinality attestation is a separate shim (`hive-mcp-zk-attestation`); not bundled.\n\n## License\n\nMIT — Steve Rotzin / Hive Civilization\n\n<!-- HIVE-GAMIFICATION-META-START -->\n## Hive Gamification\n\nThis MCP server is part of the Hive Civilization gamification surface (10-mechanic capability taxonomy).\n\n- Capability taxonomy: https://hive-gamification.onrender.com/.well-known/hive-gamification.json\n- Centrifuge dashboard: https://hive-gamification.onrender.com/.well-known/hive-centrifuge.json\n- Consolidated OpenAPI: https://hive-gamification.onrender.com/.well-known/openapi.json\n\n**Surface tags:** `gamification.spec.v1` · `gamification.surface.public` · `gamification.signal.read-only` · `gamification.settlement.real-rails`\n\nReal rails on Base L2 (USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`). Read-only signal layer. Brand gold `#C08D23`.\n<!-- HIVE-GAMIFICATION-META-END -->\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:05.448Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:38.019Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

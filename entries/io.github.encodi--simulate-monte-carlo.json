@@ -1,0 +1,56 @@
+{
+  "id": "io.github.encodi/simulate-monte-carlo",
+  "title": "simulate-monte-carlo",
+  "description": "Real Monte Carlo simulation of a compound event/conditional probability. Paid via x402.",
+  "summary": "Real Monte Carlo simulation of a compound event/conditional probability. Paid via x402.",
+  "offersHint": "Real Monte Carlo simulation of a compound event/conditional probability. Paid via x402. · Remote MCP (streamable-http) at https://simulate-monte-carlo.encodari.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://simulate-monte-carlo.encodari.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://simulate-monte-carlo.encodari.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/encodi/simulate-monte-carlo",
+  "repository": {
+    "url": "https://github.com/encodi/simulate-monte-carlo",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T16:16:46.652952Z",
+  "publishedAt": "2026-08-11T16:16:46.652952Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:04.887Z",
+    "sourceRepoAt": "2026-08-11T23:46:51.743Z",
+    "readmeAt": "2026-08-11T23:46:52.255Z",
+    "toolsAt": "2026-08-11T23:46:52.377Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/encodi/simulate-monte-carlo",
+    "checkedAt": "2026-08-11T23:46:51.743Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/encodi/simulate-monte-carlo/main/README.md",
+    "markdown": "# simulate-monte-carlo\n\n[![simulate-monte-carlo MCP server](https://glama.ai/mcp/servers/encodi/simulate-monte-carlo/badges/score.svg)](https://glama.ai/mcp/servers/encodi/simulate-monte-carlo)\n\nRemote MCP server (Cloudflare Workers) with one tool that estimates a compound event or conditional probability by actually running a Monte Carlo simulation:\n\n- **`simulate_monte_carlo`** — declare named random variables (`uniform`, `normal`, `bernoulli`, `binomial`, `poisson`, `exponential`, `discrete`), an `event` boolean expression over those names (e.g. `\"a > 0.5 && b == 1\"`), and an optional `condition` expression to get a conditional probability `P(event | condition)` via rejection sampling. Real random sampling and real counting — not a model guess about what the probability should be.\n\nNo database, no persistent state: each call builds a fresh `McpServer` (see `createServer()` in `src/index.ts`) and is self-contained. The PRNG is seedable (`mulberry32`): pass the `seed` returned in a previous response to reproduce the exact same result.\n\n## Why a hand-written expression interpreter, not `eval`\n\n`event`/`condition` are arbitrary caller-supplied strings. Running them through `eval`/`Function` would mean executing untrusted code inside the Worker. Instead, `src/tools/monteCarlo.ts` includes a small tokenizer + recursive-descent parser + AST interpreter that only understands numbers, declared variable names, arithmetic (`+ - * /`), comparisons (`< <= > >= == !=`), boolean logic (`&& || !`), parentheses, and a three-function whitelist (`min`, `max`, `abs`). There is no code execution path — the interpreter can't do anything beyond evaluate that narrow grammar.\n\n## Billing (x402)\n\nCharges per call via [x402](https://x402.org) — real USDC payment on **Base mainnet**, against the Coinbase Developer Platform (CDP) facilitator. The payment travels inside the MCP JSON-RPC itself (`_meta`), not as an HTTP header; see `src/payments.ts`.\n\n| Tool | Price |\n|---|---|\n| `simulate_monte_carlo` | $0.03 USDC |\n\nAn unpaid `tools/call` returns `isError: true` with the `accepts` (network, amount, `payTo`) the client needs to pay and retry — not an unexplained exception.\n\n## Structure\n\n```\nsrc/\n  index.ts            # registers the tool in the McpServer and exposes the MCP HTTP handler\n  payments.ts         # x402 billing on Base mainnet via the CDP facilitator\n  tools/\n    monteCarlo.ts        # distributions, expression parser/interpreter, simulation loop (testable without Workers)\n    monteCarlo.test.ts\nscripts/\n  dev-node.ts          # dev server that runs the handler in plain Node, no wrangler\n```\n\n## Resource limits\n\nSet from the start, not bolted on after: max 10 variables, 100–100,000 trials (default 10,000), 500-character expressions, binomial `n` ≤ 1,000, poisson `lambda` ≤ 1,000, and a discrete-outcome cap of 20. On top of the individual caps, a combined sampling-budget check (`trials × sum(per-variable cost)` ≤ 5,000,000) rejects combinations that would be individually within limits but jointly too expensive — e.g. 100,000 trials against a `binomial(n=1000)` variable.\n\n## Running it locally\n\n⚠️ **Note on `wrangler dev`**: the real Cloudflare Workers runtime (`workerd`) requires **macOS 13.5+**. If your Mac has an older version, `wrangler dev` (and `npm run dev`) will fail. This project includes a plain-Node shim that runs the exact same `fetch()` handler without needing `workerd`.\n\n### 1. Install dependencies\n\n```bash\nnpm install\n```\n\n### 2. Run the unit tests\n\n```bash\nnpm test\n```\n\n### 3a. If your wrangler dev works (macOS 13.5+, Linux, Windows)\n\n```bash\nnpm run dev\n```\n\n### 3b. If `wrangler dev` fails because of the macOS version\n\n```bash\nnpm run dev:node\n```\n\nStarts at `http://localhost:8787/mcp`, reading CDP credentials from `~/.mcp-tools-factory-credentials.env` (shared across all tools in this factory).\n\n### 4. Test with curl\n\n```bash\n# 1) initialize\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl-test\",\"version\":\"0.0.1\"}}}'\n\n# 2) tools/list\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}'\n\n# 3) tools/call — simulate_monte_carlo (two dice, P(sum > 9 | first die == 6))\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"simulate_monte_carlo\",\"arguments\":{\"variables\":[{\"name\":\"d1\",\"distribution\":{\"type\":\"discrete\",\"values\":[1,2,3,4,5,6],\"weights\":[1,1,1,1,1,1]}},{\"name\":\"d2\",\"distribution\":{\"type\":\"discrete\",\"values\":[1,2,3,4,5,6],\"weights\":[1,1,1,1,1,1]}}],\"event\":\"d1 + d2 > 9\",\"condition\":\"d1 == 6\",\"trials\":40000,\"seed\":3}}}'\n```\n\nResponses come as Server-Sent Events (`event: message` + `data: {...}`); the `data:` line is the usual JSON-RPC response.\n\n## Deploy and listings\n\nDeployed at `https://simulate-monte-carlo.encodari.workers.dev/mcp` (Cloudflare Workers). Published on the [official MCP registry](https://registry.modelcontextprotocol.io), [Smithery](https://smithery.ai), [mcp.so](https://mcp.so), and with an open PR to [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers).\n\n## What it doesn't do (yet)\n\n- Charges on Base mainnet with real money. To switch back to testnet (Base Sepolia, `eip155:84532`) during development, change `NETWORK` in `src/payments.ts`.\n- No database or persistent state between calls (beyond the billing config, cached in memory per isolate — see `src/payments.ts`).\n- The 95% confidence interval uses the normal (Wald) approximation, which is imprecise near probabilities close to 0 or 1 — good enough for a quick estimate, not a substitute for exact binomial confidence intervals in high-stakes use.\n",
+    "fetchedAt": "2026-08-11T23:46:52.255Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "simulate_monte_carlo",
+      "description": "Actually draws random samples from real distributions and counts outcomes, instead of a model guess about a probability. Declare named random variables (uniform, normal, bernoulli, binomial, poisson, exponential, discrete), an \"event\" boolean expression over those variable names (e.g. \"a > 0.5 && b == 1\"), and an optional \"condition\" expression to estimate a conditional probability P(event | condition) by rejection sampling. Event/condition expressions are parsed and evaluated by a small built-in interpreter (arithmetic, comparisons, &&/||/!, min/max/abs) — no arbitrary code execution. Returns the estimated probability, a 95% confidence interval, and the seed used (pass the same seed back to reproduce the exact result). Costs $0.03 USDC (Base) per call."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:52.377Z",
+  "toolsPreviewStatus": "ok"
+}

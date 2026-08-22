@@ -1,0 +1,58 @@
+{
+  "id": "io.github.sanjeevkkansal/solfleet",
+  "title": "solfleet",
+  "description": "Agent-safe fleet management for independent Solana validators and RPC nodes",
+  "summary": "Agent-safe fleet management for independent Solana validators and RPC nodes",
+  "offersHint": "Agent-safe fleet management for independent Solana validators and RPC nodes · Packages: pypi:solfleet",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "solfleet",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "solfleet",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sanjeevkkansal/solfleet",
+  "repository": {
+    "url": "https://github.com/sanjeevkkansal/solfleet",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-26T19:57:50.60645Z",
+  "publishedAt": "2026-06-26T19:57:50.60645Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:47.863Z",
+    "sourceRepoAt": "2026-08-11T23:22:54.170Z",
+    "readmeAt": "2026-08-11T23:22:55.217Z",
+    "toolsAt": "2026-08-12T01:02:47.863Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sanjeevkkansal/solfleet",
+    "checkedAt": "2026-08-11T23:22:54.170Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sanjeevkkansal/solfleet/main/README.md",
+    "markdown": "# solfleet\n\n[![tests](https://github.com/sanjeevkkansal/solfleet/actions/workflows/ci.yml/badge.svg)](https://github.com/sanjeevkkansal/solfleet/actions/workflows/ci.yml)\n[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)\n[![python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](pyproject.toml)\n\nAgent-safe fleet management for independent Solana validators and RPC\nnodes. One config file describes your fleet across devnet, testnet, and\nmainnet. An MCP server (and a CLI) exposes Solana-aware status, safe\nin-place upgrades, and health-driven DNS failover to Claude or any MCP\nclient. Every operation that changes a node is dry-run by default,\npolicy-gated, and audited. solfleet never reads or moves your keypairs.\n\nSee [PLAN.md](PLAN.md) for the roadmap and design notes.\n\n## Architecture\n\nsolfleet runs on the operator's machine (or a small VM). It talks to the\nfleet over JSON-RPC (read) and SSH/scp (act), builds artifacts on a\nseparate build host, computes slot lag against each cluster's reference\nRPC, and manages failover records at the DNS provider. Every mutation\nflows through one gate and is written to a SQLite audit log.\n\n```mermaid\nflowchart TB\n  claude[\"Claude / any MCP client\"]\n\n  subgraph operator[\"operator machine\"]\n    mcp[\"solfleet-mcp (stdio)\"]\n    cli[\"solfleet CLI\"]\n    core[\"core: probe · safety gate · executor · dns\"]\n    audit[(\"audit log (SQLite)\")]\n    claude -->|MCP| mcp\n    mcp --> core\n    cli --> core\n    core --> audit\n  end\n\n  builder[\"build host (agave + geyser from source)\"]\n  ref[\"cluster reference RPC\"]\n  dns[\"DNS provider (Cloudflare / Route53)\"]\n\n  subgraph fleet[\"fleet: devnet / testnet / mainnet\"]\n    rpc[\"RPC nodes\"]\n    val[\"voting validators\"]\n  end\n\n  core -->|JSON-RPC :8899| rpc\n  core -->|JSON-RPC :8899| val\n  core -->|SSH / scp| rpc\n  core -->|SSH / scp| val\n  core -->|SSH build, fetch artifacts| builder\n  builder -. \"artifact set + sha256\" .-> core\n  core -->|slot lag / delinquency| ref\n  core -->|eject / restore A records| dns\n```\n\n### How an in-place upgrade runs\n\n```mermaid\nsequenceDiagram\n  actor Op as Claude / operator\n  participant SF as solfleet\n  participant B as build host\n  participant N as node\n  participant R as reference RPC\n  Op->>SF: upgrade node to version (confirm)\n  SF->>SF: gate, policy + preflight (else stop)\n  SF->>B: build agave + geyser (or reuse cache)\n  B-->>SF: artifact set + sha256\n  SF->>N: scp artifacts as dest.solfleet-new\n  SF->>N: sha256 on node matches builder (else abort)\n  alt RPC node\n    SF->>N: systemctl stop\n    SF->>N: atomic swap (binary + geyser + marker)\n    SF->>N: systemctl start\n  else voting validator\n    SF->>N: atomic swap (binary + geyser + marker)\n    SF->>N: agave-validator exit (leader-aware), systemd relaunches\n  end\n  loop until healthy and caught up\n    SF->>R: getSlot\n    SF->>N: getHealth / getSlot\n  end\n  SF->>SF: verify reported version, write audit entry\n```\n\n### How failover runs\n\n```mermaid\nsequenceDiagram\n  participant SF as solfleet watch\n  participant N as pool members\n  participant R as reference RPC\n  participant D as DNS provider\n  loop every interval\n    SF->>N: getHealth / getSlot\n    SF->>R: getSlot (cluster head)\n    SF->>SF: per member: unhealthy, lag over limit, or delinquent\n    alt every member failing\n      SF->>SF: keep current records (never empty the pool)\n    else at least one healthy\n      SF->>D: ensure TXT ownership marker\n      SF->>D: remove A record of each failing member\n      SF->>D: add A record of each recovered member\n      SF->>SF: write audit entry\n    end\n  end\n```\n\n## Why\n\n- **Solana-aware health.** A generic health check sees HTTP 200; a Solana\n  node can be 500 slots behind and still return 200. solfleet checks slot\n  lag against the cluster, delinquency, and version drift.\n- **Build-and-distribute.** Agave v3.0 dropped prebuilt validator\n  binaries, so every operator now has to build from source. solfleet\n  builds once on a dedicated builder node (with the ABI-matched\n  Yellowstone geyser `.so`), caches it, and distributes the artifact set\n  to the fleet.\n- **Leader-aware restarts.** Restarting a voting validator during its own\n  leader slots skips blocks. solfleet restarts validators via a\n  leader-aware safe-exit; RPC nodes cycle via systemctl.\n- **Safe failover.** The watch loop pulls lagging/unhealthy nodes out of\n  DNS and restores them on recovery, and refuses to ever empty a pool.\n\n## Status\n\nv1. Built and unit-tested (91 tests, CI on Python 3.11-3.13). Most paths are\nalso proven live against a disposable devnet node and a real Cloudflare zone.\n\nProven live:\n\n- read path: `status`, `validate`, `vote-status`, `inspect`\n- `restart` (RPC via systemctl; validator via leader-aware safe-exit)\n- in-place `upgrade` end to end (build agave from source on a builder,\n  distribute, sha256-verify on the target, atomic swap, catch-up) for both\n  RPC and voting-validator nodes\n- `bootstrap-builder` (toolchain + deps on a bare builder)\n- `provision` a voting validator from bare disks (format NVMe, install,\n  render the voting unit, start, catch up, vote)\n- DNS driver plus `dns status` / `eject` / `restore` and last-member\n  protection, against a live Cloudflare zone\n\nUnit-tested but not yet run live:\n\n- the autonomous `watch` loop (probe -> decide -> act); its decision logic is\n  unit-tested and it reuses the now-proven Cloudflare driver\n- the Route53 driver (no AWS zone to point at yet)\n\nNot built yet: HTTP transport (MCP is stdio-only today). See PLAN.md (M6).\n\n## Install\n\n```sh\npipx install solfleet            # not yet published; for now:\npipx install git+https://github.com/sanjeevkkansal/solfleet\npipx install 'solfleet[route53]' # if you use Route53 for DNS\n```\n\n## Quick start\n\n```sh\ncp fleet.example.yaml fleet.yaml     # edit with your nodes\ncp policy.example.yaml policy.yaml   # optional; sane defaults if absent\nsolfleet status                      # probe the fleet\nsolfleet status --watch              # refreshing live table\nsolfleet validate                    # structural + live readiness check\nsolfleet vote-status mn-val-1        # voting health: credits, balance, delinquency, leader\nsolfleet inspect mn-val-1            # read-only SSH detail for one node\nsolfleet bootstrap-builder b1        # install build toolchain on a builder; --confirm\nsolfleet provision rpc-1 4.1.0       # dry-run bring-up plan; --confirm to run\nsolfleet plan-upgrade mn-val-1 4.1.0 # dry-run upgrade plan\nsolfleet upgrade mn-val-1 4.1.0      # dry-run; add --confirm to execute\nsolfleet watch --dry-run             # DNS failover loop, decide-only\n```\n\nMCP (Claude Code):\n\n```sh\nclaude mcp add solfleet -- solfleet-mcp\n```\n\n## Example session\n\nPointed at a small devnet fleet. With no flags, commands are read-only or\ndry-run.\n\nFleet health is Solana-aware, not just an HTTP 200:\n\n```console\n$ solfleet status\nCLUSTER  NODE   ROLE  HEALTH  VERSION     SLOT LAG  VOTE\ndevnet   rpc-1  rpc   ok      4.1.0-rc.1  0         -\ndevnet   rpc-2  rpc   ok      4.1.0-rc.1  0         -\n```\n\nAn upgrade is dry-run by default. It returns the ordered plan and the gate\ndecision and changes nothing until you pass `--confirm`:\n\n```console\n$ solfleet plan-upgrade rpc-1 4.1.0\n{\n  \"decision\": {\n    \"operation\": \"upgrade\",\n    \"cluster\": \"devnet\",\n    \"node\": \"rpc-1\",\n    \"mode\": \"dry-run\",\n    \"allowed\": true,\n    \"plan\": [\n      \"on builder 'build-1': build agave 4.1.0 from source\",\n      \"distribute artifact set to rpc-1; checksum-verify each (abort on mismatch)\",\n      \"stop solana-validator, swap, start\",\n      \"swap /usr/local/bin/agave-validator + geyser .so + version marker atomically\",\n      \"wait until healthy + caught up to https://api.devnet.solana.com\",\n      \"verify reported version == 4.1.0; record before/after\"\n    ],\n    \"reasons\": [\n      \"dry-run: preflight checks pass; pass confirm=true to execute\"\n    ]\n  },\n  \"target_version\": \"4.1.0\"\n}\n```\n\nOver MCP, the same operations are tools (`fleet_status`, `plan_node_upgrade`,\n`upgrade`, ...). Claude gets that same plan back and has to pass `confirm=true`\nto execute, so an agent cannot mutate a node by accident.\n\n## Tools\n\nRead-only: `fleet_status`, `node_detail`, `version_drift`, `vote_status`,\n`leader_schedule`, `validate`, `plan_node_upgrade`, `dns_pool_status`,\n`audit_log`.\n\nGated (dry-run by default; `confirm=true` to execute):\n`bootstrap_builder_host`, `provision`, `restart`, `upgrade`,\n`dns_pool_eject`, `dns_pool_restore`.\n\nEvery mutation is dry-run by default, checked against `policy.yaml`\n(allowed versions, disk floor, leader-window minimum), and written to a\nSQLite audit log. The watch loop is the one autonomous mutator; it is\nbounded by the same audit log and the never-empty-a-pool rule.\n\n## Safety model\n\n- **Dry-run by default.** Mutations return their ordered plan and\n  preflight unless called with `confirm=true`.\n- **Policy gate.** Per-cluster `policy.yaml`: allowed version globs, disk\n  floor, and `require_leader_window_minutes` for validators.\n- **Checksum-verified distribution.** Upgrade artifacts are sha256-checked\n  on the target against the builder before any swap.\n- **No keys, ever.** solfleet does not read, move, or generate\n  identity/vote keypairs. Voting-validator identity failover is out of\n  scope by design (double-signing risk).\n- **Audit log.** Every dry-run and execute is recorded in SQLite.\n\n## Development\n\n```sh\nuv venv && uv pip install -e '.[dev]'\nuv run pytest\n```\n\n## MCP registry\n\nPublished to the [MCP Registry](https://registry.modelcontextprotocol.io).\n\nmcp-name: io.github.sanjeevkkansal/solfleet\n",
+    "fetchedAt": "2026-08-11T23:22:55.217Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:47.863Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

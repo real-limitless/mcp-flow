@@ -1,0 +1,59 @@
+{
+  "id": "io.github.b-shields/cmxflow",
+  "title": "cmxflow",
+  "description": "Composable, tunable cheminformatics workflows: library preparation, clustering, docking, and more.",
+  "summary": "Composable, tunable cheminformatics workflows: library preparation, clustering, docking, and more.",
+  "offersHint": "Composable, tunable cheminformatics workflows: library preparation, clustering, docking, and more. · Packages: pypi:cmxflow",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "cmxflow",
+    "version": "0.4.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "cmxflow",
+      "version": "0.4.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://b-shields.github.io/cmxflow/",
+  "sourceUrl": "https://github.com/b-shields/cmxflow",
+  "repository": {
+    "url": "https://github.com/b-shields/cmxflow",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-15T01:06:11.772878Z",
+  "publishedAt": "2026-06-15T01:06:11.772878Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:30.689Z",
+    "sourceRepoAt": "2026-08-11T23:55:39.111Z",
+    "readmeAt": "2026-08-11T23:55:39.607Z",
+    "toolsAt": "2026-08-12T01:29:30.689Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/b-shields/cmxflow",
+    "checkedAt": "2026-08-11T23:55:39.111Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/b-shields/cmxflow/main/README.md",
+    "markdown": "# cmxflow 🧪\n\n<!-- mcp-name: io.github.b-shields/cmxflow -->\n\n[![Docs](https://img.shields.io/badge/docs-b--shields.github.io%2Fcmxflow-teal)](https://b-shields.github.io/cmxflow/)\n[![CI](https://github.com/b-shields/cmxflow/actions/workflows/ci.yml/badge.svg)](https://github.com/b-shields/cmxflow/actions/workflows/ci.yml)\n[![codecov](https://codecov.io/gh/b-shields/cmxflow/branch/main/graph/badge.svg)](https://codecov.io/gh/b-shields/cmxflow)\n[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)]()\n[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\nBuild cheminformatics and computational chemistry pipelines with composable blocks. Tune end-to-end with Bayesian Optimization. Or ask an LLM agent to do it.\n\n## Quick examples\n\n### Prepare ligands for docking\n\n```python\nfrom cmxflow import Workflow\nfrom cmxflow.sources import MoleculeSourceBlock\nfrom cmxflow.operators import (\n    MoleculeStandardizeBlock,\n    IonizeMoleculeBlock,\n    EnumerateStereoBlock,\n    ConformerGenerationBlock,\n)\nfrom cmxflow.sinks import MoleculeSinkBlock\n\n# Standardize → ionize (pH 6.4–8.4) → enumerate stereo → generate 3D conformers\nworkflow = Workflow()\nworkflow.add(\n    MoleculeSourceBlock(),\n    MoleculeStandardizeBlock(),\n    IonizeMoleculeBlock(),\n    EnumerateStereoBlock(),\n    ConformerGenerationBlock(),\n    MoleculeSinkBlock(),\n)\nworkflow(\"library.smi\", \"prepared.sdf\")\n```\n\n### Dock a congeneric series\n\nPure-Python docking. Free docking is the default (`index_poses=False`); scaffold-indexed mode caches poses by Bemis–Murcko scaffold for ~3× faster throughput on congeneric series with consistent pose alignment.\n\n```python\nfrom cmxflow import Workflow\nfrom cmxflow.sources import MoleculeSourceBlock\nfrom cmxflow.operators import ConformerGenerationBlock, MoleculeDockBlock\nfrom cmxflow.sinks import MoleculeSinkBlock\nfrom cmxflow.utils.parallel import make_parallel\n\nworkflow = Workflow()\nworkflow.add(\n    MoleculeSourceBlock(),\n    ConformerGenerationBlock(),\n    make_parallel(\n        MoleculeDockBlock(\n            receptor=\"receptor.pdb\",\n            site_reference=\"crystal_ligand.sdf\",\n            index_poses=True,  # omit for free docking\n        )\n    ),\n    MoleculeSinkBlock(),\n)\nworkflow(\"library.smi\", \"docked.sdf\")\n```\n\n### Tune a ligand-based virtual screen\n\n```python\nfrom cmxflow import Workflow\nfrom cmxflow.sources import MoleculeSourceBlock\nfrom cmxflow.operators import MoleculeSimilarityBlock\nfrom cmxflow.scores import EnrichmentScoreBlock\nfrom cmxflow.opt import Optimizer\n\n# Rank a library by 2D similarity to a known active, then tune the\n# fingerprint end-to-end to maximize enrichment AUC.\nworkflow = Workflow()\nworkflow.add(\n    MoleculeSourceBlock(),\n    MoleculeSimilarityBlock(queries=\"crystal_ligand.sdf\"),\n    EnrichmentScoreBlock(target=\"active\"),\n)\n\nopt = Optimizer(workflow, \"benchmark.csv\")\nopt.optimize(n_trials=30, direction=\"maximize\")\n\nprint(f\"Best enrichment AUC: {opt.best_score:.3f}\")\nprint(opt.best_params)\n# Best enrichment AUC: 0.836\n# {'fingerprint_type': 'morgan', 'similarity_metric': 'sokal', 'radius': 2, 'nbits': 2545}\n```\n\nThe four fingerprint parameters above are searched automatically — every block exposes its mutable parameters to the optimizer.\n\n### Or build it conversationally via an LLM agent\n\n```bash\nclaude mcp add cmxflow -- cmxflow-mcp\n```\n\n> *\"How many of the molecules in library.csv pass Lipinski's rules?\"*\n\n> *\"I need to build a ligand-based virtual screening workflow. I'm not sure if 2D or 3D is better. Can you optimize two workflows?\"*\n\n> *\"Dock the molecules in hits.csv against receptor.pdb with crystal_ligand.sdf as a reference.\"*\n\nThe agent can build, run, *and* optimize workflows. See [Using with Claude](https://b-shields.github.io/cmxflow/using-with-claude/) for full transcripts.\n\n## What's in the box\n\n- 15+ blocks for sourcing, transforming, filtering, clustering, scoring, and docking molecules\n- Bayesian optimization of pipeline parameters via [Optuna](https://optuna.org/)\n- Parallel execution for compute-heavy blocks (conformer generation, docking)\n- Workflow serialization for save / load / reuse\n- An MCP server with five tools: `build_workflow`, `run_workflow`, `optimize_workflow`, `manage_workflows`, `view_structures`\n\n## Install\n\n```bash\npip install cmxflow\n```\n\n### MCP server\n\n```bash\nclaude mcp add cmxflow -- cmxflow-mcp\n```\n\n### Optional: PyMOL\n\nRequired only for the `view_structures` MCP tool (3D visualization):\n\n```bash\nconda install -c conda-forge pymol-open-source\n```\n\n## Documentation\n\n- [Docs site](https://b-shields.github.io/cmxflow/)\n- [Block catalog](https://b-shields.github.io/cmxflow/blocks/)\n- [Using with Claude](https://b-shields.github.io/cmxflow/using-with-claude/) — agent transcripts\n- [`examples/basic_usage.ipynb`](examples/basic_usage.ipynb) — full tutorial\n- [`examples/docking/docking.ipynb`](examples/docking/docking.ipynb) — docking walkthrough (ILS, scaffold-indexed, and template modes)\n\n## Project\n\nMIT licensed. See [CONTRIBUTING.md](CONTRIBUTING.md) and [RELEASING.md](RELEASING.md).\n",
+    "fetchedAt": "2026-08-11T23:55:39.607Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:30.689Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

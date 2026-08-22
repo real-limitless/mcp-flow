@@ -1,0 +1,51 @@
+{
+  "id": "io.github.Vektoris-AI/proofetch",
+  "title": "proofetch",
+  "description": "Verified extraction: source-backed JSON from PDFs/URLs; honest null + signed receipt.",
+  "summary": "Verified extraction: source-backed JSON from PDFs/URLs; honest null + signed receipt.",
+  "offersHint": "Verified extraction: source-backed JSON from PDFs/URLs; honest null + signed receipt. · Remote MCP (streamable-http) at https://proofetch-vektoris-ai-workflows.vercel.app/mcp",
+  "version": "0.0.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://proofetch-vektoris-ai-workflows.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://proofetch-vektoris-ai-workflows.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Vektoris-AI/proofetch-mcp",
+  "repository": {
+    "url": "https://github.com/Vektoris-AI/proofetch-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-26T21:42:03.563625Z",
+  "publishedAt": "2026-06-26T21:42:03.563625Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:17.271Z",
+    "sourceRepoAt": "2026-08-12T00:00:27.856Z",
+    "readmeAt": "2026-08-12T00:00:28.452Z",
+    "toolsAt": "2026-08-12T01:33:17.271Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Vektoris-AI/proofetch-mcp",
+    "checkedAt": "2026-08-12T00:00:27.856Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Vektoris-AI/proofetch-mcp/main/README.md",
+    "markdown": "# proofetch — verified extraction with proof per field\n\n**Structured data from PDFs and web pages, where every value is backed by an exact source quote — or honestly left `null`. Never guessed.** Each result ships with a cryptographically signed receipt you can verify yourself.\n\nproofetch is a hosted **MCP server** and **HTTP API** built for developers and AI agents. You pay only for fields that pass the proof — €0.02 per verified field. Empty or unprovable fields cost nothing.\n\n- 🔗 **Landing page & pricing:** https://vektoris.de/proofetch\n- 🤖 **MCP endpoint (remote):** `https://proofetch-vektoris-ai-workflows.vercel.app/mcp`\n- 🧾 **Listed in the official MCP registry:** `io.github.Vektoris-AI/proofetch`\n\n> This repository is the public connector & documentation for the hosted proofetch service. The extraction pipeline itself is operated as a service — you don't self-host it, you call it with an API key.\n\n---\n\n## Why proofetch\n\nNormal extraction fills every field — even when the value is invented. You then have to re-check every number by hand. proofetch is different:\n\n- **Never guesses.** Unsure? The field is `null` + flagged, instead of a fabricated value.\n- **Provenance per field.** Every value comes with the exact source quote, verifiable against the original document.\n- **Signed receipt.** The result is sealed in a signed receipt (Ed25519) — you, or an escrow, verify it without having to trust us.\n- **Pay for truth only.** Billing is per field that passes the proof (`verdict: PASS`).\n\n## Get an API key\n\nBuy prepaid balance (from €5) on the landing page — you get your key instantly after payment:\n\n👉 **https://vektoris.de/proofetch#preise**\n\n## Quickstart — HTTP API\n\n```bash\ncurl -X POST https://proofetch-vektoris-ai-workflows.vercel.app/extract \\\n  -H \"Authorization: Bearer YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"source\": { \"type\": \"pdf_url\", \"value\": \"https://example.com/invoice.pdf\" },\n    \"targetSchema\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"invoice_total\": { \"type\": \"string\" },\n        \"due_date\":      { \"type\": \"string\" },\n        \"invoice_number\":{ \"type\": \"string\" }\n      },\n      \"additionalProperties\": false\n    }\n  }'\n```\n\n**Source types** (`source.type`): `pdf_url`, `pdf_base64`, `url`, `text`, `html`.\n**`targetSchema`** is a standard JSON Schema (`type: \"object\"`, `properties`, `additionalProperties: false`).\n\n### What you get back\n\n```jsonc\n{\n  \"data\": {\n    \"invoice_total\": \"1,190.00 EUR\",\n    \"due_date\": \"2024-09-30\",\n    \"invoice_number\": null          // honest null — not found in source\n  },\n  \"fields\": [\n    { \"path\": \"invoice_total\", \"value\": \"1,190.00 EUR\", \"verdict\": \"PASS\",\n      \"provenance\": { \"quote\": \"1,190.00 EUR\", \"start\": 43, \"end\": 55 } },\n    { \"path\": \"invoice_number\", \"value\": null, \"verdict\": \"FAIL\", \"provenance\": null }\n  ],\n  \"verdict\": \"PARTIAL\",\n  \"receipt\": { \"v\": 1, \"jobId\": \"pf_…\", \"outputHash\": \"sha256:…\" },\n  \"billing\": { \"charged\": true, \"amountCents\": 4 }\n}\n```\n\n- `data` — clean JSON, each field proven or honestly `null`\n- `fields[]` — per field: source quote (`provenance`) + `verdict` (`PASS`/`FAIL`)\n- `verdict` — overall: `PASS`, `PARTIAL`, or `FAIL`\n- `receipt` — signed proof with hashes, self-verifiable\n\nCheck your balance any time: `GET /billing/balance` with the same key.\n\n## Use as an MCP server (remote)\n\nproofetch speaks the Model Context Protocol over Streamable HTTP. Point any MCP-capable client at the remote endpoint with your key as a bearer token.\n\n**Endpoint:** `https://proofetch-vektoris-ai-workflows.vercel.app/mcp`\n**Auth:** `Authorization: Bearer YOUR_API_KEY`\n**Tool:** `verified_extract` — same contract as the HTTP API above.\n\nExample client config (generic MCP `streamable-http` remote):\n\n```json\n{\n  \"mcpServers\": {\n    \"proofetch\": {\n      \"type\": \"streamable-http\",\n      \"url\": \"https://proofetch-vektoris-ai-workflows.vercel.app/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer YOUR_API_KEY\" }\n    }\n  }\n}\n```\n\n## Open standards\n\nproofetch is built for autonomous agents: discoverable via the **A2A** card and **MCP**, payable per call via **x402 / AP2**, and every receipt is independently verifiable.\n\n## Links\n\n- Landing page & pricing — https://vektoris.de/proofetch\n- Official MCP registry — https://registry.modelcontextprotocol.io/?search=proofetch\n- Operated by **Vektoris** — https://vektoris.de\n\n---\n\n© Vektoris. The proofetch service and pipeline are proprietary; this connector/documentation is provided under the MIT License (see `LICENSE`).\n",
+    "fetchedAt": "2026-08-12T00:00:28.452Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:33:17.271Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"API key required\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "com.blackswancausallabs/target-mcp",
+  "title": "TARGET Checklist MCP",
+  "description": "Score how completely a target-trial-emulation study reports what the TARGET guideline requires.",
+  "summary": "Score how completely a target-trial-emulation study reports what the TARGET guideline requires.",
+  "offersHint": "Score how completely a target-trial-emulation study reports what the TARGET guideline requires. · Packages: pypi:target-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "target-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "target-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Black-Swan-Causal-Labs/target-mcp",
+  "repository": {
+    "url": "https://github.com/Black-Swan-Causal-Labs/target-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-21T06:28:10.599812Z",
+  "publishedAt": "2026-07-21T06:28:10.599812Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:38:07.504Z",
+    "sourceRepoAt": "2026-08-12T00:38:07.504Z",
+    "readmeAt": "2026-08-12T00:38:07.910Z",
+    "toolsAt": "2026-08-12T00:38:07.974Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Black-Swan-Causal-Labs/target-mcp",
+    "checkedAt": "2026-08-12T00:38:07.504Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Black-Swan-Causal-Labs/target-mcp/main/README.md",
+    "markdown": "# TARGET Checklist MCP Server\n\n<!-- mcp-name: com.blackswancausallabs/target-mcp -->\n\nAn MCP server that operationalizes the **TARGET** reporting guideline\n(TrAnsparent ReportinG of observational studies Emulating a Target trial;\nCashin et al., JAMA/BMJ, September 2025) as a deterministic, provenanced\nscoring engine for target trial emulation (TTE) studies.\n\nThis is the *executable* TARGET: not a manuscript auditor that renders an\nopinion, but a measurement instrument that produces a structured,\nitem-by-item, evidence-linked matrix with fixed model provenance, so a\ncorpus-scale result is reproducible.\n\nSee `../target-mcp-server-design.md` for the full design rationale.\n\n## Status — vertical slice\n\nBuilt and proven end-to-end:\n\n- **Spec layer** — the 21 published items decomposed into **39 scoreable leaf\n  subitems**, encoded as versioned YAML (`target_mcp/specs/target-0.1.0.yaml`)\n  with own-words intent, verdict boundaries, signal terms, the 6x↔7x\n  specification/emulation pairing, and applicability rules. Structurally\n  validated on load (`spec.py`).\n- **Ingestion layer** — PDF/text/docx → `SectionMap` with character-offset,\n  **source-tagged** section spans (main vs `supplement:<file>`), protocol-table\n  and flow-diagram detection, extractor version + text hash stamps, and\n  whitespace-insensitive quote→span resolution. Supports **multi-document\n  bundles** (main text + supplements) via `build_bundle` (`ingest.py`).\n- **Retrieval layer** — the corpus/batch and convenience path: fetch\n  open-access articles by PMCID from Europe PMC (JATS main text plus PMC-hosted\n  supplementary files, merged into one bundle). Use this when there is no file\n  in hand or to auto-fetch an OA paper's supplement; for a manuscript you were\n  given, ingest the file directly (`retrieve.py`).\n- **Assessment layer** — batched, single-pass scoring of all applicable leaves.\n  **Scaffold mode (default)** is the path for reviewing a publication: the agent\n  already in the loop is the scorer, so the server returns the exact prompt +\n  schema for it to run, then validates the verdicts it submits. **Judge mode**\n  is for the headless/batch case (no LLM in the loop) — the server makes its own\n  pinned model call so a corpus run is reproducible and caller-independent. Both\n  share one validation path that enforces leaf coverage, verdict vocabulary, and\n  mandatory verbatim evidence resolved to spans with a `source_document` tag\n  (`assess.py`).\n- **Rendering layer** — `render_checklist` projects a finalized assessment onto\n  the published TARGET checklist form (all 39 rows, verbatim item wording under\n  CC BY-ND, a Location-reported column from the resolved evidence spans; the\n  enriched view adds verdict + evidence). `render_checklist_docx` writes the\n  same as a submission-ready Word file (`render.py`, `render_docx.py`).\n- **Corpus & validation layers** — `aggregate_corpus` rolls many assessments\n  into per-item completeness rates with coverage denominators (`corpus.py`);\n  `validate.py` provides blind human coding-sheet generation and per-leaf\n  agreement (raw, Cohen's κ, Gwet's AC1, sensitivity/specificity) against a\n  gold standard.\n- **Composition layer** — FastMCP server (`server.py`) exposing eleven tools.\n  The primary manuscript flow is **`parse_manuscript`** (parse the file you\n  were given, with `supplements=` when available) → **`assess_manuscript`** →\n  **`submit_scaffold_verdicts`** → **`render_checklist`** (or\n  `render_checklist_docx`). Supporting tools: `parse_pmcid` (corpus/batch or\n  OA-supplement fetch), `get_checklist` (introspect the spec),\n  `aggregate_corpus`, `build_coding_sheet`, and `validate_against_gold`.\n\nNot yet built (see design doc): `assess_item`, `check_emulation_coherence`,\n`export_identifiability_spec`, publisher-site supplement retrieval (beyond the\nPMC-OA tier), better table extraction, and the separate materiality/design-risk\nlayer.\n\n### Provenance stamped on every assessment\n\n`spec_version`, resolved `model` id, `temperature`, `prompt_hash`,\n`prompt_template_version`, `extractor_version`, `text_sha256`, `assessed_at`,\n`full_text_available`, `supplement_status`, and a per-source `documents` list;\neach evidence item carries its resolved span, section, and `source_document`.\nA span is only meaningful alongside the extractor version and text hash, so\nthey travel together.\n\n## Reporting completeness, not a pass/fail verdict\n\nThe instrument scores how *completely* a manuscript reports what the checklist\nrequires — not study quality, and it issues **no pass/fail judgment**. TARGET\npresents all 21 items as essential minimum items with **no tiering**, and this\ntool follows suit: the output is the 39 per-leaf verdicts with evidence and a\ncompleteness tally. (An earlier \"critical floor\" — a BSCL pass/fail overlay over\nsix leaves — was removed in 2026-07-19 as off-message and confusing; see\n`docs/DECISIONS.md`.) Do not present a verdict matrix as TARGET compliance.\n\n## Install\n\nThe server and the optional orchestration skill ship together in this repo, but\nthey **activate through two separate mechanisms** — installing one does not\nenable the other. Getting the files (clone/download) gives you both; then do the\ntwo activation steps below.\n\n### 1. Install the server\n\n```bash\ngit clone https://github.com/Black-Swan-Causal-Labs/target-mcp.git\ncd target-mcp\npython3 -m venv .venv\n.venv/bin/pip install -e .\n```\n\n(Once published to PyPI: `pip install target-mcp`.)\n\nRun it standalone (stdio transport) to smoke-test:\n\n```bash\n.venv/bin/target-mcp\n```\n\n### 2. Register the server with your MCP client\n\nAdd it to the client's MCP config with an **absolute** path. For Claude Desktop\nthat file is `~/Library/Application Support/Claude/claude_desktop_config.json`\n(macOS); for a Claude Code project use `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"target-checklist\": {\n      \"command\": \"/ABSOLUTE/PATH/TO/target-mcp/.venv/bin/python\",\n      \"args\": [\"-m\", \"target_mcp.server\"]\n    }\n  }\n}\n```\n\nRestart / reconnect the client. Confirm it exposes **11 tools** (a stale process\nmay show fewer — respawn it). The server is now fully usable on its own: any MCP\nclient can run parse → assess → submit → render in a single scaffold pass.\n\n### 3. (Optional, Claude Code only) Activate the fan-out skill\n\n`.claude/skills/target-checklist-fanout/` encodes the parallel-subagent\norchestration that scores the 39 leaves concurrently (~2 min vs ~20 min). It is\n**an accelerator, not a dependency** — it only works in clients that can spawn\nsubagents (the Claude Code CLI, or the Claude Desktop **Code/Cowork** tabs; the\nplain **Chat** tab cannot, and non-Claude clients like Codex ignore it). Without\nit, everything still works via the single-pass fallback.\n\nA Claude Code session discovers the skill when its working directory is this\nrepo. To make it available in **every** session regardless of directory, copy it\nto the user scope:\n\n```bash\nmkdir -p ~/.claude/skills\ncp -R .claude/skills/target-checklist-fanout ~/.claude/skills/\n```\n\nFor the skill to actually run, all three must be present: the **server**\n(step 2), the **skill** (this step), and a **subagent-capable client**.\n\n### Judge mode (headless/batch, optional)\n\nJudge mode needs `ANTHROPIC_API_KEY` in the environment. The pinned model is\n`claude-sonnet-5` by default; override with `TARGET_JUDGE_MODEL`.\n\n## Batch / corpus runs\n\nScoring hundreds of papers is a **headless** job, not an interactive MCP call (a\nmulti-hour tool call would blow the client's request timeout). Use the\n`target-mcp-corpus` CLI: it fetches + judges a list of PMCIDs **concurrently**,\nisolates per-paper failures, retries transient errors, and rolls up the\naggregate.\n\n```bash\n# ids.txt: one PMCID per line (#-comments and blanks ignored)\nANTHROPIC_API_KEY=sk-... target-mcp-corpus ids.txt -o out/ -j 12\n```\n\n- `-j/--workers` bounds concurrency (default 8; raise toward your API rate\n  limit). Judge is ~a few minutes/paper, so wall-clock ≈ `papers / workers ×\n  per-paper` — e.g. 300 papers at 12 concurrent ≈ 1–1.5h, versus ~10–20h serial.\n- `-o/--out-dir` writes one JSON per assessment plus `aggregate.json` and\n  `summary.json` (with per-paper stamps, verdict tallies, and any failures).\n  Without `-o`, the aggregate prints to stdout.\n- `--model` overrides the pinned judge model; `--no-supplements` skips\n  supplement retrieval.\n\nJudge mode records the **resolved** model id per paper, so a corpus aggregate is\ntruthfully provenanced and caller-independent. Re-roll-up saved assessments any\ntime with the `aggregate_corpus` MCP tool.\n\n## Tests\n\n```bash\n.venv/bin/python -m pytest tests/ -q\n```\n\nCovers spec validation, section mapping and quote resolution, the finalize +\nevidence-resolution path, evidence-required and coverage-mismatch guards,\napplicability rules, abstract-only full-text gating, corpus aggregation,\nthe validation harness, checklist rendering (Markdown + .docx), and prompt-hash\nstability.\n\n## Licensing / commons hygiene\n\nThe encoded checklist is a re-encoding of item *intent* in own words plus\nassessor notes; it does not reproduce the TARGET checklist wording verbatim.\nThe original checklist is © the TARGET group under CC BY-ND 4.0. When the\nExplanation & Elaboration document is released, leaves flagged\n`e_e_pending: true` should be re-checked and the spec bumped to a clean minor\nrelease. Do not copy E&E text verbatim.\n",
+    "fetchedAt": "2026-08-12T00:38:07.910Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:38:07.974Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

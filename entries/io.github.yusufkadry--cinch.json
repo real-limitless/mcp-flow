@@ -1,0 +1,82 @@
+{
+  "id": "io.github.yusufkadry/cinch",
+  "title": "cinch",
+  "description": "Run AI-generated code safely. gVisor-isolated Python/JS sandboxes for any MCP client. Pay per run.",
+  "summary": "Run AI-generated code safely. gVisor-isolated Python/JS sandboxes for any MCP client. Pay per run.",
+  "offersHint": "Run AI-generated code safely. gVisor-isolated Python/JS sandboxes for any MCP client. Pay per run. · Packages: npm:@cinch-codes/mcp · Env vars: CINCH_API_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@cinch-codes/mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CINCH_API_KEY",
+        "description": "Cinch API key from cinch.codes",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@cinch-codes/mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CINCH_API_KEY",
+          "description": "Cinch API key from cinch.codes",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CINCH_API_KEY",
+      "description": "Cinch API key from cinch.codes",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/yusufkadry/cinch-mcp",
+  "repository": {
+    "url": "https://github.com/yusufkadry/cinch-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-23T19:39:24.906741Z",
+  "publishedAt": "2026-07-23T19:39:24.906741Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:56.903Z",
+    "sourceRepoAt": "2026-08-11T23:13:41.118Z",
+    "readmeAt": "2026-08-11T23:13:41.640Z",
+    "toolsAt": "2026-08-12T00:54:56.903Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/yusufkadry/cinch-mcp",
+    "checkedAt": "2026-08-11T23:13:41.118Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/yusufkadry/cinch-mcp/main/README.md",
+    "markdown": "# @cinch-codes/mcp\n\nMCP server for [Cinch](https://cinch.codes). Gives your AI assistant a real sandbox to run code in.\n\nWithout it, an assistant writes code and you run it yourself. With it, the assistant runs the code and reads the actual output — inside a gVisor-isolated container on Cinch's infrastructure, with no access to your machine, filesystem, or local network.\n\nPay per execution. No subscription floor.\n\n## Setup\n\nGet an API key at [cinch.codes](https://cinch.codes), then add the server to your MCP client.\n\n**Claude Desktop** — `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cinch\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@cinch-codes/mcp\"],\n      \"env\": {\n        \"CINCH_API_KEY\": \"cinch_live_...\"\n      }\n    }\n  }\n}\n```\n\n**Claude Desktop on Windows** — same file, but Windows can't spawn `npx` directly, so wrap it with `cmd /c`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cinch\": {\n      \"command\": \"cmd\",\n      \"args\": [\"/c\", \"npx\", \"-y\", \"@cinch-codes/mcp\"],\n      \"env\": {\n        \"CINCH_API_KEY\": \"cinch_live_...\"\n      }\n    }\n  }\n}\n```\n\n**Claude Code** (macOS/Linux):\n\n```bash\nclaude mcp add --scope user cinch -e CINCH_API_KEY=cinch_live_... -- npx -y @cinch-codes/mcp\n```\n\n**Claude Code** (Windows):\n\n```cmd\nclaude mcp add --scope user cinch -e CINCH_API_KEY=cinch_live_... -- cmd /c npx -y @cinch-codes/mcp\n```\n\n**Cursor** — `.cursor/mcp.json`, same shape as the Claude Desktop config above.\n\nRestart the client. That's it — no install step, `npx` fetches it on first run.\n\n## What it exposes\n\n### `execute_code`\n\nRuns a self-contained Python or JavaScript program and returns stdout, stderr, exit code, and duration.\n\n| Parameter | Type | Default | Description |\n|---|---|---|---|\n| `code` | string | — | The complete program to run. Must print to stdout to return anything. |\n| `language` | `python` \\| `javascript` | `python` | Runtime to execute in. |\n\nEach call gets a clean sandbox. State does not persist between calls, so every snippet needs to stand on its own.\n\n## The sandbox environment\n\nDeliberately minimal. Worth knowing before you wonder why an import failed:\n\n| | |\n|---|---|\n| Runtimes | Python 3.12, Node 20 |\n| Packages | **Standard library only.** No pip or npm packages are installed, and none can be installed at runtime. |\n| Network | **None.** HTTP, DNS, and package installs all fail. |\n| Filesystem | Root is read-only. `/tmp` is writable (64 MB) and destroyed when the run ends. |\n| Memory | 256 MB |\n| CPU | 0.5 cores |\n| Time limit | 10 seconds |\n| Isolation | gVisor (`runsc`), all capabilities dropped, no-new-privileges, non-root user, 64-process cap |\n\nThe tool description tells the model all of this up front, so it writes stdlib-only code instead of reaching for `numpy` and failing on the first call.\n\n## Configuration\n\n| Variable | Required | Default | Description |\n|---|---|---|---|\n| `CINCH_API_KEY` | yes | — | Your Cinch API key. |\n| `CINCH_TIMEOUT_MS` | no | `20000` | Client-side timeout in ms. The API caps execution at 10s regardless. |\n| `CINCH_BASE_URL` | no | `https://api.cinch.codes` | Override the API endpoint. |\n\n## Troubleshooting\n\n**Windows: \"Failed to connect\" in `claude mcp list`** — you're missing the `cmd /c` wrapper. Windows resolves `npx` to a batch script that can't be spawned directly; re-add the server using the Windows command above.\n\n**Windows: `npm error ENOENT ... AppData\\Roaming\\npm`** — some Node installs never create npm's global folder, and `npx` refuses to run without it. Create it once and retry:\n\n```cmd\nmkdir %APPDATA%\\npm\n```\n\n**Server exits immediately with \"CINCH_API_KEY is not set\"** — the env var didn't reach the server. In Claude Code, put `-e CINCH_API_KEY=...` *before* the server name in `claude mcp add`. In config files, check the `env` block is inside the `cinch` entry.\n\n**Debugging any connection failure** — run the server directly to see the real error instead of a generic status:\n\n```bash\nCINCH_API_KEY=cinch_live_... npx -y @cinch-codes/mcp   # macOS/Linux\n```\n```cmd\nset CINCH_API_KEY=cinch_live_... && cmd /c npx -y @cinch-codes/mcp   # Windows\n```\n\nCorrect behavior is `cinch-mcp ... ready` followed by silence — an MCP server waits for a client. Anything else printed is the actual failure.\n\n## Why sandboxed execution\n\nCode written by a model is untrusted code — nothing reviewed it before it ran. Executing it directly on your machine means handing it your filesystem, your network, and your credentials. Cinch runs it somewhere else entirely, in a disposable container with kernel-level isolation, and sends back only the output.\n\n## Notes\n\n- Requires Node 18 or newer.\n- Output is capped at 20,000 characters per stream to protect your context window; anything beyond that is truncated with a marker.\n- Runs that time out or exit non-zero are returned as tool errors, so the assistant knows the code failed and can correct it.\n- Out-of-credit responses are surfaced clearly and instruct the assistant not to retry, so a drained balance does not turn into a retry loop.\n\n## Links\n\n- [cinch.codes](https://cinch.codes)\n- JS/TS SDK: [`@cinch-codes/pangolin`](https://www.npmjs.com/package/@cinch-codes/pangolin)\n- Python SDK: [`pangolin-sdk`](https://pypi.org/project/pangolin-sdk/)\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:13:41.640Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:54:56.903Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

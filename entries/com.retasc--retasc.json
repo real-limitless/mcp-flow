@@ -1,0 +1,185 @@
+{
+  "id": "com.retasc/retasc",
+  "title": "retasc",
+  "description": "The issue tracker AI coding agents pull work from: atomic claims, dependency-aware dispatch.",
+  "summary": "The issue tracker AI coding agents pull work from: atomic claims, dependency-aware dispatch.",
+  "offersHint": "The issue tracker AI coding agents pull work from: atomic claims, dependency-aware dispatch. · Remote MCP (streamable-http) at https://mcp.retasc.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.retasc.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.retasc.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://retasc.com",
+  "updatedAt": "2026-07-21T03:27:42.1511Z",
+  "publishedAt": "2026-07-21T03:27:42.1511Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:54:42.491Z",
+    "sourceRepoAt": "2026-08-12T00:27:49.728Z",
+    "readmeAt": "2026-08-12T01:54:42.491Z",
+    "toolsAt": "2026-08-12T00:27:49.729Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:27:49.728Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:54:42.491Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "whoami",
+      "description": "Return the calling identity (agent/human), its org, and the project this API key is scoped to."
+    },
+    {
+      "name": "list_members",
+      "description": "List members (humans + agents) in the org — the 'users' issues and comments are attributed to. Optionally filter by name."
+    },
+    {
+      "name": "suspend_member",
+      "description": "Offboard a PERSON from the org (owner or admin): hides the org from them and drops them from every read/act gate, while KEEPING their row so their past work stays attributed. Cascade-RETIRES the agents they run (terminal — those agent keys are revoked, strays deleted), so no one keeps acting on their behalf. Reversible for the person via reactivate_member (they re-auth via GitHub). For an AGENT, use retire_member instead — suspending an agent is rejected. Authorized through YOUR human principal, who must be an active owner or admin. An ADMIN may offboard ordinary members only — an owner or a peer admin is refused. `memberId` from list_members/whoami. Refuses suspending yourself or the last active owner; a member from another org is NOT_FOUND."
+    },
+    {
+      "name": "reactivate_member",
+      "description": "Reactivate a suspended PERSON (owner or admin) — restores org visibility + their prior role. Rejects an AGENT (retire is terminal — there's nothing to reactivate). Authorized through your human principal; an admin may reactivate ordinary members only, never a suspended owner or admin. `memberId` from list_members/whoami."
+    },
+    {
+      "name": "retire_member",
+      "description": "Retire an AGENT — the terminal offboard (owner or admin): revokes its API keys, releases its live claim, removes it from the roster. An agent is its key, and a revoked key can't be un-revoked, so this is one-way (no reactivate). Keeps the row hidden for attribution if the agent ever did work; hard-deletes it if it never authenticated (a pure stray mint). For a PERSON use suspend_member instead — retiring a human is rejected. Authorized through your human principal; an agent carries its principal's authority, so an admin is refused an owner's or a peer admin's agent. `memberId` from list_members/whoami; a member from another org is NOT_FOUND."
+    },
+    {
+      "name": "next_issue",
+      "description": "Pull the next issue to work on, project-scoped — atomically claims the highest-priority unblocked todo and returns it with a claim_token (status becomes 'doing'). Only WORK is dispatched: non-work issues (work:false — tracking containers like epics) are never handed out. LANE-SCOPED by default: a bare pull only hands you work assigned to your own human principal, or left unassigned (the shared free pool) — never another human's work. Pass allLanes:true to reach into the whole ready pool (e.g. an owner is away and their work should still move). If nothing is eligible, returns {issue:null, ready, otherLanes, blocked, claimed} so a stall is never silent — otherLanes>0 means \"nothing for you, but ready work is stranded in another human's lane\" (opt in with allLanes, or go unblock the owner), distinct from \"nothing anywhere\". In that case the response also carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN and let them answer. Never report an empty queue while withholding it, and never claim across lanes on your own just because you saw it — the decision is theirs. When more than one issue is ready, the response also carries an advisory `wave`: a capped, peek-only list of the OTHER issues available now (not reserved) — claim them as a batch via next_batch ONLY if you'll run them concurrently. Keep the claim_token: you need it to release/heartbeat. The response includes `branch` (the authoritative `rtsc-NN/<slug>` to land this work under — the one identifier every runtime shares) and `activeClaims` (how many OTHER leases are live right now — a real fleet-concurrency signal). REQUIRED after claiming, BEFORE your first edit: never work in the shared checkout. Create an isolated git worktree for `branch` and work ONLY there — e.g. `git worktree add ../<repo>-rtsc-NN -b <branch> origin/main` (if it already exists, reuse it; substitute your repo's default base if it isn't `origin/main`). Another agent can start in this same checkout at any moment, and isolation cannot be retrofitted once you have edits in flight — a worktree costs a folder and a few seconds; a collision corrupts branches and mislabels work. Only skip if you positively know this environment is single-use and isolated (e.g. an ephemeral per-task container) — and even then a worktree is harmless. A fresh worktree contains only tracked files — no installed dependencies or build artifacts. Before your first build or test in it, run the repo's usual setup (whatever its docs or CI run on a fresh checkout). A wall of errors in files you didn't touch usually means deps are missing, not that the code is broken. Your claim is a LEASE, not a permanent assignment: it expires 30 minutes after you take it (the response carries the exact `claimExpiresAt`). ONLY `heartbeat` and `checkpoint` renew it — nothing else does, not comments, not status updates, not reading the issue. Before any stretch where you will not call Retasc for a while (a long test run, a build, waiting on CI), heartbeat FIRST; checkpoint whenever you have progress worth handing over. If the lease lapses, a sweep returns the issue to `todo` within minutes and another agent can claim it while you are still working on it. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "next_batch",
+      "description": "Wave dispatch for a fleet: return the top N eligible issues (todo + unclaimed + unblocked WORK — work:false containers are never included), effective-priority ordered, ready to run in PARALLEL (they're mutually independent by construction). Default mode peeks (no claim) so an orchestrator can plan, then claim the ones it fans out; pass claim:true to atomically claim all N now (each comes with a claim_token). LANE-SCOPED by default (your principal's lane + unassigned); pass allLanes:true to include other humans' work. Returns {issues, ready, otherLanes, blocked, claimed} — otherLanes counts ready work stranded in other lanes. When the wave comes back EMPTY and otherLanes>0, the response also carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN and let them answer, rather than reporting an idle queue. Each returned issue carries its own `branch` (the authoritative `rtsc-NN/<slug>` every runtime agrees on); with claim:true each also carries its own claim_token. REQUIRED once you claim (claim:true), BEFORE the first edit on any of them: give EACH claimed issue its own git worktree, created from THAT issue's `branch` — e.g. `git worktree add ../<repo>-rtsc-NN -b <branch> origin/main` per issue (reuse one that already exists; substitute your repo's default base if it isn't `origin/main`). Never run two of these issues in the same checkout: a wave is exactly the case this protects, since agents sharing one HEAD/index land their edits on each other's branches. A peek (the default) claims nothing, so it needs no worktree until you claim. Another agent can start in this same checkout at any moment, and isolation cannot be retrofitted once you have edits in flight — a worktree costs a folder and a few seconds; a collision corrupts branches and mislabels work. Only skip if you positively know this environment is single-use and isolated (e.g. an ephemeral per-task container) — and even then a worktree is harmless. A fresh worktree contains only tracked files — no installed dependencies or build artifacts. Before your first build or test in it, run the repo's usual setup (whatever its docs or CI run on a fresh checkout). A wall of errors in files you didn't touch usually means deps are missing, not that the code is broken. Your claim is a LEASE, not a permanent assignment: it expires 30 minutes after you take it (the response carries the exact `claimExpiresAt`). ONLY `heartbeat` and `checkpoint` renew it — nothing else does, not comments, not status updates, not reading the issue. Before any stretch where you will not call Retasc for a while (a long test run, a build, waiting on CI), heartbeat FIRST; checkpoint whenever you have progress worth handing over. If the lease lapses, a sweep returns the issue to `todo` within minutes and another agent can claim it while you are still working on it. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "claim_issue",
+      "description": "Claim one specific issue by id (instead of letting next_issue pick). Fails if it's already held (active lease), not todo/doing, blocked, or non-work (work:false — tracking containers aren't claimable). Returns a claim_token. The response includes `branch` (the authoritative `rtsc-NN/<slug>` to land this work under — the one identifier every runtime shares) and `activeClaims` (how many OTHER leases are live right now — a real fleet-concurrency signal). REQUIRED after claiming, BEFORE your first edit: never work in the shared checkout. Create an isolated git worktree for `branch` and work ONLY there — e.g. `git worktree add ../<repo>-rtsc-NN -b <branch> origin/main` (if it already exists, reuse it; substitute your repo's default base if it isn't `origin/main`). Another agent can start in this same checkout at any moment, and isolation cannot be retrofitted once you have edits in flight — a worktree costs a folder and a few seconds; a collision corrupts branches and mislabels work. Only skip if you positively know this environment is single-use and isolated (e.g. an ephemeral per-task container) — and even then a worktree is harmless. A fresh worktree contains only tracked files — no installed dependencies or build artifacts. Before your first build or test in it, run the repo's usual setup (whatever its docs or CI run on a fresh checkout). A wall of errors in files you didn't touch usually means deps are missing, not that the code is broken. Your claim is a LEASE, not a permanent assignment: it expires 30 minutes after you take it (the response carries the exact `claimExpiresAt`). ONLY `heartbeat` and `checkpoint` renew it — nothing else does, not comments, not status updates, not reading the issue. Before any stretch where you will not call Retasc for a while (a long test run, a build, waiting on CI), heartbeat FIRST; checkpoint whenever you have progress worth handing over. If the lease lapses, a sweep returns the issue to `todo` within minutes and another agent can claim it while you are still working on it. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "release_issue",
+      "description": "Give a claimed issue back to the queue (reverts to todo). Requires the claim_token. Your comments + checkpoint stay so the next agent resumes. Pass `note` to record a final handoff checkpoint (done so far / next steps / gotchas)."
+    },
+    {
+      "name": "checkpoint",
+      "description": "Record a handoff checkpoint on your claimed issue — what's done, what's next, gotchas, branch/artifacts. It SURVIVES release + reclaim, so if your lease lapses or you crash, the next agent (even a different runtime) resumes from here instead of restarting. Also renews your lease. Requires the claim_token."
+    },
+    {
+      "name": "heartbeat",
+      "description": "Extend your lease on a claimed issue during long-silent work. Requires the claim_token. Returns the new expiry."
+    },
+    {
+      "name": "queue_status",
+      "description": "Diagnose the queue: counts by status, how many are ready to pull, deadline SLA pressure (`breaching`/`breached` counts over non-terminal issues), exactly what's dependency-blocked (and by what), and what's currently claimed (by whom, lease expiry)."
+    },
+    {
+      "name": "check_claim",
+      "description": "Does THIS session hold an issue? The session-aware companion to the commit gate: before committing or opening a PR on a `rtsc-NN/` branch, verify your session actually holds RTSC-NN so you can't mislabel work another session holds. Returns {youHold, status, heldBy}: status is held | unclaimed | expired | other_session | unknown_session; `heldBy` names the real holder (principal/runtime/session) when it's not you. Read-only."
+    },
+    {
+      "name": "usage_summary",
+      "description": "Usage METER for the org — activity volume, not a bill. Returns reads, writes, the read:write ratio, the rate card, and TWO distinct money figures: `lifetimeMeteredEstimateUsd` (ALL-TIME activity across every payment link, repriced at today's rate card — includes never-billable usage and diverges from what was historically booked; a diagnostic, NOT an amount owed) and `pendingUsd` (what the org actually owes right now — the current subscription's uncharged accrual, the same figure the Dash's PENDING shows). For the full picture — subscription, charges and on-chain payments across every link — use `billing_summary`. Reading the meter is not charged."
+    },
+    {
+      "name": "billing_summary",
+      "description": "The org's whole billing picture in one call (owner authority required for the billing block): subscription status + spending caps, money now (pending / outstanding / charged / collected / credit), the charge ledger, and CONFIRMED ON-CHAIN PAYMENTS — both fanned across EVERY subscription/payment link the org has ever used, so changing payment link never hides prior history. Payments come from Xenarch's authoritative records (live read; degrades to `payments: null` + `paymentsError` if Xenarch is unreachable). Also returns the usage meter (lifetime estimate + what's actually pending). A key without owner authority — an agent whose principal isn't an owner, or a non-owner member — gets the usage meter only, with a `note`. Reading billing is not charged."
+    },
+    {
+      "name": "save_issue",
+      "description": "Create an issue (omit `identifier`) or update one (pass `identifier`, e.g. XEN-12). Only `title` is required to create. Setting status to `canceled` requires `cancelReason`. `labels` replaces the issue's labels. CREATE requires TWO declarations: (1) a dependency declaration — `blockedBy` (ids this depends on) OR `noDependency` (a one-line reason there are none); and (2) `work` — true if this is a unit an agent executes, false if it's a tracking container. A create missing either is rejected. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "get_issue",
+      "description": "Get one issue in full: body, status, priority, labels, relations, computed blocking (is it blocked, and by what), and its derived deadline surface (dueAt, effectiveDeadline, timeRemainingMs, slaState)."
+    },
+    {
+      "name": "list_issues",
+      "description": "List issues in the project, compact (each includes its author + createdAt + derived deadline `slaState`). Defaults to active work (hides done/canceled). Filter by status (one or many), priority, label, author, or SLA state. Ordered priority-first (None last), recent tiebreak. Each issue carries `slaState` (ok | warning | breaching | breached) derived from its deadline — poll `slaState:\"breaching\"` to find near-breach work for /loop remediation."
+    },
+    {
+      "name": "save_comment",
+      "description": "Add a comment to an issue. Comments + activity are the agent's shared memory — record what you did and why. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "list_comments",
+      "description": "List an issue's comments in chronological (thread) order."
+    },
+    {
+      "name": "retract_comment",
+      "description": "Retract a comment (strike it through) instead of deleting — the text stays as memory. Requires a note explaining why it's no longer valid (shown un-struck). If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "save_attachment",
+      "description": "Attach a link (URL) to an issue. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "prepare_attachment_upload",
+      "description": "Attach a FILE (image/blob) to an issue over MCP. Returns { uploadUrl } for the issue; then POST the raw file bytes to it with your API key as a Bearer header — the server encrypts the file at rest and attaches it. Add `&filename=` (download name) and optional `&title=` to the URL. Example: `curl -X POST \"<uploadUrl>&filename=shot.png\" -H \"Authorization: Bearer <yourApiKey>\" --data-binary @shot.png` → {\"id\":\"...\",\"url\":\"...\"}. For a plain link (not a file), use save_attachment instead."
+    },
+    {
+      "name": "list_attachments",
+      "description": "List an issue's attachments (obsolete ones are flagged, not hidden)."
+    },
+    {
+      "name": "get_attachment",
+      "description": "Read one attachment by id."
+    },
+    {
+      "name": "obsolete_attachment",
+      "description": "Mark an attachment obsolete (the delete-equivalent) — keeps it as a record. Requires a reason. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "add_relation",
+      "description": "Link two issues. type: blocks | blocked_by | related | duplicate. `blocks`/`blocked_by` form the dependency graph that drives blocking; dependency cycles are rejected. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "remove_relation",
+      "description": "Remove a link between two issues (same args as add_relation). If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "save_label",
+      "description": "Create or update a label (idempotent by name). If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "list_labels",
+      "description": "List all labels in the org with issue counts."
+    },
+    {
+      "name": "list_projects",
+      "description": "List projects in the org (prefix, name, issue counter)."
+    },
+    {
+      "name": "get_project",
+      "description": "Get a project and a breakdown of its issues by status. Defaults to the API key's project."
+    },
+    {
+      "name": "mint_session_key",
+      "description": "Mint a per-session API key bound to YOUR identity (same org/project/agent), distinctly labeled. The watchdog proxy calls this once at startup and uses the returned key, so concurrent sessions of one agent become distinguishable in queue_status/whoami. Same access as your key — no privilege change. The raw key is returned ONCE. If this call is refused for billing (BILLING_INACTIVE or MONTHLY_CAP_REACHED), the response carries `tellHuman`, a ready-to-relay sentence: PASS IT TO YOUR HUMAN. You cannot fix it yourself — only an owner can — so do NOT absorb the refusal and continue with read-only work as if the session were healthy; every value-bearing write will keep failing until they act."
+    },
+    {
+      "name": "list_connectors",
+      "description": "List the org's intake connectors (e.g. GitHub Issues → Retasc issues, RTSC-189). Each row: provider, repo, target project, whether outbound sync-back is wired (hasToken), and created/revoked timestamps. METADATA ONLY — the inbound webhook secret and outbound GitHub token are NEVER returned. Read-only. Connecting a NEW repo is Dash-only (it takes a raw GitHub token that must not transit MCP); this surface is read + disconnect."
+    },
+    {
+      "name": "revoke_connector",
+      "description": "Disconnect an intake connector by id (from list_connectors). Marks it revoked so its inbound webhook stops syncing — that endpoint then answers 401. Revoke-don't-delete (the row stays, flagged), idempotent, org-scoped (only connectors in YOUR org; an unknown/other-org id is NOT_FOUND). To reconnect, use the Dash (a fresh webhook URL + secret)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:27:49.729Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,77 @@
+{
+  "id": "io.github.Delego-Dev/delego",
+  "title": "delego",
+  "description": "Intent-bound action authorization for AI agents: policy, human approval, and a signed audit trail.",
+  "summary": "Intent-bound action authorization for AI agents: policy, human approval, and a signed audit trail.",
+  "offersHint": "Intent-bound action authorization for AI agents: policy, human approval, and a signed audit trail. · Packages: pypi:delego · Env vars: DELEGO_HOME",
+  "version": "0.3.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "delego",
+    "version": "0.3.4",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "DELEGO_HOME",
+        "description": "Directory holding the policy, signing keys, and audit ledger (defaults to ~/.delego). Set this to keep state project-scoped, e.g. /abs/path/to/project/.claude/.delego."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "delego",
+      "version": "0.3.4",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "DELEGO_HOME",
+          "description": "Directory holding the policy, signing keys, and audit ledger (defaults to ~/.delego). Set this to keep state project-scoped, e.g. /abs/path/to/project/.claude/.delego."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "DELEGO_HOME",
+      "description": "Directory holding the policy, signing keys, and audit ledger (defaults to ~/.delego). Set this to keep state project-scoped, e.g. /abs/path/to/project/.claude/.delego."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://delegohq.com",
+  "sourceUrl": "https://github.com/Delego-Dev/delego",
+  "repository": {
+    "url": "https://github.com/Delego-Dev/delego",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-11T00:36:18.535188Z",
+  "publishedAt": "2026-06-11T00:36:18.535188Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:15.884Z",
+    "sourceRepoAt": "2026-08-12T00:13:54.471Z",
+    "readmeAt": "2026-08-12T00:13:54.929Z",
+    "toolsAt": "2026-08-12T01:44:15.884Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Delego-Dev/delego",
+    "checkedAt": "2026-08-12T00:13:54.471Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Delego-Dev/delego/main/README.md",
+    "markdown": "# delego\n\n<!-- mcp-name: io.github.Delego-Dev/delego -->\n\n[![CI](https://github.com/Delego-Dev/delego/actions/workflows/ci.yml/badge.svg)](https://github.com/Delego-Dev/delego/actions/workflows/ci.yml)\n[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org)\n[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)\n\n**Website:** [delegohq.com](https://delegohq.com) · **Docs:** [delegohq.com/docs](https://delegohq.com/docs) · **Spec:** [Delego-Dev/specification](https://github.com/Delego-Dev/specification)\n\n**Intent-bound action authorization for AI agents.** It sits between an agent and\nwhatever credential broker holds the user's secrets, and it answers the one\nquestion brokers don't: *is this specific action the thing the human actually\nasked for?*\n\n```\n   agent  ──propose──▶  delego  ──if allowed──▶  credential broker  ──▶  service\n   (LLM)               (policy +                (Agent Vault /         (bank,\n                        approval +               OneCLI /               SaaS,\n                        audit)                   Browser Use…)          API)\n                           │\n                           └── needs_approval ──▶  human (CLI)\n```\n\n📜 **Protocol:** delego implements **protocol 0.3** of the open [delego wire specification](https://github.com/Delego-Dev/specification) — canonicalization, the policy schema, intent/fingerprint binding **including the §4.2 query-fold**, and the signed audit chain. The authorization token (spec §9) is an optional profile, not yet implemented.\n\n## Why this exists\n\nThe \"agent gets its own scoped credential, and never holds the user's secret\ndirectly\" pattern is now a crowded, converging space — Infisical's **Agent\nVault**, **OneCLI**, **Browser Use**, **Nango**, and others all do credential\nbrokering.\n\nThe harder problem sits one level up — the **confused deputy**: the agent holds\na *valid* credential, a prompt injection redirects it, the scope *covers* the\naction, so the broker happily injects the secret and the action goes through.\nThe credential is the wrong place to catch this — it's valid. OAuth tokens carry\nno commitment to the original instruction.\n\nAuthorising the *action* (not just the credential) is an active area — see\ndeterministic policy engines (OPA/Cedar, Permit), human-in-the-loop approval\n(HumanLayer), MCP gateways/firewalls, and the \"pre-action authorization\" line of\nresearch. delego is a small, **deterministic, local, Apache-2.0 reference** for\nit: no LLM in the decision path, no credential custody, approvals bound to the\nexact action fingerprint, and a signed, hash-chained audit trail — riding the\nexisting broker layer rather than competing with it.\n\n## What it is / isn't\n\n- **Is** a decision-and-audit layer. Deterministic policy, human approval for\n  sensitive actions, signed append-only audit ledger.\n- **Isn't** a credential vault or a proxy. It delegates execution to a broker\n  through a thin `BrokerAdapter` interface — you ride the existing layer instead\n  of rebuilding it.\n- **Authorisation is pure Python, no LLM in the loop.** A model can advise\n  upstream; the decision that gates a credential is made outside the stochastic\n  loop, so an injection can't talk its way past it.\n\n## Key properties\n\n1. **Intent binding** — every action carries a hash of the original human\n   instruction, recorded in the audit ledger and re-checked at resolve time, so\n   an approval cannot be re-pointed at a different claimed instruction.\n2. **Action-bound, single-use approval** — a human \"yes\" is bound to one exact\n   action fingerprint. An agent that gets approval for action A cannot reuse it\n   to run action B (the confused-deputy guard), and cannot replay the *same*\n   approval to run action A twice — an approval releases its action exactly once.\n3. **Tamper-evident audit** — receipts form an Ed25519-signed hash chain.\n   Editing, reordering, removing a receipt, or dropping a field breaks\n   verification, which reports the fault rather than trusting the ledger.\n   *Caveats (be precise):* hash-chaining does **not** catch truncation of the\n   most recent receipts (a tail-truncated prefix verifies clean), and the local\n   signing key protects nothing against a host compromise. For rollback\n   detection, anchor the head externally and pass it to `verify(expected_head=…)`;\n   for key safety, use an HSM/KMS. See [SECURITY.md](SECURITY.md).\n\n## Quickstart\n\n```bash\npip install delego          # the `delego` library + CLI\n# pip install \"delego[mcp]\" # add the `delego-mcp` server (MCP is an optional extra)\ndelego init               # creates ~/.delego with signing keys and an example policy\ndelego policy             # inspect the active policy\n```\n\nTo run the full loop end-to-end from a clone — an allowed read, a forbidden deny,\nan over-cap deny, an approval flow, the confused-deputy guard refusing a\nsubstituted action, and audit-chain tamper detection (no agent or live service\nneeded):\n\n```bash\ngit clone https://github.com/Delego-Dev/delego && cd delego\npip install -e \".[dev]\"\npython examples/demo.py\npytest\n```\n\n### Human side (CLI)\n\n```bash\ndelego policy            # show the active policy\ndelego pending           # list actions awaiting approval\ndelego approve apr_xxxx  # release a parked action (or: delego deny apr_xxxx)\ndelego log -n 20         # read recent receipts\ndelego verify            # check the audit chain (hashes, linkage, signatures)\n```\n\n### Agent side (MCP) — wiring into Claude Code\n\ndelego ships an MCP server (`delego_mcp`) over stdio — install it with the `mcp`\nextra: `pip install \"delego[mcp]\"`. Register it in your MCP\nconfig (for Claude Code, `.mcp.json` at the project root) so the agent can\npropose actions. Set `DELEGO_HOME` to keep the policy, signing keys, and ledger\nproject-scoped under `.claude/.delego`:\n\n```json\n{\n  \"mcpServers\": {\n    \"delego\": {\n      \"command\": \"delego-mcp\",\n      \"env\": { \"DELEGO_HOME\": \"/abs/path/to/project/.claude/.delego\" }\n    }\n  }\n}\n```\n\nInitialise that home and approve from the same one (the CLI and MCP server must\nshare a home):\n\n```bash\ndelego --home .claude/.delego init       # keys, example policy, and a .gitignore\ndelego --home .claude/.delego pending    # ...then: delego --home .claude/.delego approve apr_xxxx\n```\n\nIf `DELEGO_HOME` is unset, the CLI also auto-uses `./.claude/.delego` when run\nfrom the project root, falling back to `~/.delego`. (Use an absolute path in the\nMCP `env`, since the server's launch directory isn't guaranteed.)\n\nTools exposed:\n\n| tool | what it does |\n|------|--------------|\n| `delego_propose_action` | submit an action; returns allow / deny / needs_approval |\n| `delego_resolve_action` | complete an approved action (fingerprint must match) |\n| `delego_pending` | list actions awaiting human approval (read-only) |\n| `delego_audit_tail` | read recent receipts |\n| `delego_show_policy` | show the active policy |\n\nApproving and denying are deliberately **not** exposed over MCP — the agent\nthat proposed an action must never be able to approve it; a human decides\nout-of-band.\n\nTypical flow: the agent calls `delego_propose_action`. If it comes back\n`needs_approval` with an `approval_id`, a human runs `delego approve <id>`, then\nthe agent calls `delego_resolve_action` with the identical action to complete it.\n\n## Policy format\n\nA rule matches on `method` / `host` / `path` (glob) / `path_contains`, decides\n`allow` or `needs_approval`, and can attach constraints. Order is forbidden\n(hard deny) → rules (first match wins) → `default`. A matched rule whose\nconstraints fail becomes a deny (fail-closed). See `policy.example.yaml`.\n\n```yaml\nrules:\n  - name: place-order\n    decision: needs_approval\n    match: { method: POST, host: api.example.com, path: /orders }\n    constraints:\n      amount:     { field: amount, max: 5000, currency: USD }\n      allow_list: { field: destination, in: [internal] }\n```\n\nSupported constraints: `amount` (cap + currency), `allow_list`\n(field-in-set), `rate_limit` (max per minute/hour/day, counted from the ledger).\n\n## Build on delego\n\nThree ways to use it, lowest friction first:\n\n- **As an MCP server** — `delego init`, add the `delego-mcp` server to your MCP\n  config, and your agent proposes actions instead of executing them. No code.\n- **As a library** — `pip install delego`, write a policy + a `BrokerAdapter`, and\n  call `fw.propose(...)` in your tool-call path.\n- **Behind a service** — wrap the `Firewall` in an HTTP API so many agents share\n  one decision point and one audit chain.\n\nThe one extension point is the **broker** — where your credential lives and the\nauthorised action actually runs. delego never holds the secret:\n\n- `NullBroker` (default) — simulates execution; for demos and tests.\n- `HTTPProxyBroker(gateway_url)` — forwards the authorised action to an external\n  credential gateway (OneCLI / vault / proxy) that injects the secret upstream.\n- Your own — implement `execute(action) -> dict` against the `BrokerAdapter`\n  protocol in [`delego/brokers.py`](delego/brokers.py).\n\n▶ **[Delego-Dev/sample-app](https://github.com/Delego-Dev/sample-app)** — a\nFastAPI service built on the published package, with the full\npropose → approve → resolve loop and a copy-paste curl walkthrough. The best\nstarting point for building your own.\n\nSee **[ROADMAP.md](ROADMAP.md)** for where delego is going and where to help.\n\n## Status\n\n- **Implemented (protocol 0.3):** the policy engine, intent hashing, action\n  fingerprinting **with the URL query folded into the fingerprint** (spec §4.2 —\n  `/orders?to=me` and `/orders?to=attacker` are different actions), the\n  confused-deputy guard, intent-bound + single-use human approvals, the\n  signed, hash-chained audit ledger with verification and an external\n  head-anchor check (`delego verify --expected-head`), and the **§9 authorization\n  token** (optional profile) — a short-lived, EdDSA-signed JWS a separated broker\n  verifies before injecting a credential (`build_firewall(..., mint_tokens=True)`;\n  `verify_token` / `require_fingerprint`).\n- **Single-writer daemon** (`delego daemon`): one long-running process owns the\n  ledger, so every client routes through it and `rate_limit` is exact across all\n  of them — not just one host's file lock. The CLI's `approve`/`deny`/`pending`\n  auto-route to a running daemon. Optional: with no daemon, everything works\n  file-backed as before.\n- **Brokers:** the default `NullBroker` holds no credentials and makes no real\n  request — it records what *would* be sent (for demos and tests). `HTTPProxyBroker`\n  forwards an authorised action — and its authorization token — to an external\n  credential gateway; or write your own against the `BrokerAdapter` protocol in\n  `delego/brokers.py`.\n- **Not yet:** the MCP agent surface auto-routing to the daemon (it still talks\n  to the firewall directly — wiring it is the next step), a TCP/cross-host\n  daemon transport (it's a local Unix socket today), and a non-MCP HTTP surface.\n- **Known limitations:** without the daemon, concurrent writes to the file-backed\n  ledger and approval store are serialised with an OS file lock (corruption-safe),\n  and a `rate_limit` is exact only among processes sharing one home on one host.\n  **Run `delego daemon` for exact rate limits across all clients** (one writer).\n  The daemon serializes one action in flight at a time (a reserve-then-execute\n  throughput optimization, and a TCP transport for other hosts, are future work).\n  Path globbing is coarse (`**` and `*` collapse).\n\n## License\n\nLicensed under the [Apache License 2.0](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:13:54.929Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:15.884Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

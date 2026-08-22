@@ -1,0 +1,44 @@
+{
+  "id": "io.github.orhanbalci/droidprobe",
+  "title": "droidprobe",
+  "description": "Read-only MCP server to inspect an Android device over ADB: hardware, packages, permissions, logs.",
+  "summary": "Read-only MCP server to inspect an Android device over ADB: hardware, packages, permissions, logs.",
+  "offersHint": "Read-only MCP server to inspect an Android device over ADB: hardware, packages, permissions, logs.",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/orhanbalci/droidprobe",
+  "repository": {
+    "url": "https://github.com/orhanbalci/droidprobe",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-20T13:52:58.313585Z",
+  "publishedAt": "2026-06-20T13:52:58.313585Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:09:48.833Z",
+    "sourceRepoAt": "2026-08-11T23:30:48.151Z",
+    "readmeAt": "2026-08-11T23:30:48.787Z",
+    "toolsAt": "2026-08-12T01:09:48.833Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/orhanbalci/droidprobe",
+    "checkedAt": "2026-08-11T23:30:48.151Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/orhanbalci/droidprobe/master/README.md",
+    "markdown": "# droidprobe\n\nModular Rust toolkit for inspecting an Android device over ADB (USB debugging).\nOne shared core powers two front-ends: a terminal UI (`droidprobe`) and an MCP\nserver (`droidprobe-mcp`) for agents.\n\nSee [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design and phased plan.\n\n## Screenshots\n\n![droidprobe walkthrough](./assets/droidprobe-demo.gif)\n\n| Overview | Packages | Logs |\n| --- | --- | --- |\n| ![Overview tab](./assets/screenshot-overview.png) | ![Packages tab](./assets/screenshot-packages.png) | ![Logs tab](./assets/screenshot-logs.png) |\n\n## Workspace layout\n\n```\ndroidprobe/\n├── Cargo.toml                      # workspace + shared dep versions\n├── ARCHITECTURE.md\n└── crates/\n    ├── droidprobe-parser/   # raw text -> structured data (pure, no I/O)\n    ├── droidprobe-command/  # Command trait, Transport, built-in catalog\n    ├── droidprobe-core/     # Registry + Engine + Poller\n    ├── droidprobe-tui/      # ratatui binary  (bin: `droidprobe`)\n    └── droidprobe-mcp/      # rmcp binary     (bin: `droidprobe-mcp`)\n```\n\n## Prerequisites\n\n- Rust 1.82+ (`rustup` recommended)\n- A running `adb` server (`adb start-server`) and a device with USB debugging\n  enabled and authorized.\n\n## Build & test\n\n```bash\ncargo build --workspace\ncargo test  --workspace        # parser + command tests run without a device\n```\n\n## Run the TUI\n\n```bash\ncargo run -p droidprobe-tui\n# Tab switches views, q quits. Logs are written to ./droidprobe.log\n```\n\n## Run the MCP server\n\n```bash\ncargo run -p droidprobe-mcp        # speaks MCP over stdio\n```\n\nRegister it with an MCP client (e.g. Claude Desktop / Claude Code) by pointing\nthe client at the built binary as a stdio server. Tools are **read-only**.\n\n### Register with Claude Code\n\n```bash\ncargo build -p droidprobe-mcp --release\nclaude mcp add droidprobe -- \"$(pwd)/target/release/droidprobe-mcp\"\nclaude mcp get droidprobe        # should show \"Status: ✔ Connected\"\n```\n\nThis must run on the same machine as the `adb` server and the USB-attached\ndevice — the server has no way to reach a device it can't `adb shell` into,\nso there's no meaningful way to run it detached on remote infrastructure\nunless you tunnel `adb` back to it.\n\n### Register with Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"droidprobe\": {\n      \"command\": \"/absolute/path/to/target/release/droidprobe-mcp\"\n    }\n  }\n}\n```\n\n## Distributing droidprobe-mcp\n\n### Publish to crates.io\n\nPath-dependent crates must publish in dependency order — each one needs its\npredecessors already live on crates.io before `cargo publish` will resolve:\n\n```bash\ncargo login                                    # one-time, needs your crates.io API token\ncargo publish -p droidprobe-parser\ncargo publish -p droidprobe-command            # only after droidprobe-parser is live\ncargo publish -p droidprobe-core               # only after droidprobe-command is live\ncargo publish -p droidprobe-mcp                # only after droidprobe-core is live\ncargo publish -p droidprobe-tui                # optional, same dependency floor as mcp\n```\n\ncrates.io indexes new releases within a minute or two; `cargo publish` for a\ndownstream crate will fail with \"no matching package found\" if you run it\ntoo soon after the one before it. Once `droidprobe-mcp` is published, anyone\nwith Rust installed can run:\n\n```bash\ncargo install droidprobe-mcp\n```\n\n### Prebuilt binaries (no Rust toolchain needed)\n\n`.github/workflows/release.yml` cross-builds both `droidprobe` (TUI) and\n`droidprobe-mcp` for macOS (Intel + Apple Silicon), Linux x86_64, and Windows\nx86_64 whenever a `v*.*.*` tag is pushed, and attaches the archives to a\nGitHub Release:\n\n```bash\ngit tag v0.1.0\ngit push origin v0.1.0\n```\n\n### List in the MCP registry\n\nThe [official MCP registry](https://github.com/modelcontextprotocol/registry)\npublishes via a dedicated CLI and validates namespace ownership through\nGitHub OAuth. A starter [server.json](./server.json) is included in this repo\n— update its `version` to match each crates.io release, then:\n\n```bash\nbrew install mcp-publisher\nmcp-publisher login github\nmcp-publisher publish        # validates server.json and submits it\n```\n\n## Adding your own command\n\nImplement `Command`, wrap it in `TypedDyn`, and register it:\n\n```rust\nlet mut registry = droidprobe_core::registry::Registry::with_builtins();\nregistry.register(Box::new(droidprobe_command::TypedDyn(MyCommand)));\n```\n\n## Status\n\n10 tested parsers, 10 built-in commands, the registry/engine/poller, a TUI\nwith Overview/Packages/Logs tabs (package search, permissions, and\nactivity/service/receiver/provider component tabs), and a 10-tool MCP server\ncovering the same device/package/log surface. Phases 2–6 (parser breadth, TUI\ndepth, ATK command parity, MCP polish, robustness) are described in\nARCHITECTURE.md.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:30:48.787Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:09:48.833Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

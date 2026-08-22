@@ -1,0 +1,77 @@
+{
+  "id": "io.github.kcofoni/pmwiki-mcp",
+  "title": "pmwiki-mcp",
+  "description": "MCP server for searching and reading PmWiki pages with text queries and group filtering.",
+  "summary": "MCP server for searching and reading PmWiki pages with text queries and group filtering.",
+  "offersHint": "MCP server for searching and reading PmWiki pages with text queries and group filtering. · Packages: oci:docker.io/kcofoni/pmwiki-mcp:v1.0.4 · Env vars: WIKI_DIR",
+  "version": "1.0.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/kcofoni/pmwiki-mcp:v1.0.4",
+    "transport": "sse",
+    "environmentVariables": [
+      {
+        "name": "WIKI_DIR",
+        "description": "Path to the PmWiki wiki.d directory containing page files (must be mounted as read-only volume in Docker)",
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/kcofoni/pmwiki-mcp:v1.0.4",
+      "transport": "sse",
+      "environmentVariables": [
+        {
+          "name": "WIKI_DIR",
+          "description": "Path to the PmWiki wiki.d directory containing page files (must be mounted as read-only volume in Docker)",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WIKI_DIR",
+      "description": "Path to the PmWiki wiki.d directory containing page files (must be mounted as read-only volume in Docker)",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kcofoni/pmwiki-mcp",
+  "repository": {
+    "url": "https://github.com/kcofoni/pmwiki-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-22T11:48:20.295271Z",
+  "publishedAt": "2026-03-22T11:48:20.295271Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:44.044Z",
+    "sourceRepoAt": "2026-08-11T23:39:27.750Z",
+    "readmeAt": "2026-08-11T23:39:28.283Z",
+    "toolsAt": "2026-08-12T01:17:44.044Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kcofoni/pmwiki-mcp",
+    "checkedAt": "2026-08-11T23:39:27.750Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kcofoni/pmwiki-mcp/main/README.md",
+    "markdown": "# PmWiki MCP Server\n\nMCP (Model Context Protocol) server for interfacing an LLM with PmWiki.\n\n[Version française / French version](README_fr.md)\n\n## Architecture\n\nThe server uses the MCP protocol with SSE (Server-Sent Events) transport to enable an LLM to interact with your PmWiki instance.\n\n### Endpoints\n\n- `GET /sse`: SSE connection to establish bidirectional communication\n- `POST /messages/`: Receive messages from the MCP client\n\n## Getting Started\n\n### With Docker Compose (Docker Hub image)\n\nThe simplest method is to use the published image from Docker Hub:\n\n```bash\ndocker compose up -d\n```\n\n### With Docker Compose (local build)\n\nIf you want to build the image locally:\n\n1. Edit `docker-compose.yml` and comment out the `image:` line, then uncomment the `build: .` line\n2. Run:\n\n```bash\ndocker compose up -d --build\n```\n\n### Direct Docker Usage\n\nWithout docker-compose, you can run directly:\n\n```bash\ndocker run -d \\\n  --name pmwiki-mcp-server \\\n  -p 3000:3000 \\\n  -v /path/to/your/wiki.d:/wiki_data:ro \\\n  -e WIKI_DIR=/wiki_data \\\n  kcofoni/pmwiki-mcp:latest\n```\n\nThe server will be accessible at `http://localhost:3000` (or `http://vmtest:3000` from other machines on the network).\n\n### Verification\n\n```bash\n# Check that the server is running\ndocker logs pmwiki-mcp-server\n\n# Test the SSE connection\ncurl -N http://localhost:3000/sse\n```\n\n## Client Configuration\n\n### Claude Desktop\n\nAdd this configuration to your Claude Desktop configuration file:\n\n**On macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`\n**On Windows**: `%APPDATA%\\Claude\\claude_desktop_config.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"pmwiki\": {\n      \"command\": \"mcp-proxy\",\n      \"args\": [\n        \"--transport=sse\",\n        \"http://vmtest:3000/sse\"\n      ]\n    }\n  }\n}\n```\n\n**Important notes**:\n- `vmtest` is the hostname of the machine hosting the MCP server Docker container\n- Replace `vmtest` with:\n  - `localhost` if Claude Desktop runs on the same machine as the server\n  - The hostname or IP address of the machine running the Docker container (e.g., `192.168.1.100:3000/sse`)\n- The `mcp-proxy` tool must be installed (usually provided with Claude Desktop)\n- The proxy handles the SSE connection between Claude Desktop and the MCP server\n\n## Available Features\n\nOnce connected, your LLM will have access to:\n\n### Resources\n\n- All wiki pages are exposed as resources with the URI `pmwiki://Group.PageName`\n\n### Tools\n\n1. **search_wiki**: Search for text across all pages\n   - Parameters:\n     - `query` (required): Text to search for\n     - `case_sensitive` (optional): Case-sensitive search (default: false)\n\n2. **read_page**: Read the complete content of a page\n   - Parameters:\n     - `page_name` (required): Page name (e.g., `Main.HomePage` or `Main/HomePage`)\n\n3. **list_pages**: List all wiki pages\n   - Parameters:\n     - `group` (optional): Filter by group\n\n## Configuration\n\n### Wiki Directory Mount\n\nThe PmWiki directory is mounted from the host machine to the Docker container:\n\n```yaml\nvolumes:\n  - /home/docker/appdata/html/wiki.d:/wiki_data:ro\n```\n\n**Important**:\n- `/home/docker/appdata/html/wiki.d` is the path **on the host machine** - this is an example to adapt\n- Replace this path with the actual path to your PmWiki `wiki.d` directory\n- The volume is mounted read-only (`:ro`) for security reasons\n- `/wiki_data` is the internal container path (do not modify)\n\n## Docker Hub\n\nThe image is publicly available on Docker Hub:\n- **Repository**: [kcofoni/pmwiki-mcp](https://hub.docker.com/r/kcofoni/pmwiki-mcp)\n- **Latest tag**: `kcofoni/pmwiki-mcp:latest`\n- **Stable version**: `kcofoni/pmwiki-mcp:v1.0.2`\n\nTo pull the latest version:\n```bash\ndocker pull kcofoni/pmwiki-mcp:latest\n```\n\nTo pull a specific version:\n```bash\ndocker pull kcofoni/pmwiki-mcp:v1.0.2\n```\n\n## Technical Architecture\n\n- **Language**: Python 3.11\n- **Web Framework**: Starlette + Uvicorn\n- **Protocol**: MCP over SSE\n- **Page Format**: PmWiki (files in `wiki.d/`)\n\n## Logs\n\n```bash\n# View logs in real-time\ndocker logs -f pmwiki-mcp-server\n\n# Last 50 lines\ndocker logs --tail 50 pmwiki-mcp-server\n```\n\n## Troubleshooting\n\n### Server won't start\n\nCheck that the wiki directory exists:\n```bash\nls -la /home/docker/appdata/html/wiki.d\n```\n\n### 404 error on a page\n\nUse the `list_pages` tool to see all available pages. The exact PmWiki filename format must be used (e.g., `Main.HomePage` not `Main/HomePage` for the file).\n\n### SSE connection fails\n\nCheck that port 3000 is properly exposed:\n```bash\ndocker ps | grep pmwiki-mcp-server\n```\n\n## Development\n\n### File Structure\n\n```\npmwiki-mcp/\n├── pmwiki_mcp_server.py    # MCP server\n├── requirements.txt         # Python dependencies\n├── Dockerfile              # Docker image\n├── docker-compose.yml      # Docker Compose configuration\n├── README.md              # This documentation (English)\n└── README_fr.md           # French documentation\n```\n\n### Code Modification\n\nAfter modifying the code:\n```bash\ndocker compose up -d --build\n```\n\n## License\n\nThis project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.\n",
+    "fetchedAt": "2026-08-11T23:39:28.283Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:44.044Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

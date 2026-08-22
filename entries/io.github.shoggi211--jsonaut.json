@@ -1,0 +1,69 @@
+{
+  "id": "io.github.shoggi211/jsonaut",
+  "title": "jsonaut",
+  "description": "Repair malformed JSON from LLM/agent output; optional JSON Schema coercion. Free + x402 paid.",
+  "summary": "Repair malformed JSON from LLM/agent output; optional JSON Schema coercion. Free + x402 paid.",
+  "offersHint": "Repair malformed JSON from LLM/agent output; optional JSON Schema coercion. Free + x402 paid. · Remote MCP (streamable-http) at https://jsonaut.jsonaut-shaurya.workers.dev/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://jsonaut.jsonaut-shaurya.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jsonaut.jsonaut-shaurya.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://jsonaut.jsonaut-shaurya.workers.dev",
+  "sourceUrl": "https://github.com/shoggi211/jsonaut",
+  "repository": {
+    "url": "https://github.com/shoggi211/jsonaut",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T14:06:54.006834Z",
+  "publishedAt": "2026-07-02T14:06:54.006834Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:26.173Z",
+    "sourceRepoAt": "2026-08-11T23:21:07.899Z",
+    "readmeAt": "2026-08-11T23:21:08.385Z",
+    "toolsAt": "2026-08-11T23:21:08.488Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/shoggi211/jsonaut",
+    "checkedAt": "2026-08-11T23:21:07.899Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/shoggi211/jsonaut/main/README.md",
+    "markdown": "# Jsonaut\n\nJSON repair & validation built for AI agents as the customer. Send possibly-malformed JSON (LLM tool-call output, another agent's message, a flaky upstream), get back parsed, schema-valid JSON.\n\n- **Free tier:** deterministic repair — trailing commas, single quotes, truncation, markdown code fences, comments, Python literals — plus JSON Schema validation with type coercion (string→number, defaults, stripping hallucinated fields). Rate-limited per IP.\n- **Paid tier:** LLM-fallback repair for inputs the deterministic pass can't fix. $0.01/call, **charged only on success**, paid autonomously per-call via x402 (USDC on Base) — no accounts, no signup.\n\nBusiness context, market research, and the full 3-day plan live in [IDEA.md](IDEA.md) and [PLAN.md](PLAN.md).\n\n## Quickstart\n\n```bash\nnpm install\nnpm test          # 27 tests: repair battery, schema coercion, HTTP API, MCP protocol\nnpm run dev       # http://localhost:8787 — demo page + API + MCP endpoint\n```\n\nTry it:\n\n```bash\ncurl -s -X POST http://localhost:8787/v1/repair \\\n  -H \"content-type: application/json\" \\\n  -d \"{\\\"input\\\": \\\"{'name': 'alice', 'count': '42',}\\\", \\\"schema\\\": {\\\"type\\\":\\\"object\\\",\\\"properties\\\":{\\\"count\\\":{\\\"type\\\":\\\"number\\\"}}}}\"\n```\n\n```json\n{\n  \"valid\": true,\n  \"repaired\": { \"name\": \"alice\", \"count\": 42 },\n  \"method\": \"deterministic-repair\",\n  \"changes\": [\"repaired JSON syntax (jsonrepair)\", \"$.count: coerced string \\\"42\\\" to number\"]\n}\n```\n\n## API\n\n| Route | What it does |\n|---|---|\n| `POST /v1/repair` | Repair + optional schema validation/coercion. Body: `{input, schema?, allow_llm_fallback?}` |\n| `POST /v1/validate` | Validate only, no repair. Body: `{input, schema}` |\n| `POST /mcp` | MCP server (Streamable HTTP, stateless). Tools: `repair_json`, `validate_json` |\n| `GET /` | Interactive demo page |\n| `GET /llms.txt` | Agent-readable capability + pricing description |\n| `GET /openapi.yaml` | OpenAPI 3.1 spec |\n\nResponse `method` values: `direct` (was already valid), `deterministic-repair` (free fix), `llm-repair` (paid fix), `failed`. `changes[]` lists every modification so callers can audit what was done to their data.\n\n## Using it from an agent (MCP)\n\n```bash\nclaude mcp add --transport http jsonaut https://YOUR-DEPLOYMENT/mcp\n```\n\nOr in any MCP client config:\n\n```json\n{ \"mcpServers\": { \"jsonaut\": { \"type\": \"http\", \"url\": \"https://YOUR-DEPLOYMENT/mcp\" } } }\n```\n\nFor the paid tier, clients pay via x402 and retry with the `X-PAYMENT` header (the payment receipt). No accounts or API keys — agents pay per call.\n\n## Payment flow (x402)\n\n1. Agent calls `/v1/repair` with `allow_llm_fallback: true`; deterministic repair fails.\n2. Server responds `402` with an x402 `accepts` array (USDC on Base, amount = `PRICE_USD`).\n3. Agent pays and retries with the `X-PAYMENT` header; server verifies via the facilitator, runs the LLM repair, and settles **only if the repair succeeds**.\n\n## Configuration\n\n| Env var | Purpose | Required for |\n|---|---|---|\n| `OPENROUTER_API_KEY` | Enables the paid LLM-fallback tier (via OpenRouter; free model by default) | Paid tier |\n| `OPENROUTER_MODEL` | Override the model (default `meta-llama/llama-3.3-70b-instruct:free`) | — |\n| `X402_PAY_TO` | Wallet address on Base receiving USDC | x402 rail |\n| `X402_NETWORK` | `base` or `base-sepolia` (default `base`) | x402 rail |\n| `FACILITATOR_URL` | x402 facilitator for verify/settle | x402 rail |\n| `FREE_DAILY_LIMIT` | Free calls per IP per day (default 100) | — |\n| `PRICE_USD` | Paid-tier price (default 0.01) | — |\n| `DEV_ALLOW_FREE_LLM` | `true` opens the paid tier for local dev only | — |\n\nLocal dev secrets go in a `.dev.vars` file (git-ignored) or your shell env.\n\n## Deployment (Cloudflare Workers)\n\n```bash\nnpx wrangler login\nnpx wrangler kv namespace create KV      # then paste the id into wrangler.toml\nnpx wrangler secret put OPENROUTER_API_KEY\nnpx wrangler deploy\n```\n\nThe same codebase runs on Node for local dev (`npm run dev`) and on Workers in production — storage falls back to in-memory when no KV binding exists.\n\n## Project structure\n\n```\nsrc/core/      pipeline.ts (repair engine) · coerce.ts (schema coercion) · llm.ts (paid tier)\nsrc/http/      app.ts (routes) · payment.ts (x402 rail) · ratelimit.ts · demo.ts · billing.ts (parked, unused)\nsrc/mcp/       server.ts (stateless Streamable HTTP MCP server)\nsrc/worker.ts  Cloudflare Workers entry\nsrc/dev.ts     Node dev entry\ntest/          full battery: broken-JSON cases, coercion, HTTP, MCP protocol\n```\n\n## Known limitations (MVP)\n\n- Schema coercion does not resolve `$ref` or `oneOf`/`anyOf` branches.\n- x402 verification requires an external facilitator (`FACILITATOR_URL`); there is no on-chain verification built in.\n- Free-tier rate limiting is approximate under high concurrency (KV read-modify-write).\n",
+    "fetchedAt": "2026-08-11T23:21:08.385Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "repair_json",
+      "description": "Repair malformed JSON (trailing commas, single quotes, truncation, markdown fences, comments, python literals) and optionally validate/coerce it against a JSON Schema. Deterministic repair is free. If it fails and allow_llm_fallback is true, a paid LLM repair is attempted (requires x402 payment; charged only on success)."
+    },
+    {
+      "name": "validate_json",
+      "description": "Validate a JSON string against a JSON Schema. Free. Returns validity and a list of violations."
+    },
+    {
+      "name": "extract_json",
+      "description": "Extract JSON embedded in arbitrary text — LLM prose, chat messages, logs, emails — then repair and validate it. Deterministic extraction is free. If no JSON can be located and allow_llm_fallback is true, a paid LLM extracts structured data from the text (requires x402 payment; charged only on success). Pass a JSON Schema to shape the output."
+    },
+    {
+      "name": "infer_schema",
+      "description": "Infer a JSON Schema (draft 2020-12) from an example JSON value. Free and deterministic. Set as_samples=true when the input is an array of example objects of the same shape to merge them into one schema. Turns sample agent/tool output into a reusable schema."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:21:08.488Z",
+  "toolsPreviewStatus": "ok"
+}

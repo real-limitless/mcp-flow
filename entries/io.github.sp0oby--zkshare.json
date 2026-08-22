@@ -1,0 +1,99 @@
+{
+  "id": "io.github.sp0oby/zkshare",
+  "title": "ZKshare",
+  "description": "ZKshare stdio MCP: store/prove/share, semantic search, sandbox proxy to HTTPS /api/v1/context.",
+  "summary": "ZKshare stdio MCP: store/prove/share, semantic search, sandbox proxy to HTTPS /api/v1/context.",
+  "offersHint": "ZKshare stdio MCP: store/prove/share, semantic search, sandbox proxy to HTTPS /api/v1/context. · Packages: npm:zkshare-mcp · Env vars: ZKSHARE_API_KEY, ZKSHARE_API_URL",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "zkshare-mcp",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ZKSHARE_API_KEY",
+        "description": "ZKshare API key (zk_live_…). Create one at zkshare.io/api-key — required for POST /api/v1/context.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "ZKSHARE_API_URL",
+        "description": "API origin including scheme; omit for production (https://zkshare.io). Use http://localhost:3000 only when self-hosting.",
+        "default": "https://zkshare.io"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "zkshare-mcp",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ZKSHARE_API_KEY",
+          "description": "ZKshare API key (zk_live_…). Create one at zkshare.io/api-key — required for POST /api/v1/context.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "ZKSHARE_API_URL",
+          "description": "API origin including scheme; omit for production (https://zkshare.io). Use http://localhost:3000 only when self-hosting.",
+          "default": "https://zkshare.io"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ZKSHARE_API_KEY",
+      "description": "ZKshare API key (zk_live_…). Create one at zkshare.io/api-key — required for POST /api/v1/context.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "ZKSHARE_API_URL",
+      "description": "API origin including scheme; omit for production (https://zkshare.io). Use http://localhost:3000 only when self-hosting.",
+      "default": "https://zkshare.io"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://zkshare.io/docs",
+  "sourceUrl": "https://github.com/sp0oby/zkShare",
+  "repository": {
+    "url": "https://github.com/sp0oby/zkShare",
+    "source": "github",
+    "subfolder": "packages/zkshare-mcp"
+  },
+  "updatedAt": "2026-04-30T01:23:11.083282Z",
+  "publishedAt": "2026-04-30T01:23:11.083282Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:56.574Z",
+    "sourceRepoAt": "2026-08-11T23:20:26.227Z",
+    "readmeAt": "2026-08-11T23:20:26.724Z",
+    "toolsAt": "2026-08-12T01:00:56.574Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sp0oby/zkShare",
+    "checkedAt": "2026-08-11T23:20:26.227Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sp0oby/zkShare/master/README.md",
+    "markdown": "# zkShare\n\nPrivacy-oriented context API for users, AI agents, and back-office systems. A single HTTP entrypoint\n(`POST /api/v1/context`) handles **encrypted fact storage**, **commitment-based proof envelopes**,\n**semantic search over encrypted data**, **end-to-end-encrypted (client-sealed) facts**, and a\n**isolated sandbox execution** for sensitive computations. The implementation is a Next.js\n(App Router) application backed by PostgreSQL with `pgvector`.\n\nThis document is for developers integrating against the API and operators self-hosting the service.\nIt is **not** a marketing brochure — pricing tiers, dashboards, and billing are optional layers\ndefined separately in the application code.\n\n---\n\n## Privacy and security model\n\nThe platform is designed around three trust boundaries:\n\n| Boundary | What the operator can see | What stays private |\n|----------|---------------------------|--------------------|\n| **Server-sealed store** | Ciphertext, IV, auth tag, commitment, embedding vector. The server holds the AES-256-GCM key (`ZKSHARE_ENCRYPTION_SECRET`) and decrypts in memory only when the caller invokes `prove`, `share`, or `search` summaries. | Database operators (without the encryption secret) and direct table readers (RLS denies `anon` and `authenticated`) cannot read plaintext. |\n| **Client-sealed (E2EE) store** | Opaque ciphertext blobs, IV, auth tag, commitment, and a caller-supplied embedding vector. The server **never** receives or derives plaintext, and never calls an embedding model on the fact. | The platform operator. Decryption requires the caller's own key, which never leaves the caller. |\n| **Proof envelopes** | A versioned, HMAC-signed JSON envelope (commitment + query + yes/no answer + nonce). Verifiable by anyone holding `ZKSHARE_PROOF_SECRET`. | The fact plaintext used to derive the answer is never included in the envelope. |\n\n### What this means in practice\n\n- **Users** can prove a property of a personal fact (for example, \"the user prefers beach trips\") to\n  a third party without exposing the underlying value. The third party verifies the envelope\n  through `verify_proof`.\n- **Agents** can hold and exchange context across sessions or tool boundaries without surfacing the\n  raw values to downstream systems. Sharing produces a single-use, time-bound `share_token`\n  bound to a recipient agent identifier.\n- **Businesses** integrating the API can offer privacy guarantees that are technical, not\n  contractual — RLS denies direct table access, the encryption key is server-only, the proof\n  HMAC secret is server-only, and the client-sealed path lets sensitive data stay outside the\n  operator's reach entirely.\n\n[`SECURITY.md`](./SECURITY.md) is the canonical reference for the threat model, the trust\nmodel summary, vulnerability disclosure, the operator checklist, and third-party LLM exposure\ncontrols.\n\n---\n\n## API contract\n\n| Operation | Behavior |\n|-----------|----------|\n| `store` | **Server-sealed:** caller sends `value`. Server encrypts with AES-256-GCM, computes a salted commitment, generates an embedding (or accepts a 1536-dim `embedding`), and persists with `client_encrypted = false`. **Client-sealed:** caller sends `ciphertext`, `iv`, `auth_tag`, `commitment`, and the **required** `embedding`. Server stores blobs and the vector, sets `client_encrypted = true`, and never derives anything from the plaintext or label. |\n| `prove` | Loads a server-sealed fact, decrypts in memory, derives a yes/no answer for the supplied query (LLM with `temperature: 0`, or a heuristic when external LLMs are disabled), and returns an HMAC-signed proof envelope. Returns `422 / CLIENT_ENCRYPTED` if the fact is client-sealed. |\n| `share` | Same as `prove`, plus inserts a row into `share_tokens` (recipient_agent_id, expiry, proof) and returns a `share_token`. The token is a 24-byte base64url string, valid for seven days. |\n| `search` | Embeds the query, calls `match_facts` (a `security definer` SQL function with cosine distance over `pgvector`), and returns ranked summaries for **server-sealed rows only**. Client-sealed rows are excluded at the SQL level **and** the application level. |\n| `verify_proof` | Validates an envelope without loading any fact. Malformed envelope returns `400 / VALIDATION_ERROR`; well-formed envelope with a bad HMAC returns `200` with `data.valid: false`. |\n| `sandbox` | Executes a small allow-listed function inside an isolated `node:vm` sandbox (no host I/O, 50 ms timeout) and returns the result with attestation metadata and a short-lived HS256 JWT (`proof_of_execution`). Every response advertises `provider: \"vm-sandbox\"` — this is software isolation, not hardware attestation. |\n\nAuthoritative request and response shapes live in [`types/index.ts`](./types/index.ts) and\n[`openapi.json`](./openapi.json).\n\n### Model Context Protocol (MCP)\n\nThe npm package **`zkshare-mcp`** ([npm](https://www.npmjs.com/package/zkshare-mcp), source **`packages/zkshare-mcp/`**) is a **stdio MCP server** exposing tools (`zkshare_store`, `zkshare_prove`, …) that call **`POST https://zkshare.io/api/v1/context`** (or your **`ZKSHARE_API_URL`**) with **`ZKSHARE_API_KEY`**.\n\n**Official MCP Registry** canonical name: **`io.github.sp0oby/zkshare`** — [registry lookup](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.sp0oby/zkshare) · [About the MCP Registry](https://github.com/modelcontextprotocol/registry) (discovery metadata; runnable package remains on npm).\n\n**End users:** Node.js ≥ 18, then **`npx -y zkshare-mcp`** — no clone. Configure your host (example below).\n\n**Contributors:** from the repo root **`pnpm install`**, then **`pnpm mcp`** to run the local package; source is **`packages/zkshare-mcp/`**.\n\nAdvanced **client-sealed** `store` bodies stay on HTTPS/OpenAPI — not via MCP tools.\n\n```json\n// ~/.cursor/mcp.json\n{\n  \"mcpServers\": {\n    \"zkshare\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"zkshare-mcp\"],\n      \"env\": {\n        \"ZKSHARE_API_KEY\": \"zk_live_…\",\n        \"ZKSHARE_API_URL\": \"https://zkshare.io\"\n      }\n    }\n  }\n}\n```\n\n### Error codes\n\n| Code | HTTP | Meaning |\n|------|------|---------|\n| `INVALID_API_KEY` | `401` | Missing, malformed, or revoked key. |\n| `RATE_LIMITED` | `429` | Per-key sliding-window limit exceeded. `Retry-After` header included. |\n| `VALIDATION_ERROR` | `400` | Body fails the Zod schema or a malformed proof was passed to `verify_proof`. |\n| `FACT_NOT_FOUND` | `404` | No row matches `(api_key_id, logical_user_id, fact_key)`. |\n| `PROOF_FAILED` | `400` | Decryption failed or no definite yes/no answer could be derived. |\n| `CLIENT_ENCRYPTED` | `422` | `prove` or `share` was called against a client-sealed fact. |\n| `INTERNAL_ERROR` | `500` | Caught exception. The original message is logged via `lib/logger.ts`; clients see a generic message. |\n\n---\n\n## Architecture\n\n- **Runtime:** `/api/v1/context` is a Node.js route handler (not Edge) so AES-256-GCM, scrypt key\n  derivation, and the Supabase service-role client behave deterministically.\n- **Persistence:** PostgreSQL with extensions and tables managed by versioned migrations under\n  `supabase/migrations/`. Tables: `api_keys`, `facts`, `audit_logs`, `share_tokens`. The `facts`\n  table stores ciphertext, IV, auth tag, commitment, a `vector(1536)` embedding, and a\n  `client_encrypted` flag.\n- **Search:** `match_facts(api_key_id, logical_user_id, query_embedding, match_count)` is a\n  `security definer` function with an IVFFlat index. It returns server-sealed rows only.\n  Updating the function's row type requires `DROP FUNCTION ... CASCADE`-style replacement (a\n  PostgreSQL constraint) — the migrations handle this explicitly.\n- **Authentication and authorization:**\n  - End-user dashboard: Supabase Auth magic-link sign-in. `middleware.ts` redirects unauthenticated\n    visitors away from `/dashboard`.\n  - HTTP API: `x-api-key` header. Keys are stored as SHA-256 hashes; only the prefix is shown in\n    the dashboard. Rotating a key requires generating a new one — plaintext is never persisted.\n  - Database access: RLS denies all direct access from `anon` and `authenticated` roles. The\n    application uses the Supabase **service role** server-side only.\n- **Rate limiting:** Upstash Redis (sliding window) when configured; an in-process fallback is\n  used in local development.\n- **Encryption keys:**\n  - `ZKSHARE_ENCRYPTION_SECRET` — server-side AES-256-GCM master secret (scrypt-derived; minimum\n    32 characters).\n  - `ZKSHARE_PROOF_SECRET` — HMAC secret for commitments and proof envelopes (minimum 16\n    characters).\n  - `ZKSHARE_ENCLAVE_JWT_SECRET` — HS256 secret for sandbox attestations (minimum 32 characters).\n  - All three are required for the relevant code paths. The application throws on startup if any\n    are missing or too short.\n\n---\n\n## Repository layout\n\n| Path | Purpose |\n|------|---------|\n| `app/` | Next.js App Router routes — public site, dashboard, API endpoints (`api/v1/context`, `api/keys`, `api/billing`, `api/webhooks/stripe`, `api/health`, `api/health/ready`, `api/audit/export`, `auth/callback`). |\n| `lib/` | Server-only modules: `encryption.ts`, `zk.ts`, `embeddings.ts`, `search.ts`, `sandbox.ts`, `api-key.ts`, `rate-limit.ts`, `audit.ts`, `llm-client.ts`, `supabase-server.ts`, `supabase-browser.ts`. |\n| `components/` | UI components built on shadcn/ui primitives. |\n| `types/index.ts` | Zod request schema, operation enum, error codes, and shared row types. |\n| `supabase/migrations/` | Ordered SQL migrations. |\n| `circuits/` | Notes and placeholders for future Groth16 wiring. `snarkjs` is a runtime dependency but is not on the default trust path. |\n| `packages/zkshare-mcp/` | Publishable **`zkshare-mcp`** npm package — MCP stdio server that proxies to `/api/v1/context`. |\n| `openapi.json` | OpenAPI 3.1 description of the public surface. |\n| `SECURITY.md` | Threat model, operational checklist, and the encryption / LLM matrix. |\n\n---\n\n## Local development\n\n```bash\npnpm install\ncp .env.local.example .env.local\n# Fill the Supabase, ZKSHARE_*, and (optionally) LLM, Upstash, and Stripe values.\n# Defaults for LLM model slugs live in lib/llm-client.ts.\npnpm dev\n```\n\nApply migrations against your Supabase database before exercising the API. See\n[`supabase/README.md`](./supabase/README.md).\n\n### Smoke tests\n\nServer-sealed store followed by a proof:\n\n```bash\ncurl -sS -X POST http://localhost:3000/api/v1/context \\\n  -H \"x-api-key: zk_live_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"operation\":\"store\",\"user_id\":\"user_123\",\"fact_key\":\"example\",\"value\":\"hello\"}'\n\ncurl -sS -X POST http://localhost:3000/api/v1/context \\\n  -H \"x-api-key: zk_live_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"operation\":\"prove\",\"user_id\":\"user_123\",\"fact_key\":\"example\",\"query\":\"does the fact say hello?\"}'\n```\n\nVerifying a proof string:\n\n```bash\ncurl -sS -X POST http://localhost:3000/api/v1/context \\\n  -H \"x-api-key: zk_live_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"operation\":\"verify_proof\",\"proof\":\"<base64url envelope from the prove response>\"}'\n```\n\nHealth probes:\n\n- Liveness: `GET /api/health`\n- Readiness (database): `GET /api/health/ready`\n\n### Self-audit (privacy-critical paths)\n\n```bash\npnpm run verify:crypto\n```\n\nThis runs `scripts/verify-crypto.ts` directly under Node's built-in TypeScript support and\nasserts encryption round-trip, tamper detection, deterministic commitments, and all three\n`verify_proof` outcomes (`valid`, `invalid`, `malformed`).\n\n---\n\n## Production readiness\n\nThe full operator checklist lives in [`SECURITY.md → Operator checklist`](./SECURITY.md#operator-checklist).\nAt a minimum, before exposing the API to the public internet:\n\n- All three `ZKSHARE_*` secrets are set with high-entropy values; the application throws on startup otherwise.\n- `ZKSHARE_CORS_ORIGIN` is an explicit comma-separated allow list of origins. `*` is for unauthenticated demos only.\n- Migrations under `supabase/migrations/` have been applied in timestamp order on the target environment.\n- Upstash Redis is configured (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`); the in-process rate-limit fallback is for local development only.\n- `GET /api/health/ready` returns `200` with no `missing` entries and acknowledged `warnings`.\n\n---\n\n## Status of the \"zero-knowledge\" claim\n\nThe `proof` field returned today is a **versioned JSON envelope signed with HMAC-SHA256**, binding\nthe commitment, the query, and the yes/no answer. `snarkjs` is included as a dependency, and\n`circuits/` documents the intended Groth16 path for future work. **Groth16 verification is not on\nthe default response path.** Treat any external claim of full SNARK-on-every-call as aspirational\nunless the verifier and circuit artifacts have been shipped and audited.\n\n---\n\n## Contributing\n\nSee [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the local-development checklist, the\nverification commands required before opening a pull request, and how to flag changes that\ntouch the data plane or cryptographic paths.\n\n## Reporting a vulnerability\n\nPlease **do not** open a public issue for security vulnerabilities. The disclosure process\nand contact channels are documented in [`SECURITY.md`](./SECURITY.md).\n\n## License\n\nReleased under the [MIT License](./LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:20:26.724Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:56.574Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

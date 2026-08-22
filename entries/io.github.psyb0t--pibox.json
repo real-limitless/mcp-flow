@@ -1,0 +1,56 @@
+{
+  "id": "io.github.psyb0t/pibox",
+  "title": "Pibox",
+  "description": "Self-hosted MCP server: pi-coding-agent tools (run_prompt, file ops) over streamable HTTP.",
+  "summary": "Self-hosted MCP server: pi-coding-agent tools (run_prompt, file ops) over streamable HTTP.",
+  "offersHint": "Self-hosted MCP server: pi-coding-agent tools (run_prompt, file ops) over streamable HTTP. · Packages: oci:docker.io/psyb0t/pibox:v0.15.9",
+  "version": "0.15.9",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/psyb0t/pibox:v0.15.9",
+    "transport": "streamable-http"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/psyb0t/pibox:v0.15.9",
+      "transport": "streamable-http"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/psyb0t/docker-pibox",
+  "repository": {
+    "url": "https://github.com/psyb0t/docker-pibox",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T14:20:13.067639Z",
+  "publishedAt": "2026-08-09T14:20:13.067639Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:14.019Z",
+    "sourceRepoAt": "2026-08-11T23:25:24.506Z",
+    "readmeAt": "2026-08-11T23:25:25.115Z",
+    "toolsAt": "2026-08-12T01:05:14.019Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/psyb0t/docker-pibox",
+    "checkedAt": "2026-08-11T23:25:24.506Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/psyb0t/docker-pibox/main/README.md",
+    "markdown": "# docker-pibox\n\n[![CI](https://github.com/psyb0t/docker-pibox/actions/workflows/pipeline.yml/badge.svg?branch=main)](https://github.com/psyb0t/docker-pibox/actions/workflows/pipeline.yml)\n[![version](https://raw.githubusercontent.com/psyb0t/docker-pibox/badges/version.svg)](https://github.com/psyb0t/docker-pibox/releases)\n[![license](https://raw.githubusercontent.com/psyb0t/docker-pibox/badges/license.svg)](LICENSE)\n[![Docker Pulls](https://img.shields.io/docker/pulls/psyb0t/pibox?style=flat-square)](https://hub.docker.com/r/psyb0t/pibox)\n\n[pi-coding-agent](https://github.com/earendil-works/pi-mono/tree/main/packages/coding-agent) inside an [aicodebox](https://github.com/psyb0t/docker-aicodebox) container. One image, several ways in: interactive shell, one-shot prompt, HTTP API (with an OpenAI-compatible endpoint), MCP server, Telegram bot, and a cron scheduler that fires pi on whatever schedule you want.\n\nYou talk to pibox. pibox talks to pi. pi talks to whatever LLM you point it at. Nobody cares about the middle.\n\n## Table of Contents\n\n- [Quick start](#quick-start)\n- [Modes](#modes)\n  - [API mode](docs/modes/api.md)\n  - [Telegram mode](docs/modes/telegram.md)\n  - [Cron mode](docs/modes/cron.md)\n  - [MCP mode](docs/modes/mcp.md)\n- [Configuration](#configuration)\n- [Auth](#auth)\n- [Agent integrations](#agent-integrations)\n- [Development](#development)\n- [Tests](#tests)\n- [License](#license)\n\n## Quick start\n\n```bash\n# one-shot prompt\ndocker run --rm \\\n  -e ANTHROPIC_AUTH_TOKEN=your-token \\\n  -e ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \\\n  -e ANTHROPIC_MODEL=glm-4.6 \\\n  psyb0t/pibox:latest \\\n  -p \"list the files in /workspace\"\n\n# API server\ndocker run -d --network host \\\n  -e PIBOX_API_MODE=1 \\\n  -e PIBOX_API_MODE_TOKEN=your-secret \\\n  -e PIBOX_AVAILABLE_MODELS=glm-4.6,glm-4.5-air \\\n  -e ANTHROPIC_AUTH_TOKEN=your-token \\\n  -e ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic \\\n  -e ANTHROPIC_MODEL=glm-4.6 \\\n  -v \"$PWD/workspace:/workspace\" \\\n  psyb0t/pibox:latest\n```\n\n## Modes\n\n**Foreground modes** (API / Telegram / Cron) are mutually exclusive — except `PIBOX_TELEGRAM_MODE=1` + `PIBOX_CRON_MODE=1`, which run together (cron in-thread inside telegram). API wins if set alongside anything else.\n\n**MCP mode** (`PIBOX_MCP_MODE=1`) is independent — it coexists with whatever foreground mode is running. In API mode it's mounted at `/mcp` on the API port; in other modes it runs as a sidecar uvicorn on its own port.\n\nEach mode has its own page with full setup, env vars, and examples.\n\n### [API Mode →](docs/modes/api.md)\n\nLong-lived FastAPI server on `:8080`. Agent runs (sync, async with run-id polling, cancellable), workspace file upload/download/list/delete with traversal checking, and an OpenAI-compatible `chat/completions` endpoint with streaming and client-executed tool calling.\n\n```yaml\nenvironment:\n  - PIBOX_API_MODE=1\n  - PIBOX_API_MODE_TOKEN=your-secret\n  - PIBOX_AVAILABLE_MODELS=glm-4.6,glm-4.5-air\n```\n\n### [Telegram Mode →](docs/modes/telegram.md)\n\nTalk to pi from Telegram. Per-chat isolated workspaces, allowed-chats and per-chat allowed-users gating, file ingestion, `[SEND_FILE: path]` to get files back, and per-chat `/model`, `/effort`, `/system_prompt`, `/append_system_prompt` overrides that persist across restarts.\n\n```yaml\nenvironment:\n  - PIBOX_TELEGRAM_MODE=1\n  - PIBOX_TELEGRAM_MODE_TOKEN=123456:ABC\n```\n\n### [Cron Mode →](docs/modes/cron.md)\n\nYAML-defined scheduled jobs on 6-field croniter schedules. Per-run history dirs with `meta.json`, `stdout.log`, `stderr.log`, `result.txt`, and a \"prior run\" hint so a job can reference its own history.\n\n```yaml\nenvironment:\n  - PIBOX_CRON_MODE=1\n  - PIBOX_CRON_MODE_FILE=/home/aicode/.aicodebox/cron.yaml\n```\n\n### [MCP Mode →](docs/modes/mcp.md)\n\nExposes `run_prompt` plus workspace-confined file tools over streamable HTTP, so other agents can drive pi as a tool. Coexists with any foreground mode — mounted at `/mcp` on the API port in API mode, a sidecar on its own port everywhere else.\n\n```yaml\nenvironment:\n  - PIBOX_MCP_MODE=1\n  - PIBOX_MCP_MODE_TOKEN=your-secret\n```\n\n## Configuration\n\nNaming convention: `PIBOX_<MODE>_MODE=1` is the on/off flag, `PIBOX_<MODE>_MODE_<KNOB>=...` is its config. Non-mode-scoped vars (workspace, container name, available models) are bare.\n\nThe image is built on top of [aicodebox](https://github.com/psyb0t/docker-aicodebox), so the equivalent `AICODEBOX_*` names also work — the entrypoint translates `PIBOX_X` to `AICODEBOX_X` when only the pibox-prefixed one is set. If you set both, `AICODEBOX_*` wins.\n\n### Mode flags\n\n| Var | Default | What it does |\n|-----|---------|--------------|\n| `PIBOX_API_MODE` | `0` | Boot the HTTP API server (foreground) |\n| `PIBOX_TELEGRAM_MODE` | `0` | Boot the Telegram bot (foreground) |\n| `PIBOX_CRON_MODE` | `0` | Boot the cron scheduler (foreground; in-thread when telegram is also on) |\n| `PIBOX_MCP_MODE` | `0` | Expose MCP — mounted at `/mcp` in API mode, or as a sidecar elsewhere |\n\nEach mode's own knobs (ports, tokens, config paths, history dirs) live on that mode's page: [api.md](docs/modes/api.md), [telegram.md](docs/modes/telegram.md), [cron.md](docs/modes/cron.md), [mcp.md](docs/modes/mcp.md).\n\n### Workspace & runtime\n\n| Var | Default | What it does |\n|-----|---------|--------------|\n| `PIBOX_WORKSPACE` | `/workspace` | Root workspace dir inside the container |\n| `PIBOX_CONTAINER_NAME` | `aicodebox` | Used to scope per-container state files (auth, etc.) |\n| `PIBOX_AVAILABLE_MODELS` | — | **Required for API mode.** CSV list returned by `/openai/v1/models` and shown in the telegram `/model` picker. API mode refuses to boot without it; telegram `/model` picker degrades to a \"set this env var\" reply. |\n| `PIBOX_AVAILABLE_EFFORTS` | adapter list | Override the effort/`--thinking` list shown by the telegram `/effort` picker (comma-separated) |\n\n## Auth\n\npi speaks the Anthropic wire protocol. Point it at any Anthropic-compatible endpoint:\n\n| Var | Purpose |\n|-----|---------|\n| `ANTHROPIC_AUTH_TOKEN` | Bearer token (Z.AI, direct Anthropic, etc.) |\n| `ANTHROPIC_API_KEY` | Same thing — pi reads both |\n| `ANTHROPIC_BASE_URL` | Endpoint override (default: `https://api.anthropic.com`) |\n| `ANTHROPIC_MODEL` | Default model when the caller doesn't specify one |\n\nZ.AI's GLM models are fast and cheap for most tasks — `ANTHROPIC_BASE_URL=https://api.z.ai/api/anthropic` + `ANTHROPIC_MODEL=glm-4.6` is the recommended default.\n\npi's thinking levels (`--thinking`): `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Exposed as the `/effort` command in telegram mode and as `thinking` in API requests.\n\n## Agent integrations\n\nThe [skill](.agents/skills/pibox) works in any agent that reads `.agents/skills/`, and\ninstalls natively in the clients below.\n\n### Claude Code\n\n```bash\nclaude plugin marketplace add psyb0t/agents\nclaude plugin install pibox@psyb0t\n```\n\nClaude Code prompts for the pibox URL and, if auth is enabled, the API and MCP tokens —\nsensitive values are stored in your OS keychain.\n\n### Codex\n\n```bash\ncodex plugin marketplace add psyb0t/agents\ncodex plugin add pibox@psyb0t\n```\n\nInstalled via the marketplace, the skill invokes as `$pibox:pibox`. Codex also picks the\nskill up automatically with no install in any repo containing `.agents/skills/`, where it\ninvokes as plain `$pibox`.\n\n### OpenClaw\n\nThe skill is published to ClawHub on every release:\n\n```bash\nopenclaw skills install @psyb0t/pibox\n```\n\nFor MCP clients that speak local stdio, the [`@psyb0t/pibox`](.agents/plugins/pibox) plugin\nbridges to the service's `/mcp` endpoint:\n\n```bash\nopenclaw plugins install clawhub:@psyb0t/pibox\n```\n\nThen set `PIBOX_URL` (and `PIBOX_MCP_MODE_TOKEN` if the server was started with MCP auth\nenabled).\n\n## Development\n\n```bash\nmake help   # list targets\nmake build  # pull the published aicodebox base, build + tag psyb0t/pibox:v<VERSION> and :latest\nmake test   # run the full e2e suite (needs .env.test)\nmake clean  # remove built images\n```\n\n`VERSION` is read from `pibox/pyproject.toml`. `make build` pulls the published `psyb0t/aicodebox` base pinned in the Dockerfile; set `SKIP_BASE_PULL=1` to use a locally-built base instead (e.g. from a sibling `../docker-aicodebox` checkout), or override with `make build BASE_IMAGE=...`.\n\n## Tests\n\nEnd-to-end tests build the image and run it against a real LLM endpoint. Telegram tests use [psyb0t/telethon-plus](https://github.com/psyb0t/docker-telethon) as a real MTProto userbot.\n\n```bash\ncp .env.test.example .env.test\n$EDITOR .env.test   # fill in ANTHROPIC_* and optionally Telegram creds\nmake test\n```\n\nTelegram tests auto-skip if `AICODEBOX_TELEGRAM_MODE_TOKEN` is empty. Everything else only needs `ANTHROPIC_AUTH_TOKEN` + `ANTHROPIC_BASE_URL`.\n\n## License\n\nWTFPL — see [LICENSE](LICENSE). Do what the fuck you want.\n",
+    "fetchedAt": "2026-08-11T23:25:25.115Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:14.019Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

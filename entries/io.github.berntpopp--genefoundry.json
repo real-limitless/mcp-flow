@@ -1,0 +1,52 @@
+{
+  "id": "io.github.berntpopp/genefoundry",
+  "title": "genefoundry",
+  "description": "MCP gateway federating 21 biomedical MCP servers behind one endpoint: gnomAD, ClinVar, HPO, VEP.",
+  "summary": "MCP gateway federating 21 biomedical MCP servers behind one endpoint: gnomAD, ClinVar, HPO, VEP.",
+  "offersHint": "MCP gateway federating 21 biomedical MCP servers behind one endpoint: gnomAD, ClinVar, HPO, VEP. · Remote MCP (streamable-http) at https://genefoundry.org/mcp",
+  "version": "0.8.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://genefoundry.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://genefoundry.org/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://genefoundry.org",
+  "sourceUrl": "https://github.com/berntpopp/genefoundry-router",
+  "repository": {
+    "url": "https://github.com/berntpopp/genefoundry-router",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T14:58:36.422943Z",
+  "publishedAt": "2026-08-10T14:58:36.422943Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:09.395Z",
+    "sourceRepoAt": "2026-08-11T23:55:12.157Z",
+    "readmeAt": "2026-08-11T23:55:14.524Z",
+    "toolsAt": "2026-08-12T01:29:09.395Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/berntpopp/genefoundry-router",
+    "checkedAt": "2026-08-11T23:55:12.157Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/berntpopp/genefoundry-router/main/README.md",
+    "markdown": "# genefoundry-router\n\n[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)\n[![CI](https://github.com/berntpopp/genefoundry-router/actions/workflows/ci.yml/badge.svg)](https://github.com/berntpopp/genefoundry-router/actions/workflows/ci.yml)\n[![Security](https://github.com/berntpopp/genefoundry-router/actions/workflows/security.yml/badge.svg)](https://github.com/berntpopp/genefoundry-router/actions/workflows/security.yml)\n[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)\n\nA thin **FastMCP 3.x aggregator** that federates the GeneFoundry `*-link` MCP fleet behind a\nsingle Streamable-HTTP endpoint. A host adds **one** server — `genefoundry` — and gets every\nbiomedical backend with collision-free `<namespace>_<tool>` naming and search-based discovery.\n\n> [!IMPORTANT]\n> Research use only. Not clinical decision support. Do not use for diagnosis,\n> treatment, triage, or patient management.\n\n## Why\n\nAn MCP host that mounted all 21 backends directly would face a wall of several hundred\ntools — more than a model can reason over, and a guarantee of name collisions. The router\ncollapses that into one endpoint and replaces the flat catalog with a **search surface**, so\na model finds the right tool by intent instead of by scrolling.\n\nIt is a *client* to each backend and a *server* to hosts: it namespaces and shapes the\nsurface, but never rewrites a backend's data. The caller's token is never forwarded\nupstream.\n\n## Quick start\n\nThe fleet is hosted — no install required:\n\n```bash\nclaude mcp add --transport http genefoundry https://genefoundry.org/mcp\n```\n\nHealth check: [`genefoundry.org/health`](https://genefoundry.org/health).\n\nTo run your own against the live fleet (Python 3.12+, [uv](https://github.com/astral-sh/uv)):\n\n```bash\nuv sync --group dev\ncp .env.example .env                    # set GF_*_URL backend URLs and GF_AUTH_MODE\nuv run genefoundry-router run --host 127.0.0.1 --port 8000\ncurl -s localhost:8000/health | python -m json.tool\n```\n\nAn offline fake fleet (`make dev-fleet` + `make run-dev`, or one-shot `make test-e2e`) runs\nthe real router against impersonated backends over real Streamable-HTTP — no Docker, no\nnetwork.\n\n## Tools\n\nThe router does **not** surface the federated catalog flat. A model sees three things:\n\n| Tool | Purpose |\n|------|---------|\n| `search_tools` | Relevance search over the entire federated catalog |\n| `call_tool` | Invoke a hit by its `<namespace>_<tool>` name |\n| *pinned entry points* | Each backend's front-door tool, always visible — declared per-backend as `entrypoints:` in [`servers.yaml`](servers.yaml) |\n\n```text\nsearch_tools(query=\"splicing prediction\")   # → spliceai_predict_splicing (+ schema)\ncall_tool(name=\"spliceai_predict_splicing\", arguments={...})\n```\n\nPinning makes each domain's canonical tool reachable deterministically rather than by\nrelevance luck. See [How discovery works](docs/discovery.md) — including the two traps that\nbite MCP clients.\n\n### Federated backends\n\n<!-- BEGIN GENERATED: fleet-inventory -->\n**21 backends, 272 tools**, each surfaced namespaced — e.g. `gnomad_search_genes`.\n\n| Namespace | Domain | Data source | Tools | Repo |\n|-----------|--------|-------------|------:|------|\n| `pubtator` | Literature & entity annotation | [PubTator3](https://www.ncbi.nlm.nih.gov/research/pubtator3/) | 35 | [pubtator-link](https://github.com/berntpopp/pubtator-link) |\n| `gnomad` | Variant / gene / population frequency | [gnomAD](https://gnomad.broadinstitute.org/) | 22 | [gnomad-link](https://github.com/berntpopp/gnomad-link) |\n| `orphanet` | Rare disease ontology & associations | [Orphadata](https://www.orphadata.com/) | 19 | [orphanet-link](https://github.com/berntpopp/orphanet-link) |\n| `clingen` | Gene–disease curation | [ClinGen](https://clinicalgenome.org/) | 17 | [clingen-link](https://github.com/berntpopp/clingen-link) |\n| `hpo` | Phenotype ontology & associations | [Human Phenotype Ontology](https://hpo.jax.org/) | 17 | [hpo-link](https://github.com/berntpopp/hpo-link) |\n| `mavedb` | Variant-effect assay scores | [MaveDB](https://www.mavedb.org/) | 15 | [mavedb-link](https://github.com/berntpopp/mavedb-link) |\n| `uniprot` | Protein function | [UniProt](https://www.uniprot.org/) | 15 | [uniprot-link](https://github.com/berntpopp/uniprot-link) |\n| `genereviews` | Gene–disease literature | [GeneReviews](https://www.ncbi.nlm.nih.gov/books/NBK1116/) | 13 | [genereviews-link](https://github.com/berntpopp/genereviews-link) |\n| `mgi` | Mouse phenotype & models | [MGI](https://www.informatics.jax.org/) | 13 | [mgi-link](https://github.com/berntpopp/mgi-link) |\n| `mondo` | Disease ontology / cross-references | [Mondo](https://mondo.monarchinitiative.org/) | 13 | [mondo-link](https://github.com/berntpopp/mondo-link) |\n| `gencc` | Gene–disease curation | [GenCC](https://thegencc.org/) | 12 | [gencc-link](https://github.com/berntpopp/gencc-link) |\n| `metadome` | Protein tolerance landscapes | [MetaDome](https://stuart.radboudumc.nl/metadome/) | 11 | [metadome-link](https://github.com/berntpopp/metadome-link) |\n| `stringdb` | Protein–protein interaction networks | [STRING](https://string-db.org/) | 10 | [stringdb-link](https://github.com/berntpopp/stringdb-link) |\n| `gtex` | Tissue expression | [GTEx Portal](https://gtexportal.org/) | 9 | [gtex-link](https://github.com/berntpopp/gtex-link) |\n| `hgnc` | Gene nomenclature | [HGNC](https://www.genenames.org/) | 9 | [hgnc-link](https://github.com/berntpopp/hgnc-link) |\n| `panelapp` | Diagnostic gene panels & curation | [PanelApp](https://panelapp.genomicsengland.co.uk/) | 9 | [panelapp-link](https://github.com/berntpopp/panelapp-link) |\n| `autopvs1` | Variant ACMG PVS1 | [AutoPVS1](https://autopvs1.bgi.com/) | 7 | [autopvs1-link](https://github.com/berntpopp/autopvs1-link) |\n| `spliceai` | Splicing prediction | [SpliceAI Lookup](https://spliceailookup.broadinstitute.org/) | 7 | [spliceailookup-link](https://github.com/berntpopp/spliceailookup-link) |\n| `vep` | Variant annotation / consequence | [Ensembl VEP](https://rest.ensembl.org/) | 7 | [vep-link](https://github.com/berntpopp/vep-link) |\n| `clinvar` | Variant clinical significance | [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/) | 6 | [clinvar-link](https://github.com/berntpopp/clinvar-link) |\n| `litvar` | Variant literature | [LitVar2](https://www.ncbi.nlm.nih.gov/research/litvar2/) | 6 | [litvar-link](https://github.com/berntpopp/litvar-link) |\n<!-- END GENERATED: fleet-inventory -->\n\n## Data & provenance\n\nThe router serves **no data of its own**; each backend owns its sources, licences and\ncitation guidance, and the router mirrors their disclaimers.\n\nWhat it does own is **integrity of the tool surface**. A backend can serve a clean tool at\nreview time and later change its definition — the channel for a rug pull. The router\nfingerprints every normalized tool definition and diffs the live fleet against a reviewed,\npackaged baseline (`genefoundry_router/data/fleet-baseline.json`), enforced at startup and\non a schedule. See [Deployment → drift detection](docs/deployment.md).\n\n## Documentation\n\n- [Configuration & authentication](docs/configuration.md) — every `GF_*` variable, the OAuth/JWT resource-server modes, and the startup guards.\n- [Deployment](docs/deployment.md) — container release, digest pinning, rollback, and drift detection.\n- [How discovery works](docs/discovery.md) — the search surface, entry-point pinning, and how discoverability is measured.\n- [Design spec](docs/specs/2026-06-13-genefoundry-router-design.md) — the architecture and why it is shaped this way.\n- Fleet standards — [Tool-Naming](docs/TOOL-NAMING-STANDARD-v1.md) · [Response-Envelope](docs/RESPONSE-ENVELOPE-STANDARD-v1.md) · [MCP-Behaviour](docs/MCP-BEHAVIOUR-STANDARD-v1.md) · [Tool-Surface-Budget](docs/TOOL-SURFACE-BUDGET-STANDARD-v1.md) · [Tool-Schema-Documentation](docs/TOOL-SCHEMA-DOCUMENTATION-STANDARD-v1.md) · [Container-Hardening](docs/CONTAINER-HARDENING-STANDARD-v1.md) · [Versioning](docs/VERSIONING-STANDARD-v1.md) · [README](docs/README-STANDARD-v1.md).\n\n## Contributing\n\nSee [`AGENTS.md`](AGENTS.md) for engineering conventions. `make ci-local` is the\ndefinition-of-done gate: format, lint, line budget, README standard, mypy, and tests.\n\n## License\n\n[MIT](LICENSE) © Bernt Popp. Each federated backend carries the licence and citation terms\nof its upstream data source; see that backend's repository.\n",
+    "fetchedAt": "2026-08-11T23:55:14.524Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:09.395Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

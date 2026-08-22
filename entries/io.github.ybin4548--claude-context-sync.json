@@ -1,0 +1,58 @@
+{
+  "id": "io.github.ybin4548/claude-context-sync",
+  "title": "Claude Context Sync",
+  "description": "Share context, detect conflicts, and message across parallel Claude Code sessions",
+  "summary": "Share context, detect conflicts, and message across parallel Claude Code sessions",
+  "offersHint": "Share context, detect conflicts, and message across parallel Claude Code sessions · Packages: npm:claude-context-sync",
+  "version": "0.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "claude-context-sync",
+    "version": "0.4.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "claude-context-sync",
+      "version": "0.4.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ybin4548/claude-context-sync",
+  "repository": {
+    "url": "https://github.com/ybin4548/claude-context-sync",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-21T10:29:44.753274Z",
+  "publishedAt": "2026-05-21T10:29:44.753274Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:29.787Z",
+    "sourceRepoAt": "2026-08-11T23:13:53.215Z",
+    "readmeAt": "2026-08-11T23:13:53.743Z",
+    "toolsAt": "2026-08-12T00:55:29.787Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ybin4548/claude-context-sync",
+    "checkedAt": "2026-08-11T23:13:53.215Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ybin4548/claude-context-sync/main/README.md",
+    "markdown": "# claude-context-sync\n\n[![npm](https://img.shields.io/npm/v/claude-context-sync)](https://www.npmjs.com/package/claude-context-sync)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\nMCP server that automatically summarizes and shares context across parallel Claude Code sessions.\n\nWhen you run multiple Claude Code sessions on different tasks, each session is unaware of what the others are doing. **claude-context-sync** watches your session logs, generates structured summaries on demand, and provides real-time file conflict detection and cross-session messaging.\n\n## Features\n\n- **Session context sharing** — any session can see what others are working on\n- **File conflict detection** — real-time alerts when multiple sessions edit the same file\n- **Symbol-level conflicts** — detects shared function/class/interface edits (TypeScript, Python, Swift, Go, Rust)\n- **Cross-session messaging** — send messages between sessions without switching terminals\n- **Lazy evaluation** — zero cost when tools aren't called\n- **Auto-cleanup** — tracked data is removed when sessions end\n\n## Installation\n\n```bash\nnpm install -g claude-context-sync\ncontext-sync init\n```\n\nThat's it. The next time you open Claude Code, the MCP server starts automatically. The `init` command also registers a conflict detection hook.\n\n## MCP Tools\n\n### `list_sessions`\n\nReturns active Claude Code sessions with their current status, task summary, and any file conflicts.\n\n### `get_session_context`\n\nReturns the full structured summary for a specific session. Automatically re-summarizes if stale. Includes conflict information.\n\n**Parameters**: `sessionId` (string)\n\n### `get_all_changes`\n\nReturns changed files and decisions across all sessions, with optional project filtering.\n\n**Parameters**: `project` (string, optional)\n\n### `send_message`\n\nSends a message to another session. Omit `targetSessionId` to broadcast to all sessions in the same project.\n\n**Parameters**: `fromSessionId` (string), `message` (string), `project` (string), `targetSessionId` (string, optional)\n\n### `get_messages`\n\nReturns message history for a session.\n\n**Parameters**: `sessionId` (string), `unreadOnly` (boolean, optional)\n\n### `resolve_conflicts`\n\nClears resolved files from the conflict tracking list.\n\n**Parameters**: `sessionId` (string), `files` (string[])\n\n## How It Works\n\n### Context Sharing\n\n```\n[Always running] Watcher: detects .jsonl changes → sets stale flag (zero cost)\n                    ↓\n[On tool call]   MCP Tool invoked → summarizes only stale sessions\n                    ↓\n                 Extractor → Generator (claude -p) → Store → Response\n```\n\n### Conflict Detection\n\n```\n[Always running] Watcher: detects .jsonl changes\n                    ↓\n                 FileTracker: parses Write/Edit tool_use events\n                    ↓\n                 SymbolResolver: identifies enclosing function/class/type\n                    ↓\n                 Writes per-session touched files\n\n[Every message]  Hook (UserPromptSubmit): checks for new conflicts\n                    ↓\n                 Alerts Claude once per new conflict → Claude notifies user\n```\n\n### Messaging\n\n```\nSession A: send_message → writes to ~/.claude/context-sync/messages/{targetId}/\n                    ↓\nSession B: Hook detects unread message → injects into AI context\n                    ↓\n           Claude reads and relays to user → marks as read\n```\n\n## Architecture\n\nSingle MCP server process — no separate daemon. Claude Code launches it automatically via stdio transport.\n\n```\nsrc/\n├── mcp/server.ts              # MCP server + 6 tools\n├── watcher/\n│   ├── watcher.ts             # File watching (chokidar)\n│   ├── scheduler.ts           # Hybrid summarization strategy\n│   ├── file-tracker.ts        # Real-time file edit tracking\n│   └── symbol-resolver.ts     # Pattern-based symbol detection\n├── summarizer/\n│   ├── extractor.ts           # .jsonl parsing + stratified sampling\n│   └── generator.ts           # claude -p invocation\n├── messaging/\n│   └── messenger.ts           # Cross-session message passing\n├── store/store.ts             # Local summary cache\n├── cli.ts                     # CLI (init + serve + hook registration)\n└── types.ts                   # Shared types\n```\n\n### Summarization Strategy\n\n- **Incremental**: updates existing summary with new messages (default)\n- **Full**: regenerates from scratch (after 4 incremental updates)\n- **Stratified sampling**: for large sessions (500+ messages), samples head + middle + tail\n- **Cached**: returns stored summary if nothing changed (zero cost)\n\n### Supported Languages (Symbol Detection)\n\n| Language | Detected Symbols |\n|----------|-----------------|\n| TypeScript/JavaScript | function, class, interface, type, enum, const |\n| Python | def, class |\n| Swift | func, class, struct, protocol, enum, extension |\n| Go | func, type (struct/interface) |\n| Rust | fn, struct, enum, trait, impl |\n\nUnsupported file types fall back to file-level conflict detection.\n\n## Requirements\n\n- Node.js 20+\n- Claude Code CLI (`claude` command available)\n- `jq` (for conflict detection hook)\n\n## Feedback\n\nWe'd love to hear from you! If you have feature requests, bug reports, or just want to share how you use claude-context-sync:\n\n- [GitHub Discussions](https://github.com/ybin4548/claude-context-sync/discussions) — ideas, questions, show & tell\n- [GitHub Issues](https://github.com/ybin4548/claude-context-sync/issues) — bug reports, feature requests\n\n## Development\n\n```bash\ngit clone https://github.com/ybin4548/claude-context-sync.git\ncd claude-context-sync\nnpm install\nnpm run build\nnpm test\n```\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:13:53.743Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:29.787Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

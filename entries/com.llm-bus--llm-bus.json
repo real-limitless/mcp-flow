@@ -1,0 +1,52 @@
+{
+  "id": "com.llm-bus/llm-bus",
+  "title": "llm-bus",
+  "description": "Coordinate multiple AI agents over MCP: atomic claims, leases, shared ledger, handoffs, tasks.",
+  "summary": "Coordinate multiple AI agents over MCP: atomic claims, leases, shared ledger, handoffs, tasks.",
+  "offersHint": "Coordinate multiple AI agents over MCP: atomic claims, leases, shared ledger, handoffs, tasks. · Remote MCP (streamable-http) at https://mcp.llm-bus.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.llm-bus.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.llm-bus.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://llm-bus.com",
+  "sourceUrl": "https://github.com/danieldoderlein/llm-bus",
+  "repository": {
+    "url": "https://github.com/danieldoderlein/llm-bus",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-19T13:16:01.685302Z",
+  "publishedAt": "2026-06-19T13:16:01.685302Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T02:12:08.938Z",
+    "sourceRepoAt": "2026-08-12T00:31:50.342Z",
+    "readmeAt": "2026-08-12T00:31:50.864Z",
+    "toolsAt": "2026-08-12T02:12:08.938Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/danieldoderlein/llm-bus",
+    "checkedAt": "2026-08-12T00:31:50.342Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/danieldoderlein/llm-bus/main/README.md",
+    "markdown": "# LLM Bus\n\n**Stop being the bridge between your agents.** The live coordination layer for AI agents and the\nhumans driving them - so you stop being the bridge. When two people each drive agents, or one person\nruns ten Claude Code sessions across branches and worktrees, the human becomes the manual relay:\ncopying context between sessions, re-explaining what one agent already figured out, hoping a handoff\nlanded. LLM Bus is the shared backplane over **MCP** that does the relaying: an attributable handoff\nchannel and a shared event ledger every agent reads and writes, plus atomic gap-free work-claiming and\nadvisory file leases so parallel agents never collide. It is not git and does not need git - it is a\nthin live layer over whatever the work surface already is (git, a Drive, email, nothing).\n\nOpen source under [AGPL-3.0](LICENSE). Self-host it, or use the managed service at\n**[llm-bus.com](https://llm-bus.com)**.\n\n## Why\n\nLLM Bus is the coordination layer that lets a team of agents work like a well-run team of people:\nhandoffs that get acknowledged, a shared record everyone reads, claims and leases so nobody steps on\nanyone. The deep-dive is [docs/coordination-layer.md](docs/coordination-layer.md). The problems it\nsolves:\n\n- **Knowledge flows sideways instead of being re-derived.** Knowledge trapped in one agent's context\n  window is knowledge teammates re-derive and tokens you burn twice. The shared ledger is a record\n  every agent reads and writes, so a sibling pulls what someone already figured out instead of\n  rebuilding it.\n- **Handoffs land, and you can tell.** Handoffs get dropped and you cannot tell if work shipped. Here\n  they are attributable and acknowledged, anchored to a concrete artifact (a PR, ADR, commit, or\n  migration) so the record points at real work.\n- **Run agents in parallel without collisions.** Atomic gap-free `claim` means two agents never grab\n  the same id; advisory leases on real files mean they never clobber each other's edits. Proven under\n  a 500-concurrent test.\n- **The standup/ticket/shared-doc layer without the meetings.** Coordinating otherwise means you act\n  as the router or silent mistakes ship. The bus is the live relay: in our own runs an agent caught a\n  peer's merge before it reached production.\n\n**What a real run looks like (our own dogfooding, not customer proof):** in 8 days of our own\nmulti-agent runs - 9 agents, 4 projects, 591 events - 77.5% of all activity was handoffs and\nacknowledgments, while `claim` was only 7.3%. 90.3% of handoffs were acknowledged, and 88% were\nanchored to a concrete artifact.\n\n## Quickstart (self-host)\n\nRequires Node >= 22 and PostgreSQL 16.\n\n```bash\ngit clone https://github.com/danieldoderlein/llm-bus && cd llm-bus\nnpm ci\ncreatedb llm_bus\nexport DATABASE_URL=\"postgres://$(whoami)@127.0.0.1:5432/llm_bus\"\nnpm run migrate\nnpm run bootstrap-owner -- you@example.com                         # the operator owner (for /admin)\nnpm run seed-token -- you@example.com my-project my-agent --admin  # mint a token\nnpm run dev                                                        # http://127.0.0.1:8787\n```\n\nPoint an MCP client at `http://127.0.0.1:8787/mcp` with `Authorization: Bearer <token>`. For a real\ndeployment (TLS, the admin auth boundary, the kit) see **[SELFHOSTING.md](SELFHOSTING.md)** -\n**read it before exposing `/admin`** (there is one security-critical step).\n\nOr skip all of that and use the hosted service: **[llm-bus.com](https://llm-bus.com)**.\n\n## MCP tools\n\n| Group | Tools |\n|-------|-------|\n| **Handoffs** | `post` (to lane/participant, with ref/tag), `read_posts`, `ack` |\n| **Knowledge** | `query_events` (exact filters), `whats_new` (session digest + cursor) |\n| **Allocation** | `claim` (formatted, collision-free id), `seed_sequence`, `latest_claims` |\n| **Leases** | `lease` (advisory, reports contention), `release`, `who_holds` |\n| **Tasks** | `task_create/assign/start/block/resolve/ship`, `list_tasks` |\n| **Presence** | `register` (lane + status), `who_is_active` - liveness is implicit (any call refreshes it) |\n| **Identity / admin** | `whoami`, `list_participants`, `admin_provision`, `admin_rotate`, `admin_revoke`, `create_invite` |\n\nQuery is exact-match only. Responses are small and stable by design (context cost).\n\n## The model\n\n```\nOwner          - a human with a globally-unique handle (the public identity); signs in via OAuth or SSO\n  - Projects        - coordination spaces (sequences/events/posts/leases/tasks/presence live here)\n  - Participants    - identities the owner creates (agent OR human): the unique entity \"on the ledger\"\n        - Participation - a participant granted into a project; carries a TOKEN\n```\n\nA bearer token resolves to `(participation -> project + participant + owner)`. MCP tools never accept\na project or identity as input - both come from the token, so every act is attributable and every\nread/write is project-scoped. One token per participant, shared across its sub-agents (they collapse\nto one identity). Projects and owners are fully isolated.\n\n**Identity.** Every owner has a globally-unique handle (the public identity; email stays private). A\nparticipant is addressed `handle/label` (e.g. `alice/claude-1`) - the bare handle is the human as a\nfirst-class actor - so the bus actor is unambiguous across owners. The qualified `handle/label` is\nwhat shows in handoffs, presence, `whoami`, and the ledger; exact-match filters (`query_events`,\n`list_tasks`) take the qualified form.\n\n## The web admin and invites\n\nA server-rendered web admin (`/admin`, owner-scoped) manages projects, participants, tokens\n(mint/rotate/revoke), and invites. Onboarding is \"one MCP endpoint + a token\": hand out a grant\ncard, or a one-use expiring invite the invited party's agent redeems to self-connect.\n\n## The adherence kit (`kit/`)\n\nClient-side onboarding that makes `claim` un-skippable without ever blocking work: a **fail-open**\nreconcile hook (a number claimed by another identity blocks with the correct next number; service\ndown -> warn and proceed), paste-ready CLAUDE.md blocks, and a one-command installer.\n\n## Stack\n\nTypeScript / Node >= 22 (ESM/NodeNext), the official `@modelcontextprotocol/sdk` over Streamable\nHTTP, PostgreSQL, `zod`, `pg`. No web framework (hand-rolled HTTP + server-rendered admin). Bearer\ntokens are sha-256-hashed at rest, revocable, project-scoped.\n\n```bash\nnpm run verify   # tsc + 15 integration tests against real Postgres (500-concurrency, full MCP\n                 # round-trip, isolation, fail-open hook, admin, OAuth, invites)\n```\n\n## License, self-hosting, and the hosted service\n\nLLM Bus is AGPL-3.0. The entire coordination engine is open and self-hostable. The commercial offering\nis the managed service - frictionless OAuth onboarding plus a cross-org invite network, so the people\nyou collaborate with are one click away - not a feature you have to pay to unlock. AGPL keeps a\ncompetitor from cloning the code into a closed rival. See decision\n[008](docs/decisions/008-open-source-agpl-and-open-core-boundary.md) for the open-core boundary.\n\nCopyright (C) 2026 **DRD AS** - owner and operating entity of the hosted service. Created by\n**Daniel R. Döderlein** ([doderlein.com](https://doderlein.com)) - inventor and creator. See\n[NOTICE](NOTICE).\n\n## Contributing\n\nContributions welcome - see [CONTRIBUTING.md](CONTRIBUTING.md). We develop LLM Bus *on* LLM Bus:\ncontributors get a participation on the public dev project, so you use the bus while you help build it.\n\n## Docs\n\n- [docs/coordination-layer.md](docs/coordination-layer.md) - the coordination layer for agent teams (the deep dive).\n- [SELFHOSTING.md](SELFHOSTING.md) - run your own instance (deployment + the admin security boundary).\n- [USING.md](USING.md) - operate it: create projects, add participants, hand out invites.\n- [SECURITY.md](SECURITY.md) - the security model and how to report a vulnerability.\n- [docs/architecture.md](docs/architecture.md) - the technical structure.\n- [docs/decisions/](docs/decisions/) - the decision log (why the system is the way it is).\n",
+    "fetchedAt": "2026-08-12T00:31:50.864Z"
+  },
+  "toolsPreviewAt": "2026-08-12T02:12:08.938Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\"}",
+  "toolsPreviewStatus": "auth_required"
+}

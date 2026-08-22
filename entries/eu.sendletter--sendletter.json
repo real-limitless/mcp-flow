@@ -1,0 +1,52 @@
+{
+  "id": "eu.sendletter/sendletter",
+  "title": "SendLetter",
+  "description": "Send real, printed letters by post across Europe. Requires a free account; quote before sending.",
+  "summary": "Send real, printed letters by post across Europe. Requires a free account; quote before sending.",
+  "offersHint": "Send real, printed letters by post across Europe. Requires a free account; quote before sending. · Remote MCP (streamable-http) at https://sendletter.eu/api/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://sendletter.eu/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://sendletter.eu/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://sendletter.eu/en/integrations/mcp",
+  "sourceUrl": "https://github.com/gertsnijder/sendletter-node",
+  "repository": {
+    "url": "https://github.com/gertsnijder/sendletter-node",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T12:33:21.016058Z",
+  "publishedAt": "2026-08-08T12:33:21.016058Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:49:39.953Z",
+    "sourceRepoAt": "2026-08-12T00:20:59.951Z",
+    "readmeAt": "2026-08-12T00:21:00.635Z",
+    "toolsAt": "2026-08-12T01:49:39.953Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gertsnijder/sendletter-node",
+    "checkedAt": "2026-08-12T00:20:59.951Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gertsnijder/sendletter-node/main/README.md",
+    "markdown": "# sendletter\n\nSend a real letter — printed, folded, franked and handed to the post — from Node.\n\n```bash\nnpm install sendletter\n```\n\n```ts\nimport { SendLetter } from 'sendletter'\n\nconst sendletter = new SendLetter(process.env.SENDLETTER_API_KEY!)\n\nconst letter = await sendletter.send({\n  sender: {\n    company: 'Twilper',\n    name: 'Gert Snijder',\n    street: 'Merelstraat',\n    number: '64',\n    postalCode: '8916 AX',\n    city: 'Leeuwarden',\n    country: 'NL',\n  },\n  recipient: {\n    name: 'Jan de Vries',\n    street: 'Keizersgracht',\n    number: '123',\n    postalCode: '1015 CJ',\n    city: 'Amsterdam',\n    country: 'NL',\n  },\n  text: 'Beste heer De Vries,\\n\\nBijgaand de herinnering voor factuur 2026-0042.',\n})\n\nconsole.log(letter.id, letter.status, letter.totalCents)\n```\n\nGet a key at [sendletter.eu](https://sendletter.eu/en/developers). Keys starting\n`sk_test_` post nothing, charge nothing, and still run the whole status chain, so\nyou can build against the real thing.\n\n## Sending\n\nGive the content exactly one way: `text`, `document` (rich text), `file`\n(base64) or `fileUrl`. Two is refused rather than guessed at, because the wrong\ndocument in a postbox cannot be recalled.\n\n```ts\n// An invoice you already have as a PDF.\nawait sendletter.send({\n  sender,\n  recipient,\n  file: { name: 'invoice.pdf', contentBase64: pdf.toString('base64') },\n  product: 'registered',        // 'standard' | 'priority' | 'registered'\n  colour: true,\n  idempotencyKey: `invoice-${invoice.id}`,\n})\n```\n\n**Send an `idempotencyKey` on anything that can be retried.** A repeat with the\nsame key returns the original letter instead of a second envelope. That single\nfield is what makes a retry after a network timeout safe, and a timeout says\nnothing about whether the letter was accepted.\n\n## Reading\n\n```ts\nawait sendletter.get(id)                       // one letter\nawait sendletter.list({ status: 'posted' })    // one page\nawait sendletter.cancel(id, 'order withdrawn') // while it is still cancellable\nawait sendletter.download(id)                  // the PDF as printed\nawait sendletter.download(id, { proof: true }) // proof of posting\n\nfor await (const letter of sendletter.all({ mode: 'live' })) {\n  // walks every page; you never hold the cursor\n}\n```\n\n## Checking before you spend\n\n```ts\nconst check = await sendletter.validateAddress(recipient)\nif (!check.valid) console.log(check.problems)   // answers, does not throw\n\nconst quote = await sendletter.quote({ destination: 'DE', pages: 3 })\n```\n\n`validateAddress` returns a bad address rather than throwing: a wrong postcode\nis the successful outcome of asking. `supported: false` is the one that cannot\nbe fixed by editing the address — we do not carry to that country.\n\n## Errors\n\nEverything the API refuses becomes a `SendLetterError` with a `code` to branch\non.\n\n```ts\nimport { SendLetterError } from 'sendletter'\n\ntry {\n  await sendletter.send({ sender, recipient, text })\n} catch (error) {\n  if (!(error instanceof SendLetterError)) throw error\n\n  if (error.code === 'insufficient_balance') {\n    // Put this in front of the customer; the wallet is short, nothing else.\n    return redirect(error.topUpUrl!)\n  }\n  if (error.isRetryable) {\n    await sleep((error.retryAfter ?? 5) * 1000)\n  }\n}\n```\n\n`isRetryable` covers 429 and 5xx. Nothing else should be retried: a 400 means\nthe letter will be refused just as firmly the second time.\n\n## Webhooks\n\nStatus changes arrive as a POST to the URL you registered. **Verify them.**\nWithout that, anyone who learns your endpoint can tell your system a letter was\ndelivered.\n\n```ts\nimport { verifyWebhook, SendLetterError } from 'sendletter'\n\nexport async function POST(request: Request) {\n  const rawBody = await request.text()   // the raw text, not the parsed object\n\n  let event\n  try {\n    event = verifyWebhook({\n      rawBody,\n      signature: request.headers.get('x-sendletter-signature'),\n      secret: process.env.SENDLETTER_WEBHOOK_SECRET!,\n    })\n  } catch (error) {\n    if (error instanceof SendLetterError) return new Response('nope', { status: 400 })\n    throw error\n  }\n\n  if (await alreadyHandled(event.id)) return new Response('ok')   // see below\n  await handle(event)                                            // letter.posted, ...\n  return new Response('ok')\n}\n```\n\nTwo things this shape gets right and hand-rolled verification usually does not:\n\n- **The raw body, not a re-serialised one.** The signature covers the exact\n  bytes we sent, and `JSON.stringify` does not promise to reproduce them. Read\n  the body as text, verify, then parse.\n- **Deduplicate on `event.id`.** Delivery is at-least-once with retries, so a\n  timeout on your side means the same event arrives again. `letter.posted`\n  handled twice should not bill a customer twice.\n\nEvents: `letter.submitted`, `letter.printed`, `letter.posted`,\n`letter.delivered`, `letter.failed`, `letter.refunded`.\n\n## Test mode\n\nA `sk_test_` key runs the full chain — `submitted → printed → posted →\ndelivered` — with webhooks firing exactly as they will in production, while\ntouching no wallet and no printer. `client.isTestMode` tells you which kind of\nkey you are holding, which is worth asserting in a deploy check: the two look\nalike in a log and only one of them costs money.\n\n## Reference\n\n[sendletter.eu/en/developers](https://sendletter.eu/en/developers) ·\nOpenAPI at `/api/v1/openapi.json` · MIT\n",
+    "fetchedAt": "2026-08-12T00:21:00.635Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:49:39.953Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Authentication required\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

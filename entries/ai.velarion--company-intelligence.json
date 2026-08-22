@@ -1,0 +1,100 @@
+{
+  "id": "ai.velarion/company-intelligence",
+  "title": "company-intelligence",
+  "description": "Exec comp benchmarking, say-on-pay risk, and governance cards for US public companies.",
+  "summary": "Exec comp benchmarking, say-on-pay risk, and governance cards for US public companies.",
+  "offersHint": "Exec comp benchmarking, say-on-pay risk, and governance cards for US public companies. · Remote MCP (streamable-http) at https://velarion-scraper-production.up.railway.app/mcp · Requires headers: X-Velarion-Agent-Token",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://velarion-scraper-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://velarion-scraper-production.up.railway.app/mcp",
+      "headers": [
+        {
+          "name": "X-Velarion-Agent-Token",
+          "description": "Velarion agent token. Request one at https://intel.velarion.ai — tokens are per-agent, scoped, and revocable.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://intel.velarion.ai",
+  "updatedAt": "2026-07-14T19:38:10.914662Z",
+  "publishedAt": "2026-07-14T19:38:10.914662Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "X-Velarion-Agent-Token"
+  ],
+  "headerDocs": [
+    {
+      "name": "X-Velarion-Agent-Token",
+      "description": "Velarion agent token. Request one at https://intel.velarion.ai — tokens are per-agent, scoped, and revocable.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:43:17.912Z",
+    "sourceRepoAt": "2026-08-12T00:43:17.912Z",
+    "readmeAt": "2026-08-12T00:43:17.912Z",
+    "toolsAt": "2026-08-12T00:43:17.912Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:43:17.912Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:43:17.912Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "lookup_company_compensation",
+      "description": "Look up executive compensation for a company in Velarion's coverage universe.\n\nReturns CEO/NEO total compensation, pay mix breakdown, and canonical metrics for the\nrequested fiscal year (latest available if omitted). All data sourced from Supabase\nproduction tables — no LLM, no invented values.\n\nOut-of-coverage tickers return a structured error (not_in_coverage)."
+    },
+    {
+      "name": "predict_say_on_pay_risk",
+      "description": "Predict Say-on-Pay risk for a company using Velarion's deterministic risk compilers.\n\nReturns trend phrase, peer cohort distribution note, governance friction summary, and\noverall risk band. No LLM — fully deterministic from canonical_metrics + say_on_pay data.\n\nCompilers: compile_sop_trend_phrase, compile_sop_peer_cohort_distribution,\ncompile_governance_friction_summary (lib/agent_merchant/compilers/say_on_pay_risk.py)."
+    },
+    {
+      "name": "benchmark_executive_pay",
+      "description": "Benchmark executive pay vs. disclosed peers using Velarion's canonical percentile data.\n\nReturns pay percentile, performance (TSR) percentile, P4P gap, and an alignment label\nbased on canonical_metrics columns (ceo_percentile, tsr_percentile, p4p_gap). No LLM.\n\nrole is currently CEO-only (only CEO percentile is pre-computed in canonical_metrics)."
+    },
+    {
+      "name": "compare_companies",
+      "description": "Compare multiple companies on pay, performance, and governance metrics.\n\nReturns a ranked table from Velarion's canonical_metrics — no LLM narrative invention.\nThe data-based summary describes observed patterns in the returned data only.\nOut-of-coverage tickers are excluded (listed separately). Max 20 tickers."
+    },
+    {
+      "name": "generate_governance_alpha_card",
+      "description": "Generate a Governance Alpha Card for a company.\n\nComposite deterministic card: pay alignment (Velarion's own P4P-style estimate, modeled\non public proxy-advisory methodology concepts — not licensed ISS data), governance scorecard, SoP risk band,\npeer quality, top risks/strengths. Requires the company to be in Velarion's coverage\nuniverse with current-period data.\n\nCalls generate_alpha_card (lib/agent_merchant/compilers/governance_alpha_card.py:441)\nafter confirming deliverability via evaluate_deliverability (deliverability.py:219),\nwhich includes the period-currency gate (_governance_alpha_card_period_gate at :312).\n\nFREE-TIER CAP: this is the free sample of a $100 marketplace product\n(GOVERNANCE-ALPHA-CARD, pricer.py:59). Each agent gets ALPHA_CARD_FREE_DAILY_CAP cards\nper UTC day; beyond that the tool returns free_tier_cap_reached with the purchase path.\nUnlimited free issuance of the paid anchor product is the contradiction the catalog's\nPRICE_INTEGRITY blocker named — the cap is what resolves it.\n\nStructured errors returned (not raised) for:\n- not_in_coverage: ticker unknown\n- not_deliverable: coverage too thin / stale period\n- free_tier_cap_reached: daily free allowance spent (buy it, or wait for 00:00 UTC)"
+    },
+    {
+      "name": "price_product",
+      "description": "Price a Velarion product. Handles EVERY catalog SKU in its real state.\n\nproduct_type may be a sku_id (e.g. \"SKU-002\") OR a custom_artifact_family\n(e.g. \"peer_disclosure_custom_cohort\"). Returns the row's classification and, when\nAPPROVED_SELLABLE, the price a buyer is actually charged:\n  - APPROVED_SELLABLE     → proposed_price_cents + currency + fulfillment_type +\n                            latency + caveats. No price floor touches it (deleted\n                            2026-07-14); the catalog/pricer anchor IS the billed price.\n  - NEEDS_OWNER_APPROVAL  → {status: \"needs_owner_approval\"} structurally — price is\n                            known but the row is pending Andy's approval flip.\n  - UNSELLABLE / KILLED   → structured error with the reason.\n\ncustom_band families price via the profit-aware pricer (respecting MERCHANT_MIN_MARGIN);\none_off_fixed SKUs price at the canonical catalog price_cents. No fabricated price is\never returned (price_verified gate enforced upstream in classify_sku)."
+    },
+    {
+      "name": "place_order",
+      "description": "Place an order for a priced product — creates a quote you can pay and then fulfill.\n\nThis is the missing middle of the buy path: price_product tells you what it costs,\nplace_order creates the actual quote (owned by YOUR agent account), and\nfulfill_paid_order delivers it once settlement clears.\n\nRequires a token with the mcp:buy scope AND a Velarion commerce account — a\nself-serve token issued at POST /agent/v1/token/self-serve has both.\n\nCUSTOM-* cohort products (CUSTOM-PEER-COHORT / CUSTOM-SOP-WINDOW / CUSTOM-GOV-EXTENDED):\nthe ticker list is the comparison cohort, capped at 15 distinct tickers (a 16th is a\nclean too_many_tickers rejection, never a silent truncation). The subject is the first\nin-coverage ticker unless subject_ticker names another cohort member.\n\nReturns quote_id, the price, and how to pay. Nothing is charged here."
+    },
+    {
+      "name": "fulfill_paid_order",
+      "description": "Fulfill a paid custom quote by compiling and delivering its artifact.\n\nOwnership gate: you may only fulfill a quote your own agent account owns. (The REST\nbuyer rail has always enforced this — routes.py:656 — and this tool did not, which\nmeant any valid token could fulfill, and therefore download, an artifact somebody\nelse had paid for. Latent while every token was owner-issued; a live artifact leak\nthe moment self-serve issuance opened. Closed here.)\n\nSettlement gate (fail-closed): if the quote is priced and settlement is not verified\non any rail, returns settlement_unverified — compile_and_deliver is NOT called.\n\nOn verified settlement: calls compile_and_deliver (fulfillment.py:121) — the same\npath used by Danny and the agent bridge. No forked fulfillment logic."
+    },
+    {
+      "name": "list_skus",
+      "description": "List the Velarion catalog — every product an agent can see and (where APPROVED_SELLABLE) buy.\n\nReturns all APPROVED_SELLABLE SKUs with full detail by default (sku_id, name, price,\ncurrency, fulfillment type, latency, caveats, classification). Set\ninclude_non_sellable=true to also return NEEDS_OWNER_APPROVAL / UNSELLABLE / KILLED rows,\neach clearly tagged with its classification and blockers so inventory is never hidden —\nonly de-prioritized. No price is fabricated: unverified prices are surfaced as-is with\ntheir classification, never quoted as billable."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:43:17.912Z",
+  "toolsPreviewStatus": "ok"
+}

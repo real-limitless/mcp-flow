@@ -1,0 +1,58 @@
+{
+  "id": "io.github.cxk280/locksmith",
+  "title": "locksmith",
+  "description": "Lints PostgreSQL migrations for dangerous locking operations and suggests safe rewrites.",
+  "summary": "Lints PostgreSQL migrations for dangerous locking operations and suggests safe rewrites.",
+  "offersHint": "Lints PostgreSQL migrations for dangerous locking operations and suggests safe rewrites. · Packages: npm:locksmith-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "locksmith-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "locksmith-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/cxk280/locksmith",
+  "repository": {
+    "url": "https://github.com/cxk280/locksmith",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-29T16:56:40.416902Z",
+  "publishedAt": "2026-06-29T16:56:40.416902Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:25:50.983Z",
+    "sourceRepoAt": "2026-08-11T23:51:22.392Z",
+    "readmeAt": "2026-08-11T23:51:22.963Z",
+    "toolsAt": "2026-08-12T01:25:50.983Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/cxk280/locksmith",
+    "checkedAt": "2026-08-11T23:51:22.392Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/cxk280/locksmith/main/README.md",
+    "markdown": "# Locksmith 🔒\n\n**An MCP server that catches dangerous SQL migrations before they lock your database.**\n\nMost migrations look harmless and then take down production: a plain `CREATE INDEX`\nblocks every write for the length of the build; `ALTER COLUMN ... TYPE` rewrites the\nwhole table under `ACCESS EXCLUSIVE`; `SET NOT NULL` scans every row. Which operations\nare safe — and the rewrite that makes the dangerous ones safe — is knowledge that\nlives in senior engineers' heads.\n\nLocksmith encodes that knowledge as a tool an LLM agent (or a human) can call. Give it\na PostgreSQL migration; it returns a **PASS / REVIEW / BLOCK** verdict, a finding for\neach risky statement (which lock it takes, *why* that's dangerous), and a concrete safe\nrewrite.\n\n```\n🛑 BLOCK — do not ship as written\n\n## 🛑 CREATE INDEX without CONCURRENTLY  `create-index-non-concurrent` (line 5)\n> `CREATE INDEX idx_users_email ON users (email)`\nProblem: This index build will block all writes to the table until it completes.\nLock taken: SHARE (blocks writes)\nFix: Build the index with CREATE INDEX CONCURRENTLY, which does not block writes.\nSuggested rewrite:\n  CREATE INDEX CONCURRENTLY idx_users_email ON users (email)\n```\n\n## Why an MCP server?\n\nAn agent can often reason about lock semantics — but not *reproducibly*, and not in a\nway you can test, audit, or trust to gate a deploy unsupervised. The same prompt may\napprove a table-rewriting `ALTER` one run and flag it the next, or miss it entirely in a\nlong migration. Locksmith turns that probabilistic capability into a **deterministic,\ntested** tool: the lock semantics were verified once (against the PostgreSQL docs and the\nparser's real behavior, with a test suite pinning each rule) and now run identically every\ntime, returning the same verdict plus a paste-ready fix — so \"review this migration\" stops\nbeing a guess.\n\n## Capabilities\n\n**Tools**\n- `analyze_migration(sql, assumeLargeTables?)` → verdict + findings + safe rewrites\n  (both human-readable Markdown and validated structured output).\n- `explain_lock(query)` → what a given Postgres lock mode blocks and what takes it.\n\n**Resources**\n- `locksmith://lock-matrix` — the PostgreSQL table-level lock compatibility matrix.\n- `locksmith://rules` — the full rule catalog (id, severity, rationale) as JSON.\n\n**Prompts**\n- `review-migration` — analyze a migration and summarize the risk as a PR comment.\n\n## Rule catalog\n\n| Rule | Severity | What it catches |\n|------|----------|-----------------|\n| `create-index-non-concurrent` | critical | `CREATE INDEX` without `CONCURRENTLY` (blocks writes) |\n| `index-concurrently-in-transaction` | critical | `CONCURRENTLY` inside `BEGIN/COMMIT` (Postgres rejects it) |\n| `add-column-not-null-no-default` | critical | `ADD COLUMN NOT NULL` with no default (fails / rewrites) |\n| `alter-column-type` | critical | `ALTER COLUMN ... TYPE` (full table rewrite) |\n| `add-column-volatile-default` | warning | `ADD COLUMN ... DEFAULT now()` etc. (rewrites table) |\n| `set-not-null` | warning | `SET NOT NULL` (full scan under exclusive lock) |\n| `add-foreign-key-validating` | warning | `ADD FOREIGN KEY` without `NOT VALID` (locks both tables) |\n| `add-check-constraint-no-not-valid` | warning | `ADD CHECK` without `NOT VALID` (full scan) |\n| `drop-column-or-table` | warning | destructive + breaks deployed code |\n| `rename-column-or-table` | warning | breaks running app code |\n\n### Suppressing a rule\n\nAcknowledge a deliberate risk inline, eslint-style:\n\n```sql\n-- locksmith:disable create-index-non-concurrent\nCREATE INDEX idx_users_email ON users (email);\n```\n\nA bare `-- locksmith:disable` suppresses all rules for the next statement.\n\n## Install & run\n\nNo clone or build required — run it straight from npm:\n\n```bash\nnpx locksmith-mcp\n```\n\n### Use with Claude Code\n\n```bash\nclaude mcp add locksmith -- npx -y locksmith-mcp\n```\n\nOr add to any MCP client config (Claude Desktop, etc.):\n\n```json\n{\n  \"mcpServers\": {\n    \"locksmith\": { \"command\": \"npx\", \"args\": [\"-y\", \"locksmith-mcp\"] }\n  }\n}\n```\n\n### Run from source instead\n\n```bash\ngit clone https://github.com/cxk280/locksmith.git && cd locksmith\nnpm install && npm run build\n# then point your client at:  node /absolute/path/to/locksmith/dist/index.js\n```\n\n### Try it with the MCP Inspector\n\n```bash\nnpx @modelcontextprotocol/inspector npx -y locksmith-mcp\n```\n\nThen call `analyze_migration` with the contents of `examples/dangerous.sql`.\n\n## Development\n\n```bash\nnpm run dev    # run from source with tsx\nnpm test       # vitest: per-rule + golden tests on examples/\n```\n\n## Design notes\n\n- **Deterministic.** No clock, randomness, or network — same SQL in, same verdict out.\n  That's what makes it testable and safe to drop into CI.\n- **Hybrid parsing.** Statements are parsed to an AST ([`pgsql-ast-parser`]) when the\n  parser supports them; rules fall back to normalized text for Postgres clauses the\n  parser doesn't model (`NOT VALID`, `CONCURRENTLY`). An unparseable statement degrades\n  to a \"review manually\" note — the linter never fails closed on input it doesn't\n  understand.\n- **Composable rules.** Each rule is a pure function with its own metadata in its own\n  file; adding one is a one-file change plus a line in the registry.\n- **Advisory, not a prover.** Locksmith complements review; `assumeLargeTables` defaults\n  to `true` so it errs toward flagging.\n\n## Roadmap\n\n- Remote (Streamable HTTP) transport for hosted deployments.\n- Additional dialects (MySQL, SQLite).\n- Optional live DB introspection to suppress findings on known-small tables.\n- A GitHub Action wrapping the same engine to gate PRs.\n\n[`pgsql-ast-parser`]: https://github.com/oguimbal/pgsql-ast-parser\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:51:22.963Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:25:50.983Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

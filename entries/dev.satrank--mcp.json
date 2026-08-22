@@ -1,0 +1,80 @@
+{
+  "id": "dev.satrank/mcp",
+  "title": "SatRank — Lightning trust + audit oracle",
+  "description": "Lightning trust + audit oracle. Score, pay, and audit L402 endpoints with Ed25519 receipts.",
+  "summary": "Lightning trust + audit oracle. Score, pay, and audit L402 endpoints with Ed25519 receipts.",
+  "offersHint": "Lightning trust + audit oracle. Score, pay, and audit L402 endpoints with Ed25519 receipts. · Packages: npm:satrank-mcp · Env vars: SATRANK_API_BASE",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "satrank-mcp",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SATRANK_API_BASE",
+        "description": "Hosted SatRank API endpoint. Default https://satrank.dev for the public oracle.",
+        "default": "https://satrank.dev"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "satrank-mcp",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SATRANK_API_BASE",
+          "description": "Hosted SatRank API endpoint. Default https://satrank.dev for the public oracle.",
+          "default": "https://satrank.dev"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SATRANK_API_BASE",
+      "description": "Hosted SatRank API endpoint. Default https://satrank.dev for the public oracle.",
+      "default": "https://satrank.dev"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://satrank.dev",
+  "sourceUrl": "https://github.com/proofoftrust21/satrank",
+  "repository": {
+    "url": "https://github.com/proofoftrust21/satrank",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-08T02:18:49.54232Z",
+  "publishedAt": "2026-05-08T02:18:49.54232Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:26.155Z",
+    "sourceRepoAt": "2026-08-12T00:22:13.676Z",
+    "readmeAt": "2026-08-12T00:22:14.185Z",
+    "toolsAt": "2026-08-12T01:50:26.155Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/proofoftrust21/satrank",
+    "checkedAt": "2026-08-12T00:22:13.676Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/proofoftrust21/satrank/main/README.md",
+    "markdown": "# SatRank\n\nLightning trust oracle for AI agents on L402. Bitcoin-pure.\n\n## What this does\n\n- **Crawls** the L402 ecosystem (l402.directory + RSS + DNS) to build a catalogue of paid endpoints.\n- **Probes** each endpoint, classifying outcomes across 5 stages: challenge / invoice / payment / delivery / quality.\n- **Scores** every (endpoint, stage) pair as a streaming Beta(α, β) posterior. The end-to-end success probability is the product of stage means.\n- **Ranks** candidates on `POST /api/intent` (paid 2 sats via L402): an agent passes a category + budget + SLA, gets back the top-K endpoints with full Bayesian breakdown.\n- **Publishes** signed Nostr trust assertions (kind 30782) so any agent can cache / verify SatRank's output offline.\n\n## Public endpoints\n\nDoc surfaces:\n\n```\nGET  /                                 landing page (static HTML)\nGET  /methodology                      technical reference (static HTML)\nGET  /api                              API reference (static HTML)\nGET  /openapi.json                     OpenAPI 3.0 spec (machine-readable)\n```\n\nFunctional API (nine routes — POST /api/intent is the only L402-gated one):\n\n```\nPOST /api/intent                       paid, 2 sats via L402\nPOST /api/deposit                      free, mint a multi-use deposit macaroon (10–10000 sats, 30-day TTL)\nGET  /api/deposit/:macaroon_id         free, read remaining balance\nGET  /api/services/:url_hash           free, per-endpoint score snapshot\nGET  /api/services/categories          free, list of catalogue categories\nGET  /api/services/best                free, top-3 per category (5-min cache)\nGET  /api/oracle/budget                free, last 24h revenue + paid-probe spend\nGET  /health                           free, liveness\nGET  /.well-known/satrank-key          free, oracle pubkey for offline verify\n```\n\nDeposit macaroons let an agent pre-pay N sats once and use the bearer\npreimage across many `/api/intent` calls without a Lightning round-trip\nper call. `Authorization: L402 deposit_<id>:<preimage_hex>`.\n\n## MCP\n\nThree tools for any MCP-compatible AI runtime (Claude Code, Cursor, Codex, n8n):\n\n```\nintent              forwards POST /api/intent (paid)\nget_endpoint_score  forwards GET /api/services/:url_hash (free)\nverify_assertion    offline Schnorr verification of kind 30782 (no network)\n```\n\nInstall in Claude Code:\n\n```bash\nclaude mcp add satrank -- npx -y satrank-mcp\n```\n\nSelf-hosters point `SATRANK_API_BASE` at their own deployment.\n\n## Architecture\n\n14 source files + 4 doc surfaces (3 HTML pages + OpenAPI spec). Read top-to-bottom in 30 minutes.\n\n```\nsrc/\n├── types.ts             Stage, Posterior, Endpoint, Observation\n├── config.ts            zod env schema, parsed once at boot\n├── logger.ts            JSON-line stdout\n├── db.ts                pg Pool + idempotent schema bootstrap\n├── schema.sql           9 tables in ONE file (no migrations folder)\n├── lnd.ts               minimal LND REST client (addInvoice + payInvoice)\n├── ssrf.ts              RFC1918 + link-local + IPv6 ULA URL guard\n├── nostr.ts             kind 30782 sign + publish + offline verify\n├── scoring.ts           Beta(α,β) per stage, Wilson CI95, ranker\n├── probe.ts             HTTP probe with optional L402 pay\n├── crawler.ts           l402.directory + RSS + DNS + cron\n├── api.ts               Express; 9 functional routes + 4 doc surfaces, native L402 paid gate, deposit credits\n├── mcp.ts               MCP server, 3 tools, ships verbatim to npm\n├── landing.html         static landing served at GET /\n├── methodology.html     technical reference served at GET /methodology\n├── api-reference.html   API reference served at GET /api\n├── openapi.json         OpenAPI 3.0 spec served at GET /openapi.json\n└── index.ts             boot + shutdown\n```\n\n## Run it\n\n```bash\ncp .env.example .env\n# minimum: set DATABASE_URL\n\nnpm install\nnpm run build\nnpm start\n```\n\nFor paid probes + paid `/api/intent` gate, set `LND_REST_URL` + `LND_MACAROON_HEX` + `L402_MACAROON_SECRET`. For Nostr trust assertions, set `NOSTR_PRIVATE_KEY`.\n\n## Scoring math\n\nFor each (endpoint, stage), maintain a Beta(α, β) posterior with α₀ = β₀ = 1 (uniform prior). On every observation:\n\n- success → α += 1\n- failure → β += 1\n\nStage mean: α / (α+β). 95% credible interval via Wilson (closed-form). End-to-end success: ∏ stage_means across the 5 stages, assuming stage independence.\n\n`is_meaningful` is true iff the **challenge** stage has at least `MEANINGFUL_N_OBS_MIN` observations. The challenge stage is observed on every probe (free or paid), so its n_obs converges fastest. p_e2e remains the honest end-to-end product separately.\n\n## License\n\nAGPL-3.0\n",
+    "fetchedAt": "2026-08-12T00:22:14.185Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:50:26.155Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,97 @@
+{
+  "id": "io.github.sendblue-api/sendblue-browser-mcp",
+  "title": "sendblue-browser-mcp",
+  "description": "Drive a stealth-patched Chromium daemon: navigate, screenshot, eval JS, attach over CDP.",
+  "summary": "Drive a stealth-patched Chromium daemon: navigate, screenshot, eval JS, attach over CDP.",
+  "offersHint": "Drive a stealth-patched Chromium daemon: navigate, screenshot, eval JS, attach over CDP. · Packages: npm:sendblue-browser-mcp · Env vars: BROWSER_USE_API_KEY, BROWSER_USE_URL",
+  "version": "0.2.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "sendblue-browser-mcp",
+    "version": "0.2.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "BROWSER_USE_API_KEY",
+        "description": "Bearer token the sendblue-browser-use daemon was started with.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "BROWSER_USE_URL",
+        "description": "Base URL of the sendblue-browser-use daemon.",
+        "default": "http://127.0.0.1:8787"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "sendblue-browser-mcp",
+      "version": "0.2.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "BROWSER_USE_API_KEY",
+          "description": "Bearer token the sendblue-browser-use daemon was started with.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "BROWSER_USE_URL",
+          "description": "Base URL of the sendblue-browser-use daemon.",
+          "default": "http://127.0.0.1:8787"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "BROWSER_USE_API_KEY",
+      "description": "Bearer token the sendblue-browser-use daemon was started with.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "BROWSER_USE_URL",
+      "description": "Base URL of the sendblue-browser-use daemon.",
+      "default": "http://127.0.0.1:8787"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sendblue-api/sendblue-browser-use",
+  "repository": {
+    "url": "https://github.com/sendblue-api/sendblue-browser-use",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-26T00:18:43.116959Z",
+  "publishedAt": "2026-05-26T00:18:43.116959Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:10.520Z",
+    "sourceRepoAt": "2026-08-11T23:21:42.432Z",
+    "readmeAt": "2026-08-11T23:21:43.000Z",
+    "toolsAt": "2026-08-12T01:02:10.520Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sendblue-api/sendblue-browser-use",
+    "checkedAt": "2026-08-11T23:21:42.432Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sendblue-api/sendblue-browser-use/main/README.md",
+    "markdown": "# sendblue-browser-use\n\nA standalone debug browser for agents. Stealth-patched Chromium behind a tiny HTTP API, with persistent named sessions, an easy purge endpoint, configurable auto screenshots, and CDP attach so any client (Playwright, Puppeteer, undetected-chromedriver, custom scripts) can drive it.\n\nIt runs as its own process — not tied to any one Claude / Cursor / Codex session — so multiple agents can share it concurrently, debug each other's flows, and reuse a logged-in session without paying the auth tax every run.\n\n## Why this exists\n\n| Need | What you get |\n|---|---|\n| **Not coupled to a single agent** | Long-running HTTP daemon. Any tool with a bearer token can drive it. |\n| **Doesn't look automated** | Chromium patched via `patchright`: `navigator.webdriver` is hidden, CDP detection vectors are patched, real Chromium binary (no Playwright fingerprints). Passes typical Cloudflare Turnstile and similar low-friction checks; not for hostile scraping at scale. |\n| **Reusable sessions** | Named persistent profiles. Log in once, every subsequent debug run reuses the cookies. |\n| **One-click reset** | `POST /sessions/:name/purge` clears cookies + active-page storage but keeps the session id, so your client code keeps working. |\n| **Multi-agent friendly** | Each session is an isolated `BrowserContext` (or its own profile). Run 5+ debug sessions in parallel without state bleed. |\n| **CDP attach** | `GET /sessions/:name/cdp-url` returns the shared browser CDP URL for non-persistent sessions, so Playwright / Puppeteer / any CDP client can `connect()` to the debug browser. |\n| **Auto evidence** | Navigation screenshots follow `NAV_SCREENSHOT_POLICY` (default: headless only). Optional Playwright traces. |\n| **HTTP-controlled** | Plain `curl` works. No SDK required. |\n| **Self-contained deploy** | One `docker compose up` on any Mac mini / EC2 / Codespace. No host Chromium needed. |\n\n## Quick start (local)\n\nPrereqs: Bun `>=1.3` and Node.js `>=20` on your `PATH`.\n\n```sh\ngit clone https://github.com/sendblue-api/sendblue-browser-use.git\ncd sendblue-browser-use\nbun install\nbun --bun x patchright install chromium\n\ncp .env.example .env\n# generate and set the required token\nTOKEN=\"$(openssl rand -hex 32)\"\nsed -i.bak \"s/^BROWSER_USE_API_KEY=.*/BROWSER_USE_API_KEY=$TOKEN/\" .env\nrm .env.bak\n\nbun run dev\n```\n\nThen in another terminal:\n\n```sh\nsource .env\nTOKEN=\"Authorization: Bearer $BROWSER_USE_API_KEY\"\n\n# 1. create a persistent session (log in here once, reuse it forever)\ncurl -s -X POST http://127.0.0.1:8787/sessions \\\n  -H \"$TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"name\":\"qa\",\"persistent\":true}'\n\n# 2. navigate\ncurl -s -X POST http://127.0.0.1:8787/sessions/qa/navigate \\\n  -H \"$TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '{\"url\":\"https://trybloom.so/\"}'\n\n# 3. screenshot\ncurl -s http://127.0.0.1:8787/sessions/qa/screenshot?fullPage=true \\\n  -H \"$TOKEN\" -o /tmp/qa.png\n\n# 4. wipe state without losing the session\ncurl -s -X POST http://127.0.0.1:8787/sessions/qa/purge -H \"$TOKEN\"\n```\n\n## Quick start (Docker)\n\n```sh\necho \"BROWSER_USE_API_KEY=$(openssl rand -hex 32)\" > .env\ndocker compose up -d\n```\n\nSame API, exposed on `127.0.0.1:8787`. Data persists in `./data/`. CDP stays loopback-only inside the container by default; to attach CDP from the host, uncomment `CDP_BIND` and the `127.0.0.1:9222:9222` port mapping in `docker-compose.yml` on a trusted machine only.\n\n## Install into your agent\n\nThe repo ships three packaging layers so any agent can drive the daemon with one line of config.\n\n### MCP (Claude Desktop, Codex, Cursor, Antigravity, Cline, Windsurf)\n\nThe cross-agent path. Wraps the HTTP API as MCP tools (`health`, `create_session`, `navigate`, `screenshot`, `script`, `get_cdp_url`, `purge_session`, etc).\n\n```json\n{\n  \"mcpServers\": {\n    \"sendblue-browser\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"sendblue-browser-mcp@0.2.3\"],\n      \"env\": {\n        \"BROWSER_USE_URL\": \"http://127.0.0.1:8787\",\n        \"BROWSER_USE_API_KEY\": \"<same token you start the daemon with>\"\n      }\n    }\n  }\n}\n```\n\nDrop into `~/.cursor/mcp.json`, `~/Library/Application Support/Claude/claude_desktop_config.json`, `~/.gemini/config/mcp_config.json`, etc. For Codex:\n\n```sh\ncodex mcp add sendblue-browser \\\n  --env BROWSER_USE_URL=http://127.0.0.1:8787 \\\n  --env BROWSER_USE_API_KEY=<daemon-token> \\\n  -- npx -y sendblue-browser-mcp@0.2.3\n```\n\nWrapper source: [`mcp/`](mcp/).\n\n### Claude Code plugin\n\n```\n/plugin install sendblue-api/sendblue-browser-use\n```\n\nPulls `.claude-plugin/plugin.json` + `skills/sendblue-browser/SKILL.md` from this repo.\n\n### Codex / Antigravity / Cline skill\n\nThe same [`skills/sendblue-browser/SKILL.md`](skills/sendblue-browser/SKILL.md) works as a skill across Codex, Google Antigravity, and Cline. Copy the folder into:\n\n| Agent | Path |\n|---|---|\n| Codex | `~/.codex/skills/sendblue-browser/` |\n| Antigravity | `~/.gemini/skills/sendblue-browser/` |\n| Cline | enable Skills in Settings, then drop in its skills directory |\n\n### AGENTS.md repos\n\nIf your repo already follows the [agents.md](https://agents.md) convention, the [`AGENTS.md`](AGENTS.md) in this repo doubles as a copy-pasteable section for any consumer repo that wants to call this daemon.\n\n## API\n\nAll routes require `Authorization: Bearer $BROWSER_USE_API_KEY` except `/health`.\n\n| Method | Path | Body / Query | Returns |\n|---|---|---|---|\n| `GET` | `/health` | — | `{ ok, service, version, sessions, defaultHeadless, navScreenshotPolicy }` |\n| `GET` | `/sessions` | — | `{ sessions: [...] }` |\n| `POST` | `/sessions` | `{ name, persistent?, headless?, viewport?, userAgent?, locale?, timezone?, traces?, proxy? }` | `{ session }` |\n| `GET` | `/sessions/:name` | — | session info + current page url/title |\n| `POST` | `/sessions/:name/purge` | — | `{ session }` — clear cookies + active-origin storage, keep session id |\n| `DELETE` | `/sessions/:name` | — | `{ ok }` — close context, remove profile |\n| `POST` | `/sessions/:name/navigate` | `{ url, waitUntil?, timeoutMs? }` | `{ url, title, status }` |\n| `GET` | `/sessions/:name/screenshot` | `?fullPage=true&selector=...` | `image/png` |\n| `POST` | `/sessions/:name/script` | `{ code, timeoutMs? }` (≤200kB) | `{ result }` — code runs in page context |\n| `GET` | `/sessions/:name/cookies` | `?url=...` | `{ cookies }` |\n| `POST` | `/sessions/:name/cookies` | `{ cookies: [...] }` | `{ ok }` |\n| `GET` | `/sessions/:name/console` | `?limit=100` | `{ messages: [...] }` (ring buffer) |\n| `GET` | `/sessions/:name/cdp-url` | — | `{ cdpUrl, targetId }` — for non-persistent sessions only |\n\n`POST /sessions/:name/script` passes `code` directly to Playwright's `page.evaluate`. Send a JavaScript expression, or wrap statements in an IIFE. Scripts time out after 30s by default; pass `timeoutMs` up to `120000`, or `0` to disable the request timeout.\n\n```json\n{ \"code\": \"(() => { const x = 1; return x; })()\" }\n```\n\n### Errors\n\nAll non-2xx responses share the same envelope. Failures from Playwright are\ntruncated to one line before being returned; the full message is logged\nserver-side with proxy credentials redacted.\n\n```json\n{ \"error\": { \"code\": \"navigate_failed\", \"message\": \"net::ERR_NAME_NOT_RESOLVED\" } }\n```\n\n| Status | Code | Meaning |\n|---|---|---|\n| 400 | `empty_body` | request body is required but was missing |\n| 400 | `malformed_json` | body was not valid JSON |\n| 400 | `invalid_body` | body failed Zod validation (see `error.details`) |\n| 401 | `unauthorized` | missing or wrong bearer token |\n| 404 | `not_found` | session does not exist |\n| 409 | `already_exists` | a session with that name is already running |\n| 409 | `cdp_unavailable_for_persistent_session` | persistent sessions don't expose the shared CDP url |\n| 422 | `script_failed` | `/script` request was valid but the in-page eval threw or timed out |\n| 500 | `internal_error` | unexpected — check server logs |\n| 502 | `navigate_failed` `screenshot_failed` `cookie_read_failed` `cookie_write_failed` `session_unreachable` | Chromium-side failure |\n\n### Session options\n\n```ts\n{\n  name: string;            // required, [a-z0-9_-]\n  persistent?: boolean;    // default true — profile data survives restarts\n  headless?: boolean | \"new\"; // persistent sessions only; non-persistent uses DEFAULT_HEADLESS\n  viewport?: { width, height };\n  userAgent?: string;\n  locale?: string;         // default \"en-US\"\n  timezone?: string;\n  traces?: boolean;        // capture a Playwright trace.zip on session close\n  proxy?: { server, username?, password?, bypass? };\n}\n```\n\n### Cookie shape\n\n`POST /sessions/:name/cookies` accepts up to 500 Playwright-style cookies:\n\n```ts\n{\n  cookies: Array<{\n    name: string;\n    value: string;\n    url?: string;       // absolute URL, or domain + path\n    domain?: string;\n    path?: string;\n    expires?: number;\n    httpOnly?: boolean;\n    secure?: boolean;\n    sameSite?: \"Strict\" | \"Lax\" | \"None\";\n  }>;\n}\n```\n\nEach cookie must include either `url` or both `domain` and `path`.\n\n### Persistent vs non-persistent\n\n- **`persistent: true` (default)** — cookies, localStorage, IndexedDB persist under `~/.sendblue-browser-use/profiles/<name>/`. After a daemon restart, recreate the same named persistent session to reuse that profile. **CDP attach is not available** for these sessions because each gets its own private browser instance.\n- **`persistent: false`** — shares the central Chromium process via a fresh `BrowserContext`. State is in-memory only. **CDP attach IS available** via `/sessions/:name/cdp-url`, which returns the shared browser-level CDP endpoint plus a `targetId` for the session page. CDP clients can see the shared debug browser, so keep the CDP port local and trusted and select the returned target before driving.\n\nPick persistent for \"log in once, debug for a week\" workflows. Pick non-persistent when you need to attach Playwright / Puppeteer directly.\n\n## Examples\n\n- [`examples/attach-from-playwright.ts`](examples/attach-from-playwright.ts) — connect Playwright over CDP and drive a page (run with Node/tsx as shown in the file header)\n- [`examples/attach-from-puppeteer.ts`](examples/attach-from-puppeteer.ts) — same with Puppeteer\n- [`examples/multi-agent-debug.ts`](examples/multi-agent-debug.ts) — two agents driving two surfaces in parallel\n- [`examples/run-script.sh`](examples/run-script.sh) — curl-only walkthrough\n\n## Stealth notes\n\nThis is built on [`patchright`](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright), a maintained fork of Playwright that:\n\n- Hides `navigator.webdriver`\n- Removes CDP runtime markers\n- Drops Playwright-specific extensions and command flags\n- Uses real Chromium so most fingerprint surfaces match a normal user\n\nWe deliberately do **not** pass `--disable-blink-features=AutomationControlled` or override `userAgent`/`viewport` by default — patchright handles those internally and our overrides would defeat its rebrowser patches. Pass an explicit `userAgent` per session only if you have a reason.\n\nWhy patchright over alternatives:\n\n- **vs `nodriver` / `undetected-playwright`** — patchright is actively maintained, matches Playwright's API surface, and integrates cleanly with the existing TypeScript ecosystem.\n- **vs [Camoufox](https://github.com/daijro/camoufox)** — Camoufox uses Firefox with deeper fingerprint randomization, better for hostile scraping at scale. patchright is the right pick for QAing your own auth flows (Clerk, Stripe, Google OAuth, Cloudflare Turnstile) without the maintenance burden.\n\n## Storage\n\n```\n~/.sendblue-browser-use/\n├── profiles/\n│   └── <session>/          # persistent profile dir\n└── runs/\n    └── <session>/\n        ├── 2026-05-25T...-nav.png   # automatic nav screenshot when policy enables it\n        └── 2026-05-25T...-trace.zip # if traces:true at create\n```\n\n`POST /sessions/:name/purge` clears cookies and permissions context-wide, then clears `localStorage`, `sessionStorage`, `IndexedDB`, ServiceWorker registrations, CacheStorage, and the console buffer for currently open pages/origins. It does **not** enumerate every historical origin in a persistent profile, does not delete the on-disk profile (so the session id stays valid), and does not clear browser-level HTTP cache or HSTS state. To wipe the profile too, `DELETE /sessions/:name` and recreate.\n\nAutomatic navigation screenshots follow `NAV_SCREENSHOT_POLICY`:\n- `headless` (default): only effective-headless sessions write `*-nav.png`, avoiding visible capture flicker in headed browsers.\n- `always`: preserve legacy behavior and capture every navigation, including headed sessions.\n- `off`: disable automatic navigation screenshots.\n\nAuto-screenshots are capped at `MAX_NAV_SCREENSHOTS` per session (default 200, oldest deleted first). Set `MAX_NAV_SCREENSHOTS=0` to disable automatic screenshots entirely. Call `/screenshot` explicitly when you need evidence from a headed browser.\n\n## Security\n\n- The HTTP API binds to `127.0.0.1` by default. Setting `BIND=0.0.0.0` exposes you to your LAN — put a reverse proxy with auth in front before doing this. The Docker image sets `BIND=0.0.0.0` so host port-publishing works, but `docker-compose.yml` publishes only to `127.0.0.1`. If you `docker run -p 8787:8787` directly, you are choosing to expose the HTTP API.\n- CDP is bound to `CDP_BIND` (default `127.0.0.1`; the Docker image default is also loopback-only). The default `docker-compose.yml` does not publish CDP; if you opt into host CDP attach, publish it to `127.0.0.1` only. Anyone who can reach this port gets full in-browser RCE — keep it on loopback.\n- `POST /sessions/:name/script` runs arbitrary JS in the page context. The bearer token is the only gate. Don't share the token.\n- Treat the bearer token as local browser/network control. A token holder can navigate Chromium to any `http(s)` URL reachable from the daemon host, including localhost and private-network services.\n- `POST /sessions/:name/navigate` only accepts `http(s)` URLs — `file://`, `chrome://`, etc. are rejected.\n- Healthcheck (`GET /health`) is public so Docker/k8s probes work without a token; it returns service metadata only.\n\n## Architecture\n\n```\nHTTP :8787  ──►  Hono router  ──►  session manager  ──►  patchright Chromium\n                                    │                    └─►  CDP :9222 (loopback; Docker opt-in)\n                                    └─►  on-disk profiles + runs\n```\n\nInspired by the [Sendblue channel-server](https://github.com/sendblue-api/) pattern (Bun + Hono + bearer auth + simple HTTP surface).\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:21:43.000Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:10.520Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

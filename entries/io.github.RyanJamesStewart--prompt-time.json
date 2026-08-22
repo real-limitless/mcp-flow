@@ -1,0 +1,58 @@
+{
+  "id": "io.github.RyanJamesStewart/prompt-time",
+  "title": "prompt-time",
+  "description": "Claude Desktop reminders for Windows. Survives MSIX boundary; persists across restarts. Zero deps.",
+  "summary": "Claude Desktop reminders for Windows. Survives MSIX boundary; persists across restarts. Zero deps.",
+  "offersHint": "Claude Desktop reminders for Windows. Survives MSIX boundary; persists across restarts. Zero deps. · Packages: binary:https://github.com/RyanJamesStewart/prompt-time/releases/download/v2.2.6/prompt-time-v2.2.6.mcpb",
+  "version": "2.2.6",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/RyanJamesStewart/prompt-time/releases/download/v2.2.6/prompt-time-v2.2.6.mcpb",
+    "version": "2.2.6",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/RyanJamesStewart/prompt-time/releases/download/v2.2.6/prompt-time-v2.2.6.mcpb",
+      "version": "2.2.6",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/RyanJamesStewart/prompt-time",
+  "repository": {
+    "url": "https://github.com/RyanJamesStewart/prompt-time",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-07T23:01:08.42555Z",
+  "publishedAt": "2026-05-07T23:01:08.42555Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:35:29.558Z",
+    "sourceRepoAt": "2026-08-12T00:03:26.655Z",
+    "readmeAt": "2026-08-12T00:03:28.193Z",
+    "toolsAt": "2026-08-12T01:35:29.559Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/RyanJamesStewart/prompt-time",
+    "checkedAt": "2026-08-12T00:03:26.655Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/RyanJamesStewart/prompt-time/main/README.md",
+    "markdown": "# prompt-time\n\n[![CI](https://github.com/RyanJamesStewart/prompt-time/actions/workflows/ci.yml/badge.svg)](https://github.com/RyanJamesStewart/prompt-time/actions/workflows/ci.yml)\n\n**Schedule Windows desktop reminders directly from Claude Desktop.** Zero dependencies — just PowerShell + Windows Task Scheduler.\n\n## What it does\n\nAdds three tools to Claude Desktop:\n\n| Tool | What it does |\n|---|---|\n| `schedule_reminder` | Set a one-time or recurring desktop reminder |\n| `list_reminders`    | Show every reminder currently scheduled |\n| `cancel_reminder`   | Cancel a reminder by ID |\n\nReminders persist across reboots and Claude restarts. There is no cloud surface — everything runs locally.\n\n## Install in 60 seconds\n\n1. Download `prompt-time-v2.2.6.zip` from the [latest release](https://github.com/RyanJamesStewart/prompt-time/releases/latest).\n2. **Right-click the zip → Extract All.** Windows must extract — running `install.bat` from inside the zip preview window will not work.\n3. Open the extracted folder, double-click **`install.bat`**.\n4. If Claude Desktop is running, the installer will prompt to restart it. Accept — the MCP tools only show up after Claude Desktop is restarted.\n5. Done. The tools are live.\n\nNo Node, no npm, no admin rights, no internet required.\n\n> **The extracted folder is disposable after install.** v2.2.6+ copies both the MCP server and the watcher into the prompt-time data directory at install time, and points Claude Desktop's config + the scheduled task at the data-dir copies. You can move or delete the extracted folder afterwards without breaking anything. (Re-run `install.bat` from a fresh extract if you ever want to upgrade.)\n\n## Usage examples\n\nJust talk to Claude:\n\n> \"Remind me to send the weekly update at 4pm today\"\n> \"Set a reminder every weekday at 9am to check my inbox\"\n> \"Remind me about the board call next Monday at 2pm\"\n> \"What reminders do I have set?\"\n> \"Cancel reminder PROMPTTIME-A1B2C3D4\"\n\nRecurrence: `once`, `daily`, `weekly`, `weekdays`. Granularity is ~10 seconds (the watcher's poll interval).\n\n## How it works\n\nTwo pieces:\n\n1. **MCP server** (`prompt_time.ps1`) — runs inside Claude Desktop's process tree. Validates and enqueues reminders to a JSONL file on disk.\n2. **Watcher daemon** (`prompt-time-watcher.ps1`) — registered once at install as a Task Scheduler `At LogOn` task. Polls the queue, renders the toast popup in-process, and advances recurring entries.\n\nThe MCP server never talks to Task Scheduler at runtime, never spawns a process, and never displays UI. It only writes one JSONL line per reminder. Everything else is the watcher's job.\n\n### Why two processes — the MSIX boundary\n\nClaude Desktop ships as an [MSIX-packaged app](https://learn.microsoft.com/en-us/windows/msix/). MSIX containers transparently virtualize file writes: a server running inside the package that calls `Add-Content $env:APPDATA\\prompt-time\\queue.jsonl` does not write to `%APPDATA%\\Roaming\\prompt-time\\queue.jsonl` — it writes to a per-package shadow tree under `%LOCALAPPDATA%\\Packages\\<package-family>\\LocalCache\\…`.\n\nAnything Task Scheduler spawns runs *outside* the package, so a per-reminder `schtasks` task would look for files at the real path and find nothing.\n\nprompt-time resolves this once: at startup, every component (`prompt_time.ps1`, `prompt-time-watcher.ps1`, `install.ps1`, `uninstall.ps1`) discovers the Claude AppX package and computes the same canonical data directory inside its `LocalCache`. Server writes and watcher reads land at the same physical file. The watcher renders the popup itself rather than asking Task Scheduler to do it, which keeps every state-bearing operation on the same side of the boundary.\n\nThe installer also pre-creates the queue file at the canonical path before the MCP server's first write — without that, MSIX file-virtualization redirects new file creation into the package shadow even though existing files at the real path are written through.\n\nThe same trap bites the Claude Desktop config itself. If MSIX-packaged Claude has ever written to its own `claude_desktop_config.json` (e.g. saving preferences), MSIX materializes a per-package shadow copy at `%LOCALAPPDATA%\\Packages\\<family>\\LocalCache\\Roaming\\Claude\\claude_desktop_config.json` and then *reads from the shadow* on every subsequent boot. An installer that writes only to `%APPDATA%` becomes invisible to Claude on those machines. v2.2.3+ reads shadow-first as the source of truth and writes the merged config to both paths atomically; uninstall removes from both. v2.2.4 adds post-write self-verify so install fails loudly with an actionable error if the entry doesn't survive (AV rollback, managed-policy override, etc.) instead of reporting a false success. Run `diagnose.bat` for a full breakdown.\n\n## Troubleshooting\n\n**Notifications muted by Focus Assist.** Windows Focus Assist (Settings → System → Focus) silences toasts. Either turn it off or add `powershell.exe` to the Priority list.\n\n**Tools don't appear in Claude Desktop.**\n1. Fully quit Claude Desktop (right-click tray icon → Quit) and reopen it. The \"X\" close button only minimizes; tools won't reload.\n2. Run **`diagnose.bat`** from the extracted folder. It reads your config, spawns `prompt_time.ps1` the way Claude Desktop will, reads Claude Desktop's MCP logs, and prints an actionable hint for each failure. Most \"install ran but nothing appeared\" cases are diagnosed here without needing IT.\n3. If `diagnose.bat` says all checks pass but tools still don't show: run `diagnose.bat -Json` and attach the output when filing a bug.\n\n**`install.bat` closes immediately.** Run it from a `cmd` prompt instead so you can read the error: `install.bat` from inside the unzipped folder. The installer also writes a debug log at `%APPDATA%\\prompt-time\\prompt-time.debug.log` (or the MSIX `LocalCache` equivalent) — check there.\n\n**Reminders not firing.** Check the watcher task is running:\n\n```powershell\nGet-ScheduledTask -TaskName PROMPTTIME-Watcher | Get-ScheduledTaskInfo\n```\n\n`LastTaskResult` should be `267009` (running) or `0` (success).\n\n## Uninstall\n\nDouble-click **`uninstall.bat`**. It removes the prompt-time entry from Claude Desktop's config, deletes the `PROMPTTIME-Watcher` scheduled task, and clears the data directory. Other MCP servers in your config are untouched.\n\n## Tests\n\n```powershell\n.\\tests\\run.ps1\n```\n\nInstalls Pester 5 if missing, runs the Pester suite, and emits NUnit XML at `tests/pester-results.xml`. CI runs the same harness plus `Invoke-ScriptAnalyzer` on every push.\n\n## Security\n\nSee [SECURITY.md](SECURITY.md) for the trust model, supply-chain story, and how to report a vulnerability. Short version: the trust boundary is your local Windows user; reminder titles and messages are stored on disk in cleartext (don't put secrets in them); prompt-time registers a logon-time scheduled task as a standard persistence primitive.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\n---\n\nBuilt by Ryan Stewart\n",
+    "fetchedAt": "2026-08-12T00:03:28.193Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:35:29.559Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

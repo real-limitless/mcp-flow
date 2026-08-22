@@ -1,0 +1,58 @@
+{
+  "id": "io.github.bitterdev/veracrypt-mcp",
+  "title": "veracrypt-mcp",
+  "description": "MCP server to mount and unmount VeraCrypt containers with secure stdin password handling.",
+  "summary": "MCP server to mount and unmount VeraCrypt containers with secure stdin password handling.",
+  "offersHint": "MCP server to mount and unmount VeraCrypt containers with secure stdin password handling. · Packages: pypi:veracrypt-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "veracrypt-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "veracrypt-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/bitterdev/veracrypt-mcp",
+  "repository": {
+    "url": "https://github.com/bitterdev/veracrypt-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-23T17:56:22.836375Z",
+  "publishedAt": "2026-07-23T17:56:22.836375Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:58.525Z",
+    "sourceRepoAt": "2026-08-11T23:55:08.967Z",
+    "readmeAt": "2026-08-11T23:55:09.373Z",
+    "toolsAt": "2026-08-12T01:28:58.525Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bitterdev/veracrypt-mcp",
+    "checkedAt": "2026-08-11T23:55:08.967Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bitterdev/veracrypt-mcp/main/README.md",
+    "markdown": "# veracrypt-mcp\n\nMCP (Model Context Protocol) server for mounting and unmounting [VeraCrypt](https://veracrypt.io) containers, with a security-first approach to password handling.\n\nOnce a container is mounted, your MCP client (e.g. Claude Code) can read and edit the files inside it with its normal file tools. Say \"mount my vault\", work on the files, then \"unmount my vault\".\n\nmcp-name: io.github.bitterdev/veracrypt-mcp\n\n## Features\n\n- **mount_container**: mount a VeraCrypt container (optional mount point, PIM, read-only)\n- **unmount_container**: dismount by container path or mount point\n- **list_mounted_containers**: show all mounted VeraCrypt volumes\n- **Default vault**: configure your container once via environment variables; \"mount my vault\" then works without any arguments\n\n## Security model\n\nThe volume password is **never passed as a command line argument**. Command line arguments are visible to every process on the machine (`ps aux`), so this server always pipes the password to VeraCrypt via stdin using VeraCrypt's official `--stdin` option.\n\nThere are two password sources:\n\n### 1. OS keyring (recommended)\n\nStore the password once in the OS keyring. The MCP tool then only receives a keyring *account name*, so the password never enters the LLM context, chat logs, or transcripts.\n\nmacOS (Keychain):\n\n```bash\nsecurity add-generic-password -s veracrypt-mcp -a my-container -w\n# you will be prompted for the password interactively\n```\n\nLinux (libsecret / GNOME Keyring, requires `libsecret-tools`):\n\n```bash\nsecret-tool store --label=\"veracrypt-mcp my-container\" service veracrypt-mcp account my-container\n```\n\nThen mount with `keychain_account: \"my-container\"`.\n\n### 2. Direct password (fallback)\n\nYou can pass `password` directly to the tool. It is still piped via stdin to VeraCrypt (never visible in the process list), **but it passes through the LLM conversation** and may be stored in chat logs. Use the keyring source whenever possible.\n\nAdditional notes:\n\n- Passwords are never logged and never included in tool results or error messages.\n- Python cannot securely wipe strings from memory; for maximum security, use the keyring source and a dedicated container password.\n\n## Requirements\n\n- Python >= 3.10\n- VeraCrypt with the command line binary available (`veracrypt` on PATH, the macOS app bundle, or set `VERACRYPT_PATH`)\n- macOS: [macFUSE](https://macfuse.github.io/) (required by VeraCrypt for mounting)\n- Linux keyring source: `libsecret-tools` (`secret-tool`)\n\n## Installation\n\n```bash\npip install git+https://github.com/bitterdev/veracrypt-mcp.git\n```\n\nOr from a local clone:\n\n```bash\ngit clone https://github.com/bitterdev/veracrypt-mcp.git\ncd veracrypt-mcp\npip install .\n```\n\n## Configuration\n\n### Claude Code\n\n```bash\nclaude mcp add veracrypt -- veracrypt-mcp\n```\n\nWith a default vault (recommended):\n\n```bash\nclaude mcp add veracrypt \\\n  -e VERACRYPT_MCP_CONTAINER=\"/path/to/vault.hc\" \\\n  -e VERACRYPT_MCP_KEYCHAIN_ACCOUNT=\"my-vault\" \\\n  -- veracrypt-mcp\n```\n\n### Claude Desktop / generic MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"veracrypt\": {\n      \"command\": \"veracrypt-mcp\",\n      \"env\": {\n        \"VERACRYPT_MCP_CONTAINER\": \"/path/to/vault.hc\",\n        \"VERACRYPT_MCP_KEYCHAIN_ACCOUNT\": \"my-vault\"\n      }\n    }\n  }\n}\n```\n\nThe server runs over stdio.\n\n## Usage examples\n\nWith a configured default vault:\n\n> Mount my vault\n\n> Unmount my vault\n\nExplicit, without defaults:\n\n> Mount the container /Users/me/secret.hc using the keychain account \"my-container\"\n\nMount read-only at a specific mount point:\n\n> Mount /Users/me/secret.hc read-only at ~/mnt/secret, keychain account \"my-container\"\n\n## Environment variables\n\n| Variable | Description |\n| --- | --- |\n| `VERACRYPT_MCP_CONTAINER` | Default container path used when no `container_path` is given |\n| `VERACRYPT_MCP_KEYCHAIN_ACCOUNT` | Default keyring account used when no password source is given |\n| `VERACRYPT_MCP_MOUNT_POINT` | Default mount directory (otherwise VeraCrypt auto-selects) |\n| `VERACRYPT_PATH` | Absolute path to the VeraCrypt binary if it is not on PATH |\n\n## License\n\nMIT, see [LICENSE](LICENSE).\n\n## Author\n\nFabian Bitter (fabian@bitter.de)\n",
+    "fetchedAt": "2026-08-11T23:55:09.373Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:28:58.525Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

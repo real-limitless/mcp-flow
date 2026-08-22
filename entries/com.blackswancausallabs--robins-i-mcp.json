@@ -1,0 +1,58 @@
+{
+  "id": "com.blackswancausallabs/robins-i-mcp",
+  "title": "ROBINS-I V2 MCP",
+  "description": "ROBINS-I V2 (not V1): risk of bias in one result of a non-randomized cohort study",
+  "summary": "ROBINS-I V2 (not V1): risk of bias in one result of a non-randomized cohort study",
+  "offersHint": "ROBINS-I V2 (not V1): risk of bias in one result of a non-randomized cohort study · Packages: pypi:robins-i-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "robins-i-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "robins-i-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Black-Swan-Causal-Labs/robins-i-mcp",
+  "repository": {
+    "url": "https://github.com/Black-Swan-Causal-Labs/robins-i-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T05:57:20.175889Z",
+  "publishedAt": "2026-08-04T05:57:20.175889Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:38:04.765Z",
+    "sourceRepoAt": "2026-08-12T00:38:04.765Z",
+    "readmeAt": "2026-08-12T00:38:05.285Z",
+    "toolsAt": "2026-08-12T00:38:05.399Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Black-Swan-Causal-Labs/robins-i-mcp",
+    "checkedAt": "2026-08-12T00:38:04.765Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Black-Swan-Causal-Labs/robins-i-mcp/main/README.md",
+    "markdown": "# robins-i-mcp\n\n<!-- mcp-name: com.blackswancausallabs/robins-i-mcp -->\n\nAn MCP server implementing **ROBINS-I V2** (Risk Of Bias In Non-randomized\nStudies – of Interventions, follow-up/cohort variant) as a deterministic,\nprovenanced assessment engine.\n\nSibling to [`target-mcp`](../../TARGET%20Checklist%20MCP), which scores how\n*completely* a target-trial-emulation study reports what the TARGET guideline\nrequires. This one assesses *risk of bias* in one specific result. The two are\ncomplementary on the same paper.\n\n> **The source is a draft.** riskofbias.info presents the 20 November 2025\n> release of ROBINS-I V2 as still a draft, subject to change. Every report\n> stamps that in its provenance line. See `NOTICE` and `TRANSCRIPTION-NOTES.md`.\n>\n> **Follow-up cohort studies.** \"Follow-up\" and \"cohort\" name one structural\n> property — a defined time zero, individuals followed forward under the\n> contrasted strategies — so read the property, not a design label. Target trial\n> emulations are the central use case and are cohort studies in exactly this\n> sense; both worked examples below are TTEs. Designs with no follow-up\n> structure are out. No variant for other designs is published yet. Note that\n> \"Variant A / Variant B\" inside the tool means the two forms of Domain 1\n> selected by C4 — not a study design.\n\n## What makes it different from asking a model\n\nThe model's contribution is bounded at answering signalling questions from the\ntext. It cannot compute a judgement and it cannot invent evidence.\n\n```\n1  parse_document              PDF + supplement → SectionMap        deterministic\n2  cue detection               where to look, per domain            deterministic\n3  answer signalling questions quotes copied from the bundle        MODEL\n4  evidence binding            quotes → offsets, or REJECT          deterministic\n5  algorithms                  answers → domain → overall           deterministic\n6  report + render             stamped artifact                     deterministic\n7  human ratification          P1, reviewer-prior answers, overrides\n```\n\nThree rules are enforced at submission, and they are the point of the server:\n\n- **Quotes resolve or die.** Every quote is matched to character offsets in the\n  ingested bundle through a three-pass ladder (exact → hyphen-relaxed →\n  references-stripped), and the winning pass is recorded so a loose match is\n  never silently equated with an exact one. An unresolvable quote is rejected\n  with the nearest actual text.\n- **Absence is searched, not asserted.** A `manuscript_absent` answer names a\n  cue; the *server* runs the search and attaches the record — terms, sections,\n  hit count. A prose claim that you looked is refused.\n- **Judgements are computed.** No tool accepts a domain judgement as input. The\n  six domain algorithms and the overall algorithm are explicit edge graphs\n  traced from the published flowcharts. A human may override, with a recorded\n  justification, and the report shows both values.\n\n## Two gates\n\n**P1 blocks domain 1.** Question 1.1 asks whether all *important* confounding\nfactors were controlled, and \"important\" is defined by the reviewer's\nprespecified list — not by the paper's covariate table. The server refuses to\nscore domain 1 without `set_prespecified_confounders` rather than silently\nsubstituting one for the other. A list you propose is a candidate: it enters the\nratification queue until a human accepts it.\n\n**C4 selects domain 1's question set.** Whether the analysis accounts for\nprotocol deviations picks variant A (intention-to-treat, baseline confounding\nonly) or variant B (per-protocol, baseline *and* time-varying confounding), so\n`specify_result` requires it up front with no default. Judge it on what the\nanalysis *does*, not on the label the authors give their estimand — on the\nreference paper, the protocol table says \"per-protocol effect\" and the analysis\nis intention-to-treat.\n\n## Install\n\n```bash\npip install robins-i-mcp\n```\n\nThen register it with your MCP client:\n\n```jsonc\n{ \"mcpServers\": { \"robins-i\": { \"command\": \"robins-i-mcp\" } } }\n```\n\nOr run it with no install at all:\n\n```bash\nuvx robins-i-mcp\n```\n\nAlso on the [MCP registry](https://registry.modelcontextprotocol.io) as\n`com.blackswancausallabs/robins-i-mcp`.\n\n## Develop\n\n```bash\npython3 -m venv .venv && .venv/bin/python -m pip install -e \".[dev]\"\n.venv/bin/python -m pytest tests/ -q      # 205 passed\n.venv/bin/robins-i-mcp                    # stdio MCP server\n```\n\n## Tools\n\n| Group | Tool | |\n|---|---|---|\n| Spec | `get_spec` | optional introspection; `detail='compact'\\|'full'` |\n| Ingest | `parse_document` | PDF/docx/text + supplements → hash + cue survey |\n| | `parse_pmcid` | Europe PMC retrieval |\n| Setup | `set_prespecified_confounders` | P1, review-scoped, **blocks domain 1** |\n| | `specify_result` | A1–A3, B1–B3, C1–C3, D1, and **C4** |\n| Assess | `assess_result` | `domain=0` overview, `domain=1..6` scaffold |\n| | `submit_answers` | per domain; `domain=0` finalizes and renders |\n| Render | `render_report` | re-render of the stamped artifact |\n| Review | `export_robvis` | many runs' records → one [robvis](https://mcguinlu.shinyapps.io/robvis/) CSV |\n\nScaffolds are **per domain**, never one flat rubric: most signalling questions\nare unreachable on any given path, and which of domain 1's two sets exists at\nall depends on C4.\n\n**Pass the supplement.** The target-trial specification that settles C1–C4, and\nthe analysis detail domains 1 and 4 turn on, routinely live only in the\nappendix. Without it, those questions read `NI` when the answer was merely in a\nfile nobody ingested.\n\n## Many studies: the record\n\nA review of N studies is **N runs**. Each assessment costs a session, and the\nserver keeps no state between them. So each run emits a small portable\n**record** — that is the deliverable that crosses the boundary:\n\n```\nsession 1..N   assess one result -> save submit_answers(domain=0)['record']\nlater          export_robvis(records=[...]) -> one figure-ready CSV\n```\n\nA record is ~4 KB of flat JSON and depends on nothing in this codebase, so any\nlater agent can consume it. It carries its own provenance — document hash,\nalgorithm fingerprint, spec version, ratification state — so every row in the\nresulting figure traces back to a document, and the export can warn when a set\nmixes algorithm transcriptions.\n\n`export_robvis` is not a column dump. robvis's ROBINS-I template is **V1**:\nseven domains, and V1 orders selection of participants *before* classification\nof interventions, which V2 swaps. The default layout places each V2 judgement in\nits correct V1 slot; a positional dump would parse, plot, and lie. Read the\nreturned `losses` before publishing — robvis reduces every cell to its first\ninitial over a five-fill palette, so the qualified low collapses to Low there\nwhatever string is written.\n\nSee `examples/review_from_records.py`.\n\n## Worked examples\n\n```bash\n.venv/bin/python examples/dickerman_2022.py out.html          # library level\n.venv/bin/python examples/jabagi_2026_server_run.py           # server level\n.venv/bin/python examples/review_from_records.py             # across runs\n```\n\n- **Dickerman et al., NEJM 2022** — BNT162b2 vs mRNA-1273 in US veterans. Comes\n  out *low, except for concerns about uncontrolled confounding*. 24 of 41\n  questions never reached.\n- **Jabagi et al., Lancet Reg Health Eur 2026** — maternal RSVpreF vs infant RSV\n  hospitalisation. Comes out *serious*, and the route is worth reading: domain 1\n  fails at 1.3 rather than 1.1, because gestational age at birth and birth\n  weight are matched on despite being realised after the intervention.\n\nThe papers themselves are **not** in this repository — they are published\narticles and not ours to redistribute. Put your own copies in `papers/`, or\npoint `ROBINS_MCP_PAPERS` at the directory holding them; the examples name the\nfiles they need and fail with that message if they are absent.\n\n## Documentation\n\n- `docs/STATUS.md` — current state and handoff. **Read this first.**\n- `docs/DECISIONS.md` — why things are the way they are, newest first.\n- `docs/SESSION-NOTES-*.md` — per-session narrative.\n- `TRANSCRIPTION-NOTES.md` — how the algorithms were obtained from raster\n  flowcharts, the errata found in the published document, and what still needs\n  external verification.\n\n## Licence\n\nApache-2.0 (`LICENSE`). The ROBINS-I V2 tool it implements is CC BY-NC-ND 4.0\nand **no part of it is reproduced here** — see `NOTICE` for why that matters and\nwhat the actual constraint is.\n",
+    "fetchedAt": "2026-08-12T00:38:05.285Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:38:05.399Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

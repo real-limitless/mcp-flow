@@ -1,0 +1,91 @@
+{
+  "id": "ai.matih/mcp",
+  "title": "mcp",
+  "description": "The grounded data layer for any LLM: governed SQL, metrics, lineage and catalog over your data.",
+  "summary": "The grounded data layer for any LLM: governed SQL, metrics, lineage and catalog over your data.",
+  "offersHint": "The grounded data layer for any LLM: governed SQL, metrics, lineage and catalog over your data. · Remote MCP (streamable-http) at https://mcp.matih.ai/api/v1/mcp · Packages: npm:@matihlabs/mcp · Env vars: MATIH_MCP_TOKEN",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.matih.ai/api/v1/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.matih.ai/api/v1/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@matihlabs/mcp",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "MATIH_MCP_TOKEN",
+        "description": "Matih developer token (mat_agt_…), minted in Settings → Developer Tokens. Bearer credential, scoped to your connections + tools.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@matihlabs/mcp",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "MATIH_MCP_TOKEN",
+          "description": "Matih developer token (mat_agt_…), minted in Settings → Developer Tokens. Bearer credential, scoped to your connections + tools.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MATIH_MCP_TOKEN",
+      "description": "Matih developer token (mat_agt_…), minted in Settings → Developer Tokens. Bearer credential, scoped to your connections + tools.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://matih.ai",
+  "sourceUrl": "https://github.com/matih-labs/matih-mcp",
+  "repository": {
+    "url": "https://github.com/matih-labs/matih-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T18:41:28.871763Z",
+  "publishedAt": "2026-07-06T18:41:28.871763Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:46:16.514Z",
+    "sourceRepoAt": "2026-08-12T00:46:16.514Z",
+    "readmeAt": "2026-08-12T00:46:17.017Z",
+    "toolsAt": "2026-08-12T00:46:17.158Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/matih-labs/matih-mcp",
+    "checkedAt": "2026-08-12T00:46:16.514Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/matih-labs/matih-mcp/main/README.md",
+    "markdown": "# @matihlabs/mcp\n\nConnect AI clients (Claude Desktop, ChatGPT, Cursor, …) to the **Matih** data\nplatform over the [Model Context Protocol](https://modelcontextprotocol.io). Write\nSQL, profile tables, run analyses + charts, manage dashboards, and upload files —\nall through MCP tools, with OAuth/PKCE auth and PII-safe egress.\n\n> **New here?** See **[QUICKSTART.md](./QUICKSTART.md)** for a step-by-step customer\n> guide — create a token, connect Claude Desktop / Cursor, and copy-paste `curl`\n> smoke tests — plus a troubleshooting table.\n\n## Use as a stdio MCP server (Claude Desktop / Cursor)\n\nAdd to your client's MCP config. The token is delivered via the environment — never\nas a CLI flag (which leaks into the OS process list):\n\n```json\n{\n  \"mcpServers\": {\n    \"matih\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@matihlabs/mcp\", \"https://<slug>.app.matih.ai/api/v1/mcp\"],\n      \"env\": { \"MATIH_MCP_TOKEN\": \"<your Matih bearer token>\" }\n    }\n  }\n}\n```\n\nThe bridge turns the remote Matih HTTP MCP endpoint into a local stdio MCP server,\nforwarding every `tools/call`, `resources/read`, and `prompts/get` to Matih.\n\n> **Endpoint:** replace `<slug>` with your workspace slug — your Matih app lives at\n> `https://<slug>.app.matih.ai` (the bare `app.matih.ai` host does not resolve).\n> Get a `mat_agt_…` token from **Settings → Developer Tokens**. See\n> [QUICKSTART.md](./QUICKSTART.md) for the full walkthrough.\n\n## Use as a library\n\n```ts\nimport { McpClient, MatihTools, StaticTokenProvider } from \"@matihlabs/mcp\";\n\nconst client = new McpClient({\n  endpoint: \"https://<slug>.app.matih.ai/api/v1/mcp\",\n  tokenProvider: new StaticTokenProvider(process.env.MATIH_MCP_TOKEN!),\n});\n\n// discovery-first: fetch the LIVE tool surface (auto-initializes + caches)\nconst live = await client.tools();\nconsole.log(live.map((t) => t.name));\n\n// call ANY tool generically — including Beta tools with no typed wrapper\nconst hot = await client.callTool(\"get_hot_context\", {});\n\n// typed convenience wrappers for the 34 STABLE tools\nconst graph = await new MatihTools(client).exploreGraph({ query: \"orders\", depth: 2 });\nconst matih = new MatihTools(client);\nconst result = await matih.runSql({ connection_id: \"<id>\", sql: \"select 1\" });\n```\n\n### OAuth (PKCE) instead of a static token\n\n```ts\nimport { McpClient, OAuthTokenProvider } from \"@matihlabs/mcp\";\n\nconst tokenProvider = new OAuthTokenProvider({\n  resourceMetadataUrl: \"https://<slug>.app.matih.ai/.well-known/oauth-protected-resource/api/v1/mcp\",\n  clientId: \"<registered client id>\",\n  acquire: async ({ metadata, clientId, resource }) => {\n    // open metadata.authorization_endpoint (PKCE S256, resource=<resource>),\n    // capture the code at your redirect_uri, return { code, verifier, redirectUri }.\n  },\n});\n```\n\nThe provider runs RFC 9728 → RFC 8414 discovery, PKCE S256, RFC 8707 resource-bound\ntokens, caches, and refreshes; a `401 invalid_token` triggers one re-auth.\n\n## Tools\n\nDiscovery is the primary API — `await client.tools()` returns the live tool\ndescriptors and `client.callTool(name, args)` reaches every advertised tool.\nThe typed facade (`MatihTools`) covers the **34 stable tools**\n(`STABLE_TOOL_NAMES`):\n\n- **Query & SQL:** `ask` (natural-language → grounded answer + the SQL it ran),\n  `run_sql`, `run_analysis`, `get_query_result`, `export_result`\n- **Catalog & discovery:** `list_connections`, `list_databases`, `list_schemas`,\n  `list_tables`, `describe_table`, `profile_table`\n- **Ontology & semantic layer:** `search_ontology`, `get_entity`,\n  `get_relationships`, `get_semantic_model`, `get_glossary`, `explore_graph`\n- **Governed metrics & taxonomy:** `get_metric`, `run_metric`, `draft_metric`\n  (write-class — proposes a DRAFT `metric_def` into the human-gated\n  DRAFT → REVIEW → APPROVED → SHIP pipeline), `list_metric_drafts`,\n  `export_semantic_model` (OSI), `get_taxonomy`, `export_taxonomy` (SKOS)\n- **Dashboards & charts:** `create_chart`, `create_dashboard`, `get_dashboard`,\n  `publish_dashboard`\n- **Uploads:** `upload_file`, `upload_status`, `create_upload_url`, `finalize_upload`\n- **Identity & scope:** `whoami`, `get_scope`\n\nThe **1 Beta tool** (`BETA_TOOL_NAMES`: `get_hot_context`) is deliberately\nnot hard-typed while its shape may evolve — call it via\n`client.callTool(name, args)`. The governed metrics & taxonomy group and\n`explore_graph` were promoted from Beta to stable in July 2026 (PDR W3-1).\n\nPlus catalog / lineage **resources** and the `explain_metric` **prompt**. Every\ntool is bounded by the developer token's scope (connections + capabilities you\ngrant in Settings) and never exceeds your own permissions — `get_scope` shows\nexactly what a token allows.\n\n## Notes\n\n- **Egress consent.** Matih gates third-party-LLM data egress per tenant. If your\n  tenant hasn't accepted the data-processing agreement, calls return a clear\n  `EGRESS_CONSENT_REQUIRED` error with a link to accept it.\n- **Node ≥ 20** (uses native `fetch` + `node:crypto`; zero runtime dependencies).\n\nLicense: Apache-2.0 · https://matih.ai\n",
+    "fetchedAt": "2026-08-12T00:46:17.017Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:46:17.158Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"type\":\"about:blank\",\"title\":\"Unauthorized\",\"status\":401,\"detail\":\"MCP access requires a bearer token. Discover the authorization server via the resource_metadata URL in the WWW-Authenticate header.\",\"error_code\":\"MCP_AUTH_REQUIRED\"}",
+  "toolsPreviewStatus": "auth_required"
+}

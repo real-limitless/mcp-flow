@@ -1,0 +1,77 @@
+{
+  "id": "io.github.vanshulgoyal101/ctx",
+  "title": "ctx",
+  "description": "Turn a GitHub repo or docs site into agent-ready context: pack it or search it, over MCP.",
+  "summary": "Turn a GitHub repo or docs site into agent-ready context: pack it or search it, over MCP.",
+  "offersHint": "Turn a GitHub repo or docs site into agent-ready context: pack it or search it, over MCP. · Remote MCP (streamable-http) at https://ctx.vanshul.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ctx.vanshul.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ctx.vanshul.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://ctx.vanshul.com",
+  "sourceUrl": "https://github.com/vanshulgoyal101/ctx",
+  "repository": {
+    "url": "https://github.com/vanshulgoyal101/ctx",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-06T03:16:04.431386Z",
+  "publishedAt": "2026-08-06T03:16:04.431386Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:57:55.485Z",
+    "sourceRepoAt": "2026-08-11T23:17:21.136Z",
+    "readmeAt": "2026-08-11T23:17:21.752Z",
+    "toolsAt": "2026-08-11T23:17:21.930Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vanshulgoyal101/ctx",
+    "checkedAt": "2026-08-11T23:17:21.136Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vanshulgoyal101/ctx/main/README.md",
+    "markdown": "# ctx.vanshul.com\n\n[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.vanshulgoyal101%2Fctx-a78bfa)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.vanshulgoyal101/ctx)\n[![Endpoint](https://img.shields.io/badge/endpoint-ctx.vanshul.com%2Fmcp-34d399)](https://ctx.vanshul.com/mcp)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)\n\nA public **Model Context Protocol (MCP)** server, running as a Cloudflare\nWorker, that turns a **GitHub repository or a documentation site into agent-ready\ncontext**. Point an AI agent at it and it can pack a whole repo (or crawl a docs\nsite) into one token-counted blob — or search it and get back only the relevant\npassages, each with its file/URL and line.\n\nIt's the agent-first companion to [`mcp/`](../mcp): where `mcp` reads a single\nweb page, `ctx` reads whole repos and doc sites. The repo pipeline fetches,\ngunzips and parses the tarball in-process; docs extraction reuses Mozilla\nReadability + Turndown.\n\n## Endpoint\n\n```\nPOST https://ctx.vanshul.com/mcp     # JSON-RPC 2.0 (MCP)\nGET  https://ctx.vanshul.com/health  # { ok: true, tools: [...] }\n```\n\n## Tools\n\n| Tool | Input | Returns |\n| --- | --- | --- |\n| `pack_repo` | `{ repo, ref?, include?, exclude?, max_tokens? }` | The repo as one context blob with `==== path ====` headers + token estimate |\n| `search_context` | `{ repo, query, ref?, include?, exclude?, max_matches?, context_chars? }` | Only the passages matching `query`, each with file, line and score |\n| `list_files` | `{ repo, ref?, include?, exclude? }` | JSON: the text files ctx would include, with byte sizes |\n| `get_file` | `{ repo, path, ref? }` | The full text of a single file |\n| `pack_docs` | `{ url, depth?, max_pages?, max_tokens? }` | A crawled docs site as one context blob (each page → Markdown) |\n| `search_docs` | `{ url, query, depth?, max_pages?, max_matches?, context_chars? }` | Only the docs passages matching `query`, each with page URL, line and score |\n\n`repo` is `owner/repo`, `owner/repo/ref`, or a `github.com` URL. `url` (for the\ndocs tools) is an absolute `http(s)` docs page to start crawling from.\n\n## Connect from an MCP client\n\n```json\n{ \"mcpServers\": { \"ctx\": { \"url\": \"https://ctx.vanshul.com/mcp\" } } }\n```\n\nStdio-only clients bridge with `npx mcp-remote https://ctx.vanshul.com/mcp`.\n\n### Add it to your client\n\n- **Cursor** — Settings → MCP → Add new server, or drop this into `~/.cursor/mcp.json`:\n  ```json\n  { \"mcpServers\": { \"ctx\": { \"url\": \"https://ctx.vanshul.com/mcp\" } } }\n  ```\n- **Claude Desktop** — add the same block to `claude_desktop_config.json` (Settings → Developer → Edit Config). If your version is stdio-only, use:\n  ```json\n  { \"mcpServers\": { \"ctx\": { \"command\": \"npx\", \"args\": [\"mcp-remote\", \"https://ctx.vanshul.com/mcp\"] } } }\n  ```\n- **Continue / VS Code** — add `ctx` with URL `https://ctx.vanshul.com/mcp` to your MCP servers config.\n\n## Try it with curl\n\n```sh\n# Pack a repo, capped to 8000 tokens\ncurl -s https://ctx.vanshul.com/mcp -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\n       \"params\":{\"name\":\"pack_repo\",\"arguments\":{\"repo\":\"sindresorhus/slugify\",\"max_tokens\":8000}}}'\n\n# Search a repo for just the relevant passages\ncurl -s https://ctx.vanshul.com/mcp -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\n       \"params\":{\"name\":\"search_context\",\"arguments\":{\"repo\":\"sindresorhus/slugify\",\"query\":\"replace separator\"}}}'\n```\n\n## Layout\n\n```\nctx/\n├── src/\n│   ├── worker.ts     # entry: routes /mcp, /health, rate limit, CORS\n│   ├── mcp.ts        # JSON-RPC dispatch + the six tool definitions\n│   ├── github.ts     # fetch tarball, gunzip, parse tar, filter files (no deps)\n│   ├── pack.ts       # assemble the context blob + token estimate\n│   ├── search.ts     # ranked passage search over files (file + line)\n│   ├── docs.ts       # crawl a docs site into pages (BFS, same-section)\n│   ├── extract.ts    # HTML -> Markdown / links (Readability + Turndown)\n│   ├── fetcher.ts    # bounded fetch with re-validated redirects (SSRF)\n│   └── security.ts   # SSRF guard (block private/internal addresses)\n├── public/\n│   ├── index.html    # landing page (served for non-API paths)\n│   ├── og.png / og.svg\n│   ├── robots.txt\n│   └── sitemap.xml\n├── tests/            # vitest: github (tar parsing), pack, search, mcp, worker\n├── docs/             # architecture, tools/API reference, deployment\n├── wrangler.toml\n├── package.json\n└── tsconfig.json\n```\n\n## Develop & deploy\n\n```sh\ncd ctx\nnpm install\nnpm run typecheck\nnpm test           # vitest — full suite\nnpm run dev        # local worker at http://localhost:8787  (POST /mcp)\nnpm run deploy     # wrangler deploy\n```\n\n## How it works\n\n```\nowner/repo → github.com tarball → DecompressionStream('gzip')\n           → in-process tar parse → drop binaries/lockfiles/build dirs\n           → pack (concat + token estimate) OR search (ranked passages)\n```\n\nThe GitHub URL is always constructed from a fixed `owner/repo` slug, so the repo\ntools have no SSRF surface. The docs tools fetch caller-supplied URLs, so every\nURL and redirect hop is re-validated against the SSRF guard. Downloads are\nbounded (timeout, size caps, page/file-count caps) and results are cached\nper-isolate for a few minutes.\n\n## Security & limits\n\n- **No SSRF:** input is a repo slug, not an arbitrary URL; only github.com is fetched.\n- **Bounded:** 20s download timeout, ~60 MB uncompressed cap, 512 KB/file, ≤3000 files, per-IP rate limit.\n- **Stateless & private:** no code stored, no LLM in the loop; public repos by default (private with a token).\n\n## Authentication (optional)\n\nSet a `GITHUB_TOKEN` Worker secret to lift GitHub's rate limit (60 → 5,000/hour) and\nread private repos:\n\n```sh\nwrangler secret put GITHUB_TOKEN\n```\n\nThe token is a Worker secret only — never a tool argument — so it can't leak to an agent.\n\n## Documentation\n\n- [docs/architecture.md](docs/architecture.md) — modules, pipeline, tar parsing, limits\n- [docs/tools.md](docs/tools.md) — full tool & JSON-RPC API reference\n- [docs/deployment.md](docs/deployment.md) — Cloudflare Worker + custom-domain deploy\n\n## License\n\n[MIT](./LICENSE) © Vanshul Goyal\n",
+    "fetchedAt": "2026-08-11T23:17:21.752Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "pack_repo",
+      "description": "Fetch a GitHub repository and return it as one agent-ready context blob: text files concatenated with clear \"==== path ====\" headers, binaries/lockfiles/build dirs stripped, with a token estimate. Use include/exclude globs to focus, and max_tokens to fit a budget."
+    },
+    {
+      "name": "search_context",
+      "description": "Search a GitHub repository and return only the passages that match a query — each with its file path, line number and a relevance score. Far more token-efficient than pack_repo when you need a specific detail (e.g. \"where is auth handled?\")."
+    },
+    {
+      "name": "list_files",
+      "description": "List the text files ctx would include for a repository (after stripping binaries, lockfiles and build dirs), with their byte sizes. Cheap way for an agent to see the layout before packing."
+    },
+    {
+      "name": "get_file",
+      "description": "Return the full text of a single file in a repository, by path. Use after list_files or search_context to drill in."
+    },
+    {
+      "name": "pack_docs",
+      "description": "Crawl a documentation site from a start URL and return it as one agent-ready context blob: each page extracted to clean Markdown, concatenated with its URL. Stays within the same site section; bounded by depth and page count. Use max_tokens to fit a budget."
+    },
+    {
+      "name": "search_docs",
+      "description": "Crawl a documentation site and return only the passages that match a query — each with its page URL, line and a relevance score. Token-efficient way to answer a question from docs without packing the whole site."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:17:21.930Z",
+  "toolsPreviewStatus": "ok"
+}

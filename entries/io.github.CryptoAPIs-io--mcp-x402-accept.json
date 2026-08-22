@@ -1,0 +1,58 @@
+{
+  "id": "io.github.CryptoAPIs-io/mcp-x402-accept",
+  "title": "mcp-x402-accept",
+  "description": "Self-hosted MCP proxy that puts an x402 paywall in front of an existing MCP server",
+  "summary": "Self-hosted MCP proxy that puts an x402 paywall in front of an existing MCP server",
+  "offersHint": "Self-hosted MCP proxy that puts an x402 paywall in front of an existing MCP server · Packages: npm:@cryptoapis-io/mcp-x402-accept",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@cryptoapis-io/mcp-x402-accept",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@cryptoapis-io/mcp-x402-accept",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/CryptoAPIs-io/cryptoapis-mcp-x402-accept",
+  "repository": {
+    "url": "https://github.com/CryptoAPIs-io/cryptoapis-mcp-x402-accept",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T06:02:45.927082Z",
+  "publishedAt": "2026-07-30T06:02:45.927082Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:29.665Z",
+    "sourceRepoAt": "2026-08-12T00:14:20.457Z",
+    "readmeAt": "2026-08-12T00:14:21.385Z",
+    "toolsAt": "2026-08-12T01:44:29.665Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/CryptoAPIs-io/cryptoapis-mcp-x402-accept",
+    "checkedAt": "2026-08-12T00:14:20.457Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/CryptoAPIs-io/cryptoapis-mcp-x402-accept/main/README.md",
+    "markdown": "# @cryptoapis-io/mcp-x402-accept\n\nPut an **x402 paywall in front of an MCP server you already run** — charge AI agents per tool call\nwithout changing a line of that server's code.\n\n```\nagent  →  mcp-x402-accept (your process)  →  your existing MCP server\n```\n\nThe proxy is an MCP server to the agent and an MCP client to yours. It mirrors every tool your server\nexposes; the ones you price are paywalled, the rest pass through free.\n\n## When to use this (and when not to)\n\n| Your situation | Use |\n|---|---|\n| You **can** edit your MCP server (Node/TS) | [`x402-merchant-sdk/mcp`](https://github.com/CryptoAPIs-io/cryptoapis-x402-merchant-sdk/tree/master/examples/mcp-paid-tool) — three lines around your handler, nothing in the data path |\n| You **cannot** — third-party, closed-source, or not Node | **this proxy** |\n\nIf you can edit your server, do that instead. It is simpler and strictly fewer moving parts. This\npackage exists for the case where that is not an option.\n\n## Why self-hosted only\n\n**You run this process. We never do, and we do not offer a hosted version.**\n\nThat is a deliberate product decision, not a default you can flip. A proxy sits between an agent and\nyour server, so a hosted one would mean CryptoAPIs holding your upstream server's credentials, sitting\nin the cleartext path of your tool arguments and results, and owing you uptime on your own revenue.\nFor a merchant whose product *is* the data flowing through those calls, that is not a reasonable thing\nto ask. Self-hosting removes the question rather than answering it.\n\nWhat that guarantees, structurally:\n\n- Tool **arguments and results are opaque** to the proxy. It reads the tool *name* (is this priced?)\n  and `_meta[\"x402/payment\"]` (is it paid for?) — nothing else. They are never parsed, logged,\n  buffered, or cached.\n- Your upstream credentials are **your own env vars**, in your own process.\n- The only outbound calls are to the CryptoAPIs facilitator, to `/verify` and `/settle` the payment\n  itself.\n\n## Install\n\n```bash\nnpm install -g @cryptoapis-io/mcp-x402-accept\n```\n\n## Configure\n\n```jsonc\n{\n  \"upstream\": {\n    \"transport\": \"stdio\",\n    \"command\": \"node\",\n    \"args\": [\"/path/to/your-mcp-server.js\"],\n    \"env\": { \"YOUR_UPSTREAM_TOKEN\": \"${YOUR_UPSTREAM_TOKEN}\" }\n  },\n\n  \"apiKey\": \"${CRYPTOAPIS_API_KEY}\",\n  \"payTo\":  \"0xYourReceivingAddress\",\n\n  // Only these are charged for. Everything else your server exposes stays FREE.\n  \"pricedTools\": {\n    \"premium_data\": {\n      \"network\": \"eip155:8453\",\n      \"asset\":   \"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\n      \"amount\":  \"10000\"\n    }\n  }\n}\n```\n\n`${VAR}` reads from the environment, so the config file itself holds no secrets and is safe to commit.\n\n`amount` is in **atomic units** — USDC has 6 decimals, so `\"10000\"` is $0.01. Getting this wrong by\n10^6 is the easiest mistake here.\n\nAn HTTP upstream instead of stdio:\n\n```jsonc\n\"upstream\": {\n  \"transport\": \"http\",\n  \"url\": \"https://your-server.example.com/mcp\",\n  \"headers\": { \"Authorization\": \"Bearer ${YOUR_UPSTREAM_TOKEN}\" }\n}\n```\n\nTo accept several assets or networks for one tool, pass an array — the agent picks one. Offer only\nwhat `GET https://ai.cryptoapis.io/x402/merchant/supported` lists (public, no key); anything else is\nadvertised and then rejected at `/verify`.\n\n## Run\n\n```bash\ncryptoapis-mcp-x402-accept --config ./x402-accept.config.json\n```\n\nThen point agents at the **proxy** instead of your server. In Claude Code:\n\n```bash\nclaude mcp add my-paid-tools -- cryptoapis-mcp-x402-accept --config /abs/path/to/config.json\n```\n\nEverything is validated at boot — the config, the upstream connection, and whether the tools you\npriced actually exist upstream. A typo'd tool name is a **hard failure**, not a silent revenue hole:\nthe alternative is believing a tool is paywalled while it quietly serves for free.\n\n## What an agent sees\n\n| Step | Result |\n|---|---|\n| Unpaid call to a priced tool | `isError: true` carrying `PaymentRequired` in **both** `structuredContent` and `content[0].text` |\n| Agent pays | Signs locally, retries with the payload in `_meta[\"x402/payment\"]` — raw JSON, no base64 |\n| Paid call | Your tool's real result, with the receipt in `_meta[\"x402/payment-response\"]` |\n| Call to an unpriced tool | Forwarded, free, unchanged |\n\n**Your server is never called until payment has settled.** The proxy charges and then forwards — it\ndoes not forward and then bill. An unpaid call cannot reach your server at all, so it cannot be made\nto do the work for free.\n\nPriced tools advertise `[paid: x402]` in their description so an agent knows the cost *before*\ncalling. An agent that discovers a price only by being refused has already wasted a round-trip.\n\n## Paying it\n\nAgents pay with [`@cryptoapis-io/mcp-x402-pay`](https://www.npmjs.com/package/@cryptoapis-io/mcp-x402-pay)\nor, in code, [`@cryptoapis-io/x402-buyer-sdk/mcp`](https://www.npmjs.com/package/@cryptoapis-io/x402-buyer-sdk).\n\n## Notes\n\n- Requires a CryptoAPIs API key with the **`X402_FACILITATOR`** feature.\n- `\"settle\": false` verifies without settling — useful while wiring up, but advisory only: the buyer\n  proved they *could* pay, not that they did. Never ship it.\n- Test end-to-end on **Base Sepolia** (`eip155:84532`) before charging real money.\n- Implements the x402 v2 MCP transport\n  ([spec](https://github.com/coinbase/x402/blob/main/specs/transports-v2/mcp.md)), sharing one\n  implementation with the merchant SDK — a spec fix lands in both.\n",
+    "fetchedAt": "2026-08-12T00:14:21.385Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:29.665Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

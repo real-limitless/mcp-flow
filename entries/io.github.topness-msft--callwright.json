@@ -1,0 +1,109 @@
+{
+  "id": "io.github.topness-msft/callwright",
+  "title": "callwright",
+  "description": "Self-hosted MCP voice agent that places phone calls on your behalf via Retell.",
+  "summary": "Self-hosted MCP voice agent that places phone calls on your behalf via Retell.",
+  "offersHint": "Self-hosted MCP voice agent that places phone calls on your behalf via Retell. · Packages: npm:callwright · Env vars: MCP_AUTH_TOKEN, PORT, RETELL_API_KEY",
+  "version": "1.0.3",
+  "status": "deprecated",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "callwright",
+    "version": "1.0.3",
+    "transport": "streamable-http",
+    "environmentVariables": [
+      {
+        "name": "RETELL_API_KEY",
+        "description": "Your Retell secret API key (stays server-side)",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "MCP_AUTH_TOKEN",
+        "description": "Bearer token clients must send; required when exposed beyond localhost",
+        "secret": true
+      },
+      {
+        "name": "PORT",
+        "description": "Port the HTTP MCP server listens on (default 8787)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "callwright",
+      "version": "1.0.3",
+      "transport": "streamable-http",
+      "environmentVariables": [
+        {
+          "name": "RETELL_API_KEY",
+          "description": "Your Retell secret API key (stays server-side)",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "MCP_AUTH_TOKEN",
+          "description": "Bearer token clients must send; required when exposed beyond localhost",
+          "secret": true
+        },
+        {
+          "name": "PORT",
+          "description": "Port the HTTP MCP server listens on (default 8787)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MCP_AUTH_TOKEN",
+      "description": "Bearer token clients must send; required when exposed beyond localhost",
+      "secret": true
+    },
+    {
+      "name": "PORT",
+      "description": "Port the HTTP MCP server listens on (default 8787)"
+    },
+    {
+      "name": "RETELL_API_KEY",
+      "description": "Your Retell secret API key (stays server-side)",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/topness-msft/callwright",
+  "repository": {
+    "url": "https://github.com/topness-msft/callwright",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-12T19:49:44.017018Z",
+  "publishedAt": "2026-07-09T15:44:38.819718Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:44.705Z",
+    "sourceRepoAt": "2026-08-11T23:18:04.360Z",
+    "readmeAt": "2026-08-11T23:18:04.878Z",
+    "toolsAt": "2026-08-12T00:58:44.705Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/topness-msft/callwright",
+    "checkedAt": "2026-08-11T23:18:04.360Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/topness-msft/callwright/main/README.md",
+    "markdown": "# Callwright\n\nA voice agent that places phone calls — reservations, appointments, confirmations, general inquiries — **on your behalf**, shaped by an LLM's direction + grounding. It discloses it's an AI, negotiates within bounds you set, never fabricates, and reports the outcome.\n\nBuilt on [Retell](https://retellai.com). Exposed as an **MCP server** so any MCP-capable assistant (Claude, ChatGPT, Cursor, Copilot) can place calls for you — combining callwright (the *actuator*) with your other MCPs (WorkIQ, Gmail, calendar — the *sensors*) for context.\n\n## Just ask\n\nYou don't fill out forms — you ask your assistant in plain language, and it gathers the context (from your calendar, email, or the chat), shapes the call, reads it back to you, and dials on your OK:\n\n> *\"Find the repair appointment in my calendar and call the contractor to confirm it's still on for Thursday.\"*\n\n> *\"Call Sakura Sushi and book a table for 4 this Friday at 7 — anytime between 6:30 and 8 is fine.\"*\n\n> *\"Ring my dentist and move my cleaning to sometime next week; my member ID is in my profile.\"*\n\n> *\"電話して、東京の美容院に明日の午後カットの予約を取って.\"* — *(places the call in Japanese)*\n\n> *\"Call this hotel in Kyoto and ask their hire-car rate to the airport — just gathering info, don't book.\"*\n\nThe assistant pulls only the minimal details each call needs, confirms the plan with you first, then places it fire-and-forget and fetches the outcome when you ask.\n\n## How it works\n\n```\nYou (chat) --> Host LLM --gathers context from other MCPs--> shapes a place_call\n                  |\n                  v\n            callwright MCP  --validate + profile + compose + guard--> Retell --> phone\n                  |                                                     |\n                  +-- get_call_outcome / learn_from_call <-- outcome --+\n```\n\n- **Generic agent, not per-scenario.** One agent prompt = fixed guardrails (disclose AI, never pay, never fabricate, PII-minimize) + injected per-call direction. Handles any scenario and language.\n- **Multilingual, extensible at runtime.** Ships speaking English and Japanese; `add_language` stands up a brand-new call language (translated prompt + a native voice + its own agent) entirely from chat — no redeploy. All language phrasing is data (`lang-phrases.json`), not code.\n- **Purpose-first disclosure.** Opens with the goal (\"I'm an AI assistant. I'm calling to confirm...\"), not a name. Your name surfaces only when a business needs it.\n- **Data minimization, filled lazily.** PII lives in `principal.facts` (shared *only if asked*); each call carries only the minimal relevant subset, and the read-back lists exactly which data types go out. When a call uses a durable fact you haven't saved, it offers to remember it — so the profile fills from use, not an upfront interview.\n- **Learns from every call.** When a call defers on a missing detail, the profile is enriched so next time it's collected up front — manually (`learn_from_call`) or **automatically** via a signature-verified Retell webhook. A genuinely new scenario is *staged* and *proposed* (never silently created), with guards against over-specific splintering.\n- **Bounded retry.** An unanswered/busy call is re-dialed — **exactly once by default**, never more without an explicit request (anti-spam).\n\n## Tools\n\n**Setup & profiles**\n| Tool | Purpose |\n|---|---|\n| `get_setup_status` | What's configured / missing |\n| `configure` | Save your name, callback, standing facts (+ optional provisioning) |\n| `list_scenarios` | Known scenario profiles (+ pending candidates) |\n\n**Calling**\n| Tool | Purpose |\n|---|---|\n| `place_call` | **Dry-run by default** (returns read-back); `confirm:true` to dial. Supports `lang` and `overrides.retry` |\n| `get_call_outcome` | Outcome + analysis + transcript by `call_id` |\n| `list_recent_calls` | Recent calls |\n| `list_retries` | Recent automatic no-answer re-dials |\n\n**Languages**\n| Tool | Purpose |\n|---|---|\n| `list_voices` | Browse Retell voices (for adding a language) |\n| `list_languages` | Languages this server can call in |\n| `add_language` | Add a new call language at runtime (translate → agent) |\n| `verify_language` | Quality-gate a new language (review card + optional live test call) |\n| `update_language` / `remove_language` | Change / remove an added language |\n\n**Learning**\n| Tool | Purpose |\n|---|---|\n| `learn_from_call` | Enrich a profile, or stage a new-scenario candidate |\n| `list_candidates` | Staged scenario candidates (pending new profiles) |\n| `create_profile` | Create a new scenario profile (propose-and-confirm, guarded) |\n| `add_scenario_alias` | Merge a call type into an existing profile |\n| `reject_candidate` | Drop a noise/one-off candidate |\n\n`place_call` is fire-and-forget and **gated**: the first call returns a read-back (including the PII footprint); you dial only after confirming with `confirm:true`.\n\n`get_call_outcome` returns a canonical `outcome` object. Its custom-analysis-first status is authoritative when Retell's built-in `call_successful` signal disagrees; both raw signals remain available for diagnosis. Successful informational calls use `completed`, while `booked` is reserved for an actual reservation, appointment, or commitment.\n\n---\n\n## Retell setup (prerequisites)\n\nCallwright dials through [Retell](https://retellai.com), so you need a Retell account with **outbound calling enabled** before anything works. In the [Retell dashboard](https://dashboard.retellai.com):\n\n1. **Create an account** and **add a payment method** (Stripe). Calls and phone numbers are pay-as-you-go; there's no Callwright fee on top.\n2. **Complete KYC verification.** This is **required** to unlock **outbound calling** and **phone-number purchases** — without it, calls are blocked. (It's a one-time identity/business check; approval is usually quick.)\n3. **Buy a phone number.** This becomes your caller ID (the `from` number). A US local number is cheapest; Callwright auto-selects it during `configure run_provisioning`.\n4. **Create an API key** (Settings → API Keys). This is your `RETELL_API_KEY` — it stays server-side and must never go in a browser or chat.\n\n**Optional, recommended:**\n- **Verified phone number / branded calling** (dashboard → Telephony) — registers your number so carriers are less likely to tag it *\"Spam Likely\"*, which meaningfully improves pickup rates on outbound calls.\n\n**Not required (and currently dormant here):**\n- **A2P 10DLC registration** — only needed to *send SMS*, via a multi-step business-profile → brand → campaign approval with a recurring cost. Callwright's SMS notifications are built but shelved, so you can skip this entirely for placing calls.\n\n> Costs are per-minute and destination-driven (roughly ~$0.015/min US, higher internationally) plus the monthly number rental.\n\n---\n\n## Install\n\nPublished on npm as [`callwright`](https://www.npmjs.com/package/callwright). Install globally to get the `callwright` (server) and `callwright-init` (setup wizard) commands:\n\n```bash\nnpm install -g callwright\n```\n\nOr clone this repo and `npm install` to run from source (`node server.js`, `node init.js`).\n\nEither way, callwright is a **self-hosted, single-user HTTP MCP server**: you run your own instance with your own [Retell](https://retellai.com) credentials (see [Retell setup](#retell-setup-prerequisites) above). Nothing is shared or multi-tenant.\n\n## Run locally\n\nUsing the global install:\n\n```bash\ncallwright-init                     # one-time setup wizard (number, agent, your identity)\nexport RETELL_API_KEY=key_xxx       # [Environment]::SetEnvironmentVariable on Windows\ncallwright                          # MCP server on :8787 (POST /mcp)\n```\n\nFrom a cloned repo, use `node init.js` and `node server.js` instead.\n\nCheck setup anytime: `callwright-init status` (or `node init.js status`).\nPlace a call from the CLI (bypassing MCP): `node dispatch.js <job.json> --go`.\n\n> For **local** use, `MCP_AUTH_TOKEN` is optional — with it unset the server accepts loopback connections only. Set it once you expose the server beyond localhost (see [Deploy hosted](#deploy-hosted-single-user)).\n\n---\n\n## Deploy hosted (single-user)\n\nGoal: a remote MCP URL **only you** can use. Works in both web clients (claude.ai, chatgpt.com) and local clients.\n\n### 1. Pick a host with a **persistent disk**\n`config.json` and `scenario-profiles.json` are written at runtime (by `configure` and `learn_from_call`), so avoid ephemeral/serverless filesystems. Good fits: **Fly.io** (volume), **Railway** (volume), **Render** (disk). A small always-on instance is fine — call volume is tiny.\n\n### 2. Set environment variables (host dashboard)\n```\nRETELL_API_KEY = key_xxx            # your Retell secret - stays server-side\nMCP_AUTH_TOKEN = <long random>      # the bearer token only you hold\nPORT           = 8787               # or whatever the host injects\nCALLWRIGHT_DATA_DIR = /data         # persistent volume for runtime state\nCALLWRIGHT_PUBLIC_URL = https://your-host.example.com   # optional: enables the auto-learn webhook (Retell posts call_analyzed back here)\nCLAUDE_ROUTINE_URL = https://api.anthropic.com/v1/claude_code/routines/trig_xxx/fire   # optional immediate call completion wake-up\nCLAUDE_ROUTINE_TOKEN = <routine trigger token>   # dedicated token generated by the Claude Routine\n```\nSee `.env.example`. **Never** put the Retell key in a browser or chat.\n\nWhen a call originates from a TickTick task, the calling assistant can pass\n`tracking.ticktick_task_id` to `place_call`. Callwright stores that opaque ID\nin Retell's storage-only metadata, preserves it through automatic retries, and\nuses the final `call_analyzed` webhook to wake the configured Claude Routine.\nThe Routine URL and token are optional; hourly polling remains the fallback.\n\n### 3. Deploy\nDocker is provided:\n```bash\ndocker build -t callwright .\ndocker run -p 8787:8787 --env-file .env callwright\n```\nOr point the host at this repo (it auto-detects the Dockerfile). Mount a volume at the app dir so `config.json` / `scenario-profiles.json` persist across restarts.\n\nNo-Docker alternative: install from npm on the host and run the binary directly (point `CALLWRIGHT_DATA_DIR` at your persistent volume so runtime state survives restarts):\n```bash\nnpm install -g callwright\nCALLWRIGHT_DATA_DIR=/data callwright     # reads RETELL_API_KEY / MCP_AUTH_TOKEN from env\n```\n\n### 4. First-run setup over MCP (no webpage needed)\nDo setup **in chat**:\n1. Connect the server (below).\n2. Ask the assistant to call `configure` with `run_provisioning: true` and your name + callback number. That verifies the key, selects your Retell number, creates the generic agent, and saves your profile.\n3. `get_setup_status` should now report `ready: true`.\n\n(Or run `node init.js` once on the host shell if you prefer.)\n\n---\n\n## Connect a client\n\nReplace the URL with your deployed host and the token with your `MCP_AUTH_TOKEN`. The server accepts the token **two ways**: an `Authorization: Bearer` header (Desktop/Code/Cursor) **or** a `?key=` URL query param (web clients whose connector form has no header field).\n\n### Claude.ai (web)\n\nThe web connector form only takes a URL, so put the token in the URL:\n\n1. **Settings → Connectors → Add custom connector** (or **Browse connectors → Add custom**).\n2. **Name:** `Callwright`\n3. **URL:** paste your host + `/mcp` + your token as `?key=`:\n   ```\n   https://your-host.example.com/mcp?key=<MCP_AUTH_TOKEN>\n   ```\n4. Save, then enable it in a chat (the 🔌/tools menu). Ask *\"what callwright tools do you have?\"* to confirm it connected.\n\n> Because the token is in the URL, treat that connector URL like a password — anyone with it can place calls billed to your Retell account. Rotate by changing `MCP_AUTH_TOKEN` and updating the connector.\n\n### Claude Desktop / Cursor\n\n```json\n{\n  \"mcpServers\": {\n    \"callwright\": {\n      \"url\": \"https://your-host.example.com/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer <MCP_AUTH_TOKEN>\" }\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add --transport http callwright https://your-host.example.com/mcp \\\n  --header \"Authorization: Bearer <MCP_AUTH_TOKEN>\"\n```\n\n### ChatGPT (Developer mode / connectors)\n\nAdd a custom MCP connector with the same URL — header or `?key=` both work.\n\n> Keep **\"confirm before running tools\"** on. `place_call` is already dry-run-by-default, but tool-confirmation is a good second gate for an actuator that spends money and reaches real people.\n\n---\n\n## Security notes\n\n- **Single bearer token = your lock.** Anyone with the token can place calls billed to your Retell account. Treat it like a password; rotate by changing `MCP_AUTH_TOKEN`.\n- **Least-privilege Retell key.** Use a scoped key if you don't need full admin.\n- **PII.** Standing facts are stored in `config.json` on your host. Calls send only the minimal subset, shared only if the business asks; the read-back shows the footprint every time.\n- If `MCP_AUTH_TOKEN` is unset, the server accepts **loopback only** (local dev).\n\n## Key files\n\n| File | Purpose |\n|---|---|\n| `server.js` | MCP server (Streamable HTTP, bearer auth) + the auto-learn / retry webhook |\n| `dispatch-core.js` | Validate → profile → compose vars → dispatch (shared core) |\n| `dispatch.js` | CLI over dispatch-core |\n| `setup-core.js` | Provisioning + config + status + lazy-save helpers (shared by init & MCP) |\n| `lang-core.js` | Runtime language management (add/verify/update/remove, voices) |\n| `lang-phrases.json` | Per-language composed phrasing (data, not code) |\n| `learn-core.js` | Profile enrichment + new-scenario candidate staging (anti-splintering) |\n| `retry-core.js` | No-answer retry policy + bounded re-dial decisions |\n| `routine-core.js` | Idempotent Retell call completion → Claude Routine trigger |\n| `init.js` | Terminal setup wizard (`node init.js` / `node init.js status`) |\n| `update-prompt.js` | Push a prompt + tools + etiquette + webhook to an existing agent |\n| `place_call.schema.json` | The job contract the LLM fills |\n| `generic-prompt.md` / `.ja.md` | Generic agent prompts (guardrails + `{{variables}}`) |\n| `scenario-profiles.json` | Learning profiles (recommended details per scenario) |\n| `learn.js` / `get-call.js` | CLIs: enrich a profile / fetch a call outcome |\n| `paths.js` | Resolves mutable state paths (honors `CALLWRIGHT_DATA_DIR`) |\n| `scripts/release.ps1` | One-shot release: version bump + test + push + npm & MCP-registry publish |\n| `docs/` | Design specs (add-language, profile-learning) |\n| `webhook/` | Optional serverless Retell→Resend email notifier (independent of the MCP) |\n\n> Per-user runtime files — `config.json`, `agents.json`, `.retell-ids.json`, `job.*.json`,\n> `grounding.*.json` — are git-ignored. They're created at runtime (by `init`/`configure`) or\n> are personal call data; never commit them. Start from `config.example.json` and `examples/`.\n\n## A note on disclosure & legality\n\nThe agent **always discloses that it's an AI** at the start of every call — this is a hard,\nnon-removable behavior. AI-call disclosure is legally required in some jurisdictions (e.g.\nCalifornia's B.O.T. Act) and is good practice everywhere. The agent also never fabricates\ninformation and shares personal data only when a business asks for it. For commercial or\nat-scale use, confirm requirements with counsel in your jurisdiction.\n\n## Optional: proactive email on every call\n\nSee [`webhook/`](./webhook) — a serverless Retell→Resend notifier that emails you each outcome.\nIt is **independent of the MCP** (which retrieves outcomes on demand via `get_call_outcome`) and\nis **not deployed or wired by default**.\n",
+    "fetchedAt": "2026-08-11T23:18:04.878Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:44.705Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

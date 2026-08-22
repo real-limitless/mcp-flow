@@ -1,0 +1,52 @@
+{
+  "id": "me.ai-know/memory",
+  "title": "memory",
+  "description": "Chinese-first brain-inspired memory MCP — hybrid recall, 7-layer user profile, workspace assembly.",
+  "summary": "Chinese-first brain-inspired memory MCP — hybrid recall, 7-layer user profile, workspace assembly.",
+  "offersHint": "Chinese-first brain-inspired memory MCP — hybrid recall, 7-layer user profile, workspace assembly. · Remote MCP (streamable-http) at https://ai-know.me/mcp",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ai-know.me/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ai-know.me/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://ai-know.me/mcp",
+  "sourceUrl": "https://github.com/xfhxxffhh224/zhiji-mcp",
+  "repository": {
+    "url": "https://github.com/xfhxxffhh224/zhiji-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-20T12:48:16.798914Z",
+  "publishedAt": "2026-07-20T12:48:16.798914Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:52:18.407Z",
+    "sourceRepoAt": "2026-08-11T23:10:15.755Z",
+    "readmeAt": "2026-08-11T23:10:16.238Z",
+    "toolsAt": "2026-08-12T00:52:18.407Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/xfhxxffhh224/zhiji-mcp",
+    "checkedAt": "2026-08-11T23:10:15.755Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/xfhxxffhh224/zhiji-mcp/main/README.md",
+    "markdown": "# 知己 (Zhiji) Memory — MCP Server\n\n> **Chinese-first, brain-inspired long-term memory as an MCP server.**\n> Give any MCP client — Claude Desktop / Claude Code / Cursor / Cline / Cherry Studio / Coze — the ability to *remember and understand* your user across sessions.\n>\n> 中文用户：完整接入手册见 [`MCP-USAGE.md`](MCP-USAGE.md),或在线版 <https://ai-know.me/mcp>。\n\n**v0.4.0** · 9 tools / 2 resources / 1 prompt · stdio + Streamable HTTP · MCP protocol `2025-11-25`\n\nThis repo is a **thin bridge**: it translates MCP tool calls into REST calls to the **Zhiji backend** (hosted at `ai-know.me`). The bridge stores nothing; all memory lives in the Zhiji service you connect to.\n\n---\n\n## Why not just another vector-memory MCP?\n\nMem0 / Zep / LangMem expose `add / search / delete` over a vector store. 知己 exposes **brain-inspired primitives**:\n\n- **11-stage hybrid retrieval** — trigram full-text + `bge-large-zh` semantic + time-decay + access-reinforcement + dedup ranking.\n- **7-layer / 36-dimension evolving user profile** — values, decision logic, behavior style, self-cognition, interoceptive & dynamic state.\n- **Workspace assembly** — *one* call returns profile + relevant memories + confirmed facts + behavioral inferences, budget-trimmed for the client context window.\n- **Prospective reminders**, **multimodal ingest** (audio / OCR / doc), and a **self-evolving reward loop** driven by user feedback.\n\nAll **Chinese-optimized** (trigram tokenizer + `bge-large-zh`); English is supported too. Memory is stored in the Zhiji backend you connect to — self-host it, or use the hosted `ai-know.me` service; either way it's your Zhiji instance, not a generic memory-SaaS middleman.\n\n## Tools, resources & prompts\n\n**9 tools**, grouped by role. Every user-scoped tool takes `userEmail` (or falls back to `MB_USER_EMAIL`); only the notable extra params are listed.\n\n### Read — understand the user\n| Tool | What it does | Notable params |\n|------|--------------|----------------|\n| `zhiji_workspace_assemble` | **Flagship.** One call returns everything needed to understand this user for a query — relevant memories + profile + confirmed facts + behavioral inferences (plus counterfactual & cross-domain hints). Drop straight into any LLM's context. | `query`; `maxResults` ≤20 (def 6). Slow \"what-if\" queries can take 10–15s. |\n| `zhiji_memory_search` | Lighter, recall-only: the 11-stage hybrid pipeline (trigram FTS + semantic + time-decay), returns scored snippets with sources. | `query`; `maxResults` ≤50 (def 8) |\n| `zhiji_profile_get` | 7-layer / 36-dim user profile as an inject-ready natural-language summary. | — |\n| `zhiji_facts_get` | Structured atomic facts (subject attribution, confidence, conflict status) — for exact names/dates/counts, not narrative. | — |\n| `zhiji_prospective_due` | Due/upcoming intentions (todos, promises, plans) within a time window — for proactively nudging the user. | `hours` ≤720 (def 24) |\n\n### Write — feed memory\n| Tool | What it does | Notable params |\n|------|--------------|----------------|\n| `zhiji_memory_ingest` | Write a conversation turn to long-term memory; async embedding + profile/fact extraction + importance scoring follow. **Text only.** | `conversationId`; `messages[{ author: \"user\"\\|\"bot\", text }]` |\n| `zhiji_ingest_file` | Multimodal ingest — audio / image / PDF / Word / Excel / video → Whisper transcribe / Tesseract OCR / doc parse → memory. Audio & video also get acoustic-emotion analysis. | one of `path` \\| `url` \\| `base64`; `filename`; `isUserVoice` |\n\n### Ops — improve & diagnose\n| Tool | What it does | Notable params |\n|------|--------------|----------------|\n| `zhiji_feedback` | Thumbs up/down on the last recall/answer → feeds the self-evolution reward and reinforces (or penalizes) the Q-value of recently retrieved memories. The \"gets better the more you use it\" loop. | `rating: \"up\"\\|\"down\"`; `weak?` → ±0.5 |\n| `zhiji_status` | Health & memory scale (files / chunks / FTS availability). Call first to verify connectivity. | — |\n\n**2 resources** — `zhiji://schema/dimensions` (authoritative 7-layer / 36-dim profile schema) · `zhiji://server/status` (live service status).\n**1 prompt** — `personal-context`: weaves profile + memories + facts into a ready-to-prepend system prompt for a given query.\n\n> Experimental capabilities (sleep consolidation / dream replay / emergence) are **not exposed** until their groundedness passes ablation.\n\n### Typical flow\n```\nzhiji_status              → verify connectivity\nzhiji_memory_ingest       → feed a conversation  (or zhiji_ingest_file for audio/docs)\nzhiji_workspace_assemble  → in a *new* session, recall + understand the user\nzhiji_feedback            → thumbs up/down, closing the self-evolution loop\n```\n\n## Quick start\n\nYou need an **agent Key** (`mb-` prefix). Get one at <https://ai-know.me/memory?tab=api> (register + create a Key bound to your account).\n\n### Option A — remote, no install (recommended)\n\nPoint any Streamable-HTTP MCP client at the hosted endpoint — you don't need this repo at all:\n\n```bash\nclaude mcp add zhiji-memory --transport http \\\n  --url https://ai-know.me/mcp \\\n  --header \"Authorization: Bearer mb-yourKey\"\n```\n\nOr in a URL-style client config (Cursor / Cherry Studio / LobeChat):\n\n```json\n{\n  \"mcpServers\": {\n    \"zhiji-memory\": {\n      \"url\": \"https://ai-know.me/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer mb-yourKey\" }\n    }\n  }\n}\n```\n\n### Option B — run this bridge locally (stdio)\n\nUse this repo when you want the bridge as a local stdio process (e.g. a desktop client launches it for you), talking to the hosted Zhiji backend:\n\n```bash\nnpm install   # only @modelcontextprotocol/sdk + zod\n```\n\nThen in your client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"zhiji-memory\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/zhiji-mcp/zhiji-mcp-server.mjs\"],\n      \"env\": {\n        \"MB_BASE_URL\": \"https://ai-know.me\",\n        \"MB_API_KEY\": \"mb-yourKey\"\n      }\n    }\n  }\n}\n```\n\n### Verify\n\n```bash\n# visual debugger — should list 9 tools / 2 resources / 1 prompt\nnpx @modelcontextprotocol/inspector node zhiji-mcp-server.mjs\n```\n\nFull client matrix (LangChain, OpenAI Agents SDK, Coze…) is in [`MCP-USAGE.md`](MCP-USAGE.md).\n\n## Architecture — a stateless thin bridge\n\n```\nMCP client  ──stdio / HTTP(JSON-RPC)──►  zhiji-mcp-*.mjs  ──REST──►  Zhiji backend (ai-know.me)\n```\n\nThe MCP layer stores nothing; it translates MCP tool calls into REST calls to the Zhiji backend. Shared core `zhiji-mcp-core.mjs` backs both entry points:\n\n| File | Role |\n|------|------|\n| `zhiji-mcp-core.mjs` | Tool/resource/prompt definitions (single source of truth) |\n| `zhiji-mcp-server.mjs` | stdio entry (`npm start`) |\n| `zhiji-mcp-http.mjs` | Streamable HTTP entry (`npm run http`) |\n\n## Isolation & auth\n\n- All data is hard-isolated by `userEmail`. The bridge treats `userEmail` as a **namespace, not a credential**.\n- The hosted public endpoint requires an agent Key — requests without `Bearer mb-…` get 401; the backend binds each Key to its userEmail and rejects cross-user access.\n- Never hand a key-less, userEmail-swappable bridge to end users — front it with your own backend that injects the correct userEmail. See `MCP-USAGE.md §8`.\n\n## Environment\n\n| Var | Default | Notes |\n|-----|---------|-------|\n| `MB_BASE_URL` | `http://localhost:3001` | Zhiji backend address; for the hosted service use `https://ai-know.me` |\n| `MB_USER_EMAIL` | — | default user namespace (single-user local use) |\n| `MB_API_KEY` | — | `mb-` agent Key; forwarded as Bearer |\n| `MB_TIMEOUT_MS` | `60000` | slow workspace routes can take ~15s |\n\n## Status\n\n| Version | Highlights |\n|---------|-----------|\n| v0.4 | `zhiji_ingest_file` (9 tools) + public-release hardening (TLS, `MCP_REQUIRE_KEY`, JWT-only key issuance, cross-user isolation hard-test) |\n| v0.5 (planned) | inference-list tool, resource subscriptions, fine-grained key permissions |\n\n## Docs\n\n- [`MCP-USAGE.md`](MCP-USAGE.md) — full guide (install, all clients, per-tool reference, troubleshooting, FAQ)\n- Online: <https://ai-know.me/mcp>\n\n## License\n\n[MIT](LICENSE) © 2026 知己 AI (ai-know.me)\n\n---\n\n*知己 AI · MCP integration — Chinese-first brain-inspired memory. The bridge is open; the memory intelligence lives in the Zhiji backend.*\n",
+    "fetchedAt": "2026-08-11T23:10:16.238Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:52:18.407Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"Unauthorized: 须提供 agent API Key(Authorization: Bearer mb-...)\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

@@ -1,0 +1,103 @@
+{
+  "id": "com.reqbeat/hiring-signals",
+  "title": "Reqbeat Hiring Signals",
+  "description": "Find companies hiring for a role and geo, qualify them, and watch them for changes.",
+  "summary": "Find companies hiring for a role and geo, qualify them, and watch them for changes.",
+  "offersHint": "Find companies hiring for a role and geo, qualify them, and watch them for changes. · Remote MCP (streamable-http) at https://mcp.reqbeat.com/mcp · Requires headers: X-API-Key",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.reqbeat.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.reqbeat.com/mcp",
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "description": "Reqbeat plane API key",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-07-28T10:27:25.01802Z",
+  "publishedAt": "2026-07-28T10:27:25.01802Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "X-API-Key"
+  ],
+  "headerDocs": [
+    {
+      "name": "X-API-Key",
+      "description": "Reqbeat plane API key",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:54:44.160Z",
+    "sourceRepoAt": "2026-08-12T00:27:49.694Z",
+    "readmeAt": "2026-08-12T01:54:44.160Z",
+    "toolsAt": "2026-08-12T00:27:49.694Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:27:49.694Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:54:44.160Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "is_hiring",
+      "description": "WHEN an agent already holds a company and needs to qualify it -- the cheap gate before spending a richer call. ATS/board-only and freshness-floored. Takes the integer `company_id` from an earlier result, not a company name or domain. company_id=1234 -> is_hiring true, open_req_count 7, coverage_status \"ats_direct_hit\". company_id=5678 -> is_hiring false with coverage_status \"no_ats_signal\" -- that company has no ATS coverage yet, which is not evidence it is quiet, so do not score it as a negative. No key yet? Pass `plane_api_key` as an empty string and the call answers with a signup link instead of an auth error. To find companies in the first place, use `who_is_hiring_for`."
+    },
+    {
+      "name": "get_open_reqs",
+      "description": "The company's current active reqs, deduped across boards --\n    ATS/board-only, freshness-floored. `function` must be a function id\n    (as seen in prior results); a plain role name like 'engineering' is\n    rejected with an explicit error rather than an empty result. `limit`\n    is bounded: an oversized page is rejected rather than truncated."
+    },
+    {
+      "name": "hiring_pulse",
+      "description": "A company's hiring velocity/direction/momentum in one call --\n    dual-metered via `max_age` (seconds). Cold returns `{job_id, status:\n    \"crawling\"}` instead of a synchronous body, same as the REST route."
+    },
+    {
+      "name": "who_is_hiring_for",
+      "description": "WHEN an agent needs to FIND the companies worth working -- the sourcing step, before it knows which companies exist. Reverse who's-hiring-for {role, geo} search: companies with active reqs matching `role`/`geo`/`since`, deduped by company, keyset-paginated via `cursor`. `role` is free text matched against the posting title, not an id. `geo` is resolved to a stored country before matching; an unresolvable one is an explicit error, never a quietly partial page. `limit` is bounded -- page through the full set with `cursor` instead of raising it. Billed per company returned (~0.10 USD each) -- an empty result bills nothing. role=\"backend engineer\", geo=\"USA\" -> the companies with matching active reqs, each with its pulse and its matched reqs. geo=\"Atlantis\" -> an explicit unresolvable-country error rather than an empty page. No key yet? On the hosted HTTP endpoint the first calls are free: pass `plane_api_key` as an empty string and the search runs on a shared demo credential -- a smaller page, billed to nobody -- until a per-IP limit is reached, after which the answer becomes a signup link whose minted key finishes this exact search. On any other transport a blank key answers with that signup link straight away. Already holding a company_id and only need a yes/no? Use `is_hiring`."
+    },
+    {
+      "name": "search_jobs",
+      "description": "Flat, role-granular job search -- the individual open roles across\n    companies matching `role` (function) / `geo` (country) / `since`, one\n    row per logical req (each with its own `company_id` + `req_key`),\n    ATS-only + freshness-floored. Keyset-paginated via the opaque `cursor`\n    (a prior call's `next_cursor`). Use `who_is_hiring_for` for the\n    company-granular reverse view. `role` must be a function id (as seen\n    in prior results); a plain role name like 'engineering' is rejected\n    with an explicit error rather than an empty result. `limit` is\n    bounded: an oversized page is rejected rather than truncated, so page\n    through the full set with `cursor` instead of raising `limit`."
+    },
+    {
+      "name": "pre_action_brief",
+      "description": "The motion atoms + history primitives pre-joined into one\n    bounded, compact call -- dual-metered via `max_age`. Cold returns\n    `{job_id, status: \"crawling\"}`, same as the REST route."
+    },
+    {
+      "name": "get_changes",
+      "description": "The `since=cursor` diff feed -- ledger events with `event_seq >\n    since`, plus a `next_cursor`. Meters one `change` unit per event\n    returned, independent of poll count. A free-tier caller is\n    freshness-floored, the same as every other free-tier read. `limit` is\n    bounded: an oversized page is rejected rather than truncated, so\n    replay with `next_cursor` instead of raising `limit`."
+    },
+    {
+      "name": "register_webhook",
+      "description": "Register the delivery target a watch fires to, and get back the\n    `webhook_endpoint_id` `watch_company` needs -- call this first if you\n    do not already hold one. Idempotent: registering the same `url` twice\n    returns the same id, so retrying is safe and never leaves you with two\n    endpoints. `secret` is optional; supply one to verify the\n    `X-Plane-Signature` on delivered payloads, omit it and one is\n    generated (it is never returned). Registration itself is free -- the\n    `watch_company` call that follows is what bills.\n\n    Plane session only: `webhook_endpoints` is plane-owned and this tool reads\n    no corpus table."
+    },
+    {
+      "name": "watch_company",
+      "description": "Subscribe to a company's hiring events on a registered webhook --\n    `webhook_endpoint_id` must belong to the same customer as the\n    authenticated key. Meters one `watch` unit.\n\n    A free key holds a limited number of watches at once; the one past that\n    is refused with the same 402 the REST route raises, and cancelling a\n    watch returns the slot."
+    },
+    {
+      "name": "write_outcome",
+      "description": "Write back a conversion outcome for `company_id` -- the\n    label-flywheel substrate. Appends to `outcome_labels` scoped to the\n    caller's own customer.\n\n    Plane session only: `outcome_labels` is plane-owned (Phase 1 dropped its\n    one foreign key into the corpus) and this tool reads no corpus table."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:27:49.694Z",
+  "toolsPreviewStatus": "ok"
+}

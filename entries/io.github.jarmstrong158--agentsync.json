@@ -1,0 +1,100 @@
+{
+  "id": "io.github.jarmstrong158/agentsync",
+  "title": "agentsync",
+  "description": "Multi-agent coordination MCP: claim work, survey peers, resolve conflicts via a git branch as CAS.",
+  "summary": "Multi-agent coordination MCP: claim work, survey peers, resolve conflicts via a git branch as CAS.",
+  "offersHint": "Multi-agent coordination MCP: claim work, survey peers, resolve conflicts via a git branch as CAS. · Packages: pypi:agentsync-mcp · Env vars: AGENTSYNC_AGENT_ID, AGENTSYNC_BRANCH, AGENTSYNC_REPO",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "agentsync-mcp",
+    "version": "0.2.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AGENTSYNC_REPO",
+        "description": "Absolute path to the shared project git clone used for coordination."
+      },
+      {
+        "name": "AGENTSYNC_AGENT_ID",
+        "description": "Your unique agent id, used to key your claims."
+      },
+      {
+        "name": "AGENTSYNC_BRANCH",
+        "description": "The dedicated coordination branch (default: agentsync)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "agentsync-mcp",
+      "version": "0.2.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AGENTSYNC_REPO",
+          "description": "Absolute path to the shared project git clone used for coordination."
+        },
+        {
+          "name": "AGENTSYNC_AGENT_ID",
+          "description": "Your unique agent id, used to key your claims."
+        },
+        {
+          "name": "AGENTSYNC_BRANCH",
+          "description": "The dedicated coordination branch (default: agentsync)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AGENTSYNC_AGENT_ID",
+      "description": "Your unique agent id, used to key your claims."
+    },
+    {
+      "name": "AGENTSYNC_BRANCH",
+      "description": "The dedicated coordination branch (default: agentsync)."
+    },
+    {
+      "name": "AGENTSYNC_REPO",
+      "description": "Absolute path to the shared project git clone used for coordination."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jarmstrong158/agentsync",
+  "repository": {
+    "url": "https://github.com/jarmstrong158/agentsync",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T13:35:31.678952Z",
+  "publishedAt": "2026-08-02T13:35:31.678952Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:23.135Z",
+    "sourceRepoAt": "2026-08-11T23:41:36.160Z",
+    "readmeAt": "2026-08-11T23:41:36.826Z",
+    "toolsAt": "2026-08-12T01:19:23.135Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jarmstrong158/agentsync",
+    "checkedAt": "2026-08-11T23:41:36.160Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jarmstrong158/agentsync/main/README.md",
+    "markdown": "# agentsync\n\n<!-- mcp-name: io.github.jarmstrong158/agentsync -->\n\nAn MCP server that lets two (or more) AI agents collaborate on the **same git\nrepository** without stepping on each other. Each agent declares what it's\nbuilding before it builds, sees what its partner has claimed, and detects\nconflicts when work lands — all coordinated through the repo itself, with no\nlock server and no requirement that both agents be online at once.\n\n## How it works (one paragraph)\n\nCoordination state is a single `claims.json` living on a dedicated `agentsync`\nbranch (kept out of `main`, so it never pollutes your code history and isn't\nblocked by `main`'s branch protection). Each agent's claim declares the work,\nthe files it will **touch**, what it **requires**, its branch, and a status.\nOverlap is plain set intersection. Writes use a read-modify-write loop with\n`git push` as a **compare-and-swap**: if the push is rejected, the server\nre-fetches the latest claims and re-evaluates, so a colliding peer claim is\n*observed before* this agent's claim is committed. All git work happens in a\nprivate worktree under `.git/`, so your agent's actual code branch is never\ndisturbed.\n\nSee **DESIGN.md** for the architecture rationale and **AGENTS.md** for the\nplaybook your agent follows to drive the tools.\n\n## Install\n\n```bash\npip install -r requirements.txt      # just `mcp`\n```\n\nFor anything that talks to GitHub — provisioning a repo (`provision`), inviting a\ncollaborator (`add_collaborator`), or opening a PR (`finish`) — you also need the\n[GitHub CLI](https://cli.github.com), authenticated with `repo` scope:\n\n```bash\ngh auth login        # one-time; check with `gh auth status`\n```\n\n## Configure\n\nBoth collaborators add the server to their MCP client, each with their own\nagent id and their own local clone. See `mcp.config.example.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"agentsync\": {\n      \"command\": \"python3\",\n      \"args\": [\"/abs/path/to/agentsync_server.py\"],\n      \"env\": {\n        \"AGENTSYNC_BOARD_REPO\": \"/abs/path/to/the/clone/holding/the/board\",\n        \"AGENTSYNC_AGENT_ID\": \"jonny\"\n      }\n    }\n  }\n}\n```\n\n| env var                   | required | default     | meaning                                    |\n|---------------------------|----------|-------------|--------------------------------------------|\n| `AGENTSYNC_BOARD_REPO`    | yes\\*    | —           | path to the clone that **holds the board** |\n| `AGENTSYNC_REPO`          | no       | —           | legacy alias for `AGENTSYNC_BOARD_REPO`    |\n| `AGENTSYNC_AGENT_ID`      | yes      | —           | your unique agent id                       |\n| `AGENTSYNC_REMOTE`        | no       | `origin`    | git remote name                            |\n| `AGENTSYNC_BRANCH`        | no       | `agentsync` | coordination branch name                   |\n| `AGENTSYNC_PARTNER_GITHUB`| no       | —           | partner GitHub user(s) to invite (comma/space-separated) |\n| `AGENTSYNC_STALE_HOURS`   | no       | `24`        | age after which an in-progress claim is flagged `stale` |\n| `AGENTSYNC_GIT_TIMEOUT`   | no       | `25`        | seconds any single git/gh call may run before it fails fast |\n\nThe `agentsync` branch is created automatically on the first `survey()` or\n`claim()` call against an explicitly addressed board — no manual setup.\n\n### Where the board lives (board addressing)\n\n\\* The board is a **shared, long-lived team artifact**, not a property of\nwhichever repo you happen to be sitting in. So its address is resolved\nindependently of the session, in this order:\n\n1. **`AGENTSYNC_BOARD_REPO`** — the explicit board address. This never follows\n   the Xylem session pointer (`~/.xylem/active_project.json`).\n2. **`AGENTSYNC_REPO`** — the legacy explicit pin; identical effect.\n3. **The current repo** (session pointer, else the cwd's git root) — but *only\n   if that repo actually holds the coordination branch*. The check is a real ref\n   lookup (local head → remote-tracking ref → `ls-remote`), so this fallback can\n   only ever select a repo that genuinely **is** a board.\n4. Otherwise a **`ConfigError` naming `AGENTSYNC_BOARD_REPO`** — never a silent\n   selection of a boardless repo.\n\n`survey()` reports the board it actually read under `board: {repo, source}`, so\n\"the team is quiet\" and \"I am looking at the wrong board\" are distinguishable.\n\n**Why this order.** Previously an unpinned server followed the session pointer\nblindly. The board therefore changed identity whenever the session changed\nproject, and in any project that had never been provisioned it simply\ndisappeared — reported downstream as `\"no coordination branch found\"` and\ntreated as normal. cambium's `distill()` applies this **exact same** resolution,\nso the two halves of the suite can never disagree about where the board is.\n\n## Starting from nothing (no repo yet)\n\nIf the shared repo doesn't exist on GitHub yet, **one** person runs `provision()`\nonce. Point `AGENTSYNC_BOARD_REPO` at the folder you want the project in (it can\nbe empty or not yet created) and call:\n\n```\nprovision(repo=\"you/our-project\", partner_github=\"their-username\")\n```\n\nThis creates the GitHub repo (private by default), makes the first commit, seeds\nthe `agentsync` coordination branch, and invites your partner as a push\ncollaborator. It's idempotent — safe to re-run. Then send your partner the\n`clone_url` it returns; once they accept the invite and clone, both of you point\nthe MCP server at your own clones and the normal protocol below takes over.\n\n## Tools\n\n**`provision(repo=\"\", partner_github=\"\", private=True, description=\"\")`** —\none-time bootstrap when the shared repo doesn't exist yet. Creates the GitHub\nrepo via `gh`, makes the first commit, seeds the `agentsync` branch, and invites\nthe partner as a push collaborator. Idempotent. Returns the `clone_url` to hand\nyour partner. (Needs the `gh` CLI authenticated with `repo` scope.)\n\n**`add_collaborator(github_username, permission=\"push\")`** — invite **one or\nmore** people (comma/space-separated) to the **existing** shared repo so they can\npush (`pull`|`triage`|`push`|`maintain`|`admin`). Use this when the repo already\nexists and you just want to grant access — this is how you build a team of more\nthan two. They must accept the GitHub invite, then clone. (Needs `gh` with admin\non the repo.)\n\n**`survey()`** — pull the latest state and report what every *other* agent has\nclaimed: task, files, dependencies, branch, status, timestamp. Works for any\nnumber of collaborators. Each partner entry is annotated with `age_hours` and a\n`stale` flag (in-progress and older than `AGENTSYNC_STALE_HOURS`, default 24h),\nand a top-level `stale_claims` list — so you can spot a partner who crashed or\nwalked away still holding files. Run it before planning and after finishing.\n\n**`claim(task, touches, requires=None, branch=\"\", force=False)`** — stake a\nunit of work. Refuses with `status: \"blocked\"` if your `touches` hits a\npartner's active files (you'd get in their way) or your `requires` hits their\nin-progress files (you'd build on unstable ground), returning exactly what\noverlaps and with whom. **Overlap is path-aware**: exact match, directory\ncontainment (`src/api` vs `src/api/routes.py`), and globs (`src/**`, `*.py`) all\ncollide, and paths are normalized first (`./auth.py` == `auth.py`). The overlap\nis checked against freshly-fetched state immediately before the push. Pass\n`force=True` to claim anyway (e.g. same large file, disjoint regions). If your\nagent id already holds an **in-progress** claim written by a different server\ninstance — another agent is live under the same id — `claim()` returns\n`blocked` with a `shared_agent_id` reason naming the task, branch and files that\nwould be erased, because one id holds exactly one claim. Give each agent its own\nid; `force=True` overrides it for the legitimate case of a restarted server\nreclaiming its own slot, and then the result carries a `warning` listing the\nfiles that just lost their protection.\n\n**`release(note=\"\")`** — abandon your current claim **without** marking it done,\nfreeing the files for a partner to take over. Use it when you drop a task or step\naway — otherwise a crashed/abandoned claim blocks those files until someone does\nmanual git surgery. Pushes immediately.\n\n**`check_conflicts(against_branch=\"\")`** — after building, diff your branch\nagainst your partners' branches at two levels:\n- `claim_overlap` — declared-path intersection (intent, path-aware).\n- `merge_conflict` — a real `git merge-tree` dry-run merge (textual). Catches\n  collisions the claims didn't predict.\n\nDefaults to every branch named in an active peer claim; pass `against_branch`\nto check one specific branch.\n\n**`update_status(status, note=\"\")`** — set your own claim's status\n(`planning` | `in-progress` | `done`) and optionally leave a note for your\npartner. Pushes immediately. On `done`, the claim is auto-annotated with\n`changed_files` — your branch's diffstat vs the default branch — so your partner\nreconciles against real data, not just a hand-written summary. It is computed in\nthe **board repo**, and a claim records a branch *name* with no repo qualifier,\nso `changed_files_repo` names the repo the diffstat actually came from: where you\ncoordinate on a dedicated board repo, a same-named branch there will diff cleanly\nand produce a confidently wrong file list. Check the label before trusting the\nlist. (To drop a claim without finishing it, use `release()`.)\n\n**`finish(note=\"\", title=\"\", draft=False)`** — close the loop: mark your claim\n`done` **and** open a GitHub pull request from your claimed branch into the\ndefault branch. Falls back to your claim's task/note for the PR title/body, and\nreturns the existing PR's URL if one is already open. Your branch must be pushed.\n(Needs `gh`.)\n\n**`history(limit=20)`** — the coordination timeline (who claimed, finished, or\nreleased what, and when) read from the git history of `claims.json`, newest\nfirst. Answers \"what has my partner been up to?\" even when they're offline.\n\n## The workflow (what your agent does)\n\n0. `provision(...)` — **once, only if the repo doesn't exist yet** (then both clone)\n1. `survey()` — what's my partner working on, if anything?\n2. plan a slice that doesn't overlap their active work\n3. `claim(...)` — if blocked, narrow the slice or wait\n4. build on your branch\n5. `survey()` again — where are they now?\n6. `check_conflicts()` — does their landed work collide with mine?\n7. reconcile (rebase/merge or flag) → `update_status(\"done\", ...)` or\n   `finish(...)` to also open a PR\n\nThe full prompt your agent should run is in **AGENTS.md**.\n\n## More than two agents\n\nNothing here is limited to two. `claims.json` is keyed by agent id, `claim()`\nchecks your plan against *every* peer, and the compare-and-swap only ever edits\nyour own key — so three, four, or more agents coordinate safely. To run a team:\n\n- Invite everyone: `add_collaborator(\"alice, bob, carol\")` (or list them in\n  `provision(partner_github=...)`).\n- **Give every agent a unique `AGENTSYNC_AGENT_ID`** — every *agent*, not every\n  person. One person running a desktop session, a phone and a remote agent needs\n  three ids, for the same reason three people do: one id holds exactly one claim.\n  `claim()` blocks rather than overwriting a live claim under your own id, but a\n  unique id per agent avoids the collision entirely.\n\n  This guard used to key on a per-**process** token, which meant it caught a\n  restarted server and waved through a *concurrent session* -- one agentsync\n  process serves every session on a machine, so two sessions shared the token\n  and silently overwrote each other. It now keys on the **work**: a claim for a\n  different task, while one is in progress under your id, is refused whatever\n  process wrote it. Re-claiming the *same* task stays free, which is how you\n  widen `touches` mid-unit. `release(expect_task=...)` covers the other\n  direction, refusing to close a claim that is not the one you think you hold.\n- Contention stays cheap for a handful of agents; with *many* simultaneous\n  claimers a `claim()` can return `retry_exhausted` — just call `survey()` and\n  retry.\n\n## Test\n\n```bash\npython3 test_agentsync.py     # unit + protocol suite (real git repos)\npython3 test_workflow.py      # two-person lifecycle + real MCP stdio transport\n```\n\n`test_agentsync.py` (51 cases, isolated per test) covers the protocol (claim/\nblock on shared files and dependency-on-WIP, force override, done-claims-don't-\nblock, status validation), **path-aware overlap** (directory containment, globs,\nnormalization, disjoint-dirs-are-clean), conflict detection (textual conflict and\nclean-merge), the **compare-and-swap guarantee** (a peer claim landing mid-flight\nboth survives our retry and is observed in time to block a collision), liveness\n(`release`, `stale` flagging, the live-claim guard against concurrent sessions), the review loop\n(`history` timeline, `done` diffstat capture, `finish` opening/reusing a PR,\npush-required guard), error paths, and provisioning + `add_collaborator` (single\nand multi-invite, partner-from-env, existing-remote skip, invite-failure\nreporting, bad-permission, no-remote) with the `gh` CLI stubbed so no real GitHub\nrepo is touched. `test_workflow.py` (5 cases) drives the full two-person\nlifecycle and the real MCP stdio transport as a subprocess. CI runs both on every\npush via [GitHub Actions](.github/workflows/test.yml).\n\n## Limitations\n\n- **Textual, not semantic.** `check_conflicts` catches files that won't merge;\n  it does *not* catch \"their API signature change breaks my caller.\" That\n  reasoning is the agent's job (read both diffs) — the server gives it the\n  signal, not the judgment.\n- **Both sides must opt in.** This only works fully if your partner's agent\n  runs the same server and honors the same claim protocol. Without that, yours\n  degrades to branch inspection: it sees what has *landed*, not what's *planned*.\n- **Advisory locks.** Claims prevent collisions by convention, not enforcement;\n  `force=True` exists precisely because some overlaps are fine.\n\n## License\n\n[PolyForm Noncommercial License 1.0.0](LICENSE.md) — free to use, modify, and\nshare for any **noncommercial** purpose. Commercial use requires a separate\nlicense.\n",
+    "fetchedAt": "2026-08-11T23:41:36.826Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:23.135Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

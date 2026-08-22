@@ -1,0 +1,99 @@
+{
+  "id": "io.github.Mediaeater/swarm-at",
+  "title": "swarm-at",
+  "description": "Settlement protocol for AI agent swarms — hash-chained ledger, trust, 48 blueprints, 18 tools",
+  "summary": "Settlement protocol for AI agent swarms — hash-chained ledger, trust, 48 blueprints, 18 tools",
+  "offersHint": "Settlement protocol for AI agent swarms — hash-chained ledger, trust, 48 blueprints, 18 tools · Remote MCP (sse) at https://api.swarm.at · Packages: pypi:swarm-at-sdk · Env vars: SWARM_API_KEY, SWARM_API_URL",
+  "version": "0.7.1",
+  "status": "active",
+  "transport": "sse",
+  "endpointUrl": "https://api.swarm.at",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://api.swarm.at"
+    }
+  ],
+  "install": {
+    "kind": "pypi",
+    "package": "swarm-at-sdk",
+    "version": "0.7.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SWARM_API_URL",
+        "description": "Base URL for the swarm.at API (default: https://api.swarm.at)"
+      },
+      {
+        "name": "SWARM_API_KEY",
+        "description": "API key for authenticated endpoints (settlement, credits, webhooks)",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "swarm-at-sdk",
+      "version": "0.7.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SWARM_API_URL",
+          "description": "Base URL for the swarm.at API (default: https://api.swarm.at)"
+        },
+        {
+          "name": "SWARM_API_KEY",
+          "description": "API key for authenticated endpoints (settlement, credits, webhooks)",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SWARM_API_KEY",
+      "description": "API key for authenticated endpoints (settlement, credits, webhooks)",
+      "secret": true
+    },
+    {
+      "name": "SWARM_API_URL",
+      "description": "Base URL for the swarm.at API (default: https://api.swarm.at)"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Mediaeater/swarm-at-ledger",
+  "repository": {
+    "url": "https://github.com/Mediaeater/swarm-at-ledger",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-27T16:26:49.149143Z",
+  "publishedAt": "2026-02-27T16:26:49.149143Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:38:00.778Z",
+    "sourceRepoAt": "2026-08-12T00:07:07.273Z",
+    "readmeAt": "2026-08-12T00:07:07.804Z",
+    "toolsAt": "2026-08-12T01:38:00.778Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Mediaeater/swarm-at-ledger",
+    "checkedAt": "2026-08-12T00:07:07.273Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Mediaeater/swarm-at-ledger/main/README.md",
+    "markdown": "# swarm.at Public Ledger\n\nHash-chained public record of verified agent settlements. Append-only, tamper-evident, auditable by anyone.\n\nEvery entry in `ledger.jsonl` is a SHA-256 hash-chained settlement that passed the full verification pipeline: integrity check, confidence threshold, and shadow audit. Modifying any entry breaks all subsequent hashes.\n\n## Ledger Format\n\nEach line in `ledger.jsonl` is a JSON object:\n\n```json\n{\n  \"timestamp\": 1770480398.05,\n  \"task_id\": \"fingerprint-pg84\",\n  \"parent_hash\": \"000000...000000\",\n  \"payload\": { \"type\": \"text-fingerprint\", \"title\": \"Frankenstein\", \"...\" : \"...\" },\n  \"current_hash\": \"453eaa...178b287\"\n}\n```\n\n- **parent_hash** links to the previous entry's `current_hash` (genesis = `0` x 64)\n- **current_hash** = SHA-256 of the entry with `current_hash` set to `\"\"`\n- The chain is tamper-evident: modifying any entry breaks all subsequent hashes\n\n## Canonical Hash Algorithm\n\nTo verify any entry:\n\n1. Parse the JSON line into a dict\n2. Set `current_hash` to `\"\"` (empty string)\n3. Serialize with `json.dumps(entry, sort_keys=True).encode()` (UTF-8)\n4. Compute `hashlib.sha256(serialized).hexdigest()`\n5. Compare against the stored `current_hash`\n\nThe genesis (first entry's `parent_hash`) is always `\"0\" * 64` (64 zero characters).\n\n## Data Provenance\n\nEntries in this ledger are **synthetic seed data** generated from public domain sources (Project Gutenberg texts, scientific constants, geographic facts). They demonstrate the settlement protocol's hash-chaining and verification pipeline. They are not records of real agent interactions.\n\n## Verification\n\nThree ways to verify the chain:\n\n**Standalone** (zero dependencies, Python 3.8+):\n\n```bash\npython verify.py\n# OK: 1107 entries, chain intact\n```\n\n**SDK**:\n\n```python\nfrom swarm_at.settler import Ledger\nledger = Ledger(path=\"ledger.jsonl\")\nprint(ledger.verify_chain())  # True\n```\n\n**API**:\n\n```bash\ncurl https://api.swarm.at/public/ledger/verify\n# {\"intact\": true, \"entry_count\": 1107}\n```\n\n## Settlement Receipts\n\nEvery settled entry produces a receipt that any agent can look up by hash. No authentication required.\n\n```bash\ncurl https://api.swarm.at/public/receipts/{hash}\n# {\"status\": \"SETTLED\", \"hash\": \"...\", \"task_id\": \"...\", \"timestamp\": ..., \"parent_hash\": \"...\"}\n```\n\nReceipts let third parties verify that a specific settlement happened, when it happened, and where it sits in the chain.\n\n## Trust Verification\n\nCheck an agent's trust level without authentication:\n\n```bash\n# Does this agent meet a trust threshold?\ncurl \"https://api.swarm.at/public/verify-trust?agent_id=X&min_trust=trusted\"\n# {\"agent_id\": \"X\", \"meets_requirement\": true, \"trust_level\": \"trusted\", \"reputation_score\": 0.95}\n\n# How many agents at each trust level?\ncurl https://api.swarm.at/public/trust-summary\n# {\"total_agents\": 5, \"by_trust_level\": {\"untrusted\": 0, \"provisional\": 0, \"trusted\": 4, \"senior\": 1}}\n```\n\n## Trust Badges\n\nEmbeddable SVG badges show an agent's trust level at a glance. No authentication required.\n\n```\nhttps://api.swarm.at/badge/{agent_id}\n```\n\nColors: untrusted (red), provisional (yellow), trusted (green), senior (blue).\n\n## MCP Server\n\n29 tools available via the Model Context Protocol:\n\n```bash\nmcp add swarm-at -- python -m swarm_at.mcp\n```\n\n| Tool | Description |\n|---|---|\n| settle_action | Validate an action against institutional rules |\n| check_settlement | Query ledger status for a task or hash |\n| ledger_status | Current chain state (latest hash, entry count, integrity) |\n| guard_action | Settle before acting — propose + settle + receipt in one call |\n| list_blueprints | Browse workflow blueprints by tag |\n| get_blueprint | Full blueprint detail with steps and credit cost |\n| get_credits | Check an agent's credit balance |\n| topup_credits | Add credits to an agent |\n| fork_blueprint | Fork a blueprint into an executable workflow |\n| verify_receipt | Look up a settlement receipt by hash |\n| check_trust | Check if an agent meets a minimum trust threshold |\n| settle_batch | Settle multiple proposals in one call |\n| register_agent | Register a new agent identity with trust tracking |\n| get_agent | Look up an agent's profile and reputation |\n| list_agents | Browse agents by trust level and role |\n| whoami | Agent self-introspection (trust, tools, next promotion) |\n| execute_step | Execute a single workflow step in a molecule |\n| list_molecules | List active workflow molecules with progress |\n| get_molecule | Get full molecule state with all beads |\n| register_webhook | Subscribe to settlement events |\n| list_webhooks | List registered webhook subscriptions |\n| unregister_webhook | Remove a webhook subscription |\n| claim_authorship | Create a verifiable authorship record |\n| verify_authorship | Check authorship claims by content hash |\n| start_writing_session | Start tracking authorship provenance |\n| record_writing_event | Record a creative event in a session |\n| approve_writing | Record final approval of content |\n| get_provenance_report | Generate a verifiable provenance report |\n| list_writing_sessions | List active authorship sessions |\n\n## Framework Adapters\n\nSeven adapters settle agent outputs with zero hard dependencies on the framework:\n\n| Framework | Adapter | Entry Point |\n|---|---|---|\n| LangGraph | `SwarmNodeWrapper` | Wraps node functions |\n| CrewAI | `SwarmTaskCallback` | Task completion callback |\n| AutoGen | `SwarmReplyCallback` | Agent reply observer |\n| OpenAI Assistants | `SwarmRunHandler` | Run and step settlement |\n| OpenAI Agents SDK | `SwarmAgentHook` | Runner result and tool call settlement |\n| Strands (AWS) | `SwarmStrandsCallback` | Tool and agent completion callbacks |\n| Haystack | `SwarmSettlementComponent` | Pipeline component returning receipts |\n\nInstall adapters via optional extras:\n\n```bash\npip install swarm-at-sdk[langgraph]\npip install swarm-at-sdk[openai-agents]\npip install swarm-at-sdk[strands]\npip install swarm-at-sdk[haystack]\n```\n\n## Blueprint Catalog\n\n58 pre-validated blueprints across 9 categories:\n\n| Category | Count | Examples |\n|---|---|---|\n| Procurement & Supply Chain | 5 | vendor-negotiation, purchase-approval, delivery-confirmation |\n| Software Development | 5 | code-review-pipeline, pr-merge-audit, incident-escalation |\n| Finance & Compliance | 5 | invoice-matching, kyc-verification, financial-close |\n| Content & Knowledge | 5 | research-workflow, fact-checking, translation-verification |\n| Customer Operations | 5 | escalation-routing, refund-approval, sla-compliance |\n| Specialty | 6 | audit-chain, healthcare-referral, insurance-adjudication |\n| AI & ML Ops | 9 | model-validation, training-pipeline, prompt-regression |\n| Security & Compliance | 9 | vulnerability-triage, access-review, incident-response |\n| Data Engineering | 9 | etl-pipeline, data-quality, schema-migration |\n\nBrowse: [api.swarm.at/public/blueprints](https://api.swarm.at/public/blueprints)\n\nEach blueprint defines 2-4 steps with role assignments (worker, auditor, specialist, orchestrator, validator), dependency chains, and credit costs (2.0-8.0 per settlement).\n\n## Settlement Types\n\n<details>\n<summary>42 types covering knowledge verification, agent behaviors, and protocol operations</summary>\n\n### Knowledge Verification\n\n| Type | Description |\n|---|---|\n| text-fingerprint | Public domain text ingestion + hashing |\n| qa-verification | Factual Q&A with multi-agent consensus |\n| fact-extraction | Structured entity extraction from text |\n| classification | Genre/topic/tone multi-label tagging |\n| summarization | Text condensation with cross-verification |\n| translation-audit | Cross-language verification |\n| data-validation | Math constants + periodic table verification |\n| code-review | Algorithm correctness + complexity analysis |\n| sentiment-analysis | Dimensional sentiment scoring |\n| logical-reasoning | Syllogism and formal logic verification |\n| unit-conversion | Metric/imperial/scientific unit verification |\n| geo-validation | Geographic fact verification |\n| timeline-ordering | Chronological event ordering |\n| regex-verification | Pattern matching correctness |\n| schema-validation | Data schema conformance checking |\n\n### Agent Behaviors\n\n| Type | Description |\n|---|---|\n| code-generation | New code creation with language + framework metadata |\n| code-edit | Modifications to existing code with diff tracking |\n| code-refactor | Structural improvements preserving behavior |\n| bug-fix | Defect resolution with root cause analysis |\n| test-authoring | Test creation with coverage and assertion tracking |\n| codebase-search | Code search operations with match scoring |\n| web-research | Web research with source verification |\n| planning | Task decomposition and execution planning |\n| debugging | Diagnostic investigation with hypothesis tracking |\n| shell-execution | Shell command execution with safety classification |\n| file-operation | File system operations with change tracking |\n| git-operation | Git operations with ref and diff metadata |\n| dependency-management | Package and dependency management |\n| agent-handoff | Task delegation between agents |\n| consensus-vote | Multi-agent consensus participation |\n| task-delegation | Work distribution to sub-agents |\n| documentation | Documentation creation and updates |\n| api-integration | External API calls with endpoint tracking |\n| deployment | Build, deploy, and release operations |\n| conversation-turn | Conversational exchange settlement |\n\n### Protocol Operations\n\n| Type | Description |\n|---|---|\n| blueprint-fork | Blueprint forked into executable workflow |\n| guard-action | Pre-action settlement check (settle before you act) |\n| trust-check | Agent trust level verification against threshold |\n| credit-topup | Credits added to agent balance |\n| receipt-verify | Settlement receipt lookup by hash |\n| badge-request | Trust badge SVG generation |\n| adapter-settlement | Framework adapter settling agent output |\n\n</details>\n\n## Lexicon\n\n| Term | Definition |\n|---|---|\n| **Settlement** | A verified, hash-chained record of an agent action. One credit = one settlement. |\n| **Ledger** | Append-only JSONL file where settlements are recorded. Each entry's hash chains to the previous. |\n| **Proposal** | An agent's request to settle an action. Contains a header (task ID, parent hash) and payload (data, confidence score). |\n| **Receipt** | Proof that a settlement occurred. Contains hash, task ID, timestamp, and parent hash. Publicly verifiable. |\n| **Blueprint** | A pre-validated workflow template with ordered steps, role assignments, and credit cost. Forkable by any agent. |\n| **Workflow** | An executable instance of a blueprint. Created by forking. Each step maps to one settlement. |\n| **Trust Level** | Agent reputation tier: untrusted, provisional, trusted, senior. Computed via Bayesian credible intervals. |\n| **Credit** | Unit of settlement currency. 1 credit = 1 settlement. New agents get 100 free. |\n| **Guard Action** | Pattern: settle before you act. Propose, settle, get receipt in one call. Raises error on rejection. |\n| **Shadow Audit** | Cross-model verification where a second model independently checks the primary's output. |\n| **Divergence** | When a shadow audit disagrees with the primary. Penalizes the agent's trust score. |\n| **Adapter** | Framework integration that settles agent outputs without hard-importing the framework. Uses duck typing. |\n| **Agent Card** | A2A discovery document at `/.well-known/agent-card.json` describing the protocol's capabilities. |\n| **Tier** | Settlement strictness level: sandbox (log-only), staging (writes, no chain enforcement), production (full). |\n\n## Links\n\n- **Protocol**: [swarm.at](https://swarm.at)\n- **API**: [api.swarm.at](https://api.swarm.at)\n- **Blueprints**: [api.swarm.at/public/blueprints](https://api.swarm.at/public/blueprints)\n- **Stack**: [swarm.at/stack.html](https://swarm.at/stack.html) — where swarm.at fits alongside MCP, A2A, and ACP\n- **Pricing**: [swarm.at/pricing.html](https://swarm.at/pricing.html) — Free / Pro / Enterprise tiers\n- **Spec**: [swarm.at/SPEC.html](https://swarm.at/SPEC.html) — full technical specification\n- **Dashboard**: [swarm.at/dashboard.html](https://swarm.at/dashboard.html) — live settlement stats\n- **LLMs.txt**: [api.swarm.at/llms.txt](https://api.swarm.at/llms.txt) — LLM-readable protocol summary\n- **Agent Card**: [api.swarm.at/.well-known/agent-card.json](https://api.swarm.at/.well-known/agent-card.json)\n- **PyPI**: [swarm-at-sdk](https://pypi.org/project/swarm-at-sdk/)\n\n---\n\n© 2026 Mediaeater. All rights reserved.\n",
+    "fetchedAt": "2026-08-12T00:07:07.804Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:38:00.778Z",
+  "toolsPreviewError": "SSE error: Non-200 status code (404)",
+  "toolsPreviewStatus": "unreachable"
+}

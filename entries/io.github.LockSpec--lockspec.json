@@ -1,0 +1,58 @@
+{
+  "id": "io.github.LockSpec/lockspec",
+  "title": "lockspec",
+  "description": "MCP server giving AI coding agents version-pinned API context from your OpenAPI specs.",
+  "summary": "MCP server giving AI coding agents version-pinned API context from your OpenAPI specs.",
+  "offersHint": "MCP server giving AI coding agents version-pinned API context from your OpenAPI specs. · Packages: npm:lockspec",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "lockspec",
+    "version": "1.0.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "lockspec",
+      "version": "1.0.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/LockSpec/lockspec",
+  "repository": {
+    "url": "https://github.com/LockSpec/lockspec",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-10T23:09:54.502485Z",
+  "publishedAt": "2026-06-10T23:09:54.502485Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:25.219Z",
+    "sourceRepoAt": "2026-08-12T00:08:13.896Z",
+    "readmeAt": "2026-08-12T00:08:14.358Z",
+    "toolsAt": "2026-08-12T01:39:25.219Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/LockSpec/lockspec",
+    "checkedAt": "2026-08-12T00:08:13.896Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/LockSpec/lockspec/main/README.md",
+    "markdown": "# LockSpec\n\nYour AI coding agent writes code that calls your API, but it guesses parts of the contract that it can't see and doesn't know about. It invents field names, calls paths that don't exist, and gets the types wrong. LockSpec is an MCP server that gives the agent the real contract from your OpenAPI spec. When the agent needs an endpoint signature or a type, it gets the exact shape your API accepts.\n\nMost API context tools for agents cover public libraries. LockSpec is for any API that you have a spec for, regardless of whether it's private, internal, or a third party's.\n\nv1 supports OpenAPI 3.0 and 3.1.\n\n## Why\n\nYou might ask why the agent can't just read the spec from your repo. This works fine in many cases. But if you're working with a spec that the agent can't access (because it's not in the repo, or because it's too large to fit into context), the agent can't get accurate information about the contract it needs to fulfill. You might also want the agent pinned to a specific spec version you choose, not whatever is currently the latest version in the repo. LockSpec loads the spec you provide, indexes it, and serves answers from a pinned snapshot that you control. It returns only the slice that the agent asked for, so an agent can ground the code it writes in the actual contract rather than hallucinating it.\n\nLockSpec can also help agents prevent API version skew. Suppose prod runs v1, a few services already moved to v2, and both are live. You want the agent to write against the right one the *first* time around. Writing against the wrong one breaks tests, or worse, ships a broken call. With LockSpec, you can load multiple versions of the same API spec at once. You control which one the agent uses. When more than one version of a spec is loaded, the tools that feed code-writing stop *before* writing code to ask which version should be used. The agent commits to a version on purpose instead of using the one that it saw most recently.\n\nWhen the agent has a draft request, `validate_call` checks it against the pinned spec and reports any structural problems it finds. It's a check that catches structural mistakes in the draft before they fail tests and burn extra turns.\n\n## Install\n\nRequires Node 22 or newer. Your MCP client runs it through `npx`:\n\n```bash\nnpx lockspec\n```\n\n### From source\n\n```bash\ngit clone https://github.com/LockSpec/lockspec.git\ncd lockspec\nnpm install\nnpm run build      # compiles TypeScript to dist/\nnode dist/index.js # starts the server over stdio\n```\n\n## Connect your agent\n\nLockSpec runs locally over stdio. Point your MCP client at the `lockspec` command:\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"lockspec\": { \"command\": \"npx\", \"args\": [\"lockspec\"] }\n  }\n}\n```\n\n- Claude Code: `claude mcp add lockspec -- npx lockspec`\n- Gemini CLI: `gemini mcp add lockspec npx lockspec`\n- Codex: `codex mcp add lockspec -- npx lockspec`\n- Cursor: add the block above to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global).\n- Cline / Windsurf: add the block above to the client's MCP settings (`cline_mcp_settings.json` for Cline).\n\nTo run from a source checkout instead of npm, point `command`/`args` at the built entrypoint:\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"lockspec\": { \"command\": \"node\", \"args\": [\"/absolute/path/to/lockspec/dist/index.js\"] }\n  }\n}\n```\n\n## The tools\n\n| Tool | What it does |\n|---|---|\n| `load_spec` | Ingest an OpenAPI file, URL, or text; normalize, index, and pin a version. |\n| `find_endpoint` | Find operations by intent or by exact path/operationId. |\n| `find_type` | Find named schemas and types. |\n| `get_signature` | Exact request and response shape: params, required fields, types. |\n| `validate_call` | Structurally validate a draft request against the spec and report what's wrong. |\n| `list_specs` | What's loaded, and which version is active. |\n| `activate_version` | Switch the active (pinned) version. |\n| `remove_spec` | Remove a spec or a single version. |\n| `diff_versions` | Structural diff of two versions, classified breaking or non-breaking. |\n\n## How it works\n\n`load_spec` fetches a spec once, normalizes it (bundles external `$ref`s, reconciles 3.0 and 3.1), hashes the result to use as the version's identity, and stores it under `~/.lockspec/`. After that everything is pinned and offline. Your specs never leave your machine.\n\nMultiple specs, and multiple versions of one spec, coexist and are queried independently. Each spec has one active version, used when you don't name one. When more than one version is loaded, `get_signature` and `validate_call` won't guess. They return an error asking you to pin a `version`. `find_endpoint` and `find_type` use the active version and tell you which one they used.\n\n## Examples\n\n### Discovering an operation\n\n`find_endpoint` scores and ranks operations by intent, returning the match or matches the agent will work with.\n\n```js\nfind_endpoint({ query: \"create\" })\n```\n\n<!-- demo:find_endpoint -->\n```json\n{\n  \"ok\": true,\n  \"spec_id\": \"petstore\",\n  \"version_id\": \"sv_f403f8b0c4465bd7db52a4cd\",\n  \"results\": [\n    {\n      \"operation_key\": \"POST:/pets\",\n      \"operation_id\": \"createPet\",\n      \"summary\": \"Create a pet\"\n    }\n  ],\n  \"truncated\": false\n}\n```\n\n### Reading the operation's request shape\n\n`get_signature` returns the exact request body schema: required fields, types, and allowed values.\n\n```js\nget_signature({ operation_id: \"createPet\" })\n```\n\n<!-- demo:get_signature -->\n```json\n{\n  \"ok\": true,\n  \"spec_id\": \"petstore\",\n  \"version_id\": \"sv_f403f8b0c4465bd7db52a4cd\",\n  \"operation_key\": \"POST:/pets\",\n  \"method\": \"POST\",\n  \"path\": \"/pets\",\n  \"operation_id\": \"createPet\",\n  \"summary\": \"Create a pet\",\n  \"deprecated\": false,\n  \"parameters\": [],\n  \"responses\": {\n    \"201\": {\n      \"description\": \"Created\",\n      \"content\": {\n        \"application/json\": {\n          \"schema\": \"…\"\n        }\n      }\n    }\n  },\n  \"truncated_paths\": [],\n  \"requestBody\": {\n    \"required\": true,\n    \"content\": {\n      \"application/json\": {\n        \"schema\": {\n          \"type\": \"object\",\n          \"required\": [\"id\", \"name\"],\n          \"examples\": [\n            {\n              \"id\": 1,\n              \"name\": \"Rex\",\n              \"status\": \"available\"\n            }\n          ],\n          \"properties\": {\n            \"id\": {\n              \"type\": \"integer\"\n            },\n            \"name\": {\n              \"type\": \"string\"\n            },\n            \"tag\": {\n              \"type\": [\"string\", \"null\"]\n            },\n            \"weight\": {\n              \"type\": \"number\",\n              \"exclusiveMinimum\": 0\n            },\n            \"status\": {\n              \"type\": \"string\",\n              \"enum\": [\"available\", \"pending\", \"sold\"]\n            }\n          }\n        }\n      }\n    }\n  }\n}\n```\n\n### Confirming a correct draft\n\nA structurally valid draft body returns `valid: true` with no errors.\n\n```js\nvalidate_call({ operation_id: \"createPet\", request: { body: { id: 1, name: \"Rex\" } } })\n```\n\n<!-- demo:validate_call_pass -->\n```json\n{\n  \"ok\": true,\n  \"valid\": true,\n  \"spec_id\": \"petstore\",\n  \"version_id\": \"sv_f403f8b0c4465bd7db52a4cd\",\n  \"operation_key\": \"POST:/pets\",\n  \"errors\": [],\n  \"warnings\": []\n}\n```\n\n### Validating a draft request\n\n`validate_call` collects all structural violations in one pass. Missing required fields, type mismatches, enum failures:\n\n```js\nvalidate_call({ operation_id: \"createPet\", request: { body: { id: \"1\", status: \"unknown\" } } })\n```\n\n<!-- demo:validate_call -->\n```json\n{\n  \"ok\": true,\n  \"valid\": false,\n  \"spec_id\": \"petstore\",\n  \"version_id\": \"sv_f403f8b0c4465bd7db52a4cd\",\n  \"operation_key\": \"POST:/pets\",\n  \"errors\": [\n    {\n      \"location\": \"body\",\n      \"pointer\": \"/id\",\n      \"code\": \"type\",\n      \"message\": \"Expected integer, got string.\",\n      \"expected\": \"integer\",\n      \"actual\": \"string\"\n    },\n    {\n      \"location\": \"body\",\n      \"pointer\": \"/name\",\n      \"code\": \"required\",\n      \"message\": \"Missing required property 'name'.\"\n    },\n    {\n      \"location\": \"body\",\n      \"pointer\": \"/status\",\n      \"code\": \"enum\",\n      \"message\": \"Value is not one of the allowed values [available, pending, sold].\",\n      \"expected\": [\"available\", \"pending\", \"sold\"],\n      \"actual\": \"unknown\"\n    }\n  ],\n  \"warnings\": []\n}\n```\n\n### Multiple versions loaded\n\nWhen two versions of the same spec are loaded, `get_signature` and `validate_call` refuse to guess which one you mean:\n\n```js\nget_signature({ operation_id: \"createInvoice\" })\n```\n\n<!-- demo:ambiguous -->\n```json\n{\n  \"ok\": false,\n  \"error\": {\n    \"code\": \"ambiguous\",\n    \"message\": \"Spec \\\"billing-api\\\" has 2 loaded versions (1.0.0, 2.0.0) — pass version (version_id or version_label) to choose one.\",\n    \"details\": {\n      \"loaded_versions\": [\n        {\n          \"version_id\": \"sv_a5a2fdfa11e7038e6eb6b4b1\",\n          \"version_label\": \"1.0.0\",\n          \"active\": false\n        },\n        {\n          \"version_id\": \"sv_bcfbfdc5783f3292208c9dc7\",\n          \"version_label\": \"2.0.0\",\n          \"active\": true\n        }\n      ]\n    }\n  }\n}\n```\n\n## License\n\n[Apache-2.0](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:08:14.358Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:25.219Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

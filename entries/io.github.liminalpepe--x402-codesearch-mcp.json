@@ -1,0 +1,58 @@
+{
+  "id": "io.github.liminalpepe/x402-codesearch-mcp",
+  "title": "x402-codesearch-mcp",
+  "description": "Free MCP server: index a repo's files into the x402-codesearch Worker's search index.",
+  "summary": "Free MCP server: index a repo's files into the x402-codesearch Worker's search index.",
+  "offersHint": "Free MCP server: index a repo's files into the x402-codesearch Worker's search index. · Packages: npm:x402-codesearch-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "x402-codesearch-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "x402-codesearch-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/liminalpepe/x402-codesearch-mcp",
+  "repository": {
+    "url": "https://github.com/liminalpepe/x402-codesearch-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T11:06:30.712142Z",
+  "publishedAt": "2026-08-02T11:06:30.712142Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:48.088Z",
+    "sourceRepoAt": "2026-08-11T23:37:52.994Z",
+    "readmeAt": "2026-08-11T23:37:53.555Z",
+    "toolsAt": "2026-08-12T01:16:48.088Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/liminalpepe/x402-codesearch-mcp",
+    "checkedAt": "2026-08-11T23:37:52.994Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/liminalpepe/x402-codesearch-mcp/main/README.md",
+    "markdown": "# x402-codesearch-mcp\n\nA free MCP (Model Context Protocol) server that indexes a repo's files —\nchunked and embedded — into the live semantic code search Worker, for free,\nvia one MCP tool: `index_code`.\n\nThis is the **open funnel twin** of a paid, x402-gated HTTP API:\n\n**[x402-codesearch-poc.theliminalguy.workers.dev](https://x402-codesearch-poc.theliminalguy.workers.dev)**\n— `POST /search`, $0.01 USDC on Base per query via the\n[x402 payment protocol](https://x402.org), for the actual semantic search\nstep over an indexed repo.\n\n## Why this one is different from the other free twins (read this first)\n\nSibling packages like [`x402-repohealth-mcp`](https://github.com/liminalpepe/x402-repohealth-mcp)\nfully reimplement their paid Worker's logic locally (pure functions, no\nexternal account-bound dependency) and expose the *entire* feature for\nfree via MCP.\n\nThis package **cannot** do that. The paid Worker's semantic search depends\non two Cloudflare-account-bound bindings with no free, local, or portable\nequivalent:\n\n- **Workers AI** (`@cf/baai/bge-base-en-v1.5`) — generates the embeddings\n- **Vectorize** — stores and queries those embeddings by cosine similarity\n\nBoth only exist inside the Worker's own Cloudflare account. There is no way\nto run them for free outside that account, so this MCP server does not try\nto fake or proxy them.\n\nWhat genuinely *is* free is `POST /index` on the live Worker itself — the\nstep that chunks a file, embeds it, and upserts it into that Worker's own\nVectorize index. That's the one real, free, stateless capability this\npackage exposes as an MCP tool. The matching `POST /search` step stays\nexactly where it already is: a real x402-gated HTTP call directly against\nthe live Worker.\n\n## What it does\n\nOne tool, `index_code`:\n\n- Input: `{ repoId: string, files: [{ path: string, content: string }] }`\n- Calls `POST https://x402-codesearch-poc.theliminalguy.workers.dev/index`\n  (free, no payment) with that exact body.\n- Output: `{ repoId, filesIndexed, chunksIndexed }` plus a `note` field\n  reminding the caller that searching what was just indexed requires the\n  paid endpoint.\n\nIt does **not** expose a `search_code` tool. Semantic search over data\nindexed with this tool requires calling the x402-gated endpoint directly:\n\n```\nPOST https://x402-codesearch-poc.theliminalguy.workers.dev/search\nBody: { \"repoId\": \"...\", \"query\": \"...\" }\nPrice: $0.01 USDC on Base, via the x402 protocol (e.g. x402-fetch / x402-axios)\n```\n\nAn unpaid request to `/search` returns `402 Payment Required` with real\nx402 payment instructions.\n\n## Install & run\n\n```bash\nnpx x402-codesearch-mcp\n```\n\nOr add it to an MCP client config (e.g. Claude Desktop's\n`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"codesearch\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"x402-codesearch-mcp\"]\n    }\n  }\n}\n```\n\n## Tool: `index_code`\n\nInput:\n\n```jsonc\n{\n  \"repoId\": \"my-repo\",\n  \"files\": [\n    { \"path\": \"src/retry.py\", \"content\": \"def retry_with_backoff(...): ...\" }\n  ]\n}\n```\n\nOutput (MCP tool text content, JSON-stringified):\n\n```jsonc\n{\n  \"repoId\": \"my-repo\",\n  \"filesIndexed\": 1,\n  \"chunksIndexed\": 2,\n  \"note\": \"Indexing succeeded (free). To semantically search this repoId, call the x402-gated POST https://x402-codesearch-poc.theliminalguy.workers.dev/search directly ($0.01 USDC on Base per query) — not available through this free MCP tool.\"\n}\n```\n\n## Local development\n\n```bash\nnpm install\nnpm run dev              # runs src/index.ts directly on stdio via tsx\nnpm run build             # compiles to dist/ for the published npm package\nnpm run test:index        # calls indexCode() directly against the real live Worker, no MCP transport\n```\n\n`src/client.ts` and `src/types.ts` hold the thin HTTP client against the\nlive Worker's `/index` endpoint — `src/index.ts` is a thin MCP wrapper\naround `indexCode()`.\n\n## What's real vs. limited\n\n- **Real:** the `POST /index` call this tool makes goes to the actual live\n  Worker, which really chunks the given files, really calls Workers AI for\n  embeddings, and really upserts into Vectorize — nothing here is mocked or\n  hardcoded. Verified end-to-end against the live Worker (see below).\n- **Genuinely free:** `POST /index` requires no payment and no API key —\n  confirmed live, not just documented.\n- **Not free, and not exposed here by design:** `POST /search` on the same\n  Worker. That's a deliberate scope boundary, not an oversight — see \"Why\n  this one is different\" above.\n- **No local caching/dedup:** every `index_code` call re-POSTs to the live\n  Worker; re-indexing the same file just re-chunks/re-embeds/re-upserts it.\n\n## When to use the paid HTTP twin directly\n\nUse `POST /search` on the live Worker instead of (in addition to) this MCP\nserver when:\n\n- You've indexed a repo with `index_code` and now want to actually search\n  it semantically.\n- Your agent already speaks x402 (e.g. via `x402-fetch` / `x402-axios`) and\n  can pay $0.01 USDC on Base per query.\n- You need production/high-volume search — this MCP server's `index_code`\n  tool shares the same free `/index` endpoint as every other caller, but\n  `/search` is metered per call regardless of caller.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:37:53.555Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:48.088Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,112 @@
+{
+  "id": "io.github.runcomfy-com/runcomfy-mcp",
+  "title": "runcomfy-mcp",
+  "description": "Remote MCP server for RunComfy Serverless API (ComfyUI): deployments and async inference.",
+  "summary": "Remote MCP server for RunComfy Serverless API (ComfyUI): deployments and async inference.",
+  "offersHint": "Remote MCP server for RunComfy Serverless API (ComfyUI): deployments and async inference. · Remote MCP (streamable-http) at https://mcp.runcomfy.com/mcp · Requires headers: Authorization",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.runcomfy.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.runcomfy.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "RunComfy API token as a Bearer credential (Bearer <YOUR_RUNCOMFY_TOKEN>). Get it from https://www.runcomfy.com/profile",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.runcomfy.com",
+  "sourceUrl": "https://github.com/runcomfy-com/runcomfy-mcp",
+  "repository": {
+    "url": "https://github.com/runcomfy-com/runcomfy-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-15T08:17:27.706861Z",
+  "publishedAt": "2026-07-15T08:17:27.706861Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "RunComfy API token as a Bearer credential (Bearer <YOUR_RUNCOMFY_TOKEN>). Get it from https://www.runcomfy.com/profile",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:03:17.658Z",
+    "sourceRepoAt": "2026-08-11T23:23:13.891Z",
+    "readmeAt": "2026-08-11T23:23:14.319Z",
+    "toolsAt": "2026-08-11T23:23:14.506Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/runcomfy-com/runcomfy-mcp",
+    "checkedAt": "2026-08-11T23:23:13.891Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/runcomfy-com/runcomfy-mcp/main/README.md",
+    "markdown": "# RunComfy MCP\n\n[![Website](https://img.shields.io/badge/Website-www.runcomfy.com-6C47FF)](https://www.runcomfy.com)\n[![Docs](https://img.shields.io/badge/Docs-MCP-2965F1)](https://docs.runcomfy.com/mcp)\n\nMCP server for the [RunComfy Serverless API (ComfyUI)](https://docs.runcomfy.com/serverless/introduction). Manage deployments, run inference, and retrieve results from AI assistants like Claude, Cursor, and Windsurf.\n\n**Website**: [www.runcomfy.com](https://www.runcomfy.com)\n\n**Endpoint**: `https://mcp.runcomfy.com/mcp`\n\n**Docs**: [docs.runcomfy.com/mcp](https://docs.runcomfy.com/mcp)\n\n---\n\n## What it does\n\n10 tools that mirror [docs.runcomfy.com/serverless](https://docs.runcomfy.com/serverless) 1:1:\n\n| Category | Tools |\n| --- | --- |\n| **Deployment management** | `list_deployments`, `get_deployment`, `create_deployment`, `update_deployment`, `delete_deployment` |\n| **Inference** | `submit_request`, `get_request_status`, `get_request_result`, `cancel_request` |\n| **Advanced** | `call_instance_proxy` |\n\n---\n\n## Quick setup\n\n### Claude Code\n\n```bash\nclaude mcp add runcomfy \\\n  --transport streamable-http \\\n  https://mcp.runcomfy.com/mcp \\\n  --header \"Authorization: Bearer <YOUR_RUNCOMFY_TOKEN>\"\n```\n\n### Cursor\n\nAdd to `.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"runcomfy\": {\n      \"url\": \"https://mcp.runcomfy.com/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer <YOUR_RUNCOMFY_TOKEN>\"\n      }\n    }\n  }\n}\n```\n\n### Windsurf\n\nAdd to Windsurf Settings > MCP:\n\n```json\n{\n  \"mcpServers\": {\n    \"runcomfy\": {\n      \"serverUrl\": \"https://mcp.runcomfy.com/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer <YOUR_RUNCOMFY_TOKEN>\"\n      }\n    }\n  }\n}\n```\n\nGet your API token from your [Profile](https://www.runcomfy.com/profile) page.\n\n---\n\n## Architecture\n\n```\nMCP Client  ──Bearer token──>  Cloudflare Worker (/mcp)\n                                      │\n                                      ▼\n                              Cloudflare Container\n                              (Python FastMCP app)\n                                      │\n                                      ▼\n                              api.runcomfy.net\n                              (using caller's token)\n```\n\n- **Cloudflare Worker** (`src/index.ts`) — thin proxy: CORS, body size check, forwards the caller's token to the container. No auth logic — `api.runcomfy.net` handles authentication.\n- **Python container** (`server.py`) — FastMCP app with 10 tools. Uses the caller's token (forwarded via `x-runcomfy-user-token` header) for all outbound API calls. Each user sees only their own deployments.\n- **Cloudflare Container** auto-starts on first request, sleeps after 10 minutes idle.\n\n---\n\n## Project layout\n\n```\nsrc/index.ts          Cloudflare Worker entrypoint\nserver.py             MCP tool definitions (10 tools)\nruncomfy_client.py    RunComfy API client (serverless endpoints)\ncontainer_app.py      ASGI middleware (request IDs, token forwarding)\ncontainer_entrypoint.py  Uvicorn startup\ncontainer_runtime.py  Env validation, structured logging\nwrangler.jsonc        Cloudflare Worker + Container config\nDockerfile            Container image\n.env.example          Local dev config\n```\n\n---\n\n## Local development\n\n```bash\n# Python 3.11+\npython3.11 -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\ncp .env.example .env\n# Set RUNCOMFY_API_KEY in .env\npython -m container_entrypoint\n```\n\nLocal endpoints:\n- `http://127.0.0.1:8000/healthz`\n- `http://127.0.0.1:8000/mcp`\n\nIn local mode (no Worker), the Python app uses `RUNCOMFY_API_KEY` from `.env` for all outbound calls.\n\n---\n\n## Deploy\n\nRequires Cloudflare Workers Paid plan with Containers enabled.\n\n```bash\nnpm install\n\n# Set the API key secret (one-time)\nnpx wrangler secret put RUNCOMFY_API_KEY\n\n# Deploy\nCLOUDFLARE_ACCOUNT_ID=<your-account-id> npx wrangler deploy\n```\n\nThe MCP endpoint goes live at `https://mcp.runcomfy.com/mcp` (custom domain configured in `wrangler.jsonc`).\n\n---\n\n## Environment variables\n\n### Worker secrets (set via `wrangler secret put`)\n\n| Name | Required | Description |\n| --- | :---: | --- |\n| `RUNCOMFY_API_KEY` | Yes | Fallback API key for the container |\n\n### Worker vars (in `wrangler.jsonc`)\n\n| Name | Default | Description |\n| --- | --- | --- |\n| `CONTAINER_INSTANCE_NAME` | `runcomfy-unified` | Durable Object instance name |\n| `CONTAINER_STARTUP_TIMEOUT_MS` | `15000` | Max wait for container start |\n| `CONTAINER_PORT_READY_TIMEOUT_MS` | `30000` | Max wait for port ready |\n| `MCP_MAX_BODY_BYTES` | `1048576` | Max request body size |\n| `RUNCOMFY_SERVERLESS_BASE_URL` | `https://api.runcomfy.net` | Serverless API base URL |\n\n### Local dev (`.env` file)\n\n| Name | Required | Description |\n| --- | :---: | --- |\n| `RUNCOMFY_API_KEY` | Yes | Your RunComfy API token |\n| `RUNCOMFY_SERVERLESS_BASE_URL` | No | Override base URL (default: `https://api.runcomfy.net`) |\n| `RUNCOMFY_MCP_MOUNT_PREFIX` | No | Path prefix for MCP mount (default: empty) |\n",
+    "fetchedAt": "2026-08-11T23:23:14.319Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "list_deployments",
+      "description": "List Serverless API deployments in the caller's account.\n\n    Backs ``GET /prod/v2/deployments``.\n\n    Args:\n        ids: Optional list of deployment IDs to filter to.\n        include_payload: Include workflow_api_json, overrides, and\n            object_info_url for each deployment. Larger response.\n        include_readme: Include the deployment's README markdown.\n    "
+    },
+    {
+      "name": "get_deployment",
+      "description": "Get one deployment by ID.\n\n    Backs ``GET /prod/v2/deployments/{deployment_id}``.\n\n    Set include_payload=true to inspect the deployed workflow graph\n    (workflow_api_json) and default overrides — use the node IDs and\n    input names to build the ``overrides`` for ``submit_request``.\n    "
+    },
+    {
+      "name": "create_deployment",
+      "description": "Create a Serverless API (ComfyUI) deployment.\n\n    Backs ``POST /prod/v2/deployments``. For LoRA deployments, create\n    via the runcomfy.com UI instead.\n\n    Args:\n        name: Human-readable name.\n        workflow_id: UUID of the ComfyUI workflow.\n        workflow_version: Version label, e.g. \"v1\".\n        hardware: One of TURING_16, AMPERE_24, AMPERE_48, ADA_48_PLUS,\n            AMPERE_80, ADA_80_PLUS, HOPPER_141.\n        min_instances: 0..30. Warm instance floor (billable if > 0).\n        max_instances: 1..60. Concurrency ceiling.\n        queue_size: >= 0. Pending requests before scaling up.\n        keep_warm_duration_in_seconds: >= 0. Idle timeout.\n    "
+    },
+    {
+      "name": "update_deployment",
+      "description": "Partially update a deployment.\n\n    Backs ``PATCH /prod/v2/deployments/{deployment_id}``. Only pass the\n    fields you want to change. Set is_enabled=false to pause;\n    true to re-enable.\n    "
+    },
+    {
+      "name": "delete_deployment",
+      "description": "Permanently delete a deployment.\n\n    Backs ``DELETE /prod/v2/deployments/{deployment_id}``. This cannot\n    be undone. Consider ``update_deployment(is_enabled=false)`` to pause\n    instead.\n    "
+    },
+    {
+      "name": "submit_request",
+      "description": "Submit an async inference request to a deployment.\n\n    Backs ``POST /prod/v1/deployments/{deployment_id}/inference``.\n\n    Args:\n        deployment_id: Target deployment.\n        overrides: Partial graph keyed by node_id, e.g.\n            ``{\"6\": {\"inputs\": {\"text\": \"a cat\"}}}``.\n            Use ``get_deployment(include_payload=true)`` to discover\n            node IDs and input names.\n        workflow_api_json: Advanced — run a different workflow without\n            updating the deployment. Omit ``overrides`` in this mode.\n        extra_data: E.g. ``{\"api_key_comfy_org\": \"comfyui-...\"}`` for\n            ComfyUI Core API nodes.\n        webhook_url: Push-based updates instead of polling.\n        webhook_intermediate_status: Fire webhooks on every status\n            change, not just terminal.\n        wait_for_completion: If true, poll until done and return the\n            result inline.\n        timeout_seconds: Max wait when wait_for_completion=true.\n\n    File inputs: pass a public HTTPS URL or Base64 data URI directly\n    in the overrides value, e.g.\n    ``{\"189\": {\"inputs\": {\"image\": \"https://example.com/photo.jpg\"}}}``\n    or ``{\"189\": {\"inputs\": {\"image\": \"data:image/jpeg;base64,/9j...\"}}}``.\n    "
+    },
+    {
+      "name": "get_request_status",
+      "description": "Poll a request's current status.\n\n    Backs ``GET /prod/v1/deployments/{deployment_id}/requests/{request_id}/status``.\n    Lifecycle: ``in_queue`` → ``in_progress`` → ``completed`` / ``cancelled``.\n    "
+    },
+    {
+      "name": "get_request_result",
+      "description": "Fetch a completed request's outputs.\n\n    Backs ``GET /prod/v1/deployments/{deployment_id}/requests/{request_id}/result``.\n    Output URLs are hosted for 7 days.\n    "
+    },
+    {
+      "name": "cancel_request",
+      "description": "Cancel a queued or running request.\n\n    Backs ``POST /prod/v1/deployments/{deployment_id}/requests/{request_id}/cancel``.\n    Returns ``cancelled`` if accepted, ``not_cancellable`` if already done.\n    "
+    },
+    {
+      "name": "call_instance_proxy",
+      "description": "Call a ComfyUI backend endpoint on a live instance.\n\n    Backs ``POST /prod/v2/deployments/{deployment_id}/instances/{instance_id}/proxy/{path}``.\n\n    Get the instance_id from ``get_request_status`` once the status is\n    ``in_progress``. Common target: ``api/free`` with\n    ``{\"unload_models\": true}`` to free GPU memory.\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:23:14.506Z",
+  "toolsPreviewStatus": "ok"
+}

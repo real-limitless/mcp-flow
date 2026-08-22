@@ -1,0 +1,58 @@
+{
+  "id": "io.github.thehesiod/aa",
+  "title": "aa",
+  "description": "MCP server for read-only American Airlines AAdvantage account access",
+  "summary": "MCP server for read-only American Airlines AAdvantage account access",
+  "offersHint": "MCP server for read-only American Airlines AAdvantage account access · Packages: pypi:aa-mcp-server",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "aa-mcp-server",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "aa-mcp-server",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/thehesiod/aa-mcp",
+  "repository": {
+    "url": "https://github.com/thehesiod/aa-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-04T16:01:49.64443Z",
+  "publishedAt": "2026-05-04T16:01:49.64443Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:10.227Z",
+    "sourceRepoAt": "2026-08-11T23:18:39.006Z",
+    "readmeAt": "2026-08-11T23:18:39.492Z",
+    "toolsAt": "2026-08-12T00:59:10.227Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/thehesiod/aa-mcp",
+    "checkedAt": "2026-08-11T23:18:39.006Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/thehesiod/aa-mcp/main/README.md",
+    "markdown": "# aa-mcp-server\n\nAn MCP server that gives Claude (or any MCP-compatible LLM) **read-only** access to your American Airlines AAdvantage account — mile balance, Loyalty Points progress, transaction history, upcoming trips, travel credits, and partner offers.\n\nThis is **not** a browser-automation wrapper. The server discovers and calls aa.com's underlying JSON APIs directly using session cookies extracted from a Chromium login. All HTTP traffic uses [`curl_cffi`](https://github.com/lexiforest/curl_cffi) with Chrome TLS impersonation to satisfy aa.com's Akamai Bot Manager.\n\n## Tools\n\n| Tool | Endpoint | Returns |\n| - | - | - |\n| `get_account_summary` | `/loyalty/api/member-information` | Name, AAdvantage #, mile balance, status, cobranded card, business memberships |\n| `get_loyalty_points_progress` | `/loyalty/api/progress-qualification` | LP YTD, last-year totals, tier thresholds, next-status delta |\n| `get_profile_details` | `/api/loyalty/.../profile` | DOB, partners list, sales city, mile expiration, million-miler stats |\n| `get_mile_activity` | `/api/loyalty/.../memberActivity` | Mile/LP transaction history (date range, paginated, searchable) |\n| `get_upcoming_trips` | `/loyalty/api/upcoming-trips` | Reservations with record locators |\n| `get_reservation_by_locator` | `/manage-reservation/viewres/api/reservation` | Full reservation: segments, passengers, tickets, costs, change/cancel eligibility (requires lead-passenger name) |\n| `search_change_flights` | `/manage-reservation/reshop/api/reshop/cheapest` | Alternative flights for a reservation with a ±6-day price carousel, per-cabin pricing (`netPrice` = delta vs paid). Accepts origin/destination/date changes; pricing is total for all pax (no per-passenger split) |\n| `get_flight_credits` | `/api/loyalty/travelCredits/flightCredit/details` | Single-passenger ticket credits |\n| `get_trip_credits` | `/api/loyalty/travelCredits/tripCredit/details` | Multi-passenger / itinerary credits |\n| `get_partner_offers` | `/loyalty/api/partnerOffers` | Dashboard partner promotions |\n| `get_notifications` | `/loyalty/api/notifications` | Account notifications |\n| `check_auth_status` | — | Saved-session info: AA #, token expiry, cookie count |\n| `save_session_from_browser` | CDP | Pulls cookies from a logged-in Chromium and persists them |\n\n## Setup\n\n```bash\npip install aa-mcp-server\n```\n\n### One-time auth\n\naa.com is fronted by Akamai Bot Manager — you can't log in via headless requests. The flow:\n\n1. Launch a real Chromium with a persistent profile and a remote-debugging port:\n   ```bash\n   aa-auth-browser              # default account\n   aa-auth-browser personal     # named account\n   ```\n2. Log into aa.com (and complete 2FA if prompted) in the window that opens.\n3. Copy the cookies into the MCP store:\n   ```bash\n   aa-mcp-server --extract-session default\n   ```\n   Or call the `save_session_from_browser` MCP tool from Claude.\n\nThe cookies live in `~/.aa-mcp/accounts/<account>/session.json`. The chromium profile lives in `~/.aa-mcp/chrome-profiles/<account>/`. To refresh after expiry, relaunch `aa-auth-browser` (the saved profile auto-refreshes the access_token cookie when you visit any aa.com page) and re-run `--extract-session`.\n\n`AA_MCP_CHROMIUM=<path-to-chrome.exe>` overrides the auto-discovery if your Chromium is somewhere unusual.\n\n### Multi-account\n\nEvery tool takes an optional `account` parameter. Omit it to use the default account.\n\n```python\nget_account_summary()                # default\nget_account_summary(account=\"spouse\")\n```\n\n## Running\n\n```bash\naa-mcp-server                        # stdio transport\naa-mcp-server --setup                # show account status & setup hints\naa-mcp-server --extract-session NAME # save cookies from running Chromium\n```\n\nAdd to your MCP client config (e.g. Claude Desktop):\n\n```json\n{\n  \"mcpServers\": {\n    \"aa\": {\n      \"command\": \"aa-mcp-server\"\n    }\n  }\n}\n```\n\n## Limitations\n\n- **Read-only.** No booking, no award redemption, no profile edits.\n- **Cookie expiry.** The `access_token` JWT lives ~45 min; the `refresh_token` cookie typically ~30 days. Visiting any aa.com page in the saved Chromium profile silently refreshes both. After a long gap, re-extract.\n- **GraphQL coverage.** Only the `GetCustomer` persisted query is wired up. Expanding requires capturing additional sha256Hashes from the browser bundle — easy but a per-feature task.\n- **One region tested.** All testing has been on US-locale aa.com. International locales may require different `referer` paths.\n\n## License\n\nMIT\n\nmcp-name: io.github.thehesiod/aa\n",
+    "fetchedAt": "2026-08-11T23:18:39.492Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:10.227Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

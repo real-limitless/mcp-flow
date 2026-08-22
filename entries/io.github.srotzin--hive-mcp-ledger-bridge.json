@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-ledger-bridge",
+  "title": "Hive Ledger Bridge",
+  "description": "Hive MCP server implementing the EIP-712 over USB/DMK ledger-bridge integration spec…",
+  "summary": "Hive MCP server implementing the EIP-712 over USB/DMK ledger-bridge integration spec…",
+  "offersHint": "Hive MCP server implementing the EIP-712 over USB/DMK ledger-bridge integration spec… · Remote MCP (streamable-http) at https://hive-mcp-gateway.onrender.com/ledger-bridge/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-gateway.onrender.com/ledger-bridge/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-gateway.onrender.com/ledger-bridge/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://thehiveryiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-ledger-bridge",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-ledger-bridge",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-04T01:33:01.589105Z",
+  "publishedAt": "2026-05-04T01:33:01.589105Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:25.592Z",
+    "sourceRepoAt": "2026-08-11T23:20:04.924Z",
+    "readmeAt": "2026-08-11T23:20:05.958Z",
+    "toolsAt": "2026-08-12T01:00:25.592Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-ledger-bridge",
+    "checkedAt": "2026-08-11T23:20:04.924Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-ledger-bridge/main/README.md",
+    "markdown": "# hive-mcp-ledger-bridge\n\n[![srotzin/hive-mcp-ledger-bridge MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-ledger-bridge/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-ledger-bridge)\n\n**Hive Civilization** — EIP-712 over USB/DMK ledger-bridge MCP server.\n\nImplements the same signer-backend contract that [shisa-ai/shisad](https://github.com/shisa-ai/shisad) exposes through `contrib/ledger-bridge`. Ledger is a partner. This server complements shisad — it does not replace it.\n\n---\n\n## Partner Doctrine\n\n| Layer | Operator | Function |\n|---|---|---|\n| Hardware countersignature | Ledger device | EIP-712 signature over `intent_envelope_hash` after on-device review |\n| ledger-bridge | shisa-ai (in `contrib/`) | Signer-backend contract; HTTP-to-USB/DMK adapter |\n| 8-layer PEP + ConfirmationLevel | shisad | Per-call policy enforcement; routes confirmation to backend |\n| DID resolution + identity passport | Hive (`hivetrust`, `hive-mcp-identity`) | Read-only identity surface |\n| Spectral receipts | Hive | Settlement audit record per fee event |\n\nNo overlap. The hardware tier remains Ledger's. The runtime policy tier remains shisad's. Hive contributes IntentEnvelope construction, hash verification, confirmation-level policy, and settlement attestation — all above the PEP, without modifying the `ConfirmationLevel` enum or the signer-backend contract.\n\n---\n\n## ConfirmationLevel Enum\n\nFrom the `shisa-ai/shisad` specification:\n\n| Level | Name | Integer |\n|---|---|---|\n| L0 | `SOFTWARE` | 0 |\n| L1 | `REAUTHENTICATED` | 1 |\n| L2 | `BOUND_APPROVAL` | 2 |\n| L3 | `SIGNED_AUTHORIZATION` | 3 |\n| L4 | `TRUSTED_DISPLAY_AUTHORIZATION` | 4 |\n\nThis server uses the enum verbatim. No extensions, no invented tiers.\n\n---\n\n## Tools\n\n| Tool | Description | Default ConfirmationLevel |\n|---|---|---|\n| `ledger_intent_envelope_create` | Build an `IntentEnvelope` with EIP-712 domain separator and `intent_envelope_hash` | Derived from `action` |\n| `ledger_intent_envelope_verify` | Verify `intent_envelope_hash` matches envelope contents | Read-only / none |\n| `ledger_confirmation_level_query` | Return required `ConfirmationLevel` for an intent | Read-only / none |\n| `ledger_signed_authorization_attest` | Hive-side attestation that an intent reached L3 or L4 | L3 / L4 required |\n| `ledger_partner_directory` | Partner integration directory: shisad reference, Ledger Live, Hive contact | Read-only / none |\n\n### `ledger_intent_envelope_create`\n\nBuild a signed-ready `IntentEnvelope`. The server produces the EIP-712 domain separator and `intent_envelope_hash` — the hash is what the Ledger device signs.\n\n```json\n{\n  \"intent_id\": \"uuid-or-did-fragment\",\n  \"agent_did\": \"did:hive:0xabc...\",\n  \"action\": \"transfer\",\n  \"target\": \"0xRecipientAddress\",\n  \"amount\": \"1000.00\",\n  \"chain_id\": 8453,\n  \"nonce\": 1,\n  \"deadline\": 1777699200,\n  \"verifying_contract\": \"0x0000000000000000000000000000000000000000\"\n}\n```\n\nResponse includes `envelope`, `intent_envelope_hash`, `domain_separator`, and `suggested_confirmation_level`.\n\n### `ledger_intent_envelope_verify`\n\nSupply an `IntentEnvelope` body and an `intent_envelope_hash`. Returns `match: true|false` and the recomputed hash.\n\n### `ledger_confirmation_level_query`\n\n```json\n{ \"action\": \"transfer\", \"amount_usd\": 50000 }\n```\n\nReturns the integer level and name. Useful for pre-call policy checks before routing to the ledger-bridge.\n\n### `ledger_signed_authorization_attest`\n\nRecord a Hive-side attestation that a device returned an ECDSA signature at L3 or L4. This is not on-chain settlement — it is an audit record that the intent_envelope_hash was device-countersigned.\n\n```json\n{\n  \"intent_envelope_hash\": \"0xabc...\",\n  \"agent_did\": \"did:hive:0xabc...\",\n  \"confirmation_level\": 4,\n  \"ecdsa_signature\": \"0xsignatureHex...\"\n}\n```\n\n### `ledger_partner_directory`\n\nReturns the full partner directory with URLs, roles, and contact information.\n\n---\n\n## Endpoints\n\n| Path | Method | Description |\n|---|---|---|\n| `/health` | GET | Service health and version |\n| `/.well-known/mcp.json` | GET | MCP manifest |\n| `/mcp` | POST | JSON-RPC 2.0 (MCP 2024-11-05) |\n\n---\n\n## Connect\n\n**MCP endpoint:** `https://hiveledgerbridge.onrender.com/mcp` *(pairs with shisa-ai/shisad contrib/ledger-bridge + future hive-ledger-attest backend)*\n\n### JSON-RPC 2.0 — tools/list\n\n```bash\ncurl -s -X POST https://hiveledgerbridge.onrender.com/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n```\n\n### JSON-RPC 2.0 — ledger_intent_envelope_create\n\n```bash\ncurl -s -X POST https://hiveledgerbridge.onrender.com/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\n    \"params\":{\n      \"name\":\"ledger_intent_envelope_create\",\n      \"arguments\":{\n        \"intent_id\":\"550e8400-e29b-41d4-a716-446655440000\",\n        \"agent_did\":\"did:hive:0xabc\",\n        \"action\":\"transfer\",\n        \"target\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\n        \"chain_id\":8453,\n        \"nonce\":1,\n        \"deadline\":1777699200\n      }\n    }\n  }'\n```\n\n---\n\n## Integration with shisad\n\n`shisa-ai/shisad` routes `trusted_display_authorization` (L4) intents through `contrib/ledger-bridge` — the daemon POSTs an `IntentEnvelope` plus `intent_envelope_hash` to the bridge, the user reviews on the Ledger device, and the ECDSA signature returns to the daemon.\n\nThis server speaks the same `IntentEnvelope` / `intent_envelope_hash` vocabulary. A shisad deployment can use `ledger_intent_envelope_create` upstream of the bridge call, `ledger_intent_envelope_verify` on the returned hash, and `ledger_signed_authorization_attest` to anchor the device signature as a Hive Spectral receipt.\n\nOperator policy continues to control `ConfirmationLevel` through the standard `tools.\"x\".confirmation.level` config — no new mechanism required.\n\n---\n\n## Infrastructure\n\n| Property | Value |\n|---|---|\n| Transport | Streamable-HTTP, JSON-RPC 2.0, MCP 2024-11-05 |\n| Runtime | Node.js ≥ 18, ESM |\n| LLM (if extended) | `https://hivecompute-g2g7.onrender.com/v1/compute/chat/completions` |\n| Treasury | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` |\n| USDC (Base) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |\n| Brand | `#C08D23` |\n| Spec reference | [shisa-ai/shisad contrib/ledger-bridge](https://github.com/shisa-ai/shisad) |\n| Ledger partner program | [developers.ledger.com](https://developers.ledger.com/docs/live-app/start-here/) |\n\n---\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\nContact: steve@thehiveryiq.com\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:05.958Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:25.592Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"not_found\",\"path\":\"/ledger-bridge/mcp\",\"service\":\"hive-mcp-gateway\",\"recruitment\":{\"version\":\"0.1.0\",\"status\":404,\"title\":\"Endpoint not found\",\"summary\":\"This path is not part of the current service surface.\",\"next_step\":\"Consult the MCP config below for the canonical endpoint catalog.\",\"links\":{\"register\":\"https://hivegate.onrender.com/onboard\",\"readiness_assessment\":\"https://hive-mcp-audit-readiness.onrender.com/assess\",\"mcp_config\":\"https://hive-mcp-gateway.onrender.com/.well-known/mcp.json\",\"agent_catalog\":\"https://hive-mcp-gateway.onrender.com/.well-known/agents.json\",\"fleet_status\":\"https://hive-mcp-gateway.onrender.com/health\"},\"brand\":{\"accent\":\"#C08D23\",\"voice\":\"Bloomberg Terminal / Stripe Docs\",\"attribution\":\"Hive Civilization\"}}}",
+  "toolsPreviewStatus": "unreachable"
+}

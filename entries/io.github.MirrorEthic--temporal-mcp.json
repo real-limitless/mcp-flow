@@ -1,0 +1,95 @@
+{
+  "id": "io.github.MirrorEthic/temporal-mcp",
+  "title": "temporal-mcp",
+  "description": "Wall-clock awareness for LLM agents. Two tools: elapsed-time-between-turns + day rollover detection.",
+  "summary": "Wall-clock awareness for LLM agents. Two tools: elapsed-time-between-turns + day rollover detection.",
+  "offersHint": "Wall-clock awareness for LLM agents. Two tools: elapsed-time-between-turns + day rollover detection. · Remote MCP (streamable-http) at https://temporal-mcp.dev/mcp · Packages: pypi:temporal-mcp · Requires headers: Authorization",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://temporal-mcp.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://temporal-mcp.dev/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token. Pick any opaque string (UUID, passphrase, etc.) — we SHA-256 hash it for storage and never see the original. The token is your private key for your timeline. Example: 'Bearer 8c7d4b8a-...'",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "install": {
+    "kind": "pypi",
+    "package": "temporal-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "temporal-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://temporal-mcp.dev",
+  "sourceUrl": "https://github.com/MirrorEthic/temporal-mcp",
+  "repository": {
+    "url": "https://github.com/MirrorEthic/temporal-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-13T16:50:32.544144Z",
+  "publishedAt": "2026-05-13T16:50:32.544144Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token. Pick any opaque string (UUID, passphrase, etc.) — we SHA-256 hash it for storage and never see the original. The token is your private key for your timeline. Example: 'Bearer 8c7d4b8a-...'",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:44.242Z",
+    "sourceRepoAt": "2026-08-12T00:06:40.654Z",
+    "readmeAt": "2026-08-12T00:06:41.184Z",
+    "toolsAt": "2026-08-12T00:06:41.380Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MirrorEthic/temporal-mcp",
+    "checkedAt": "2026-08-12T00:06:40.654Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MirrorEthic/temporal-mcp/main/README.md",
+    "markdown": "# temporal-mcp\n\n> Your model knows calculus but not what day it is. Fix that.\n\n`temporal-mcp` is a tiny [Model Context Protocol](https://modelcontextprotocol.io)\nserver that gives LLM agents a sense of time *between turns*. Two tools, a few\nhundred lines, stdlib + `mcp` + `platformdirs`. That's the whole thing.\n\n## The problem\n\nOpen a fresh chat at 11 PM. The model says \"good morning.\" Resume a\nconversation three weeks later. The model picks up mid-sentence like no time\npassed. Ask for \"today's status.\" Get yesterday's status. Or last Tuesday's.\n\nLLMs don't have wall clocks. They don't know when the last user message was,\nwhether the calendar flipped, or whether this is a fresh thread or one\nresumed after a long gap. Most of the time this is harmless. Sometimes it\nmakes your agent sound like it just woke up from cryosleep.\n\n## The fix\n\nA persistent per-thread last-seen log, exposed as two MCP tools:\n\n- **`temporal_tick`** — call this once per user turn. Returns *\"it has been\n  14 minutes since the last message, no day rollover, timezone MDT\"* in a\n  format the model can actually read.\n- **`temporal_peek`** — same thing, but doesn't advance state. For when you\n  want the gap without claiming a turn.\n\nThat's it. Time exists. Your model should know that.\n\n## Try it in 10 seconds\n\n```bash\ncurl -s -X POST https://temporal-mcp.dev/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Authorization: Bearer $(uuidgen)\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\n        \"name\":\"temporal_tick\",\n        \"arguments\":{\"thread_key\":\"try-it\",\"tz_offset_minutes\":-360,\"tz_name\":\"MDT\"}}}' \\\n| python3 -c 'import sys,json; print(json.load(sys.stdin)[\"result\"][\"content\"][0][\"text\"])'\n```\n\nYou'll see something like:\n\n```\n[temporal] Wed May 13, 10:42 AM MDT | fresh thread (no prior history)\n{...JSON payload...}\n```\n\nRun it twice and the second response shows the gap. Run it tomorrow and\nyou'll get `day rollover: yes`. That's the whole point.\n\n## What you get\n\nEvery tick returns a human-readable header and a JSON payload:\n\n```\n[temporal] Wed May 13, 9:42 AM MDT | last prompt 14m ago (Wed 9:28 AM)\n\n{\"thread_key\": \"mcp:abc123\", \"now\": 1747158120.0, \"prev\": 1747157280.0,\n \"delta_sec\": 840, \"day_rollover\": false, \"fresh_thread\": false,\n \"tz_name\": \"MDT\", \"tz_offset_sec\": -21600, \"available\": true, \"error\": \"\"}\n```\n\nThe header is for the model. The JSON is for your code, in case you want to\ndo something interesting with `day_rollover` (greet differently, reload\ncontext, recompute \"today's items\") or with `delta_sec` (decay relevance,\ndetect a resumed session, flag idle threads).\n\n## Two ways to use it\n\n### 1. Hosted endpoint — claude.ai, ChatGPT, mobile\n\nIf you use claude.ai web, ChatGPT, or anything else that wants a *remote*\nMCP server, point your connector at:\n\n```\nhttps://temporal-mcp.dev/mcp\n```\n\nThere are two ways to authenticate, depending on what your client UI exposes:\n\n#### A. OAuth 2.0 (claude.ai and ChatGPT custom connectors)\n\nBoth claude.ai and ChatGPT's custom connector UIs require OAuth 2.0 with\na Client ID and Client Secret. The hosted endpoint is a full OAuth\nprovider — visit `https://temporal-mcp.dev/connect` and click\n**Generate OAuth Credentials**. You'll get a fresh `client_id` +\n`client_secret` pair, shown once. Paste them into your client's\nconnector config. That's the entire signup.\n\nNo email, no password, no account record — the credential pair *is* the\nidentity. We store only a SHA-256 of the secret, so we never see the\nplaintext. Generate a new pair any time you want a fresh timeline.\n\n**Claude.ai setup:** Settings → Connectors → Add custom connector. URL\n`https://temporal-mcp.dev/mcp`. Paste your Client ID and Client Secret.\nConnect. The auto-approve flow redirects you back, claude.ai exchanges\nthe code for a token, and you're done.\n\n**ChatGPT setup:** Same idea — Settings → Connectors → Custom MCP. Same\nURL, same credentials.\n\n#### B. Raw bearer token (Cursor, Cline, Claude Desktop, Zed, Claude Code)\n\nIf your client supports custom HTTP headers (most do), skip OAuth and\njust send any opaque string as a bearer token:\n\n```\nAuthorization: Bearer <any opaque string you choose>\n```\n\nPick a UUID, a passphrase, anything. We SHA-256 it before storing\nanything; same identity-is-the-credential property as the OAuth flow,\nwithout the dance. This is the original lowest-ceremony path and works\nfor any client that lets you set a custom header.\n\n#### C. URL-embedded token (xAI, Grok, anything URL-only)\n\nIf your client's connector UI only exposes a URL field — no headers, no\nauth, no OAuth — embed your token directly in the path:\n\n```\nhttps://temporal-mcp.dev/mcp/<any opaque string you choose>\n```\n\nOr as a query parameter, if the path form gets stripped:\n\n```\nhttps://temporal-mcp.dev/mcp?token=<any opaque string you choose>\n```\n\nSame SHA-256 hashing, same identity model. URL-embedded tokens leak\nmore easily than header tokens (proxy logs, referrers), so this path\nis a pragmatic fallback rather than the default — but the threat in\nour model is \"someone advances your timeline,\" not data exposure.\nRotate by picking a new random string any time you suspect the URL has\nbeen logged where it shouldn't be.\n\n#### Either way\n\nNo signup. No email. No PII. The hosted endpoint is free, rate-limited\nto 60 requests/minute per credential. If you outgrow that, self-host\n(see below).\n\n### 2. Local stdio — Claude Desktop, Cursor, Cline, Zed, Claude Code\n\nFor desktop/IDE MCP clients, `pip install` the Python package and run it\nlocally. No network round-trip, state lives on your disk, no auth needed.\n\n```bash\npip install temporal-mcp\n```\n\nPython 3.9+. Linux, macOS, Windows.\n\nRun as stdio:\n\n```bash\ntemporal-mcp        # or: python -m temporal_mcp\n```\n\n#### Claude Desktop\n\n```json\n{\n  \"mcpServers\": {\n    \"temporal\": {\n      \"command\": \"temporal-mcp\"\n    }\n  }\n}\n```\n\n#### Cursor / Cline / anything else that speaks MCP stdio\n\nSame idea — point the client at the `temporal-mcp` command.\n\n## Self-host the remote endpoint (Cloudflare Workers)\n\nThe hosted endpoint at `temporal-mcp.dev` runs on Cloudflare Workers backed\nby D1. If you want your own instance — for privacy, scale, or to ship it\nas part of a larger product — the entire deploy lives in\n[`workers/`](workers/):\n\n```bash\ncd workers\nnpm install\nnpx wrangler login\nnpx wrangler d1 create temporal_mcp           # creates the database\n# Paste the printed database_id into wrangler.toml\nnpx wrangler d1 migrations apply temporal_mcp --remote\nnpx wrangler deploy\n```\n\nFree tier covers ~100k requests/day forever. Set\n`REQUIRE_AUTH=true` in `[vars]` to refuse anonymous traffic. The Worker\nis ~400 lines of TypeScript and has its own unit tests\n([`workers/test/`](workers/test/)).\n\n## Tools\n\n### `temporal_tick`\n\nAdvance the clock for a thread and return a snapshot. **Call once per user\nturn.**\n\n| Field | Type | Notes |\n|---|---|---|\n| `thread_key` | string, optional | Stable conversation/session ID. claude.ai web: conversation ID. Cursor: window/workspace ID. Anything else: any caller-stable string. Omit it and you get a default hostname+cwd hash — fine for local testing, not for serving multiple threads. |\n| `client_id` | string, optional | Namespace tag (e.g. `\"caweb\"`, `\"cursor\"`). Defaults to `\"mcp\"`. Use distinct tags per client so threads don't collide in shared state. |\n\n### `temporal_peek`\n\nRead-only. Same shape, doesn't advance state. Use it when you want the gap\ndelta but the call isn't the canonical \"one tick per user turn\" event.\n\n## State\n\nPer-thread last-seen state lives at:\n\n| Platform | Path |\n|---|---|\n| Linux | `~/.local/share/temporal-mcp/state.json` |\n| macOS | `~/Library/Application Support/temporal-mcp/state.json` |\n| Windows | `%LOCALAPPDATA%\\temporal-mcp\\state.json` |\n\nOverride with `TEMPORAL_MCP_STATE_DIR=/some/path`.\n\nState writes are `flock`-safe on POSIX and atomically replaced via\n`os.replace`, so multiple agents pointing at the same state directory will\nnot corrupt each other. (Windows falls back to an in-process lock — fine\nfor a single MCP server, not designed for cross-process contention.)\n\n## Maintenance\n\n```bash\npython -m temporal_mcp gc        # prune threads > 30d idle\npython -m temporal_mcp gc 7      # prune threads > 7d idle\n```\n\nNot exposed as an MCP tool on purpose — a model that can prune its own\nmemory of \"when did we last talk\" will eventually do it at exactly the\nwrong moment. Run it from cron if you care.\n\n## Design notes (for the curious)\n\n- **Thread keying** is namespaced as `{client_id}:{key}`. Reserve a unique\n  `client_id` per surface so threads from claude.ai web don't collide with\n  a local Cursor session sharing the same state directory.\n\n- **Failure is honest.** If the state file is unreadable or the lock times\n  out, the snapshot returns `available: false` with an `error` field and\n  the header says `gap: unknown`. It does **not** silently lie and call it\n  a fresh thread — a model that thinks every turn is fresh will keep\n  saying good morning forever.\n\n- **Watchdog.** `tick()` runs in a daemon thread with a 100 ms timeout so\n  a stalled state read can't block your hook budget. If it times out, you\n  get the honest-failure snapshot above.\n\n- **No HTTP transport in 0.1.** Stdio only — that's what Claude Desktop,\n  Cursor, and the other major MCP clients actually use. HTTP/SSE can land\n  in 0.2 if there's demand.\n\n## Roadmap\n\n- 0.2 — optional HTTP/SSE transport, conversation-ID auto-resolve from\n  `Mcp-Session-Id` and friends, configurable timezone override\n- 0.3 — opt-in \"long gap\" thresholds (return a `resume: true` flag past N\n  hours) so agents can branch on resumed sessions without doing the math\n  themselves\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n\n## Author\n\nBuilt by [Garret Sutherland](https://github.com/GMaN1911) / MirrorEthic LLC,\nextracted from the temporal layer of a larger cognitive-mesh project where\nthis primitive was load-bearing enough to deserve its own package.\n\n---\n\n<sub>mcp-name: io.github.MirrorEthic/temporal-mcp</sub>\n",
+    "fetchedAt": "2026-08-12T00:06:41.184Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "temporal_tick",
+      "description": "Advance the temporal clock for a thread and return a snapshot (now / prev / gap / day_rollover / fresh_thread). Call once per user turn. Pass a stable `thread_key` (e.g. the conversation ID) so gap deltas remain meaningful across page reloads."
+    },
+    {
+      "name": "temporal_peek",
+      "description": "Read the current temporal snapshot for a thread WITHOUT advancing state. Use this when you want the gap delta but the call is not the canonical per-turn event."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:06:41.380Z",
+  "toolsPreviewStatus": "ok"
+}

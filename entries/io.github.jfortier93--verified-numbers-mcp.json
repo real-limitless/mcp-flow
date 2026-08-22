@@ -1,0 +1,51 @@
+{
+  "id": "io.github.jfortier93/verified-numbers-mcp",
+  "title": "Verified Numbers",
+  "description": "Current source-cited 2026 US tax constants and calculators for AI agents; every answer cites IRS.",
+  "summary": "Current source-cited 2026 US tax constants and calculators for AI agents; every answer cites IRS.",
+  "offersHint": "Current source-cited 2026 US tax constants and calculators for AI agents; every answer cites IRS. · Remote MCP (streamable-http) at https://verified-numbers.mcpize.run",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://verified-numbers.mcpize.run",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://verified-numbers.mcpize.run"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/jfortier93/verified-numbers-mcp",
+  "repository": {
+    "url": "https://github.com/jfortier93/verified-numbers-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-06T18:20:51.06649Z",
+  "publishedAt": "2026-08-06T18:20:51.06649Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:00.738Z",
+    "sourceRepoAt": "2026-08-11T23:41:15.064Z",
+    "readmeAt": "2026-08-11T23:41:15.643Z",
+    "toolsAt": "2026-08-12T01:19:00.738Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jfortier93/verified-numbers-mcp",
+    "checkedAt": "2026-08-11T23:41:15.064Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jfortier93/verified-numbers-mcp/main/README.md",
+    "markdown": "[![MCPize](https://mcpize.com/badge/@josh/verified-numbers)](https://mcpize.com/mcp/verified-numbers)\n\n# Verified Numbers MCP\n\nCurrent, source-cited US federal tax and business constants for AI agents — tax year 2026.\n\n## Why this exists\n\nAI models recall tax numbers from training data, and training data goes stale. Live example: the IRS made a rare **mid-year mileage adjustment** effective July 1, 2026 (business rate 72.5¢ → 76¢/mile, Announcement 2026-11). Any model trained before July 2026 confidently reports the wrong current rate. Agents doing bookkeeping, invoicing, or planning work need verified numbers, not remembered ones. Every response from this server carries its primary source and a last-verified date.\n\n## Tools (9)\n\n- `get_mileage_rate(date, purpose)` — IRS standard mileage rate in effect on a specific date; handles both 2026 periods\n- `mileage_deduction(miles, date, purpose)` — dollar deduction at the correct period rate\n\n## Connect via MCPize (hosted)\n\n```bash\nnpx -y mcpize connect @josh/verified-numbers --client claude\n```\n\nOr add the HTTP endpoint directly: https://verified-numbers.mcpize.run\n\nMarketplace page: https://mcpize.com/mcp/verified-numbers\n\n- `se_tax_estimate(net_self_employment_profit, filing_status)` — 2026 SE tax with wage-base cap and Additional Medicare\n- `federal_income_tax(taxable_income, filing_status)` — progressive tax via Rev. Proc. 2025-32 brackets\n- `standard_deduction(filing_status, age_65_or_older, blind)` — 2026 amounts with additions\n- `quarterly_estimate(...)` — simplified federal quarterly estimated-tax calc with optional safe-harbor comparison\n- `retirement_limits()` — 2026 401(k)/IRA/SEP/SIMPLE/HSA limits and catch-up rules\n- `estimated_tax_deadlines()` — 2026 quarterly due dates\n- `data_provenance()` — how and when every constant was verified\n\n## Design principles\n\n1. **Refuse rather than guess.** Filing statuses or dates outside verified data raise errors (e.g., MFS brackets are absent in v1 and the server says so).\n2. **Every response is cited** — primary source + `last_verified` date + disclaimer, in the payload itself.\n3. **Deterministic.** No LLM calls, no external requests at runtime. Pure lookup and arithmetic. Sub-millisecond, zero marginal cost.\n\n## Run\n\n```bash\npip install \"mcp>=2.0\"\npython server.py          # stdio transport\n```\n\nTests: `python test_server.py` — hand-computed expected values for every calculator.\n\n## Example\n\nAsk any model trained before July 2026 for the current IRS business mileage rate. It will say 72.5 cents. Then call:\n\n```\nget_mileage_rate(\"2026-08-01\")\n```\n\n```json\n{\n  \"date\": \"2026-08-01\",\n  \"purpose\": \"business\",\n  \"cents_per_mile\": 76.0,\n  \"effective_period\": \"2026-07-01 to 2026-12-31\",\n  \"source\": \"IRS Announcement 2026-11, IRB 2026-29 (rare mid-year adjustment, announced Jul. 13, 2026)\",\n  \"last_verified\": \"2026-07-28\",\n  \"disclaimer\": \"Educational reference data and estimates only. Not tax, legal, or financial advice.\"\n}\n```\n\nEvery tool responds in this shape: the number, the effective window, the primary source, and the verification date.\n\n## Data provenance (verified 2026-07-28)\n\n| Constant set | Primary source |\n|---|---|\n| Mileage H1 2026 | IRS Notice 2026-10 (IR-2025-128, Dec 29 2025) |\n| Mileage H2 2026 | IRS Announcement 2026-11, IRB 2026-29 (Jul 13 2026) |\n| Brackets & standard deduction | IRS Rev. Proc. 2025-32 (Oct 9 2025) + OBBBA §70103 |\n| Retirement limits | IRS Notice 2025-67 (IR-2025-111, Nov 13 2025) |\n| SS wage base $184,500 | SSA COLA announcement (Oct 24 2025) |\n| Estimated-tax rules | Form 1040-ES (2026); IRC §6654 |\n\n## Maintenance SOP (the moat)\n\nQuarterly, and within 7 days of any IRS newsroom announcement:\n\n1. Check irs.gov/newsroom for rate changes (search: mileage, inflation adjustment, notice)\n2. Check SSA press releases each October (wage base, COLA)\n3. Check IRS retirement-limit notice each November\n4. Update `constants_2026.json`, bump `last_verified`, run `test_server.py`, republish\n5. Each December: create `constants_<year+1>.json` and add year routing\n\nEstimated effort: ~1 hour/quarter. This maintenance commitment is the product — competitors that stop updating die.\n\n## Compliance posture\n\n- Educational reference and estimates only; **not tax, legal, or financial advice** — stated in every response payload\n- Federal only; no state/local tax\n- Underlying data is US-government material (public domain); no scraped or licensed content\n- Simplifications are disclosed in-payload (QBI phase-outs, credits, W-2 interactions not modeled)\n\n## Pricing\n\n- Free tier: 50 requests/month (enough to evaluate every tool)\n- Then $0.01 per request, metered. Pay only for what you use\n- Fiat rails only (Stripe via marketplace payouts)\n## Roadmap\n\nv1.1: MFS brackets, capital-gains thresholds · v1.2: state income-tax constants (top 10 states) · v2: 2027 constants + year routing\n",
+    "fetchedAt": "2026-08-11T23:41:15.643Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:00.738Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Bearer token required\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "ai.vanticlabs/vantic",
+  "title": "vantic",
+  "description": "Verify an AI agent's payment authority: signed mandates, allowlists, and tamper-proof receipts.",
+  "summary": "Verify an AI agent's payment authority: signed mandates, allowlists, and tamper-proof receipts.",
+  "offersHint": "Verify an AI agent's payment authority: signed mandates, allowlists, and tamper-proof receipts. · Packages: npm:@vantic/sdk",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@vantic/sdk",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@vantic/sdk",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vanticlabs/vantic",
+  "repository": {
+    "url": "https://github.com/vanticlabs/vantic",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T13:11:43.096298Z",
+  "publishedAt": "2026-07-31T13:11:43.096298Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:43:17.919Z",
+    "sourceRepoAt": "2026-08-12T00:43:17.919Z",
+    "readmeAt": "2026-08-12T00:43:18.253Z",
+    "toolsAt": "2026-08-12T00:43:18.362Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vanticlabs/vantic",
+    "checkedAt": "2026-08-12T00:43:17.919Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vanticlabs/vantic/main/README.md",
+    "markdown": "# Vantic\n\n**A spending firewall and permission layer for AI agents.** Give your agent a signed budget it can't exceed — even if it gets prompt-injected — and get a tamper-proof receipt for everything it does.\n\nZero dependencies · TypeScript · Ed25519 + W3C DIDs · works with MCP, LangChain, or any tool-calling agent.\n\n---\n\n## The problem\n\nYour AI agent can hold a wallet and call payment APIs. That's useful — and dangerous. One prompt injection from a poisoned web page, one hallucination, one bug, and your agent pays the wrong party. This is a documented, actively-exploited failure mode: agents tricked into wiring funds to attacker-controlled accounts.\n\n## What Vantic does\n\nYou issue your agent a **signed mandate** — a budget, a per-transaction cap, allowed actions, and an allowlist of who it may pay — and wrap its money-moving calls (purchase, subscribe, transfer, pay-per-use, payout, refund — any action that moves value). From then on, an out-of-scope payment is **impossible**: the check runs *before* the money-moving code, so even a fully compromised model can't execute it. Every allowed action emits a **signed, tamper-proof receipt** — a clean audit trail, and evidence if a charge is ever disputed.\n\n## Install\n\n```bash\nnpm install @vantic/sdk\n```\n\n## Protect your agent in ~5 lines\n\n```ts\nimport { generateKeyPair, issueMandate, AgentWallet } from \"@vantic/sdk\";\n\nconst owner = generateKeyPair();   // you (the principal)\nconst agent = generateKeyPair();   // your autonomous agent\n\n// Authorize the agent: what it may pay for, ≤ $200 each, ≤ $500/week, only these counterparties.\nconst mandate = issueMandate({\n  agent: agent.publicKey,\n  principal: owner.publicKey,\n  principalPrivateKeyPem: owner.privateKeyPem,\n  ttlSeconds: 7 * 24 * 3600,\n  scope: {\n    budget: { currency: \"USD\", amount: 50000, windowSeconds: 7 * 24 * 3600 }, // $500 / 7 days\n    maxPerTransaction: 20000,                                                  // $200\n    allowedActions: [\"purchase\", \"subscribe\"], // any money-moving action: transfer, payout, refund, …\n    allowedCounterparties: [\"etsy.com\", \"*.shop.example\"],\n  },\n});\n\nconst wallet = new AgentWallet(mandate, agent.privateKeyPem);\n\n// Your real payment call goes inside the executor. The guard runs FIRST;\n// if the action is out of scope, the executor is never called.\nawait wallet.spend(\n  { type: \"purchase\", counterparty: \"etsy.com\", amount: 4500, currency: \"USD\" },\n  async (action) => ({ outcome: \"settled\", result: await pay(action) }),\n);\n\n// A prompt-injected wallet.spend({ counterparty: \"attacker.xyz\", ... })\n// throws GuardViolation — before any money moves.\n```\n\nRun `npm run guard-demo` to watch it block live attacker payments.\n\n## Already have a payment tool? Wrap it once.\n\nFor MCP / LangChain / function-calling agents, gate an existing tool without restructuring anything:\n\n```ts\nimport { wrapMcpTool } from \"@vantic/sdk\";\n\nconst guardedPurchase = wrapMcpTool(purchaseTool, {\n  wallet,\n  toAction: (args) => ({ type: \"purchase\", counterparty: args.merchant, amount: args.amountCents, currency: args.currency }),\n});\n// Register `guardedPurchase` instead of `purchaseTool`. A blocked call comes back as a tool\n// error the model can read and recover from; the real charge never fires.\n```\n\nFramework guides (OpenAI, LangChain, Vercel AI SDK, MCP, raw): **[docs/integrations.md](docs/integrations.md)**.\n\n## What you get\n\n- **Hard spending limits** — per-transaction cap and a rolling budget window, enforced deterministically.\n- **Counterparty allowlists** — the agent can only pay who you allow (exact match or wildcard domains).\n- **Prompt-injection protection** — the mandate is enforced *outside* the model, so a compromised agent can't spend out of scope.\n- **Tamper-proof receipts** — a signed, hash-chained record of every action; verify offline; use as dispute evidence.\n- **Standard identity** — agents and owners are W3C `did:key`/`did:web` DIDs, and the owner→agent relationship is a W3C Verifiable Credential.\n- **MCP server** — `npx vantic-mcp` exposes verification tools to any MCP host.\n- **Zero dependencies** — Node's built-in crypto only. Ed25519 + SHA-256.\n\n## How it works\n\nTwo primitives (full spec in [`spec/SPEC.md`](spec/SPEC.md)):\n\n- **Mandate** — a signed statement from an owner authorizing an agent within a scope (budget, limits, counterparties, expiry, revocation).\n- **Receipt** — a signed, hash-chained record binding each action to the mandate and its outcome. Tamper-evident.\n\nEverything is deterministic and runs outside the agent's model.\n\n## Use it from an MCP host\n\n```bash\nnpm run mcp        # or, once published: npx vantic-mcp\n```\n\nExposes stateless verification tools (no private keys): `mandate_authorize`, `mandate_verify_chain`, `mandate_verify_credential`, `mandate_resolve_did`.\n\n## Identity\n\nAgents and owners can be identified by bare keys (`key:<x>`) or by W3C **`did:key`** DIDs — interchangeable, both verify. `generateKeyPair()` returns both. DIDs resolve to standard DID documents offline (`resolveDidKey`), the same key can be published as **`did:web`** (`buildDidWebDocument`), and the owner→agent relationship is a portable **W3C Verifiable Credential** (`issueSponsorCredential` / `verifySponsorCredential`). See `npm run identity-demo`.\n\n## Develop\n\n```bash\ncd sdk\nnpm install\nnpm test          # 39 tests\nnpm run demo      # end-to-end walkthrough\n```\n\n## Learn more\n\n- **[docs/integrations.md](docs/integrations.md)** — add Vantic to OpenAI / LangChain / Vercel AI SDK / MCP / raw agents.\n- **[docs/ap2-and-standards.md](docs/ap2-and-standards.md)** — how Vantic relates to AP2, x402, and the shared \"mandate\" concept.\n- **[docs/agent-spending-security.md](docs/agent-spending-security.md)** — securing agent spending (and why not to roll your own).\n- **[spec/SPEC.md](spec/SPEC.md)** — the protocol.\n\n## Status & security\n\n**v0.1 — early, and honest about it.** The code is production-quality (Ed25519 + SHA-256 + canonical JSON; `did:key`/`did:web` + Verifiable Credential identity; zero runtime dependencies), but it is **not yet audited** and the wire format isn't frozen.\n\n- **[`ROADMAP.md`](ROADMAP.md)** — exactly what is and isn't hardened, and the path to v1.0.\n- **[`SECURITY.md`](SECURITY.md)** — how to report a vulnerability (please don't open a public issue).\n- **[`spec/SPEC.md`](spec/SPEC.md) §8** — threat model and non-goals.\n\nFeedback and PRs welcome. Apache-2.0.\n",
+    "fetchedAt": "2026-08-12T00:43:18.253Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:43:18.362Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

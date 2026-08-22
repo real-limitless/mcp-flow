@@ -1,0 +1,58 @@
+{
+  "id": "io.github.JayOfemi/shikamaru",
+  "title": "shikamaru",
+  "description": "Provably correct day-count, calendar, business-day, and schedule math, verified against QuantLib.",
+  "summary": "Provably correct day-count, calendar, business-day, and schedule math, verified against QuantLib.",
+  "offersHint": "Provably correct day-count, calendar, business-day, and schedule math, verified against QuantLib. · Packages: npm:@jayofemi/shikamaru",
+  "version": "1.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@jayofemi/shikamaru",
+    "version": "1.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@jayofemi/shikamaru",
+      "version": "1.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/JayOfemi/shikamaru",
+  "repository": {
+    "url": "https://github.com/JayOfemi/shikamaru",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-12T03:39:49.997044Z",
+  "publishedAt": "2026-06-12T03:39:49.997044Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:20.714Z",
+    "sourceRepoAt": "2026-08-12T00:09:21.791Z",
+    "readmeAt": "2026-08-12T00:09:22.323Z",
+    "toolsAt": "2026-08-12T01:40:20.714Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/JayOfemi/shikamaru",
+    "checkedAt": "2026-08-12T00:09:21.791Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/JayOfemi/shikamaru/main/README.md",
+    "markdown": "# shikamaru\n\n[![CI](https://github.com/JayOfemi/shikamaru/actions/workflows/ci.yml/badge.svg)](https://github.com/JayOfemi/shikamaru/actions/workflows/ci.yml)\n\nProvably correct day-count, holiday-calendar, business-day, and payment-schedule calculations. A small, dependency-light TypeScript library and an MCP server, so an AI agent can get the exact date or number instead of guessing.\n\n## Why\n\nLLMs are unreliable at date and money math: they pick the wrong day-count convention, forget market holidays, and miscompute accrued interest. shikamaru does it deterministically and proves it against published reference values. Do not let a model guess your interest accrual or your settlement date.\n\n## What it does\n\n- Day-count fraction between two dates under seven market conventions: 30/360, 30E/360, 30E/360 ISDA, ACT/360, ACT/365F, ACT/ACT ISDA, ACT/ACT ICMA (with reference periods and stub decomposition).\n- Simple accrued interest: notional x rate x day-count fraction.\n- Holiday calendars as rules in code, no data feed: `us-federal`, `nyse`, `sifma-us`, `target`, `uk`.\n- Business-day math: is-business-day, next/previous, ISDA adjustment conventions (following, modified-following, preceding, modified-preceding), T+N settlement.\n- Payment schedules: monthly to annual, backward or forward roll, short or long stubs, end-of-month rule, per-period unadjusted and adjusted dates.\n- All of it exposed as a library and as an MCP server.\n- Every MCP tool is annotated read-only and returns structured output (typed JSON under an output schema) alongside the plain-text result, so an agent client can consume the numbers without parsing text.\n\n### Calendar maintenance contract\n\nCalendars are published rules plus a short pinned table of historical one-off closures, current as of this version. Rules generate correct dates arbitrarily far forward; one-off closures (a mourning day, a proclaimed extra holiday) are added when announced and ship in a patch release. A scheduled CI run re-checks every calendar against the latest QuantLib weekly, so drift is detected, not discovered.\n\n## Install\n\n```\nnpm install @jayofemi/shikamaru\n```\n\n## Library usage\n\n```ts\nimport {\n\taccruedInterest, addBusinessDays, adjustDate, dayCountFraction,\n\tgenerateSchedule, isBusinessDay,\n} from \"@jayofemi/shikamaru\";\n\ndayCountFraction(\"2003-11-01\", \"2004-05-01\", \"ACT/ACT ISDA\"); // 0.4977...\naccruedInterest({\n\tnotional: 1_000_000,\n\trate: 0.05,\n\tstart: \"2024-01-01\",\n\tend: \"2024-04-01\",\n\tconvention: \"ACT/365F\",\n});\n\nisBusinessDay(\"2024-06-19\", \"nyse\"); // false (Juneteenth)\nadjustDate(\"2024-03-29\", \"modified-following\", \"target\"); // \"2024-03-28\" (Good Friday, stays in March)\naddBusinessDays(\"2024-07-02\", 2, \"us-federal\"); // \"2024-07-05\" (T+2 over July 4th)\n\ngenerateSchedule({\n\teffective: \"2024-01-15\",\n\ttermination: \"2026-01-15\",\n\tfrequency: \"semiannual\",\n\tcalendar: \"target\",\n}); // four periods with unadjusted and adjusted dates\n```\n\nDates are strict ISO `YYYY-MM-DD`. Rate is an annual decimal (`0.05` = 5%).\n\n## MCP server [![shikamaru MCP server](https://glama.ai/mcp/servers/JayOfemi/shikamaru/badges/score.svg)](https://glama.ai/mcp/servers/JayOfemi/shikamaru)\n\n[![shikamaru MCP server](https://glama.ai/mcp/servers/JayOfemi/shikamaru/badges/card.svg)](https://glama.ai/mcp/servers/JayOfemi/shikamaru)\n\nFrom source (local dev):\n\n```\nnpm install\nnpm run build\nnode dist/cli.js\n```\n\nOr launch the published package directly:\n\n```\nnpx @jayofemi/shikamaru\n```\n\nPoint any MCP client (Claude Desktop, an IDE, etc.) at that command over stdio.\n\nClaude Code users can also install it as a plugin, which registers the MCP server automatically:\n\n```\n/plugin marketplace add JayOfemi/shikamaru\n/plugin install shikamaru@shikamaru\n```\n\n## Verify the MCP server\n\nThe test suite exercises the server end to end in memory, covering tool listing, read-only annotations, structured output against each output schema, and a call to every tool. For an interactive check, use the official MCP Inspector:\n\n```\nnpm run build\nnpx @modelcontextprotocol/inspector node dist/cli.js\n```\n\nIt opens a local UI, connects over stdio, lists the tools, and lets you call them. Sanity check: `day_count_fraction` with start `2003-11-01`, end `2004-05-01`, convention `ACT/ACT ISDA` returns about 0.4977.\n\n## Correctness\n\nConventions follow the ISDA 2006 definitions; calendars follow their published sources (OPM, NYSE rules, SIFMA recommendations, ECB TARGET rules, gov.uk proclamations). The test suite checks published reference vectors (ISDA worked examples, official holiday lists, the OpenGamma conventions guide), property checks, and differential batteries against QuantLib, the de-facto reference: day-count fractions, full per-calendar holiday lists across decades, business-day adjustment and advancing, schedules compared date by date, and ACT/ACT ICMA fractions including stubs.\n\nTo (re)generate the QuantLib batteries (needs Python + pip):\n\n```\npip install QuantLib\nnpm run vectors\n```\n\nThis writes `test/vectors/quantlib.json` and `test/vectors/quantlib-calendar.json` (commit both). `npm test` then checks shikamaru against every QuantLib value. CI regenerates the batteries from the latest QuantLib on every push AND on a weekly schedule (the drift watchdog), so a real-world calendar change surfaces as a red run even when the repo is quiet. The proof is the product.\n\n## Develop\n\n```\nnpm install\nnpm run build\nnpm test\n```\n\n## License\n\nMIT. Copyright (c) 2026 Jay Ofemi.\n",
+    "fetchedAt": "2026-08-12T00:09:22.323Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:20.714Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

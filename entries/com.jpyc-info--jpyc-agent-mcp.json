@@ -1,0 +1,51 @@
+{
+  "id": "com.jpyc-info/jpyc-agent-mcp",
+  "title": "JPYC Agent MCP",
+  "description": "OAuth-protected JPYC wallet, transfer, and contract workflows on Polygon.",
+  "summary": "OAuth-protected JPYC wallet, transfer, and contract workflows on Polygon.",
+  "offersHint": "OAuth-protected JPYC wallet, transfer, and contract workflows on Polygon. · Remote MCP (streamable-http) at https://jpyc-info.com/api/jpyc-agent-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://jpyc-info.com/api/jpyc-agent-mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jpyc-info.com/api/jpyc-agent-mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/yourbright-jp/jpyc-agent-mcp",
+  "repository": {
+    "url": "https://github.com/yourbright-jp/jpyc-agent-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-31T00:35:38.420877Z",
+  "publishedAt": "2026-03-31T00:35:38.420877Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:32:20.294Z",
+    "sourceRepoAt": "2026-08-12T00:32:20.294Z",
+    "readmeAt": "2026-08-12T00:32:20.719Z",
+    "toolsAt": "2026-08-12T00:32:20.834Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/yourbright-jp/jpyc-agent-mcp",
+    "checkedAt": "2026-08-12T00:32:20.294Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/yourbright-jp/jpyc-agent-mcp/main/README.md",
+    "markdown": "# JPYC Agent MCP\n\nJPYC Agent MCP can be used both as a public MCP endpoint and as a Codex plugin bundle.\nThis repository now uses the repository root as the plugin root so Codex can discover it directly.\n\n## What It Supports\n\n- Polygon agent wallet creation and lookup\n- Wallet balance inspection\n- JPYC transfer quote and execution flows\n- Contract read calls\n- Contract write quote and execution flows\n- Transfer and contract call status tracking\n\n## Plugin Layout\n\nCodex should discover the plugin from the repository root via the files below:\n\n- [`.codex-plugin/plugin.json`](./.codex-plugin/plugin.json)\n- [`.mcp.json`](./.mcp.json)\n- [`skills/jpyc-agent-mcp/SKILL.md`](./skills/jpyc-agent-mcp/SKILL.md)\n- [`skills/jpyc-agent-mcp/agents/openai.yaml`](./skills/jpyc-agent-mcp/agents/openai.yaml)\n- [`config/default.json`](./config/default.json)\n\n## Public Endpoint\n\n- MCP endpoint: `https://jpyc-info.com/api/jpyc-agent-mcp`\n- OAuth issuer: `https://jpyc-info.com/api/jpyc-agent-oauth`\n- Resource metadata: `https://jpyc-info.com/.well-known/oauth-protected-resource`\n- Authorization server metadata: `https://jpyc-info.com/.well-known/oauth-authorization-server`\n- OpenID configuration: `https://jpyc-info.com/.well-known/openid-configuration`\n- Human sign-in page: `https://jpyc-info.com/mcp/connect`\n- MCP Registry auth file: `https://jpyc-info.com/.well-known/mcp-registry-auth`\n\nThe endpoint is OAuth-protected. Users must log in and grant consent before private wallet operations can run.\nIf you open the MCP endpoint directly in a browser, it redirects to `https://jpyc-info.com/mcp/connect`.\nIf an MCP client receives `401 unauthorized`, it should follow `WWW-Authenticate` and the resource metadata above to discover the OAuth flow.\nIf ChatGPT/Codex does not surface a full authorization URL automatically, open `https://jpyc-info.com/mcp/connect` in the browser as the canonical human fallback. Low-level manual auth with `/api/jpyc-agent-oauth/start` remains available for debugging, but it is not the primary documented path. Clients using the low-level flow must keep the returned `auth_session_secret` private and present it when polling `/api/jpyc-agent-oauth/auth-session`.\n\nFor the complete OAuth contract and exact URLs, see [`docs/auth.md`](./docs/auth.md) and [`config/oauth.json`](./config/oauth.json).\n\n## Claude Code\n\nClaude Code does not natively support `streamable-http` MCP servers.\nUse [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) to bridge\nstreamable-http + OAuth to stdio.\n\n### Quick Start\n\nAdd the following to your project `.mcp.json` or `~/.claude/settings.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"jpyc-agent-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"mcp-remote\",\n        \"https://jpyc-info.com/api/jpyc-agent-mcp\"\n      ]\n    }\n  }\n}\n```\n\nOn first connection, `mcp-remote` opens a browser for OAuth consent.\nAfter authentication, all tools are available immediately.\n\n## Client Token Persistence\n\nThis repository defines the OAuth-protected MCP endpoint and the plugin metadata needed for Codex discovery. It does not implement client-side credential storage on behalf of Codex, ChatGPT, or any other MCP client.\n\nExpected client behavior:\n\n1. Start the OAuth flow against the JPYC Agent OAuth issuer\n2. Receive the issued bearer token or equivalent session credential\n3. Persist that credential in the client's local secure storage\n4. Reuse it on subsequent MCP calls to `https://jpyc-info.com/api/jpyc-agent-mcp`\n5. Verify the recovered session with `auth_status`\n\nIf a client can complete browser login but cannot persist and reuse the issued credential locally, the MCP integration is incomplete from the user's point of view. In that case, the fix belongs in the MCP client implementation rather than this repository's server-side OAuth protocol.\n\nFor local operator workflows, this repository includes helpers that persist the issued refresh token with DPAPI and reuse it across future sessions:\n\n- [`docs/local-token-cache.md`](./docs/local-token-cache.md)\n- [`scripts/jpyc_oauth_cache.py`](./scripts/jpyc_oauth_cache.py) (Python, Windows)\n- [`scripts/jpyc_oauth_cache.ps1`](./scripts/jpyc_oauth_cache.ps1) (PowerShell, Windows)\n\n## MCP Registry\n\nThis repository includes [`server.json`](./server.json) for publishing the remote server to the public MCP Registry using the domain-based namespace `com.jpyc-info/jpyc-agent-mcp`.\n\nFor HTTP-based domain verification, host the exact text value `v=MCPv1; k=...; p=...` at `https://jpyc-info.com/.well-known/mcp-registry-auth`. In the `jpyc-info` deployment, that endpoint is served from the `MCP_REGISTRY_AUTH` environment variable.\n\n## Main Tools\n\n- `auth_status`\n- `list_agent_wallets`\n- `get_agent_wallet`\n- `create_agent_wallet`\n- `get_agent_wallet_balance`\n- `quote_transfer`\n- `transfer_jpyc`\n- `list_transactions`\n- `get_transfer_status`\n- `read_contract`\n- `quote_contract_write`\n- `execute_contract_write`\n- `list_contract_call_history`\n- `get_contract_call_status`\n\nDetailed request and response examples are in [`docs/tools.md`](./docs/tools.md).\n\n## Recommended Flow\n\n1. Check `auth_status`\n2. Inspect wallets with `list_agent_wallets`\n3. Create a wallet only if needed with `create_agent_wallet`\n4. Check balances before transfers\n5. Use quote-first execution for transfers and contract writes\n\nTransfer flow:\n\n1. `quote_transfer`\n2. `transfer_jpyc`\n\nContract write flow:\n\n1. `quote_contract_write`\n2. `execute_contract_write`\n\n## Notes\n\n- This repo does not include secrets.\n- This repo does not include private keys or signer material.\n- The bundled skill is intended to keep Codex inside the JPYC Agent MCP tool surface.\n- For more details, see [`docs/auth.md`](./docs/auth.md), [`config/oauth.json`](./config/oauth.json), and [`docs/openai-and-mcp.md`](./docs/openai-and-mcp.md).\n",
+    "fetchedAt": "2026-08-12T00:32:20.719Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:32:20.834Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"not_found\"}",
+  "toolsPreviewStatus": "unreachable"
+}

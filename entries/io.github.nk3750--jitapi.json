@@ -1,0 +1,82 @@
+{
+  "id": "io.github.nk3750/jitapi",
+  "title": "jitapi",
+  "description": "Turn any OpenAPI spec into an executable agent interface using graphs and semantic search.",
+  "summary": "Turn any OpenAPI spec into an executable agent interface using graphs and semantic search.",
+  "offersHint": "Turn any OpenAPI spec into an executable agent interface using graphs and semantic search. · Packages: pypi:jitapi · Env vars: OPENAI_API_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "jitapi",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "OPENAI_API_KEY",
+        "description": "OpenAI API key for embeddings and workflow planning",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "jitapi",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key for embeddings and workflow planning",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "OPENAI_API_KEY",
+      "description": "OpenAI API key for embeddings and workflow planning",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nk3750/jitapi",
+  "repository": {
+    "url": "https://github.com/nk3750/jitapi",
+    "source": "github"
+  },
+  "updatedAt": "2026-01-19T22:22:49.273397Z",
+  "publishedAt": "2026-01-19T22:22:49.273397Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:41.689Z",
+    "sourceRepoAt": "2026-08-11T23:31:34.559Z",
+    "readmeAt": "2026-08-11T23:31:35.718Z",
+    "toolsAt": "2026-08-12T01:10:41.689Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nk3750/jitapi",
+    "checkedAt": "2026-08-11T23:31:34.559Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nk3750/jitapi/main/README.md",
+    "markdown": "# JitAPI\n\n[![PyPI](https://img.shields.io/pypi/v/jitapi?v=2)](https://pypi.org/project/jitapi/)\n[![PyPI Downloads](https://img.shields.io/pepy/dt/jitapi)](https://pepy.tech/project/jitapi)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)\n[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)\n\n**Point Claude at any API. JitAPI figures out which endpoints to call and in what order — automatically.**\n\n<!-- mcp-name: io.github.nk3750/jitapi -->\n\nJitAPI is an MCP server that lets Claude interact with *any* API from its OpenAPI spec. Instead of dumping hundreds of endpoints into context, JitAPI uses semantic search and a dependency graph to surface only what's needed — then Claude plans and executes the calls.\n\nhttps://github.com/user-attachments/assets/53f72f89-a41a-4a9c-a688-ec876ea05fbd\n\n<p align=\"center\">\n  <img src=\"assets/v020-infographic.png\" alt=\"JitAPI v0.2.0\" width=\"700\">\n</p>\n\n---\n\n## The Problem\n\nStripe has 300+ endpoints. GitHub has 800+. Loading the full spec into Claude's context wastes tokens and causes hallucinations. Writing a custom MCP server for every API you use doesn't scale.\n\n**JitAPI solves this:** register any OpenAPI spec once, then ask for what you need in plain English. It finds the right endpoints, resolves dependencies between them, and lets Claude execute the calls.\n\n## Quick Start\n\n```bash\npip install jitapi\n```\n\nAdd to your Claude Code config (`.mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"jitapi\": {\n      \"command\": \"uvx\",\n      \"args\": [\"jitapi\"]\n    }\n  }\n}\n```\n\nThat's it. No API keys required — JitAPI uses local embeddings out of the box.\n\nThen in Claude:\n\n```\nYou: Register the GitHub API from https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json\n\nClaude: ✓ Registered GitHub v3 REST API — 1,107 endpoints indexed\n\nYou: List my repos\n\nClaude: [searches for \"list repositories for authenticated user\" → finds GET /user/repos → executes]\nHere are your repositories: ...\n```\n\n## Multi-API Orchestration\n\nThe killer feature: register multiple APIs and ask questions that span them. JitAPI searches across all registered APIs and Claude chains the calls.\n\n```\nYou: Register the TMDB API and OpenWeatherMap API\nClaude: ✓ Registered both APIs\n\nYou: Find the top popular movie on TMDB, then get the weather where it was filmed\n\nClaude: [searches TMDB → GET /movie/popular → GET /movie/{id} for production locations\n         → searches OpenWeather → GET /data/2.5/weather with the city]\n\nThe #1 popular movie is \"Inception\", filmed in Los Angeles.\nCurrent weather in LA: 72°F, partly cloudy.\n```\n\n## How It Works\n\n```\nRegister API                          Ask a question\n     │                                      │\n     ▼                                      ▼\nParse OpenAPI spec               Embed query → vector search\n     │                                      │\n     ▼                                      ▼\nBuild dependency graph           Find relevant endpoints\n     │                                      │\n     ▼                                      ▼\nEmbed all endpoints              Expand with dependencies\n     │                                      │\n     ▼                                      ▼\nStore in vector DB               Return schemas → Claude executes\n```\n\n1. **Register** — Parse an OpenAPI spec, build a dependency graph (which endpoints need data from which other endpoints), and create searchable embeddings for all endpoints\n2. **Search** — When you ask a question, JitAPI embeds your query and finds the most relevant endpoints via cosine similarity\n3. **Expand** — The dependency graph adds any prerequisite endpoints (e.g., \"you need to call GET /users first to get the user_id for POST /orders\")\n4. **Execute** — Claude gets the endpoint schemas and makes the API calls, passing data between steps\n\n## MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `register_api` | Register an API from an OpenAPI spec URL |\n| `list_apis` | List all registered APIs and their endpoint counts |\n| `search_endpoints` | Semantic search across endpoints using natural language |\n| `get_workflow` | Find relevant endpoints with dependency resolution and full schemas |\n| `get_endpoint_schema` | Get the complete schema for a specific endpoint |\n| `call_api` | Execute a single API call with auth, path params, query params, and body |\n| `set_api_auth` | Configure authentication (API key header, API key query param, or bearer token) |\n| `delete_api` | Remove a registered API and all its data |\n\n## Setup\n\n### Claude Code\n\nCreate `.mcp.json` in your project directory (or `~/.claude.json` for global access):\n\n```json\n{\n  \"mcpServers\": {\n    \"jitapi\": {\n      \"command\": \"uvx\",\n      \"args\": [\"jitapi\"]\n    }\n  }\n}\n```\n\n### Claude Desktop\n\nAdd to your Claude Desktop config:\n\n| OS | Config path |\n|----|-------------|\n| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |\n| Windows | `%APPDATA%\\Claude\\claude_desktop_config.json` |\n| Linux | `~/.config/Claude/claude_desktop_config.json` |\n\n```json\n{\n  \"mcpServers\": {\n    \"jitapi\": {\n      \"command\": \"uvx\",\n      \"args\": [\"jitapi\"]\n    }\n  }\n}\n```\n\n### Embedding Providers\n\nJitAPI works out of the box with **local embeddings** (fastembed) — no API keys needed. For better search quality on large APIs, you can add a cloud embedding provider:\n\n| Provider | Quality | Setup |\n|----------|---------|-------|\n| **Local (default)** | Good | Nothing — works immediately |\n| **Voyage AI** (recommended) | Excellent | `pip install jitapi[voyage]` + set `VOYAGE_API_KEY` |\n| **OpenAI** | Excellent | `pip install jitapi[openai]` + set `OPENAI_API_KEY` |\n| **Cohere** | Very good | `pip install jitapi[cohere]` + set `COHERE_API_KEY` |\n\nSet the API key in your MCP config's `env` block:\n\n```json\n{\n  \"mcpServers\": {\n    \"jitapi\": {\n      \"command\": \"uvx\",\n      \"args\": [\"jitapi\"],\n      \"env\": {\n        \"VOYAGE_API_KEY\": \"your-key-here\"\n      }\n    }\n  }\n}\n```\n\nProvider is auto-detected from available environment variables. Priority: Voyage AI > OpenAI > Cohere > local.\n\n### Authentication\n\nConfigure API authentication after registering. Supported auth types: `bearer`, `api_key` (custom header), and `api_key_query` (query parameter). The recommended approach uses **environment variables** so secrets are never written to disk:\n\n```json\n{\n  \"mcpServers\": {\n    \"jitapi\": {\n      \"command\": \"uvx\",\n      \"args\": [\"jitapi\"],\n      \"env\": {\n        \"GITHUB_TOKEN\": \"ghp_...\",\n        \"OPENWEATHER_API_KEY\": \"your-key-here\"\n      }\n    }\n  }\n}\n```\n\nThen tell Claude to use the env var:\n\n```\nYou: Set bearer auth for GitHub using env var GITHUB_TOKEN\nClaude: [calls set_api_auth with auth_type=\"bearer\", env_var=\"GITHUB_TOKEN\"]\n✓ Auth configured for github (from env var $GITHUB_TOKEN)\n```\n\nWith `env_var`, JitAPI reads the secret from the environment at request time — only the env var *name* is persisted, never the credential itself.\n\nYou can also pass credentials directly (they'll be stored in `~/.jitapi/auth.json` with `0600` permissions):\n\n```\nYou: Set API key auth for OpenWeather with param name \"appid\"\nClaude: [calls set_api_auth with auth_type=\"api_key_query\", credential=\"...\", param_name=\"appid\"]\n✓ Auth configured for openweather\n```\n\nSupported auth types: `bearer`, `api_key` (custom header, default `X-API-Key`), `api_key_query` (query parameter).\n\n> **Security note:** When using `env_var`, credentials are resolved at runtime and never touch the filesystem. When passing `credential` directly, secrets are stored as plaintext JSON at `~/.jitapi/auth.json` (file permissions `0600`, directory `0700`). For production use, prefer the `env_var` approach.\n\n## Environment Variables\n\n| Variable | Required | Description |\n|----------|----------|-------------|\n| `VOYAGE_API_KEY` | No | Voyage AI API key (recommended cloud provider) |\n| `OPENAI_API_KEY` | No | OpenAI API key (alternative cloud provider) |\n| `COHERE_API_KEY` | No | Cohere API key (alternative cloud provider) |\n| `JITAPI_STORAGE_DIR` | No | Data directory (default: `~/.jitapi`) |\n| `JITAPI_LOG_LEVEL` | No | DEBUG, INFO, WARNING, ERROR (default: INFO) |\n\n## Development\n\n```bash\ngit clone https://github.com/nk3750/jitapi.git\ncd jitapi\npip install -e \".[dev]\"\npytest\nruff check src/\n```\n\n## License\n\nMIT\n\n---\n\n<sub>Built by <a href=\"https://www.neelabhbuilds.com\">Neelabh Kumar</a> — AI engineer and builder.</sub>\n",
+    "fetchedAt": "2026-08-11T23:31:35.718Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:41.689Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

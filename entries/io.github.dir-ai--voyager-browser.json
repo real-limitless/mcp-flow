@@ -1,0 +1,58 @@
+{
+  "id": "io.github.dir-ai/voyager-browser",
+  "title": "voyager-browser",
+  "description": "Voyager's web-page sense: safe read-only observation of one live URL (structure, security, a11y).",
+  "summary": "Voyager's web-page sense: safe read-only observation of one live URL (structure, security, a11y).",
+  "offersHint": "Voyager's web-page sense: safe read-only observation of one live URL (structure, security, a11y). · Packages: npm:@dir-ai/voyager-browser",
+  "version": "0.7.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@dir-ai/voyager-browser",
+    "version": "0.7.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dir-ai/voyager-browser",
+      "version": "0.7.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dir-ai/voyager-browser",
+  "repository": {
+    "url": "https://github.com/dir-ai/voyager-browser",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-20T20:37:21.546758Z",
+  "publishedAt": "2026-07-20T20:37:21.546758Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:26.250Z",
+    "sourceRepoAt": "2026-08-11T23:48:40.092Z",
+    "readmeAt": "2026-08-11T23:48:40.607Z",
+    "toolsAt": "2026-08-12T01:24:26.250Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dir-ai/voyager-browser",
+    "checkedAt": "2026-08-11T23:48:40.092Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dir-ai/voyager-browser/main/README.md",
+    "markdown": "# @dir-ai/voyager-browser\n\n**Voyager's web-page sense.** A safe, **read-only** observation of one live URL:\nits structure, forms, links, script origins, **security posture** (HTTPS / HSTS /\nCSP / mixed-content / cookies) and **accessibility signals** (lang, image alt\ncoverage, heading order) — each with a *described, never applied* fix.\n\nIt parses **static HTML** — **no JavaScript execution, no headless browser** — so\nit's honest about what it can and cannot see (it will not render a client-side\nSPA's runtime state). Every piece of page text is returned **framed as\nuntrusted**. It is **SSRF-gated**: it refuses non-`http(s)` URLs and anything\nresolving to private, loopback, or cloud-metadata addresses.\n\n> One sense in the [Voyager family](#the-voyager-family). Read-only, like all the\n> senses — it never submits a form, clicks, or mutates anything.\n\n## Install\n\n```bash\nnpm i -g @dir-ai/voyager-browser\n```\n\n## Use\n\n```bash\nvoyager-browser observe https://example.com\nvoyager-browser observe https://example.com --json\n```\n\n```\nhttps://example.com/\nhttps://example.com — 200; 3 finding(s), worst: medium. 0 form(s), 1 link(s).\n\n  title: Example Domain\n  security: https  ·  a11y lang:yes alt:n/a\n\n  med   HTTPS without HSTS\n        ↳ add Strict-Transport-Security: max-age=63072000; includeSubDomains\n  med   no Content-Security-Policy\n        ↳ add a Content-Security-Policy to constrain scripts/resources\n  low   no X-Content-Type-Options: nosniff\n        ↳ add X-Content-Type-Options: nosniff\n```\n\n## As an MCP server\n\nOne tool, `observe_page`.\n\n```json\n{ \"command\": \"voyager-browser\", \"args\": [\"mcp\"] }\n```\n\n## As a library\n\n```ts\nimport { observe } from '@dir-ai/voyager-browser'\n\nconst brief = await observe('https://example.com')\nconsole.log(brief.summary)\nconsole.log(brief.security)   // { https, hsts, csp, mixedContent, thirdPartyScripts, … }\nconsole.log(brief.forms)      // insecure / cross-origin / sensitive flags\nconsole.log(brief.findings)   // severity + described fix\n```\n\n## What it looks for\n\n- **Security posture (quality, not just presence)** — plain HTTP; missing/**weak** HSTS; missing CSP or a CSP graded weak (`unsafe-inline`/`unsafe-eval`/wildcard/no `object-src`/no `base-uri`); missing clickjacking protection (X-Frame-Options / `frame-ancestors`); missing `nosniff`, Referrer-Policy, Permissions-Policy; version-leaking `Server`/`X-Powered-By`; mixed content on an HTTPS page (origin-compared, not prefix); **per-cookie** Secure/HttpOnly; third-party scripts without **Subresource Integrity**.\n- **Forms** — a form on HTTPS posting to plain HTTP (`critical`); a sensitive form (password/payment) posting cross-origin or over HTTP; a sensitive `POST` with no anti-CSRF token; sensitive data on `GET`.\n- **Links** — external `target=\"_blank\"` without `rel=\"noopener\"` (reverse-tabnabbing).\n- **Body-content leaks** — directory listings (Apache/nginx autoindex), language-specific **stack traces** (Python/Java/PHP/Node/Oracle/SQLSTATE/MySQL) and **verbose framework debug pages** (Werkzeug/Flask, Rails, Symfony/Whoops, ASP.NET YSOD) disclosed in the response body — each with the matched signature (framed).\n- **Exposed JWTs** — JWT-shaped tokens found in the HTML, response headers, `Set-Cookie`, and same-origin bundles are **decoded** (header+payload, base64url, **no signature verification, no secret cracking**) and flagged for `alg:none` (`critical`), expired (`exp` in the past), or missing `exp`. Claim values are framed as untrusted.\n- **Passive discovery of well-known sensitive paths** — bounded, same-origin, read-only `GET`s to a **short fixed list** (`/.git/config`, `/.env`, `/.svn/entries`, `/.DS_Store`, `/config.json`, `/wp-config.php~`, `/backup/`, `/uploads/`), flagging only a **confirmed body signature** — never a bare `200`. Pinned to the vetted IP; honours `--authorized`. Disable with `--no-discovery`.\n- **Accessibility** — missing `<html lang>`, images without `alt`, skipped heading levels, unlabeled form fields.\n- **Render honesty** — a `render: static | hybrid | client-heavy` field: if a page's content is JavaScript-rendered, the brief says so and marks itself PARTIAL rather than reporting a shell as clean.\n- **Composition hints** — third-party script origins to vet with `@dir-ai/voyager` / `@dir-ai/voyager-net`.\n\n## Safety\n\n- **Read-only.** Fetches the page with a single GET; never submits, clicks, or mutates.\n- **No code execution.** Static HTML parsing only — the page's JavaScript is never run.\n- **SSRF-gated, with IP pinning.** Only `http(s)`; a single URL (no lists/credentials). The host is resolved, every address is classified canonically (IPv4-mapped IPv6, unspecified, CGNAT, NAT64, link-local, private, loopback, metadata all refused), and the connection is **pinned to the vetted IP** so DNS rebinding cannot swap in an internal address between the check and the fetch. **Every redirect hop is re-vetted and re-pinned.**\n- **Untrusted by construction.** Every owner-controlled string that reaches the brief — title, headings, meta, links, form actions, field names — is injection-stripped and framed; the agent must treat it as data, not instructions.\n- **Bounded.** One deadline covers headers **and** body; the body is byte-capped; a truncated read downgrades confidence and is never reported as \"clean\".\n- **Honest limits.** It reads what the server sends. It does not see client-rendered state — and the `render` field says exactly how much it saw.\n\n## Roadmap\n\n- **v0.3** — same-origin JS-bundle static scan (exposed secrets/endpoints/source-maps), third-party/tracker/cookie inventory + tech fingerprinting, WCAG-mapped a11y depth, and a `CognitiveClaim` adapter so a page observation drops into a `@dir-ai/voyager-agent` mission (page → host → dependency chain).\n- **v1.0** — an opt-in, consent-gated `--render` sandboxed headless pass (network-isolated, resource-capped) for true SPA/rendered-DOM coverage, always labeled as render-mode output; a stable finding-`kind` taxonomy and a full posture score.\n\nThe line stays fixed: voyager-browser expands by **reading more of what's already served**, never by *doing more to the server*. Anything active (submitting, fuzzing, probing) belongs to a separate consent-gated organ.\n\n## The Voyager family\n\n| Package | Sense |\n| --- | --- |\n| [`@dir-ai/voyager`](https://www.npmjs.com/package/@dir-ai/voyager) | web — verified-internet retrieval |\n| **`@dir-ai/voyager-browser`** | **web page — observe one live URL** |\n| [`@dir-ai/voyager-repo`](https://www.npmjs.com/package/@dir-ai/voyager-repo) | code — orient in a repository |\n| [`@dir-ai/voyager-net`](https://www.npmjs.com/package/@dir-ai/voyager-net) | hosts — authorized host audit |\n| [`@dir-ai/voyager-contract`](https://www.npmjs.com/package/@dir-ai/voyager-contract) | the cognitive contract the senses speak |\n| [`@dir-ai/voyager-agent`](https://www.npmjs.com/package/@dir-ai/voyager-agent) | the one agent that composes them |\n\n## License\n\nMIT © dir-ai\n",
+    "fetchedAt": "2026-08-11T23:48:40.607Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:26.250Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

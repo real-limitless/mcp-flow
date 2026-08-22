@@ -1,0 +1,51 @@
+{
+  "id": "io.github.Trainzilla/trainzilla-mcp",
+  "title": "Trainzilla Coach MCP",
+  "description": "Manage clients, plans, sessions, habits, and billing on Trainzilla via one-click OAuth.",
+  "summary": "Manage clients, plans, sessions, habits, and billing on Trainzilla via one-click OAuth.",
+  "offersHint": "Manage clients, plans, sessions, habits, and billing on Trainzilla via one-click OAuth. · Remote MCP (streamable-http) at https://api.tzilla.live/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.tzilla.live/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.tzilla.live/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Trainzilla/tzilla-mcp",
+  "repository": {
+    "url": "https://github.com/Trainzilla/tzilla-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-13T15:40:08.881668Z",
+  "publishedAt": "2026-06-13T15:40:08.881668Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:38.100Z",
+    "sourceRepoAt": "2026-08-12T00:00:56.917Z",
+    "readmeAt": "2026-08-12T00:00:57.341Z",
+    "toolsAt": "2026-08-12T01:33:38.100Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Trainzilla/tzilla-mcp",
+    "checkedAt": "2026-08-12T00:00:56.917Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Trainzilla/tzilla-mcp/main/README.md",
+    "markdown": "# tzilla-mcp (MVP, local only)\n\nA local [MCP](https://modelcontextprotocol.io) server that lets an MCP client\n(Claude Desktop, Claude Code, Cursor, …) act as a **Trainzilla coach**. It wraps\nthe existing GraphQL API at `api.tzilla.live` — no direct DB access — so all\nauth and business rules stay enforced by the backend.\n\n> Status: **Local MVP** — read tools, offline calculators, and **confirm-gated\n> write tools**, plus a resource + a prompt. Not deployed anywhere. Runs entirely\n> on your machine against your own coach login.\n\n## What it can do today (23 tools, 1 resource, 1 prompt)\n\n**Read (live data):**\n- `whoami`, `list_clients`, `get_client_profile`\n- `list_client_habits`, `get_habit_compliance`, `recent_habit_activity`, `master_habits`\n- `list_workout_plans`, `list_diet_plans`\n- `list_checkins`, `list_sessions`, `list_subscriptions`, `billing_summary`\n\n**Calculators (offline, no network):**\n- `calc_tdee` — BMR / TDEE / recommended calories\n- `calc_macros` — macro split by strategy (Standard 40/30/30, Pro g/kg, Keto)\n- `calc_1rm` — 1-rep-max (Epley) + %1RM weight suggestions\n\n**Write (confirm-gated):** every write tool returns a **preview** unless called\nwith `confirm: true`, so nothing changes by accident:\n- `create_habit`, `create_master_habit`, `assign_master_habit`\n- `create_checkin` (with questions), `schedule_session`\n- `create_workout_plan`, `create_diet_plan`\n\nStill **not** exposed: deletes, payment execution/refunds, messaging, permission\nchanges — by design.\n\n**Resource:** `tzilla://client/{clientId}/profile` — a client's profile as JSON.\n\n**Prompt:** `weekly_client_review` — pulls profile/habits/compliance/sessions and\nwrites a read-only weekly review.\n\n## Setup\n\n```bash\nnpm install\nnpm run build\n```\n\nCreate `.env` (see `.env.example`) with a coach's tokens. Easiest source — log in\nto the coach web app, then in the browser console:\n\n```js\nlocalStorage.getItem(\"token\")        // -> TZ_ACCESS_TOKEN\nlocalStorage.getItem(\"refreshToken\") // -> TZ_REFRESH_TOKEN\n```\n\nThe server auto-refreshes the access token via `refreshAccessToken` when it expires.\n\n## Run\n\n**Local (stdio)** — for Claude Desktop etc.:\n- Dev:  `npm run dev`\n- Built: `npm start`\n- Smoke: `node scripts/smoke.mjs`\n\n**Remote (Streamable HTTP)** — localhost only, multi-coach:\n- Dev:  `npm run http`  ·  Built: `npm run start:http`\n- Listens on `http://127.0.0.1:8787/mcp` (set `MCP_HTTP_PORT` / `MCP_HTTP_HOST`).\n- Smoke: `node scripts/smoke-http.mjs`\n\n## Auth modes\n\n- **stdio:** uses `TZ_ACCESS_TOKEN` (+ `TZ_REFRESH_TOKEN`) from env; auto-refreshes.\n- Endpoint selection:\n  - `TZ_API_URL` wins when set.\n  - Otherwise `TZ_ENVIRONMENT=staging` uses `https://qa-be2.tzilla.live/graphql`.\n  - All other cases default to `https://api.tzilla.live/graphql`.\n- **HTTP:** **pass-through** — each request must send the coach's **API key**\n  (`Authorization: Bearer tz_...` or `x-api-key`). The server never stores tokens;\n  it forwards the caller's key to the GraphQL API, so the backend enforces scope\n  (multi-coach safe). API keys are minted by the backend feature below.\n\n### Backend: trainer API keys (built in `tzilla-be`, local — not deployed yet)\n- `createApiKey(name)` → returns the plaintext `tz_…` key **once** + info\n- `apiKeys` (list, no secret) · `revokeApiKey(id)`\n- Auth middleware accepts `tz_` keys (header `x-api-key` or `Bearer`), resolves the\n  owning coach, and stamps `lastUsedAt`. Only a SHA-256 hash is stored.\n\n## Use from Claude Desktop\n\nAdd to `claude_desktop_config.json` (Settings → Developer → Edit Config):\n\n```json\n{\n  \"mcpServers\": {\n    \"tzilla-coach\": {\n      \"command\": \"node\",\n      \"args\": [\"C:/New folder/tzilla-mcp/dist/index.js\"],\n      \"env\": {\n        \"TZ_API_URL\": \"https://api.tzilla.live/graphql\",\n        \"TZ_ACCESS_TOKEN\": \"<paste>\",\n        \"TZ_REFRESH_TOKEN\": \"<paste>\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude Desktop, then try: *\"Use tzilla-coach: who am I, and list my clients.\"*\n\n## Roadmap\n\n- [x] Write tools (habits, check-ins, sessions, plans) — confirm-gated\n- [x] Resource (client profile) + prompt (weekly review)\n- [x] Wider read coverage (plans, check-ins, sessions, billing)\n- [x] Backend trainer API keys / PAT (built in `tzilla-be`, local — needs PR + deploy)\n- [x] Remote Streamable-HTTP transport (localhost, API-key pass-through auth)\n- [ ] Deploy the backend API-key feature; host the HTTP server (TLS) for real remote use\n- [ ] Full MCP OAuth 2.1 (replace pass-through) for a public connector\n- [ ] More resources (plans / check-in history) + prompts (e.g. \"draft a plan\")\n\n## Layout\n\n```\nsrc/\n  config.ts   # env + tiny .env loader\n  client.ts   # GraphQL client: bearer auth + refresh-on-401 + role header\n  calc.ts     # offline coach math (ported from HealthMath/WorkoutMath)\n  index.ts    # MCP server + tool definitions (stdio)\nscripts/\n  smoke.mjs   # spawns the server and lists tools (handshake check)\n```\n",
+    "fetchedAt": "2026-08-12T00:00:57.341Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:33:38.100Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"Missing credentials. Send 'Authorization: Bearer <token>' — a Trainzilla API key (tz_...) or an OAuth access token.\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

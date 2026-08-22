@@ -1,0 +1,73 @@
+{
+  "id": "ai.epinu/epinu",
+  "title": "Epinu",
+  "description": "Agent-first marketplace for real-world assets — agro and energy first; humans approve every write.",
+  "summary": "Agent-first marketplace for real-world assets — agro and energy first; humans approve every write.",
+  "offersHint": "Agent-first marketplace for real-world assets — agro and energy first; humans approve every write. · Remote MCP (streamable-http) at https://api.epinu.ai/api/agent/mcp",
+  "version": "1.0.4",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.epinu.ai/api/agent/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.epinu.ai/api/agent/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://epinu.ai",
+  "sourceUrl": "https://github.com/CMS87/epinu-mcp",
+  "repository": {
+    "url": "https://github.com/CMS87/epinu-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-14T16:22:26.921858Z",
+  "publishedAt": "2026-08-14T16:22:26.921858Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-22T05:22:47.681Z",
+    "sourceRepoAt": "2026-08-22T05:22:47.681Z",
+    "readmeAt": "2026-08-22T05:22:48.292Z",
+    "toolsAt": "2026-08-22T05:22:48.633Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/CMS87/epinu-mcp/main/README.md",
+    "markdown": "# Epinu MCP — agent door for a real-world asset marketplace\n\n[![MCP endpoint liveness](https://github.com/CMS87/epinu-mcp/actions/workflows/liveness.yml/badge.svg)](https://github.com/CMS87/epinu-mcp/actions/workflows/liveness.yml)\n\n[Epinu](https://epinu.ai) is an **agent-first marketplace for real-world\nassets** — agro and energy first, extending to mining, equipment, and\nindustrial services. AI agents are first-class users: they can search,\nread, and draft deals directly over MCP, and **every write goes through a\nhuman-approval broker** with a full audit trail.\n\nThis is the **public integration repository** for Epinu's hosted MCP endpoint:\nregistry metadata ([`ai.epinu/epinu`](https://registry.modelcontextprotocol.io/v0/servers?search=epinu)\nin the official MCP Registry), runnable examples, and operational checks.\nThe Epinu platform implementation is maintained separately.\n\n- **Endpoint:** `https://api.epinu.ai/api/agent/mcp` (Streamable HTTP, JSON-RPC 2.0)\n- **Live docs for agents:** [epinu.ai/llms.txt](https://epinu.ai/llms.txt)\n- **Manifest:** [epinu.ai/.well-known/mcp](https://epinu.ai/.well-known/mcp)\n\n## Try it in 60 seconds — no account, no token\n\n```bash\nbash examples/quickstart.sh\n```\n\nThat queries the **live public production endpoint** anonymously and returns\ncurrent public project and marketplace results. The sample queries currently\nsurface an ASIC repair center in Odessa, TX and related services; inventory\nmay change. (QA fixtures are excluded from public reads as of 2026-07-15.) The\nanonymous tier allows\n`initialize`, `tools/list`, and five read tools (`getting_started`,\n`marketplace_listings_search`, `projects_search`, `search`, and `fetch`)\nagainst public data —\nsee [TOOLS.md](TOOLS.md) for the reference.\n\nOr the same flow in plain Node (zero dependencies, Node ≥ 18):\n\n```bash\nnode examples/walkthrough.mjs\n```\n\n## Connect from Claude Code / any MCP client\n\n```bash\nclaude mcp add --transport http epinu https://api.epinu.ai/api/agent/mcp\n```\n\nor in `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"epinu\": {\n      \"type\": \"http\",\n      \"url\": \"https://api.epinu.ai/api/agent/mcp\"\n    }\n  }\n}\n```\n\nWorks immediately in read-only mode. To let your agent draft deals, add\n`\"headers\": {\"Authorization\": \"Bearer epagt_...\"}` with a delegated token —\nsee below for how to get one. Details in [examples/claude-code.md](examples/claude-code.md).\n\n## The interesting part: writes never execute\n\nEpinu's write tools (`marketplace_listing_create`, `project_create`, …) do\n**not** write to the database. They create **proposals** (`status: pending`)\nand return an `approval_url`. A human reviews the proposal in the Epinu\ndashboard and approves or rejects it — only approval executes the change.\n\n[`examples/walkthrough.mjs`](examples/walkthrough.mjs) demonstrates the\nagent-controlled portion of the flow: search → create a pending proposal →\ncheck its status. Human approval happens separately in the Epinu dashboard.\n[`examples/walkthrough.md`](examples/walkthrough.md) is the recorded,\nredacted transcript of a real production run — proposal created, reviewed,\nand rejected by the human, with nothing ever written.\n\n### Why is every write human-approved?\n\n- **Agents make mistakes; markets are real.** A hallucinated listing, a wrong\n  price, or a duplicate is cheap to reject at proposal time and expensive to\n  unwind after it's live. The broker makes the failure mode \"a human clicked\n  reject\", not \"a bad write hit production\".\n- **Identity and audit.** Every proposal records `actor.type=personal_agent`\n  and the agent's client id. The human always knows *which* agent proposed\n  *what*, and the trail survives.\n- **Scoped delegation, not account takeover.** An `epagt_` token is created by\n  the account owner with explicit scopes (Dashboard → Settings → Authorize\n  Agent). Out-of-scope calls fail with a clean scope error. Sensitive actions\n  (deletes, profile changes) additionally require fresh MFA on the human side\n  at approval time.\n- **Drift checks.** If the underlying data changed materially between proposal\n  and approval, approval is blocked or requires explicit acknowledgment — an\n  agent can't get a stale change approved.\n- Unapproved proposals expire on their own (7 days).\n\n**Production experience:** Epinu reports that its first external marketplace\nparticipant was onboarded through a delegated AI agent: the agent prepared the\ncatalog proposals, and the account owner reviewed and approved them in the\ndashboard. A sanitized case study is forthcoming.\n\n## Getting a token (for writes)\n\n1. Create an account at [epinu.ai/signup](https://epinu.ai/signup)\n2. Dashboard → **Settings → Authorize Agent** → choose scopes → copy the\n   `epagt_` token, or send your agent's human to\n   `https://epinu.ai/authorize-agent?name=<AgentName>&scopes=<scopes>`\n3. Use it as `Authorization: Bearer epagt_...` on `POST /api/agent/mcp`\n   (the token is valid on the MCP endpoint only)\n\n## What's in this repo\n\n| File | What it is |\n| --- | --- |\n| [`server.json`](server.json) | The MCP Registry entry for `ai.epinu/epinu` |\n| [`examples/quickstart.sh`](examples/quickstart.sh) | Anonymous tier in 60 seconds (curl) |\n| [`examples/walkthrough.mjs`](examples/walkthrough.mjs) | Search → create pending proposal → check proposal status (Node, zero deps) |\n| [`examples/walkthrough.md`](examples/walkthrough.md) | Recorded, redacted transcript of a real production run |\n| [`examples/claude-code.md`](examples/claude-code.md) | Connect from Claude Code / `.mcp.json` |\n| [`TOOLS.md`](TOOLS.md) | Anonymous-tier tool reference with captured responses |\n| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability |\n\nThe canonical, always-current agent documentation lives on the site itself:\n[llms.txt](https://epinu.ai/llms.txt) ·\n[.well-known/mcp](https://epinu.ai/.well-known/mcp). This repo deliberately\nlinks rather than mirrors, so it can't go stale.\n\n## License\n\nExamples and docs in this repository: [MIT](LICENSE).\nThe Epinu platform itself is a hosted service — [epinu.ai](https://epinu.ai).\n",
+    "fetchedAt": "2026-08-22T05:22:48.292Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/CMS87/epinu-mcp",
+    "checkedAt": "2026-08-22T05:22:47.681Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreview": [
+    {
+      "name": "projects_search",
+      "description": "Search Epinu real-asset projects. Returns bounded summaries only; call projects_get_deep_dive for detailed packets. Results include public projects plus the token owner's own archived, draft, or unpublished projects for duplicate checks; another owner's unpublished projects are never returned. Available without a token for public results only."
+    },
+    {
+      "name": "getting_started",
+      "description": "Start here: platform overview, the proposal/approval operating model, auth rules, common flows, and agent etiquette. Static content — requires no scopes."
+    },
+    {
+      "name": "marketplace_listings_search",
+      "description": "Search the Epinu marketplace for equipment, services, and assets. Returns summaries only; call marketplace_listing_get for detailed packets."
+    },
+    {
+      "name": "search",
+      "description": "Unified read-only search across public Epinu projects and marketplace listings. Returns { id, title, url } results; call fetch with a returned id for the full document. Available without a token; public data only. Additive alias over projects_search and marketplace_listings_search."
+    },
+    {
+      "name": "fetch",
+      "description": "Fetch the full document for one search result by its opaque id (project:<uuid> or listing:<uuid>). Returns { id, title, text, url, metadata }. Available without a token; public data only. Wraps projects_get_deep_dive and marketplace_listing_get. Unknown or malformed ids return a clean not-found."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-22T05:22:48.633Z",
+  "toolsPreviewStatus": "ok"
+}

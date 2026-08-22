@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Growi-DeFi/mcp-growi",
+  "title": "mcp-growi",
+  "description": "MCP server for Growi Finance — programmatic interaction with the GrowiHFVault on Arbitrum",
+  "summary": "MCP server for Growi Finance — programmatic interaction with the GrowiHFVault on Arbitrum",
+  "offersHint": "MCP server for Growi Finance — programmatic interaction with the GrowiHFVault on Arbitrum · Packages: npm:mcp-growi",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-growi",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-growi",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Growi-DeFi/mcp-growi",
+  "repository": {
+    "url": "https://github.com/Growi-DeFi/mcp-growi",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-25T08:32:37.257004Z",
+  "publishedAt": "2026-05-25T08:32:37.257004Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:41:04.618Z",
+    "sourceRepoAt": "2026-08-12T00:10:41.280Z",
+    "readmeAt": "2026-08-12T00:10:41.803Z",
+    "toolsAt": "2026-08-12T01:41:04.618Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Growi-DeFi/mcp-growi",
+    "checkedAt": "2026-08-12T00:10:41.280Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Growi-DeFi/mcp-growi/main/README.md",
+    "markdown": "# mcp-growi\n\nMCP (Model Context Protocol) server for [Growi Finance](https://growi.fi) — enables AI agents and autonomous bots to interact programmatically with the **GrowiHFVault** smart contract on Arbitrum.\n\n## Security\n\n**Read this before configuring a keystore or private key.**\n\n`mcp-growi` exposes `execute_transaction`, which signs and broadcasts Arbitrum transactions with the locally configured wallet. Inside any MCP client (Claude Desktop, Claude Code, etc.) **the LLM has full authority over what gets signed** — every tool call is initiated by the model in response to your prompts *and* anything else it has access to.\n\nThis makes the MCP a \"confused deputy\": if untrusted content reaches the model — a web page fetched by another tool, a document opened in the session, a sibling MCP server controlled by an attacker — a prompt-injection payload inside that content can instruct the model to drain the configured wallet.\n\n### Recommendations\n\n- **Do not configure `KEYSTORE_PATH` or `PRIVATE_KEY` in a session that has access to untrusted content.** If the same client has browsing tools, document-readers, or any other MCP server, treat the session as compromised by default.\n- **Use a dedicated \"bot\" wallet.** Create a fresh Ethereum address solely for `mcp-growi` and fund it only with the amount you intend to deposit. Never reuse your main custody wallet.\n- **Keep ETH for gas low.** A few dollars' worth is enough — there is no upside to holding more on the bot wallet than the next operation needs.\n- **Run `mcp-growi@latest`.** When a security release is published, the built-in version check blocks all operations until you upgrade. Pinning to an older version defeats this.\n\n### What this server does enforce\n\nThe server has its own defenses against the most direct drain paths, but they cannot prevent every form of misuse:\n\n- **Allowlist.** `execute_transaction` only signs calls to four `(contract, selector)` pairs — `USDC.approve`, `GWHF.approve`, `vault.deposit`, `vault.withdraw`. A prompt-injection payload calling `USDC.transfer(attacker, balance)` is rejected before signing.\n- **Decoded validation.** `approve` calls are accepted only when the spender is the GrowiHFVault address. `deposit` and `withdraw` amounts must be greater than zero.\n- **Version gate.** All read and write tools refuse to operate when the local MCP version cannot be verified against the npm registry, or does not match the latest published version.\n\nThese guards close the easy attacks but do not make the keystore safe in arbitrary sessions. Treat it as a hot wallet, not custody.\n\n## Contract details\n\n| Field | Value |\n|-------|-------|\n| Network | Arbitrum One |\n| Contract | `0x928ed672e6eabb7a565c5eb9aac15e3cf6a18388` |\n| Vault token | GWHF |\n| Deposit token | USDC |\n\nThe contract is verified on Arbiscan — you can check the source code and ABI at:\nhttps://arbiscan.io/address/0x928ed672e6eabb7a565c5eb9aac15e3cf6a18388#code\n\nThe ABI is included in this package (`src/contract/abi.ts`) so no external calls are needed at runtime.\n\n## Project structure\n\n```\nsrc/\n├── index.ts               # Server entrypoint + npm version check\n├── contract/              # On-chain interaction layer (viem)\n│   ├── abi.ts             # GrowiHFVault + ERC20 ABIs\n│   ├── client.ts          # Arbitrum public client + contract/token/HL addresses\n│   └── index.ts\n├── locks/\n│   └── lock-period.ts     # Arbitrum deposit lock + Hyperliquid 24h withdraw lockup\n└── tools/                 # MCP tool definitions\n    ├── read.ts            # Read-only on-chain queries\n    ├── write.ts           # Transaction prep + signing (keystore/privkey)\n    └── index.ts\n```\n\n## Setup — Claude Desktop / Claude Code\n\nAdd the following to your Claude MCP config (`claude_desktop_config.json` or `.mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"growi\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-growi@latest\"],\n      \"env\": {\n        \"KEYSTORE_PATH\": \"/path/to/your/wallet.json\",\n        \"KEYSTORE_PASSPHRASE\": \"your_passphrase\"\n      }\n    }\n  }\n}\n```\n\n> **Important:** use `mcp-growi@latest` (not just `mcp-growi`) to ensure the MCP auto-updates every time Claude starts. If your version is outdated, or the npm registry is unreachable, all tools (read and write) will be blocked until verification succeeds.\n\n**Alternative — plain private key (less secure):**\n```json\n\"env\": { \"PRIVATE_KEY\": \"0x...\" }\n```\n\n**Optional — custom RPC endpoint:**\n```json\n\"env\": { \"RPC_URL\": \"https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY\" }\n```\n\nRestart Claude Desktop/Code after saving. The tools will be available once the version check passes — if calls return a version-block error, see the Security section above.\n\n## Setup — development (from source)\n\n```bash\nnpm install\nnpm run build\nnpm start\n```\n\n## Tech stack\n\n- **TypeScript + Node.js**\n- **@modelcontextprotocol/sdk** — MCP server implementation\n- **viem** — Ethereum/Arbitrum RPC interactions\n",
+    "fetchedAt": "2026-08-12T00:10:41.803Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:41:04.618Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,86 @@
+{
+  "id": "io.github.shibley/mymcptools",
+  "title": "MyMCPTools",
+  "description": "Find MCP servers and check whether they actually respond, via live handshake probes.",
+  "summary": "Find MCP servers and check whether they actually respond, via live handshake probes.",
+  "offersHint": "Find MCP servers and check whether they actually respond, via live handshake probes. · Remote MCP (streamable-http) at https://mymcptools.com/api/mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mymcptools.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mymcptools.com/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mymcptools.com",
+  "sourceUrl": "https://github.com/shibley/mymcptools-mcp-server",
+  "repository": {
+    "url": "https://github.com/shibley/mymcptools-mcp-server",
+    "source": "github",
+    "id": "1316507959"
+  },
+  "updatedAt": "2026-07-30T07:38:13.112025Z",
+  "publishedAt": "2026-07-30T07:38:13.112025Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:36.633Z",
+    "sourceRepoAt": "2026-08-11T23:21:11.475Z",
+    "readmeAt": "2026-08-11T23:21:12.011Z",
+    "toolsAt": "2026-08-11T23:21:12.119Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/shibley/mymcptools-mcp-server",
+    "checkedAt": "2026-08-11T23:21:11.475Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/shibley/mymcptools-mcp-server/main/README.md",
+    "markdown": "# MyMCPTools MCP Server\n\nAn MCP server for finding other MCP servers — and, more usefully, for checking whether the one you are about to recommend is actually reachable.\n\nEvery uptime figure it returns comes from a real MCP handshake against the server's remote endpoint, not from self-reported metadata in a README.\n\nBacked by [mymcptools.com](https://mymcptools.com). No API key required.\n\n## Install\n\n### Remote endpoint (recommended — nothing to install)\n\nThe server is hosted. If your client speaks Streamable HTTP, point it straight at:\n\n```\nhttps://mymcptools.com/api/mcp\n```\n\nStateless, read-only, no auth, no API key. This is also the entry published to the\n[official MCP Registry](https://registry.modelcontextprotocol.io) as\n`io.github.shibley/mymcptools`.\n\n### Local stdio adapter\n\nThe code in this repo is a thin stdio adapter over that same endpoint, for clients\nthat don't speak Streamable HTTP yet. **It is not on npm yet**, so build it from\nsource (Node.js 18+):\n\n```bash\ngit clone https://github.com/shibley/mymcptools-mcp-server.git\ncd mymcptools-mcp-server\nnpm install && npm run build\n```\n\nThen point your client at the built entrypoint:\n\n```json\n{\n  \"mcpServers\": {\n    \"mymcptools\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/mymcptools-mcp-server/dist/index.js\"]\n    }\n  }\n}\n```\n\nAdd that to `claude_desktop_config.json` (Claude Desktop), `.cursor/mcp.json` (Cursor), or your client's equivalent.\n\nSet `MYMCPTOOLS_MCP_URL` to override the upstream endpoint the adapter talks to.\n\n## Tools\n\n| Tool | What it answers |\n|---|---|\n| `search_mcp_servers` | Which servers match this keyword, category, client integration or install type? |\n| `get_mcp_server` | Full entry for one server: install command, repo, supported clients, current probe verdict. |\n| `get_server_status` | Is this server reachable right now? Verdict, exposed tool count, handshake latency, negotiated protocol version. |\n| `get_server_history` | Trailing probe history and a daily uptime sparkline for one server. |\n| `list_server_incidents` | Reconstructed outages — contiguous runs of failed probes, with start, end and duration. |\n| `list_schema_drift` | Which servers added, removed or changed tools between probes. Useful for spotting breaking changes. |\n| `list_categories` | Every category and client integration, with counts. Returns the valid slugs for the filters above. |\n| `get_catalog_stats` | Population-level health: verdict breakdown, transport mix, latency percentiles. |\n\n## What the probe data does and does not cover\n\nWorth stating plainly, because the numbers are easy to misread:\n\n- The catalog carries **~2,700 entries**, but only **~44 are probeable** — that is, they publish a remote endpoint something can actually connect to.\n- The rest are **local-only servers** (stdio, run via `npx` or `docker` on your machine). There is no remote endpoint to handshake against, so they are reported as `UNPROBEABLE` rather than assigned a made-up status. For those, `get_mcp_server` falls back to a static repo-freshness signal.\n- `UNPROBEABLE` therefore means \"not remotely checkable\", **not** \"broken\".\n\nSo treat the live-verification tools as high-confidence for remote/hosted servers, and treat the catalog entry itself as the useful part for local ones.\n\n## Verdicts\n\n| Verdict | Meaning |\n|---|---|\n| `GOOD` | Handshake succeeded and the server listed its tools. |\n| `WARN` | Reachable, but something was off — slow handshake or a degraded response. |\n| `AUTH_REQUIRED` | Endpoint is live but needs credentials before it will list tools. |\n| `DOWN` | Endpoint is published but the handshake failed. |\n| `UNPROBEABLE` | No remote endpoint to probe — typically a local stdio server. |\n\n## Development\n\n```bash\nnpm install\nnpm run build\n```\n\nSmoke-test the built server over stdio:\n\n```bash\nprintf '%s\\n%s\\n%s\\n' \\\n  '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"t\",\"version\":\"1\"}}}' \\\n  '{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}' \\\n  '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}' \\\n  | node dist/index.js\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:21:12.011Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_mcp_servers",
+      "description": "Search the MyMCPTools catalog of Model Context Protocol servers. Filter by free-text query, category slug, integration slug (claude-desktop, cursor, vs-code, ...), install type, or official status. Set only_verified to restrict to servers that answered a live MCP handshake on the most recent probe. Results carry the live verdict for each server."
+    },
+    {
+      "name": "get_mcp_server",
+      "description": "Full catalog entry for one MCP server by slug: description, author, install command, repo, supported clients, current probe verdict, static repo-freshness signal for local servers, and related servers in the same categories."
+    },
+    {
+      "name": "get_server_status",
+      "description": "Current live-probe status for one server: verdict (GOOD / WARN / AUTH_REQUIRED / DOWN / UNPROBEABLE), exposed tool count, handshake latency, negotiated protocol version, remote endpoint, and when it was last seen healthy. Omit the slug to get the catalog-wide verdict summary instead."
+    },
+    {
+      "name": "get_server_history",
+      "description": "Trailing probe history for one server plus a daily uptime sparkline — the reliability signal behind the badge on mymcptools.com. Returns per-day uptime buckets and the raw probe points (timestamp, verdict, latency)."
+    },
+    {
+      "name": "list_server_incidents",
+      "description": "Reconstructed outage incidents (contiguous runs of failed probes) across the catalog, newest first. Each incident has a start, an end (or ongoing), a duration and the failure reason. Filter to one server with slug, or to open outages with status='ongoing'."
+    },
+    {
+      "name": "list_schema_drift",
+      "description": "Tool-schema and protocol-version drift events detected between successive probes — which servers added, removed or changed tools, and when. Use this to spot breaking changes in a server you depend on. Newest first."
+    },
+    {
+      "name": "list_categories",
+      "description": "Every category and client integration in the MyMCPTools catalog, with the number of servers in each. The slugs returned here are the valid values for the category and integration filters on search_mcp_servers."
+    },
+    {
+      "name": "get_catalog_stats",
+      "description": "Aggregate health of the whole MCP population: verdict breakdown, share of probeable servers actually serving, transport mix, handshake latency percentiles, tool counts and probe freshness. This is the 'how healthy is MCP right now?' headline number."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:21:12.119Z",
+  "toolsPreviewStatus": "ok"
+}

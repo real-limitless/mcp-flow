@@ -1,0 +1,76 @@
+{
+  "id": "io.github.AJSMonty/adobe-mcp",
+  "title": "adobe-mcp",
+  "description": "Drive Adobe CC (AE, Photoshop, Illustrator, Premiere, Character Animator) from any MCP client",
+  "summary": "Drive Adobe CC (AE, Photoshop, Illustrator, Premiere, Character Animator) from any MCP client",
+  "offersHint": "Drive Adobe CC (AE, Photoshop, Illustrator, Premiere, Character Animator) from any MCP client · Packages: npm:@ajsmonty/adobe-mcp · Env vars: ADOBE_MCP_WORKSPACE",
+  "version": "1.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@ajsmonty/adobe-mcp",
+    "version": "1.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ADOBE_MCP_WORKSPACE",
+        "description": "Directory for rendered assets, the asset registry, and learned lessons (default: ~/AdobeMCP)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@ajsmonty/adobe-mcp",
+      "version": "1.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ADOBE_MCP_WORKSPACE",
+          "description": "Directory for rendered assets, the asset registry, and learned lessons (default: ~/AdobeMCP)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ADOBE_MCP_WORKSPACE",
+      "description": "Directory for rendered assets, the asset registry, and learned lessons (default: ~/AdobeMCP)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AJSMonty/adobe-mcp",
+  "repository": {
+    "url": "https://github.com/AJSMonty/adobe-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-15T10:24:59.227072Z",
+  "publishedAt": "2026-07-15T10:24:59.227072Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.864Z",
+    "sourceRepoAt": "2026-08-12T00:17:54.381Z",
+    "readmeAt": "2026-08-12T00:17:54.906Z",
+    "toolsAt": "2026-08-12T01:47:49.865Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AJSMonty/adobe-mcp",
+    "checkedAt": "2026-08-12T00:17:54.381Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AJSMonty/adobe-mcp/main/README.md",
+    "markdown": "# adobe-mcp — Adobe Creative Cloud MCP server (macOS)\n\nDrives After Effects, Photoshop, Illustrator, Premiere Pro (and Character Animator puppet authoring) from Claude. See ROADMAP.md for the full tool matrix and what is next.\nBridge: MCP client → this server → AppleScript `DoScript` → AE → temp result file → back.\n\n## Tools\n\n| Tool | Purpose |\n|---|---|\n| `run_extendscript` | Run arbitrary JSX; `return <value>` comes back as JSON. Auto undo-grouped. |\n| `get_project_state` | Project item tree, or one comp's layers in detail (`comp_name`). |\n| `save_frame` | Render a comp frame to PNG, returned inline so Claude can *see* its work. |\n| `list_ae_scripts` | List `.jsx`/`.jsxbin` tools in `scripts/` with descriptions from header comments. |\n| `run_ae_script` | Execute a library script, like File → Scripts → Run Script File. |\n\n## Knowledge system (the server learns as it goes)\n\nThe server ships with a curated knowledge base (`knowledge/lessons.jsonl`) seeded from real\nproduction sessions — matchName gotchas, API quirks, parameter-type traps, and techniques\n(blueprint line extraction, seamless wind loops, QE transitions, Auto Reframe...).\n\nThree mechanisms keep it useful and growing:\n\n1. **Auto-surfaced gotchas** — every failed `*_run_extendscript` call is matched against the\n   lesson keywords; hits are appended to the error message the client sees (e.g. hit\n   `Illegal Parameter type` in Premiere and the fix for `autoReframeSequence`'s string preset\n   arrives with the error). Failures are also logged to `$WORKSPACE/error-log.jsonl` as raw\n   material for new lessons.\n2. **`knowledge_search` / `knowledge_add` tools** — agents consult lessons before attempting\n   unusual scripting, and record new gotchas when they solve one that wasn't auto-suggested.\n   Runtime lessons persist to `$WORKSPACE/learned.jsonl` (survives repo updates, per-install).\n3. **Server instructions + tool descriptions** — the highest-value rules (explicit document\n   targeting, visual verification, render-timeout handling, ES3 limits) are baked into the MCP\n   instructions and the per-tool descriptions, so a fresh install starts smart.\n\nThe `scripts/` per-app libraries are the executable side of the same idea — distilled,\nreusable skills (`list_scripts` / `run_script`): blueprint line extraction (PS), seamless\nwind loops and kinetic typography rigs (AE), one-call vertical Auto Reframe (Premiere).\n\n## Install\n\n### Option A — one-click for Claude Desktop & Cowork (no Node needed)\n\n1. Have the Adobe apps you want to drive installed. In After Effects, enable Preferences → Scripting & Expressions → **\"Allow Scripts to Write Files and Access Network\"**.\n2. Download the latest `adobe-mcp-x.y.z.mcpb` from [Releases](https://github.com/AJSMonty/adobe-mcp/releases) and **double-click it** (or drag it onto Claude Desktop → Settings → Extensions). Claude Desktop bundles its own Node runtime — nothing else to install.\n3. Use it. The first tool call for each app triggers a one-time macOS **Automation** permission prompt — click Allow.\n\n**Upgrading?** Remove the old version first (Settings → Extensions → Adobe Creative Cloud → Uninstall), then install the new `.mcpb` — in-place installs over an existing version can leave stale files behind while reporting the new version number.\n\n### Option B — any MCP client via npm\n\nRequires Node 18+ installed system-wide ([nodejs.org](https://nodejs.org) installer or `brew install node` — note GUI apps often cannot see nvm-managed installs). No clone, no `npm install`: every client config below just runs\n\n```\nnpx -y @ajsmonty/adobe-mcp\n```\n\n### Option C — from source (contributors)\n\n```bash\ngit clone https://github.com/AJSMonty/adobe-mcp.git ~/tools/adobe-mcp\ncd ~/tools/adobe-mcp && npm install\n# point your client at: node ~/tools/adobe-mcp/server.mjs\n```\n\n**Premiere Pro only:** the `ppro_*` tools need the bundled CEP panel installed once — copy `cep/mcp-bridge` to `~/Library/Application Support/Adobe/CEP/extensions/` and enable `PlayerDebugMode` (see Notes), then open Window → Extensions → MCP Bridge inside Premiere.\n\n## Hook up to your MCP client\n\nThis is a standard **stdio MCP server** — any MCP-capable client can drive it (Claude Code,\nClaude Desktop, Cursor, Windsurf, VS Code Copilot agent mode, Zed, Cline, Goose, ...).\nEverything below is the same one-liner expressed in each client's config format:\nrun `npx -y @ajsmonty/adobe-mcp` over stdio (or `node .../server.mjs` for a source checkout).\n\n### Claude Code\n\n```bash\nclaude mcp add --scope user adobe -- npx -y @ajsmonty/adobe-mcp\n```\n\n`--scope user` = available in all projects; use `--scope project` from inside a repo to share via `.mcp.json` with your team. Verify: `claude mcp list`.\n\n### Claude Desktop\n\nSettings → Developer → Edit Config, add to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"adobe\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@ajsmonty/adobe-mcp\"]\n    }\n  }\n}\n```\n\nFully quit and reopen Claude Desktop.\n\n### Cursor\n\nSettings → MCP → Add server, or edit `~/.cursor/mcp.json` (global) / `.cursor/mcp.json` (per-project):\n\n```json\n{\n  \"mcpServers\": {\n    \"adobe\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@ajsmonty/adobe-mcp\"]\n    }\n  }\n}\n```\n\nEnable it under Settings → MCP, then use Agent mode (composer) — tool calls appear with approval prompts.\n\n### VS Code (Copilot agent mode)\n\n`.vscode/mcp.json` in the workspace (or user `mcp.json` via the \"MCP: Add Server\" command):\n\n```json\n{\n  \"servers\": {\n    \"adobe\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@ajsmonty/adobe-mcp\"]\n    }\n  }\n}\n```\n\n### Windsurf\n\n`~/.codeium/windsurf/mcp_config.json` — same `mcpServers` shape as Claude Desktop/Cursor above.\n\n### Anything else\n\nIf the client supports MCP over stdio, point it at `npx -y @ajsmonty/adobe-mcp` and you are done.\n\n### Client caveats\n\n- **macOS Automation permission is per host app.** The first tool call from each new client\n  (Cursor, VS Code, a different terminal) triggers its own Automation prompt for controlling\n  the Adobe apps — approve it once per host in System Settings → Privacy & Security → Automation.\n- **Inline image previews** (`ae_save_frame`, `ps_save_preview`, `ai_save_preview`,\n  `ppro_save_frame`) return MCP image content. Claude clients and Cursor render these inline;\n  clients without image rendering still get the metadata text, and the model can fall back to\n  exporting a file and reading it from disk.\n- **Server instructions** (the working rules + knowledge-base pointers) are sent via the MCP\n  `instructions` field; most clients pass them to the model, but if yours does not, the same\n  rules are baked into the tool descriptions and `knowledge_search`.\n\n## Script library (\"skills\")\n\nDrop `.jsx` / `.jsxbin` files into `scripts/` — they're immediately available via `list_ae_scripts` / `run_ae_script`.\n\n- **Action scripts** (operate on the current selection, no UI) run headlessly — set up selection first via `run_extendscript`.\n- **ScriptUI panel scripts** open their palette in the AE window for a human to click.\n- Plain `.jsx` panels with a separable core function can often be driven headlessly by evaluating the source with the UI kickoff stripped.\n\n> ⚠️ `scripts/` may contain third-party/purchased tools. Keep this repo **private** unless you've cleared redistribution rights, or add `scripts/` to `.gitignore`.\n\n## Notes\n\n- AE app auto-detected from `/Applications` (newest \"Adobe After Effects *\"). Override with env var `AE_APP_NAME`, e.g. `\"env\": {\"AE_APP_NAME\": \"Adobe After Effects 2025\"}` in the Desktop config or `--env AE_APP_NAME=...` in `claude mcp add`.\n- **AE must be open** with a project (the empty default project is fine).\n- Timeouts usually mean AE is showing a modal dialog — dismiss it.\n- `save_frame` needs AE 2022+.\n\n## ExtendScript gotchas (learned the hard way)\n\n- ExtendScript is **ES3**: no arrow functions, template literals, `let`/`const`, `JSON`, `Array.map`.\n- Collections (`project.items`, `comp.layers`, property groups) are **1-indexed**.\n- Address effect params by **matchName** (`\"ADBE Glo2-0002\"`), not display name — display names collide.\n- A `.property()` miss throws a **native error whose own stringification throws** — wrap `e.toString()` in its own try/catch or your error handler dies too.\n- Text layers auto-rename to their source text — rename them if you need stable lookups.\n- Cameras: Point of Interest lives in the **Anchor Point** slot (`ADBE Anchor Point`).\n- Spatial properties need **1-element** ease arrays in `setTemporalEaseAtKey`, regardless of dimensions.\n- Parenting a child to a rotated layer bakes compensation into the child's transform — zero the child's rotation *after* parenting if it should inherit orientation.\n- Grid effect: set **Size From** (`ADBE Grid-0002 = 3`) before animating the anchor, or your \"scroll\" resizes cells instead.\n\n## Smoke test\n\nWith AE open, ask Claude: *\"Use get_project_state to show me what's in my AE project, then create a 1920x1080 comp called 'Test' with a headline text layer and show me a frame.\"*\n\n## Contributing & governance\n\nPRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). All merges to `main` and `dev` require\nmaintainer approval (branch protection + CODEOWNERS). Lessons for the knowledge base are the\neasiest high-value contribution. Read [SECURITY.md](SECURITY.md) before installing: this\nserver executes scripts in your Adobe apps by design.\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:17:54.906Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.865Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

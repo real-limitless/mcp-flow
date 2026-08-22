@@ -1,0 +1,108 @@
+{
+  "id": "io.github.agentzeny/snap-private-payments",
+  "title": "SNAP Protocol",
+  "description": "Private agent payments on Solana via ZK proofs: deposit, withdraw, list pools, estimate fees.",
+  "summary": "Private agent payments on Solana via ZK proofs: deposit, withdraw, list pools, estimate fees.",
+  "offersHint": "Private agent payments on Solana via ZK proofs: deposit, withdraw, list pools, estimate fees. · Packages: npm:snap-mcp-server · Env vars: SNAP_POOL_ADDRESS, SNAP_RELAYER_URL, SNAP_RPC_URL",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "snap-mcp-server",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SNAP_RPC_URL",
+        "description": "Solana RPC endpoint URL",
+        "required": true
+      },
+      {
+        "name": "SNAP_POOL_ADDRESS",
+        "description": "Default shielded pool address",
+        "required": true
+      },
+      {
+        "name": "SNAP_RELAYER_URL",
+        "description": "Optional relayer URL for private withdrawals"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "snap-mcp-server",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SNAP_RPC_URL",
+          "description": "Solana RPC endpoint URL",
+          "required": true
+        },
+        {
+          "name": "SNAP_POOL_ADDRESS",
+          "description": "Default shielded pool address",
+          "required": true
+        },
+        {
+          "name": "SNAP_RELAYER_URL",
+          "description": "Optional relayer URL for private withdrawals"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SNAP_POOL_ADDRESS",
+      "description": "Default shielded pool address",
+      "required": true
+    },
+    {
+      "name": "SNAP_RELAYER_URL",
+      "description": "Optional relayer URL for private withdrawals"
+    },
+    {
+      "name": "SNAP_RPC_URL",
+      "description": "Solana RPC endpoint URL",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://agentzeny.ai",
+  "sourceUrl": "https://github.com/agentzeny/snap-public",
+  "repository": {
+    "url": "https://github.com/agentzeny/snap-public",
+    "source": "github",
+    "subfolder": "integrations/mcp"
+  },
+  "updatedAt": "2026-06-06T02:45:13.169513Z",
+  "publishedAt": "2026-06-06T02:45:13.169513Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:42.485Z",
+    "sourceRepoAt": "2026-08-11T23:58:34.984Z",
+    "readmeAt": "2026-08-11T23:58:35.341Z",
+    "toolsAt": "2026-08-12T01:31:42.485Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/agentzeny/snap-public",
+    "checkedAt": "2026-08-11T23:58:34.984Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/agentzeny/snap-public/main/README.md",
+    "markdown": "# SNAP — Shield Network Agent Payments\n\nPrivate agent-to-agent payments on Solana using zero-knowledge proofs.\n\n[![GitHub stars](https://img.shields.io/github/stars/agentzeny/snap-public?style=social)](https://github.com/agentzeny/snap-public/stargazers)\n[![snap-solana-sdk](https://img.shields.io/npm/v/snap-solana-sdk?label=snap-solana-sdk&color=34d399)](https://www.npmjs.com/package/snap-solana-sdk)\n[![snap-langchain-tools](https://img.shields.io/npm/v/snap-langchain-tools?label=snap-langchain-tools&color=34d399)](https://www.npmjs.com/package/snap-langchain-tools)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n[![Solana](https://img.shields.io/badge/Solana-mainnet--beta-9945FF?logo=solana&logoColor=white)](https://explorer.solana.com/address/9uePoqdgaXpqFLQM2ED1GGQrwSEiqe3r6tW1AfsnrrbS)\n\n> SNAP is live on Solana mainnet. See the [security docs](docs/THREAT_MODEL.md) for the protocol's threat model and trust assumptions.\n\n## What SNAP Does\n\nSNAP lets AI agents pay each other without on-chain observers learning who paid whom. Deposits enter a shielded pool under a cryptographic commitment. Withdrawals leave the pool with a Groth16 proof that shows the recipient is entitled to the funds without revealing which deposit is being claimed.\n\n## How It Works\n\n1. **Agent A** deposits SOL plus a commitment into the pool.\n2. **Agent A** sends a secret note to Agent B through a private channel.\n3. **Agent B** reconstructs the Merkle path and generates a Groth16 proof.\n4. **Agent B** withdraws SOL with `withdraw_zk` or `withdraw_zk_relayed`.\n5. **Observers** can see the pool activity, but they cannot link the withdrawal to a specific deposit.\n\n## Quick Start\n\nInstall the SDK and its peer dependencies:\n\n```bash\nnpm install snap-solana-sdk @solana/web3.js @coral-xyz/anchor\n```\n\nMinimal private payment:\n\n```typescript\nimport { Connection, Keypair, PublicKey, clusterApiUrl } from \"@solana/web3.js\";\nimport { SNAPClient } from \"snap-solana-sdk\";\n\nasync function main() {\n  const connection = new Connection(\"https://your-rpc-url.com\", \"confirmed\");\n  const sender = Keypair.generate();\n  const recipient = Keypair.generate();\n  const pool = new PublicKey(\"B8SyffZKt8LABKogWjH9rZcjY5PV2hyYRCbTxxbcrpFf\");\n\n  const snapA = new SNAPClient(connection, sender);\n  const snapB = new SNAPClient(connection, recipient);\n\n  const note = await snapA.deposit(pool, 0.1);\n  const serialized = SNAPClient.serializeNote(note);\n  await snapB.withdraw(pool, SNAPClient.deserializeNote(serialized), recipient);\n}\n\nvoid main();\n```\n\nIf you want a runnable walkthrough from this repo, use:\n\n```bash\nnpx tsx examples/basic-payment.ts\nnpx tsx examples/agent-to-agent.ts\nnpx tsx examples/relayed-withdrawal.ts\n```\n\n## Architecture\n\n| Component | Description |\n|-----------|-------------|\n| Solana Program | Anchor program with `deposit`, `withdraw_zk`, and `withdraw_zk_relayed` |\n| ZK Circuit | circom Groth16 circuit using Poseidon and a depth-10 Merkle tree |\n| SDK | `snap-solana-sdk` for note handling, proof generation, and client API |\n| Agent Kit Plugin | Solana Agent Kit v2 plugin with `snap_create_pool`, `snap_deposit`, `snap_withdraw`, and `snap_withdraw_private` |\n| LangChain Tools | `snap-langchain-tools` — StructuredTool wrappers for LangChain/LangGraph agents |\n| Relayer | Express service for gas-abstracted private withdrawals |\n\n## Mainnet\n\n> Pool denominations are 0.1 SOL, 1 USDC, and 10 USDC. See [THREAT_MODEL.md](docs/THREAT_MODEL.md) for trust assumptions.\n\n| Field | Value |\n|-------|-------|\n| Program ID | `9uePoqdgaXpqFLQM2ED1GGQrwSEiqe3r6tW1AfsnrrbS` |\n| Pool — 0.1 SOL | `B8SyffZKt8LABKogWjH9rZcjY5PV2hyYRCbTxxbcrpFf` |\n| Pool — 1 USDC | `5LeuHrPBgHNhgbCy996MEjcsBk5gNHhVj6AiuuCHZ8od` |\n| Pool — 10 USDC | `ECuHf8kgiWfmL3Q6id4WGBQWvuukhzqvF5vsxuPAKZBv` |\n| Network | Solana mainnet-beta |\n| Protocol fee | 0.25% |\n\n## Project Structure\n\n```text\n├── programs/           # Solana program (Rust/Anchor)\n├── circuits/           # circom ZK circuit\n├── sdk-package/        # snap-solana-sdk npm package\n├── agent-kit-tool/     # Solana Agent Kit plugin\n├── relayer/            # Express relay service\n├── agents/             # Demo agent scripts\n├── examples/           # Minimal end-to-end examples\n├── scripts/            # Deployment and quickstart scripts\n├── docs/               # Troubleshooting, circuit, and compliance docs\n└── tests/              # Integration tests\n```\n\n## Development\n\n```bash\n# Build the Solana program\nanchor build\n\n# Run validator-backed tests\nPATH=\"$HOME/.local/share/solana/install/active_release/bin:$PATH\" anchor test --skip-build\n\n# Build and test the SDK package\ncd sdk-package && npm install && npm run build && npm test\n```\n\n## Security\n\nKnown risks, protocol limits, and security documentation are in `FINDINGS.md`, `docs/CIRCUIT_SPEC.md`, `docs/THREAT_MODEL.md`, `docs/COMPLIANCE.md`, and `docs/GOVERNANCE.md`.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:58:35.341Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:31:42.485Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

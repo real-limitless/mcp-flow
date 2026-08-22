@@ -1,0 +1,89 @@
+{
+  "id": "io.github.r3352/redact-mcp",
+  "title": "Redact MCP",
+  "description": "Auto-detects and obfuscates PII (IPs, emails, API keys, names) so Claude never sees real client data",
+  "summary": "Auto-detects and obfuscates PII (IPs, emails, API keys, names) so Claude never sees real client data",
+  "offersHint": "Auto-detects and obfuscates PII (IPs, emails, API keys, names) so Claude never sees real client data · Packages: npm:@mattzam/redact-mcp · Env vars: REDACT_AUDIT_LOG, REDACT_DATA_DIR",
+  "version": "2.0.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@mattzam/redact-mcp",
+    "version": "2.0.4",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "REDACT_AUDIT_LOG",
+        "description": "Enable JSONL audit trail for compliance tracking"
+      },
+      {
+        "name": "REDACT_DATA_DIR",
+        "description": "Directory for mappings and audit log storage"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@mattzam/redact-mcp",
+      "version": "2.0.4",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "REDACT_AUDIT_LOG",
+          "description": "Enable JSONL audit trail for compliance tracking"
+        },
+        {
+          "name": "REDACT_DATA_DIR",
+          "description": "Directory for mappings and audit log storage"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "REDACT_AUDIT_LOG",
+      "description": "Enable JSONL audit trail for compliance tracking"
+    },
+    {
+      "name": "REDACT_DATA_DIR",
+      "description": "Directory for mappings and audit log storage"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/r3352/redact-mcp",
+  "sourceUrl": "https://github.com/r3352/redact-mcp",
+  "repository": {
+    "url": "https://github.com/r3352/redact-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-23T12:55:28.558654Z",
+  "publishedAt": "2026-03-23T12:55:28.558654Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:54.755Z",
+    "sourceRepoAt": "2026-08-11T23:24:56.132Z",
+    "readmeAt": "2026-08-11T23:24:56.662Z",
+    "toolsAt": "2026-08-12T01:04:54.755Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/r3352/redact-mcp",
+    "checkedAt": "2026-08-11T23:24:56.132Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/r3352/redact-mcp/main/README.md",
+    "markdown": "# Redact MCP — Automatic PII Obfuscation for Claude Code\n\nAn MCP server (and Claude Code plugin) that automatically detects and obfuscates sensitive data before Claude ever sees it. Uses **regex pattern matching** and **AI-powered Named Entity Recognition (NER)** to catch IPs, hostnames, emails, API keys, person names, organization names, locations, private keys, connection strings, and more.\n\nBuilt for penetration testers who need Claude's analysis capabilities without exposing client data to a third party.\n\n## How It Works\n\n```\nRaw data with real PII ──► Regex + NER detection ──► Claude sees only fake values\n                                                              │\nFinal report for client ◄── Real values restored ◄── /redact:export\n```\n\nThe server maintains a **bidirectional mapping table**. Every sensitive value gets a consistent, deterministic fake replacement that persists across the entire session:\n\n| Real Value | Obfuscated As | Detection |\n|---|---|---|\n| `10.50.1.100` | `198.51.100.1` | regex |\n| `api.clientcorp.com` | `target-1.example.com` | regex |\n| `john.smith@clientcorp.com` | `user-1@example.com` | regex |\n| `AKIA3EXAMPLE...` | `[REDACTED_AWS_KEY_1]` | regex |\n| `James Wilson` | `Person_A Person_B` | NER |\n| `Microsoft` | `Org_A` | NER |\n| `Seattle` | `City_A` | NER |\n| `postgres://admin:pw@host/db` | `[REDACTED_CONN_STRING_1]` | regex |\n| `-----BEGIN RSA PRIVATE KEY...` | `[REDACTED_PRIVATE_KEY_1]` | regex |\n\nSame real value always maps to the same fake value. `obfuscate(text) -> deobfuscate(result) === text` is guaranteed.\n\n## Install\n\n### Quick install via npx (recommended)\n\n```bash\nclaude mcp add @mattzam/redact-mcp -- npx @mattzam/redact-mcp\n```\n\nThat's it. Claude Code will launch the server via npx on each session. The NER model (~110MB) downloads automatically on first use and is cached for subsequent runs.\n\nTo enable audit logging:\n\n```bash\nclaude mcp add @mattzam/redact-mcp -e REDACT_AUDIT_LOG=true -- npx @mattzam/redact-mcp\n```\n\n### As a Claude Code plugin (full features: hooks + skills)\n\n```bash\ngit clone https://github.com/r3352/redact-mcp.git redact\ncd redact/server\nnpm install\nnpm run build\ncd ../..\n\n# Load as a plugin (includes hooks for leak detection + slash commands)\nclaude --plugin-dir ./redact\n```\n\nThe plugin mode adds **hooks** (automatic leak detection on raw tool output) and **skills** (`/redact:status`, `/redact:add`, `/redact:export`) on top of the MCP server.\n\n### Manual MCP configuration\n\nAdd to your Claude Code MCP config (`~/.claude/mcp.json` or project `.mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"redact-server\": {\n      \"command\": \"npx\",\n      \"args\": [\"redact-mcp\"],\n      \"env\": {\n        \"REDACT_DATA_DIR\": \"/path/to/data/directory\",\n        \"REDACT_AUDIT_LOG\": \"true\"\n      }\n    }\n  }\n}\n```\n\n### Environment Variables\n\n| Variable | Default | Description |\n|---|---|---|\n| `REDACT_DATA_DIR` | `./data` | Directory for mapping state and audit logs |\n| `REDACT_AUDIT_LOG` | `false` | Set to `true` to enable JSONL audit logging |\n\n## What Gets Detected\n\n### Regex Patterns (19 types)\n\nZero configuration required. Detected automatically:\n\n| Category | Types |\n|---|---|\n| **Network** | IPv4 (private + public), IPv6, hostnames with valid TLDs, MAC addresses |\n| **Identity** | Emails, person names (JSON context), phone numbers (US + international), SSNs |\n| **Secrets** | AWS access keys, JWTs, Bearer tokens, API keys (context-aware), generic secrets (`password=`, `secret=`), private keys (PEM format), connection strings (postgres/mysql/redis/mongodb/amqp/mssql URIs) |\n| **Financial** | Credit card numbers (Luhn-validated) |\n| **Physical** | Street addresses (`123 Main Street`, `456 Oak Ave`, etc.) |\n\n### NER Detection (AI-powered)\n\nWhen `@huggingface/transformers` is installed (included by default), the server loads `Xenova/bert-base-NER` (~110MB ONNX model, downloaded on first use) to detect:\n\n| Entity Type | Example | Obfuscated As |\n|---|---|---|\n| Person names | `James Wilson` | `Person_A Person_B` |\n| Organizations | `Microsoft`, `Acme Corp` | `Org_A`, `Org_B` |\n| Locations | `Seattle`, `New York` | `City_A`, `City_B` |\n\nNER catches entities that regex misses — names and organizations outside of JSON context, arbitrary location names, etc. Regex results always take priority when both detect the same span (regex is more precise for structured patterns).\n\n**Graceful fallback:** If the model fails to load or the package is missing, the server continues in regex-only mode with no errors.\n\n### Smart Passthrough\n\nThese values are never obfuscated:\n\n- **Loopback/reserved:** `localhost`, `127.0.0.1`, `::1`, `0.0.0.0`\n- **RFC documentation ranges:** `192.0.2.x` (TEST-NET-1), `198.51.100.x` (TEST-NET-2), `203.0.113.x` (TEST-NET-3), `2001:db8::` (IPv6 docs)\n- **Example domains:** `example.com`, `example.org`, `example.net`\n- **Dev domains:** `github.com`, `npmjs.com`, `nodejs.org`, `googleapis.com`, etc.\n- **Security testing:** `burpcollaborator.net`, `oastify.com`\n- **Code patterns:** `console.log`, `process.env`, `package.json`, `webpack.config`, `jest.config`, `tailwind.config`, and 30+ other common false positives\n- **Broadcast MACs:** `FF:FF:FF:FF:FF:FF`, `00:00:00:00:00:00`\n\n## MCP Tools\n\nThe server registers **8 tools** via MCP:\n\n| Tool | Description |\n|---|---|\n| `redact_obfuscate` | Auto-detect and replace all PII in text (regex + NER) |\n| `redact_deobfuscate` | Reverse all replacements back to real values |\n| `redact_proxy_request` | HTTP proxy — deobfuscates request, makes real call, obfuscates response |\n| `redact_read_file` | Read a file and return obfuscated content |\n| `redact_add_mapping` | Manually add a real-to-fake mapping |\n| `redact_remove_mapping` | Remove a mapping (fix false positives) |\n| `redact_show_mappings` | Show all current mappings grouped by type |\n| `redact_audit_log` | View recent audit log entries (requires `REDACT_AUDIT_LOG=true`) |\n\n### `redact_proxy_request` — The Key Tool\n\nFor pentest workflows, this is the critical tool. Claude calls it instead of curl/fetch:\n\n1. Claude provides URL/headers/body (may contain already-obfuscated values)\n2. Server **deobfuscates** the request (restores real hostnames/IPs/tokens)\n3. Makes the **real HTTP request** to the target\n4. **Obfuscates** the entire response (headers + body)\n5. Returns sanitized response to Claude\n\nClaude never sees the real response data. All deobfuscation and obfuscation steps are audit-logged.\n\n### `redact_audit_log` — Compliance Audit Trail\n\nWhen `REDACT_AUDIT_LOG=true`, every obfuscation and deobfuscation operation is logged to `${REDACT_DATA_DIR}/audit.jsonl`. Each entry records:\n\n- **Timestamp** and **operation type** (`obfuscate`, `deobfuscate`, `proxy_request`, `file_read`)\n- **Full input text** (raw data before transformation)\n- **All detections** with type, real value, fake replacement, and source (`regex` or `ner`)\n- **Full output text** (transformed result)\n\nThis provides a complete audit trail: what went in, what was modified, and what came out.\n\nView entries via the `redact_audit_log` tool or read `audit.jsonl` directly:\n\n```bash\n# Last 5 entries, pretty-printed\ntail -5 data/audit.jsonl | python3 -m json.tool\n```\n\n**Security note:** The audit log contains real sensitive data by design (that's its purpose — proving what was redacted). Protect it accordingly.\n\n## Skills (Slash Commands)\n\n| Command | Description |\n|---|---|\n| `/redact:status` | Show current redaction mappings grouped by type |\n| `/redact:add <real> <fake>` | Manually add a mapping (e.g., `/redact:add clientcorp.com target.example.com`) |\n| `/redact:export <file> [output]` | Deobfuscate a file for client delivery (defaults to `~/Desktop/`) |\n\n## Hooks\n\nThe plugin uses two hooks (automatic, no user interaction):\n\n- **SessionStart** — Injects instructions telling Claude to route all data through redact tools\n- **PostToolUse** — Warns if Claude uses raw `Bash`/`Read`/`Grep`/`WebFetch` and the output contains known sensitive values (leak detection)\n\n## How the Pipeline Works\n\n### Detection\n\n1. **Regex pass** — 19 pattern types scanned synchronously via compiled RegExp\n2. **NER pass** — `Xenova/bert-base-NER` runs in parallel (async), catches person/org/location entities\n3. **Merge** — Results combined; regex matches win on overlapping spans (more precise for structured data)\n4. **Deduplication** — Overlapping NER results that cover the same span as a regex match are dropped\n\n### Mapping\n\n1. Each unique real value gets a **deterministic fake** via counter-based generation\n2. Fake values use **safe ranges**: TEST-NET-2 for IPv4, RFC 3849 for IPv6, `example.com` for domains, `555` prefix for phones, locally-administered range for MACs\n3. Mappings persist to `${REDACT_DATA_DIR}/mappings.json` with debounced writes (500ms)\n4. **Longest-first replacement** prevents partial match corruption (e.g., `10.50.1.100` before `10.50.1.10`)\n\n### Round-trip Guarantee\n\n`deobfuscate(obfuscate(text)) === text` for all inputs. The bidirectional mapping table ensures lossless restoration.\n\n## Architecture\n\n```\nredact/\n├── .claude-plugin/plugin.json     # Plugin manifest\n├── .mcp.json                      # MCP server config (stdio transport)\n├── hooks/\n│   ├── hooks.json                 # Hook definitions\n│   └── scripts/\n│       ├── session-start.sh       # Injects redaction context on session start\n│       └── post-tool-scan.py      # Leak detection on raw tool output\n├── skills/\n│   ├── status/SKILL.md            # /redact:status\n│   ├── add/SKILL.md               # /redact:add\n│   └── export/SKILL.md            # /redact:export\n└── server/\n    ├── package.json               # v2.0.0, deps: @modelcontextprotocol/sdk, @huggingface/transformers\n    ├── tsconfig.json              # ES2022, Node16 modules, strict\n    └── src/\n        ├── index.ts               # MCP server — 8 tools, server instructions\n        ├── mapping-engine.ts      # Bidirectional mapping, async obfuscate/deobfuscate, audit integration\n        ├── pattern-detector.ts    # 19 regex patterns + async NER merge\n        ├── fake-generator.ts      # Deterministic counter-based fake value generation\n        ├── ner-detector.ts        # Lazy-loaded HuggingFace NER with graceful fallback\n        ├── audit-logger.ts        # JSONL append logger, serialized write queue\n        └── persistence.ts         # JSON state file with debounced writes\n```\n\n### Runtime Flow\n\n```\nClaude Code ──stdio──► MCP Server (index.ts)\n                            │\n                     CallToolRequest\n                            │\n                    ┌───────┴───────┐\n                    │ MappingEngine │\n                    └───────┬───────┘\n                            │\n              ┌─────────────┼─────────────┐\n              │             │             │\n        detectPatterns   NER detect   AuditLogger\n        (regex, sync)   (async)      (JSONL, async)\n              │             │             │\n              └─────────────┼─────────────┘\n                            │\n                     merge + dedupe\n                            │\n                     apply mappings\n                     (longest-first)\n                            │\n                     return to Claude\n```\n\n## Development\n\n```bash\ncd server\n\n# Install dependencies (~110MB for NER model on first run)\nnpm install\n\n# Build TypeScript\nnpm run build\n\n# Test MCP server starts and lists tools\necho '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' | node dist/index.js\n\n# Quick obfuscation test\nnode -e '\nconst { MappingEngine } = await import(\"./dist/mapping-engine.js\");\nconst engine = new MappingEngine(\"/tmp/redact-dev\");\nawait engine.init();\nconsole.log(await engine.obfuscate(\"Email john@acme.com from 10.0.0.1\"));\n'\n```\n\n## Changelog\n\n### v2.0.0\n\n- **NER detection** — AI-powered entity recognition via `@huggingface/transformers` + `Xenova/bert-base-NER`. Catches person names, organizations, and locations outside structured JSON context.\n- **Audit logging** — Opt-in JSONL audit trail (`REDACT_AUDIT_LOG=true`) records full input/output text, all detections with sources, and timestamps for every obfuscation and deobfuscation operation.\n- **7 new pattern types** — `organization`, `location`, `private_key`, `connection_string`, `generic_secret`, `mac_address`, `street_address`\n- **8th tool** — `redact_audit_log` for viewing audit entries\n- **Improved phone detection** — International format support (`+CC-XXXX-XXXX`)\n- **Expanded false positive list** — `webpack.config`, `jest.config`, `tailwind.config`, and 9 other config file patterns\n\n### v1.0.0\n\n- Initial release with regex-only detection (12 pattern types), 7 MCP tools, bidirectional mapping, persistence, hooks, and skills.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:24:56.662Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:54.755Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

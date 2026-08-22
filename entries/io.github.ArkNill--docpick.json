@@ -1,0 +1,58 @@
+{
+  "id": "io.github.ArkNill/docpick",
+  "title": "Docpick",
+  "description": "Schema-driven document extraction with local OCR + LLM. Document in, Structured JSON out.",
+  "summary": "Schema-driven document extraction with local OCR + LLM. Document in, Structured JSON out.",
+  "offersHint": "Schema-driven document extraction with local OCR + LLM. Document in, Structured JSON out. · Packages: pypi:docpick",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "docpick",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "docpick",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/QuartzUnit/docpick",
+  "repository": {
+    "url": "https://github.com/QuartzUnit/docpick",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-17T01:45:47.811703Z",
+  "publishedAt": "2026-03-17T01:45:47.811703Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:43.130Z",
+    "sourceRepoAt": "2026-08-12T00:16:57.407Z",
+    "readmeAt": "2026-08-12T00:16:57.989Z",
+    "toolsAt": "2026-08-12T01:46:43.130Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/QuartzUnit/docpick",
+    "checkedAt": "2026-08-12T00:16:57.407Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/QuartzUnit/docpick/main/README.md",
+    "markdown": "# Docpick\n\n[![PyPI](https://img.shields.io/pypi/v/docpick)](https://pypi.org/project/docpick/)\n[![Python](https://img.shields.io/pypi/pyversions/docpick)](https://pypi.org/project/docpick/)\n[![License](https://img.shields.io/github/license/QuartzUnit/docpick)](https://github.com/QuartzUnit/docpick/blob/main/LICENSE)\n[![Tests](https://img.shields.io/badge/tests-217%20passed-brightgreen)]()\n\n> [한국어 문서](README.ko.md) · [llms.txt](llms.txt)\n\n> Document in, Structured JSON out. Locally. With your schema.\n\n**docpick** is a lightweight, schema-driven document extraction pipeline that combines local OCR engines with local LLMs to extract structured JSON from any document — invoices, receipts, bills of lading, tax forms, and more.\n\n- **Zero cloud dependency** — runs entirely on your machine (CPU or GPU)\n- **Custom schemas** — define your own Pydantic models or use 8 built-in document schemas\n- **Validation built-in** — checkdigit verification, cross-field rules, cross-document consistency\n- **Apache 2.0** — no GPL/AGPL dependencies\n\n## Install\n\n```bash\npip install docpick            # core (LLM extraction only)\npip install docpick[paddle]    # + PaddleOCR (recommended)\npip install docpick[easyocr]   # + EasyOCR (Korean-optimized)\npip install docpick[got]       # + GOT-OCR2.0 (GPU, vision-language)\npip install docpick[all]       # all OCR backends\n```\n\n**Requirements:** Python 3.11+ / LLM endpoint (vLLM, Ollama, or OpenAI-compatible)\n\n## Quick Start\n\n### Python API\n\n```python\nfrom docpick import DocpickPipeline\nfrom docpick.schemas import InvoiceSchema\n\npipeline = DocpickPipeline()\nresult = pipeline.extract(\"invoice.pdf\", schema=InvoiceSchema)\n\nprint(result.data)           # Structured dict matching schema\nprint(result.validation)     # Validation errors/warnings\nprint(result.confidence)     # Per-field confidence scores\n```\n\n### CLI\n\n```bash\n# Extract structured data\ndocpick extract invoice.pdf --schema invoice --output result.json\n\n# OCR only (no LLM)\ndocpick ocr document.png --lang ko,en\n\n# Validate extracted JSON\ndocpick validate result.json --schema invoice\n\n# Batch process a directory\ndocpick batch ./documents/ --schema invoice --output ./results/ --concurrency 4\n\n# List available schemas\ndocpick schemas list\n\n# Show schema details\ndocpick schemas show invoice\n```\n\n## Built-in Schemas\n\n| Schema | Document Type | Key Validations |\n|--------|--------------|-----------------|\n| `invoice` | Commercial invoices | Line item sums, tax ID checkdigit, date order |\n| `receipt` | Retail/restaurant receipts | Total = subtotal + tax + tip |\n| `bill_of_lading` | Ocean/air B/L | Container weight sums, ISO 6346, HS code format |\n| `purchase_order` | Purchase orders | PO total = line items, delivery date order |\n| `kr_tax_invoice` | Korean e-tax invoice (세금계산서) | Business number checkdigit (x2), supply/tax/total sums |\n| `bank_statement` | Bank statements | IBAN mod97, period date order |\n| `id_document` | Passport/ID (ICAO 9303) | MRZ, ISO 3166 country codes, date ranges |\n| `certificate_of_origin` | Certificate of Origin | ISO 3166 alpha-2 country codes |\n\n## Custom Schemas\n\nDefine your own schema with Pydantic:\n\n```python\nfrom pydantic import BaseModel\nfrom docpick import DocpickPipeline\nfrom docpick.validation.rules import SumEqualsRule, RequiredFieldRule\n\nclass MyDocument(BaseModel):\n    \"\"\"Custom document schema.\"\"\"\n    company_name: str | None = None\n    total_amount: float | None = None\n    tax_amount: float | None = None\n    net_amount: float | None = None\n    items: list[dict] | None = None\n\n    class ValidationRules:\n        rules = [\n            RequiredFieldRule(\"company_name\"),\n            SumEqualsRule([\"net_amount\", \"tax_amount\"], \"total_amount\"),\n        ]\n\npipeline = DocpickPipeline()\nresult = pipeline.extract(\"my_document.pdf\", schema=MyDocument)\n```\n\nOr use a JSON Schema file:\n\n```bash\ndocpick extract document.pdf --schema my_schema.json\n```\n\n## Validation\n\n### Check Digit Algorithms\n\n| Algorithm | Use Case |\n|-----------|----------|\n| `kr_business_number` | Korean business registration number (10 digits) |\n| `luhn` | Credit card numbers |\n| `iso_6346` | Shipping container numbers |\n| `iban_mod97` | International bank account numbers |\n| `awb_mod7` | Air waybill numbers |\n| `mrz` | Machine Readable Zone (passport/ID) |\n\n### Cross-Field Rules\n\n| Rule | Description |\n|------|-------------|\n| `SumEqualsRule` | Sum of fields equals target (with tolerance) |\n| `DateBeforeRule` | Date A must precede Date B |\n| `RequiredFieldRule` | Field must be non-null and non-empty |\n| `FieldEqualsRule` | Two fields must be equal |\n| `RangeRule` | Numeric field within min/max bounds |\n| `RegexRule` | Field matches regex pattern |\n\n### Cross-Document Validation\n\nValidate consistency across related documents (e.g., Invoice + B/L + Packing List):\n\n```python\nfrom docpick.validation.cross_document import create_trade_document_validator\n\nvalidator = create_trade_document_validator()\nresult = validator.validate({\n    \"invoice\": invoice_data,\n    \"bl\": bl_data,\n    \"packing_list\": packing_list_data,\n    \"certificate\": certificate_data,\n})\nprint(result.is_valid)\n```\n\n## OCR Engines\n\n| Engine | Type | GPU | Languages | Best For |\n|--------|------|-----|-----------|----------|\n| PaddleOCR | Traditional OCR | Optional | 111 | General documents (default) |\n| EasyOCR | Traditional OCR | Optional | 80+ | Korean text |\n| GOT-OCR2.0 | Vision-Language | Required | Multi | Complex layouts |\n| VLM | Vision-Language | Required | Multi | Direct image → JSON |\n\n### 2-Tier Auto Engine\n\nThe default `auto` engine uses confidence-based fallback:\n\n1. **Tier 1 (CPU):** PaddleOCR → EasyOCR\n2. **Tier 2 (GPU):** GOT-OCR2.0 → VLM\n\nIf Tier 1 average confidence falls below threshold (default 0.7), automatically escalates to Tier 2.\n\n## LLM Providers\n\n| Provider | Endpoint | Default Model |\n|----------|----------|---------------|\n| vLLM | `http://localhost:8000/v1` | Qwen/Qwen3.5-32B-AWQ |\n| Ollama | `http://localhost:11434` | qwen3.5:7b |\n\nConfigure via CLI or YAML:\n\n```bash\ndocpick config set llm.provider ollama\ndocpick config set llm.base_url http://localhost:11434\ndocpick config set llm.model qwen3.5:7b\n```\n\n## Error Handling\n\nThe pipeline is designed to be resilient:\n\n- **OCR failure** → automatic fallback to next available engine\n- **LLM JSON parse failure** → automatic retry with correction prompt (up to 1 retry)\n- **Partial results** → returns whatever was extracted, with errors logged in `result.errors`\n- **Document load failure** → returns empty result with error message\n\n```python\nresult = pipeline.extract(\"damaged.pdf\", schema=InvoiceSchema)\nif result.errors:\n    print(\"Pipeline warnings:\", result.errors)\nif result.data:\n    print(\"Partial extraction:\", result.data)\n```\n\n## Batch Processing\n\nProcess entire directories with parallel workers:\n\n```python\nfrom docpick.batch import BatchProcessor\nfrom docpick.schemas import InvoiceSchema\n\nprocessor = BatchProcessor(concurrency=4)\nresult = processor.process_directory(\n    \"./invoices/\",\n    schema=InvoiceSchema,\n    recursive=True,\n)\n\nprint(f\"Processed {result.succeeded}/{result.total} files\")\nfor path, extraction in result.results.items():\n    print(f\"{path}: {extraction.data.get('total_amount')}\")\n```\n\n## Architecture\n\n```mermaid\nflowchart TD\n    A[\"📄 Document\\n(PDF / Image)\"] --> B[\"DocumentLoader\\n(pypdfium2)\"]\n    B --> C[\"Tier 1: OCR\\n(PaddleOCR / EasyOCR)\\nCPU\"]\n    C --> D{\"Confidence\\n≥ threshold?\"}\n    D -->|\"yes\"| F[\"LLM Extractor\\n(vLLM / Ollama)\\nSchema prompt\"]\n    D -->|\"no\"| E[\"Tier 2: VLM\\n(GOT / VLM)\\nGPU\"]\n    E --> F\n    F --> G[\"Pydantic Validation\"]\n    G --> H[\"✅ ExtractionResult\"]\n```\n\n## License\n\nApache 2.0 — all dependencies are Apache 2.0 or MIT licensed.\n\n<!-- mcp-name: io.github.QuartzUnit/docpick -->\n\n\n---\n\n<sub>Part of the [QuartzUnit](https://github.com/QuartzUnit) ecosystem — composable Python libraries for data collection, extraction, search, and AI agent safety.</sub>\n",
+    "fetchedAt": "2026-08-12T00:16:57.989Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:43.130Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

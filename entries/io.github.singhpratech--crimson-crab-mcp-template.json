@@ -1,0 +1,44 @@
+{
+  "id": "io.github.singhpratech/crimson-crab-mcp-template",
+  "title": "crimson-crab-mcp-template",
+  "description": "Ready-to-clone Rust MCP server with chat, token-counting, and model tools for Claude",
+  "summary": "Ready-to-clone Rust MCP server with chat, token-counting, and model tools for Claude",
+  "offersHint": "Ready-to-clone Rust MCP server with chat, token-counting, and model tools for Claude",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/singhpratech/crimson-crab-mcp-template",
+  "repository": {
+    "url": "https://github.com/singhpratech/crimson-crab-mcp-template",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T19:49:37.466837Z",
+  "publishedAt": "2026-07-31T19:49:37.466837Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:15.264Z",
+    "sourceRepoAt": "2026-08-11T23:20:58.643Z",
+    "readmeAt": "2026-08-11T23:20:59.510Z",
+    "toolsAt": "2026-08-12T01:01:15.264Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/singhpratech/crimson-crab-mcp-template",
+    "checkedAt": "2026-08-11T23:20:58.643Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/singhpratech/crimson-crab-mcp-template/main/README.md",
+    "markdown": "# Claude-powered MCP server in Rust (starter template)\n\n[![crimson-crab-mcp-template MCP server](https://glama.ai/mcp/servers/singhpratech/crimson-crab-mcp-template/badges/score.svg)](https://glama.ai/mcp/servers/singhpratech/crimson-crab-mcp-template)\n[![crates.io](https://img.shields.io/crates/v/crimson-crab.svg?label=crimson-crab)](https://crates.io/crates/crimson-crab)\n[![license](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)\n\nA minimal, production-ready [Model Context Protocol](https://modelcontextprotocol.io)\n(MCP) server, written in Rust, backed by Anthropic's Claude API through the\n[`crimson-crab`](https://crates.io/crates/crimson-crab) SDK. It exposes five\ntools: `ask_claude` (send a prompt, get Claude's reply), `chat` (multi-turn\nconversation), `count_tokens` (price a prompt without running it), `list_models`\n(enumerate the models your API key can use), and `get_model` (limits and\nmetadata for one model).\n\nUse it as the reference starting point for building your own Claude-powered MCP\ntools in Rust.\n\n## Use this template\n\nClick **Use this template** on GitHub, or generate a fresh project with\n[`cargo generate`](https://github.com/cargo-generate/cargo-generate):\n\n```sh\ncargo generate --git https://github.com/singhpratech/crimson-crab-mcp-template\n```\n\nYou can also just clone it:\n\n```sh\ngit clone https://github.com/singhpratech/crimson-crab-mcp-template\n```\n\n## Quickstart\n\n```sh\nexport ANTHROPIC_API_KEY=sk-ant-...\ncargo run\n```\n\nThe server communicates over stdio, so running it directly just waits for an MCP\nclient to connect. All logging goes to **stderr** — stdout is reserved for the MCP\nprotocol. Set `RUST_LOG=debug` for more verbose logs.\n\nTo build an optimized binary you can point a client at:\n\n```sh\ncargo build --release\n# -> target/release/crimson-crab-mcp-template\n```\n\n## Wire it into Claude Desktop\n\nAdd an entry to your Claude Desktop MCP config\n(`claude_desktop_config.json`), pointing at the built binary and passing your API\nkey through the environment:\n\n```json\n{\n  \"mcpServers\": {\n    \"claude-via-crimson-crab\": {\n      \"command\": \"/absolute/path/to/target/release/crimson-crab-mcp-template\",\n      \"env\": {\n        \"ANTHROPIC_API_KEY\": \"sk-ant-...\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude Desktop; the `ask_claude`, `chat`, `count_tokens`,\n`list_models`, and `get_model` tools will then be available.\n\n## The tools\n\n### `ask_claude`\n\n| Parameter | Type              | Required | Description                        |\n| --------- | ----------------- | -------- | ---------------------------------- |\n| `prompt`  | `string`          | yes      | The prompt to send to Claude.      |\n| `system`  | `string`          | no       | Optional system prompt.            |\n\nBuilds a Claude Messages request (defaulting to the `claude-opus-5` model),\ncalls the API, and returns the concatenated text of Claude's reply.\n\n### `chat`\n\n| Parameter    | Type       | Required | Description                                              |\n| ------------ | ---------- | -------- | -------------------------------------------------------- |\n| `messages`   | `array`    | yes      | The conversation so far, oldest first: `{role, content}` where `role` is an enum constrained to `\"user\"` or `\"assistant\"`. Must end with a user turn. |\n| `system`     | `string`   | no       | Optional system prompt.                                  |\n| `model`      | `string`   | no       | Model id (defaults to the `ask_claude` model).           |\n| `max_tokens` | `integer`  | no       | Maximum tokens to generate (default 1024).               |\n\nSends the whole message history to Claude and returns the next reply — use it\ninstead of `ask_claude` when the caller needs to keep context across turns.\n\n### `count_tokens`\n\n| Parameter | Type              | Required | Description                                        |\n| --------- | ----------------- | -------- | -------------------------------------------------- |\n| `prompt`  | `string`          | yes      | The prompt whose token count you want.             |\n| `system`  | `string`          | no       | Optional system prompt to include in the count.    |\n| `model`   | `string`          | no       | Model id to count against (counts are model-specific). |\n\nReturns the number of input tokens the prompt would consume, without running\nit — useful for estimating cost before an expensive call.\n\n### `list_models`\n\n| Parameter | Type              | Required | Description                                    |\n| --------- | ----------------- | -------- | ---------------------------------------------- |\n| `limit`   | `integer`         | no       | Maximum number of models to return.            |\n\nReturns the id, display name, and release date of each Claude model available\nto the configured API key.\n\n### `get_model`\n\n| Parameter | Type              | Required | Description                                    |\n| --------- | ----------------- | -------- | ---------------------------------------------- |\n| `model`   | `string`          | yes      | The model id to look up, e.g. `claude-opus-5`. |\n\nReturns the model's display name, release date, context window\n(`max_input_tokens`), and maximum output tokens.\n\nErrors from all tools are returned as MCP tool errors rather than panicking.\nThe Claude client is built once at startup and reused across calls.\n\n## Built with crimson-crab\n\nThis template is built with [`crimson-crab`](https://crates.io/crates/crimson-crab)\n— a production-grade Rust SDK for Anthropic's Claude API. Source:\n<https://github.com/singhpratech/crimson-crab>.\n\n## License\n\nLicensed under either of\n\n- MIT license ([LICENSE-MIT](LICENSE-MIT))\n- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))\n\nat your option.\n\n---\n\ncrimson-crab is an independent open-source project and is not affiliated with Anthropic.\n",
+    "fetchedAt": "2026-08-11T23:20:59.510Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:15.264Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

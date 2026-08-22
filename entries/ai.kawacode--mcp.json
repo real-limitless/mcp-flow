@@ -1,0 +1,59 @@
+{
+  "id": "ai.kawacode/mcp",
+  "title": "Kawa Code",
+  "description": "Team-aware memory: intent, decisions, real-time conflicts for AI coding assistants.",
+  "summary": "Team-aware memory: intent, decisions, real-time conflicts for AI coding assistants.",
+  "offersHint": "Team-aware memory: intent, decisions, real-time conflicts for AI coding assistants. · Packages: npm:@kawacode/mcp",
+  "version": "6.9.5",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@kawacode/mcp",
+    "version": "6.9.5",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@kawacode/mcp",
+      "version": "6.9.5",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://kawacode.ai",
+  "sourceUrl": "https://github.com/kawacode-ai/kawa.mcp",
+  "repository": {
+    "url": "https://github.com/kawacode-ai/kawa.mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T17:06:38.174718Z",
+  "publishedAt": "2026-08-04T17:06:38.174718Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:46:35.880Z",
+    "sourceRepoAt": "2026-08-12T00:46:35.880Z",
+    "readmeAt": "2026-08-12T00:46:36.296Z",
+    "toolsAt": "2026-08-12T00:46:36.484Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kawacode-ai/kawa.mcp",
+    "checkedAt": "2026-08-12T00:46:35.880Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kawacode-ai/kawa.mcp/main/README.md",
+    "markdown": "# Kawa Code MCP\n\n> Team-aware memory for AI coding assistants. Track intent, record decisions, and see when a teammate is editing the same code — in real time, before commit.\n\n`@kawacode/mcp` is the official [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server for [Kawa Code](https://kawacode.ai). It lets Claude Code, Cursor, and any MCP-compatible AI assistant:\n\n- **Remember what you're working on** across sessions, branches, and machines — no more re-explaining the architecture every morning.\n- **Surface team conflicts before they happen** — know when a teammate is editing the same file or function in their working copy *right now*, before either of you commits.\n- **Capture architectural decisions with their reasoning** — future you (and future AI sessions) inherit the team's accumulated context instead of relitigating choices.\n- **Link commits to intent automatically** — every commit gets the *why* attached, not just the diff.\n\n## Prerequisites\n\n### Required\n\n- **Node.js >= 18.0.0** — runtime for the MCP server\n- **[Kawa Code](https://kawacode.ai) desktop app running** — kawa.mcp is a thin MCP-to-IPC adapter; all git operations, storage, and API communication happen in Kawa Code\n\n### Optional (for history inference)\n\n- **Anthropic API key** — your own Claude API key, passed as a parameter to the inference tools\n- **[GitHub CLI (`gh`)](https://cli.github.com/)** — enables richer data tiers (PR descriptions, review comments, issue discussions). Without `gh`, tiers 2 and 4 are skipped automatically\n\n## Installation\n\nAdd the MCP in your AI configuration, for example on Claude Code:\n\n`claude mcp add -s user kawa-intents -- npx -y @kawacode/mcp`\n\nFor Cursor AI, install the MCP with `npm install -g @kawacode/mcp` and add it to `~/.cursor/mcp.json`.\n\n```json\n{\n  \"mcpServers\": {\n    \"kawa-intents\": {\n      \"command\": \"kawacode-mcp\"\n    }\n  }\n}\n```\n\nNote that the MCP will not be automatically updated to future versions in this scenario.\nTo upgrade to a newer release, run `npm update -g @kawacode/mcp`.\n\n## Manual Installation\n\nFor the project you want Kawa Code to run on, create a `.mcp.json` file in your project root (recommended for teams — commit it to git):\n\n```json\n{\n  \"mcpServers\": {\n    \"kawa-intents\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@kawacode/mcp\"]\n    }\n  }\n}\n```\n\n## Usage\n\nThe MCP server works together with the Kawa Code application, Kawa Code IDE extensions, and AI code generators such as Cursor AI and Claude Code.\n\n## Pre-edit decision check (Claude Code hook)\n\nOptional. When the agent is about to edit code that has prior recorded reasoning attached (an overlapping intent's blocks, or a constraint with the file in `relatedFiles`), the hook surfaces it before the Edit fires. Recommendation maps to action: silent (proceed), advisory context injected (review), or blocked with stderr message (`investigate-upstream`).\n\nWire it as a Claude Code `PreToolUse` hook in your `~/.claude/settings.json` or project `.claude/settings.json`:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Edit|Write\",\n        \"hooks\": [\n          { \"type\": \"command\", \"command\": \"npx -y -p @kawacode/mcp kawacode-on-pre-edit\" }\n        ]\n      }\n    ]\n  }\n}\n```\n\nOverride paths when blocked:\n\n- **Persistent (recommended):** record a fork decision that supersedes the existing one and retry the Edit.\n  ```\n  record_decision(type: \"fork\", supersedes: [\"<surfaced-decision-id>\"], rationale: \"...\")\n  ```\n- **One-off escape hatch:** add `force: true` to the Edit tool args. The hook acks the surfaced decisions in the session cache and allows the edit. Cache resets when the Kawa Code daemon restarts.\n\nDisable the hook for a session with `KAWA_PRE_EDIT_CHECK=off`.\n\n### Local telemetry (logs)\n\nEvery pre-edit check fire (and force-override) appends a JSON line to a daily-rotated file at `~/.kawa-code/logs/pre-edit-decision-check-YYYY-MM-DD.jsonl`. Logs are **local only** — nothing leaves your machine. The defaults keep the last 30 days, capped at 100 MB total (oldest files dropped first).\n\nEach line records what fired, why, and what was filtered out — useful for tuning the recommendation thresholds and spotting false positives over time.\n\nDisable telemetry with `KAWA_PRE_EDIT_TELEMETRY=off`.\n\n## Key Features\n\n- **Real-time team conflict detection** — see when a teammate is editing the same files or lines in their working copy, *before either of you commits*. Most version-control tooling shows you this after the merge conflict; Kawa shows you before.\n- **Cross-session AI memory** — your AI assistant picks up where it left off across days, branches, and machines. No re-explaining the architecture every morning.\n- **Decision history with reasoning** — record forks, trade-offs, and abandoned approaches with their *why*. Future sessions and teammates inherit the context instead of re-deriving it.\n- **Commit ↔ intent linkage** — every commit is automatically associated with the intent that drove it. `git log` shows what changed; Kawa shows why.\n- **Smart context retrieval** — relevance-based loading; only what the current task needs.\n- **Zero-knowledge encryption** — code blocks encrypted client-side before sync. The Kawa cloud cannot decrypt your team's code.\n- **Cross-platform** — works with Claude Code, Cursor, and any MCP-compatible AI assistant.\n\n## Migrating or rewriting a codebase? Transplant its decisions\n\nWhen you port a codebase to a new language or rebuild it in a fresh repository, the code moves — but the *reasoning* usually doesn't. The source repo's decision history knows why retired approaches were retired, which constraints are load-bearing, and where the security landmines are. With Kawa Code, that history becomes a first-class migration input.\n\nDecisions are scoped per repository, so the new repo won't surface the old repo's history automatically. Transplant them slice by slice as you port — this is the **recall-transplant workflow**:\n\n1. **Recall before porting each slice.** Call `get_relevant_context` against the *source* repo with a description of the subsystem you're about to port (name its key files). This surfaces the forks, constraints, trade-offs, and discoveries that shaped it.\n2. **Expand what matters.** Recall returns summaries — call `get_decision_detail` on the load-bearing hits for the full rationale and consequences.\n3. **Classify: stack-portable vs stack-bound.** Domain truths port: protocol contracts, cost/scale rationale, security discoveries, \"we tried X and retired it\" warnings. Mechanics of the old stack don't: build-tooling quirks, runtime workarounds, library-specific fixes. Only the portable ones move.\n4. **Re-record the portable ones in the *target* repo** with `record_decision`, citing provenance in the summary or rationale (e.g. `[transplanted from <source-repo> <decision-id>]`). Merge decisions that form one lineage into a single record.\n5. **Let the transplants shape the port and its tests.** A transplanted durability rationale should become a test that proves the property survived the rewrite; a retired-approach warning should stop the new stack from reintroducing it.\n\nThe payoff compounds: the port doesn't re-litigate settled arguments or faithfully reproduce old bugs, *negative knowledge* survives even though the code that motivated it was deleted long ago, and at cutover the new repo starts with a curated decision corpus instead of an empty one.\n\nThe [CLAUDE.md template](./CLAUDE.md.example) ships a compact version of this workflow, so agents set up through the Kawa Code welcome flow follow it automatically.\n\n## Development\n\n```bash\n# Watch mode (auto-rebuild on file changes)\nnpm run dev\n\n# Build TypeScript to JavaScript\nnpm run build\n\n# Clean build artifacts\nnpm run clean\n\n# Run the MCP server directly\nnpm start\n```\n\n### Testing the MCP Server\n\nTo test the MCP server without integrating it into an AI assistant:\n\n1. Build the project: `npm run build`\n2. Run the server: `npm start`\n3. The server communicates via stdio (standard input/output)\n4. You can send MCP protocol messages via stdin to test tool functionality\n\n### Development Tips\n\n- Use `npm run dev` to auto-rebuild during development\n- Check stderr for server logs (stdout is reserved for MCP protocol)\n- Ensure Kawa Code is running before testing\n\n## Architecture\n\n```\nClaude Code / Cursor AI\n    ↓ MCP Protocol (stdio)\nkawa.mcp (this server)\n    ↓ Huginn IPC (Unix socket / Named pipe)\nKawa Code Desktop App\n    └─ HTTP Client\n        ↓ REST + SSE\n    Kawa API (cloud)\n        └─ Team sync & zero-knowledge encryption\n```\n\n## Contributing\n\nContributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTION.md) and [CLA.md](CLA.md).\n\n## License\n\nThis project is source-available under the\nKawa Code Source Available License.\n\nYou may run and modify the software for personal or internal use.\n\nSee [LICENSE](LICENSE) for details.\n",
+    "fetchedAt": "2026-08-12T00:46:36.296Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:46:36.484Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

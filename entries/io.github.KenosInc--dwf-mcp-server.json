@@ -1,0 +1,56 @@
+{
+  "id": "io.github.KenosInc/dwf-mcp-server",
+  "title": "Digilent WaveForms MCP Server",
+  "description": "MCP server for Digilent WaveForms instruments (oscilloscope, AWG, logic analyzer).",
+  "summary": "MCP server for Digilent WaveForms instruments (oscilloscope, AWG, logic analyzer).",
+  "offersHint": "MCP server for Digilent WaveForms instruments (oscilloscope, AWG, logic analyzer). · Packages: oci:ghcr.io/kenosinc/dwf-mcp-server:0.2.1",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/kenosinc/dwf-mcp-server:0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/kenosinc/dwf-mcp-server:0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/KenosInc/dwf-mcp-server",
+  "repository": {
+    "url": "https://github.com/KenosInc/dwf-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-09T06:12:59.899785Z",
+  "publishedAt": "2026-05-09T06:12:59.899785Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:04.683Z",
+    "sourceRepoAt": "2026-08-12T00:09:04.586Z",
+    "readmeAt": "2026-08-12T00:09:05.076Z",
+    "toolsAt": "2026-08-12T01:40:04.683Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/KenosInc/dwf-mcp-server",
+    "checkedAt": "2026-08-12T00:09:04.586Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/KenosInc/dwf-mcp-server/main/README.md",
+    "markdown": "# dwf-mcp-server\n\nMCP Server for [Digilent WaveForms](https://digilent.com/reference/software/waveforms/waveforms-3/start)\ninstruments — oscilloscope, arbitrary waveform generator (AWG), and logic analyzer.\nBuilt on [dwfpy](https://github.com/mariusgreuel/dwfpy), a Python binding for the\nDigilent WaveForms SDK (`libdwf`).\n\n## Supported Devices\n\n- Analog Discovery 2 (AD2)\n- Analog Discovery 3 (AD3)\n- Digital Discovery (DD)\n- Any device supported by the Digilent WaveForms SDK\n\n## Prerequisites\n\n- **Docker** installed on the host machine.\n- **No host-side WaveForms SDK installation is required.** The proprietary `libdwf.so` is added\n  via a derived Dockerfile layer (see [Installation](#installation)).\n- **USB device permissions** — Digilent USB devices default to `root:root 0664`. If the container\n  cannot find any devices, add a udev rule on the host:\n  ```\n  # /etc/udev/rules.d/99-digilent.rules\n  SUBSYSTEM==\"usb\", ATTRS{idVendor}==\"1443\", MODE=\"0666\"\n  ```\n  Then reload: `sudo udevadm control --reload-rules && sudo udevadm trigger`\n\n\n## Installation\n\nThe public Docker image **does not bundle any Digilent proprietary software**\n(Adept 2 Runtime, WaveForms SDK / `libdwf.so`). You must create a derived image\nthat adds them.\n\n### 1. Create a derived Dockerfile\n\nCreate a file named `Dockerfile.dwf`:\n\n```dockerfile\nFROM ghcr.io/kenosinc/dwf-mcp-server:latest\n\nARG ADEPT_VERSION=2.27.9\nARG WAVEFORMS_VERSION=3.24.4\nRUN ARCH=\"$(dpkg --print-architecture)\" \\\n    && apt-get update \\\n    && apt-get install -y --no-install-recommends curl \\\n    && curl -fsSL \"https://files.digilent.com/Software/Adept2%20Runtime/${ADEPT_VERSION}/digilent.adept.runtime_${ADEPT_VERSION}-${ARCH}.deb\" \\\n       -o /tmp/adept-runtime.deb \\\n    && curl -fsSL \"https://files.digilent.com/Software/Waveforms/${WAVEFORMS_VERSION}/digilent.waveforms_${WAVEFORMS_VERSION}_${ARCH}.deb\" \\\n       -o /tmp/waveforms.deb \\\n    && (apt-get install -y --no-install-recommends /tmp/adept-runtime.deb /tmp/waveforms.deb || true) \\\n    && for cmd in xdg-desktop-menu xdg-icon-resource xdg-mime; do \\\n         printf '#!/bin/sh\\nexit 0\\n' > \"/usr/bin/$cmd\" && chmod +x \"/usr/bin/$cmd\"; \\\n       done \\\n    && dpkg --configure -a \\\n    && apt-get purge -y curl \\\n    && apt-get autoremove -y \\\n    && rm -f /tmp/adept-runtime.deb /tmp/waveforms.deb \\\n    && rm -rf /var/lib/apt/lists/*\n```\n\n### 2. Build the image\n\n```bash\ndocker build -f Dockerfile.dwf -t dwf-mcp-server .\n```\n\n### 3. Configure your MCP client\n\n#### Claude Code\n\n```bash\nclaude mcp add dwf -- docker run -i --rm --privileged dwf-mcp-server\n```\n\n#### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"dwf\": {\n      \"command\": \"docker\",\n      \"args\": [\n        \"run\", \"-i\", \"--rm\",\n        \"--privileged\",\n        \"dwf-mcp-server\"\n      ]\n    }\n  }\n}\n```\n\nPass `--privileged` so the container can access USB devices.\n\n#### Project-level config (Claude Code)\n\nIf you have cloned this repository, copy the bundled example to a project-local\n`.mcp.json` (which is gitignored) so Claude Code picks it up automatically when\nopened against this directory:\n\n```bash\ncp .mcp.example.json .mcp.json\n```\n\nEdit the resulting `.mcp.json` to match your local image tag or to add other\nservers; the original `.mcp.example.json` stays clean and shareable.\n\n## Available MCP Tools\n\n| Tool | Description |\n|---|---|\n| `list_devices` | List all connected Digilent WaveForms devices |\n| `device_info` | Get detailed information about a specific device |\n| `analog_capture` | Capture analog waveform samples (oscilloscope); supports `action=\"single\" / \"start\" / \"read\" / \"stop\"` for continuous capture across tool calls |\n| `generate_waveform` | Generate an analog signal (AWG): sine, square, triangle, ...; supports `action=\"pulse\" / \"start\" / \"stop\"` for persistent output |\n| `measure` | Measure DC voltage, RMS, frequency, period, or peak-to-peak |\n| `power_supply` | Control the programmable power supply (V+ / V-) |\n| `digital_capture` | Capture digital logic signals (logic analyzer); supports `action=\"single\" / \"start\" / \"read\" / \"stop\"` for continuous capture across tool calls |\n| `gpio_read` | Read the logic level of a digital I/O pin |\n| `gpio_write` | Set the logic level of a digital I/O pin |\n| `spi_transfer` | Send and receive data over SPI using the digital protocol interface |\n| `device_state` | Report per-sub-instrument running/idle status (AWG, scope, LA, power supply) |\n| `close_device` | Close the persistent device session and stop all outputs |\n| `device_session_status` | Check whether the persistent device session is currently open |\n\n## Development\n\nSee [CLAUDE.md](CLAUDE.md) for development setup, coding conventions, and release procedures.\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:09:05.076Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:04.683Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

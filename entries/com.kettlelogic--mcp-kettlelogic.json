@@ -1,0 +1,73 @@
+{
+  "id": "com.kettlelogic/mcp-kettlelogic",
+  "title": "mcp-kettlelogic",
+  "description": "MCP server exposing Kettle Logic insight articles & industry guidance as tools + resources.",
+  "summary": "MCP server exposing Kettle Logic insight articles & industry guidance as tools + resources.",
+  "offersHint": "MCP server exposing Kettle Logic insight articles & industry guidance as tools + resources. · Remote MCP (streamable-http) at https://kettlelogic.com/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://kettlelogic.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://kettlelogic.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://kettlelogic.com/mcp",
+  "sourceUrl": "https://github.com/mploschiavo/mcp-kettlelogic",
+  "repository": {
+    "url": "https://github.com/mploschiavo/mcp-kettlelogic",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-01T23:56:12.666947Z",
+  "publishedAt": "2026-06-01T23:56:12.666947Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:32:14.781Z",
+    "sourceRepoAt": "2026-08-12T00:32:14.781Z",
+    "readmeAt": "2026-08-12T00:32:15.435Z",
+    "toolsAt": "2026-08-12T00:32:15.547Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mploschiavo/mcp-kettlelogic",
+    "checkedAt": "2026-08-12T00:32:14.781Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mploschiavo/mcp-kettlelogic/main/README.md",
+    "markdown": "# mcp-kettlelogic\n\nA **Model Context Protocol (MCP) server** that exposes a [Kettle Logic](https://kettlelogic.com)\nsite's published content — whitepapers/playbooks (\"insights\") and industry pages —\nto any MCP-capable agent (Claude Desktop, IDEs, custom orchestrators).\n\nIt is a **pure, read-only client of the public website**: it fetches content live\nover HTTP and parses it with the Python standard library. No database, no API keys,\nno dependency on any backend cluster or LLM. The target site is configurable, so you\ncan point it at your own deployment — or any site with the same shape — and see what\nit discovers.\n\nBuilt on the official [`mcp`](https://pypi.org/project/mcp/) Python SDK (FastMCP),\nspeaking the standard **stdio** transport (and an optional **streamable-http**\ntransport for container/Kubernetes deployment).\n\n> Engineering note: this repository doubles as a reference for how we build —\n> hexagonal layering, fully-typed OO, dependency injection, and a suite of\n> **ratchets** (see [ARCHITECTURE.md](./ARCHITECTURE.md)) that enforce the rules\n> in CI. `pytest` runs unit tests, real-stdio e2e tests, and the ratchets together.\n\n---\n\n## What it exposes\n\n### Tools\n| Tool | Description |\n|------|-------------|\n| `search_articles(query, limit=5)` | Search insight articles by title / slug / description. |\n| `get_industry_overview(industry)` | Plain-text overview extracted from an industry page. |\n| `list_articles()` | JSON catalog of every insight article (title, slug, description). |\n| `list_industries()` | JSON list of industries with guidance (name + slug). |\n| `get_article(slug)` | A single insight article rendered as readable text. |\n\n### Resources\n| URI | Description |\n|-----|-------------|\n| `kettlelogic://articles/manifest` | JSON catalog of every insight article. |\n| `kettlelogic://industries/list` | JSON list of industry pages discovered on the site. |\n| `kettlelogic://articles/{slug}` | A single article rendered as readable text. |\n\nDiscovery is live: articles from the site's `/insights/` index, industries from its\n[`/llms.txt`](https://llmstxt.org/) (falling back to crawling `/industries/`).\n\n---\n\n## Install & run\n\n```bash\npip install .            # Python >= 3.11; pulls in mcp + httpx\nmcp-kettlelogic          # console script (stdio transport by default)\n```\n\nNormally an MCP client launches it. To explore interactively:\n\n```bash\nnpx @modelcontextprotocol/inspector mcp-kettlelogic\n```\n\n### Use it in an MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"kettlelogic\": {\n      \"command\": \"mcp-kettlelogic\",\n      \"env\": { \"KETTLELOGIC_BASE_URL\": \"https://kettlelogic.com\" }\n    }\n  }\n}\n```\n\n### Or connect to the hosted server (no install)\n\nA hardened instance runs live over streamable-HTTP — point any MCP client at it:\n\n```json\n{\n  \"mcpServers\": {\n    \"kettlelogic\": { \"url\": \"https://kettlelogic.com/mcp\" }\n  }\n}\n```\n\n## Publishing to the MCP registry\n\nThis server is listed in the public [MCP registry](https://registry.modelcontextprotocol.io)\nas **`com.kettlelogic/mcp-kettlelogic`** (brand: *kettlelogic*, not a personal GitHub\nhandle). [`server.json`](server.json) is the manifest — it advertises the hosted\nstreamable-HTTP remote and validates against the `2025-12-11` schema.\n\nThe listing is claimed by **HTTP domain ownership**, not a GitHub login: the registry\nfetches `https://kettlelogic.com/.well-known/mcp-registry-auth` (a public-key challenge\nserved by the marketing site — `web/public/.well-known/mcp-registry-auth` in the\n`kettlelogic` repo) and verifies a signature made with our Ed25519 **private** key.\n\n### Automated (on a self-hosted runner)\n\n[`.github/workflows/publish-registry.yml`](.github/workflows/publish-registry.yml)\n**publishes automatically on every GitHub Release** (and via manual *Run workflow*).\nIt runs on a **self-hosted runner in our cluster** (`runs-on: [self-hosted, linux,\ncluster]`) — chosen because GitHub-hosted minutes run out fast, and this way the\npublish costs zero quota and won't fail when the month is drained. That runner also\nmounts the signing key from an in-cluster Secret (`/opt/mcp/key-hex`), so the key\nnever lives in GitHub Actions secrets.\n\nSo the normal flow is: **bump `version.py` + `server.json` `version` → cut a GitHub\nRelease** → the registry updates itself.\n\nRunner setup is one-time and lives in the private home repo:\n`deployments/github-runner/` (README there). **If the runner is down**, re-run from\nthe Actions tab, or use the local fallback below — it always works with no infra.\n\n### Manual\n\nIf you ever need to publish by hand:\n\n```bash\n# 1. Get the CLI (prebuilt binary from the registry releases)\ncurl -L https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz | tar xz mcp-publisher\n\n# 2. From the repo root (where server.json lives):\n./mcp-publisher validate\n./mcp-publisher login http --domain kettlelogic.com \\\n  --private-key \"$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)\"\n./mcp-publisher publish\n```\n\n### Keys & recovery & rotation\n\nThe Ed25519 key authorizes publishing under the `com.kettlelogic` namespace. It\nexists in **three places** (the private key is intentionally NOT in git):\n\n1. **Local** — `.secrets/mcp-registry-key.pem` (gitignored). Convenience for manual publishes.\n2. **Cluster** — Secret `mcp-registry-key` (key `key-hex`) in the `github-runner`\n   namespace. This is what the auto-publish runner uses, and the **canonical backup**.\n3. **Public half** — served at `https://kettlelogic.com/.well-known/mcp-registry-auth`\n   (committed in the kettlelogic repo as `web/public/.well-known/mcp-registry-auth`).\n\n**Lost the local `.pem`?** Recover the signing key (as hex) straight from the cluster —\npublishing only needs the hex, not the pem file:\n\n```bash\nKEY_HEX=\"$(kubectl -n github-runner get secret mcp-registry-key -o jsonpath='{.data.key-hex}' | base64 -d)\"\n./mcp-publisher login http --domain kettlelogic.com --private-key \"$KEY_HEX\"\n./mcp-publisher publish\n```\n\n**Rotate** (if the key is ever exposed):\n\n```bash\nopenssl genpkey -algorithm Ed25519 -out .secrets/mcp-registry-key.pem   # new key\nPUB=\"$(openssl pkey -in .secrets/mcp-registry-key.pem -pubout -outform DER | tail -c 32 | base64)\"\n# 1. update the served challenge (in the kettlelogic repo) + redeploy the site:\necho \"v=MCPv1; k=ed25519; p=$PUB\" > ../kettlelogic/web/public/.well-known/mcp-registry-auth\n# 2. update the cluster Secret the runner uses:\nkubectl -n github-runner delete secret mcp-registry-key\nkubectl -n github-runner create secret generic mcp-registry-key \\\n  --from-literal=key-hex=\"$(openssl pkey -in .secrets/mcp-registry-key.pem -outform DER | tail -c 32 | xxd -p -c 64)\"\n# 3. re-publish (new key must be live at the well-known URL first).\n```\n\n**Versions are immutable** in the registry — you can't re-publish an existing version;\nbump `version.py` + `server.json` first.\n\n## Configure\n\n| Env var | Default | Purpose |\n|---------|---------|---------|\n| `KETTLELOGIC_BASE_URL` | `https://kettlelogic.com` | Target site to read. Point it at your own. |\n| `KETTLELOGIC_TRANSPORT` | `stdio` | `stdio` (local clients) or `streamable-http` (network/k8s). |\n| `KETTLELOGIC_HTTP_HOST` / `KETTLELOGIC_HTTP_PORT` | `0.0.0.0` / `8080` | Bind for the http transport. |\n| `KETTLELOGIC_METRICS_PORT` | _(unset)_ | If set, serve Prometheus metrics at `/metrics`. |\n| `KETTLELOGIC_LOG_LEVEL` | `INFO` | Log level. Logs go to **stderr** (stdout is the MCP channel). |\n| `KETTLELOGIC_CACHE_TTL_SECONDS` / `KETTLELOGIC_MAX_ARTICLES` / `KETTLELOGIC_FETCH_CONCURRENCY` / `KETTLELOGIC_OVERVIEW_MAX_CHARS` | see `constants.py` | Tuning. |\n\n## Containers & Kubernetes\n\nFor network deployment the server runs the **streamable-http** transport.\n\n```bash\ndocker compose -f deploy/docker/docker-compose.yaml up --build\n```\n\nKubernetes manifests live in [`deploy/k8s/`](./deploy/k8s/) (Deployment with 2\nreplicas, readiness/liveness probes, resource bounds, non-root + read-only root FS,\nClusterIP Service, ConfigMap). Apply with:\n\n```bash\nkubectl apply -k deploy/k8s\n```\n\n## Observability\n\n- **Logging** — structured logs to **stderr**: operation start/finish + durations,\n  fetch results, cache hits/misses, errors. Set `KETTLELOGIC_LOG_LEVEL`.\n- **Metrics** — Prometheus `/metrics` (set `KETTLELOGIC_METRICS_PORT`):\n  `mcp_operations_total`, `mcp_errors_total`, `mcp_http_fetches_total`,\n  `mcp_http_errors_total`, `mcp_cache_total{result}`, `mcp_op_duration_seconds`.\n\n## Develop & test\n\n```bash\npip install -e \".[dev]\"\nruff check src tests        # lint + import order\nmypy                        # type check (disallow-untyped-defs)\npytest                      # unit + e2e + ratchets, coverage gate (fail-under 90%)\n```\n\nCoverage runs ~99%. See [ARCHITECTURE.md](./ARCHITECTURE.md) for layering, the\nrequest flow, and the full list of ratchets.\n\n## License\n\nMIT — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:32:15.435Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_articles",
+      "description": "Search Kettle Logic insight articles by title, slug or description."
+    },
+    {
+      "name": "get_industry_overview",
+      "description": "Return a plain-text overview for an industry page (slug, e.g. \"retail\")."
+    },
+    {
+      "name": "list_articles",
+      "description": "List every Kettle Logic insight article (title, slug, description) as JSON."
+    },
+    {
+      "name": "list_industries",
+      "description": "List the industries Kettle Logic publishes guidance for (name + slug) as JSON."
+    },
+    {
+      "name": "get_article",
+      "description": "Fetch one insight article as readable text (slug, e.g. \"control-tower-operations\")."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:32:15.547Z",
+  "toolsPreviewStatus": "ok"
+}

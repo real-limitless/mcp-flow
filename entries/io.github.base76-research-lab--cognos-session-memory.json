@@ -1,0 +1,76 @@
+{
+  "id": "io.github.base76-research-lab/cognos-session-memory",
+  "title": "cognos-session-memory",
+  "description": "CognOS trust scoring (C=p·(1-Ue-Ua)) and session trace storage as MCP tools.",
+  "summary": "CognOS trust scoring (C=p·(1-Ue-Ua)) and session trace storage as MCP tools.",
+  "offersHint": "CognOS trust scoring (C=p·(1-Ue-Ua)) and session trace storage as MCP tools. · Packages: pypi:cognos-session-memory-mcp · Env vars: COGNOS_TRACE_DB",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "cognos-session-memory-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "COGNOS_TRACE_DB",
+        "description": "Path to SQLite trace database (default: data/traces.sqlite3)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "cognos-session-memory-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "COGNOS_TRACE_DB",
+          "description": "Path to SQLite trace database (default: data/traces.sqlite3)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "COGNOS_TRACE_DB",
+      "description": "Path to SQLite trace database (default: data/traces.sqlite3)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/base76-research-lab/cognos-session-memory",
+  "repository": {
+    "url": "https://github.com/base76-research-lab/cognos-session-memory",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-03T12:01:43.423657Z",
+  "publishedAt": "2026-03-03T12:01:43.423657Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:19.943Z",
+    "sourceRepoAt": "2026-08-11T23:55:31.894Z",
+    "readmeAt": "2026-08-11T23:55:32.547Z",
+    "toolsAt": "2026-08-12T01:29:19.943Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/base76-research-lab/cognos-session-memory",
+    "checkedAt": "2026-08-11T23:55:31.894Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/base76-research-lab/cognos-session-memory/main/README.md",
+    "markdown": "# CognOS Session Memory\n\nmcp-name: io.github.base76-research-lab/cognos-session-memory\n\n**Verified context injection via epistemic trust scoring for LLMs.**\n\nSolves session fragmentation by maintaining verified, high-confidence session context between conversations.\n\n## Problem\n\nLarge language models suffer from **session fragmentation**: each new conversation starts without verified context of previous work. This forces repeated explanations, loses decision history, and breaks long-running workflows.\n\nExisting solutions (persistent memory systems, vector retrieval) either:\n- Lack trust scores before injection → hallucinations propagate\n- Don't audit which context was injected → compliance gaps\n- Treat all past information equally → noise overwhelms signal\n\n## Solution\n\nA **plan-mode gateway** that:\n\n1. **Extracts** structured context from 3-5 recent traces\n2. **Scores** context quality via CognOS epistemic formula: `C = p · (1 − Ue − Ua)`\n3. **Injects** as system prompt only if `C > threshold`\n4. **Flags** for manual review if `C < threshold`\n5. **Audits** every context injection with trace IDs → EU AI Act compliance\n\n## Architecture\n\n```\nrecent_traces (n=5)\n    ↓\nextract_context() → ContextField + coverage\n    ↓\ncompute_trust_score(p, ue, ua) → C, R, decision\n    ↓\nif C > threshold:\n    system_prompt ← inject\nelse:\n    flagged_reason ← manual review\n```\n\n### Core Formula\n\n```\nC = p · (1 − Ue − Ua)\nR = 1 − C\n\nwhere:\n  p   = prediction confidence (coverage of required fields)\n  Ue  = epistemic uncertainty (divergence between traces)\n  Ua  = aleatoric uncertainty (mean risk in traces)\n```\n\n### Action Gate\n\n```\nR < 0.25       → PASS      (inject without review)\n0.25 ≤ R < 0.60 → REFINE   (inject with caution)\nR ≥ 0.60       → ESCALATE  (flag for manual review)\n```\n\n## API\n\n### POST /v1/plan\n\nExtract and score context.\n\n**Request:**\n```json\n{\n  \"n\": 5,\n  \"trust_threshold\": 0.75,\n  \"mode\": \"auto\"\n}\n```\n\n**Response (if injected):**\n```json\n{\n  \"status\": \"injected\",\n  \"trust_score\": 0.82,\n  \"confidence\": 0.82,\n  \"risk\": 0.18,\n  \"decision\": \"PASS\",\n  \"context\": {\n    \"active_project\": \"CognOS mHC research\",\n    \"last_decision\": \"Verify P1 hypothesis\",\n    \"open_questions\": [\"How does routing entropy scale?\"],\n    \"current_output\": \"exp_008 complete\",\n    \"recent_models\": [\"gpt-4\", \"claude-3\", \"mistral\"]\n  },\n  \"system_prompt\": \"## CognOS Context...\",\n  \"trace_ids\": [\"uuid-1\", \"uuid-2\", ...]\n}\n```\n\n**Response (if flagged):**\n```json\n{\n  \"status\": \"flagged\",\n  \"trust_score\": 0.45,\n  \"decision\": \"REFINE\",\n  \"flagged_reason\": \"Trust score 0.45 below threshold 0.75. Manual review recommended.\",\n  \"trace_ids\": [...]\n}\n```\n\n## Modes\n\n- **auto** (default) — inject if `trust_score ≥ threshold`, else flag\n- **force** — always inject (for testing)\n- **dry_run** — compute score but never inject\n\n## Claude Code Integration\n\n### As a /compact replacement\n\n```bash\n# In any Claude Code session:\n/save\n```\n\nClaude writes a structured summary, trust-scores it, and persists it to SQLite.\nNext session: automatically injected as `SESSION_CONTEXT` before your first prompt.\n\nSee [docs/COMPACT_ALTERNATIVE.md](docs/COMPACT_ALTERNATIVE.md) for a full comparison.\n\n### As an MCP server\n\nAdd to `~/.claude/settings.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cognos-session-memory\": {\n      \"command\": \"python3\",\n      \"args\": [\"/path/to/cognos-session-memory/mcp_server.py\"]\n    }\n  }\n}\n```\n\nTools exposed:\n\n| Tool | Description |\n|------|-------------|\n| `save_session(summary, project?)` | Trust-score and persist a session summary |\n| `load_session(threshold?)` | Retrieve last verified context (default threshold: 0.45) |\n\n---\n\n## Quick Start\n\n### Installation\n\n```bash\ngit clone https://github.com/base76-research-lab/cognos-session-memory\ncd cognos-session-memory\npip install -e .\n```\n\n### Run Gateway\n\n```bash\npython3 -m uvicorn --app-dir src main:app --port 8788\n```\n\n### Test /v1/plan (dry_run)\n\n```bash\ncurl -X POST http://127.0.0.1:8788/v1/plan \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"n\": 5, \"mode\": \"dry_run\"}'\n```\n\n### Test /v1/plan (auto)\n\n```bash\ncurl -X POST http://127.0.0.1:8788/v1/plan \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"n\": 5, \"trust_threshold\": 0.75, \"mode\": \"auto\"}'\n```\n\n## Modules\n\n- **trust.py** — CognOS confidence formula, action gate, signal extractors\n- **trace_store.py** — SQLite persistence (write/read/purge)\n- **plan.py** — Context extraction, trust scoring, system prompt building\n- **main.py** — FastAPI gateway + middleware\n- **mcp_server.py** — MCP stdio server (`save_session`, `load_session`)\n\n## Testing\n\n```bash\npytest tests/ -v --cov=src\n```\n\n## Documentation\n\n- [COMPACT_ALTERNATIVE.md](docs/COMPACT_ALTERNATIVE.md) — Why this beats `/compact`\n- [PAPER.md](docs/PAPER.md) — Research paper\n\n## Research Paper\n\nSee [docs/PAPER.md](docs/PAPER.md) — \"Verified Context Injection: Epistemically Scored Session Memory for Large Language Models\"\n\n**Status:** Independent research — Base76 Research Lab, 2026\n**Authors:** Björn André Wikström (Base76)\n\n## Citation\n\n```bibtex\n@software{wikstrom2026cognos,\n  author = {Wikström, Björn André},\n  title = {{CognOS Session Memory}: Verified Context Injection via Epistemic Trust Scoring},\n  year = {2026},\n  url = {https://github.com/base76-research-lab/cognos-session-memory}\n}\n```\n\n## License\n\nMIT\n\n## Contact\n\n- **Author:** Björn André Wikström\n- **Email:** bjorn@base76.se\n- **ORCID:** 0009-0000-4015-2357\n- **GitHub:** [base76-research-lab](https://github.com/base76-research-lab)\n",
+    "fetchedAt": "2026-08-11T23:55:32.547Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:19.943Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

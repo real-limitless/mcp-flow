@@ -1,0 +1,88 @@
+{
+  "id": "io.github.inSideos-designs/cowork-qa",
+  "title": "cowork-qa",
+  "description": "Goal-driven Playwright browser sessions for LLMs, with full action traces and aria-snapshots.",
+  "summary": "Goal-driven Playwright browser sessions for LLMs, with full action traces and aria-snapshots.",
+  "offersHint": "Goal-driven Playwright browser sessions for LLMs, with full action traces and aria-snapshots. · Packages: npm:cowork-qa-mcp · Env vars: COWORK_QA_DATA, COWORK_QA_HEADED",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "cowork-qa-mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "COWORK_QA_HEADED",
+        "description": "Set to '1' to launch Chromium with a visible window instead of headless."
+      },
+      {
+        "name": "COWORK_QA_DATA",
+        "description": "Directory where session traces (<session-id>.json) are written. Defaults to <cwd>/.cowork-qa."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "cowork-qa-mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "COWORK_QA_HEADED",
+          "description": "Set to '1' to launch Chromium with a visible window instead of headless."
+        },
+        {
+          "name": "COWORK_QA_DATA",
+          "description": "Directory where session traces (<session-id>.json) are written. Defaults to <cwd>/.cowork-qa."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "COWORK_QA_DATA",
+      "description": "Directory where session traces (<session-id>.json) are written. Defaults to <cwd>/.cowork-qa."
+    },
+    {
+      "name": "COWORK_QA_HEADED",
+      "description": "Set to '1' to launch Chromium with a visible window instead of headless."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/inSideos-designs/cowork-qa-mcp",
+  "repository": {
+    "url": "https://github.com/inSideos-designs/cowork-qa-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-06T14:24:46.665628Z",
+  "publishedAt": "2026-05-06T14:24:46.665628Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:02.994Z",
+    "sourceRepoAt": "2026-08-11T23:42:32.513Z",
+    "readmeAt": "2026-08-11T23:42:33.018Z",
+    "toolsAt": "2026-08-12T01:20:02.995Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/inSideos-designs/cowork-qa-mcp",
+    "checkedAt": "2026-08-11T23:42:32.513Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/inSideos-designs/cowork-qa-mcp/main/README.md",
+    "markdown": "# cowork-qa-mcp\n\n![demo](docs/demo.gif)\n\nA [Model Context Protocol](https://modelcontextprotocol.io) server that gives an LLM a real Chromium browser, records every action it takes toward a stated goal, and hands back a structured trace so the LLM (or a second LLM) can decide whether the goal was actually achieved.\n\nBuilt on [Playwright](https://playwright.dev). Five tools, one binary, no cloud dependency.\n\n## Why\n\nMost browser-tool MCP servers are stateless — the LLM clicks, gets HTML back, repeats. There's no record of what happened, no way to grade the run after the fact, and no goal context.\n\n`cowork-qa-mcp` flips that:\n\n- Every session **starts with a goal in plain English**.\n- Every action (`goto`, `click`, `fill`, `press`, `eval`) is **recorded with timestamps, the URL after, and the page's aria-snapshot**.\n- When the session ends, a JSON trace is persisted to disk and exposed via a single `qa_get_trace` call.\n\nThe orchestrating LLM can then reason over the trace (\"did this run actually fulfill the goal, or did it click the wrong button?\") instead of trusting the run-time chatter.\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `session_start` | Open a fresh tab, optional starting URL, return a session id |\n| `session_act` | Run one of: `goto`, `click`, `fill`, `press`, `eval`. Records the step. |\n| `session_observe` | Return current URL + full aria-snapshot of the page |\n| `session_end` | Close the tab, persist the trace to disk, return the file path |\n| `qa_get_trace` | Return the goal, every step, final URL, and final aria-snapshot — formatted for an LLM to read |\n\n## Install\n\nRequires Node 20+. The package is on npm — no clone needed.\n\n```bash\n# Try it once, no install\nnpx cowork-qa-mcp\n\n# Or install globally\nnpm install -g cowork-qa-mcp\n```\n\nThe first install pulls Chromium via Playwright's `postinstall` (~150 MB).\n\n## Wire into your MCP-compatible client\n\n### Claude Code\n\n```bash\nclaude mcp add cowork-qa --scope user -- npx -y cowork-qa-mcp\n```\n\nTo watch the browser instead of running headless:\n\n```bash\nclaude mcp add cowork-qa --scope user \\\n  -e COWORK_QA_HEADED=1 \\\n  -- npx -y cowork-qa-mcp\n```\n\nVerify with `/mcp` inside a fresh `claude` session — you should see `cowork-qa ✓ connected` and 5 tools.\n\n### Claude Desktop\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"cowork-qa\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"cowork-qa-mcp\"]\n    }\n  }\n}\n```\n\n### Cursor / Windsurf / other MCP clients\n\nAny client that speaks the MCP stdio transport works. Point its server config at `npx -y cowork-qa-mcp`.\n\n### From source (for development)\n\n```bash\ngit clone https://github.com/inSideos-designs/cowork-qa-mcp.git\ncd cowork-qa-mcp\nnpm install\nnpm run build\nnode dist/server.js   # stdio server, expects an MCP client\n```\n\n### MCP Registry\n\nThis server is also published on the official [MCP Server Registry](https://registry.modelcontextprotocol.io) as `io.github.inSideos-designs/cowork-qa` — clients that auto-discover from the registry will find it without any manual config.\n\n## Environment variables\n\n| Variable | Default | Purpose |\n|---|---|---|\n| `COWORK_QA_HEADED` | unset (headless) | Set to `1` to launch Chromium with a visible window |\n| `COWORK_QA_DATA` | `<cwd>/.cowork-qa` | Directory where `<session-id>.json` traces are written |\n\n## Usage example\n\nA typical end-to-end loop the orchestrating LLM runs:\n\n```\nsession_start({ goal: \"find the cheapest 14\\\" MacBook Pro on apple.com\",\n                url: \"https://www.apple.com/shop/buy-mac/macbook-pro\" })\n  → { session_id: \"abc-123\" }\n\nsession_observe({ session_id: \"abc-123\" })\n  → URL + aria-snapshot\n\nsession_act({ session_id: \"abc-123\", action: \"click\",\n              target: \"button:has-text('Continue')\" })\n\n# ... more acts / observes ...\n\nsession_end({ session_id: \"abc-123\" })\n  → { steps: 7, trace_path: \"~/.cowork-qa/abc-123.json\" }\n\nqa_get_trace({ session_id: \"abc-123\" })\n  → Goal: ...\n    Steps (7 total): ...\n    Final URL: ...\n    Final aria-snapshot: ...\n```\n\n## Trace format\n\nEach trace is a JSON file:\n\n```json\n{\n  \"session_id\": \"abc-123\",\n  \"goal\": \"...\",\n  \"steps\": [\n    {\n      \"t\": 142,\n      \"action\": \"click\",\n      \"args\": { \"target\": \"...\", \"value\": null },\n      \"url_after\": \"...\",\n      \"aria_after\": \"...\"\n    }\n  ],\n  \"final\": { \"url\": \"...\", \"aria\": \"...\" },\n  \"path\": \"/.../abc-123.json\"\n}\n```\n\n## Limitations / known quirks\n\n- `session_observe` calls **don't show up in the trace's step count** — only `session_act` calls do. The final aria-snapshot is captured at `session_end`.\n- `eval` runs the JS expression but **doesn't return the value to the caller** — only side effects on the page are observable.\n- One Chromium process is shared across all sessions in a server instance; each session gets its own context (cookies, etc. are isolated).\n- Selectors are passed straight to Playwright. CSS, text-selectors (`button:has-text(\"Send\")`), and `role=` selectors all work.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\n## Contributing\n\nPRs welcome. Keep it small: this is meant to stay a thin, auditable server.\n",
+    "fetchedAt": "2026-08-11T23:42:33.018Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:02.995Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

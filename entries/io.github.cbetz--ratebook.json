@@ -1,0 +1,58 @@
+{
+  "id": "io.github.cbetz/ratebook",
+  "title": "ratebook",
+  "description": "Open MCP server for US electricity tariffs: real rate lookup, bill estimates, and when to charge.",
+  "summary": "Open MCP server for US electricity tariffs: real rate lookup, bill estimates, and when to charge.",
+  "offersHint": "Open MCP server for US electricity tariffs: real rate lookup, bill estimates, and when to charge. · Packages: pypi:ratebook-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "ratebook-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "ratebook-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/cbetz/ratebook",
+  "repository": {
+    "url": "https://github.com/cbetz/ratebook",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-29T01:03:02.639611Z",
+  "publishedAt": "2026-06-29T01:03:02.639611Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:53.357Z",
+    "sourceRepoAt": "2026-08-11T23:53:28.383Z",
+    "readmeAt": "2026-08-11T23:53:29.185Z",
+    "toolsAt": "2026-08-12T01:27:53.357Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/cbetz/ratebook",
+    "checkedAt": "2026-08-11T23:53:28.383Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/cbetz/ratebook/main/README.md",
+    "markdown": "# Ratebook\n\nThe open rate engine for the electrified home — an openly licensed database of US electricity\ntariffs, an open-source rate-calculation engine, and an MCP server, so any app, device, or agent\ncan answer \"what will this kWh cost me, and when should I charge?\"\n\n[![License: Apache-2.0](https://img.shields.io/badge/code-Apache--2.0-blue.svg)](LICENSE)\n[![Data: CC0-1.0](https://img.shields.io/badge/data-CC0--1.0-lightgrey.svg)](LICENSE-DATA)\n[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)\n[![CI](https://github.com/cbetz/ratebook/actions/workflows/ci.yml/badge.svg)](https://github.com/cbetz/ratebook/actions/workflows/ci.yml)\n\n![Ratebook demo — estimate a monthly bill, and see how charging an EV off-peak is ~23% cheaper, computed live by the engine](demo/ratebook-demo.gif)\n\n<sub>↑ The real engine running in the browser. Try it yourself: [`demo/demo.html`](demo/demo.html).</sub>\n\n> **Status: pre-release.** What works today: a deterministic rate engine (Python + a TypeScript\n> port held to it byte-for-byte), cross-validated against NREL's PySAM and shown to reproduce a\n> real bill's total once its components are supplied; an LLM pipeline that extracts tariff\n> structure from utility PDFs; an MCP server; and a Home Assistant integration. What's still in progress: broad utility coverage, freshness automation,\n> and a reproducible public accuracy scorecard. See [`docs/ROADMAP.md`](docs/ROADMAP.md).\n\n## Quickstart\n\nThe engine has no I/O and no required data download — price a tariff in a few lines:\n\n```sh\ngit clone https://github.com/cbetz/ratebook && cd ratebook\nuv sync\nuv run python quickstart.py   # or paste the snippet below into `uv run python`\n```\n\n```python\nfrom datetime import date\nfrom decimal import Decimal\nfrom ratebook import (\n    Tariff, TariffIdentity, Sector, EnergyRateStructure, EnergyPeriod, EnergyTier,\n    Schedule, FixedCharge, FixedChargeUnit, Usage, BillingWindow, estimate_bill,\n)\n\n# A flat residential tariff: $0.10276/kWh + $11.30/month (PECO Rate R distribution).\nno_tou = tuple(tuple(0 for _ in range(24)) for _ in range(12))  # 12 months × 24 hours, one period\ntariff = Tariff(\n    energy=EnergyRateStructure(periods=(EnergyPeriod(tiers=(EnergyTier(rate=Decimal(\"0.10276\")),)),)),\n    schedule=Schedule(weekday=no_tou, weekend=no_tou),\n    identity=TariffIdentity(plan_code=\"R\", plan_name=\"Example flat residential\", sector=Sector.RESIDENTIAL),\n    fixed_charges=(FixedCharge(Decimal(\"11.30\"), FixedChargeUnit.PER_MONTH),),\n)\n\nbill = estimate_bill(tariff, Usage.aggregate(1244), BillingWindow(date(2026, 4, 28), 30))\nprint(f\"ok={bill.ok}  total=${bill.total}\")   # ok=True  total=$139.13344  →  1244 kWh × $0.10276 + $11.30\n```\n\nReal tariffs round-trip through JSON via `Tariff.from_json(...)`. To work with corpus data, load\nthe URDB seed set (`uv run ratebook-data urdb`) or run the MCP server (`uv run ratebook-mcp`) and\nask an agent `lookup_tariff` / `estimate_bill` / `compare_plans` / `best_charge_window`.\n\n## Development\n\nPython 3.12+, [uv](https://docs.astral.sh/uv/) workspace with these packages:\n`packages/ratebook` (rate engine), `packages/ratebook-data` (data plant),\n`packages/ratebook-mcp` (MCP server), `packages/ratebook-ts` (the TypeScript engine port —\npnpm + vitest, held to the Python engine via shared JSON test vectors), and\n`packages/ratebook-homeassistant` (a Home Assistant custom integration: electricity-price +\ncheapest-charge-window sensors).\n\n```sh\nuv sync                            # install all workspace packages + dev tools\nuv run pytest                      # Python tests\nuv run ruff check .                # lint\nuv run ratebook-data urdb          # download URDB bulk CSV → data/raw/, load into data/ratebook.duckdb\nuv run ratebook-mcp                # run the MCP server (stdio)\n\npnpm -C packages/ratebook-ts install && pnpm -C packages/ratebook-ts test   # TS engine + vectors\n```\n\nThe PySAM cross-validation runs in CI against committed tariff fixtures (`uv sync --group\nvalidation` installs the oracle). The MCP tool tests additionally need the built corpus and run\nlocally (`uv run ratebook-data urdb`); they skip otherwise. The two engines must never\ndiverge: both reproduce `packages/ratebook/tests/vectors/v0_bills.json` byte-for-byte. Regenerate\nit with `uv run python packages/ratebook/tests/generate_vectors.py`.\n\nSee [`CONTRIBUTING.md`](CONTRIBUTING.md) — the highest-value contribution is a **tariff\ncorrection** (report a wrong or stale rate with its source PDF).\n\n## License\n\nCode is licensed under [Apache-2.0](LICENSE). Published datasets are dedicated to the public\ndomain under [CC0-1.0](LICENSE-DATA). The seed corpus derives from the\n[U.S. Utility Rate Database](https://apps.openei.org/USURDB/) (CC0).\n",
+    "fetchedAt": "2026-08-11T23:53:29.185Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:53.357Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

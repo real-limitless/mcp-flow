@@ -1,0 +1,95 @@
+{
+  "id": "io.github.zmarten/meatspace",
+  "title": "MeatSpace",
+  "description": "Human-in-the-loop for AI agents. Submit choices, get a human decision.",
+  "summary": "Human-in-the-loop for AI agents. Submit choices, get a human decision.",
+  "offersHint": "Human-in-the-loop for AI agents. Submit choices, get a human decision. · Remote MCP (streamable-http) at https://meatspace.run/api/mcp · Optional headers: Authorization",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://meatspace.run/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://meatspace.run/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token for the ask_human tool. Optional — get_service_status and provision_api_key require no auth, so a fresh client can connect without credentials and call provision_api_key to mint a token instantly.",
+          "secret": true,
+          "valueTemplate": "Bearer {api_key}",
+          "variables": [
+            {
+              "name": "api_key",
+              "description": "Your MeatSpace API key. Mint one with provision_api_key (no auth, rate-limited to 5 keys per email) or via POST https://meatspace.run/api/keys.",
+              "secret": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://meatspace.run",
+  "sourceUrl": "https://github.com/zmarten/meatspace",
+  "repository": {
+    "url": "https://github.com/zmarten/meatspace",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-07T02:27:35.361172Z",
+  "publishedAt": "2026-05-07T02:27:35.361172Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token for the ask_human tool. Optional — get_service_status and provision_api_key require no auth, so a fresh client can connect without credentials and call provision_api_key to mint a token instantly.",
+      "secret": true,
+      "valueTemplate": "Bearer {api_key}",
+      "variables": [
+        {
+          "name": "api_key",
+          "description": "Your MeatSpace API key. Mint one with provision_api_key (no auth, rate-limited to 5 keys per email) or via POST https://meatspace.run/api/keys.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:47.979Z",
+    "sourceRepoAt": "2026-08-11T23:13:22.807Z",
+    "readmeAt": "2026-08-11T23:13:23.402Z",
+    "toolsAt": "2026-08-11T23:13:23.766Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/zmarten/meatspace",
+    "checkedAt": "2026-08-11T23:13:22.807Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/zmarten/meatspace/master/README.md",
+    "markdown": "# MeatSpace\n\nHuman-in-the-loop service for AI agents. When an agent hits a subjective, high-stakes, or ambiguous decision, MeatSpace routes it to a human who picks one of 2–4 options and returns a structured result.\n\n**Live at [meatspace.run](https://meatspace.run)**\n\n## What it does\n\nAn agent posts a title, optional content (text, markdown, HTML, or an image), and 2–4 labeled choices. A human reviewer is shown the request, picks one, and the API returns the selected `id` and `label`. The agent waits via long-poll or webhook.\n\nTypical use cases:\n\n- Approval gates before destructive or irreversible actions (deploys, deletes, payments).\n- Subjective tie-breaks where the model is below its confidence threshold.\n- Tasteful judgment calls — copy choices, design preferences, ranking ties.\n- Escalation when an agent has run out of deterministic checks.\n\nDon't use it when the task is deterministic, automatically verifiable, or low-stakes and easily reversible.\n\n## Three integration methods\n\n| Method | Endpoint | Best for |\n|---|---|---|\n| **REST API** | `POST /api/requests` | Any HTTP client, custom agent frameworks, server-to-server. |\n| **MCP** | `POST /api/mcp` (Streamable HTTP) | Claude, Claude Code, MCP-compatible clients. |\n| **Browser SDK** | [`/sdk/meatspace.js`](public/sdk/meatspace.js) | Agents running in a browser tab. |\n\nAll three sit on the same backing API and accept the same Bearer token.\n\n## Zero-setup self-service flow\n\nA new agent can fully onboard itself in three calls — no signup page, no approval queue, no human in the setup loop:\n\n1. `POST /api/keys` with `{\"name\": \"your-agent\", \"email\": \"owner@example.com\"}` → returns an API key instantly. Rate-limited to 5 keys per email.\n2. `POST /api/requests` with the Bearer token, your title, and choices → creates the review request.\n3. `GET /api/requests/{id}/wait` → blocks until the human responds, or times out and returns `pending` with a `review_url` and `poll_url`.\n\nThe same flow is available over MCP: `initialize` → `tools/list` → `provision_api_key` → `ask_human`. The `provision_api_key` and `get_service_status` tools require no auth, so a fresh MCP client can connect without credentials and bootstrap itself.\n\n## REST quickstart\n\nProvision a key:\n\n```bash\ncurl -X POST https://meatspace.run/api/keys \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\": \"my-agent\", \"email\": \"you@example.com\"}'\n```\n\nThe response includes `api_key` — shown once, save it. All subsequent calls use `Authorization: Bearer <token>`.\n\nCreate a request:\n\n```bash\ncurl -X POST https://meatspace.run/api/requests \\\n  -H \"Authorization: Bearer $MEATSPACE_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"agent_name\": \"my-agent\",\n    \"title\": \"Ship v2.0 to production?\",\n    \"content\": \"All tests pass. Staging looks good. 2 minor lint warnings.\",\n    \"choices\": [\n      { \"id\": \"ship\", \"label\": \"Ship it\" },\n      { \"id\": \"wait\", \"label\": \"Wait for next cycle\" }\n    ],\n    \"confidence\": 0.7,\n    \"consequence_of_wrong_choice\": \"Premature ship affects ~50k users\"\n  }'\n```\n\nResponse:\n\n```json\n{\n  \"success\": true,\n  \"data\": {\n    \"id\": \"uuid\",\n    \"status\": \"pending\",\n    \"review_url\": \"https://meatspace.run/review/uuid?token=opaque-review-token\",\n    \"poll_url\": \"/api/requests/uuid\",\n    \"expires_at\": \"2026-04-23T19:00:00.000Z\"\n  }\n}\n```\n\nLong-poll for the result:\n\n```bash\ncurl https://meatspace.run/api/requests/{id}/wait?timeout=25000 \\\n  -H \"Authorization: Bearer $MEATSPACE_API_KEY\"\n```\n\nReturns `{ status: \"completed\", selected, selected_label, responded_at }` when the human responds, or `202` if still pending.\n\nOptional fields on `POST /api/requests`: `content_type` (`text` default, `markdown`, `html`, `image`), `decision_reason`, `confidence` (0–1), `consequence_of_wrong_choice`, `recommended_option`, `callback_url` (must be HTTPS and host-allowlisted), `metadata` (passed through to the webhook), `run_id`, `trace_id`, `timeout_seconds` (default 3600, max 86400).\n\n## MCP\n\nMeatSpace implements MCP over Streamable HTTP at `https://meatspace.run/api/mcp`. The server exposes three tools:\n\n- `get_service_status` — availability and escalation guidance. No auth.\n- `provision_api_key` — mint a Bearer token. No auth, rate-limited.\n- `ask_human` — submit a decision. Requires Bearer auth.\n\nClaude Code config:\n\n```json\n{\n  \"mcpServers\": {\n    \"meatspace\": {\n      \"type\": \"url\",\n      \"url\": \"https://meatspace.run/api/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer <your-api-key>\"\n      }\n    }\n  }\n}\n```\n\n`ask_human` long-polls for up to 20 seconds. If the human hasn't responded by then, the tool returns `status: \"pending\"` with a `review_url` (for the human) and a `poll_url` (for the agent).\n\n## Browser SDK\n\nFor agents running in browser contexts:\n\n```html\n<script type=\"module\">\n  import { MeatSpace } from 'https://meatspace.run/sdk/meatspace.js';\n\n  const ms = new MeatSpace();\n  await ms.getKey({ name: 'browser-agent', email: 'agent@example.com' });\n\n  const result = await ms.ask({\n    agentName: 'browser-agent',\n    title: 'Which option?',\n    choices: [\n      { id: 'a', label: 'A' },\n      { id: 'b', label: 'B' },\n    ],\n  });\n  console.log(result.selected);\n</script>\n```\n\nMethods: `getKey()`, `createRequest()`, `pollResult()`, `waitForResult()`, `ask()` (create + wait).\n\n## Webhooks\n\nIf `callback_url` is set on the request, MeatSpace POSTs the result when the human responds:\n\n```json\n{\n  \"event\": \"request.completed\",\n  \"request_id\": \"uuid\",\n  \"selected\": \"ship\",\n  \"selected_label\": \"Ship it\",\n  \"responded_at\": \"2026-04-23T18:10:00.000Z\",\n  \"metadata\": {}\n}\n```\n\n`callback_url` must be `https://` and the hostname must be explicitly allowlisted by the operator. If no allowlist is configured, request creation rejects callback URLs. Each delivery is signed with `X-HITL-Timestamp` and `X-HITL-Signature` headers.\n\n## Discovery endpoints\n\n| Path | Format | Purpose |\n|---|---|---|\n| `/.well-known/mcp.json` | JSON | MCP server manifest |\n| `/.well-known/agent.json` | JSON | A2A Agent Card |\n| `/api/openapi` | JSON | OpenAPI 3.1 spec |\n| `/api/mcp` (GET) | JSON | MCP server info, no auth |\n| `/api/status` | JSON | Health check + agent guidance |\n| `/sdk/meatspace.js` | JavaScript | Browser SDK |\n| `/llms.txt` | Text | LLM-readable summary |\n| `/llms-full.txt` | Text | Full API documentation |\n| `/agents.md` | Markdown | Full integration guide |\n| `/sitemap.xml` | XML | Sitemap |\n| `/robots.txt` | Text | Crawler directives + discovery pointers |\n\n## Errors\n\nAll errors return:\n\n```json\n{\n  \"success\": false,\n  \"error\": \"Human-readable message\",\n  \"code\": \"machine_readable_code\"\n}\n```\n\nCommon codes: `agent_name_required`, `invalid_choice_count`, `content_too_large`, `callback_url_not_allowed`, `request_create_failed`.\n\n## Local development\n\nThis repo is a Next.js 14 app deployed on Cloudflare Pages.\n\n```bash\nnpm install\nnpm run dev          # local dev at http://localhost:3000\nnpm run test         # integration tests\nnpm run build:cf     # build for Cloudflare Pages\nnpm run deploy:cf    # build and deploy\n```\n\nSupabase is the system of record for keys and requests; Resend handles transactional email.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:13:23.402Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_service_status",
+      "description": "Check whether MeatSpace is available and when to use a human. Call this when deciding whether to escalate a subjective or high-consequence choice."
+    },
+    {
+      "name": "ask_human",
+      "description": "Present content to a human and ask them to choose between options. Use this for subjective judgment, approval, preference, or tie-breaks. Avoid using it for deterministic checks or reversible low-stakes choices. The tool waits briefly for a result, then returns pending if the human has not responded yet."
+    },
+    {
+      "name": "provision_api_key",
+      "description": "Create a MeatSpace API key instantly. No authentication required. Returns a Bearer token for use with the ask_human tool. Max 5 active keys per email address."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:13:23.766Z",
+  "toolsPreviewStatus": "ok"
+}

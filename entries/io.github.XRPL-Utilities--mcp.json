@@ -1,0 +1,59 @@
+{
+  "id": "io.github.XRPL-Utilities/mcp",
+  "title": "XRPL-Utilities",
+  "description": "XRPL data tools for AI agents: wallet classifier, signals, RWA tracker, ETF flows. Pay via x402.",
+  "summary": "XRPL data tools for AI agents: wallet classifier, signals, RWA tracker, ETF flows. Pay via x402.",
+  "offersHint": "XRPL data tools for AI agents: wallet classifier, signals, RWA tracker, ETF flows. Pay via x402. · Packages: npm:@xrpl-utilities/mcp",
+  "version": "0.2.192",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@xrpl-utilities/mcp",
+    "version": "0.2.192",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@xrpl-utilities/mcp",
+      "version": "0.2.192",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://mcp.xrpl-utilities.io",
+  "sourceUrl": "https://github.com/XRPL-Utilities/xrpl-utilities-mcp",
+  "repository": {
+    "url": "https://github.com/XRPL-Utilities/xrpl-utilities-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T17:17:46.834447Z",
+  "publishedAt": "2026-08-11T17:17:46.834447Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:32:35.827Z",
+    "sourceRepoAt": "2026-08-11T23:59:47.119Z",
+    "readmeAt": "2026-08-11T23:59:47.636Z",
+    "toolsAt": "2026-08-12T01:32:35.827Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/XRPL-Utilities/xrpl-utilities-mcp",
+    "checkedAt": "2026-08-11T23:59:47.119Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/XRPL-Utilities/xrpl-utilities-mcp/main/README.md",
+    "markdown": "# @xrpl-utilities/mcp\n\n[Model Context Protocol](https://modelcontextprotocol.io) server for the\nXRPL-Utilities™ portfolio. Exposes the read endpoints of all six\nservices as MCP tools so AI agents can discover and use them, either\nlocally via stdio (Claude Desktop, MCP Inspector, etc.) or remotely\nvia the hosted endpoint at `mcp.xrpl-utilities.io`.\n\n## Services covered\n\n| Service       | What it does                                            | Tools |\n|---------------|---------------------------------------------------------|-------|\n| **XR-Sentinel**  | XRPL wallet activity-pattern classifier (0-100 score, 35-signal catalog including account-genesis chain + provenance flags + AI narrative) | `xrpl_sentinel_scan`, `xrpl_sentinel_scan_history` |\n| **XR-Pulse**     | Normalized XRPL signal feed: public-source news, on-chain whale activity, XLS-70/80/81 lifecycle, RWA mint/burn flow, AMM-of-RWA pool snapshots. Also streamable live via `POST /stream/purchase` + WebSocket (1h/6h/24h tiers) directly on the backend; MCP exposes the snapshot endpoints here. | `xrpl_pulse_recent_events`, `xrpl_pulse_events_by_address`, `xrpl_pulse_stream_purchase` |\n| **XR-Telemetry** | XRPL macro snapshot: supply, liquidity, AMM, Active Float, Burst Math utility floor | `xrpl_telemetry_snapshot`, `xrpl_telemetry_get_quote`, `xrpl_telemetry_get_status`, `xrpl_telemetry_get_results` |\n| **XR-Trust**     | Directory + drill-down for XRPL permissioned-asset stack (XLS-70/80/81 + XLS-40 DID) | `xrpl_trust_list_domains`, `xrpl_trust_get_domain`, `xrpl_trust_credential_issuers`, `xrpl_trust_recent_events` |\n| **XR-Vault**     | Real-world asset tracker for XRPL: per-issuer mint/burn flow, daily circulating snapshots, AMM-of-RWA pool exposure across tokenized treasuries, stablecoins, commercial paper, MMFs, and energy commodities | `xrpl_vault_scan` |\n| **XR-Flows**     | ETF AUM vs XRPL exchange-flow correlation across every US-listed XRP-exposure ETF (spot + indirect-basket tiers), including SEC EDGAR filing list and launch-window flow analysis | `xrpl_flows_correlation`, `xrpl_flows_launch_impact`, `xrpl_flows_scan` |\n\n17 tools total, all read-only. Every paid call is settled via x402 v2\non the XRPL mainnet through the t54 facilitator.\n\n## Auth model\n\nThe MCP server is a **stateless passthrough proxy**. It does not hold\nwallets, manage user accounts, or subsidize calls.\n\nFor paid tools (every endpoint at $0.10 USD), the caller supplies a\n`payment_signature` argument: a base64-JSON-encoded x402 v2 payment\nheader signing an XRPL Payment that matches one of the requirements\nreturned by an unauthenticated probe. The server forwards it as the\n`PAYMENT-SIGNATURE` header on the underlying call.\n\nIf you don't supply `payment_signature`, the underlying service\nreturns its real `402 Payment Required` challenge listing three\npayment options: XRP and RLUSD on XRPL via the t54 facilitator, or\nUSDC on Base mainnet via the Coinbase x402 facilitator. The MCP\nserver passes that back to the LLM as a structured error so it can\nsign and retry against whichever rail its wallet supports.\n\nOperators can set `MCP_BYPASS_KEY` on the server to enable an opt-in\nbypass for friendlies / demos. The caller passes the matching key as\n`_bypass_key` in the tool args. Rate-limited at the proxy layer.\n\n### H-Seal receipt co-signing (optional)\n\nSet `PROVIDER_IDENTITY` (our CAIP-10, e.g. `xrpl:0:r...`) and\n`PROVIDER_KEY_RAW` (32-byte ed25519 seed, hex) on the server to have every\ntool response co-signed with an [H-Seal](https://h-seal.xr-utilities.com)\nprovider attestation. The attestation rides on the tool result's\n`_meta.hSeal`, so a caller can anchor a tamper-evident, independently\nverifiable on-chain receipt of the interaction. When either var is unset the\nfeature is inert and responses are unchanged. Never hardcode the key — env\nonly. See `src/hSeal.ts` and the ops runbook\n[`docs/hseal-provider.md`](docs/hseal-provider.md) (current identity, the\ned25519 curve gotcha, and how to rotate/recover the key).\n\n## Use it\n\n### Locally via Claude Desktop (stdio)\n\nAdd to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n\n```json\n{\n  \"mcpServers\": {\n    \"xrpl-utilities\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@xrpl-utilities/mcp\", \"--transport\", \"stdio\"]\n    }\n  }\n}\n```\n\nRestart Claude Desktop. The 17 tools should appear with the prefix\n`xrpl_`. Ask Claude to \"scan the wallet rXXX with XR-Sentinel\" or\n\"list permissioned domains on XRPL\" and the tool calls flow through.\n\n### Remotely (HTTP/SSE)\n\nPoint any MCP client at `https://mcp.xrpl-utilities.io/mcp`. Same\ntool list, same auth model.\n\n## What you need to actually pay\n\nTo avoid 402 challenges on every call, your client needs to:\n\n1. Hold a wallet on at least one of the supported rails:\n   an XRPL wallet with XRP (and optional RLUSD trustline) OR\n   an EVM wallet with USDC on Base mainnet.\n2. On each paid tool call, sign a payment matching one of the\n   `accepts` entries from a prior probe. XRPL rails take an\n   XRPL Payment; the Base rail takes an EIP-3009\n   `transferWithAuthorization`.\n3. Pass the base64-JSON-encoded envelope as `payment_signature`.\n\nReference implementations:\n[`x402-xrpl`](https://pypi.org/project/x402-xrpl/) covers the\nXRPL rails. The official [`x402`](https://pypi.org/project/x402/)\npackage (with `[evm]` extras) covers the Base USDC rail. Both are\nuseful as templates in any language.\n\n## Local dev\n\n```bash\nnpm install\nnpm run build\nnode dist/index.js --transport http --port 8080\n```\n\nPoint MCP Inspector at `http://localhost:8080/mcp` to walk through\ntool definitions interactively.\n\n## Releases\n\nReleases are cut by tag push. The `Release` workflow builds, validates\nthat `package.json` version matches the tag, publishes to npm with\nsigstore provenance, then mirrors the same version to the official\nMCP Registry via GitHub OIDC (no extra secrets needed).\n\n```bash\nnpm version patch       # or minor / major\ngit push --follow-tags  # pushes commit + tag, CI does the rest\n```\n\nThe published artifact appears at\n[npmjs.com/package/@xrpl-utilities/mcp](https://www.npmjs.com/package/@xrpl-utilities/mcp)\nwithin ~90 seconds. Provenance attestation is visible on the package\npage as a green check. The MCP Registry entry lives at\n[registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.XRPL-Utilities/mcp)\nunder the reverse-DNS name `io.github.XRPL-Utilities/mcp`.\n\n## License\n\nMIT. Full portfolio at [xrpl-utilities.com](https://xrpl-utilities.com).\n",
+    "fetchedAt": "2026-08-11T23:59:47.636Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:32:35.827Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

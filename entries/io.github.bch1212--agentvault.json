@@ -1,0 +1,100 @@
+{
+  "id": "io.github.bch1212/agentvault",
+  "title": "agentvault",
+  "description": "Credential vault for AI agents — Fernet-encrypted keys, per-agent budgets, audit logs.",
+  "summary": "Credential vault for AI agents — Fernet-encrypted keys, per-agent budgets, audit logs.",
+  "offersHint": "Credential vault for AI agents — Fernet-encrypted keys, per-agent budgets, audit logs. · Packages: npm:agentvault-mcp · Env vars: AGENTVAULT_AGENT_KEY, AGENTVAULT_API_URL",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "agentvault-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AGENTVAULT_API_URL",
+        "description": "Base URL of your AgentVault deployment",
+        "required": true,
+        "default": "https://agentvault-api-production.up.railway.app"
+      },
+      {
+        "name": "AGENTVAULT_AGENT_KEY",
+        "description": "Your avk_ agent API key",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "agentvault-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AGENTVAULT_API_URL",
+          "description": "Base URL of your AgentVault deployment",
+          "required": true,
+          "default": "https://agentvault-api-production.up.railway.app"
+        },
+        {
+          "name": "AGENTVAULT_AGENT_KEY",
+          "description": "Your avk_ agent API key",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AGENTVAULT_AGENT_KEY",
+      "description": "Your avk_ agent API key",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "AGENTVAULT_API_URL",
+      "description": "Base URL of your AgentVault deployment",
+      "required": true,
+      "default": "https://agentvault-api-production.up.railway.app"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/bch1212/agentvault",
+  "repository": {
+    "url": "https://github.com/bch1212/agentvault",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-13T13:27:30.963172Z",
+  "publishedAt": "2026-05-13T13:27:30.963172Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:15.523Z",
+    "sourceRepoAt": "2026-08-11T23:55:26.344Z",
+    "readmeAt": "2026-08-11T23:55:26.958Z",
+    "toolsAt": "2026-08-12T01:29:15.523Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bch1212/agentvault",
+    "checkedAt": "2026-08-11T23:55:26.344Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bch1212/agentvault/main/README.md",
+    "markdown": "# AgentVault\n\n**AI-native credential management for autonomous agents.** Store API keys with column-level Fernet encryption, issue unique `avk_` keys to registered agent identities, proxy decrypted values with TTL, enforce per-agent spending budgets, log every access, and expose everything as an MCP server.\n\n- **Live API:** https://agentvault-api-production.up.railway.app\n- **Docs:** https://agentvault-api-production.up.railway.app/docs\n- **Status:** Production (Railway + Postgres + Stripe live)\n\n## Why\n\nAutonomous agents need API keys to do anything useful — Stripe, OpenAI, SendGrid, your own internal services. Three bad options today:\n\n1. **Hardcode in the agent prompt or config.** Leaks in logs, can't rotate, no audit trail.\n2. **Pass via env vars at spawn.** No per-agent isolation, no budget controls, no revocation without redeploy.\n3. **Roll your own vault.** Real work — encryption at rest *and* in transit, audit logs, key rotation, budget tracking.\n\nAgentVault is option 3 as a service. One `avk_` key per agent. Permission patterns (`[\"stripe_*\", \"openai_*\"]`). Daily/monthly spending caps. Full access log. MCP-native so agents can `vault.get_credential(\"stripe_key\")` and get a TTL-bound decrypted value back.\n\n## Quickstart\n\n### Direct HTTP\n\n```python\nimport httpx\n\nresp = httpx.post(\n    \"https://agentvault-api-production.up.railway.app/api/v1/vault/get/stripe_key\",\n    headers={\"X-Agent-Key\": \"avk_...\"},\n    params={\"cost\": 0.05},\n)\nstripe_key = resp.json()[\"value\"]\n```\n\n### MCP (Claude Desktop / Cursor / Cline)\n\n```json\n{\n  \"mcpServers\": {\n    \"agentvault\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"mcp_server\"],\n      \"env\": {\n        \"AGENTVAULT_API_URL\": \"https://agentvault-api-production.up.railway.app\",\n        \"AGENTVAULT_AGENT_KEY\": \"avk_...\"\n      }\n    }\n  }\n}\n```\n\nThen in Claude: `vault.get_credential(\"stripe_key\")` returns the decrypted value.\n\n## How it works\n\n- **Column-level Fernet encryption** — credentials are encrypted with `VAULT_ENCRYPTION_KEY` *before* they hit the database. Stronger than at-rest disk encryption alone.\n- **`avk_` agent keys** — SHA-256 hashed at rest, never stored plaintext. Recognizable prefix like `sk_live_` / `whsec_`.\n- **Permission patterns** — `[\"stripe_*\", \"openai_*\"]` scopes an agent without a full policy engine. fnmatch-based.\n- **Budget enforcement** — daily and monthly caps per agent. `/vault/get?cost=0.05` records the spend; 429 once the cap is hit.\n- **Audit log** — every access (success or denied) goes into `credential_access_logs` with IP, user-agent, error reason.\n- **MCP server** — `mcp_server/` exposes `list_credentials`, `get_credential`, `vault_status`, `set_budget`, `view_audit_log` as stdio MCP tools.\n\n## Pricing\n\n| Tier | $/mo | Agents | Credentials | Audit | Rotation | Budgets | Team |\n|---|---|---|---|---|---|---|---|\n| Free | $0 | 3 | 10 | – | – | – | – |\n| Pro | $49 | 25 | 100 | ✓ | ✓ | – | – |\n| Business | $149 | ∞ | ∞ | ✓ | ✓ | ✓ | ✓ |\n| Enterprise | $499 | ∞ | ∞ | ✓ | ✓ | ✓ | ✓ + SSO + compliance |\n\n## Self-host\n\n```bash\ngit clone https://github.com/bch1212/agentvault\ncd agentvault\npip install -r requirements.txt\ncp .env.example .env  # then fill in VAULT_ENCRYPTION_KEY and DATABASE_URL\npython -m api.main\n```\n\nRun tests:\n\n```bash\npython -m pytest -v   # 34 tests\n```\n\nDeploy to Railway:\n\n```bash\nbash deploy.sh\n```\n\n## Architecture\n\n```\napi/\n├── main.py                 # FastAPI + lifespan\n├── database.py             # Async SQLAlchemy (auto-rewrites postgresql:// → postgresql+asyncpg://)\n├── services/\n│   ├── encryption.py       # Fernet encrypt/decrypt\n│   ├── auth.py             # avk_ key gen + SHA-256 hashing\n│   ├── budget.py           # Per-agent spend tracking\n│   ├── audit.py            # Access log\n│   └── alerts.py           # SendGrid alerts\n├── middleware/             # X-Agent-Key + Bearer auth\n└── routers/                # users, agents, credentials, vault, audit, budgets, billing\nmcp_server/                 # FastMCP stdio server\ntests/                      # 34 tests, SQLite in-memory\n```\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:55:26.958Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:15.523Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Younghef/nutriref",
+  "title": "nutriref",
+  "description": "Pay-per-call USDA nutrition for AI agents (x402 micropayments in USDC on Base).",
+  "summary": "Pay-per-call USDA nutrition for AI agents (x402 micropayments in USDC on Base).",
+  "offersHint": "Pay-per-call USDA nutrition for AI agents (x402 micropayments in USDC on Base). · Packages: binary:https://github.com/Younghef/nutriref-api/releases/download/v0.2.3/nutriref.mcpb",
+  "version": "0.2.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/Younghef/nutriref-api/releases/download/v0.2.3/nutriref.mcpb",
+    "version": "0.2.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/Younghef/nutriref-api/releases/download/v0.2.3/nutriref.mcpb",
+      "version": "0.2.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Younghef/nutriref-api",
+  "repository": {
+    "url": "https://github.com/Younghef/nutriref-api",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-15T11:57:12.687862Z",
+  "publishedAt": "2026-06-15T11:57:12.687862Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:32:27.343Z",
+    "sourceRepoAt": "2026-08-11T23:59:21.996Z",
+    "readmeAt": "2026-08-11T23:59:22.507Z",
+    "toolsAt": "2026-08-12T01:32:27.344Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Younghef/nutriref-api",
+    "checkedAt": "2026-08-11T23:59:21.996Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Younghef/nutriref-api/master/README.md",
+    "markdown": "# NutriRef\n\n[![NutriRef MCP server](https://glama.ai/mcp/servers/Younghef/nutriref-api/badges/score.svg)](https://glama.ai/mcp/servers/Younghef/nutriref-api)\n\n**Pay-per-call USDA nutrition data for AI agents.** Structured FoodData Central via the [x402](https://www.x402.org/) micropayment protocol — agents pay $0.001–$0.005 in USDC per request, no signup, no API keys, no human auth flows.\n\nLive at **<https://nutriref.xyz>**. Spec at [/openapi.json](https://nutriref.xyz/openapi.json) · Swagger at [/docs](https://nutriref.xyz/docs) · Bazaar discovery at [/.well-known/x402](https://nutriref.xyz/.well-known/x402).\n\n## Endpoints\n\n| Method | Path | Price | Cache |\n|---|---|---|---|\n| `GET`  | `/v1/nutrition/search?q=&limit=` | $0.001 | 24h |\n| `GET`  | `/v1/nutrition/detail/{fdc_id}` | $0.002 | 7d |\n| `POST` | `/v1/nutrition/compare` | $0.003 | derived |\n| `POST` | `/v1/nutrition/recipe` | $0.005 | derived |\n\nAll values per 100g. Missing nutrients are `null`, not `0`. `compare` returns per-nutrient winners (highest protein, lowest sodium, etc.). `recipe` scales by grams and sums.\n\n## Use it from Claude (or any MCP agent)\n\nNutriRef ships an MCP server that exposes the four endpoints as native tools. Install it from PyPI:\n\n```bash\npip install nutriref-mcp\n```\n\nThen add this to your MCP client config (Claude Desktop's `claude_desktop_config.json`, Claude Code's MCP settings, etc.):\n\n```json\n{\n  \"mcpServers\": {\n    \"nutriref\": {\n      \"command\": \"nutriref-mcp\",\n      \"env\": {\n        \"PAYER_PRIVATE_KEY\": \"0x...your-funded-wallet-key...\",\n        \"NUTRIREF_BASE_URL\": \"https://nutriref.xyz\"\n      }\n    }\n  }\n}\n```\n\n> Prefer not to install? Use `uvx nutriref-mcp` as the `command` to run it on demand. To work from a clone instead, `pip install -e \".[mcp]\"` and set `command` to `python` with `args: [\"-m\", \"mcp_server\"]`.\n\nThe wallet needs USDC on Base mainnet — gas is sponsored by the facilitator, so you only need stablecoin balance. The agent now has `nutrition_search`, `nutrition_detail`, `nutrition_compare`, `nutrition_recipe` and auto-pays per call.\n\n## Use it from any HTTP client\n\nUnpaid requests get `402 Payment Required` with x402 payment instructions. Any x402-aware client signs a gasless USDC authorization (EIP-3009) and retries automatically:\n\n```python\nimport asyncio\nfrom eth_account import Account\nfrom x402.client import x402Client\nfrom x402.http.clients.httpx import wrapHttpxWithPayment\nfrom x402.mechanisms.evm.exact import register_exact_evm_client\n\naccount = Account.from_key(\"0x...funded-wallet-key...\")\nclient = x402Client(); register_exact_evm_client(client, account)\n\nasync def main():\n    async with wrapHttpxWithPayment(client, base_url=\"https://nutriref.xyz\") as http:\n        r = await http.get(\"/v1/nutrition/detail/2012128\")\n        print(r.json())\n\nasyncio.run(main())\n```\n\n## Response example\n\n`GET /v1/nutrition/detail/173944`:\n\n```json\n{\n  \"fdc_id\": 173944,\n  \"description\": \"Banana, raw\",\n  \"data_type\": \"Foundation\",\n  \"serving_size\": 100, \"serving_size_unit\": \"g\",\n  \"calories\": 89.0,  \"protein\": 1.1,    \"fat\": 0.3,\n  \"carbs\": 22.8,     \"fiber\": 2.6,      \"sugar\": 12.2,\n  \"sodium\": 1.0,     \"cholesterol\": null, \"saturated_fat\": 0.1,\n  \"vitamin_c\": 8.7,  \"calcium\": 5.0,    \"iron\": 0.3,  \"potassium\": 358.0\n}\n```\n\n---\n\n## Self-hosting\n\nNutriRef is open source; the live instance at `nutriref.xyz` is one deployment among many possible. To run your own:\n\n```bash\ncp .env.example .env\n# fill in USDA_API_KEY (free at https://fdc.nal.usda.gov/api-key-signup.html)\n# and X402_RECEIVER_ADDRESS (an EVM address that should receive payments)\ndocker compose up --build\ncurl http://localhost:8000/health\n```\n\n### Configuration\n\n| Var | Required | Default | Purpose |\n|---|---|---|---|\n| `USDA_API_KEY` | yes | — | Free key from [fdc.nal.usda.gov](https://fdc.nal.usda.gov/api-key-signup.html) |\n| `USDA_BASE_URL` | no | `https://api.nal.usda.gov/fdc/v1` | |\n| `REDIS_URL` | no | `redis://redis:6379/0` | Response cache |\n| `X402_NETWORK` | no | `base-sepolia` | `base` for mainnet |\n| `X402_RECEIVER_ADDRESS` | yes | — | EVM address that receives USDC |\n| `X402_FACILITATOR_URL` | no | `https://x402.org/facilitator` | `https://api.cdp.coinbase.com` for mainnet |\n| `CDP_API_KEY_ID` | mainnet only | — | Coinbase Developer Platform key ID |\n| `CDP_API_KEY_SECRET` | mainnet only | — | Coinbase Developer Platform key secret |\n| `LOG_LEVEL` | no | `INFO` | |\n\nFor mainnet you need a Coinbase CDP account and the public x402 facilitator at `https://api.cdp.coinbase.com`. Testnet works for free with the community facilitator at `https://x402.org/facilitator`.\n\n### Architecture\n\n```\nagent → x402 middleware → route handler → cache (Redis) → USDA FDC API\n```\n\n`search` and `detail` cache USDA responses directly. `compare` and `recipe` compose from the cached `detail` data — no extra USDA calls when warm. The cache is a meaningful cost lever: warm requests return in <50ms and never hit USDA.\n\n### Tests\n\n```bash\npip install -e \".[dev]\"\npytest\n```\n\n## Example: Claude agent that uses NutriRef\n\n`examples/meal-planner/` is a complete, ~150-line agent that gives Claude\nthe four NutriRef endpoints as tools and asks it to plan a day of meals\nhitting a calorie/protein goal. Worth reading if you're wiring NutriRef\ninto your own agent — the tool schemas and the payment loop are all\nthere. See `examples/meal-planner/README.md`.\n\n## Repo layout\n\n```\napp/                # FastAPI service\n  main.py             # app factory + x402 init\n  routes/             # search, detail, compare, recipe\n  landing.py          # / (public landing page)\n  discovery.py        # /.well-known/x402, /llms.txt, /.well-known/ai-plugin.json, /logo.svg\n  usda.py             # async USDA client\n  cache.py            # Redis wrapper\n  normalize.py        # USDA → flat 13-nutrient schema\nmcp_server/         # MCP server wrapper for agent use\nexamples/           # worked agent examples (meal planner)\nscripts/            # CDP wallet bootstrap + payer-side test\ntests/              # pytest + respx + fakeredis\n```\n\n## Acknowledgments\n\n- [USDA FoodData Central](https://fdc.nal.usda.gov/) for the data.\n- [x402](https://www.x402.org/) for the payment protocol.\n- [`fastapi-x402`](https://pypi.org/project/fastapi-x402/) for the server middleware (with a small EIP-712 patch we apply at startup for Base mainnet USDC).\n",
+    "fetchedAt": "2026-08-11T23:59:22.507Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:32:27.344Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

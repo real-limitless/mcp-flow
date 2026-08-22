@@ -1,0 +1,137 @@
+{
+  "id": "com.faireplace/public-tools",
+  "title": "public-tools",
+  "description": "French rental tools: create & e-sign a lease, rent control, IRL, deposit, receipts (France).",
+  "summary": "French rental tools: create & e-sign a lease, rent control, IRL, deposit, receipts (France).",
+  "offersHint": "French rental tools: create & e-sign a lease, rent control, IRL, deposit, receipts (France). · Remote MCP (streamable-http) at https://mcp.faireplace.com/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.faireplace.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.faireplace.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://faireplace.com",
+  "sourceUrl": "https://github.com/ykarmouta/faireplace-public-mcp",
+  "repository": {
+    "url": "https://github.com/ykarmouta/faireplace-public-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T13:43:04.791103Z",
+  "publishedAt": "2026-07-02T13:43:04.791103Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:34:34.921Z",
+    "sourceRepoAt": "2026-08-12T00:34:34.921Z",
+    "readmeAt": "2026-08-12T00:34:35.549Z",
+    "toolsAt": "2026-08-12T00:34:35.715Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ykarmouta/faireplace-public-mcp",
+    "checkedAt": "2026-08-12T00:34:34.921Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ykarmouta/faireplace-public-mcp/main/README.md",
+    "markdown": "# FairePlace — Public MCP Server 🏠🇫🇷\n\n[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-com.faireplace%2Fpublic--tools-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=faireplace)\n[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)\n[![Transport: Streamable HTTP](https://img.shields.io/badge/transport-Streamable%20HTTP-orange)](https://mcp.faireplace.com/mcp)\n[![Auth: none](https://img.shields.io/badge/auth-none-lightgrey)](https://mcp.faireplace.com/mcp)\n\nA **public, no-auth, remote MCP server** that exposes [FairePlace](https://faireplace.com)'s free **French residential rental** tools to AI agents (ChatGPT, Claude, Perplexity, Cursor…): create & **e-sign a lease** (bail), check **rent control**, revise rent (**IRL**), compute a **security deposit** or **rental yield**, get an **address risk** report, and generate **rental documents** (rent receipts, inventory, notices, and more).\n\n> **Zero LLM inference server-side.** The server is a thin, deterministic proxy over FairePlace's public API — the *calling* agent pays for its own inference; FairePlace only runs Rust/Typst logic. Marginal cost ≈ 0.\n\n**Endpoint:** `https://mcp.faireplace.com/mcp` · **Registry:** `com.faireplace/public-tools`\n\n---\n\n## Quick start\n\nAdd the remote server to any MCP client:\n\n| Client | How |\n|---|---|\n| **Claude** (Desktop / claude.ai) | Settings → Connectors → Add custom connector → `https://mcp.faireplace.com/mcp` |\n| **Cursor** | Settings → MCP → Add → Streamable HTTP → `https://mcp.faireplace.com/mcp` |\n| **ChatGPT** (Custom GPT) | Import the OpenAPI at `https://mcp.faireplace.com/openapi.json` as an Action (auth: none) |\n| **MCP Inspector** | `npx @modelcontextprotocol/inspector@latest` → connect to the URL |\n\nNo API key, no account. Ask your agent things like *\"Check if a 1500 €/month rent is legal at 75001 Paris for a 45 m² 2-room\"* or *\"Create a furnished lease for a flat in Paris at 850 €\"*.\n\n## Tools (21)\n\n**Data & compliance** (return JSON):\n\n| Tool | Purpose |\n|---|---|\n| `check_rent_control` | Rent control verdict for an address (encadrement des loyers) |\n| `get_reference_rent` | Reference rent (€/m²) for a rent-controlled quarter |\n| `simulate_irl` / `simulate_irl_by_quarters` | Annual rent revision (IRL), explicit or server-resolved INSEE values |\n| `calculate_deposit_restitution` | Security-deposit cap, restitution deadline, penalties |\n| `simulate_rental_yield` | Gross/net yield + per-regime taxation (LMNP, micro-foncier…) |\n| `check_address_risks` | Natural/technological risk report (Géorisques) |\n\n**Lease creation** (the conversion tool):\n\n| Tool | Purpose |\n|---|---|\n| `create_lease_draft` | Create a lease draft → returns a link to finalize & **e-sign** it (advanced eIDAS, PAdES-B-LT) on FairePlace |\n\n**Document generation** (return a link that renders the PDF): `generate_quittance`, `generate_etat_des_lieux`, `generate_conge`, `generate_cautionnement`, `generate_avenant`, `generate_resiliation_amiable`, `generate_relance_impaye`, `generate_inventaire_mobilier`, `generate_notice_information`, `generate_reparations_locatives`, `generate_grille_vetuste`, `generate_charges_recuperables`, `generate_bordereau_restitution`.\n\n## How the lease → signature flow works\n\n```\nagent → create_lease_draft(owner, logement, lease)\n      → FairePlace stores an anonymous draft, returns draft_token\n      → tool returns  https://mcp.faireplace.com/r?draft_token=…\nuser clicks the link\n      → GET /r sets the draft_token cookie on .faireplace.com, 302 → app sign-up\n      → on login, FairePlace ingests the draft and opens it on the Signature step\n```\n\nThe server never hands back a signable document — signature stays behind FairePlace auth. Every link carries `utm_source=mcp` for attribution.\n\n## Architecture\n\nIntentionally a **thin adapter** — not a domain application. All business logic (rent-control data, IRL indices, legal document rendering) lives in FairePlace's Rust backend; this Worker only maps MCP tool calls to the public `/public/tools/*` HTTP endpoints and formats results.\n\n- **Runtime:** Cloudflare Worker (`McpAgent`, Durable Object for session state).\n- **Transport:** Streamable HTTP on `/mcp`.\n- **Guardrail:** native per-IP rate limit (100 req / 60 s).\n- **PDF delivery:** `/pdf/<slug>?p=<base64url payload>` serves an HTML page that fetches the PDF **browser-side** (avoids a same-zone Worker→origin block; no storage — the PDF is a local blob).\n\n### Endpoints\n\n| Path | Purpose |\n|---|---|\n| `/mcp` | MCP server (Streamable HTTP) |\n| `/openapi.json` | Curated OpenAPI 3.1 for GPT Actions |\n| `/.well-known/ai-plugin.json` | Plugin manifest |\n| `/llms.txt` | Passive AI discovery |\n| `/r` | Draft-resume → sets cookie → sign-up |\n| `/pdf/<slug>` | On-demand PDF rendering (browser-side) |\n\n## Development\n\n```bash\nnpm install\nnpm run typecheck\nnpm run dev            # wrangler dev (local)\nnpm run inspect        # MCP Inspector\nnpm run deploy         # wrangler deploy (needs Cloudflare auth)\n```\n\nConfig lives in `wrangler.jsonc` (`vars`: `API_BASE`, `WEB_BASE`, `SELF_BASE`, `DRAFT_REPRISE_URL`, `APP_SIGNUP_URL`).\n\n## Discoverability\n\n- **Official MCP Registry:** [`com.faireplace/public-tools`](https://registry.modelcontextprotocol.io/v0/servers?search=faireplace)\n- **Glama:** [connector `com.faireplace/public-tools`](https://glama.ai/mcp/connectors/com.faireplace/public-tools)\n\n## License\n\n[MIT](./LICENSE) © 2026 FairePlace (Thinkylab SAS). Not legal advice — an aid for French rental workflows.\n",
+    "fetchedAt": "2026-08-12T00:34:35.549Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_rent_control",
+      "description": "Check whether a proposed rent complies with French rent control for an address (returns reference rent, upper ceiling and verdict). Use for: max allowed rent, rent cap, is a city rent-controlled. FR: verifie un loyer face a l'encadrement des loyers (zone tendue)."
+    },
+    {
+      "name": "simulate_irl",
+      "description": "Compute the revised rent after annual indexation from two IRL index values (French rent revision, art. 17-1 loi 89-462); returns new rent, % change, monthly/annual increase. FR: revision de loyer / augmentation de loyer via l'IRL."
+    },
+    {
+      "name": "calculate_deposit_restitution",
+      "description": "Compute the security deposit legal cap, restitution deadline, allowed retentions and any late penalty (art. 22 loi 89-462). FR: depot de garantie, restitution, retenues, delais."
+    },
+    {
+      "name": "create_lease_draft",
+      "description": "Create a French residential lease draft (bail / contrat de location) from the provided info, and return a link to finalize, adjust and E-SIGN it (advanced eIDAS signature, legally binding) on FairePlace. Use whenever a user wants to create, draft or generate a lease / rental contract. Link valid 30 minutes. FR: creer / rediger / generer un bail de location."
+    },
+    {
+      "name": "simulate_rental_yield",
+      "description": "Compute gross/net rental yield of a rental investment, per-regime taxation (micro-foncier, reel, LMNP...), cashflow and the recommended tax regime. FR: rendement locatif, rentabilite, fiscalite."
+    },
+    {
+      "name": "check_address_risks",
+      "description": "Geocode an address and return an indicative summary of the commune's natural and technological risks (Georisques) + a link to the official ERRIAL tool. For the lease's mandatory risk annex. FR: etat des risques (ERNMT/ERRIAL), annexe obligatoire du bail."
+    },
+    {
+      "name": "simulate_irl_by_quarters",
+      "description": "Like simulate_irl, but the server resolves the official INSEE IRL values itself: give only the rent, the two quarters and the region. Prefer this when you don't know the exact IRL values. FR: revision de loyer IRL, valeurs INSEE automatiques."
+    },
+    {
+      "name": "get_reference_rent",
+      "description": "Return the reference rent (EUR/m2), its upper/lower bounds and data freshness for a rent-controlled quarter, by room count, construction period and furnishing. The 'quarter' is a geographic rent-control zone (e.g. 'Halles'). FR: loyer de reference de l'encadrement des loyers."
+    },
+    {
+      "name": "generate_quittance",
+      "description": "Generate a rent receipt (or a partial-payment receipt). Fields: landlord_name, landlord_address, tenant_name, property_address, month (e.g. 'avril 2026'), rent, charges, paid. FR: quittance de loyer. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_etat_des_lieux",
+      "description": "Generate a semi-filled, print-and-complete inventory report (decret 2016-382). Fields: landlord_name, property_type, tenant_names, rooms, property_address. FR: etat des lieux. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_conge",
+      "description": "Generate a notice-to-quit letter (landlord or tenant). Fields: landlord_name, tenant_name, property_address, reason, effective_date. FR: lettre de conge / preavis. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_cautionnement",
+      "description": "Generate a guarantor's guarantee deed. Fields: guarantor_name, tenant_name, landlord_name, property_address, rent, duration. FR: acte de cautionnement (garant). Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_avenant",
+      "description": "Generate a lease amendment. Fields: landlord_name, tenant_name, property_address, object, effective_date. FR: avenant au bail. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_resiliation_amiable",
+      "description": "Generate a mutual lease-termination agreement. Fields: landlord_name, tenant_name, property_address, end_date. FR: resiliation amiable du bail. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_relance_impaye",
+      "description": "Generate an unpaid-rent reminder letter. Fields: landlord_name, tenant_name, property_address, amount_due, period. FR: relance / mise en demeure loyer impaye. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_inventaire_mobilier",
+      "description": "Generate a furniture inventory (furnished lease). Fields: property_address, rooms/items. FR: inventaire du mobilier (bail meuble). Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_notice_information",
+      "description": "Generate the lease's mandatory information notice (loi ALUR). Fields: lease_type. FR: notice d'information annexe du bail. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_reparations_locatives",
+      "description": "Generate the list of repairs chargeable to the tenant (decret 87-712). Few or no fields required. FR: liste des reparations locatives. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_grille_vetuste",
+      "description": "Generate a wear-and-tear (vetuste) grid. Few or no fields required. FR: grille de vetuste. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_charges_recuperables",
+      "description": "Generate the list of recoverable charges (decret 87-713). Few or no fields required. FR: charges recuperables. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    },
+    {
+      "name": "generate_bordereau_restitution",
+      "description": "Generate the security-deposit restitution slip. Fields: landlord_name, tenant_name, property_address, deposit_amount, retentions. FR: bordereau de restitution du depot. Renvoie un lien a ouvrir pour afficher/telecharger le PDF."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:34:35.715Z",
+  "toolsPreviewStatus": "ok"
+}

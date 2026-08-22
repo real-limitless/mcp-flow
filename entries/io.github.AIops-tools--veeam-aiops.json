@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/veeam-aiops",
+  "title": "Veeam AIops",
+  "description": "Governed Veeam Backup & Replication ops — 25 MCP tools with audit, budget, undo guards.",
+  "summary": "Governed Veeam Backup & Replication ops — 25 MCP tools with audit, budget, undo guards.",
+  "offersHint": "Governed Veeam Backup & Replication ops — 25 MCP tools with audit, budget, undo guards. · Packages: pypi:veeam-aiops",
+  "version": "0.11.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "veeam-aiops",
+    "version": "0.11.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "veeam-aiops",
+      "version": "0.11.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Veeam-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Veeam-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:51:00.588022Z",
+  "publishedAt": "2026-08-10T06:51:00.588022Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.209Z",
+    "sourceRepoAt": "2026-08-12T00:17:56.016Z",
+    "readmeAt": "2026-08-12T00:17:56.607Z",
+    "toolsAt": "2026-08-12T01:47:49.209Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Veeam-AIops",
+    "checkedAt": "2026-08-12T00:17:56.016Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Veeam-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/veeam-aiops -->\n\n# Veeam AIops\n\n> **Disclaimer**: Community-maintained open-source project. **Not affiliated with, endorsed by, or sponsored by Veeam Software.** \"Veeam\" is a trademark of its owner. MIT licensed.\n\nAI-powered Veeam Backup & Replication operations with a **built-in governance\nharness** — unified audit log, policy engine, token/runaway budget guard,\nundo-token recording, and descriptive risk tiers. Self-contained: no\nexternal dependencies beyond `httpx` and the MCP SDK. Coverage is not yet full\ncoverage of every Veeam operation.\n\n> **Verification status**: the test suite is mock-based; this package has not yet been\n> validated against a live Veeam B&R server. See [docs/VERIFICATION.md](docs/VERIFICATION.md).\n\n## What works\n\n- **CLI** (`veeam-aiops ...`): `init`, `overview`, `job list/get/start/stop/retry/enable/disable`, `restore list-points/start`, `repository list/get/state`, `session list/get/log/stop`, `backup list/objects`, `diagnose job-failures/repo-capacity`, `infra servers/proxies`, `secret set/list/rm/migrate/rotate-password`, `doctor`, `mcp`.\n- **MCP server** (`veeam-aiops mcp` or `veeam-aiops-mcp`): **25 tools** (17 read, 8 write), every one wrapped with the bundled `@governed_tool` harness.\n- **Diagnostics / RCA** (read-only): `diagnose job-failures` triages recent job sessions — flags every Failed/Warning run and categorizes the likely cause (repository full, source/guest unreachable, credential/VSS failure, retry exhaustion), citing the session result + matched error substring; `diagnose repo-capacity` flags repositories under the free-space thresholds (<15% warn, <10% critical). Both cite the measured number that tripped each finding, worst-first.\n- **Encrypted credentials**: passwords live in an encrypted store `~/.veeam-aiops/secrets.enc` (Fernet + scrypt) — **never plaintext on disk**. Unlock with a master password from `VEEAM_AIOPS_MASTER_PASSWORD` (MCP/CI) or an interactive prompt (CLI).\n- **Reversibility**: write ops with a clean inverse (job start/stop/retry, enable/disable) record an inverse undo descriptor; the irreversible VM restore declares none and is tagged `high` risk.\n- **Async sessions**: Veeam jobs and restores run as sessions — poll progress with `session list` / `session get` / `session log` (the runaway budget guard prevents poll loops from running away).\n\n## What this tool does, and does not, decide\n\nIt delivers Veeam Backup & Replication operations — reads and writes —\naccurately and efficiently, and records every one of them. It does **not**\ndecide whether a write is allowed to happen. That is the agent's judgement, or\nthe permission of the Veeam account you connect it with: give that account a\nread-only or restricted role on the VBR server and the writes fail at the\nserver — the place that actually owns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in `~/.veeam-aiops/audit.db`,\nand reversible writes still capture their before-state and record an inverse.\n\n> Each tool declares a `risk_level`, kept in agreement with its `[READ]`/`[WRITE]`\n> documentation tag by a test, and carried into the audit row as a descriptive\n> tier — so a reviewer can see at a glance that a row was a high-risk restore. It\n> is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/veeam-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool now enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Quick start\n\n```bash\nuv tool install veeam-aiops\nveeam-aiops init        # interactive wizard: connection details + encrypted password\nveeam-aiops doctor      # verify config, encrypted store, connectivity\n```\n\n`init` writes `~/.veeam-aiops/config.yaml` (non-secret connection details) and\nstores the login password **encrypted** in `~/.veeam-aiops/secrets.enc`. Example\nconfig it produces:\n\n```yaml\ntargets:\n  - name: vbr-lab\n    host: 10.0.0.20\n    username: \"DOMAIN\\\\backup-admin\"\n    port: 9419\n    verify_ssl: false          # self-signed lab certs only\n```\n\nFor non-interactive use (MCP server, CI, cron) export the master password so the\nstore can be unlocked without a prompt:\n\n```bash\nexport VEEAM_AIOPS_MASTER_PASSWORD='your-master-password'\n```\n\n### Managing secrets\n\n```bash\nveeam-aiops secret set vbr-lab            # prompts hidden for the password\nveeam-aiops secret list                   # names only, values never shown\nveeam-aiops secret rm vbr-lab\nveeam-aiops secret rotate-password        # re-encrypt under a new master password\nveeam-aiops secret migrate                # import a legacy plaintext .env, then deletes it\n```\n\nMigrating from an old `~/.veeam-aiops/.env` (legacy `VEEAM_<TARGET>_PASSWORD`\nvars)? Run `veeam-aiops secret migrate`; the old `.env` is renamed to\n`.env.migrated`. The plaintext env var is still honoured as a fallback (with a\ndeprecation warning) for a smooth transition.\n\n## Audit & safety\n\nAll operations are logged to a local SQLite audit DB under `~/.veeam-aiops/`\n(relocatable via `VEEAM_AIOPS_HOME`) — the harness **records**, it does not\nauthorize. Every call, over MCP and the CLI alike, lands an audit row; the\ntoken/runaway budget guard is a safety backstop (not an authorization gate) that\nstops a stuck agent from burning unbounded calls, and each row carries a\ndescriptive risk tier that gates nothing. Destructive CLI commands (`job stop`,\n`restore start`) require double confirmation and support `--dry-run`.\nAPI-returned text is run through a prompt-injection sanitizer.\n\n## Contributing & feature requests\n\nCoverage is intentionally focused. **Missing a device, action, or feature you need?** Open an issue or pull request at [github.com/AIops-tools/Veeam-AIops](https://github.com/AIops-tools/Veeam-AIops/issues) — feature requests, contributions, and comments are all welcome.\n\nLicense: MIT.\n",
+    "fetchedAt": "2026-08-12T00:17:56.607Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.209Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "io.github.wildsurfer/cnnfag",
+  "title": "CNN Fear & Greed Index",
+  "description": "CNN's Fear & Greed index for the US stock market: score, rating, indicators and daily history.",
+  "summary": "CNN's Fear & Greed index for the US stock market: score, rating, indicators and daily history.",
+  "offersHint": "CNN's Fear & Greed index for the US stock market: score, rating, indicators and daily history. · Packages: oci:ghcr.io/wildsurfer/cnnfag:2.2.0",
+  "version": "2.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/wildsurfer/cnnfag:2.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/wildsurfer/cnnfag:2.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/wildsurfer/cnn-fear-and-greed-parse",
+  "repository": {
+    "url": "https://github.com/wildsurfer/cnn-fear-and-greed-parse",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T07:25:34.45836Z",
+  "publishedAt": "2026-08-11T07:25:34.45836Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:05.500Z",
+    "sourceRepoAt": "2026-08-11T23:15:06.739Z",
+    "readmeAt": "2026-08-11T23:15:07.123Z",
+    "toolsAt": "2026-08-12T00:56:05.500Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/wildsurfer/cnn-fear-and-greed-parse",
+    "checkedAt": "2026-08-11T23:15:06.739Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/wildsurfer/cnn-fear-and-greed-parse/main/README.md",
+    "markdown": "# cnn-fear-and-greed-parse\n\n[![Go Reference](https://pkg.go.dev/badge/github.com/wildsurfer/cnn-fear-and-greed-parse/v2.svg)](https://pkg.go.dev/github.com/wildsurfer/cnn-fear-and-greed-parse/v2) ![CI](https://github.com/wildsurfer/cnn-fear-and-greed-parse/actions/workflows/go.yml/badge.svg) [![Coverage Status](https://coveralls.io/repos/github/wildsurfer/cnn-fear-and-greed-parse/badge.svg?branch=main)](https://coveralls.io/github/wildsurfer/cnn-fear-and-greed-parse?branch=main) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\nGo package for CNN's [Fear & Greed Index](https://www.cnn.com/markets/fear-and-greed), a 0–100 gauge of US stock market sentiment. It returns the current score and rating, the values for the previous close, week, month and year, about a year of daily history, and the seven component indicators (market momentum, stock price strength, stock price breadth, put/call options, market volatility, junk bond demand, safe haven demand), each with its own score, rating and history of raw values. The module also ships a CLI and an MCP server, and has no dependencies outside the Go standard library.\n\n## Install\n\n```\ngo get github.com/wildsurfer/cnn-fear-and-greed-parse/v2\n```\n\n## Usage\n\n```go\npackage main\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\n\tcnnfag \"github.com/wildsurfer/cnn-fear-and-greed-parse/v2\"\n)\n\nfunc main() {\n\tresult, err := cnnfag.Get(context.Background())\n\tif err != nil {\n\t\tpanic(err)\n\t}\n\n\tfmt.Printf(\"Now: %.0f (%s)\\n\", result.Score, result.Rating)\n\tfmt.Printf(\"One year ago: %.0f\\n\", result.OneYearAgo)\n\tfmt.Printf(\"History: %d daily points since %s\\n\",\n\t\tlen(result.History), result.History[0].Date.Format(\"2006-01-02\"))\n\tfmt.Printf(\"VIX indicator: %.0f (%s)\\n\",\n\t\tresult.MarketVolatility.Score, result.MarketVolatility.Rating)\n}\n```\n\nOutput:\n\n```\nNow: 64 (greed)\nOne year ago: 58\nHistory: 250 daily points since 2025-08-11\nVIX indicator: 50 (neutral)\n```\n\nAn `Indicator`'s `History` holds the raw underlying series (the S&P 500 level for momentum, the VIX level for volatility, ratios and spreads for the rest), and its `Score` is CNN's 0–100 normalization. To use your own `http.Client` (timeout, proxy), replace `cnnfag.HTTPClient`.\n\n## CLI\n\nFor cron jobs and shell pipelines, without writing Go:\n\n```\ngo install github.com/wildsurfer/cnn-fear-and-greed-parse/v2/cmd/cnnfag@latest\n```\n\n```\n$ cnnfag\n64 (greed) as of 2026-08-11T00:00:00Z\nprevious close 64 · week ago 60 · month ago 47 · year ago 58\n\n$ cnnfag -json | jq .score\n64.3714285714286\n```\n\n`-json` prints the full result, including the daily history. `-timeout` changes the request timeout (default 15s).\n\n## MCP server\n\n`cnnfag mcp` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio, so AI assistants can query the index. It exposes one tool, `get_fear_and_greed`, with an optional `include_history` argument. Configuration for MCP clients:\n\n```json\n{\n  \"mcpServers\": {\n    \"cnnfag\": {\n      \"command\": \"cnnfag\",\n      \"args\": [\"mcp\"]\n    }\n  }\n}\n```\n\nThe client must be able to find the binary: use the full path (usually `~/go/bin/cnnfag`) if your MCP client does not inherit your shell's `PATH`. Like the rest of the module, the server is built on the standard library only.\n\nThe server is also published to the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.wildsurfer/cnnfag`, with a container image at `ghcr.io/wildsurfer/cnnfag` for clients that prefer Docker over a local binary.\n\n## How it works\n\nCNN does not offer a documented public API. This package requests the JSON endpoint that the Fear & Greed page itself uses:\n\n```\nhttps://production.dataviz.cnn.io/index/fearandgreed/graphdata\n```\n\nThe endpoint rejects requests that do not look like they come from a browser, so the package sends browser-like `User-Agent` and `Referer` headers. This is the same data source used by the known wrappers in other languages.\n\nA scheduled CI job runs the test suite against the real endpoint once a week, so a change on CNN's side is detected within days.\n\n## Migrating from v1\n\nv2 is a full rewrite: CNN removed the HTML page that v1 parsed, so v1 stopped working and its data model no longer matches what CNN publishes. Update the import path first:\n\n```go\nimport cnnfag \"github.com/wildsurfer/cnn-fear-and-greed-parse/v2\"\n```\n\nThen adjust the calls:\n\n| v1 | v2 |\n|----|----|\n| `cnnfag.Parse()` | `cnnfag.Get(ctx)`, takes a `context.Context` |\n| `Result.Now.Value` (`int`) | `Result.Score` (`float64`) |\n| `Result.Now.Text` | `Result.Rating` |\n| `Result.PreviousClose.Value` (`int`) | `Result.PreviousClose` (`float64`) |\n| `Result.OneWeekAgo.Value`, `.OneMonthAgo.Value`, `.OneYearAgo.Value` | same field names, now plain `float64` |\n| `Result.PreviousClose.Text` and other past-period labels | removed; CNN's API has no labels for past periods, but every `History` point carries a rating |\n| `Result.LastUpdateDate` | `Result.Timestamp`, now an exact time from CNN instead of a parsed guess |\n| `Result.ImageURL`, `Result.GetImageBytes()` | removed; the needle image no longer exists |\n| `ErrHTTPNon200` | `ErrUnexpectedStatus`, check with `errors.Is` |\n| `ErrEmptyField` | `ErrEmptyResult` |\n| `ErrImgLoadNon200`, `ErrReadingBytes` | removed with the image API |\n| — | `Result.History` is new: about a year of daily scores |\n\nScores changed from rounded integers to the exact floats CNN serves, so `44` in v1 corresponds to something like `43.71` in v2. Round with `%.0f` or `math.Round` if you need the old look.\n\n## Project history\n\nv1 (2021) parsed the HTML of `money.cnn.com/data/fear-and-greed` with goquery and could also download the index needle image. CNN removed that page, which broke parsing, and the image no longer exists. v2 (2026) is a rewrite on the JSON endpoint with a smaller API, historical data and zero dependencies. The last v1 release is tagged [`v1.2.0`](https://github.com/wildsurfer/cnn-fear-and-greed-parse/tree/v1.2.0).\n\n## Data disclaimer\n\nThis package is not affiliated with or endorsed by CNN. The Fear & Greed Index and its values belong to CNN (Warner Bros. Discovery). The MIT license covers only the code in this repository and gives you no rights to CNN's data. CNN's Terms of Use permit personal use of site content and restrict commercial exploitation. If you use this data in a product, compliance is your responsibility, and the endpoint can change or disappear at any time.\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:15:07.123Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:05.500Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

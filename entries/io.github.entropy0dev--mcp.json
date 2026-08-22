@@ -1,0 +1,83 @@
+{
+  "id": "io.github.entropy0dev/mcp",
+  "title": "mcp",
+  "description": "Entropy0 MCP server — source trust and URL safety tools for AI agents",
+  "summary": "Entropy0 MCP server — source trust and URL safety tools for AI agents",
+  "offersHint": "Entropy0 MCP server — source trust and URL safety tools for AI agents · Packages: npm:@entropy0/mcp · Env vars: ENTROPY0_API_KEY",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@entropy0/mcp",
+    "version": "0.1.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ENTROPY0_API_KEY",
+        "description": "Your Entropy0 API key (sk_ent0_xxxx). Get one at entropy0.ai.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@entropy0/mcp",
+      "version": "0.1.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ENTROPY0_API_KEY",
+          "description": "Your Entropy0 API key (sk_ent0_xxxx). Get one at entropy0.ai.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ENTROPY0_API_KEY",
+      "description": "Your Entropy0 API key (sk_ent0_xxxx). Get one at entropy0.ai.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/entropy0dev/sdk",
+  "repository": {
+    "url": "https://github.com/entropy0dev/sdk",
+    "source": "github",
+    "subfolder": "packages/mcp"
+  },
+  "updatedAt": "2026-05-22T01:10:18.68298Z",
+  "publishedAt": "2026-05-22T01:10:18.68298Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:03.563Z",
+    "sourceRepoAt": "2026-08-11T23:46:56.266Z",
+    "readmeAt": "2026-08-11T23:46:56.724Z",
+    "toolsAt": "2026-08-12T01:23:03.563Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/entropy0dev/sdk",
+    "checkedAt": "2026-08-11T23:46:56.266Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/entropy0dev/sdk/main/README.md",
+    "markdown": "# Entropy0 SDK\n\nAI agents fetch URLs, follow links, and act on domains they've never seen before. Most of the time that's fine. Sometimes it isn't — phishing infrastructure, newly registered lookalike domains, brand impersonation sites, or plain malware hosting.\n\nEntropy0 adds a trust gate between your agent and the external web. One API call returns a machine-readable recommended action your agent can reason about before it fetches, navigates, or transacts.\n\n**[Try it without signing up →](https://entropy0.ai/playground)**\n\n```\nPOST /v1/decide\n{ \"domain\": \"secure-login-verify-account.xyz\" }\n\n→ recommended_action: \"deny\"\n  confidence: 91%\n  signals: [NEWLY_REGISTERED_DOMAIN, BRAND_MISMATCH, CERTIFICATE_ANOMALY]\n```\n\n---\n\n## Packages\n\n| Package | Registry | Description |\n|---|---|---|\n| [`entropy0-langchain`](packages/langchain) | PyPI | LangChain tool — trust-gate URLs before agents fetch from them |\n| [`@entropy0/express`](packages/express) | npm | Express middleware — evaluate request targets through `/v1/decide` |\n| [`@entropy0/mcp`](packages/mcp) | npm | MCP server — source trust and URL safety tools for Claude Desktop, Cursor, Cline |\n\n---\n\n## Quick start\n\n**LangChain (Python)**\n```bash\npip install entropy0-langchain\n```\n```python\nfrom entropy0_langchain import Entropy0Tool\n\ntools = [Entropy0Tool(api_key=\"sk_ent0_xxxx\")]\n# Agent will call entropy0_trust_check before fetching any external URL\n```\n\n**Express (Node.js)**\n```bash\nnpm install @entropy0/express\n```\n```typescript\nimport { entropy0Guard } from \"@entropy0/express\";\n\napp.use(entropy0Guard({ apiKey: process.env.ENTROPY0_API_KEY! }));\n// Requests to flagged domains are blocked before your handlers run\n```\n\n**Direct API**\n```bash\ncurl -X POST https://entropy0.ai/v1/decide \\\n  -H \"X-API-Key: sk_ent0_xxxx\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"example.com\"}'\n```\n\n---\n\n## How it works\n\nEach decision runs a deterministic pipeline — same inputs always produce the same output:\n\n1. Classifies the domain (Clear Threat → Safe Known) using WHOIS, DNS, SSL, and threat intel feeds\n2. Maps classification to a base action under your chosen policy\n3. Shifts strictness based on interaction risk (fetch vs transactional vs privileged)\n4. Applies confidence clamps — low-confidence negatives never hard-deny\n5. Returns `recommended_action` + reason codes + uncertainty + bounded validity window\n\nNo probabilistic black boxes. Auditable, explainable, overridable.\n\n---\n\n## Examples\n\n| Example | Description |\n|---|---|\n| [`examples/rag-agent`](examples/rag-agent) | LangChain agent that trust-gates every URL before fetching content |\n| [`examples/langgraph-trust-gate`](examples/langgraph-trust-gate) | LangGraph pipeline with Entropy0 trust gate + evidence usability scoring |\n\n### LangGraph trust gate demo\n\nThis example shows a four-layer retrieval pipeline:\n\n1. Search returns candidate sources\n2. Entropy0 evaluates whether each source should enter the workflow\n3. The extraction layer retrieves page content\n4. The evidence usability layer determines whether the agent can safely cite the content\n\nExample run:\n\n```\n[entropy0] 5 approved / 1 sandboxed / 0 denied / 0 unverified\n  SANDBOX    outpost24.com\n             trust signals: ['LONG_OPERATIONAL_HISTORY', 'STRONG_BRAND_ALIGNMENT']\n             sandbox reason: ['ELEVATED_DEVIATION']\n\n[evidence layer]\n  ! microsoft.com/security/blog/...   boilerplate_dominant — usability=low\n  ! genai.owasp.org/llmrisk/...       boilerplate_dominant — usability=low\n  ✓ pmc.ncbi.nlm.nih.gov/...          body_text_captured   — usability=high\n  ✓ securecodewarrior.com/...         body_text_captured   — usability=high\n```\n\nThe agent answered only from high-usability evidence and refused to attribute claims to sources where article body text was not captured.\n\nThis prevents a common failure mode in AI search agents:\n\n> Treating a reputable URL as equivalent to usable evidence.\n\n---\n\n## Links\n\n- [Live playground](https://entropy0.ai/playground) — no sign-up required\n- [API reference](https://entropy0.ai/docs)\n- [Get a free API key](https://entropy0.ai/signup) — 150 scans/month, no credit card\n",
+    "fetchedAt": "2026-08-11T23:46:56.724Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:23:03.563Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

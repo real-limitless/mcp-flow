@@ -1,0 +1,57 @@
+{
+  "id": "io.github.dacode-dev/agent-context-api",
+  "title": "agent-context-api",
+  "description": "Free MCP context preflight with local redaction and a paid HTTP upgrade.",
+  "summary": "Free MCP context preflight with local redaction and a paid HTTP upgrade.",
+  "offersHint": "Free MCP context preflight with local redaction and a paid HTTP upgrade. · Remote MCP (streamable-http) at https://agent-context-api-proxy.agent-context-proxy.workers.dev/mcp",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://agent-context-api-proxy.agent-context-proxy.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agent-context-api-proxy.agent-context-proxy.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://dacode-dev.github.io/agent-context-api.html",
+  "sourceUrl": "https://github.com/dacode-dev/agent-context-api",
+  "repository": {
+    "url": "https://github.com/dacode-dev/agent-context-api",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T11:38:19.493457Z",
+  "publishedAt": "2026-08-11T11:38:19.493457Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:25:30.370Z",
+    "sourceRepoAt": "2026-08-11T23:50:44.485Z",
+    "readmeAt": "2026-08-11T23:50:45.312Z",
+    "toolsAt": "2026-08-11T23:50:45.470Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dacode-dev/agent-context-api",
+    "checkedAt": "2026-08-11T23:50:44.485Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dacode-dev/agent-context-api/main/README.md",
+    "markdown": "# Agent Context API\n\nA small paid API for coding agents that need a deterministic context preflight before sending repository text to an LLM. It counts GPT-family tokens, applies an optional model-aware budget, and redacts likely credentials.\n\nIt also exposes managed data experiments. `bounty-radar` normalizes live agent-work listings and preserves the difference between a canonical escrow signal and an ordinary venue listing. `payanagent-health` produces a fresh liveness snapshot of the ranked PayanAgent catalog. `base-market-pulse` combines fresh public ETH, DEX, and Base-network signals. The source code is public, but the paid value is operated aggregation, source health, bounded probing, and timestamped results that a buyer does not have to run.\n\n`agent-work-brief` is the decision-oriented bundle: it combines canonical escrowed work with catalog liveness, excludes ordinary unfunded listings, and classifies opportunities that require capital before an agent spends time evaluating them.\n\n## Why pay when the source is public?\n\nSelf-hosting is deliberately allowed. The paid convenience is the maintained run: polling changing upstreams, normalizing responses, detecting partial outages, enforcing bounded work, and serving a timestamped result from a ready endpoint. A buyer can fork the code, but then owns deployment, monitoring, rate-limit handling, schema drift, and repairs. There is no claim of exclusivity; the service must earn trust through freshness and reliable operation.\n\n## Local development\n\n```bash\nnpm install\nnpm test\nX402_FACILITATOR=https://facilitator.openx402.ai npm start\n```\n\nThe service listens on `http://localhost:8787` by default. `GET /health` is free. `POST /v1/context-preflight` returns an x402 `402 Payment Required` response until the caller supplies a valid Base USDC payment.\n\nFor production Base mainnet operation, use a facilitator that advertises `x402Version: 2`, `scheme: exact`, and `network: eip155:8453` at its `/supported` endpoint; the maintained deployment uses `https://facilitator.openx402.ai`. The public `https://x402.org/facilitator` endpoint is suitable for Base Sepolia testing, not this mainnet payout configuration. Always verify current facilitator support before changing deployments.\n\n## API example\n\n```bash\ncurl -X POST http://localhost:8787/v1/context-preflight \\\n  -H 'content-type: application/json' \\\n  -d '{\"text\":\"const token = \\\"sk-example\\\";\",\"model\":\"claude-sonnet\",\"token_budget\":1000}'\n```\n\nThe default price is `$0.005` per request. Set `PAY_TO` to change the public payout address, `X402_FACILITATOR` to select a compatible facilitator, and `PUBLIC_HOSTS` to provide a comma-separated allowlist of Worker/custom hostnames used in x402 resource URLs. Do not put private keys or facilitator credentials in this repository; the service does not need a signing key to receive payments.\n\n## Managed bounty radar\n\n`POST /v1/bounty-radar` costs `$0.01` through x402. Send filters such as:\n\n```json\n{\"include_unverified\":false,\"min_reward_usd\":0,\"limit\":20}\n```\n\nThe response includes source health, deadlines, claim bonds, external-spend requirements, and a `payment_evidence` field. Only listings explicitly marked canonical and escrowed are labeled funded; other listings remain visible only when requested and are labeled unverified.\n\n## PayanAgent catalog health\n\n`POST /v1/payanagent-health` costs `$0.01` through x402. It accepts an optional `limit` from 1 to 25 and checks the ranked public catalog using only read-only `HEAD` requests (falling back to `OPTIONS` when required). HTTP 402 means that a live payment gate responded; the service never sends payment headers or calls paid routes. The response contains per-offer status, HTTP code, latency, summary counts, and `generated_at`.\n\n## Base market pulse\n\n`POST /v1/base-market-pulse` costs `$0.01` through x402 and accepts `{}`. The equivalent `GET` route exists for agent directories and simple HTTP clients. It reads Coinbase's public ETH/USD spot endpoint, DEX Screener's public Base WETH/USDC pair feed, and public Base JSON-RPC methods for the current block and gas price. It returns per-source health, timestamped values, and partial results when one source is unavailable. It is informational data only and does not trade or submit transactions.\n\n`POST /v1/agent-work-brief` costs `$0.03` and accepts optional `min_reward_usd`, `limit`, and `health_limit` filters. It is intended for agents deciding whether current work is worth pursuing; it makes no claims, payments, or downstream paid calls.\n\n`GET /.well-known/x402` (also available as `/.well-known/x402.json`) publishes the machine-readable service manifest, routes, prices, network, asset, and payout address. The manifest is generated from the request host so it remains correct when the zero-cost development tunnel rotates.\n\nWhen the optional agent-tools hub gateway is enabled, it forwards settled requests to `/hub/v1/base-market-pulse` with a hub-issued `X-Hub-Secret`. That upstream path returns 404 without the secret and is separate from the direct x402 routes.\n\n## MCP integration\n\nThe repository also includes a local stdio MCP server for Cline and other MCP clients:\n\n```bash\nnpm run start:mcp\n```\n\nThe `preflight_context` tool provides a free local tier up to 12,000 characters. Larger inputs return the paid HTTP endpoint and its x402 price. Set `PAID_ENDPOINT` to the currently deployed endpoint when launching the MCP server. See [`llms-install.md`](./llms-install.md) for a copy-paste client configuration.\n\nThe same server is available as a hosted, stateless Streamable HTTP MCP endpoint at `https://agent-context-api-proxy.agent-context-proxy.workers.dev/mcp` and is described by [`server.json`](./server.json). It is published in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.dacode-dev%2Fagent-context-api) for client and downstream-directory discovery. This hosted route is intended for clients that can discover remote MCP servers; local execution remains available for self-hosting and offline preflight work. [`glama.json`](./glama.json) identifies the GitHub maintainer for directory indexing and ownership.\n\n## Design notes\n\n- `server.js` contains the Express app, x402 payment middleware, discovery metadata, and route wiring.\n- `mcp-core.js` defines the shared MCP tool surface; `mcp-server.js` runs it over stdio and `/mcp` runs it over Streamable HTTP.\n- `analysis.js` contains deterministic context analysis; `bounty-radar.js` contains source normalization and evidence policy.\n- `payanagent-health.js` contains the bounded, read-only catalog collector and probe logic.\n- `market-pulse.js` contains the bounded public market/RPC collectors and partial-source health output.\n- `test/server.test.js` covers redaction, budgets, the health route, and funded/unfunded labeling; `test/payanagent-health.test.js` covers health classification and the no-payment probe contract.\n- The API intentionally does not send submitted text to a third party; processing is local.\n- This is an experiment. Revenue must be verified from settlement records, not inferred from 402 responses, requests, or directory listings.\n",
+    "fetchedAt": "2026-08-11T23:50:45.312Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "preflight_context",
+      "description": "Count tokens, apply an optional model-aware budget, and redact likely credentials locally. Inputs over 12,000 characters require the paid HTTP API."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:50:45.470Z",
+  "toolsPreviewStatus": "ok"
+}

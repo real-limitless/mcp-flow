@@ -1,0 +1,81 @@
+{
+  "id": "app.pulltrader/seller-economics",
+  "title": "Pulltrader Seller Economics",
+  "description": "Compare what a trading-card seller keeps across eBay, Pulltrader, and other card marketplaces.",
+  "summary": "Compare what a trading-card seller keeps across eBay, Pulltrader, and other card marketplaces.",
+  "offersHint": "Compare what a trading-card seller keeps across eBay, Pulltrader, and other card marketplaces. · Remote MCP (streamable-http) at https://mcp.pulltrader.app/mcp",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.pulltrader.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.pulltrader.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://pulltrader.app/mcp",
+  "sourceUrl": "https://github.com/pulltrader/pulltrader-mcp",
+  "repository": {
+    "url": "https://github.com/pulltrader/pulltrader-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-28T04:56:13.076736Z",
+  "publishedAt": "2026-06-28T04:56:13.076736Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:42:01.766Z",
+    "sourceRepoAt": "2026-08-12T00:42:01.766Z",
+    "readmeAt": "2026-08-12T00:42:02.265Z",
+    "toolsAt": "2026-08-12T00:42:02.577Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/pulltrader/pulltrader-mcp",
+    "checkedAt": "2026-08-12T00:42:01.766Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/pulltrader/pulltrader-mcp/main/README.md",
+    "markdown": "# Pulltrader Seller Economics MCP\n\n> Compare what a trading-card seller keeps across eBay and Pulltrader selling methods — inside your AI assistant.\n\nA public, read-only [Model Context Protocol](https://modelcontextprotocol.io) server that estimates the **net amount a trading-card seller keeps** when selling the same card through eBay versus Pulltrader's selling methods (marketplace, Fulfilled by Pulltrader, branded storefront, and in-person POS).\n\nCalculations are **deterministic** and use a **dated, versioned fee schedule**. The server performs the math itself — it never asks the model to infer fees from prose. eBay figures are clearly labeled **estimates**.\n\n- **Transport:** Streamable HTTP (`POST /mcp`)\n- **Auth:** none (public, read-only)\n- **Endpoint:** `https://mcp.pulltrader.app/mcp`\n- **Registry name:** `app.pulltrader/seller-economics`\n\n## Who it's for\n\nTrading-card sellers, dealers, and shops deciding where to list a card and how much they'll take home — especially while comparing eBay against alternatives.\n\n## What it does (and doesn't)\n\n| Does | Doesn't |\n|---|---|\n| Estimate seller fees & net proceeds per method | Look up a card's market value or recent sales |\n| Compare eBay (estimated) vs Pulltrader methods | Identify a card from text or image |\n| Compute the price needed for a target net (via inputs) | Make any write/account changes |\n| State its assumptions and limitations explicitly | Claim one platform is universally cheapest |\n\n> Card identification, comparable sales, and \"what's it worth\" are **out of scope** for this server (see [ROADMAP](#roadmap)).\n\n## Tools\n\n### `compare_selling_costs`\n\nCompare estimated fees and seller net proceeds for one trading-card sale across selling methods.\n\n**Inputs**\n\n| Field | Type | Required | Default | Notes |\n|---|---|---|---|---|\n| `sale_price` | number | ✅ | — | Per-item price, > 0 |\n| `currency` | enum `USD` | | `USD` | Only USD supported |\n| `quantity` | integer | | `1` | Per-order fixed fees applied once |\n| `shipping_amount` | number | | `0` | Affects eBay's fee base |\n| `item_category` | enum `trading_cards` | | `trading_cards` | Only trading cards |\n| `seller_plan` | enum `free`\\|`starter`\\|`pro`\\|`shop` | | `free` | Marketplace payout tier |\n| `seller_covers_fees` | boolean | | `false` | If false, buyer pays the platform fee |\n| `ebay_store_subscription` | boolean | | `false` | Use eBay Store rate (12.35%) vs individual (13.25%) |\n| `methods` | array | | eBay + marketplace + storefront | Subset of supported methods |\n| `acquisition_cost` | number | | — | Estimates net profit per method |\n| `ebay_fee_percent_override` | number | | — | Override estimated eBay FVF % (flat) |\n\n**Supported methods:** `ebay`, `pulltrader_marketplace`, `pulltrader_fbp`, `pulltrader_storefront`, `pulltrader_pos`, and estimated competitor marketplaces `tcgplayer`, `manapool`, `misprint`, `fanatics_collect`, `goldin` (off by default — opt in via `methods`). Competitor figures model **fixed-price / Buy Now seller fees only**; auction formats (hammer price, buyer's premium, negotiated consignment) are not modeled.\n\n**Output (structured):** `currency`, `sale_price`, `methods[]` (each with `gross_amount`, `estimated_total_fees`, `fee_breakdown`, `estimated_payout`, `effective_fee_rate`, `owns_listing`, `fulfilled_by`, `where_it_sells`, `estimated`, `notes`), `difference_from_baseline`, `best_for_seller`, `assumptions`, `inputs_used`, `fee_schedules`, `fee_schedule_version`, `warnings`, `calculated_at`, `disclaimer`, `related_url`. A concise, neutral human summary is returned as text content.\n\n## Example prompts\n\n- \"Compare my estimated proceeds on a $250 graded-card sale.\"\n- \"What would I keep on an $80 card on eBay vs Pulltrader?\"\n- \"If I'm on the Pro plan, what do I net on a $500 sale through Pulltrader?\"\n- \"Explain the assumptions behind this payout estimate.\"\n\n## Example response (text summary)\n\n```\nOn a $250.00 trading-card sale, estimated seller proceeds by method:\n- Sell it yourself on eBay: keep $216.47 (estimated) (fees $33.53, 13.41%)\n- Pulltrader marketplace (you ship): keep $235.00 (fees $15.00, 6%)\n- Your Pulltrader storefront (you ship): keep $250.00 (fees $0.00, 0%)\nFor these inputs, Your Pulltrader storefront (you ship) returns about $33.53 more than Sell it yourself on eBay.\nEstimate based on fee schedules updated 2026-06-01 (Pulltrader) and 2026-06-27 (eBay, estimated). Estimates only, for trading cards in USD. ...\n```\n\n> eBay = 13.25% individual FVF + $0.40 per-order fee (orders over $10). The storefront keeps 100% because Pulltrader has **no seller fee** on storefront/POS — only the platform fee, paid by the buyer here. The platform fee is always charged on Pulltrader card sales (buyer pays by default).\n\n## Connecting\n\n### Claude (web / Desktop)\nSettings → Connectors → **Add custom connector** → URL `https://mcp.pulltrader.app/mcp`.\n\n### ChatGPT\nSettings → Apps & Connectors → Advanced → enable **Developer mode** → **Create** → URL `https://mcp.pulltrader.app/mcp`.\n\n### Cursor / generic\nAdd to your MCP client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"pulltrader-seller-economics\": {\n      \"url\": \"https://mcp.pulltrader.app/mcp\"\n    }\n  }\n}\n```\n\n> **Tested clients:** Claude (web/Desktop), ChatGPT developer mode, Cursor, MCP Inspector. We do not claim universal compatibility with every assistant.\n\n## Public access & rate limits\n\nPublic and read-only. A best-effort per-IP rate limit (default 60 req/min) guards the endpoint and returns HTTP 429 with `Retry-After`. There is no authenticated tier in this release.\n\n## Data sources & fee freshness\n\n- **Pulltrader fees** mirror Pulltrader's authoritative internal fee configuration.\n- **eBay fees** are an **estimate** of published trading-card rates (tiered individual/Store final value fee + order-size-based per-order fee), updated and reviewed on a schedule. See [docs/FEE_SCHEDULES.md](docs/FEE_SCHEDULES.md). Responses warn if a schedule is past its review date.\n\n## Limitations\n\n- eBay estimates exclude promoted listings, international fees, buyer-paid sales tax, and the seller's own shipping-label cost.\n- Not financial advice; actual proceeds vary.\n- Trading cards / USD only in this release.\n\n## Development\n\n```bash\nnpm install\nnpm run typecheck   # tsc --noEmit\nnpm test            # vitest\nnpm run dev         # wrangler dev (local)\n```\n\nDeploy and registry submission require **explicit approval** — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md). Do not deploy or publish from a development environment.\n\n## More\n\n- [PRIVACY](docs/PRIVACY.md) · [SECURITY](docs/SECURITY.md) · [TERMS](docs/TERMS.md) · [CHANGELOG](docs/CHANGELOG.md)\n- [Fee schedules & update process](docs/FEE_SCHEDULES.md)\n\n## Roadmap\n\nCard market context (comparable sales / pricing) is intentionally **deferred**. It will only be added if this MVP demonstrates useful repeat usage, acceptable cost, reliable outputs, meaningful seller intent, measurable conversion, and low support burden — and after data-licensing and abuse/auth review.\n\n---\n\nBuilt and maintained by Pulltrader. Support: support@pulltrader.app\n",
+    "fetchedAt": "2026-08-12T00:42:02.265Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "compare_selling_costs",
+      "description": "Compare estimated fees and the net amount a trading-card seller keeps when selling the SAME card across eBay (estimated), Pulltrader selling methods (marketplace, Fulfilled by Pulltrader, branded storefront, and in-person POS), and other marketplaces (TCGplayer, Mana Pool, Misprint, Fanatics Collect, Goldin — estimated fixed-price/Buy Now seller fees). Use this when a seller asks what they would keep/net/take-home on a sale, how fees compare between platforms, or which method leaves them with more money. Calculations are deterministic and use dated fee schedules. Competitor marketplaces are off by default; include them via the `methods` field. Only fixed-price seller fees are modeled — auction formats (hammer price, buyer's premium, negotiated consignment) are not. Do NOT use this to look up a card's market value or recent sales (this tool does not price cards), and do NOT use it for non-trading-card categories. Present competitor and eBay figures as estimates, never as guaranteed proceeds, and never claim one platform is universally cheapest."
+    },
+    {
+      "name": "calculate_required_sale_price",
+      "description": "Given a target take-home amount, compute the per-item sale price a trading-card seller must list at to net that amount on ONE selling method, after fees — eBay (estimated), a Pulltrader selling method (marketplace, Fulfilled by Pulltrader, branded storefront, in-person POS), or an estimated competitor marketplace (TCGplayer, Mana Pool, Misprint, Fanatics Collect, Goldin). If acquisition_cost is supplied, the target is treated as net profit (payout minus what you paid); otherwise it is the take-home payout. Use this when a seller asks 'what do I need to list this at to walk away with $X', 'to net/profit $X after fees', or 'to break even'. Calculations are deterministic and use dated fee schedules. Do NOT use this to look up a card's market value or recent sales (this tool does not price cards), and do NOT use it for non-trading-card categories. Present eBay and competitor figures as estimates, never as guaranteed proceeds."
+    },
+    {
+      "name": "explain_selling_method",
+      "description": "Return a plain, structured explanation of one or more supported trading-card selling methods: who owns the listing, who fulfills, where it sells, the fee components that apply, and important caveats. Covers eBay (estimated), Pulltrader marketplace, Fulfilled by Pulltrader, branded storefront, in-person POS, and estimated competitor marketplaces (TCGplayer, Mana Pool, Misprint, Fanatics Collect, Goldin). Use this when a seller asks how a method works, what fees a platform charges, or how Pulltrader selling options differ. Do NOT use this to compute a specific payout (use compare_selling_costs) or the price needed for a target net (use calculate_required_sale_price), and do NOT use it to price cards."
+    },
+    {
+      "name": "identify_card",
+      "description": "Resolve a natural-language trading-card description into structured fields (player/athlete, year, set, card number, parallel, grader, grade, sport/category). Use this first when a user names a card in prose and you need its canonical fields before looking up sales or market value. Returns a confidence level and which fields were resolved. This does NOT price the card or return sales — use search_card_sales or summarize_card_market for that. Trading cards only."
+    },
+    {
+      "name": "search_card_sales",
+      "description": "Return a capped sample of recent comparable SOLD listings for a trading card (price + sale date), plus a market snapshot (median, range, sample size). Use this when a user asks 'what is this card selling for', 'recent sales', or 'comps'. Accepts a natural-language `query` or a structured `item`. Figures are estimates from recent sales and exclude fees/taxes/shipping; this is not financial advice and does not place orders. Trading cards only."
+    },
+    {
+      "name": "summarize_card_market",
+      "description": "Return a canonical market summary for a trading card from recent comparable sales: median, mean, 10th–90th percentile range, volatility, and a confidence level based on sample size and dispersion. Use this when a user asks 'what's it worth', 'market value', or 'how volatile is this card'. Accepts a natural-language `query` or a structured `item`. Estimates from recent sales, excluding fees/taxes/shipping; not financial advice. Trading cards only."
+    },
+    {
+      "name": "get_card_price_history",
+      "description": "Return a chart-ready price-history series for a trading card, aggregated from recent comparable sold sales into day/week/month buckets with a median per bucket and an overall trend. Use this when a user asks 'how has the price changed', 'price over time', 'is it trending up or down', or wants a chart. Accepts a natural-language `query` or a structured `item`. Series is built from sold-sale samples (and vendor TCG history when available); estimates only, not financial advice. Trading cards only."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:42:02.577Z",
+  "toolsPreviewStatus": "ok"
+}

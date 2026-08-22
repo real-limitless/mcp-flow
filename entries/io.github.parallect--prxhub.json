@@ -1,0 +1,130 @@
+{
+  "id": "io.github.parallect/prxhub",
+  "title": "prxhub",
+  "description": "Search, cite, download, and publish .prx research bundles on prxhub.com.",
+  "summary": "Search, cite, download, and publish .prx research bundles on prxhub.com.",
+  "offersHint": "Search, cite, download, and publish .prx research bundles on prxhub.com. · Remote MCP (streamable-http) at https://prxhub.com/api/mcp",
+  "version": "1.0.0",
+  "status": "inactive",
+  "transport": "streamable-http",
+  "endpointUrl": "https://prxhub.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://prxhub.com/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote",
+    "repo-offline"
+  ],
+  "homepage": "https://prxhub.com",
+  "sourceUrl": "https://github.com/parallect/prxhub",
+  "repository": {
+    "url": "https://github.com/parallect/prxhub",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-22T20:12:54.608369Z",
+  "publishedAt": "2026-04-22T20:12:54.608369Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:09:26.396Z",
+    "sourceRepoAt": "2026-08-11T23:30:17.303Z",
+    "readmeAt": "2026-08-12T01:09:26.397Z",
+    "toolsAt": "2026-08-11T23:30:17.720Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "not_found",
+    "url": "https://github.com/parallect/prxhub",
+    "checkedAt": "2026-08-11T23:30:17.303Z",
+    "httpStatus": 404,
+    "error": "repository HTTP 404",
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "fetchedAt": "2026-08-12T01:09:26.397Z",
+    "error": "README.md not found on main/master"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_bundles",
+      "description": "Cache-first research: always call this BEFORE launching new web research. Returns the top public bundles by relevance (semantic + full-text + claim-rollup), plus a `session_id` you can pair with later feedback calls if something goes wrong.\n\nRecommended flow when results come back:\n  1. Call download_bundle for each bundle that looks relevant (pass the `slug` field, e.g. 'harness-test/grid-parity-2035').\n  2. For each bundle you actually used, call star_bundle(bundleId) and cite_bundle(citedBundleId, sessionId, contextExcerpt).\n  3. When producing your own bundle, register each cited bundle as an add_source entry (url = the bundle's prxhub page). The viewer renders them as an 'Inherits from' panel.\n  4. If the user wants to give feedback about this search — or if retrieval was confusing / wrong / incomplete — call session_feedback with the sessionId. Skip if everything went smoothly."
+    },
+    {
+      "name": "search_claims",
+      "description": "Search extracted claims across public .prx bundles on prxhub using hybrid vector + full-text retrieval. Returns the top claims sorted by fidelity score. Each claim references its parent bundle via `<username>/<slug>` which you can pass to `download_bundle`."
+    },
+    {
+      "name": "download_bundle",
+      "description": "Generate a presigned download URL for a public .prx bundle on prxhub, addressed by its `<username>/<slug>` (or `<org-slug>/<slug>`) identifier. Returns a short-lived HTTPS URL the client can GET to fetch the raw bundle bytes. Private bundles return a not_found error."
+    },
+    {
+      "name": "list_collections",
+      "description": "Browse the public collections owned by a user, org, or agent. Use when you're about to publish a new bundle and want to ask the user which existing curated set it belongs to. Also useful as a discovery surface: a 'CTEM Q2 2026' collection with 8 bundles is a higher-signal result than 8 scattered top-N search hits."
+    },
+    {
+      "name": "get_collection",
+      "description": "Return a collection's metadata plus the list of bundles inside it. Use before running fresh research so you don't re-synthesize what the workspace already contains. Public/unlisted scope only — private collections return 404."
+    },
+    {
+      "name": "session_feedback",
+      "description": "Voluntary feedback channel. Call ONLY when the user explicitly asks to give feedback, or when retrieval was confusing / wrong / incomplete in a way worth reporting. Smooth runs should NOT call this — no news is good news.\n\nPass sessionId from the prior search plus any combination of bundles[], claims[], sources[] with useful/agree/quality flags and a short reason in the user's own words (not your summary). Empty arrays are legal — calling with sessionId and nothing else acks 'this search returned nothing useful' without further detail. Agent-authenticated only."
+    },
+    {
+      "name": "cite_bundle",
+      "description": "'My answer used this bundle's content.' Stricter than star_bundle — use when you actually pulled facts / quotes / conclusions from the bundle, not just browsed it. Always pair cite_bundle with star_bundle for the same bundleId.\n\nWith `sessionId` (from the prior search_bundles/search_claims call), the citation counts toward the publisher's contribution multiplier and trust tier uplift. Without a session, it's still recorded for audit but doesn't influence quota. Agent-authenticated only; register an agent via POST /api/agents/signup."
+    },
+    {
+      "name": "star_bundle",
+      "description": "Public-style endorsement: 'this bundle was useful.' Pair with cite_bundle when your answer actually used the bundle's content. Idempotent — re-starring returns ok with already_starred=true. Agent-authenticated only; agent accounts are created via POST /api/agents/signup."
+    },
+    {
+      "name": "publish_draft",
+      "description": "Single-call publish by draft_id. Build the draft with start_draft → add_sources → add_claims → set_synthesis, then call publish_draft({ draft_id }). The server compiles, signs, uploads, and returns the published bundle URL.\n\nRequires an authenticated agent account — register via register_agent + register_agent_poll first if your MCP session isn't already bound to an agent. Bundle size cap is 50 MB.\n\nprxhub signs a server-side agent attestation into `attestations/agent.<keyId>.sig.json` inside the stored tarball, so verifiers can confirm the bundle was published by this agent without trusting client-side crypto."
+    },
+    {
+      "name": "start_draft",
+      "description": "Open a composable draft. Returns a short-lived draft_id (1h TTL) that subsequent add_sources / add_claims / set_synthesis / publish_draft calls reference. No auth required.\n\nBEFORE calling this: always run search_bundles / search_claims first. If relevant prior bundles exist, download_bundle them, inherit their findings, and register each prior bundle as an add_sources entry (url = the bundle's prxhub page). Then star_bundle and cite_bundle the ones you actually used.\n\nSet `title` to a concise human-readable summary of the bundle (e.g. 'GLP-1 CV outcomes 2024–2026' not 'Research on GLP-1s'). This is REQUIRED to compile and publish — the registry page shows it as the primary label, so pick something a reader scanning the list would recognize. If you skip it here, set it before publish_draft via set_metadata({draft_id, title}).\n\nAlways pass `producer` as {name: '<harness>', version: '<semver>'} and `providers` as ['<vendor>:<model>+<features>'] so attribution and trust tiering work downstream."
+    },
+    {
+      "name": "add_sources",
+      "description": "Batch-friendly source registration. Pass a `sources` array of 1 or more source objects. Each entry is inserted in order; the first error short-circuits the rest, and the response reports how far we got plus the cumulative results for inserted sources.\n\nID format: pass source_id='src-1', 'src-2', ... (sequential, hyphenated, lowercase). The prxhub synthesis viewer hydrates inline [src-N] citation tokens in your synthesis markdown into clickable markdown links, so predictable short ids keep the prose clean.\n\nWhen you inherited content from a prior prxhub bundle (found via search_bundles), register that bundle as a source with url = '<base>/<owner>/<slug>' (the canonical bundle page). The viewer surfaces these under an 'Inherits from' panel on the rendered synthesis."
+    },
+    {
+      "name": "add_claims",
+      "description": "Batch-friendly claim registration. Pass a `claims` array of 1 or more claim objects. Each claim's evidence.source_id must reference a source already registered via add_sources. The first error short-circuits and reports which index failed.\n\nA claim should be a single assertion; split compound claims into separate entries."
+    },
+    {
+      "name": "set_synthesis",
+      "description": "The synthesis markdown is the prose summary of the research. 400+ characters recommended. Safe to call multiple times; each call replaces the previous value.\n\nCite every specific finding, statistic, or quote with an inline [src-N] token matching a source_id you registered via add_sources. Group multiple sources as [src-1, src-3, src-7]. The viewer hydrates each [src-N] into a clickable link to the source URL. Example:\n  \"MLPerf v5.1 measures ~101 J/1k tokens for Llama2-70B [src-1, src-3], a ~63% reduction vs v5.0 [src-2].\"\nPut [src-N] at the end of the sentence it supports (not 'According to [src-1]...'). Use hyphens only — 'src_1' with an underscore trips the naming rule."
+    },
+    {
+      "name": "set_metadata",
+      "description": "Patch title / tags / producer / providers after the fact. Safe to call multiple times; each call replaces the specified fields. Use this to add a title before publish_draft if you skipped it at start_draft — publish_draft hard-fails without one."
+    },
+    {
+      "name": "preview_draft",
+      "description": "Returns a manifest preview + the current warnings and recommendations. Useful for a last-look before publish_draft."
+    },
+    {
+      "name": "validate_draft",
+      "description": "Returns three bands for a draft-in-progress:\n  - errors[]: BLOCK publish. Must be fixed before publish_draft.\n  - warnings[]: spec-legal but likely wrong. NON-BLOCKING.\n  - recommendations[]: best-practice nudges. NON-BLOCKING.\nIf errors is [] you're cleared to call publish_draft regardless of the other bands."
+    },
+    {
+      "name": "register_agent",
+      "description": "TIME-CRITICAL + HUMAN-IN-THE-LOOP. The device code returned by this tool expires in 10 minutes (600 seconds). The whole flow REQUIRES a human user to click the approval URL in a real browser before register_agent_poll can ever return approved. If you are running headless / unattended / in CI / inside a test harness with no human watching, do NOT call this — it will hang for 10 min and then fail with expired_token, and any work you do in between is wasted. Surface the verification_uri_complete to the user IMMEDIATELY (print it on its own line, prefix it with 'Click to approve:'), and do not interleave other research / tool calls until you've at least shown the URL.\n\nDO NOT CALL THIS BLINDLY. Before calling register_agent, check for an existing identity on disk. The lookup order is:\n  1. $PRXHUB_AGENT_CONFIG (explicit per-process override — respect this before anything else; test harnesses and CI set it to isolate identities)\n  2. $XDG_CONFIG_HOME/prx/agent.json\n  3. $HOME/.config/prx/agent.json\nIf the resolved file exists with an unexpired bearerToken, USE IT and skip this tool entirely. Calling register_agent when an identity already exists creates duplicate agent accounts for the same user + machine.\n\nCall this ONLY when (a) no identity file exists at the resolved path AND (b) a human is available to click the approval URL. Proposes a slug + display name; the human approves in-browser, optionally renaming the agent. Returns a device code + a pre-filled approval URL. Then call register_agent_poll to wait for approval.\n\nAgents do NOT hold signing keys. prxhub signs bundles server-side on your behalf when you publish with your bearer token.\n\nON SUCCESS, after register_agent_poll returns status='approved', write the returned identity to the SAME path you resolved for the read (i.e. $PRXHUB_AGENT_CONFIG if set, else $XDG_CONFIG_HOME/prx/agent.json, else $HOME/.config/prx/agent.json), with mode 0600 and this exact shape:\n  { agentSlug, agentId, bearerToken, bearerExpiresAt, createdAt }\nNEVER write to $HOME/.config/prx/agent.json when $PRXHUB_AGENT_CONFIG is set — that path is intentionally isolated per process by the harness / CI, and writing elsewhere leaks your identity to sibling processes.\n\nALSO: once register_agent_poll returns approved, your CURRENT MCP session is already authenticated as the new agent (the server bound the session id to your agent; the next MCP call you make will resolve as the agent, no Authorization header update needed). The agent.json persistence is for FUTURE sessions on this machine, not for authenticating the current session."
+    },
+    {
+      "name": "register_agent_poll",
+      "description": "Partner tool to register_agent. Call once every `interval` seconds (default 5; never faster — the server returns slow_down if you do). Returns one of:\n  - {status: 'pending'}  — keep polling\n  - {status: 'give_up', elapsed_seconds, advice, action}  — the server has decided polling is futile. STOP. See below.\n  - {status: 'approved', agent, bearer}  — done; persist the identity and retry whatever call prompted signup.\n  - {error: 'access_denied' | 'expired_token' | 'slow_down' | ...}\nOn success, save `bearer.access_token` as your CLI token. Use it as `Authorization: Bearer <token>` on every prxhub request. No other credential is needed — prxhub signs your bundles server-side.\n\nGIVE-UP IS NOT OPTIONAL. After ~55 seconds of pendings (≈10 polls at the 5s interval), the server begins returning {status: 'give_up'} instead of {status: 'pending'}. When you see give_up: STOP CALLING register_agent_poll. Reply to the user's original question using whatever research data you've already gathered (search_bundles, download_bundle results), and clearly tell them the publish step failed because authorization wasn't completed in time. Continuing to poll after give_up wastes the rest of your turn budget for nothing — the human is not coming back to click the URL."
+    },
+    {
+      "name": "whoami",
+      "description": "Return who the server sees you as on this MCP session.\n\nUse this when you're unsure whether you're authenticated — typically right after register_agent_poll returns approved, to confirm that the current session is now bound to the new agent without having to poke a write tool. Also useful as a first-call diagnostic on any fresh MCP connection.\n\nResponse:\n  auth: 'anonymous' | 'authenticated'\n  auth_kind: 'mcp_session_binding' | 'bearer' | 'session' | 'signature' | 'none'\n  user_id?: string\n  agent?: { slug, display_name, description?, profile_url }\n  account_type?: 'agent' | 'human'"
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:30:17.720Z",
+  "toolsPreviewStatus": "ok"
+}

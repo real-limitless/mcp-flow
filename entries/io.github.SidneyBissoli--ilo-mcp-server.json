@@ -1,0 +1,68 @@
+{
+  "id": "io.github.SidneyBissoli/ilo-mcp-server",
+  "title": "ILOSTAT — ILO Labour Statistics (provenance-first)",
+  "description": "Labour statistics from ILOSTAT (ILO) with full provenance: source URL, vintage, license.",
+  "summary": "Labour statistics from ILOSTAT (ILO) with full provenance: source URL, vintage, license.",
+  "offersHint": "Labour statistics from ILOSTAT (ILO) with full provenance: source URL, vintage, license. · Remote MCP (streamable-http) at https://ilo.sidneybissoli.com/mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ilo.sidneybissoli.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ilo.sidneybissoli.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/SidneyBissoli/ilo-mcp-server",
+  "repository": {
+    "url": "https://github.com/SidneyBissoli/ilo-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T02:42:41.817654Z",
+  "publishedAt": "2026-08-08T02:42:41.817654Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:51.591Z",
+    "sourceRepoAt": "2026-08-12T00:02:37.906Z",
+    "readmeAt": "2026-08-12T00:02:38.523Z",
+    "toolsAt": "2026-08-12T00:02:38.624Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SidneyBissoli/ilo-mcp-server",
+    "checkedAt": "2026-08-12T00:02:37.906Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SidneyBissoli/ilo-mcp-server/main/README.md",
+    "markdown": "# ilo-mcp-server — servidor MCP provenance-first do ILOSTAT\n\nServidor [MCP](https://modelcontextprotocol.io) (Streamable HTTP) para o **ILOSTAT**,\na base estatística da Organização Internacional do Trabalho, hospedado em Cloudflare\nWorkers. Projeto ilostat (`C:\\dev\\mcp\\ilostat\\roadmap.md`), instanciado do template\nda Fase 0 do portfólio (`mcp-br-commons/templates/cloudflare-worker`). A fonte UNESCO\nUIS vive no servidor irmão **`uis-mcp-server`** (decisão do decisor, 07/08/2026: um\nservidor por fonte — segregação estrutural CC BY / CC BY-SA e convenção de naming do\nmcp-builder; tools com prefixo de serviço `ilo_`).\n\nProdução: **`https://ilo.sidneybissoli.com`** (endpoint MCP em `/mcp`; padrão de\nURLs do portfólio). O hostname `ilo-mcp-server.sidneybissoli.workers.dev` permanece\nservido como secundário.\n\n## Tools\n\n| Tool | O quê | Fonte |\n|---|---|---|\n| `ilo_search_indicators` | busca ~1.210 dataflows por palavra-chave (paginação por `offset`) | catálogo em D1 (100% local) |\n| `ilo_get_indicator_metadata` | dimensões, codelists, vintage, defaults de um dataflow | estrutura em KV (miss → upstream) |\n| `ilo_list_dimension_values` | códigos válidos de uma dimensão (paginação por `offset`) | codelist em KV (miss → upstream) |\n| `ilo_get_data` | observações com filtros por dimensão e período | 1 chamada REST por consulta |\n\nToda resposta carrega o **bloco de proveniência v1.0** (`@sbissoli/mcp-provenance`,\nmodos `concise`/`detailed` via parâmetro `provenance_mode`) nos três canais do\ncontrato: `structuredContent`, `_meta` namespaced (`com.sidneybissoli.ilostat/*`) e\nrodapé de texto.\n\n## Decisões vinculantes (spike Sessão 04 + decisor, 07/08/2026)\n\n- **JSON só via header `Accept`** (`application/vnd.sdmx.{structure,data}+json`) —\n  `?format=` é ignorado pelo endpoint e devolve XML.\n- **Nunca emitir consulta irrestrita** (`/all` → HTTP 504 do gateway em ~61 s).\n  `REF_AREA` é obrigatório em `ilo_get_data`, com **teto de 30 áreas por chamada** e erro\n  pedagógico pedindo lotes/paginação por período. Sem fatiamento server-side no MVP;\n  reavaliar pós-lançamento com dados do UsageTracker.\n- **Codelists cacheadas POR CODELIST** (`codelist:ILO:CL_AREA:1.0`, TTL 7 dias) —\n  `CL_MEASURE`/`CL_AREA` são compartilhadas entre dataflows (~90% de economia de KV).\n  Estrutura de dataflow em KV com TTL 24 h (é a fonte do `data_vintage`).\n- **`data_vintage`** = annotation `LAST_UPDATE` do dataflow (`dd/MM/yyyy` → ISO),\n  servido da estrutura cacheada — consulta típica permanece **1 chamada REST**.\n- **Catálogo em D1**, seed via `scripts/seed-catalog.mjs`; o `retrieved_at` do seed é\n  gravado em `catalog_meta` e reportado na proveniência de `ilo_search_indicators`\n  (`served_from_cache: true`).\n- **`retrieved_at` é sempre o instante REAL da extração no upstream**, preservado\n  junto ao valor cacheado — nunca o momento do build ou da resposta.\n- **User-Agent identificável** em toda chamada upstream (o gateway da OIT responde\n  500 a clientes sem UA reconhecível; o fetch do Node/undici é rejeitado mesmo com UA\n  — o seed usa `curl`).\n- **Idioma do servidor: inglês; fuso: UTC** (persona internacional; dados da OIT são\n  publicados em inglês).\n\n### Regra de `derived` (caso de fronteira — decisão do decisor, 07/08/2026)\n\nConversão de unidade e arredondamento **não** contam como derivação: `derived=false`\ncom nota documentando a conversão. `derived=true` fica reservado a **transformação\nreal** (agregação, taxa calculada pelo servidor, interpolação, harmonização), sempre\ncom `derivation_note`. Regra operativa: *valor com o mesmo significado = não derivado;\nvalor calculado = derivado.* O MVP não transforma nada — `derived` é sempre `false`.\n\n### Notices\n\n`notices` reproduz os valores de `OBS_STATUS` (canal de status/disclaimer do SDMX,\nex.: \"Break in series\"), verbatim com contagem. Atributos técnicos por observação\n(`DECIMALS` etc.) permanecem nas linhas (`rows[].attributes`).\n\n## Obrigações de licença (docs/02 do projeto)\n\n- ILOSTAT: **CC BY 4.0** (dados/metadados desde 03/05/2023; `verified_at` 2026-08-04).\n- Atribuição ILO em toda resposta (campo `citation`):\n  `International Labour Organization, ILOSTAT, https://ilostat.ilo.org/data/, accessed <data>.`\n- **Não** usar o logo da OIT. Landing declara \"not endorsed by the ILO\".\n- Dados UIS (CC BY-SA) vivem no servidor irmão `uis-mcp-server` — segregação\n  estrutural: os dois regimes nunca coabitam um servidor.\n\n## Desenvolvimento\n\n```bash\nnpm install\nnpm run typecheck && npm test   # 62 testes offline (parsers, chave, tools, evals-fixtures)\nnpm run dev                     # http://localhost:8787/mcp\n\n# Seed do catálogo (D1) — necessário antes do primeiro uso:\nnode scripts/seed-catalog.mjs   # baixa via curl e gera scripts/seed-catalog.sql\nnpx wrangler d1 execute ilostat-catalog --local  --file=scripts/seed-catalog.sql\nnpx wrangler d1 execute ilostat-catalog --remote --file=scripts/seed-catalog.sql\n\nnpm run deploy\nnode scripts/smoke-mcp.mjs      # smoke do MCP em produção (initialize → 4 tools → erros)\n```\n\n## Refresh do seed (D1) — decisão da Sessão 07 (07/08/2026)\n\nEstratégia: **seed manual com gatilho definido; sem cron do Worker.** Os dados de\n`ilo_get_data` são sempre live (nunca envelhecem); o que o seed congela é só o\ncatálogo de busca (~1.210 dataflows, quase estático no upstream). A proveniência de\n`ilo_search_indicators` expõe o `retrieved_at` REAL do seed, então a idade do\ncatálogo é sempre visível ao cliente — staleness explícita, não silenciosa.\n\n- **Gatilhos de re-seed**: (a) trimestral; (b) imediato se um dataflow existente no\n  upstream não aparecer na busca (sintoma de catálogo defasado). Procedimento: os 3\n  comandos de seed em \"Desenvolvimento\".\n- **Cron rejeitado por ora**: cadência upstream baixa não justifica código/estado\n  extra; reavaliar na Fase 3 (pós-submissão), com tráfego real — mesma janela da\n  reavaliação dos tetos operacionais.\n\n## Evals\n\n`@sbissoli/mcp-evals`: 24 fixtures próprias em `evals/fixtures/queries.ts`, validadas\noffline em `npm test`. A rodada com modelo real (`npm run eval`) **custa API** — só\ncom decisão explícita (`ANTHROPIC_API_KEY`; sem a chave, sai 0 com instruções).\nRodada de 07/08/2026 (Sessão 07): **top-1 100% (24/24)** — `evals/results/`.\n\n**End-to-end (formato mcp-builder)**: 10 perguntas complexas com resposta única\nverificável em `evals/e2e/evaluation.xml`, respostas validadas manualmente contra a\nprodução (`evals/e2e/validacao-respostas.md`). Rodada de 07/08/2026 (Sonnet):\n**9/10 string exata; 10/10 substantivo** — `evals/results/2026-08-07-e2e.md`.\nHarness:\n`fase0-insumos/mcp-builder-evaluation/evaluation.py -t http -u https://ilo.sidneybissoli.com/mcp`\n(exige as correções de compatibilidade descritas no registro de resultados).\n\n## Rotas\n\n`/` landing · `/health` liveness · `/status` versão+deploy · `/metrics` uso agregado ·\n`/mcp` MCP Streamable HTTP. Auth Bearer opcional (`wrangler secret put API_KEY`);\nrate limit token-bucket por IP.\n\n## Privacidade\n\nPolítica de privacidade do serviço hospedado: [PRIVACY.md](PRIVACY.md).\n",
+    "fetchedAt": "2026-08-12T00:02:38.523Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "ilo_search_indicators",
+      "description": "Search the ILOSTAT catalogue of ~1,200 indicator dataflows by keywords in the name or id (e.g. \"unemployment rate sex age\"). Returns dataflow ids to use with ilo_get_data / ilo_get_indicator_metadata. Searches the catalogue only — it does not return statistical values (use ilo_get_data) and does not cover non-ILO sources."
+    },
+    {
+      "name": "ilo_get_indicator_metadata",
+      "description": "Structure of one ILOSTAT dataflow: dimensions (in SDMX key order), their codelists, the time dimension, the source's default selection and the data vintage (last update at the ILO). Use before ilo_get_data to know which filters exist. Does not return statistical values and does not list the codes themselves (use ilo_list_dimension_values)."
+    },
+    {
+      "name": "ilo_list_dimension_values",
+      "description": "Valid codes (id + label) of one dimension of an ILOSTAT dataflow — e.g. the country/area codes of REF_AREA or the sex categories of SEX. Use to build correct ilo_get_data filters. Does not return statistical values; not applicable to the time dimension (filter it via start_period/end_period in ilo_get_data)."
+    },
+    {
+      "name": "ilo_get_data",
+      "description": "Statistical observations from one ILOSTAT dataflow, filtered by dimension codes (filters, e.g. {\"REF_AREA\": [\"BRA\",\"ARG\"], \"SEX\": \"SEX_T\"}) and period (start_period/end_period, e.g. \"2015\"/\"2024\"). REF_AREA is required, maximum 30 areas per call — for broad panels, split areas into batches and/or paginate by period. Unfiltered dimensions return all their categories. Does not aggregate, convert or otherwise transform values (raw ILOSTAT data only), and does not search indicators (use ilo_search_indicators)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:02:38.624Z",
+  "toolsPreviewStatus": "ok"
+}

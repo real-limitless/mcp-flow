@@ -1,0 +1,128 @@
+{
+  "id": "dev.dnsdoctor/dns-doctor",
+  "title": "dns-doctor",
+  "description": "Scan and fix email auth (SPF, DMARC, DKIM, MX, blacklists, expiry) + DNS checks. Validated fixes.",
+  "summary": "Scan and fix email auth (SPF, DMARC, DKIM, MX, blacklists, expiry) + DNS checks. Validated fixes.",
+  "offersHint": "Scan and fix email auth (SPF, DMARC, DKIM, MX, blacklists, expiry) + DNS checks. Validated fixes. · Remote MCP (streamable-http) at https://dnsdoctor.dev/mcp · Packages: npm:@dnsdoctor/mcp",
+  "version": "1.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://dnsdoctor.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://dnsdoctor.dev/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@dnsdoctor/mcp",
+    "version": "1.4.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dnsdoctor/mcp",
+      "version": "1.4.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://dnsdoctor.dev/methodology",
+  "sourceUrl": "https://github.com/dnsdoctor/claude-plugin",
+  "repository": {
+    "url": "https://github.com/dnsdoctor/claude-plugin",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T17:20:49.083213Z",
+  "publishedAt": "2026-08-04T17:20:49.083213Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:56.488Z",
+    "sourceRepoAt": "2026-08-12T00:23:05.053Z",
+    "readmeAt": "2026-08-12T00:23:05.575Z",
+    "toolsAt": "2026-08-12T00:23:05.673Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dnsdoctor/claude-plugin",
+    "checkedAt": "2026-08-12T00:23:05.053Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dnsdoctor/claude-plugin/main/README.md",
+    "markdown": "# DNS Doctor — Claude Code plugin & DNS skill (DMARC, SPF, DKIM)\n\nDiagnose and fix a domain's email authentication (SPF, DMARC, DKIM, MX, blacklist,\ndomain/SSL expiry) from inside Claude. This plugin bundles the DNS Doctor **skill**\n(the scan → diagnose → fix workflow) and an **MCP server config** pointing at the\nhosted DNS Doctor tools.\n\nThe moat: every fix record you get back is generated and validated by a\ndeterministic engine — RFC grammar plus the SPF 10-lookup counter — **never an LLM\nguess**. Your agent hands the human a record that already parses correctly, not a\nplausible-looking string that silently fails.\n\n## What's inside\n\n```\nclaude-plugin/\n├── .claude-plugin/plugin.json   # plugin manifest\n├── .mcp.json                    # MCP server: https://dnsdoctor.dev/mcp (HTTP)\n├── skills/dns-doctor/SKILL.md   # the scan → diagnose → fix workflow\n├── src/                         # @dnsdoctor/mcp — the local stdio MCP server\n├── tools.json                   # the 15 tool definitions (generated, never hand-edited)\n├── instructions.txt             # the server's own `initialize` guidance (generated)\n├── tests/                       # vitest suite for the stdio server\n├── package.json  tsconfig.json  # npm package + build\n├── LICENSE                      # Apache-2.0\n└── README.md\n```\n\n## Tools\n\n| Tool | Does |\n|---|---|\n| `scan_domain` | Fresh scan of a domain; full report. |\n| `get_report` | Persisted report (scans once if none exists). |\n| `build_dmarc_upgrade` | A validated DMARC enforcement record — `p=reject` only when the server-derived alignment gate passes. |\n| `count_spf_lookups` | The SPF DNS-lookup count against the RFC limit of 10. |\n| `validate_dmarc_record` | Parse and validate a DMARC record, tag by tag. |\n| `generate_dmarc_record` | Build a DMARC record from a policy + reporting address. |\n| `check_dkim_selector` | Look up one DKIM selector and check the key. |\n| `parse_dmarc_report` | Parse an aggregate (RUA) report file into rows. |\n| `check_record` | Read any DNS record type for a name. |\n| `check_reverse_dns` | PTR / forward-confirmed reverse DNS for an IP. |\n| `audit_spf_includes` | The SPF include/redirect tree — who can transitively send as the domain, with typed findings (broken include, confirmed-unregistered include, expiring registration, nested `+all`). Analysis only; no SPF fix record. |\n| `build_parked_domain_records` | The Null MX + `v=spf1 -all` + `p=reject; np=reject` hardening pack for a domain that sends no mail. The server re-checks DNS itself and refuses when it finds evidence of mail. |\n| `start_monitoring_signup` | A sign-up link to hand to the human who owns the domain. Sends no email and creates nothing — they open it, sign in on our page themselves (a social provider or an emailed link, whichever that deployment offers), and the domain is carried over to their dashboard already filled in; monitoring starts once they verify it with a TXT record. |\n| `get_alerts` | **Token required.** The account's monitoring alert log, newest first. Read-only — no acknowledge, no delete. Page down with `before` until `next_before` is `null` before advancing `since`. |\n| `get_readiness` | **Token required.** Whether one monitored domain's aggregate-report evidence justifies a stronger DMARC policy yet: `ready`, the `blockers`, and `next_record` (validated, or `null` while blocked — which is an answer, not a gap). |\n\nThe two monitoring reads are **listed for everyone and callable with a token**:\nthey appear in the tool list on both transports, and without a valid token the\ncall is refused with the page the account owner mints one on. Over the hosted\nHTTP transport the `dnsdoctor://domains` resource (your monitored domains) is\nlikewise always listed and refused without a token; the local stdio server\nregisters the tools only — no resource. Anonymous access covers all thirteen\ndiagnosis tools, which is enough for a one-off diagnosis either way.\n\n## Install\n\n### Claude Code\n\nAdd the marketplace/repo and enable the plugin:\n\n```bash\n/plugin marketplace add dnsdoctor/claude-plugin\n/plugin install dns-doctor\n```\n\n> Public home: [github.com/dnsdoctor/claude-plugin](https://github.com/dnsdoctor/claude-plugin)\n> (org `dnsdoctor`, domain-verified). The plugin is developed in the DNS Doctor\n> monorepo and published here as clean release snapshots.\n\nOr point Claude Code at a local checkout of this directory during development.\nOnce enabled, the skill auto-loads and the `dns-doctor` MCP server connects to\n`https://dnsdoctor.dev/mcp`.\n\n### claude.ai (MCP connector)\n\nAdd a custom connector with:\n\n- **URL:** `https://dnsdoctor.dev/mcp`\n- **Transport:** Streamable HTTP\n- **Auth:** none (anonymous) — or a Bearer token (below)\n\n### Any MCP client (standard config)\n\n```json\n{\n  \"mcpServers\": {\n    \"dns-doctor\": {\n      \"url\": \"https://dnsdoctor.dev/mcp\"\n    }\n  }\n}\n```\n\n## Optional: API token for monitored domains\n\nAnonymous access covers scanning and fixes. A per-account API token unlocks the\naccount's own monitoring data: the `get_alerts` and `get_readiness` tools, and\nthe `dnsdoctor://domains` resource (your continuously-monitored domains and\ntheir latest per-check statuses).\n\n1. Sign in at <https://dnsdoctor.dev> → **Settings → API tokens** → create a token.\n   The plaintext (`dnsd_…`) is shown once; copy it.\n2. Add the `Authorization` header to the server in `.mcp.json`:\n\n   ```json\n   {\n     \"mcpServers\": {\n       \"dns-doctor\": {\n         \"type\": \"http\",\n         \"url\": \"https://dnsdoctor.dev/mcp\",\n         \"headers\": { \"Authorization\": \"Bearer ${DNSDOCTOR_API_TOKEN}\" }\n       }\n     }\n   }\n   ```\n\n   Then export `DNSDOCTOR_API_TOKEN=dnsd_YOUR_TOKEN` in your environment. Never\n   commit the token.\n\n### Transport\n\nTwo supported public transports, same 15 tools:\n\n- **Hosted streamable HTTP** — `https://dnsdoctor.dev/mcp`, wired in this\n  plugin's `.mcp.json`. No install, no keys.\n- **Local stdio** — `npx -y @dnsdoctor/mcp`. A thin server that runs on your\n  machine and calls the public DNS Doctor REST API; it holds no diagnosis logic\n  of its own and relays every record string verbatim.\n\n```json\n{\n  \"mcpServers\": {\n    \"dns-doctor\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@dnsdoctor/mcp\"],\n      \"env\": { \"DNSDOCTOR_API_TOKEN\": \"dnsd_YOUR_TOKEN\" }\n    }\n  }\n}\n```\n\n`DNSDOCTOR_API_TOKEN` is optional (anonymous access covers scanning and fixes;\nthe two monitoring reads need it).\n`DNSDOCTOR_API_BASE` overrides the origin — it must be an origin that serves the\n`/api/…` paths, i.e. the public site rather than a bare backend port.\n\n### Build the stdio server from source\n\n```bash\nnpm ci\nnpm test\nnpm run build      # -> dist/index.js, the package's bin entrypoint\n```\n\n`tools.json` and `instructions.txt` are **generated from the hosted server** and\npinned by a backend test — never hand-edit them, and never add a tool\ndescription to `src/`. Both files ship in the npm tarball; without them the\nclient has no tools and none of its safety guidance.\n\n## Worked example\n\n> **You:** Our invoices keep landing in customers' spam. Domain is `example.com`.\n>\n> **Claude** (`scan_domain` → `example.com`): DMARC is at `p=none`, so nothing\n> enforces alignment — receivers can't tell your mail from a spoof. SPF passes with\n> 7 of 10 lookups used. DKIM: a selector was found and is valid. Not blacklisted.\n> Domain expires in 240 days.\n>\n> **Claude** (`build_dmarc_upgrade` → `example.com`): SPF is aligned and DKIM is\n> present, so enforcement to `p=reject` is safe. Publish this exact TXT record at\n> `_dmarc.example.com` — **paste it verbatim, don't edit it**:\n>\n> ```\n> v=DMARC1; p=reject; rua=mailto:dmarc@example.com; adkim=r; aspf=r\n> ```\n>\n> Apply it in your DNS host once you've confirmed it's approved, then ask me to\n> re-scan to verify. Want the domain watched continuously with aggregate-report\n> alerts? I can send a setup link to your email.\n\n## Learn more\n\n- **Methodology** (how the verdicts are computed): <https://dnsdoctor.dev/methodology>\n- **REST API / OpenAPI schema:** <https://dnsdoctor.dev/api/v1/openapi.json>\n\n## License\n\nApache-2.0 — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:23:05.575Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "scan_domain",
+      "description": "Force a fresh scan of a domain and return its full report: seven deterministic checks — SPF, DKIM, DMARC, MX, DNS hardening, domain/TLS expiry and blacklist listing — each with a status (pass/warn/fail/info/temperror), the observed record, and a fixengine-generated fix_record where one exists. Explanations are cache-first. A repeat scan of the same domain within a minute reuses the stored report. Use this when you need current state; use get_report when a recent cached answer will do."
+    },
+    {
+      "name": "get_report",
+      "description": "Return the stored report for a domain, scanning once only if none exists yet — the cheap read, and the right default for a first look. Returns the same seven-check report as scan_domain (SPF, DKIM, DMARC, MX, DNS hardening, domain/TLS expiry, blacklist; each with a status, the observed record and any fixengine fix_record), including `scanned_at` so you can judge staleness yourself. Prefer scan_domain when you specifically need state re-read right now — for example after a DNS change."
+    },
+    {
+      "name": "build_dmarc_upgrade",
+      "description": "Return a validated DMARC enforcement-upgrade record for a domain. The alignment gate (whether p=reject is safe) is derived server-side from a scan — a caller can never assert alignment. `record` is null when there is no honest upgrade to offer (the domain does not exist; the DMARC lookup itself hit NXDOMAIN while the existence probe did not resolve; the DMARC lookup temp-failed; or the domain already applies a policy at least as strong as this scan justifies): relay `rationale` and never compose a record to fill the gap. A returned record also carries np=reject (the DMARCbis tag covering non-existent subdomains, which can have no legitimate aligned mail) unless the domain already publishes an np tag, which is preserved as-is. Present a returned record verbatim; a human must approve before publishing."
+    },
+    {
+      "name": "start_monitoring_signup",
+      "description": "Return a sign-up link to give to the HUMAN who owns a domain, so they can start monitoring it themselves. Nothing is created and no email is sent by this call: the returned signup_url opens a page that explains monitoring and asks them to sign in with their own email address; the domain is carried over to their dashboard, already filled in, only after that, and monitoring itself starts once they prove ownership with a TXT record. Hand them the URL and relay `message` — never sign in on their behalf."
+    },
+    {
+      "name": "count_spf_lookups",
+      "description": "Validate an SPF record and count what it costs. Returns `record_valid` (the record parses as RFC 7208 SPF), `findings` (per-term diagnostics), `has_pass_all` (a `+all` that authorizes the whole internet to send as this domain), `multiple_all` (more than one `all`, which makes everything after the first unreachable), the parsed `terms`, and the lookup count against the limit of 10 with `over_limit`/`near_limit` and the `offending_mechanisms` that push it over. Pass EXACTLY ONE of `domain` (resolves the published record and counts recursively through nested includes) or `record` (parses a pasted record, its own terms only). This is the SPF validator — there is no separate one. Diagnose-only: no SPF fix record is ever returned, because removing a mechanism can silently de-authorize a real sender — relay the findings and let the domain's owner decide what to drop."
+    },
+    {
+      "name": "validate_dmarc_record",
+      "description": "Validate a pasted DMARC record: parsed tags, level'd findings, and whether it is valid. No DNS lookup — pass the record string itself. `upgrade_record` previews a stronger policy and is capped at p=quarantine: a pasted record carries no alignment evidence, so p=reject needs a full scan (use build_dmarc_upgrade). Present any returned record verbatim."
+    },
+    {
+      "name": "generate_dmarc_record",
+      "description": "Build a DMARC record from scratch for a domain that has none, using a validating engine — never compose one yourself. `policy` is none|quarantine|reject; optional `rua_email` (aggregate-report destination), `subdomain_policy`, and `strict_alignment`. Every generated record carries np=reject — the DMARCbis tag for non-existent subdomains, which can have no legitimate aligned mail — independently of the p= you choose. The generated record is re-validated before it is returned. Present it verbatim; a human must approve before publishing."
+    },
+    {
+      "name": "check_dkim_selector",
+      "description": "Check ONE specific DKIM selector on a domain — the exact selector the sending platform uses (e.g. `google`, `s1`), which a full scan's common-selector sweep may miss. Returns the verdict, its explanation, and the published key record when one resolves. No fix record is returned: a DKIM key is generated by the sending platform, so the fix is always to publish what that platform gives the owner."
+    },
+    {
+      "name": "parse_dmarc_report",
+      "description": "Parse ONE DMARC aggregate (RUA) report into readable per-source aggregates: who sent mail as the domain, how much, and what share was SPF/DKIM aligned. Pass the file's bytes base64-encoded in `content_base64` (XML, .gz or .zip; up to 2 MiB decoded) with an optional `filename`. Nothing is stored — the report is parsed and discarded."
+    },
+    {
+      "name": "check_record",
+      "description": "Check whether a DNS change has landed: reads the record from the domain's OWN nameservers (cache-free) and from two public caching resolvers, and reports whether they agree. `kind` is one of spf|dmarc|txt|mx|cname|a|aaaa — pass the kind, not a query name: `dmarc` reads TXT at _dmarc.<domain> and `spf` reads apex TXT, each filtered to the matching record. `host` prepends a label (txt, cname, a and aaaa only). Empty values mean the record is genuinely absent. When in_sync is false, max_wait_seconds is the largest remaining cached TTL — the wait before those resolvers refresh. This samples two resolvers, so never describe it as worldwide or as propagation coverage."
+    },
+    {
+      "name": "check_reverse_dns",
+      "description": "Check one sending IP's forward-confirmed reverse DNS (FCrDNS): reads the IP's PTR record, then resolves that hostname back and reports whether it returns to the same IP. `verdict` is confirmed (the pair agrees — what receivers want to see), ptr_missing (the IP publishes no reverse record), or mismatch (a PTR that does not resolve back). A PTR on its own proves nothing, because the IP's operator writes its own reverse zone — only the forward confirmation is evidence, so never report a bare PTR as verified. The fix is always made by whoever controls the IP (the hosting or mail provider), never in the sending domain's own DNS. Pass a public IPv4 or IPv6 address."
+    },
+    {
+      "name": "audit_spf_includes",
+      "description": "Audit a domain's SPF supply chain: walks every include and redirect it delegates to, and reports who can transitively send as it. Returns the resolved tree, per-node lookup attribution, the total authorized IPv4 address count, and typed findings — include_broken (a target that no longer publishes SPF, a PermError today), include_registrable (a delegated-to domain that does not exist, so a stranger who registers it becomes an authorized sender), include_expiring (registration lapsing within 30 days), pass_all_nested (a +all deep in the chain) and spf_record_unusable (the audited domain's OWN record is missing or does not parse, so there is no chain to walk). A domain we could not verify is reported as unverified and NEVER as available — never tell anyone a name is free on this tool's say-so unless the finding is include_registrable AND carries registry_confirmed: true. A registry_confirmed: false finding rests on DNS alone, which cannot tell an unsold name from one in redemption or on clientHold: report the mechanism as broken and the takeover risk as possible, but never as an available domain. Findings are risk analysis, not instructions: no SPF fix record exists here or anywhere else in DNS Doctor, because dropping a mechanism can silently de-authorize a real sender — relay the findings and let the domain's owner decide. Use count_spf_lookups instead when the question is only the 10-lookup limit."
+    },
+    {
+      "name": "build_parked_domain_records",
+      "description": "Build the three-record hardening pack that makes a NON-SENDING domain unusable for spoofing: a Null MX, a hard-fail SPF record, and a p=reject; np=reject DMARC record. For parked, redirect and brand-defensive domains only — NEVER for a domain that sends any mail, including transactional or one legacy system. Do NOT set confirm_no_mail on your own judgment or because a scan looked quiet: only the human who owns the domain can confirm it sends nothing, so ask them first. That flag unlocks the question, not the answer — the server re-checks DNS itself (existence, MX, SPF, DKIM selectors) and returns records: null with a rationale when it finds evidence of mail; relay that rationale rather than retrying. A lookup failure is reported as a failure, never as a pack. Publishing is the human's decision: present the records verbatim, in the order given, and let them approve each one."
+    },
+    {
+      "name": "get_alerts",
+      "description": "Read the monitoring alert log for the domains the caller's account monitors, newest first. Requires an API token. Each row carries id, domain, type, check, summary, a deterministic detail map, created_at, email_sent_at, acknowledged_at and delivery_class — a 'dashboard_only' row was deliberately kept out of the digest mail, so an agent watching only the inbox would never see it; this log is the complete picture. PAGE DOWN BEFORE ADVANCING `since`: next_before is non-null exactly when older rows remain, and a caller that ignores it, takes a full page and moves its watermark to the newest row it saw drops every row it did not receive. `since` is an INCLUSIVE floor, so rows repeat rather than go missing — de-duplicate on id. READ-ONLY by decision: there is no ack and no delete here, because acknowledging an alert is the human's own triage on their dashboard and an agent that acks on their behalf silences a row they have never seen. Report what the log says and let them clear it."
+    },
+    {
+      "name": "get_readiness",
+      "description": "Read the DMARC enforcement-readiness verdict for ONE domain the caller's account monitors, computed from its aggregate (RUA) report window. Requires an API token. Returns whether the domain is ready to step its policy up, the blockers that say why it is not, the window the verdict rests on, and next_record — the validated record for the next step, generated by the engine and null while blocked. THAT NULL IS AN ANSWER: relay the blockers and never compose a stronger record to fill the gap. Present a returned record verbatim; a human must approve it before it is published. Use this before proposing enforcement — a scan can show a domain's current policy, but only this evidence window can say whether tightening it would start rejecting real mail."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:23:05.673Z",
+  "toolsPreviewStatus": "ok"
+}

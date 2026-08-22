@@ -1,0 +1,59 @@
+{
+  "id": "io.github.MukundaKatta/agentcast",
+  "title": "agentcast",
+  "description": "Structured-output enforcer: extract and validate JSON from messy LLM text.",
+  "summary": "Structured-output enforcer: extract and validate JSON from messy LLM text.",
+  "offersHint": "Structured-output enforcer: extract and validate JSON from messy LLM text. · Packages: npm:@mukundakatta/agentcast-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@mukundakatta/agentcast-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@mukundakatta/agentcast-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/MukundaKatta/agentcast-mcp",
+  "sourceUrl": "https://github.com/MukundaKatta/agentcast-mcp",
+  "repository": {
+    "url": "https://github.com/MukundaKatta/agentcast-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-27T04:12:28.323528Z",
+  "publishedAt": "2026-04-27T04:12:28.323528Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:40.024Z",
+    "sourceRepoAt": "2026-08-12T00:06:21.920Z",
+    "readmeAt": "2026-08-12T00:06:22.335Z",
+    "toolsAt": "2026-08-12T01:37:40.024Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MukundaKatta/agentcast-mcp",
+    "checkedAt": "2026-08-12T00:06:21.920Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MukundaKatta/agentcast-mcp/main/README.md",
+    "markdown": "# agentcast-mcp\n\n[![npm](https://img.shields.io/npm/v/@mukundakatta/agentcast-mcp.svg)](https://www.npmjs.com/package/@mukundakatta/agentcast-mcp)\n[![tests](https://img.shields.io/badge/tests-6%20passing-brightgreen.svg)](#)\n[![mcp](https://img.shields.io/badge/protocol-MCP-blue.svg)](https://modelcontextprotocol.io)\n\nAn [MCP](https://modelcontextprotocol.io) server that gives AI assistants the\nability to enforce structured output: extract JSON from messy LLM text, gate\nit against a shape spec, and produce the retry feedback message when the model\nreturns the wrong shape.\n\nBuilt on top of\n[`@mukundakatta/agentcast`](https://github.com/MukundaKatta/agentcast). Works\nwith Claude Desktop, Cursor, Cline, Windsurf, Zed, and any other MCP client.\n\n## Tools exposed\n\n### `extract_json`\n\nPull a JSON value out of messy LLM output. Tries the whole text, then a\nfenced ` ```json ``` ` block, then the largest balanced `{...}` / `[...]`\nsubstring. Returns the parsed value plus which strategy succeeded.\n\n```json\n{\n  \"text\": \"Sure, here you go:\\n```json\\n{\\\"answer\\\": 42}\\n```\\nLet me know!\"\n}\n```\n\n→\n\n```json\n{\n  \"value\": { \"answer\": 42 },\n  \"found\": true,\n  \"source\": \"fenced_json\"\n}\n```\n\n`source` is one of `whole`, `fenced_json`, `fenced_plain`,\n`balanced_substring`, or `none`.\n\n### `validate_response`\n\nValidate a parsed JSON value against an agentcast shape spec. Spec maps field\nname to type: `string`, `number`, `boolean`, `array`, `object`. Suffix with\n`?` for optional.\n\n```json\n{\n  \"value\": { \"name\": \"ada\" },\n  \"shape\": { \"name\": \"string\", \"age\": \"number\" }\n}\n```\n\n→\n\n```json\n{\n  \"valid\": false,\n  \"error\": \"missing required field 'age'\"\n}\n```\n\n### `build_retry_prompt`\n\nGiven an attempt history, produce the validation-error feedback message\nagentcast appends to the conversation when the model returned the wrong\nshape. Codifies the \"validation error as feedback\" pattern for non-Node MCP\nclients that want to drive the same retry loop manually.\n\n```json\n{\n  \"attempts\": [\n    { \"text\": \"{\\\"name\\\":\\\"ada\\\"}\", \"error\": \"missing required field 'age'\" }\n  ],\n  \"expected_shape\": { \"name\": \"string\", \"age\": \"number\" }\n}\n```\n\n→\n\n```json\n{\n  \"feedback\": \"Your previous response did not match the required shape. Error: missing required field 'age'\\n\\nTry again. Respond with ONLY valid JSON that fixes the error above.\\n\\nExpected shape: {\\\"name\\\":\\\"string\\\",\\\"age\\\":\\\"number\\\"}\"\n}\n```\n\n## Install\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"agentcast\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@mukundakatta/agentcast-mcp\"]\n    }\n  }\n}\n```\n\n### Cursor / Cline / Windsurf / Zed\n\nSame shape, in the appropriate `mcp.json` for your client. Most clients\nauto-discover via `npx -y @mukundakatta/agentcast-mcp`.\n\n### Local install\n\n```bash\nnpm install -g @mukundakatta/agentcast-mcp\nmcp-agentcast        # listens on stdio\n```\n\n## Why this matters\n\nWhen an LLM is supposed to return structured data, it sometimes wraps the\nJSON in prose, fences, or hallucinated fields. Standard `JSON.parse` throws.\nHand-rolled regex misses nested structure. This MCP server gives any model\ndriving an agent a real handle on (1) pulling JSON out of the response,\n(2) checking it matches the expected shape, and (3) building the exact retry\nprompt that nudges the model to fix it on the next turn.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:06:22.335Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:37:40.024Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

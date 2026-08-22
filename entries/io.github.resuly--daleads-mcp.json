@@ -1,0 +1,58 @@
+{
+  "id": "io.github.resuly/daleads-mcp",
+  "title": "daleads-mcp",
+  "description": "Australian development application and property intelligence data for AI agents.",
+  "summary": "Australian development application and property intelligence data for AI agents.",
+  "offersHint": "Australian development application and property intelligence data for AI agents. · Packages: pypi:daleads-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "daleads-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "daleads-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/resuly/daleads-mcp",
+  "repository": {
+    "url": "https://github.com/resuly/daleads-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-01T23:32:48.234402Z",
+  "publishedAt": "2026-08-01T23:32:48.234402Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:15.199Z",
+    "sourceRepoAt": "2026-08-11T23:24:25.091Z",
+    "readmeAt": "2026-08-11T23:24:25.618Z",
+    "toolsAt": "2026-08-12T01:04:15.200Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/resuly/daleads-mcp",
+    "checkedAt": "2026-08-11T23:24:25.091Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/resuly/daleads-mcp/main/README.md",
+    "markdown": "# DA Leads MCP\n\n<!-- mcp-name: io.github.resuly/daleads-mcp -->\n\nDA Leads MCP lets Claude, Cursor and other MCP clients query Australian development applications and address-level property intelligence through the [DA Leads API](https://daleads.com.au/api/).\n\nIt exposes 11 tools for DA search, nearby applications, council and category lookups, read-only SQL analysis, property intelligence, keyless samples and sandbox addresses.\n\n## Install\n\nRun without installing globally:\n\n```bash\nuvx daleads-mcp\n```\n\nOr install with pipx:\n\n```bash\npipx install daleads-mcp\ndaleads-mcp\n```\n\n## Configuration\n\nPaid tools use a DA Leads API key. The property sample tools work without a key.\n\n```json\n{\n  \"mcpServers\": {\n    \"da-leads\": {\n      \"command\": \"uvx\",\n      \"args\": [\"daleads-mcp\"],\n      \"env\": {\n        \"DALEADS_API_KEY\": \"dk_live_xxx\"\n      }\n    }\n  }\n}\n```\n\n`DALEADS_API_KEY` is the only environment variable read by this package. Treat\nit as a secret. It is sent only to the fixed official HTTPS API endpoint at\n`https://daleads.com.au/api`.\n\n## Tools\n\n### Development applications\n\n**`search_das`** — Search Australian development applications with filters, newest\nfirst. Parameters: `state` (NSW, VIC, QLD, SA, WA, TAS, NT, ACT), `council` (full\ncouncil name, e.g. `City of Melbourne`), `category` (trade category, e.g.\n`Renovation / Extension`), `suburb`, `postcode`, `since` (ISO date `YYYY-MM-DD`,\nlodged on or after), `status_group` (`pending`, `advertised`, `approved`,\n`rejected`, `other`), `is_residential` (bool), `page` (default 1), `limit`\n(per page, default 20, max 100). Returns `{data: [DA record, ...], meta:\n{total, page, per_page, pages}}`. Each record carries id, address, suburb,\npostcode, council, state, trade_category, lodgement_date, status,\nstatus_group, latitude, longitude, info_url and document links; paid plans add\ndescription, summary, sub_category, cost_of_development, decision fields,\nnumber_of_dwellings, building_type, storeys and the full documents list.\nApplicant names are never returned on any plan.\n\n**`get_da`** — Retrieve one development application in full. Parameters: `da_id`\n(integer record id, as returned by `search_das` or `nearby_das`). Returns\n`{data: DA record}` with the same field set as above.\n\n**`nearby_das`** — Find development applications within a radius of a point,\nnearest first. Parameters: `lat`, `lng` (WGS84 decimal degrees), `radius_km`\n(default 5, max 50), `category`, `since`, `status_group`, `page`, `limit`\n(max 100). Returns the same `{data, meta}` shape as `search_das`, with an extra\n`distance_km` on each record.\n\n**`list_categories`** — List every trade category with its record count, for\ndiscovering valid `category` values. No parameters. Returns `{data: [{name,\nslug, is_residential, record_count}, ...], meta: {total}}` — categories such as\nRenovation / Extension, Swimming Pool / Spa, Granny Flat / Secondary Dwelling\nand Demolition.\n\n**`list_councils`** — List councils with coverage and freshness, for discovering\nvalid `council` values. Parameters: `limit` (max councils to return, default 50).\nReturns `{data: [{council, state, record_count, last_lodgement, last_fetched},\n...], meta}`.\n\n**`get_stats`** — Coverage summary for the whole dataset. No parameters. Returns\n`{data: {total_records, records_last_7_days, date_range: {earliest, latest},\nby_state: [...], by_category: [...]}}`.\n\n**`sql_query`** — Run a read-only SQL query for custom aggregation the filter\ntools cannot express. **Pro plan only.** Parameters: `query` (a single SELECT\nagainst the `das` table), `params` (optional list of values for `%s`\nplaceholders). Available columns: id, address, address_suburb, address_postcode,\ncouncil_name, council_reference, state, trade_category, sub_category,\napplication_type, is_residential, lodgement_date, status, cost_of_development,\ndecision_date, decision_status, on_notice_from, on_notice_to,\nnumber_of_dwellings, lot_count, land_use, building_type, storeys, latitude,\nlongitude, data_source, date_fetched, documents, info_url. Description and\nsummary are deliberately unavailable here because council free text can contain\npersonal contact details. SELECT only, capped at 1000 rows with a 10 second\ntimeout. Returns `{columns: [...], rows: [[...], ...], row_count, truncated}`.\n\n### Property intelligence\n\n**`property_intelligence`** — Full address-level property profile for one\nAustralian address or coordinate. Parameters: `address` (free text, e.g.\n`34 Mary St Clayton VIC`) or `lat` + `lng` together, and optional `components`\n(comma-separated subset to return, e.g. `scores.noise,hazards` — available\nblocks: das, poi, planning, hazards, environment, transport, utilities,\nadministrative, public_housing, scores). Returns the resolved address plus\nplanning (zones, overlays, heritage), hazards (flood, bushfire), environment,\ntransport, utilities, administrative boundaries, public housing, nearby\ndevelopment applications, points of interest, scored risk components, and a\n`meta` block carrying per-component status and provenance. Requires a key on a\nProperty Intelligence plan; each lookup counts against the monthly quota unless\nthe address comes from `property_sandbox_addresses`.\n\n**`property_sample`** — Inspect the complete Property Intelligence response shape\nbefore you have a key. **No API key required.** No parameters. Returns the real\nproduction payload for 163 Grattan St, Carlton VIC (a heritage terrace with DA\nactivity), with every block present.\n\n**`property_flood_sample`** — Inspect one scored hazard component in detail.\n**No API key required.** No parameters. Returns the production `scores.flood`\nblock for a study-covered point in Rocklea QLD: official 1% AEP modelled depth,\noverlay status, terrain context, coverage notes and provenance.\n\n**`property_sandbox_addresses`** — List the addresses you can evaluate for free.\n**No API key required.** No parameters. Returns `{sandbox_addresses: [{address,\nlabel}, ...], note}` — 12 real addresses spanning all eight states, chosen for\ndistinct hazard and planning profiles. Lookups of these addresses through\n`property_intelligence` never count toward a key's monthly quota.\n\n## Data boundary\n\nThe adapter code and the data returned by DA Leads have separate licence\nboundaries. Installing this package does not grant a right to redistribute the\nAPI data. Starter and Scale usage is for internal analysis; customer-facing\nembedding, onward access, resale, or redistribution requires an Enterprise\nlicence. See the [DA Leads Terms](https://daleads.com.au/terms),\n[Privacy Policy](https://daleads.com.au/privacy), and\n[Data Attributions](https://daleads.com.au/attributions).\n\nThe server reuses the DA Leads API authentication, plan limits and privacy\ncontrols. Public API and MCP responses do not expose applicant names.\n\nCopyright 2026 Limon Tech. All rights reserved.\n",
+    "fetchedAt": "2026-08-11T23:24:25.618Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:15.200Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

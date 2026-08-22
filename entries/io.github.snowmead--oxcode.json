@@ -1,0 +1,91 @@
+{
+  "id": "io.github.snowmead/oxcode",
+  "title": "oxcode",
+  "description": "PageRank-curated code intelligence for coding agents over an indexed source repository.",
+  "summary": "PageRank-curated code intelligence for coding agents over an indexed source repository.",
+  "offersHint": "PageRank-curated code intelligence for coding agents over an indexed source repository. · Packages: npm:@snowmead/oxcode-mcp · Env vars: GITHUB_TOKEN, OXCODE_NO_AUTO_UPDATE",
+  "version": "0.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@snowmead/oxcode-mcp",
+    "version": "0.4.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "OXCODE_NO_AUTO_UPDATE",
+        "description": "Set to 1 to disable the binary's startup self-update check (CI, offline, or reproducible environments)."
+      },
+      {
+        "name": "GITHUB_TOKEN",
+        "description": "Optional: used during self-update to avoid unauthenticated GitHub API rate limits.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@snowmead/oxcode-mcp",
+      "version": "0.4.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "OXCODE_NO_AUTO_UPDATE",
+          "description": "Set to 1 to disable the binary's startup self-update check (CI, offline, or reproducible environments)."
+        },
+        {
+          "name": "GITHUB_TOKEN",
+          "description": "Optional: used during self-update to avoid unauthenticated GitHub API rate limits.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GITHUB_TOKEN",
+      "description": "Optional: used during self-update to avoid unauthenticated GitHub API rate limits.",
+      "secret": true
+    },
+    {
+      "name": "OXCODE_NO_AUTO_UPDATE",
+      "description": "Set to 1 to disable the binary's startup self-update check (CI, offline, or reproducible environments)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/oxgraph/oxcode",
+  "repository": {
+    "url": "https://github.com/oxgraph/oxcode",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T15:49:41.506198Z",
+  "publishedAt": "2026-07-30T15:49:41.506198Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:01.505Z",
+    "sourceRepoAt": "2026-08-11T23:20:38.444Z",
+    "readmeAt": "2026-08-11T23:20:39.125Z",
+    "toolsAt": "2026-08-12T01:01:01.506Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/oxgraph/oxcode",
+    "checkedAt": "2026-08-11T23:20:38.444Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/oxgraph/oxcode/main/README.md",
+    "markdown": "# oxcode\n\n`oxcode` indexes source code into a graph and serves it to coding agents. It is\nbuilt on **[oxgraph](https://github.com/oxgraph/oxgraph)** — a storage-agnostic,\nzero-copy-friendly graph/hypergraph topology substrate for Rust — and stores the\nindex in a native oxgraph database under `.oxcode/index.oxgdb/`.\n\nThe CLI keeps raw OxQL available, but agent navigation should usually start\nwith `context`, `symbols`, `files`, and the call graph commands because they\nexpand graph IDs back into function names, definition ranges, signatures,\ndocstrings, source previews, and call-site source context.\n\n## Get Started\n\n### 1. Install\n\n**Prebuilt binary** (recommended — no Rust toolchain, grammars are statically\nlinked so it runs offline):\n\n```sh\n# macOS / Linux\ncurl --proto '=https' --tlsv1.2 -LsSf https://github.com/oxgraph/oxcode/releases/latest/download/oxcode-cli-installer.sh | sh\n```\n\n```powershell\n# Windows (PowerShell)\npowershell -ExecutionPolicy ByPass -c \"irm https://github.com/oxgraph/oxcode/releases/latest/download/oxcode-cli-installer.ps1 | iex\"\n```\n\nOr download an archive from the [Releases](https://github.com/oxgraph/oxcode/releases)\npage. **With Cargo** instead:\n\n```sh\ncargo binstall oxcode-cli   # prebuilt, no compile\ncargo install --force oxcode-cli   # build from source\n```\n\nThis installs one `oxcode` binary — the CLI plus the MCP server (`oxcode mcp`).\n(The crate is `oxcode-cli` because the bare `oxcode` name is taken on crates.io;\nthe command is still `oxcode`.) Re-run the installer (or `cargo install --force\noxcode-cli`) to replace an existing install; `oxcode mcp` also self-updates on\nstartup once you are on v0.1.2+.\n\n### 2. Index a project\n\n```sh\ncd your-project\noxcode index\noxcode context \"How does authentication work?\"\n```\n\n### 3. Wire up an agent (MCP)\n\nAdd the server to your agent. For Claude Code (`~/.claude.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"oxcode\": { \"type\": \"stdio\", \"command\": \"oxcode\", \"args\": [\"mcp\"] }\n  }\n}\n```\n\nOnce wired, have the agent call `oxcode_watch` once: it builds the index and\nkeeps it current as files change. When `path` is omitted, the project root comes\nfrom `OXCODE_ROOT`, `CLAUDE_PROJECT_DIR`, or\n`WORKSPACE_FOLDER_PATHS` — not from the MCP process cwd (hosts often start servers in\n`$HOME`). Across multiple agents on one repo a file lock elects a single writer\n(the one watcher/re-indexer) while the rest serve reads, so you can run as many\nas you like. Then ask questions with `oxcode_explore`.\n\nOptionally auto-allow the tools in `~/.claude/settings.json` (the query tools are\nread-only; `oxcode_watch` only builds/maintains the local index):\n`mcp__oxcode__oxcode_watch`, `_explore`, `_search`, `_callers`, `_callees`,\n`_symbol`, `_files`, `_status`.\n\n#### Claude Code plugin (one-command install)\n\nInstead of hand-editing the config above, install the bundled plugin from the\noxgraph marketplace — it wires up the MCP server for you:\n\n```sh\n/plugin marketplace add oxgraph/oxgraph\n/plugin install oxcode@oxgraph\n```\n\nThe plugin still needs the `oxcode` binary on your `PATH` and an indexed project\n(steps 1–2). See [`claude-plugin/README.md`](claude-plugin/README.md).\n\n#### Other MCP clients (registry / npm)\n\noxcode is listed in the official [MCP Registry](https://registry.modelcontextprotocol.io)\nas `io.github.snowmead/oxcode`, so registry-aware clients can discover it. For\nclients that prefer an `npx` launch command there's also an npm package:\n\n```json\n{\n  \"mcpServers\": {\n    \"oxcode\": { \"command\": \"npx\", \"args\": [\"-y\", \"@snowmead/oxcode-mcp\"] }\n  }\n}\n```\n\n`@snowmead/oxcode-mcp` is a thin wrapper that runs `oxcode mcp`, so it still needs\nthe `oxcode` binary on your `PATH` (step 1) — if you have it, `command: \"oxcode\"`\nabove is the simpler config.\n\n## How Indexing Works\n\n1. **Extraction** — tree-sitter parses each source file into a syntax tree. A\n   per-language extractor walks it (hand-written) or runs a tree-sitter query\n   (generic), emitting symbol **nodes** (file, module, class, struct, trait,\n   interface, function, method, field, …) and **edges** (`contains`, `calls`,\n   `imports`, `references`, `implements`). Qualified names are normalized to a\n   `::`-joined internal form regardless of the language's own separator, so the\n   resolver and graph are language-neutral.\n2. **Resolution** — references resolve to definitions across files through tiers:\n   exact qualified name → enclosing module scope → in-scope imports → receiver\n   type → bare name. Ambiguous matches are kept and marked, not dropped.\n3. **Storage** — the resolved graph is reconciled into the oxgraph database with\n   stable symbol identities, so re-indexing is `O(change)`, not `O(repo)`.\n   Personalized PageRank over the graph powers the `context` command's bounded,\n   relevance-ranked output.\n\n## Languages\n\nRun `oxcode languages` to list the registered extractors. Coverage is tiered:\n\n| Language | Extensions | Tier |\n|----------|-----------|------|\n| Rust | `.rs` | High-fidelity |\n| Go | `.go` | High-fidelity |\n| TypeScript | `.ts` `.tsx` `.mts` `.cts` | High-fidelity |\n| JavaScript | `.js` `.jsx` `.mjs` `.cjs` | High-fidelity |\n| Python | `.py` `.pyi` | Generic |\n| Java | `.java` | Generic |\n| C | `.c` `.h` | Generic |\n| C++ | `.cpp` `.cc` `.cxx` `.hpp` `.hh` `.hxx` | Generic |\n| C# | `.cs` | Generic |\n| PHP | `.php` | Generic |\n| Ruby | `.rb` | Generic |\n| Swift | `.swift` | Generic |\n| Kotlin | `.kt` `.kts` | Generic |\n| Scala | `.scala` `.sc` | Generic |\n| Dart | `.dart` | Generic |\n| Lua | `.lua` | Generic |\n| Luau | `.luau` | Generic |\n| Objective-C | `.m` `.mm` | Generic |\n| Pascal/Delphi | `.pas` `.dpr` `.dpk` `.lpr` | Generic |\n| Svelte | `.svelte` | Embedded script |\n| Vue | `.vue` | Embedded script |\n| Liquid | `.liquid` | Recognized |\n\n- **High-fidelity** — hand-written extractors that resolve receiver-typed method\n  calls (`self`/`this`/Go receivers), precise qualified names, and imports\n  (including TypeScript path-based ESM imports).\n- **Generic** — one query-driven extractor shared by all of these languages.\n  Each is a tree-sitter query plus a profile entry\n  (`crates/oxcode-core/src/extract/profiles.rs`); containment comes from byte-span\n  nesting. It yields symbols and approximate call edges that resolve at the\n  scoped/simple tiers (no receiver typing), so some edges are marked ambiguous.\n- **Embedded script** — Svelte/Vue `<script>` blocks are extracted as TypeScript\n  at offsets accurate to the original component file.\n- **Recognized** — the file type is known but not indexed yet; such files are\n  reported as skipped, not silently dropped.\n\nAdding a language is a tree-sitter query + a profile entry; promoting one to\nhigh fidelity is a hand-written extractor that reuses the shared\n`extract/walker.rs` scaffolding.\n\n## Quick Start\n\n```sh\noxcode index --path path/to/rust/project\noxcode status --path path/to/rust/project\noxcode context \"How does entry reach helper?\" --path path/to/rust/project --limit 8 --json\noxcode symbols \"entry helper\" --path path/to/rust/project --limit 20 --json\noxcode symbols \"entry helper\" --path path/to/rust/project --kind function --kind method\noxcode files \"runtime scheduler\" --path path/to/rust/project --limit 20 --json\noxcode symbol crate::entry --path path/to/rust/project --json\noxcode calls crate::entry --depth 2 --path path/to/rust/project\noxcode callers crate::helper --depth 2 --path path/to/rust/project\noxcode query \"MATCH ELEMENTS WHERE qualified_name = 'crate::entry'\" --path path/to/rust/project\noxcode query \"MATCH RELATIONS TYPE calls\" --format expand --path path/to/rust/project\noxcode query \"GRAPH calls WALK FROM 12 DEPTH 2 DIRECTION both LIMIT 100\" --path path/to/rust/project\n```\n\nThe generated `.oxcode/` directory writes its own `.gitignore`, so the index is\nnever committed by accident.\n\nUseful selectors for navigation commands:\n\n- `element:<id>` for a concrete OxGraph element ID\n- an exact crate-qualified name such as `my_crate::auth::tenant_middleware`\n  (qualified names are anchored at the crate, so the first segment is the\n  package name with `-` normalized to `_`)\n- `name:<name>` for a simple function name\n- `file:<path>:<line>` for the innermost symbol covering a source line\n\n`symbols` accepts repeatable `--kind <kind>` filters. Valid kinds are:\n\n- `file`, `module`, `namespace`, `package`, `class`, `struct`, `enum`,\n  `trait`, `interface`, `impl_block`, `function`, `method`, `field`,\n  `variable`, `constant`, `type_alias`, `macro`\n\n`context` is deterministic and graph-derived. It ranks entry-point symbols for\nthe task text, then expands nearby `calls`, `contains`, `references`, and\n`implements` relationships.\n\n`query` and `explain` execute raw OxQL/Cypher. For keyword discovery, use\n`symbols`; do not pass plain English phrases to `query`.\n\nAccepted OxQL profile:\n\n- `CATALOG`\n- `MATCH ELEMENTS`\n- `MATCH ELEMENTS HAS LABEL <label>`\n- `MATCH ELEMENTS WHERE <property> = '<value>'`\n- `MATCH RELATIONS TYPE <type>`\n- `GRAPH calls WALK FROM <element-id> DEPTH <n> [DIRECTION outgoing|incoming|both] [LIMIT n]`\n\n## Benchmarks\n\nAgent-task benchmark on the Tokio codebase: an agent answers *\"How does tokio\nschedule and run async tasks?\"* with and without each tool, measuring efficiency\nand blind-judged answer quality. oxcode and codegraph were measured on different\nagent harnesses, so the comparable unit is each tool's improvement **vs its own\nno-tool baseline**, not absolute numbers.\n\n| arm | answer quality | tokens | cost | tool calls | wall time |\n| --- | ---: | ---: | ---: | ---: | ---: |\n| baseline (no tool) | 0.98 | — | — | — | — |\n| oxcode — codex/gpt-5.5, CLI, n=6 | 0.96 (tied) | +15% | +4% | −4% | +14% |\n| **oxcode — codex/gpt-5.5, MCP, n=6** | **0.93** | **−74%** | **−57%** | **−84%** | **−60%** |\n| codegraph — Opus 4.8, MCP, published | not measured | −38% | even | −57% | −18% |\n\nPercentages are change vs that tool's own no-tool baseline (negative = reduction,\nbetter; quality is the blind LLM-judge score, 0–1). All oxcode rows come from one\nn=6 release suite on Tokio. Absolute medians: tokens 395k (baseline) → 455k (CLI)\n→ 104k (MCP); cost $0.17 → $0.18 → $0.07; tool calls 28 → 27 → 5; wall 97s → 111s\n→ 39s.\n\n**The MCP server is the headline.** Delivering the same bounded, PageRank-curated\ncontext through a one-call `oxcode_explore` MCP tool — instead of a CLI the agent\ncomposes — cuts tool calls 84%, tokens 74%, cost 57%, and wall 60% vs the no-tool\nbaseline, **exceeding codegraph's published reductions** (−57% tool calls / −38%\ntokens). The CLI arm is statistically tied with the baseline: the agent treats a\nshell binary as a supplement to its own grep/read, not a replacement — so the gap\nwas always **tool delivery, not index quality**. The one cost the quality gate\nexposes (and a quality-blind benchmark like codegraph's would hide): MCP answer\nquality dips to 0.93 vs 0.98, a completeness trade-off from the leaner\nexploration. codegraph numbers are from its README, re-validated 2026-06-02.\n\nFull methodology, confidence intervals, and reproduction:\n[`docs/agent-eval-results.md`](docs/agent-eval-results.md) and\n[`docs/agent-eval-methodology.md`](docs/agent-eval-methodology.md).\n\n## Architecture\n\nThe workspace uses a hybrid Rust architecture:\n\n- `oxcode-model`: storage-neutral vocabulary shared across the workspace —\n  code-graph kinds, identifier newtypes, the graph schema catalog, the selector\n  grammar, the extraction/resolution IR, and agent-facing report DTOs\n- `oxcode-core`: indexing, extraction, reference resolution, OxGraph storage,\n  navigation, formatting, and the public `ProjectIndex` facade\n- `oxcode-cli`: the `oxcode` binary — the CLI commands plus the `oxcode mcp`\n  subcommand, an MCP server (stdio) exposing the read-only queries to coding\n  agents (the one-call `oxcode_explore` tool plus `oxcode_search`,\n  `oxcode_callers`/`oxcode_callees`, `oxcode_symbol`, `oxcode_files`,\n  `oxcode_status`) and `oxcode_watch`, which builds and keeps the index current as\n  files change — a cross-process file lock elects one writer per repo while other\n  instances serve reads\n\n`oxcode-core` is split into focused internal modules: `scan`, `extract` (with\nper-language extractors and shared CST/cargo helpers), `resolve`,\n`store::oxgraph` (with its `write` path), `format`, `paths`, and `error`. The\nmodel crate's typed schema is the single source of truth that the storage layer\nderives property registration, read-key caching, and indexes from. Reads run\nthrough `ProjectIndex`, which opens the database once and resolves the\nproperty-key schema; `ProjectIndex::with_session` runs several reads against one\nshared snapshot so multi-step navigation stays internally consistent.\n\nThe `extract` module hosts the hand-written extractors (Rust, Go,\nTypeScript/JavaScript), the generic query-driven extractor with its per-language\n`.scm` queries and profiles, the Svelte/Vue embedded-script host, and the\nstatically-linked `grammar` registry. See the Languages table above.\n",
+    "fetchedAt": "2026-08-11T23:20:39.125Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:01.506Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

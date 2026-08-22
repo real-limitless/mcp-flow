@@ -1,0 +1,76 @@
+{
+  "id": "io.github.yubinkim444/repo-memory",
+  "title": "Repo Memory",
+  "description": "Shared, git-tracked working memory for AI agents on the same codebase.",
+  "summary": "Shared, git-tracked working memory for AI agents on the same codebase.",
+  "offersHint": "Shared, git-tracked working memory for AI agents on the same codebase. · Packages: pypi:repo-memory-mcp · Env vars: REPO_MEMORY_ROOT",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "repo-memory-mcp",
+    "version": "0.2.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "REPO_MEMORY_ROOT",
+        "description": "Absolute path to the repository whose .ai-memory/ to read/write. Defaults to the current working directory."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "repo-memory-mcp",
+      "version": "0.2.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "REPO_MEMORY_ROOT",
+          "description": "Absolute path to the repository whose .ai-memory/ to read/write. Defaults to the current working directory."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "REPO_MEMORY_ROOT",
+      "description": "Absolute path to the repository whose .ai-memory/ to read/write. Defaults to the current working directory."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/yubinkim444/repo-memory",
+  "repository": {
+    "url": "https://github.com/yubinkim444/repo-memory",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T10:25:57.466382Z",
+  "publishedAt": "2026-05-20T10:25:57.466382Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:57.157Z",
+    "sourceRepoAt": "2026-08-11T23:13:37.037Z",
+    "readmeAt": "2026-08-11T23:13:37.521Z",
+    "toolsAt": "2026-08-12T00:54:57.158Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/yubinkim444/repo-memory",
+    "checkedAt": "2026-08-11T23:13:37.037Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/yubinkim444/repo-memory/main/README.md",
+    "markdown": "<!--\nmcp-name: io.github.yubinkim444/repo-memory\n-->\n\n# repo-memory\n\n> **Shared, git-tracked working memory for AI agents that share a codebase.**\n> What one Claude / Cursor / Cline learns about your repo, the next one\n> picks up automatically. No database. No SaaS. Just files in your repo.\n\n[![PyPI](https://img.shields.io/pypi/v/repo-memory-mcp)](https://pypi.org/project/repo-memory-mcp/)\n[![Python](https://img.shields.io/badge/python-3.10%2B-blue)]()\n[![MCP](https://img.shields.io/badge/MCP-server-7c3aed)]()\n[![License: MIT](https://img.shields.io/badge/license-MIT-green)]()\n\n---\n\n## The problem\n\nEvery AI session that touches your repo starts from zero. It re-greps the\nsame files. It re-discovers the same conventions. It re-asks the same\nquestions you already answered three sessions ago. Multi-user / multi-tool\nmakes it worse: your teammate's Cursor and your Claude Code learn the same\ncodebase independently.\n\nThere is `CLAUDE.md` / `.cursorrules` for **rules** the human writes. But\nthere is nothing for **facts** an agent verified — \"the auth middleware\nlives at `src/auth/middleware.py:42`\", \"PR #387 chose httpx over requests\nbecause of HTTP/2\", \"don't run migrations during peak hours\".\n\n`repo-memory` is that nothing. A `.ai-memory/` directory you commit to\nyour repo. Every AI tool reads from it, writes to it. Git is the database.\n\n---\n\n## Layout\n\n```\nyour-repo/\n├── .ai-memory/\n│   ├── README.md           # explains the convention\n│   ├── facts.jsonl         # append-only structured facts with evidence\n│   ├── decisions/          # one markdown per non-trivial decision\n│   │   └── 2026-05-19-pick-httpx.md\n│   └── gotchas.md          # one-line \"watch out for X\" notes\n├── src/\n└── README.md\n```\n\nPure files. Sync over git. No daemon, no DB, no auth. Works offline.\n\n---\n\n## Install\n\n```bash\npip install repo-memory-mcp\n# or\nuvx repo-memory-mcp --help\n```\n\nPython ≥3.10. Depends only on the official `mcp` SDK (for the MCP server).\n\n---\n\n## Quick start\n\n```bash\ncd your-repo\nrepo-memory init                              # creates .ai-memory/ + adds CLAUDE.md hint\nrepo-memory add-fact \"Auth middleware lives in src/auth/middleware.py\" \\\n                     --file src/auth/middleware.py --lines 42-180 --tool grep\nrepo-memory add-decision \"Use httpx not requests\" \\\n                         --body \"HTTP/2 + async support; we already use anyio.\"\nrepo-memory add-gotcha \"Don't run migrations during 9-11am UTC peak\"\n\nrepo-memory show                              # render everything as Markdown\nrepo-memory list-facts --tag auth\n```\n\nThen commit `.ai-memory/` like any other file:\n\n```bash\ngit add .ai-memory/\ngit commit -m \"memory: record auth middleware location + httpx decision\"\ngit push\n```\n\nAnyone else (human or AI) who pulls the repo now sees those facts/decisions\nimmediately.\n\n---\n\n## LLM & AI Agent Readable Specification\n\n> **For agents discovering this repo through search or MCP indexing.**\n\n### Identity\n- **name**: `repo-memory`\n- **purpose**: read/write a structured, git-tracked memory store about the\n  current codebase so multiple AI agents (and humans) don't re-learn it.\n- **transport**: CLI (`repo-memory`) and MCP stdio (`repo-memory-mcp`).\n- **storage**: plain files under `.ai-memory/` in the repo. Sync = git.\n\n### When to call which tool\n\n| Tool | When |\n|------|------|\n| `get_repo_memory` | At the **start** of any task on this repo. |\n| `add_fact` | After you verify a non-obvious fact (location, behavior, convention). Include `evidence` so the next agent can re-verify cheaply. |\n| `add_decision` | After a non-trivial choice (architecture, library, trade-off). Body should explain *why*, not just *what*. |\n| `add_gotcha` | After a surprise that wasted your time. |\n| `list_facts` | When you want only facts in a specific area (`tag`, `source_file`). |\n\n### Recommended agent workflow\n\n```\n1. agent.call(\"get_repo_memory\")            -> absorb prior context\n2. ...do task, run tools, verify things...\n3. agent.call(\"add_fact\", claim, evidence)  -> for each new fact\n4. agent.call(\"add_decision\", title, body)  -> if a choice was made\n5. session ends, human commits .ai-memory/   -> shared via git\n```\n\n### MCP server install\n\nAdd to your client config (Claude Desktop / Cursor / Cline):\n\n```json\n{\n  \"mcpServers\": {\n    \"repo-memory\": {\n      \"command\": \"uvx\",\n      \"args\": [\"repo-memory-mcp\", \"--repo\", \"/abs/path/to/the/repo\"]\n    }\n  }\n}\n```\n\nOr set `REPO_MEMORY_ROOT` env var instead of `--repo`.\n\nExposes 5 tools: `get_repo_memory`, `add_fact`, `list_facts`,\n`add_decision`, `add_gotcha`.\n\n---\n\n## Why git, not a database\n\n- **Zero infra.** No service to host, no account to create, no API key\n  to rotate.\n- **Already authoritative.** Git history is the single source of truth.\n  `git blame` tells you which agent added which fact and when.\n- **Works offline.** Plane, train, conference WiFi — all fine.\n- **PR review.** Suspicious or wrong facts get filtered through normal\n  code review.\n- **Per-repo scope.** A fact about repo A doesn't leak into repo B; the\n  store is local to the repo.\n\n---\n\n## Schema (for tooling authors)\n\n`facts.jsonl` — one JSON object per line:\n\n```json\n{\n  \"id\": \"abc123def456\",\n  \"ts\": \"2026-05-19T18:00:00Z\",\n  \"claim\": \"Auth middleware lives in src/auth/middleware.py\",\n  \"evidence\": {\n    \"file\": \"src/auth/middleware.py\",\n    \"lines\": \"42-180\",\n    \"tool\": \"grep\",\n    \"command\": \"rg 'def authenticate' src/\",\n    \"verified_at\": \"2026-05-19T18:00:00Z\"\n  },\n  \"tags\": [\"auth\"],\n  \"added_by\": \"claude-opus-4.7\"\n}\n```\n\nAppend-only. Stale entries stay. Readers consult `verified_at` and\nre-verify if they want.\n\n---\n\n## Automatic discovery hint\n\n`repo-memory init` also appends a short discoverability section to your\nrepo's `CLAUDE.md` (or `AGENTS.md` if you already have one) telling any\nAI agent that enters the repo to check `.ai-memory/` first and to record\nnew findings back into it. Idempotent — re-running won't duplicate.\n\nOpt out with `--no-claude-md`.\n\nThe appended block is delimited by `<!-- BEGIN: repo-memory -->` and\n`<!-- END: repo-memory -->`, so you can hand-edit other parts of your\n`CLAUDE.md` freely.\n\n---\n\n## CLI reference\n\n| Command | Effect |\n|---------|--------|\n| `repo-memory init [--no-claude-md]` | Create `.ai-memory/` skeleton + (default) update CLAUDE.md/AGENTS.md. |\n| `repo-memory show [--limit N]` | Print everything as one Markdown doc. |\n| `repo-memory add-fact \"<claim>\" [--file F --lines L --tool T --command C --tag T --by AGENT]` | Append a fact. |\n| `repo-memory list-facts [--tag T] [--source-file F] [--since ISO] [--limit N] [--json]` | List/filter facts. |\n| `repo-memory add-decision \"<title>\" [--body MD]` | Write a decision file. |\n| `repo-memory list-decisions` | List decision file paths. |\n| `repo-memory add-gotcha \"<note>\"` | Append a one-line gotcha. |\n\nAll commands take `--root PATH` if your CWD isn't the repo root.\n\n---\n\n## License\n\nMIT © yubinkim444\n",
+    "fetchedAt": "2026-08-11T23:13:37.521Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:54:57.158Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

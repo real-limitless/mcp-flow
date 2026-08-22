@@ -1,0 +1,76 @@
+{
+  "id": "io.github.ikoskela/precision-desktop",
+  "title": "precision-desktop",
+  "description": "Fixes DPI coordinate scaling for Windows desktop automation MCP servers.",
+  "summary": "Fixes DPI coordinate scaling for Windows desktop automation MCP servers.",
+  "offersHint": "Fixes DPI coordinate scaling for Windows desktop automation MCP servers. · Packages: pypi:precision-desktop · Env vars: WINDOWS_MCP_PATH",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "precision-desktop",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WINDOWS_MCP_PATH",
+        "description": "Path to windows-mcp installation directory. Auto-detected if not set."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "precision-desktop",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WINDOWS_MCP_PATH",
+          "description": "Path to windows-mcp installation directory. Auto-detected if not set."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WINDOWS_MCP_PATH",
+      "description": "Path to windows-mcp installation directory. Auto-detected if not set."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ikoskela/precision-desktop",
+  "repository": {
+    "url": "https://github.com/ikoskela/precision-desktop",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-13T23:16:15.923244Z",
+  "publishedAt": "2026-02-13T23:16:15.923244Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:11.264Z",
+    "sourceRepoAt": "2026-08-11T23:42:32.519Z",
+    "readmeAt": "2026-08-11T23:42:33.040Z",
+    "toolsAt": "2026-08-12T01:20:11.264Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ikoskela/precision-desktop",
+    "checkedAt": "2026-08-11T23:42:32.519Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ikoskela/precision-desktop/master/README.md",
+    "markdown": "# precision-desktop\n\nmcp-name: io.github.ikoskela/precision-desktop\n\n**A companion MCP server that fixes DPI coordinate scaling for Windows desktop automation.**\n\nWindows DPI scaling silently breaks every MCP tool that clicks, types, or hovers on the desktop. `precision-desktop` detects and corrects the coordinate mismatch so your AI agent's clicks actually land where they should.\n\n## The Problem\n\nWindows has **two coordinate systems** and doesn't tell you which one you're using.\n\nWhen Windows DPI scaling is set above 100% (which it is on most modern laptops and monitors), different Windows APIs return coordinates in different systems:\n\n| Coordinate System | Used By | Example: Point at 50% across a 4K display |\n|---|---|---|\n| **Physical** (pixels) | Mouse events, `SetCursorPos`, UI Automation* | `1920, 1080` |\n| **Logical** (DPI-scaled) | `GetWindowRect`, `Cursor.Position`, `.NET`, **screenshots** | `1097, 617` (at 175% scaling) |\n\n\\* *UI Automation returns physical on DPI-aware processes, logical on others — yet another inconsistency.*\n\n**The ratio between them is your DPI scale factor** (e.g., 1.25x, 1.5x, 1.75x, 2.0x).\n\nThe problem isn't just \"some APIs return logical.\" It's that **different APIs return different coordinate systems with no indication of which one you're getting.** There's no flag, no header, no type annotation — just numbers that look identical but mean completely different things.\n\n### Three ways this breaks AI agents\n\n**1. API mismatch** — Click tools accept physical coordinates, but common Windows APIs return logical:\n\n```\nWhat the AI wants to click: [Button at physical (1920, 1080)]\nWhat GetWindowRect says:    [Button at logical  (1097, 617)]\nWhere the click lands:                          (1097, 617) in physical space\n                                                 ^^^^^^^^^ WRONG - completely different spot\n```\n\n**2. Screenshot mismatch** — Screen captures are taken at logical resolution, but click tools expect physical coordinates. On a 3840x2400 display at 175% scaling, screenshots are 2194x1371 pixels. When a vision model (GPT-4o, Claude, CogAgent) looks at a screenshot and estimates \"the button is at pixel (500, 300),\" that's a logical coordinate. Clicking there in physical space misses by hundreds of pixels:\n\n```\nVision model sees:    [Button at (500, 300) in screenshot]\nScreenshot space:     Logical (2194x1371)\nClick-Tool expects:   Physical (3840x2400)\nCorrect click:        (875, 525)  ← needs 1.75x conversion\n```\n\n**3. Mixed sources within the same tool** — Even a single tool can return both systems. For example, windows-mcp's State-Tool reports element coordinates in physical space (correct for clicking), but its screenshots are captured at logical resolution. An agent combining both — reading element positions from the accessibility tree *and* estimating positions from screenshots — will silently mix coordinate systems.\n\n### This isn't an edge case\n\n- **~1 billion** active Windows devices worldwide\n- **~30-50%** have DPI scaling above 100% — that's **300-500 million machines**\n- Windows **auto-enables** scaling >100% on most modern laptops (13-16\" screens at 1080p+ get 125-150% by default)\n- **47%** of PC users now run resolutions above 1080p ([Steam Hardware Survey](https://store.steampowered.com/hwsurvey)) — 21% at 1440p, 5% at 2560x1600, 4.2% at 4K — and climbing\n- The MCP ecosystem has **5,800+ servers** and **97M+ monthly SDK downloads** — every Windows desktop automation server will hit this\n\nIf you've ever watched an AI agent click confidently at exactly the wrong spot, DPI scaling is probably why.\n\n## The Solution\n\n`precision-desktop` is a companion MCP server that sits alongside your desktop automation MCP (like `windows-mcp`) and provides:\n\n1. **Calibration** — Measure the actual DPI scale factor on this specific machine using known screen landmarks\n2. **Coordinate conversion** — Convert between physical and logical systems on demand\n3. **UI element finding** — Locate elements by name via Windows UI Automation, returning physical coordinates ready for clicking\n4. **Health checks** — Detect stale calibration, verify UI Automation availability, check companion MCP status\n5. **Patch awareness** — Track which DPI-aware patches have been applied to the companion MCP\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `calibrate` | Compute DPI scale factors from 2+ reference points with known physical and logical coordinates |\n| `calibrate_verify` | Mark calibration as verified after confirming a test click landed correctly |\n| `get_calibration` | Read current calibration state (scale factors, verification status, age) |\n| `convert_coordinates` | Convert a coordinate pair between physical and logical systems |\n| `find_ui_element` | Find a single UI element by name using Windows UI Automation. Returns physical coordinates |\n| `find_all_ui_elements` | Find all UI elements matching a name. Returns list with physical coordinates |\n| `list_ui_elements` | List all named interactive elements (buttons, text fields, etc.) in a window |\n| `find_window` | Find a window handle (hwnd) by title substring |\n| `health_check` | Run environment checks: calibration freshness, UI Automation, companion MCP status |\n| `patch_status` | Check which DPI-aware patches are applied to the companion MCP |\n\n## Quick Start\n\n### 1. Install\n\nClone this repo and install dependencies:\n\n```bash\ngit clone https://github.com/ikoskela/precision-desktop.git\ncd precision-desktop\npip install -e .\n```\n\n### 2. Configure MCP\n\nAdd to your Claude Code MCP configuration (`.mcp.json` or settings):\n\n```json\n{\n  \"mcpServers\": {\n    \"precision-desktop\": {\n      \"command\": \"python\",\n      \"args\": [\"C:/path/to/precision-desktop/server.py\"]\n    }\n  }\n}\n```\n\nOr if using Claude Desktop, add to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"precision-desktop\": {\n      \"command\": \"python\",\n      \"args\": [\"C:\\\\path\\\\to\\\\precision-desktop\\\\server.py\"]\n    }\n  }\n}\n```\n\n### 3. Calibrate\n\nThe AI agent calibrates itself on first use. The flow:\n\n1. **Agent calls `health_check`** — discovers calibration is missing\n2. **Agent gathers reference points** — uses a coordinate reading tool (like [MPos](https://sourceforge.net/projects/mpos/)) or Move-Tool + Cursor.Position to get both physical and logical coordinates at 2+ known screen landmarks\n3. **Agent calls `calibrate`** with the reference points — computes scale factors\n4. **Agent verifies** — moves cursor to a known element, confirms it landed correctly, calls `calibrate_verify`\n\nCalibration persists in `state/calibration.json` and only needs to be redone if DPI settings change or the display configuration changes.\n\n## Calibration Guide\n\n### What you need\n\nTwo coordinate readings for the same point:\n- **Physical coordinates** — from Move-Tool, Click-Tool, or State-Tool (these operate in physical space)\n- **Logical coordinates** — from `[System.Windows.Forms.Cursor]::Position` in PowerShell, or `GetWindowRect` API calls\n\n### Good calibration landmarks\n\n- **Start button** (bottom-left of taskbar) — easy to locate precisely\n- **Date/time** (bottom-right of taskbar) — anchors the opposite corner\n- **Minimize button** of any maximized window — well-defined clickable target\n\n### Example calibration call\n\n```json\n{\n  \"points\": [\n    {\n      \"physical_x\": 38,\n      \"physical_y\": 2365,\n      \"logical_x\": 21,\n      \"logical_y\": 1351,\n      \"label\": \"start_button\"\n    },\n    {\n      \"physical_x\": 3691,\n      \"physical_y\": 2332,\n      \"logical_x\": 2109,\n      \"logical_y\": 1332,\n      \"label\": \"datetime\"\n    }\n  ]\n}\n```\n\nThis computes a scale factor (here, ~1.75x) and persists it for future coordinate conversions.\n\n### Verification\n\nAfter calibration, the agent should:\n1. Use `convert_coordinates` to convert a known logical position to physical\n2. Use Move-Tool to move the cursor there\n3. Confirm the cursor is on the expected target\n4. Call `calibrate_verify` with `success: true`\n\n## UI Element Finding\n\nBeyond coordinate conversion, `precision-desktop` can locate elements directly by name using Windows UI Automation — no coordinates needed.\n\n```\nAgent: find_ui_element(element_name=\"Save\", window_title=\"Notepad\")\n→ { \"name\": \"Save\", \"center_x\": 450, \"center_y\": 32, \"control_type\": \"button\", ... }\n   (coordinates are physical, ready for Click-Tool)\n```\n\nThis works for:\n- Native Windows application controls (buttons, text fields, menus)\n- Chrome extension popups and dialogs\n- Overlay windows that State-Tool may not see\n- Any UI element exposed via Windows UI Automation\n\n### Scoped search\n\nYou can scope searches to a specific window to avoid finding elements in the wrong application:\n\n```\nfind_ui_element(element_name=\"Submit\", window_title=\"My App\")\nfind_ui_element(element_name=\"Close\", window_handle=12345)\n```\n\n### Discovery\n\nDon't know the element name? Use `list_ui_elements` to see what's available:\n\n```\nlist_ui_elements(window_title=\"Settings\")\n→ [{ \"name\": \"General\", \"control_type\": \"tab item\", ... },\n   { \"name\": \"Apply\", \"control_type\": \"button\", ... }, ...]\n```\n\n## Integration with windows-mcp\n\n`precision-desktop` is designed to work alongside [windows-mcp](https://github.com/anthropics/windows-mcp) (or any MCP that provides desktop click/type/scroll tools).\n\n### The patching concept\n\nRather than forking windows-mcp, `precision-desktop` describes **patch intents** — what should change in the companion MCP and why. The AI agent reads these intents and applies version-appropriate patches itself.\n\nCurrent patch intents:\n- **`dpi_awareness`** — Add an optional `coordinate_system` parameter to Click-Tool and Move-Tool that auto-converts logical coordinates to physical\n- **`find_and_click`** — Add an optional `element_name` parameter to Click-Tool that finds and clicks an element by name (no coordinates needed)\n\nUse `patch_status` to check which patches are applied.\n\n### Environment variable\n\nIf windows-mcp is installed in a non-standard location, set the `WINDOWS_MCP_PATH` environment variable:\n\n```\nWINDOWS_MCP_PATH=C:\\path\\to\\windows-mcp\n```\n\nBy default, it looks in the standard Claude Extensions directory (`%APPDATA%\\Claude\\Claude Extensions\\ant.dir.cursortouch.windows-mcp`).\n\n## Architecture\n\n```\nprecision-desktop/\n├── server.py              # MCP server entry point — tool definitions and routing\n├── calibration.py         # DPI calibration: compute, persist, convert coordinates\n├── find_element.py        # Windows UI Automation: find elements, list elements, find windows\n├── health_check.py        # Environment checks: calibration, UI Automation, companion MCP\n├── patches/\n│   └── windows_mcp.py     # LLM-adaptive patch intents for windows-mcp\n├── state/\n│   └── calibration.json   # Persisted calibration data (user-specific, gitignored)\n└── pyproject.toml\n```\n\n### How calibration works\n\n1. User (or AI agent) provides 2+ points with both physical and logical coordinates\n2. `calibration.py` computes the median scale factor for X and Y axes independently\n3. Checks consistency — if points disagree by more than 2%, flags as inconsistent\n4. Computes offset (typically 0 for standard DPI scaling, non-zero for multi-monitor setups)\n5. Persists to `state/calibration.json`\n6. Subsequent `convert_coordinates` calls use the persisted factors\n\n### How UI Automation finding works\n\n1. `find_element.py` runs PowerShell scripts that load `UIAutomationClient` and `UIAutomationTypes` assemblies\n2. Searches the UI Automation tree for elements matching the requested name\n3. Returns bounding rectangles in the coordinate system that UI Automation reports (which is physical on DPI-aware processes)\n4. Results include center coordinates ready for direct use with Click-Tool/Move-Tool\n\n## Requirements\n\n- **Windows 10/11** (uses Windows UI Automation)\n- **Python 3.10+**\n- **PowerShell** (ships with Windows)\n- **[mcp](https://pypi.org/project/mcp/) >= 1.0.0** (MCP SDK)\n- **[MPos](https://sourceforge.net/projects/mpos/)** or similar coordinate reader (for calibration) — any tool that shows the cursor's screen position in both physical and logical coordinates. MPos is lightweight and portable (no install needed)\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:42:33.040Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:11.264Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

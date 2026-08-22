@@ -1,0 +1,56 @@
+{
+  "id": "io.github.SolvoHQ/openworkdays",
+  "title": "openworkdays",
+  "description": "Zero-signup business-day date-math API: add days, count days between dates, is-business-day.",
+  "summary": "Zero-signup business-day date-math API: add days, count days between dates, is-business-day.",
+  "offersHint": "Zero-signup business-day date-math API: add days, count days between dates, is-business-day. · Remote MCP (streamable-http) at https://openworkdays.vercel.app/api/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://openworkdays.vercel.app/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://openworkdays.vercel.app/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/SolvoHQ/openworkdays",
+  "repository": {
+    "url": "https://github.com/SolvoHQ/openworkdays",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-17T05:38:52.50078Z",
+  "publishedAt": "2026-05-17T05:38:52.50078Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:40.166Z",
+    "sourceRepoAt": "2026-08-12T00:02:32.281Z",
+    "readmeAt": "2026-08-12T00:02:32.818Z",
+    "toolsAt": "2026-08-12T00:02:33.071Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SolvoHQ/openworkdays",
+    "checkedAt": "2026-08-12T00:02:32.281Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SolvoHQ/openworkdays/master/README.md",
+    "markdown": "# OpenWorkdays\n\n**A zero-signup business-day / working-day date-arithmetic API. No account, no API key — one GET request.**\n\nAdd or subtract working days, count business days between two dates, or test\nwhether a date is a business day — with **your own** holiday list. Pure UTC date\nmath, returned as JSON. Built so autonomous AI agents get a deterministic date\nendpoint — an agent has no human to do a signup, and LLMs are measurably\nunreliable at date arithmetic.\n\nLive: **https://openworkdays.vercel.app**\n\n## Quick start\n\n```sh\ncurl \"https://openworkdays.vercel.app/api/businessdays?start=2026-05-15&days=5\"\n```\n\nSample response:\n\n```json\n{\n  \"mode\": \"add\",\n  \"start\": \"2026-05-15\",\n  \"days\": 5,\n  \"result\": \"2026-05-22\",\n  \"resultWeekday\": \"fri\",\n  \"startIsBusinessDay\": true,\n  \"weekend\": [\"sat\", \"sun\"],\n  \"holidaysApplied\": 0,\n  \"engine\": \"date-utc-v0.1\",\n  \"computedAt\": \"2026-05-17T00:00:00.000Z\"\n}\n```\n\nAny error returns JSON with an `error` key and an appropriate HTTP status\n(`400` bad params, `429` rate limited, `405` wrong method).\n\n## The three modes\n\nThe endpoint is always `GET /api/businessdays`. The mode is inferred from the\nparams you pass.\n\n### `add` — add/subtract working days\n\nParams: `start=YYYY-MM-DD`, `days=N` (integer, `+`/`-` ok, `|N| <= 10000`),\noptional `weekend=`, optional `holidays=`.\n\n```sh\ncurl \"https://openworkdays.vercel.app/api/businessdays?start=2026-05-15&days=5\"\n```\n\n`N=0` returns `start` unchanged (even if `start` is itself non-working).\n\n### `diff` — count business days between two dates\n\nParams: `start=YYYY-MM-DD`, `end=YYYY-MM-DD`, optional `weekend=`, optional\n`holidays=`. Inclusive of **both** endpoints. Result is negative if\n`end` < `start`.\n\n```sh\ncurl \"https://openworkdays.vercel.app/api/businessdays?start=2026-05-15&end=2026-06-15&holidays=2026-05-25\"\n```\n\n### `is` — is this date a business day?\n\nParams: `date=YYYY-MM-DD`, optional `weekend=`, optional `holidays=`.\n\n```sh\ncurl \"https://openworkdays.vercel.app/api/businessdays?date=2026-05-16\"\n```\n\nReturns `isBusinessDay` plus a `reason` of `\"weekend\"`, `\"holiday\"`, or `null`.\n\n### Shared params\n\n- **`weekend`** (default `sat,sun`) — comma list. Tokens are case-insensitive\n  from `{sun,mon,tue,wed,thu,fri,sat}`, or numeric `0-6` where `0=Sunday` …\n  `6=Saturday` (matches JS `getUTCDay()`). Cannot mark all 7 days as weekend.\n- **`holidays`** — comma list of `YYYY-MM-DD` dates treated as non-working\n  (max 1000). Strictly validated.\n\n## Errors\n\nErrors are JSON with an `error` key:\n\n- `400` — bad/missing params (`missing start`, `invalid days (must be integer)`,\n  `invalid weekend token`, `invalid holiday date`, `invalid date`,\n  `specify a mode` (includes a `usage` object), …)\n- `429` — rate limited (`Retry-After` header + `retryAfterSec`)\n- `405` — wrong HTTP method (only `GET`/`OPTIONS` allowed)\n\n## JavaScript\n\n```js\nconst base = \"https://openworkdays.vercel.app\";\nconst r = await fetch(\n  base + \"/api/businessdays?start=2026-05-15&days=5\"\n);\nconst out = await r.json(); // { mode:\"add\", result:\"2026-05-22\", resultWeekday:\"fri\", ... }\n```\n\n## Use as an MCP tool (AI agents / Claude / Cursor / LLM clients)\n\nOpenWorkdays is also a remote [MCP](https://modelcontextprotocol.io) server, so\nan agent can call it as a tool with **no signup, no API key, no OAuth**.\n\n- Endpoint: **`https://openworkdays.vercel.app/api/mcp`**\n- Transport: **Streamable HTTP, stateless** (POST JSON-RPC 2.0, single\n  `application/json` response — no sessions, no SSE)\n- Exposes exactly one tool: **`businessdays`** — the mode (`add` / `diff` /\n  `is`) is inferred from which args you pass, returning the same JSON as the\n  REST endpoint (also as `structuredContent`)\n\nDrop this into any MCP client config (Claude Desktop, Cursor, or any client\nthat speaks the Streamable HTTP transport):\n\n```json\n{ \"mcpServers\": { \"openworkdays\": { \"url\": \"https://openworkdays.vercel.app/api/mcp\" } } }\n```\n\nQuick smoke test:\n\n```sh\ncurl -s -X POST https://openworkdays.vercel.app/api/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"businessdays\",\"arguments\":{\"start\":\"2026-05-15\",\"days\":5}}}'\n```\n\nOver MCP, an upstream error comes back as a tool result with `isError: true`.\n\n## Why\n\nEvery public business-day API gates behind an account or API key:\n[workingdays.org](https://workingdays.org) is test-only / subscription;\n[API Ninjas](https://api-ninjas.com) and [Holiday API](https://holidayapi.com)\nneed keys; [timeanddate](https://www.timeanddate.com) is a $299 product;\nthe RapidAPI business-day APIs need a RapidAPI key; Microsoft's \"Calculate\nWorking Day\" connector is Power-Platform-framework-gated and UK-bank-holidays\nonly. OpenWorkdays is a single anonymous `GET` — no signup, no key. That is\nespecially useful to autonomous agents, which have no human in the loop to\ncomplete a signup. And because LLMs are measurably unreliable at date\narithmetic, an agent needs a deterministic endpoint rather than guessing.\n\n## Limitations\n\n- **Date-only, pure UTC arithmetic** — no time-of-day, no DST, no timezones\n  (that is recurrence-rule territory, intentionally out of scope for v0.1).\n- **Caller-supplied holidays only** — there is no built-in country holiday\n  database. This is deliberate: we do not fake-compete on the\n  7000-holiday-DB axis where funded incumbents win. You pass the\n  `holidays=` list you care about.\n- **Best-effort per-instance IP rate limit** — a soft abuse brake, not a\n  guarantee (serverless instances are ephemeral and not shared).\n- **MIT licensed and self-hostable** — see below.\n\n## Self-host — it's zero-dependency files\n\nThe entire API is two single zero-dependency Node serverless functions:\n[`api/businessdays.js`](api/businessdays.js) (REST) and [`api/mcp.js`](api/mcp.js)\n(remote MCP). No `npm install`, no deps at all. Deploy the folder to Vercel\n(zero-config `/api` detection) or drop the handlers into any Node serverless\nruntime.\n\n```sh\ngit clone https://github.com/SolvoHQ/openworkdays\ncd openworkdays\nnpx vercel --prod\n```\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:02:32.818Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "businessdays",
+      "description": "Business-day date math. Three modes inferred from params: add (start+days -> the date N business days away, negative days = before), diff (start+end -> count of business days between, inclusive of both endpoints), is (date -> is it a business day). Optional weekend (default sat,sun) and holidays (comma list of YYYY-MM-DD you supply). No signup, no API key. Pure UTC date-only math; no time-of-day/DST/timezone."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:02:33.071Z",
+  "toolsPreviewStatus": "ok"
+}

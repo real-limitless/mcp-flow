@@ -1,0 +1,94 @@
+{
+  "id": "com.dreamboothstudio/dreambooth",
+  "title": "Dreambooth Studio",
+  "description": "Ask about your Dreambooth Studio photobooths: sessions, revenue, credits, projects, device status.",
+  "summary": "Ask about your Dreambooth Studio photobooths: sessions, revenue, credits, projects, device status.",
+  "offersHint": "Ask about your Dreambooth Studio photobooths: sessions, revenue, credits, projects, device status. · Remote MCP (streamable-http) at https://mcp.dreamboothstudio.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.dreamboothstudio.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.dreamboothstudio.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://dreamboothstudio.com",
+  "sourceUrl": "https://github.com/Dreambooth-Studio/dreambooth-mcp",
+  "repository": {
+    "url": "https://github.com/Dreambooth-Studio/dreambooth-mcp",
+    "source": "github",
+    "id": "1329767345"
+  },
+  "updatedAt": "2026-08-11T10:01:57.616817Z",
+  "publishedAt": "2026-08-11T10:01:57.616817Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:35:41.182Z",
+    "sourceRepoAt": "2026-08-12T00:35:41.182Z",
+    "readmeAt": "2026-08-12T00:35:42.066Z",
+    "toolsAt": "2026-08-12T00:35:42.269Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Dreambooth-Studio/dreambooth-mcp",
+    "checkedAt": "2026-08-12T00:35:41.182Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Dreambooth-Studio/dreambooth-mcp/main/README.md",
+    "markdown": "# dreambooth-mcp\n\nMCP server for Dreambooth Studio. Lets ChatGPT, Claude and Gemini answer an\noperator's questions about their own booths — \"how did my Bandung booth do this\nweek?\" — by wrapping the Studio API the dashboard already uses.\n\n**Status: Phase 1, live at `https://mcp.dreamboothstudio.com/mcp`.** Streamable\nHTTP + stdio, eight read-only tools, and account connection through the Studio's\nexisting OAuth device flow. Listed in the official MCP Registry as\n[`com.dreamboothstudio/dreambooth`](https://registry.modelcontextprotocol.io/v0.1/servers?search=com.dreamboothstudio/dreambooth)\nv0.1.0.\n\nPhase 3 hardening — scopes, a token registry, revocation, a 30-day TTL — is\nstill outstanding, and the registry listing went out ahead of it. See\n[Connecting an account](#connecting-an-account) for what that does and does not\nexpose.\n\nDesign: [`docs/dreambooth-mcp-design.md`](../dreambooth-prod/docs/dreambooth-mcp-design.md)\nin the Studio repo. Inline cards in ChatGPT:\n[`docs/apps-sdk-widgets-plan.md`](docs/apps-sdk-widgets-plan.md).\n\n---\n\n## What it does not do\n\nThis service holds **no database, no business logic, and no aggregations**. Every\ntool wraps a route the Studio already exposes, so there is exactly one\nimplementation of \"what is this operator's revenue\" and it lives in the Studio.\nThe moment an aggregation is copied in here, it becomes a second source of truth\nthat drifts silently — which is how you end up with three different revenue\nnumbers and no way to tell which is right.\n\nAlso permanently out of scope: withdrawals, payout accounts, MFA/step-up,\nsubscription token regeneration, and anything under `/api/admin`.\n\n## Run it\n\n```bash\nnpm install\ncp .env.example .env\n\nnpm run dev               # Streamable HTTP on PORT (default 8080)\nnpm run dev:stdio         # stdio, for Claude Desktop\n\nnpm run build\nnpm run inspect           # stdio smoke: handshake, tools/list, widgets, every tool\nnpm run inspect:http      # HTTP smoke: sessions, isolation, unknown-session 404\nnpm run preview           # writes each widget state to .preview/ to open in a browser\n```\n\n`inspect:http` runs `dist/`, so `npm run build` first or you are testing the last\nbuild rather than your change.\n\nBoth smokes run without a token. `search_docs` needs no auth, and the authed\ntools must come back with a readable message naming `connect_account` rather\nthan crashing — that failure path is part of what the checks verify.\n\n## Connecting an account\n\n**There is no token to configure, in either transport.** The operator asks their\nassistant to connect; `connect_account` starts the device flow the Studio\nalready runs for the Electron booth and returns a Google link for them to open.\nThe tool returns immediately and polls in the background — a tool call that\nblocks for minutes reads as a hung server to every MCP client, and by the time\nthey ask their next question the token is in place.\n\nThat includes local development. A pasted token would be a session-equivalent\ncredential (one year, no scopes, no revocation) sitting in a file on disk, and\nin HTTP mode it would authenticate every incoming session as that one account.\nApproving in a browser after a restart takes about fifteen seconds; that is the\nwhole cost of not having it.\n\nTokens are held **in memory, per MCP session**. A restart means everyone\nreconnects, which is the right trade for v1: there is no credential store to\nprotect, and the token is session-equivalent (one year, no scopes, no\nrevocation). Hardening — scopes, a token registry, revocation, 30-day TTL — is\nPhase 3. That was meant to land *before* any public connector listing; the\nregistry entry went out first, deliberately. What that does and does not mean:\nthe listing publishes a URL, not a credential, and a session that never runs\n`connect_account` can read nothing but `search_docs`. The exposure is unchanged —\none operator, one browser approval, one in-memory token — it is simply reachable\nby more people now. Phase 3 is still owed.\n\n## Deploy\n\nRailway, following the `dreambooth-whatsapp` recipe: `railway.json` with\n`npm run build` / `npm start`, healthcheck on `/health`, restart ON_FAILURE. No\nDockerfile, no CI, and no volume — this service is stateless.\n\nSet `DREAMBOOTH_API_URL` and `ALLOWED_HOSTS`. There is no token to configure.\nLeave `MCP_DIAGNOSTICS` unset in production — see the tools section.\n`OPENAI_APPS_CHALLENGE` is set only while a directory submission is in flight —\nsee [`docs/chatgpt-listing.md`](docs/chatgpt-listing.md).\n\n`ALLOWED_HOSTS` must list **both** public hostnames:\n\n```\nALLOWED_HOSTS=mcp.dreamboothstudio.com,dreambooth-mcp-production.up.railway.app\n```\n\nRailway keeps serving its generated hostname after a custom domain is attached,\nand DNS-rebinding protection is an allow-list, not a filter — naming only one\nhost makes the other return 400 on `/mcp`. `/health` keeps answering `ok` either\nway, because it is registered ahead of the transport, so the healthcheck cannot\ntell you this broke. Leaving the variable empty disables the protection entirely\nrather than allowing everything through some safer path.\n\n### Publishing to the registry\n\n`server.json` is the registry manifest. **Entries cannot be unpublished and each\nversion is immutable** — a changed URL or a fixed typo means publishing a new\n`version`, never editing the old one.\n\n```bash\n./mcp-publisher validate server.json    # checks against the live registry, publishes nothing\n./mcp-publisher login dns --domain dreamboothstudio.com --private-key \"$(openssl pkey -in key.pem -noout -text | grep -A3 priv: | tail -n +2 | tr -d ' :\\n')\"\n./mcp-publisher publish\n```\n\nAlways `validate` first; it is the only step in that sequence you can take back.\n\nThe `com.dreamboothstudio` namespace is proved by a TXT record on the **apex**\n(`dreamboothstudio.com`, not the `mcp` subdomain), signed by `key.pem`. That file\nis gitignored and lives on one machine. Losing it is recoverable — generate a new\nEd25519 pair and replace the TXT record. Leaking it is not: this repo is public,\nand whoever holds it can publish under `com.dreamboothstudio/*` permanently.\n\n### Connecting a client\n\nThe hosted server needs no install. In any client that accepts a remote MCP\nserver, point it at:\n\n```\nhttps://mcp.dreamboothstudio.com/mcp\n```\n\n### Claude Desktop\n\nFor running a local checkout — against a preview Studio, or a branch. To use the\ndeployed server, add the URL above instead; there is nothing to clone.\n\nAdd to `claude_desktop_config.json`. `--stdio` is required — the entry point\ndefaults to HTTP, and without it Claude Desktop starts a web server and waits\nforever for a reply on stdin.\n\n```json\n{\n  \"mcpServers\": {\n    \"dreambooth\": {\n      \"command\": \"npx\",\n      \"args\": [\"tsx\", \"src/index.ts\", \"--stdio\"],\n      \"cwd\": \"/absolute/path/to/dreambooth-mcp\",\n      \"env\": { \"DREAMBOOTH_API_URL\": \"https://dreamboothstudio.com\" }\n    }\n  }\n}\n```\n\n## Tools (v1 read-only)\n\n| Tool | Wraps | Auth |\n|---|---|---|\n| `get_sessions` | `GET /api/sessions` | Bearer |\n| `get_gallery_stats` | `GET /api/gallery` | Bearer |\n| `search_docs` | `/docs-search-index-{locale}.json` | none |\n| `list_projects` | `GET /api/projects` | Bearer |\n| `get_project` | `GET /api/projects?id=` + `GET /api/device-monitoring` | Bearer |\n| `get_revenue_summary` | `GET /api/me/revenue-summary` | Bearer |\n| `get_credits` | `GET /api/credits` | Bearer |\n| `get_wallet_transactions` | `GET /api/wallet-transactions` | Bearer |\n\nThat is the complete v1 read set. Two more tools exist that wrap nothing:\n`connection_status` (is this session authenticated — polled by the connect card)\nand `session_info` (diagnostics, **temporary**, and registered only when\n`MCP_DIAGNOSTICS=1`; delete it once the session-continuity question in the\nwidgets plan is answered).\n\nEvery tool carries a `title`, an `outputSchema`, and explicit `readOnlyHint` /\n`destructiveHint` / `openWorldHint` annotations. That is not decoration: both\nthe Anthropic Connectors Directory and the ChatGPT plugin directory flag a tool\nthat is missing any of them, and `session_info` is gated off by default because\na listing is judged on its tool list and that one answers nothing an operator\nasked.\n\nOutput schemas are deliberately **permissive** — every field the Studio owns is\noptional. The SDK validates `structuredContent` against the schema and throws\n`McpError` on a mismatch, which is a protocol error, and rule 5 below exists to\nprevent exactly that. A Studio rename must degrade to a missing key, never to a\nbroken tool.\n\n## Inline cards (ChatGPT)\n\n`connect_account` renders a real card — a Google button that notices when the\noperator has finished approving — instead of a URL they have to copy. It is an\nMCP resource (`ui://widget/connect-account.html`) pointed at by `_meta` on the\ntool, per the Apps SDK.\n\nNothing about this changes other clients. Every tool result carries the payload\ntwice: `structuredContent` for widgets, and the same object pretty-printed as\ntext `content` for Claude and Gemini, which render no widget. The text block is\nwhat it always was.\n\nWidgets are self-contained HTML with an **empty CSP on both domain lists**. That\nis load-bearing: a card that cannot reach the network cannot leak the operator's\nsession token, and it never needs to, because all of its data arrives through\n`callTool` on the server side. Keep it that way — inline any asset you need.\n\nDesign tokens are copied by hand into `src/ui/tokens.ts` from the Studio's\n`tailwind.config.js`, because a sandboxed iframe has no Tailwind. That makes it a\nsecond copy of the design system; when a brand colour moves, it moves there too.\n\n`get_project` reports `livenessTier`, not the device's `isOnline` field.\n`isOnline` is retained only for back-compat and collapses \"quiet because it was\ndeliberately shut down\" into \"offline\" — which is how a healthy fleet gets\nreported as broken.\n\nThe first three needed no Studio change at all. The rest depend on Studio\nwork that has now landed: `GET` on `/api/projects`, `/api/credits` and\n`/api/wallet-transactions` accepts `Authorization: Bearer` via\n`resolveAuthSession` (POST/PUT/DELETE deliberately still do not), and\n`GET /api/me/revenue-summary` is a new owner-scoped endpoint — `/api/analytics/revenue`\nis superadmin-gated and returns 403 to an operator.\n\n`get_wallet_transactions` and `get_revenue_summary` answer different questions\nand their descriptions say so. The wallet ledger excludes cash and voucher\nincome entirely, so for an operator who takes cash it understates real revenue —\na model that reports it as \"your earnings\" is confidently wrong.\n\n**Identity is never an argument.** No tool accepts a `userId` or `email` — the\noperator is resolved server-side from the token, exactly as `lib/ai-chat` does in\nthe Studio. A tool that needs such an argument is designed wrong.\n\n## Rules for adding a tool\n\n1. It wraps an existing Studio route. If no route fits, add a thin one in the\n   Studio — do not reimplement the query here.\n2. The description says **when to call it**, not just what it returns. The model\n   picks tools by description alone.\n3. Return the smallest useful shape. `get_gallery_stats` returns counts, not 12\n   media URLs, because the model does not need them and they cost context.\n4. Read-only tools carry `annotations: { readOnlyHint: true }` so clients can\n   auto-approve them. A write tool must not.\n5. Failures go back as `isError` content with a sentence the model can relay —\n   never a protocol error, which just makes clients retry.\n\n## Notes\n\n- **stdout is the transport.** A single `console.log` corrupts the stream and the\n  client drops the connection with a parse error. Diagnostics go to stderr.\n- Do not copy `dreambooth-whatsapp`'s habit of committing `.env`. Nothing secret\n  belongs in it here, and the surest way to keep that true is to never start.\n",
+    "fetchedAt": "2026-08-12T00:35:42.066Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "connect_account",
+      "description": "Connect this conversation to a Dreambooth Studio account. Returns a link the person opens in their own browser to approve with Google. Works for people who do NOT have a Dreambooth account yet — approving creates one, with a 14-day Pro trial — as well as for existing operators. Call this when another tool reports that no account is connected, or when someone asks to connect, sign up, or switch accounts. After returning the link, ask them to open it and say when they are done; do not call this tool again while waiting."
+    },
+    {
+      "name": "connection_status",
+      "description": "Whether this conversation currently has a Dreambooth account connected, and which one. Call this if you are unsure whether to run connect_account first. Cheap and read-only — it does not contact Dreambooth."
+    },
+    {
+      "name": "get_sessions",
+      "description": "List the photo sessions recorded on this operator's booths, with totals. Call this when the operator asks how busy a booth has been, how many sessions ran in a period, or wants to inspect individual sessions. Supports date ranges, per-booth filtering, payment status and payment channel. For money totals rather than session counts, use get_revenue_summary instead."
+    },
+    {
+      "name": "get_gallery_stats",
+      "description": "How much media this operator's booths have produced: total, still active, and expired past the retention window. Call this when the operator asks how many photos or videos a booth has taken, or whether media is being lost to retention. Returns counts only, not the media itself."
+    },
+    {
+      "name": "search_docs",
+      "description": "Search the Dreambooth Studio documentation and FAQ. Call this before answering any question about the product, pricing, packages, hardware, printing, subscriptions, or troubleshooting — answer from the docs rather than from memory. Works without a connected account."
+    },
+    {
+      "name": "list_projects",
+      "description": "List the photobooth projects this operator owns, with id, name, public link slug, whether it is active, and its currency. Call this first whenever the operator names a booth — you need the project id to filter any other tool by booth. Does not return booth designs or page layouts."
+    },
+    {
+      "name": "get_project",
+      "description": "Full detail for a single booth: its name, public link, currency, screen size, and the live status of the device running it — whether it is online, when it was last seen, app version, and camera/printer/internet state. Call this when the operator asks about one specific booth, or whether a booth is working. Get the project id from list_projects first."
+    },
+    {
+      "name": "get_revenue_summary",
+      "description": "Business revenue from this operator's photobooth sessions across EVERY payment channel — gateway payments, cash vouchers (cash collected at the booth) and discount vouchers — grouped by month or day and by currency, with extra-print revenue and AI-effect purchases reported separately. Use this for any question about income, revenue or omzet. It is also the right tool when wallet earnings look too small: cash and voucher money never reaches the wallet ledger, so for operators who take cash the wallet figure legitimately understates income."
+    },
+    {
+      "name": "get_credits",
+      "description": "This operator's remaining AI credit balance and their current subscription plan, including when it ends. Call this when they ask how many credits are left, whether they can still run AI effects, or what plan they are on. Credits are separate from wallet money — do not confuse the two."
+    },
+    {
+      "name": "get_wallet_transactions",
+      "description": "This operator's wallet ledger: gateway earnings, withdrawals and refunds, newest first. Use for questions about the wallet, payouts or withdrawals. Do NOT use it to answer 'how much did I earn' — the wallet excludes cash and voucher income entirely, so for operators who take cash it understates real revenue. Use get_revenue_summary for income."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:35:42.269Z",
+  "toolsPreviewStatus": "ok"
+}

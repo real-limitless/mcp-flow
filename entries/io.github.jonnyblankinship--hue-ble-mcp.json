@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jonnyblankinship/hue-ble-mcp",
+  "title": "Hue BLE MCP",
+  "description": "Control Philips Hue lights via Bluetooth LE — no bridge required.",
+  "summary": "Control Philips Hue lights via Bluetooth LE — no bridge required.",
+  "offersHint": "Control Philips Hue lights via Bluetooth LE — no bridge required. · Packages: pypi:hue-ble-mcp",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "hue-ble-mcp",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "hue-ble-mcp",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jonnyblankinship/hue-ble-mcp",
+  "repository": {
+    "url": "https://github.com/jonnyblankinship/hue-ble-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-26T21:23:43.365673Z",
+  "publishedAt": "2026-03-26T21:23:43.365673Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:28.915Z",
+    "sourceRepoAt": "2026-08-11T23:40:25.504Z",
+    "readmeAt": "2026-08-11T23:40:25.953Z",
+    "toolsAt": "2026-08-12T01:18:28.915Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jonnyblankinship/hue-ble-mcp",
+    "checkedAt": "2026-08-11T23:40:25.504Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jonnyblankinship/hue-ble-mcp/main/README.md",
+    "markdown": "[//]: # (mcp-name: io.github.jonnyblankinship/hue-ble-mcp)\n\n# hue-ble-mcp\n\nAn [MCP](https://modelcontextprotocol.io) server that lets Claude control **Philips Hue lights via Bluetooth LE** — no Hue Bridge or internet connection required.\n\nJust ask Claude things like:\n- *\"Turn off the light\"*\n- *\"Set the light to a warm reading mode\"*\n- *\"Make it a deep blue\"*\n- *\"Dim it to 20%\"*\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `scan_hue_lights` | Discover nearby Hue BLE lights and get their addresses |\n| `turn_on` | Turn a light on |\n| `turn_off` | Turn a light off |\n| `set_brightness` | Set brightness 1–100% |\n| `set_color_temperature` | Set white color temperature (2000K warm → 6500K cool) |\n| `set_color` | Set RGB color |\n| `get_light_state` | Read current power, brightness, and color mode |\n| `set_scene` | Apply a preset: `relax`, `energize`, `concentrate`, `reading`, `nightlight`, `bright` |\n\n## Requirements\n\n- macOS (uses CoreBluetooth via [bleak](https://github.com/hbldh/bleak))\n- Python 3.10+\n- A Philips Hue light with Bluetooth support (most lights made after 2019)\n- Claude Desktop\n\n## Installation\n\n### Option 1: pip (recommended)\n\n```bash\npip install hue-ble-mcp\n```\n\nThen add to your `~/Library/Application Support/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"hue-ble\": {\n      \"command\": \"hue-ble-mcp\",\n      \"env\": {\n        \"HUE_LIGHT_ADDRESS\": \"\"\n      }\n    }\n  }\n}\n```\n\n### Option 2: Clone and run\n\n```bash\ngit clone https://github.com/jonnyblankinship/hue-ble-mcp.git\ncd hue-ble-mcp\npython3 -m venv venv\n./venv/bin/pip install -r requirements.txt\n```\n\nThen add to your `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"hue-ble\": {\n      \"command\": \"/absolute/path/to/hue-ble-mcp/venv/bin/python\",\n      \"args\": [\"/absolute/path/to/hue-ble-mcp/server.py\"],\n      \"env\": {\n        \"HUE_LIGHT_ADDRESS\": \"\"\n      }\n    }\n  }\n}\n```\n\n## First-time setup\n\n### 1. Pair your light\n\nHue BLE lights need to be in pairing mode the first time you connect. The easiest way is to **reset the light via the Hue app** (Settings → Light setup → select light → Delete), which puts it back into factory pairing mode.\n\n> After the first successful connection, macOS remembers the bond and you won't need to do this again.\n\n### 2. Find your light's address\n\nRestart Claude Desktop, then ask:\n\n> *\"Scan for my Hue lights\"*\n\nClaude will return something like:\n\n```json\n[\n  {\n    \"name\": \"Signe gradient floor\",\n    \"address\": \"77577FFA-2F08-CAFD-5F3C-5C1824D8C362\"\n  }\n]\n```\n\n> On macOS, addresses are UUIDs (not MAC addresses). This is normal — CoreBluetooth assigns its own identifiers.\n\n### 3. Set the default address\n\nPaste the address into `HUE_LIGHT_ADDRESS` in your config and restart Claude Desktop. From then on, you don't need to specify the address in every command.\n\n```json\n\"env\": {\n  \"HUE_LIGHT_ADDRESS\": \"77577FFA-2F08-CAFD-5F3C-5C1824D8C362\"\n}\n```\n\n## How it works\n\nPhilips Hue lights broadcast over Bluetooth LE using a proprietary but [well-documented](https://gist.github.com/shinyquagsire23/f7907fdf6b470200702e75a30135caf3) GATT profile. This server writes directly to those GATT characteristics using [bleak](https://github.com/hbldh/bleak), bypassing the need for a Hue Bridge or the Hue cloud entirely.\n\nKey characteristics used:\n\n| UUID | Function |\n|---|---|\n| `932c32bd-0002-...` | Power (on/off) |\n| `932c32bd-0003-...` | Brightness |\n| `932c32bd-0004-...` | Color temperature (mireds) |\n| `932c32bd-0005-...` | XY color (CIE 1931) |\n\nRGB colors are converted to CIE 1931 XY space using the wide RGB D65 gamut matrix before being sent to the light.\n\n## Limitations\n\n- **macOS only** — Linux should work too but is untested. Windows is not supported.\n- **Bluetooth range** — must be within ~10m of the light.\n- **One adapter per light** — the light bonds to the Bluetooth adapter used during first pairing. A different Mac won't be able to connect without re-pairing.\n- **Multiple lights** — supported, just call each tool with the specific address. Set `HUE_LIGHT_ADDRESS` to your primary light for convenience.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:40:25.953Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:28.915Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

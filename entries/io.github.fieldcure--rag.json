@@ -1,0 +1,109 @@
+{
+  "id": "io.github.fieldcure/rag",
+  "title": "rag",
+  "description": "MCP RAG server with hybrid search, multi-KB support, and AI-powered chunk contextualization.",
+  "summary": "MCP RAG server with hybrid search, multi-KB support, and AI-powered chunk contextualization.",
+  "offersHint": "MCP RAG server with hybrid search, multi-KB support, and AI-powered chunk contextualization. · Packages: binary:FieldCure.Mcp.Rag · Env vars: ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, OPENAI_API_KEY, VOYAGE_API_KEY",
+  "version": "2.5.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "FieldCure.Mcp.Rag",
+    "version": "2.5.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "OPENAI_API_KEY"
+      },
+      {
+        "name": "ANTHROPIC_API_KEY"
+      },
+      {
+        "name": "GEMINI_API_KEY"
+      },
+      {
+        "name": "VOYAGE_API_KEY"
+      },
+      {
+        "name": "GROQ_API_KEY"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "FieldCure.Mcp.Rag",
+      "version": "2.5.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "OPENAI_API_KEY"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY"
+        },
+        {
+          "name": "GEMINI_API_KEY"
+        },
+        {
+          "name": "VOYAGE_API_KEY"
+        },
+        {
+          "name": "GROQ_API_KEY"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANTHROPIC_API_KEY"
+    },
+    {
+      "name": "GEMINI_API_KEY"
+    },
+    {
+      "name": "GROQ_API_KEY"
+    },
+    {
+      "name": "OPENAI_API_KEY"
+    },
+    {
+      "name": "VOYAGE_API_KEY"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/fieldcure/fieldcure-mcp-rag",
+  "repository": {
+    "url": "https://github.com/fieldcure/fieldcure-mcp-rag",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-25T09:26:38.625457Z",
+  "publishedAt": "2026-05-25T09:26:38.625457Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:37.056Z",
+    "sourceRepoAt": "2026-08-11T23:46:18.666Z",
+    "readmeAt": "2026-08-11T23:46:19.181Z",
+    "toolsAt": "2026-08-12T01:22:37.057Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/fieldcure/fieldcure-mcp-rag",
+    "checkedAt": "2026-08-11T23:46:18.666Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/fieldcure/fieldcure-mcp-rag/main/README.md",
+    "markdown": "# FieldCure MCP RAG Server\n\n[![NuGet](https://img.shields.io/nuget/v/FieldCure.Mcp.Rag)](https://www.nuget.org/packages/FieldCure.Mcp.Rag)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/fieldcure/fieldcure-mcp-rag/blob/main/LICENSE)\n\nA [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for indexing and searching local document collections. Supports DOCX, HWPX, PDF (with OCR), Excel, PowerPoint, and audio (Whisper transcription, Windows-only), with hybrid keyword + semantic search optimized for Korean and English.\n\nBuilt with C# and the official [MCP C# SDK](https://github.com/modelcontextprotocol/csharp-sdk).\n\n## Commands\n\n```\nfieldcure-mcp-rag\n├── serve         --base-path <path>                         # Multi-KB MCP search server (stdio)\n├── exec          --path <kb-path> [--force] [--partial ...]  # Headless indexing for a single KB\n├── exec-queue    --queue-file <path> [--sweep-all]           # Process deferred indexing queue\n├── prune-orphans --base-path <path>                         # Delete orphan KB folders\n└── smoke-ocr     --pdf <scanned.pdf>                        # Self-test: OCR a scanned PDF (Windows)\n```\n\n- **serve** — read-only MCP server serving all knowledge bases under the base path. Single process handles multiple KBs via `kb_id` parameter. Can run while exec is indexing (SQLite WAL).\n- **exec** — scans source folders, chunks documents, contextualizes with AI, embeds, stores in SQLite. `--partial` re-runs only downstream stages when models change, preserving OCR output.\n- **exec-queue** — sequential orchestrator consuming a deferred indexing queue. One entry at a time, no GPU contention. `--sweep-all` processes deferred entries too (used at app shutdown).\n- **prune-orphans** — deletes orphan KB folders (GUID-named, no config.json). Protected folders (`.`, `_` prefix, `-backup-`) are never touched.\n- **smoke-ocr** — diagnostic mode. Loads a scanned PDF through the OCR fallback parser, prints recognized text to stdout, and exits `0` on a non-empty result. Surfaces `DllNotFoundException` / `BadImageFormatException` distinctly so a missing or arch-mismatched native is immediately visible. Useful for verifying that the OCR native path is wired correctly on a given host (notably win-arm64 dnx installs).\n\n## Features\n\n### Search\n- Hybrid BM25 + vector search with Reciprocal Rank Fusion (RRF)\n- BM25-only fallback when no embedding provider is configured\n- Korean-optimized chunking (sentence boundary, decimal protection, parenthesis-aware)\n- SIMD-accelerated cosine similarity via `System.Numerics.Vector`\n- FTS5 trigram index for substring and CJK-friendly keyword matching\n\n### Indexing\n- Incremental indexing with SHA256 change detection\n- AI-powered chunk contextualization with bilingual keyword enrichment (see [Chunk Contextualization](#chunk-contextualization))\n- 2-commit pipeline preserves expensive upstream work across embedding failures (see [How Indexing Works](#how-indexing-works))\n- Math equation extraction from DOCX/HWPX as `[math: LaTeX]` blocks\n- PDF with OCR fallback (Tesseract eng+kor) for scanned pages\n- Audio transcription (`.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac`, `.webm`) via Whisper.net — **Windows-only**. Model size (Tiny→Large) is auto-selected from detected GPU/RAM/cores at startup; each transcript chunk records `audio.model_size` and `audio.transcribed_at` for future reindex auditing\n- Cross-process indexing lock with stale PID auto-cleanup\n- Orphan cleanup for deleted files\n\n### Queue Orchestrator\n- All indexing requests flow through `start_reindex` MCP tool — no direct exec spawn\n- Scope merge rules: full ⊃ contextualization ⊃ embedding (duplicate requests upgrade, not duplicate)\n- PID-based orchestrator lock with reuse defense (`orchestrator.lock`)\n- Logical KB deletion (config.json removal) + `prune-orphans` physical cleanup\n- Deferred indexing for app-shutdown batch processing (`--sweep-all`)\n\n### Operations\n- Multi-KB serve: single process serves all knowledge bases under a base path, lazy-loaded per KB\n- SQLite WAL mode allows search during indexing\n- Graceful shutdown via `cancel` file\n- Per-KB `config.json` with provider configuration\n\n### Integration\n- **Ollama native** — embedding via `/api/embed`, contextualization via `/api/chat` with `keep_alive` and `num_ctx` support. Requires Ollama 0.4.0+.\n- **OpenAI-compatible** — embedding via `/v1/embeddings`, contextualization via `/v1/chat/completions`. Works with OpenAI, Azure OpenAI, Groq, LM Studio, Together AI.\n- **Gemini native** — embedding via `/v1beta/models/{model}:embedContent` with `task_type` asymmetric retrieval (`RETRIEVAL_DOCUMENT` / `RETRIEVAL_QUERY`) and Matryoshka dimension truncation (768 / **1536** / 3072). `gemini-embedding-2`, multilingual, 8k token input.\n- **Anthropic** — contextualization via `/v1/messages`.\n- **API keys via environment variables** — `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc. Batch indexing commands (`exec`, `exec-queue`) are env-var-only. Interactive MCP search can fall back to MCP elicitation when the client supports it.\n- Standard MCP stdio transport (JSON-RPC over stdin/stdout)\n\n## Chunk Contextualization\n\nStandard RAG chunking loses context — a sentence about \"the protocol\" becomes ambiguous when ripped from its surrounding paragraphs. This server addresses that with **Unified Chunk Contextualization**: a single LLM call per chunk that produces both contextual framing and bilingual (Korean + English) keywords in one pass.\n\nThe result is stored alongside the original chunk text:\n\n- **Original text** is preserved for accurate retrieval display\n- **Contextualized text** is what gets embedded and indexed in BM25\n- **Bilingual keywords** enable cross-lingual search — a Korean query can retrieve English documents and vice versa\n\nThis is enabled by setting `contextualizer` in `config.json`. It can be disabled (set provider/model to empty) if you prefer raw chunk indexing.\n\n## How Indexing Works\n\nThe `exec` command runs a 5-stage pipeline per file:\n\n1. **Extract** — text from document (DOCX, PDF OCR, audio transcription, etc.)\n2. **Chunk** — split into ~1000 char windows\n3. **Contextualize** — LLM enrichment (optional, see [above](#chunk-contextualization))\n4. **Embed** — vector embedding via API\n5. **Persist** — save to SQLite\n\nFor large files, Stage 1 alone can take 20+ minutes — OCR on a 596-page scanned PDF, or Whisper transcription of a multi-hour audio recording. The first audio file in any KB also pays a one-time ggml model download (cached under `{UserProfile}/.fieldcure/whisper-models/`). To prevent expensive upstream work from being lost when later stages fail, the pipeline uses a **2-commit model**:\n\n```\nStages 1-3 (Extract → Chunk → Contextualize)\n        ↓\n[Commit 1] chunks saved as PendingEmbedding\n        ↓\nStage 4 (Embed)\n   ├─ success → [Commit 2a] promote chunks to Indexed\n   └─ failure → chunks remain PendingEmbedding (retry next exec)\n```\n\n**Why this matters**: A 25-minute OCR result is persisted on disk before any embedding API call. If Stage 4 fails (network error, rate limit, token limit, process crash, even power loss), the chunks survive. The next `exec` hash-skips the file (no OCR re-run) and the deferred retry pass attempts only Stage 4.\n\n### Per-Chunk Failure Isolation (Binary Split)\n\nIf a single chunk in a file exceeds the embedding model's token limit (e.g., a math-dense page in a textbook), the binary split algorithm isolates that one chunk:\n\n```\nEmbedBatch([0..1249])         → 400 \"input[846] too long\"\n  ├─ EmbedBatch([0..624])     → OK (promote 625)\n  └─ EmbedBatch([625..1249])  → 400\n      ├─ EmbedBatch([625..937])  → 400\n      │   ... (binary search narrows toward chunk 846)\n      │   └─ EmbedBatch([846..846]) → 400 (mark chunk 846 Failed)\n      └─ EmbedBatch([938..1249]) → OK (promote 312)\n```\n\nResult: 1249 chunks indexed, only chunk 846 marked `Failed`. The file's status becomes `Degraded` — partially searchable instead of completely missing.\n\n### Deferred Retry Pass\n\nEach `exec` ends with a retry pass over any chunks left in `PendingEmbedding` state from previous runs:\n\n- Reads enriched text from DB — no OCR or contextualization re-run\n- Calls the embedding API only — typically seconds, not minutes\n- Up to 3 retries per chunk; on exhaustion, the chunk is marked `Failed`\n- Auth errors (401/403) flag the provider as unavailable and skip the rest of the pass\n\n### File States\n\n| Status | Meaning | Hash-skip behavior |\n|--------|---------|-------------------|\n| `Ready` | Fully indexed | Skip if hash matches |\n| `Degraded` | Some chunks failed (binary-split isolated) | Skip if hash matches |\n| `PartiallyDeferred` | Chunks pending embedding retry | Main loop skips; deferred pass picks up |\n| `Failed` | Extraction or repeated embedding failure | Skip; requires `--force` to retry |\n| `NeedsAction` | User intervention required | Skip with separate counter |\n\n### Schema Versioning\n\nEach KB DB carries a `PRAGMA user_version` tag. The `exec` command migrates older schemas automatically as part of `InitializeSchema()`. The `serve` command opens DBs read-only and never triggers migration — older-schema KBs continue to serve search queries correctly while their new-feature columns remain unused.\n\n## Installation\n\n### dotnet tool (recommended)\n\n```bash\ndotnet tool install -g FieldCure.Mcp.Rag\n```\n\n### From source\n\n```bash\ngit clone https://github.com/fieldcure/fieldcure-mcp-rag.git\ncd fieldcure-mcp-rag\ndotnet build\n```\n\n## Requirements\n\n- [.NET 8.0 Runtime](https://dotnet.microsoft.com/download/dotnet/8.0) or later\n- **OCR: Windows x64 only** — Tesseract OCR for scanned PDFs loads lazily on first use (Windows only). On other platforms, PDFs with embedded text work normally; scanned pages without a text layer are silently skipped.\n- An embedding provider (Ollama, OpenAI, etc.) — optional, BM25 search works without it\n- [Ollama](https://ollama.ai) 0.4.0 or later (if using Ollama for embedding or contextualization)\n\n## Quick Start\n\nIndex a folder and search it without any embedding setup (BM25 only):\n\n```powershell\n# 1. Install\ndotnet tool install -g FieldCure.Mcp.Rag\n\n# 2. Create a minimal config\n$kbPath = \"$env:LOCALAPPDATA\\FieldCure\\Mcp.Rag\\demo\"\nNew-Item -ItemType Directory -Force -Path $kbPath\n@'\n{\n  \"id\": \"demo\",\n  \"name\": \"Demo KB\",\n  \"sourcePaths\": [\"C:\\\\my-docs\"]\n}\n'@ | Set-Content \"$kbPath\\config.json\"\n\n# 3. Index\nfieldcure-mcp-rag exec --path $kbPath\n\n# 4. Start the search server\nfieldcure-mcp-rag serve --base-path \"$env:LOCALAPPDATA\\FieldCure\\Mcp.Rag\"\n```\n\nFor full retrieval quality with semantic search and contextualization, add `embedding` and `contextualizer` blocks to `config.json` — see [Usage](#usage) below.\n\n## Usage\n\n### 1. Create a knowledge base folder\n\n```\n%LOCALAPPDATA%\\FieldCure\\Mcp.Rag\\{kb-id}\\config.json\n```\n\n```json\n{\n  \"id\": \"my-kb-001\",\n  \"name\": \"Project Docs\",\n  \"created\": \"2026-04-03T00:00:00Z\",\n  \"sourcePaths\": [\"C:\\\\Users\\\\me\\\\Documents\\\\project-docs\"],\n  \"contextualizer\": {\n    \"provider\": \"anthropic\",\n    \"model\": \"claude-haiku-4-5-20251001\",\n    \"apiKeyPreset\": \"Claude\"\n  },\n  \"embedding\": {\n    \"provider\": \"openai\",\n    \"model\": \"text-embedding-3-small\",\n    \"apiKeyPreset\": \"OpenAI\"\n  }\n}\n```\n\nAPI keys are resolved from environment variables: `apiKeyPreset: \"OpenAI\"` → `OPENAI_API_KEY`, `\"Claude\"` → `ANTHROPIC_API_KEY`, `\"Gemini\"` (or `\"Google\"`) → `GEMINI_API_KEY`.\n\n**Gemini embedding example** — asymmetric retrieval with 1536-dim Matryoshka truncation (50% storage of full 3072 with identical MTEB score):\n\n```json\n\"embedding\": {\n  \"provider\": \"gemini\",\n  \"model\": \"gemini-embedding-2\",\n  \"apiKeyPreset\": \"Gemini\",\n  \"dimension\": 1536\n}\n```\n\n| Dimension | MTEB | Storage | Use case |\n|-----------|------|---------|-------------|\n| 768       | 67.99 | 25%   | Storage-constrained |\n| **1536**  | **68.17** | **50%** | **Recommended default** |\n| 3072      | 68.17 | 100%  | Maximum quality (pre-normalized) |\nIn `serve` mode, `search_documents` can also prompt via MCP elicitation when the client supports it. In `exec` and `exec-queue`, missing keys must be provided via environment variables.\n\n### 2. Index documents\n\n```bash\nfieldcure-mcp-rag exec --path \"C:\\Users\\me\\AppData\\Local\\FieldCure\\Mcp.Rag\\my-kb-001\"\n```\n\n### 3. Start MCP search server\n\n```bash\nfieldcure-mcp-rag serve --base-path \"C:\\Users\\me\\AppData\\Local\\FieldCure\\Mcp.Rag\"\n```\n\nA single serve process handles all knowledge bases under the base path. Tools accept a `kb_id` parameter to target a specific KB.\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"rag\": {\n      \"command\": \"fieldcure-mcp-rag\",\n      \"args\": [\"serve\", \"--base-path\", \"C:\\\\Users\\\\me\\\\AppData\\\\Local\\\\FieldCure\\\\Mcp.Rag\"],\n      \"env\": {\n        \"OPENAI_API_KEY\": \"sk-...\",\n        \"ANTHROPIC_API_KEY\": \"sk-ant-...\"\n      }\n    }\n  }\n}\n```\n\n### config.json Reference\n\n| Field | Description |\n|-------|-------------|\n| `id` | Knowledge base identifier |\n| `name` | Display name |\n| `sourcePaths` | List of folders to index (multiple supported) |\n| `contextualizer.provider` | `\"anthropic\"`, `\"openai\"`, `\"ollama\"`, or empty to disable |\n| `embedding.provider` | `\"openai\"`, `\"ollama\"`, `\"gemini\"`, or empty to disable |\n| `embedding.dimension` | Output dimension. `0` = provider default. Gemini supports MRL truncation: 768 / **1536** / 3072. |\n| `contextualizer.model` | Model ID, or empty to disable contextualization |\n| `contextualizer.apiKeyPreset` | Maps to env var: `\"OpenAI\"` → `OPENAI_API_KEY`, `\"Claude\"` → `ANTHROPIC_API_KEY` |\n| `contextualizer.baseUrl` | API base URL override (null = provider default) |\n| `embedding.*` | Same structure as contextualizer |\n| `embedding.maxChunkChars` | Max chars per chunk before pre-split (default: 4000) |\n| `embedding.batchSize` | Max chunks per embedding API call (default: auto from provider table) |\n| `embedding.keepAlive` | Ollama only: VRAM retention duration (default: `\"5m\"`) |\n| `embedding.numCtx` | Ollama only: context window tokens (default: 8192). Contextualizer only. |\n| `systemPrompt` | Custom system prompt for contextualization (null = built-in default) |\n\n## Tools\n\nAll tools (except `list_knowledge_bases`) require a `kb_id` parameter to specify the target knowledge base.\n\n| Tool | Description |\n|------|-------------|\n| `list_knowledge_bases` | List all available KBs with status (file/chunk counts, indexing status) |\n| `search_documents` | Hybrid BM25 + vector search with RRF. Supports `search_mode`: `auto`, `bm25`, `vector` |\n| `get_document_chunk` | Retrieve full content of a specific chunk by ID |\n| `start_reindex` | Queue an indexing request. Scope merge, force/deferred flags, orchestrator auto-spawn |\n| `cancel_reindex` | Remove a pending (not-yet-started) queue entry |\n| `get_index_info` | Index metadata, queue state (status/position/deferred/last_error), contextualization health |\n| `check_changes` | Dry-run filesystem scan. Lightweight, no API calls |\n\n### Search Modes\n\n| `search_mode` | Behavior |\n|---------------|----------|\n| `auto` | Hybrid when embedding available, else BM25. Recommended |\n| `bm25` | Keyword-only (FTS5). No embedding call |\n| `vector` | Semantic-only. Errors if no embedding provider |\n\n### Supported Formats\n\nDocument formats are provided by [FieldCure.DocumentParsers](https://github.com/fieldcure/fieldcure-document-parsers):\n\n- **DOCX** — Microsoft Word (with math equation extraction)\n- **HWPX** — Korean standard document (OWPML, with math equation extraction)\n- **XLSX** — Excel spreadsheets\n- **PPTX** — PowerPoint presentations\n- **PDF** — PDF text extraction with `## Page N` headers; OCR fallback for scanned pages (Tesseract, eng+kor)\n- **TXT, MD** — Plain text / Markdown\n\n## Project Structure\n\n```\nsrc/FieldCure.Mcp.Rag/\n├── Program.cs                     # CLI entry (exec | exec-queue | serve | prune-orphans)\n├── MultiKbContext.cs              # Multi-KB manager (lazy load, Classify, lazy unload)\n├── ExecQueueRunner.cs             # Deferred queue orchestrator\n├── OrphanCleanupRunner.cs         # prune-orphans CLI\n├── Configuration/\n│   ├── RagConfig.cs               # config.json model (KeepAlive, NumCtx fields)\n│   └── OllamaDefaults.cs          # Shared defaults (KeepAlive=\"5m\", NumCtx=8192)\n├── Indexing/\n│   ├── IndexingEngine.cs          # 5-stage pipeline (2-commit model)\n│   └── EmbeddingBatchSplitter.cs  # Binary-split per-chunk failure isolation\n├── Contextualization/\n│   ├── IChunkContextualizer.cs\n│   ├── OpenAiChunkContextualizer.cs   # /v1/chat/completions\n│   ├── OllamaChunkContextualizer.cs   # /api/chat (keep_alive + num_ctx)\n│   ├── AnthropicChunkContextualizer.cs\n│   └── NullChunkContextualizer.cs\n├── Embedding/\n│   ├── IEmbeddingProvider.cs\n│   ├── OpenAiCompatibleEmbeddingProvider.cs  # /v1/embeddings\n│   ├── OllamaEmbeddingProvider.cs            # /api/embed (keep_alive)\n│   ├── NullEmbeddingProvider.cs\n│   └── EmbeddingBatchSizes.cs\n├── Storage/\n│   └── SqliteVectorStore.cs       # SQLite + FTS5 + SIMD cosine similarity\n├── Search/\n│   ├── HybridSearcher.cs          # BM25 + Vector → RRF\n│   └── RrfFusion.cs\n├── Chunking/\n│   ├── TextChunker.cs\n│   └── ChunkLimits.cs\n└── Tools/\n    ├── ListKnowledgeBasesTool.cs\n    ├── SearchDocumentsTool.cs\n    ├── GetDocumentChunkTool.cs\n    ├── StartReindexTool.cs        # Queue entry point + orchestrator spawn\n    ├── CancelReindexTool.cs       # Remove pending queue entry\n    ├── GetIndexInfoTool.cs        # Includes queue state\n    └── CheckChangesTool.cs\n```\n\n## Data Storage\n\nKnowledge base data is stored at `%LOCALAPPDATA%\\FieldCure\\Mcp.Rag\\{kb-id}\\`:\n- `config.json` — knowledge base configuration\n- `rag.db` — SQLite database (chunks, embeddings, FTS5 index, file hashes, indexing lock)\n\nQueue and lock files at `%LOCALAPPDATA%\\FieldCure\\Mcp.Rag\\`:\n- `.deferred-queue.json` — pending indexing requests\n- `orchestrator.lock` — PID lock for the queue orchestrator\n\n## Development\n\n```bash\n# Build\ndotnet build\n\n# Test\ndotnet test\n\n# Pack as dotnet tool\ndotnet pack src/FieldCure.Mcp.Rag -c Release\n```\n\n## See Also\n\nPart of the [AssistStudio ecosystem](https://github.com/fieldcure/fieldcure-assiststudio#packages).\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:46:19.181Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:37.057Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,59 @@
+{
+  "id": "io.github.HrishiKabra/voting-mcp",
+  "title": "voting-mcp",
+  "description": "Social-choice voting rules (Borda, Copeland, Condorcet, STV, opinion pool) as MCP tools.",
+  "summary": "Social-choice voting rules (Borda, Copeland, Condorcet, STV, opinion pool) as MCP tools.",
+  "offersHint": "Social-choice voting rules (Borda, Copeland, Condorcet, STV, opinion pool) as MCP tools. · Packages: pypi:voting-mcp",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "voting-mcp",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "voting-mcp",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/HrishiKabra/voting-mcp",
+  "sourceUrl": "https://github.com/HrishiKabra/voting-mcp",
+  "repository": {
+    "url": "https://github.com/HrishiKabra/voting-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T07:20:45.943122Z",
+  "publishedAt": "2026-07-02T07:20:45.943122Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:51.236Z",
+    "sourceRepoAt": "2026-08-12T00:10:22.261Z",
+    "readmeAt": "2026-08-12T00:10:22.912Z",
+    "toolsAt": "2026-08-12T01:40:51.236Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/HrishiKabra/voting-mcp",
+    "checkedAt": "2026-08-12T00:10:22.261Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/HrishiKabra/voting-mcp/main/README.md",
+    "markdown": "# voting-mcp\n\n<!-- mcp-name: io.github.HrishiKabra/voting-mcp -->\n\n**Principled social-choice aggregation as MCP tools — with a benchmark that measures the\naccuracy lift over naive majority vote.**\n\nAlmost every multi-agent system aggregates votes with `Counter(votes).most_common(1)`, throwing\naway preference order and confidence. `voting-mcp` ships the real rules (Borda, Copeland,\nCondorcet, approval, STV, linear opinion pool) as callable MCP tools — each with its known\naxiomatic behavior and explicit, documented tie-breaking — plus a reproducible benchmark that\naggregates a diverse ensemble of LLMs on a reasoning set and reports accuracy with bootstrap\nconfidence intervals.\n\nThe server is **pure compute**: stdio transport, no network, no file writes, no secrets — clean\nagainst the OWASP MCP Top 10 by construction.\n\n## Install\n\n```sh\n# run the server directly (once published)\nuvx voting-mcp\n\n# or from source\ngit clone https://github.com/HrishiKabra/voting-mcp && cd voting-mcp\nuv sync\nuv run python -m voting_mcp.server\n```\n\nAdd it to an MCP client (e.g. Claude Desktop `claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"voting\": { \"command\": \"uvx\", \"args\": [\"voting-mcp\"] }\n  }\n}\n```\n\n## Tools\n\nEvery tool takes a `profile` (`{candidates, ballots}`) and returns a `Result` with the full\nco-winner set (`winners`, so ties are never hidden), the single tie-broken `winner` (or `null`\nwhen none exists), a `ranking`, per-candidate `scores`, and a `note`.\n\n| Tool | Ballots | Notes |\n|------|---------|-------|\n| `borda` | rankings | positional; Condorcet-inconsistent, clone-sensitive |\n| `copeland` | rankings | Condorcet-consistent pairwise (+1 win, +0.5 tie) |\n| `condorcet` | rankings | returns the pairwise winner **or an explicit no-winner on a cycle** |\n| `approval` | approval sets | most-approved wins |\n| `stv` | rankings | single-winner instant-runoff; clone-resistant |\n| `opinion_pool` | distributions | linear pool — **preserves confidence, not an argmax vote** |\n| `plurality` | rankings | baseline (most first choices) |\n| `majority` | rankings | strict >50% or **no winner** |\n| `aggregate_rule` | any | dispatch by a `rule` enum |\n\nTie-breaking is an explicit parameter (`lexicographic` default, `none`, or seeded `random`).\n\n## Benchmark\n\nAggregate an ensemble of 5 models (one OpenAI-compatible client via OpenRouter) on\nARC-Challenge and compare each rule to the naive majority vote:\n\n```sh\nuv sync --extra bench\nuv run python -m bench.fetch_arc --limit 200\n# prints a cost estimate and STOPS; add --yes to actually call the API, --mock for a free dry run\nuv run python -m bench.run_ensemble --dataset bench/datasets/arc_challenge.jsonl --limit 200 --yes\nuv run python -m bench.compare --dataset bench/datasets/arc_challenge.jsonl --limit 200\n```\n\nEvery raw response is cached under `bench/results/raw/`; re-runs never re-call the API, so\naggregation tweaks are free.\n\n### Results\n\n5-model ensemble (gpt-4o-mini · gemini-2.5-flash-lite · deepseek-v3 · claude-haiku-4.5 ·\nglm-4.7), n = 200, bootstrap 95% CI. Two datasets of different difficulty; full write-up and\nboth plots in [`RESULTS.md`](RESULTS.md).\n\n**MMLU-Pro (hard, baseline 73.5%) — the informative case:**\n\n| Rule | Accuracy | 95% CI | paired Δ vs majority | p |\n|------|---------:|:------:|:--------------------:|---|\n| **opinion_pool** | **0.755** | [0.695, 0.815] | **+0.020** [−0.011, +0.052] | 0.225 |\n| **majority_vote (baseline)** | 0.735 | [0.679, 0.788] | — | — |\n| approval | 0.701 | [0.640, 0.757] | −0.035 [−0.063, −0.006] | **0.014** |\n| stv | 0.693 | [0.630, 0.750] | −0.043 [−0.072, −0.015] | **0.002** |\n| copeland | 0.647 | [0.580, 0.710] | −0.088 [−0.127, −0.052] | **<0.001** |\n| condorcet | 0.620 | [0.550, 0.685] | −0.115 [−0.155, −0.079] | **<0.001** |\n| majority (strict) | 0.590 | [0.520, 0.655] | −0.145 [−0.189, −0.105] | **<0.001** |\n| borda | 0.472 | [0.405, 0.540] | −0.263 [−0.323, −0.206] | **<0.001** |\n\nΔ is tested with a **paired bootstrap** on the per-question accuracy difference (same questions,\nso shared difficulty cancels), not by eyeballing the independent CIs.\n\n![MMLU-Pro](docs/accuracy_mmlu_pro.png)\n\n**The finding (honest):** the value isn't \"fancy voting beats majority.\" It's that **the\nconfidence-preserving rule (`opinion_pool`) wins** when the crowd is uncertain (+2.0pp, the only\nrule above baseline — suggestive but not significant at n=200, paired p=0.225), while **forcing\nthe distributions into full rankings actively hurts, significantly** — every ranking rule is\nbelow baseline at paired p≤0.014, and `borda` collapses to 0.472 because with 10 options the\ntail of the ranking is mostly noise. Aggregate the confidence; don't throw it away. On\n**ARC-Challenge** (baseline 96.8%, near-ceiling) nothing separates — no rule differs\nsignificantly. See [`RESULTS.md`](RESULTS.md).\n\n## Develop\n\n```sh\nuv run pytest -q\nuv run ruff check .\nuv run mypy --strict src\n# exercise the tools in the MCP Inspector:\nnpx @modelcontextprotocol/inspector uv run python -m voting_mcp.server\n```\n\n> Note: if you keep this repo under an iCloud-synced folder (e.g. `~/Desktop`), iCloud can spawn\n> duplicate `.pth` files that intermittently break the editable install. Tests use\n> `pythonpath=src`; run the server with `PYTHONPATH=src` if an import fails, or move the repo\n> off the synced folder.\n\n## Related research\n\nThe choice of rules here grows out of the author's work on voting-rule design:\n[*Optimizing Voting Rules for Social Welfare and Beyond*](https://dl.acm.org/doi/10.65109/SSLT9308)\n(AAMAS). That line of work asks which aggregation rules maximize welfare given how voters\nactually express preferences; this project applies the same lens to LLM ensembles — where the\nbenchmark's answer is that confidence-preserving aggregation (the linear opinion pool) is what\npays off, and forcing cardinal beliefs into ordinal rankings destroys signal.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:10:22.912Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:51.236Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

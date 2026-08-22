@@ -1,0 +1,93 @@
+{
+  "id": "ai.tunnelmind/sigil",
+  "title": "Sigil",
+  "description": "Programmatic-advertising supply verification: ads.txt, schain, ATAP receipts, cross_lens_verify.",
+  "summary": "Programmatic-advertising supply verification: ads.txt, schain, ATAP receipts, cross_lens_verify.",
+  "offersHint": "Programmatic-advertising supply verification: ads.txt, schain, ATAP receipts, cross_lens_verify. · Remote MCP (streamable-http) at https://mcp.sigil.tunnelmind.ai/mcp",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.sigil.tunnelmind.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.sigil.tunnelmind.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://tunnelmind.ai",
+  "updatedAt": "2026-08-03T01:21:35.126755Z",
+  "publishedAt": "2026-08-03T01:21:35.126755Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:43:20.701Z",
+    "sourceRepoAt": "2026-08-12T00:43:20.701Z",
+    "readmeAt": "2026-08-12T00:43:20.701Z",
+    "toolsAt": "2026-08-12T00:43:20.701Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:43:20.701Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:43:20.701Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "cross_lens_verify",
+      "description": "A2 — the cross-lens join. Fuse TunnelMind's two lenses (Scry attacker\nintelligence + Sigil supply graph) into ONE verdict on a single node key.\nThis is the moat: no siloed competitor owns both halves of the graph, so\nthe fused `cross_lens` block carries information neither lens can supply\nalone.\n\nUse this tool when:\n- An agent must decide whether to transact with an IP, domain, ASN, or\n  entity_slug, and a one-lens answer is not enough.\n- You want a single composite trust verdict instead of running\n  Scry + Sigil calls separately and reconciling them by hand.\n\nInputs:\n- `node` (required): an IPv4 address, a domain, an ASN (e.g. `AS64500`),\n  or an entity_slug. Type is auto-detected.\n- `weights` (optional): per-component weight overrides.\n- `thresholds` (optional): `{ pass, fail }` verdict cutoffs (defaults 0.7 / 0.3).\n- `ait` (optional): an ATAP AIT id. When present, the verdict is chained\n  onto the AIT as a witness-tier `cross_lens:verified` event signed by\n  Sigil (witness OAI-2026-0000201) — replayable evidence, not just JSON.\n\nReturns: per-lens `scry` + `sigil` blocks (transparency), a fused\n`cross_lens` block with `verdict` / `trust_score` / `confidence` /\n`signals` / `recommendations`, a 5-minute signed `sigil_token`, and a\n`witnessed_event` block when an AIT was supplied.\n\nFailure semantics: each lens fails independently. Single-lens answers\nstill return 200 with a `confidence` of 0.55. Returns 503 only when BOTH\nlenses are unavailable."
+    },
+    {
+      "name": "sigil_verify_supply_path",
+      "description": "The core pre-bid check. Verify the trustworthiness of one programmatic ad\nsupply path and get back a composite trust verdict plus a signed proof token.\nSigil composes ads.txt authorization, datacenter-IP classification, Scry\nfraud-corpus lookup, and app-bundle checks into one score.\n\nUse this tool when:\n- An ad-buying agent is about to bid and must confirm the supply is genuine.\n- You want one call instead of running ads.txt / IP / bundle checks separately.\n\nInputs:\n- `supply_path` (required): { publisher_domain, exchange, seller_id, and\n  optionally ip_address, app_bundle:{bundle_id,platform} }.\n- `ait` (optional): an ATAP AIT id — when present, Sigil records this\n  verification as a witnessed attestation event and binds the token to it.\n\nReturns: `trust_score` (0-1), `verdict` (pass/warn/fail/unknown), per-check\nresults, `recommendations`, and a signed `sigil_token` (5-min) to attach to\nthe bid as proof. The submitted IP is used for lookup only — never stored."
+    },
+    {
+      "name": "sigil_verify_ads_txt",
+      "description": "Check whether an exchange/SSP is authorized to sell a publisher's inventory,\nper the publisher's ads.txt file. Fast cached lookup against Sigil's daily\ncrawl of the top ~10k publisher domains.\n\nUse this tool when:\n- You need a single, narrow authorization check (not a full supply-path score).\n- You are validating a (publisher, exchange, seller_id) triple from a bid request.\n\nInputs:\n- `publisher_domain`, `exchange_domain`, `seller_id` (all required).\n- `resolve_chain` (optional): when true and the entry is RESELLER, Sigil walks\n  one hop into the exchange's sellers.json to identify the upstream seller.\n\nReturns: `verified` (true/false/null), `confidence`, the matched ads.txt entry,\nand any `warnings` (e.g. seller_type mismatch)."
+    },
+    {
+      "name": "sigil_verify_ip_type",
+      "description": "Classify an IPv4 address as datacenter, residential, mobile, or unknown.\nDetects datacenter traffic posing as real user devices. Stateless — the IP\nis never logged or stored.\n\nUse this tool when:\n- You need to know whether bid-request traffic originates from a datacenter.\n\nInputs:\n- `ip` (required): an IPv4 address.\n\nReturns: `ip_type`, `confidence` (high/medium/low), and the ASN + AS-org name."
+    },
+    {
+      "name": "sigil_verify_app_bundle",
+      "description": "Verify that a mobile/CTV app bundle ID actually exists in its app store and,\noptionally, that the listed developer matches. Detects bundle-ID spoofing in\nbid requests.\n\nUse this tool when:\n- A bid request names an app bundle and you must confirm the app is real.\n\nInputs:\n- `bundle_id` (required), `platform` (required: ios | android | ctv_* | web),\n- `claimed_developer` (optional): developer name to match against the listing.\n\nReturns: `verified` (true/false/null), the store listing, and `developer_match`."
+    },
+    {
+      "name": "sigil_verify_supply_chain",
+      "description": "Verify a full OpenRTB SupplyChain (schain) object — every node, end to end.\nPer node Sigil checks the seller against the exchange sellers.json and the\norigin ads.txt, then returns a per-node and aggregate verdict plus a signed\ntoken.\n\nUse this tool when:\n- A bid request carries an OpenRTB `schain` and you want it verified verbatim.\n\nInputs:\n- `schain` (required): an OpenRTB SupplyChain object ({ ver, complete,\n  nodes:[{asi,sid,hp}] }).\n- `site_domain` or `app_bundle` (optional): the inventory origin, checked\n  against node[0] via ads.txt / OWNERDOMAIN.\n\nReturns: per-node `nodes` results, an aggregate `verdict`, `recommendations`,\nand a signed `sigil_token`."
+    },
+    {
+      "name": "sigil_traverse_supply_chain",
+      "description": "Walk the supply graph for a publisher domain and get back the ITEMIZED\nsell paths — distinct from sigil_verify_supply_chain (which verifies a\nschain you BRING) and from the dark-pool-risk signal (which only returns\ncounts). Here Sigil reconstructs the paths from its own crawl: every SSP\nthe publisher declares it sells through, joined to that SSP's identity and\nclassified two-sided against the SSP's sellers.json.\n\nUse this tool when:\n- You have a publisher domain but no schain, and want to SEE its real\n  authorized supply paths and where the opacity is.\n- dark-pool-risk flagged a publisher and you need the specific contradicted\n  paths driving the risk, not just the aggregate.\n\nInputs:\n- `domain` (required): the publisher domain, e.g. `cnn.com`.\n- `limit` (optional): max paths returned (default 200, cap 500). The list\n  is ordered riskiest-first (contradicted, then reseller) so a truncated\n  page is still the most useful; the `supply_paths` counts are always over\n  the FULL set.\n\nReturns: `supply_paths` aggregate counts (total / direct / reseller /\ncorroborated / contradicted / unchecked) and `paths[]`, each with the SSP\nidentity, `seller_id`, `seller_type`, `klass` (corroborated = seat present;\ncontradicted = SSP crawled but seller_id absent → real risk; unchecked =\nSSP not yet crawled → not risk), and `resells_to` (one level of downstream\nreseller expansion). Returns in_supply_graph:false if the domain is not in\nthe crawled corpus."
+    },
+    {
+      "name": "sigil_score_entity",
+      "description": "Get the pre-computed trust score for one supply-chain entity (a publisher or\nan SSP). Scores are recomputed daily from ads.txt health, supply-chain\ndirectness, reach, and stability — deterministic, no ML black box.\n\nUse this tool when:\n- You want a fast standing trust signal for an entity without running checks.\n\nInputs:\n- `entity_id` (required): `{type}:{domain}` — e.g. `publisher:nytimes.com` or\n  `ssp:pubmatic.com`.\n\nReturns: `trust_score` (0-1), `score_components`, the 14-day `trend`, and\n`warnings`."
+    },
+    {
+      "name": "sigil_score_batch",
+      "description": "Pre-computed trust scores for up to 200 entities in one call — built for an\nagent evaluating many supply sources during campaign setup.\n\nUse this tool when:\n- You have a list of publishers/SSPs to grade at once.\n\nInputs:\n- `entity_ids` (required): array of `{type}:{domain}` ids, up to 200.\n- `weights` (optional): custom component weights to re-score with.\n\nReturns: `count`, `scored_count`, and a per-entity `results` array (invalid\nids are reported inline, never failing the batch)."
+    },
+    {
+      "name": "sigil_atap_register_ait",
+      "description": "Register an ATAP v0.1 Agent Identity Token for a media-buying agent. Sigil\nvalidates the capabilities + constraints against the `sigil:media_buyer:v1`\nprofile, signs the AIT as the witness, and returns it. Do this once per agent\ncampaign before witnessing any events.\n\nInputs:\n- `profile` (required): must be `sigil:media_buyer:v1`.\n- `operator` (required): the agent operator's canonical OAI.\n- `capabilities` (required): array from the profile vocabulary.\n- `constraints` (required): { currency, max_bid_cpm, supply_trust_minimum,\n  budget_total_cap, allowed_channels, ... }.\n- `attestation_policy` (required): { witness_granularity, block_interval_seconds\n  (60-3600), receipt_generation }.\n- `expires_at` (required): ISO date-time, <= 365 days out.\n\nReturns: the signed AIT (note its `id` for subsequent witness calls)."
+    },
+    {
+      "name": "sigil_atap_witness",
+      "description": "Witness one agent-reported bid or budget event into an AIT's hash-chained\nattestation log. Sigil validates the payload (rejecting any PII), classifies\nthe evidence tier — `anchored` if a bid cites a valid Sigil token, else\n`asserted` — derives constraint violations, and signs the event.\n\nUse this tool when:\n- An ATAP-enrolled media-buyer agent submits a bid, win, loss, or budget\n  decrement and you want it on the attestation record.\n\nInputs:\n- `ait` (required): the AIT id.\n- `event_type` (required): bid:submitted | bid:won | bid:lost | budget:decremented.\n- `payload` (required): the event payload (see the sigil:media_buyer:v1 profile).\n\nReturns: the signed witness event(s), the assigned `tier`, and any derived\nconstraint violations. (supply:verified events come from verify_supply_path,\nnot this tool.)"
+    },
+    {
+      "name": "sigil_generate_receipt",
+      "description": "Generate the ATAP v0.1 compliance Receipt for an AIT — the portable, signed\nartifact a media buyer hands its principal. The receipt grades every event\nwitnessed / anchored / asserted and is verifiable offline with the bundled\nverify.sh.\n\nUse this tool when:\n- A reporting period closes and you need a compliance export for the AIT.\n\nInputs:\n- `ait` (required): the AIT id.\n- `format` (optional): `full` (default) or `summary`.\n\nReturns: JSON with `receipt_id` and `zip_base64` — base64-decode `zip_base64`\nto a .zip, unpack it, and run verify.sh to verify the chain independently."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:43:20.701Z",
+  "toolsPreviewStatus": "ok"
+}

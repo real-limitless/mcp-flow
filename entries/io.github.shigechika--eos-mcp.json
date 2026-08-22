@@ -1,0 +1,58 @@
+{
+  "id": "io.github.shigechika/eos-mcp",
+  "title": "EOS MCP",
+  "description": "MCP server for Arista EOS device operations via eAPI",
+  "summary": "MCP server for Arista EOS device operations via eAPI",
+  "offersHint": "MCP server for Arista EOS device operations via eAPI · Packages: pypi:eos-mcp",
+  "version": "1.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "eos-mcp",
+    "version": "1.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "eos-mcp",
+      "version": "1.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/shigechika/eos-mcp",
+  "repository": {
+    "url": "https://github.com/shigechika/eos-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T08:09:37.76266Z",
+  "publishedAt": "2026-08-11T08:09:37.76266Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:31.602Z",
+    "sourceRepoAt": "2026-08-11T23:21:09.639Z",
+    "readmeAt": "2026-08-11T23:21:10.139Z",
+    "toolsAt": "2026-08-12T01:01:31.602Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/shigechika/eos-mcp",
+    "checkedAt": "2026-08-11T23:21:09.639Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/shigechika/eos-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.shigechika/eos-mcp -->\n\n# eos-mcp\n\nEnglish | [日本語](README.ja.md)\n\nMCP server for Arista EOS device operations via eAPI.\n\nExposes EOS show commands, running-config retrieval, configuration push\n(via configure session with commit timer), and tech-support collection\nto MCP-compatible AI assistants.\n\n## Installation\n\n```bash\npip install eos-mcp\n```\n\n## Configuration\n\nCopy `config.ini.example` to `~/.config/eos-mcp/config.ini` and fill in credentials:\n\n```ini\n[DEFAULT]\nusername = admin\npassword = yourpassword\ntransport = https\nverify = false\n\n[switch1.example.com]\ntags = main,dc1\n\n[switch2.example.com]\ntags = main,dc1\n```\n\nConfig file discovery order:\n1. `EOS_MCP_CONFIG` environment variable\n2. `./config.ini` (current directory)\n3. `~/.config/eos-mcp/config.ini`\n\n(Individual MCP tool calls may also override the path via a `config_path`\nparameter.)\n\n## Usage\n\n```bash\n# Verify config and list devices\neos-mcp --check\n\n# Test connectivity to a specific host\neos-mcp --check --check-host switch1.example.com\n\n# Start MCP server (stdio transport)\neos-mcp\n```\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `health_check` | Report server version and config status (lightweight; does NOT connect to devices) |\n| `get_router_list` | List registered devices (optional tag filter) |\n| `get_device_facts` | Return structured facts for one device (model, serial, EOS version, uptime, memory) |\n| `get_device_facts_batch` | Return device facts for multiple devices in parallel |\n| `get_version` | Return EOS version string (quick connectivity check) |\n| `run_command` | Run a single enable-mode command on one device |\n| `run_commands` | Run multiple enable-mode commands on one device |\n| `run_command_batch` | Run an enable-mode command on multiple devices in parallel |\n| `run_commands_batch` | Run multiple enable-mode commands on multiple devices in parallel |\n| `get_config` | Retrieve running-config |\n| `get_config_diff` | Show config diff vs rollback checkpoint |\n| `list_config_sessions` | List configure sessions and their state |\n| `push_config` | Push config via configure session (dry_run=True by default) |\n| `confirm_config_session` | Confirm a pending commit timer session |\n| `abort_config_session` | Abort a pending session |\n| `collect_tech_support` | Collect show tech-support output |\n| `daily_brief` | Health check (environment, errdisabled, uptime, MLAG, recent syslog alerts) across multiple devices |\n\n## Development\n\n### Live smoke test\n\nUnit tests check logic against fixtures; they cannot tell you that a tool has\nstopped returning real data. `scripts/smoke_test.py` runs **every registered\ntool** against the configured devices and fails on empty, malformed or error\nanswers:\n\n```bash\n# uses the same inventory file as the server (EOS_MCP_CONFIG)\nuv run python scripts/smoke_test.py\nuv run python scripts/smoke_test.py --only facts --traceback\n```\n\n- **Read-only.** `push_config`, `confirm_config_session` and\n  `abort_config_session` are skipped by name, and a test enforces that.\n  `collect_tech_support` is skipped too — it changes nothing, but it is minutes\n  of device CPU for an answer no assertion would read. The command-running\n  tools are exercised with `show version`: they accept enable-mode commands in\n  general, and a smoke test must not be the thing that types one that matters.\n- **No payloads in the report.** Tool names and statuses only; error text is\n  redacted too, since every error here is prefixed with the device it came from\n  and the payloads are configuration.\n- **Nothing estate-specific in the specs.** The device the per-host tools need\n  is discovered at run time from the configured inventory, and skipped when it\n  is empty. Two tests keep it that way: one refuses those parameters as\n  literals, the other bans anything address-shaped anywhere in the file,\n  because this repository is public.\n- Every probe refuses the `Error (<host>): ...` line these tools return in\n  place of raising — otherwise an unreachable device would read as a\n  successful call.\n- CI enforces the cheap half: a tool registered without a probe spec fails the\n  build (`tests/test_smoke_probes.py`), so adding a tool forces the question\n  \"how would we know it works?\".\n- `scripts/smoke_harness.py` is the engine and holds no EOS knowledge: it is\n  kept identical across the servers that share it, so fix engine bugs once and\n  sync the file rather than patching this copy.\n\n## Requirements\n\n- Python >= 3.10\n- Arista EOS with eAPI enabled (`management api http-commands`)\n- Network access to port 443 (HTTPS) on target devices\n\n## License\n\nApache-2.0",
+    "fetchedAt": "2026-08-11T23:21:10.139Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:31.602Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

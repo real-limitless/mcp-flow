@@ -1,0 +1,113 @@
+{
+  "id": "app.ganty/mcp-server",
+  "title": "Ganty MCP",
+  "description": "Gantt chart SaaS with server-side critical path and dependency-aware shift-impact tools, plus CRUD.",
+  "summary": "Gantt chart SaaS with server-side critical path and dependency-aware shift-impact tools, plus CRUD.",
+  "offersHint": "Gantt chart SaaS with server-side critical path and dependency-aware shift-impact tools, plus CRUD. · Remote MCP (streamable-http) at https://ganty.app/api/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ganty.app/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ganty.app/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://ganty.app",
+  "sourceUrl": "https://github.com/homareyoshizaki/ganty-mcp",
+  "repository": {
+    "url": "https://github.com/homareyoshizaki/ganty-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-03T08:13:39.446652Z",
+  "publishedAt": "2026-06-03T08:13:39.446652Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:42:22.023Z",
+    "sourceRepoAt": "2026-08-12T00:42:22.023Z",
+    "readmeAt": "2026-08-12T00:42:22.727Z",
+    "toolsAt": "2026-08-12T00:42:22.823Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/homareyoshizaki/ganty-mcp",
+    "checkedAt": "2026-08-12T00:42:22.023Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/homareyoshizaki/ganty-mcp/main/README.md",
+    "markdown": "# Ganty MCP\n\n[Ganty](https://ganty.app) is a Gantt chart SaaS with a built-in **Model Context Protocol (MCP)** server that lets AI clients like Claude Desktop and Claude Code drive your projects in natural language — and computes critical paths and shift-impact server-side rather than asking the LLM to do math.\n\n> **Status: v1.0.0** — production endpoint at `https://ganty.app/api/mcp` (Streamable HTTP)\n> Free on every Ganty plan including Free.\n\n## What makes this different\n\nMost MCP servers expose CRUD over an existing API. Ganty's also exposes **calculation tools that compute on the server and return JSON** — so the LLM never has to reason about dates, dependencies, or critical paths.\n\n- `get_critical_path` — forward/backward-pass CPM with progress-aware remaining duration. Returns the critical path tasks in order, per-task earliest/latest start/finish, slack, projected end date. Detects cycles before computing and returns `error: 'cyclic_dependency'` instead of hanging or guessing.\n- `reschedule_and_propagate` — simulate or commit a task shift. Default mode is `dry_run` (no DB writes). Push-only cascade respects pinned tasks (anything at `progress=100` or in `pinned_task_ids`) and reports `conflicts` instead of overwriting. `commit` mode wraps everything in an all-or-nothing transaction.\n\n## Quick start\n\n1. **Issue an MCP token** in Ganty: dashboard → Settings → MCP Integration → \"Issue new token\".\n2. **Configure Claude Desktop** (`claude_desktop_config.json`) or **Claude Code** (`.mcp.json` at project root):\n   ```json\n   {\n     \"mcpServers\": {\n       \"ganty\": {\n         \"url\": \"https://ganty.app/api/mcp\",\n         \"headers\": { \"Authorization\": \"Bearer YOUR_TOKEN\" }\n       }\n     }\n   }\n   ```\n3. **Restart Claude** and try a prompt:\n   - `\"List my Ganty projects\"`\n   - `\"What's the critical path for the e-commerce rebuild project?\"`\n   - `\"If I push the payments task by +3 days, when does release ship?\"`\n\nFull setup walk-through: <https://ganty.app/guide/mcp-integration>\n\n## Tools\n\n### Read tools (visible to read-only and write tokens)\n\n| Tool | Description |\n|---|---|\n| `list_workspaces` | Workspaces the token's user belongs to |\n| `list_projects` | Projects in a workspace |\n| `list_tasks` | Tasks in a project (filter by name/status/assignee) |\n| `get_task` | Single task with assignees + dependencies |\n| `list_milestones` | Milestones in a project |\n| `get_critical_path` | **Server-side CPM with slack and total duration** |\n\n### Write tools (write-scope tokens only)\n\n| Tool | Description |\n|---|---|\n| `create_project`, `delete_project` | Project lifecycle |\n| `create_task`, `update_task`, `delete_task` | Task lifecycle |\n| `set_task_progress` | Update task progress (auto-sets status) |\n| `add_dependency` | Finish-to-Start dependency between two tasks |\n| `create_milestone` | Add a milestone |\n| `reschedule_and_propagate` | **Shift a task, cascade through dependencies, dry-run or commit** |\n\n`reschedule_and_propagate` is classified as a write tool even in `dry_run` mode (it shares the same compute path as commit and we don't want read-only tokens running unlimited simulations).\n\n## v1 scope and limitations\n\nWe prefer explicit non-support over silent wrong answers. Every response from the calculation tools includes a `limitations` array.\n\n- **Dependency types**: Finish-to-Start only (Ganty's schema doesn't model SS/FF/SF)\n- **Calendar**: calendar days by default; `business_days: true` skips Sat/Sun only (no holiday table)\n- **No resource calendars** in v1\n- **Multi-period tasks (extraSegments)** are ignored in v1; calculations use only the main start/end of each task\n- **Pinned tasks**: `progress=100` automatically pinned; supply `pinned_task_ids` for additional pins\n- **Push-only cascade**: successors are pushed back when required, never pulled forward\n\n## Architecture\n\n- **Transport**: Streamable HTTP (JSON-RPC 2.0 over HTTP POST) — `https://ganty.app/api/mcp`\n- **Auth**: Bearer tokens (`gnty_...`) issued from the Ganty dashboard. Tokens are scoped `read` or `write`.\n- **Rate limits**: 120 req/min for read, 30 req/min for write (per token)\n- **Audit logging**: every write call is logged with action, actor, IP, and arg summary\n- **Atomicity**: `reschedule_and_propagate` `commit` mode is wrapped in a Prisma transaction; conflicts abort without writes\n\nThe calculation logic lives in pure TypeScript functions backed by 28 golden tests asserting concrete dates and day counts (linear chain shifts, diamond merges, cycle detection within 2 seconds, progress-aware remaining duration, hand-calculated CPM with slack, business-day mode, lag-day handling, push-only cascade).\n\n## Links\n\n- **Marketing page**: <https://ganty.app/integrations/mcp>\n- **Setup guide**: <https://ganty.app/guide/mcp-integration>\n- **Claude × Gantt guide**: <https://ganty.app/blog/claude-gantt-chart>\n- **Design article**: <https://ganty.app/blog/mcp-server-side-calculation-engine>\n- **Tools by example**: <https://ganty.app/blog/mcp-gantt-chart-5-examples>\n- **Troubleshooting**: <https://ganty.app/blog/mcp-setup-troubleshooting>\n- **Sign up (free 5-member plan)**: <https://ganty.app/signup>\n\n## License\n\nMIT for this documentation repository.\nThe Ganty server itself is a hosted SaaS; the MCP endpoint is a feature of every Ganty workspace.\n",
+    "fetchedAt": "2026-08-12T00:42:22.727Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "list_workspaces",
+      "description": "Get all workspaces the authenticated user is a member of."
+    },
+    {
+      "name": "list_projects",
+      "description": "List all projects in a workspace (excluding archived)."
+    },
+    {
+      "name": "create_project",
+      "description": "Create a new project in a workspace. Returns the created project. Subject to plan-based project count limits."
+    },
+    {
+      "name": "delete_project",
+      "description": "Permanently delete a project. All tasks, milestones, and dependencies inside the project are also removed. This cannot be undone."
+    },
+    {
+      "name": "list_tasks",
+      "description": "List tasks in a project. Supports optional filtering by name (search), status, and assignee."
+    },
+    {
+      "name": "get_task",
+      "description": "Get detailed information about a single task, including assignees and dependencies."
+    },
+    {
+      "name": "list_milestones",
+      "description": "List milestones in a project (key dates such as launch or review gates)."
+    },
+    {
+      "name": "create_milestone",
+      "description": "Add a milestone (key date) to a project."
+    },
+    {
+      "name": "create_task",
+      "description": "Create a new task in a project. Dates must be in YYYY-MM-DD format. End date is exclusive (a 1-day task has end = start + 1 day)."
+    },
+    {
+      "name": "update_task",
+      "description": "Update fields of an existing task. Only provided fields will be modified."
+    },
+    {
+      "name": "set_task_progress",
+      "description": "Update the progress percentage of a task (0-100). Status is auto-derived: 0=not_started, 1-99=in_progress, 100=done."
+    },
+    {
+      "name": "add_dependency",
+      "description": "Add a finish-to-start dependency between two tasks in the same project."
+    },
+    {
+      "name": "delete_task",
+      "description": "Delete a task. Child tasks and dependencies are removed as well."
+    },
+    {
+      "name": "get_critical_path",
+      "description": "Calculate the critical path of a project on the Ganty side and return it as data (don't ask the model to reason over raw task lists). Uses forward/backward CPM with progress-aware remaining duration. Returns critical_path tasks in order, per-task earliest/latest start/finish + slack, project_end_date, and total_duration_days. v1 limitations: Finish-to-Start dependencies only (Ganty has no other types), calendar days by default (business_days=true skips Sat/Sun but no holiday table), ignores multi-period segments, no resource calendars. Returns { error: 'cyclic_dependency', cycle } if a cycle is detected."
+    },
+    {
+      "name": "reschedule_and_propagate",
+      "description": "Compute the downstream impact of shifting a single task. Default is dry_run (no DB writes); set mode='commit' to actually persist the changes. Cascades forward only (no pull): successors are pushed only if their predecessor's new end + lag would violate their current start. Tasks with progress=100 are treated as pinned; pass pinned_task_ids for additional pins. When a pin would be violated, the change is recorded in 'conflicts' and not propagated further. In mode='commit', if any conflicts exist nothing is written (all-or-nothing transaction). Same v1 limitations as get_critical_path: FS only, calendar days by default, no holiday table, ignores multi-period segments."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:42:22.823Z",
+  "toolsPreviewStatus": "ok"
+}

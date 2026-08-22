@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jimprivate/idml-mcp",
+  "title": "idml-mcp",
+  "description": "MCP server for AI agents to read and safely edit Adobe InDesign IDML files. No InDesign required.",
+  "summary": "MCP server for AI agents to read and safely edit Adobe InDesign IDML files. No InDesign required.",
+  "offersHint": "MCP server for AI agents to read and safely edit Adobe InDesign IDML files. No InDesign required. · Packages: npm:idml-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "idml-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "idml-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jimprivate/idmlkit",
+  "repository": {
+    "url": "https://github.com/jimprivate/idmlkit",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-19T02:11:41.968696Z",
+  "publishedAt": "2026-07-19T02:11:41.968696Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:51.563Z",
+    "sourceRepoAt": "2026-08-11T23:41:10.068Z",
+    "readmeAt": "2026-08-11T23:41:10.581Z",
+    "toolsAt": "2026-08-12T01:18:51.563Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jimprivate/idmlkit",
+    "checkedAt": "2026-08-11T23:41:10.068Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jimprivate/idmlkit/main/README.md",
+    "markdown": "# idmlkit\n\n**The AI-native toolkit for Adobe InDesign files (IDML) — parse, summarize, and safely write back. No InDesign required.**\n\nAI tools have transformed how we write code and build web pages, but print and layout designers have largely been left out: the InDesign ecosystem has no AI-ready open interface. Existing InDesign MCP servers all remote-control a *running* InDesign instance — which means a license, a desktop, and an open app for every operation.\n\n`idmlkit` takes the other road: it works directly on `.idml` files (InDesign's open, XML-based interchange format). That means it runs anywhere Node.js runs — servers, CI pipelines, Linux, a designer's laptop — with nothing from Adobe installed.\n\n```\nJSON data in ──► idmlkit ──► perfectly laid-out IDML out ──► open in InDesign / print\n```\n\n## Design philosophy: the AI never touches the XML\n\nLLMs are great at understanding a document and deciding *what* should change, and terrible at hand-editing 5,000 lines of layout XML without breaking it. So idmlkit splits the work:\n\n- **Deterministic code** parses the package and produces a compact, LLM-friendly summary (pages, frames, stories as indexed text runs, image links, styles) — a few hundred tokens instead of megabytes of XML.\n- **Write-back is surgical**: replacing a text run or relinking an image rewrites only that one element via targeted string surgery. Everything else — geometry, styles, the XML formatting itself — is preserved **byte-for-byte** (enforced by tests). The AI physically cannot corrupt your layout.\n\nValidated against real InDesign 2025 exports: on Adobe's official Flex Layout sample (14.5 MB, with a single 20 MB spread), summarize runs in under half a second and a text edit changes exactly one zip entry — every other entry verified byte-identical by CRC.\n\n## Packages\n\n| Package | What it is |\n| --- | --- |\n| [`idmlkit`](packages/idmlkit) | Core library + CLI: open, summarize, safe text/image write-back |\n| [`idml-mcp`](packages/idml-mcp) | [MCP](https://modelcontextprotocol.io) server exposing those abilities to Claude and any MCP-capable agent |\n\n## Quick start\n\n```sh\nnpm install\nnpm run build\nnode scripts/make-sample-idml.mjs   # generates examples/sample.idml\n```\n\n### CLI\n\n```sh\n$ node packages/idmlkit/dist/cli.js summary examples/sample.idml\nPages: 1  Spreads: 1\nStory u123 (11 words, 2 runs): Spring Catalog 2026 Fresh arrivals for the new season…\nImage link u202: file:/images/hero.jpg\nParagraph styles: $ID/NormalParagraphStyle, Headline, Body\n\n$ node packages/idmlkit/dist/cli.js set-text examples/sample.idml u123 0 \"Summer Sale 2026\" -o out.idml\n$ node packages/idmlkit/dist/cli.js relink out.idml u202 \"file:/images/summer.jpg\"\n```\n\n### MCP server (Claude Code / Claude Desktop)\n\n```json\n{\n  \"mcpServers\": {\n    \"idml\": {\n      \"command\": \"node\",\n      \"args\": [\"<repo>/packages/idml-mcp/dist/server.js\"]\n    }\n  }\n}\n```\n\nThen ask Claude things like *\"Summarize catalog.idml and replace every 2025 date with 2026\"* — it will use these tools:\n\n| Tool | Purpose |\n| --- | --- |\n| `idml_summarize` | Structured summary of pages, frames, stories, images, styles |\n| `idml_get_story` | One story's plain text + indexed runs with styles |\n| `idml_set_text` | Replace one run's text (layout untouched, byte-for-byte) |\n| `idml_relink_image` | Point an image link at a new file (geometry untouched) |\n\n### Library\n\n```ts\nimport { IdmlDocument, summarizeDocument, setStoryRunText } from \"idmlkit\";\n\nconst doc = await IdmlDocument.open(\"catalog.idml\");\nconsole.log(summarizeDocument(doc));      // LLM-friendly JSON\nsetStoryRunText(doc, \"u123\", 0, \"New headline\");\nawait doc.save(\"catalog-updated.idml\");\n```\n\n## Use cases\n\n- **Database publishing**: fill a designed template with product data — thousands of catalog pages, price lists, or menus without opening InDesign once.\n- **Localization**: extract every text run with its styles, translate, write back safely.\n- **Agent workflows**: let Claude read a layout, reason about its content, and apply text/image updates as part of a larger pipeline.\n\n## Roadmap\n\n- [x] Read IDML packages, LLM-friendly summaries\n- [x] Safe text run replacement and image relinking\n- [x] MCP server (stdio)\n- [ ] Page → frame mapping with geometry (which frame is where)\n- [ ] Template fill: apply a JSON data object to a tagged template in one call\n- [ ] Story-level structured diff (what changed between two IDML files)\n- [ ] Overflow heuristics (warn when new text likely won't fit its frame)\n- [ ] Real-world IDML corpus tests (CC 2018–2026 exports)\n\n## Development\n\n```sh\nnpm install\nnpm run build     # tsc project references\nnpm test          # vitest — includes byte-for-byte preservation tests\n```\n\n## License\n\n[MIT](LICENSE). Not affiliated with or endorsed by Adobe. \"Adobe\" and \"InDesign\" are trademarks of Adobe Inc., used here only to describe compatibility.\n",
+    "fetchedAt": "2026-08-11T23:41:10.581Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:51.563Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

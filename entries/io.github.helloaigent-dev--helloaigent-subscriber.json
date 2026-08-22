@@ -1,0 +1,76 @@
+{
+  "id": "io.github.helloaigent-dev/helloaigent-subscriber",
+  "title": "helloaigent-subscriber",
+  "description": "Subscribe your agent to Hello Aigent feeds: discover, fetch signed updates, verify, and act.",
+  "summary": "Subscribe your agent to Hello Aigent feeds: discover, fetch signed updates, verify, and act.",
+  "offersHint": "Subscribe your agent to Hello Aigent feeds: discover, fetch signed updates, verify, and act. · Packages: npm:@helloaigent-dev/subscriber · Env vars: HELLO_AIGENT_STATE",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@helloaigent-dev/subscriber",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "HELLO_AIGENT_STATE",
+        "description": "Path to the local subscription-state file (optional; defaults to a per-user location)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@helloaigent-dev/subscriber",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "HELLO_AIGENT_STATE",
+          "description": "Path to the local subscription-state file (optional; defaults to a per-user location)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "HELLO_AIGENT_STATE",
+      "description": "Path to the local subscription-state file (optional; defaults to a per-user location)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/helloaigent-dev/helloaigent-subscriber",
+  "repository": {
+    "url": "https://github.com/helloaigent-dev/helloaigent-subscriber",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T20:37:20.833881Z",
+  "publishedAt": "2026-08-08T20:37:20.833881Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:54.004Z",
+    "sourceRepoAt": "2026-08-11T23:43:31.168Z",
+    "readmeAt": "2026-08-11T23:43:31.607Z",
+    "toolsAt": "2026-08-12T01:20:54.004Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/helloaigent-dev/helloaigent-subscriber",
+    "checkedAt": "2026-08-11T23:43:31.168Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/helloaigent-dev/helloaigent-subscriber/main/README.md",
+    "markdown": "# @helloaigent-dev/subscriber\n\nThe **Hello Aigent reference subscriber** — an MCP server that lets any agent subscribe to any\n[Hello Aigent](https://helloaigent.dev) feed, fetch signed updates, verify them, and act on them.\nPlus **watch mode**: a standing poller that collects verified updates into a digest between agent runs.\n\n```bash\nnpx @helloaigent-dev/subscriber            # MCP server (stdio)\nnpx @helloaigent-dev/subscriber watch      # standing watcher (default cadence: daily)\n```\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `hello_aigent_subscribe(discovery_url, feed_id?, principal?, consent_scope?)` | Reads the site's `/.well-known/hello-aigent.json`, subscribes (defaults come from your policy) |\n| `hello_aigent_fetch(subscription_id?, max?)` | Pulls only-new-since updates via the stored cursor; **verifies every envelope signature** |\n| `hello_aigent_unsubscribe(subscription_id)` | Revokes consent (idempotent) — the one-call undo |\n| `hello_aigent_list_subscriptions()` | Lists stored subscriptions (tokens are never exposed) |\n| `hello_aigent_check_site(url)` | Checks a site you're visiting for a feed; auto-subscribes per your standing policy (`origin: auto`) |\n| `hello_aigent_digest()` | Returns unread digest entries collected by `watch` and marks them surfaced |\n| `hello_aigent_setup_watch(cadence?)` | Emits ready-to-apply standing-schedule recipes (scheduled task, recurring task, cron) |\n\n## Watch mode\n\n```bash\nnpx @helloaigent-dev/subscriber watch --once            # one pass (what schedulers call)\nnpx @helloaigent-dev/subscriber watch --every 6h        # long-running loop (floor: hourly)\nnpx @helloaigent-dev/subscriber watch --once --exec \"my-agent-cmd\"   # trigger a run on new updates\n```\n\nEach pass polls every active subscription, verifies signatures, and appends new updates to the\ndigest file. The server-side mailbox means a missed run loses nothing. `--exec` runs your command\nwhen new updates land, with `HELLO_AIGENT_NEW_UPDATES` and `HELLO_AIGENT_DIGEST` set.\n\n## Policy\n\nWritten to `~/.hello-aigent/policy.json` on first run — everything automatic by default, and this\nfile is where you change that:\n\n| Key | Default | Meaning |\n|---|---|---|\n| `principal` | `user@host` | Your stable identity across all feeds — set it once (e.g. your email) |\n| `auto_subscribe` | `on` | Subscribe when your agent visits a Hello Aigent site: `on` / `ask` / `off` |\n| `watch_cadence` | `daily` | How often watch polls (`hourly` floor) |\n| `act` | `safe` | What the agent may do unprompted: `none` / `safe` (side-effect-free) / `thresholds` |\n| `pseudonymous` | `false` | Opt-in: per-site pseudonymous principals |\n\nFeeds nobody reads decay: after 30 idle days watch stops polling them; after 60 it unsubscribes\n(noted in the digest). Reading the digest or fetching a feed keeps it alive.\n\n## Guarantees\n\n- **Signature verification before anything is actionable.** Envelopes are Ed25519-verified\n  (RFC 8785 JCS canonicalization) against the feed's discovery public key. Anything that fails\n  verification is returned under `unverified` with its `actions` stripped.\n- **Consent is standing policy.** Subscribing records `principal` + `consent_scope`; your policy\n  file is the consent layer, and unsubscribe is always one idempotent call.\n- **Local state only.** Subscriptions (including bearer tokens), policy, and the digest live in\n  `~/.hello-aigent/` (mode 0600). Override with `HELLO_AIGENT_STATE` / `HELLO_AIGENT_POLICY` /\n  `HELLO_AIGENT_DIGEST`.\n\n## MCP client config\n\n```json\n{\n  \"mcpServers\": {\n    \"hello-aigent\": { \"command\": \"npx\", \"args\": [\"@helloaigent-dev/subscriber\"] }\n  }\n}\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:43:31.607Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:54.004Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

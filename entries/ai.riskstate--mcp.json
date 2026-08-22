@@ -1,0 +1,65 @@
+{
+  "id": "ai.riskstate/mcp",
+  "title": "RiskState — Crypto Risk Engine",
+  "description": "Live BTC/ETH risk state: risk policy, market structure and trading playbooks. Keyless free tier.",
+  "summary": "Live BTC/ETH risk state: risk policy, market structure and trading playbooks. Keyless free tier.",
+  "offersHint": "Live BTC/ETH risk state: risk policy, market structure and trading playbooks. Keyless free tier. · Remote MCP (streamable-http) at https://api.riskstate.ai/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.riskstate.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.riskstate.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://riskstate.ai/connect",
+  "sourceUrl": "https://gitlab.com/likidodefi/riskstate-mcp",
+  "repository": {
+    "url": "https://gitlab.com/likidodefi/riskstate-mcp",
+    "source": "gitlab"
+  },
+  "updatedAt": "2026-07-09T09:47:03.896406Z",
+  "publishedAt": "2026-07-09T09:47:03.896406Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:45:10.096Z",
+    "sourceRepoAt": "2026-08-12T00:45:10.096Z",
+    "readmeAt": "2026-08-12T00:45:10.706Z",
+    "toolsAt": "2026-08-12T00:45:11.140Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://gitlab.com/likidodefi/riskstate-mcp",
+    "checkedAt": "2026-08-12T00:45:10.096Z",
+    "httpStatus": 200,
+    "host": "gitlab"
+  },
+  "readme": {
+    "source": "gitlab",
+    "url": "https://gitlab.com/likidodefi/riskstate-mcp/-/raw/main/README.md",
+    "markdown": "# RiskState MCP Server\n\nMCP server for [RiskState](https://riskstate.ai) — pre-trade risk permissions for BTC/USD and ETH/USD. Spot, perpetual futures (perps), and DeFi borrowing aware.\n\nYour system asks: **\"How much can I risk right now?\"**\nRiskState answers with: policy level, max exposure, leverage limits, blocked actions — computed from 30+ real-time signals.\n\n## What it does\n\nWraps the [RiskState `/v1/risk-state` API](https://riskstate.ai/docs/api) as an MCP tool. One tool: `get_risk_policy`.\n\n| Field | Description |\n|-------|-------------|\n| `policy_level` | 5 levels: BLOCK_SURVIVAL, BLOCK_DEFENSIVE, CAUTIOUS, GREEN_SELECTIVE, GREEN_EXPANSION |\n| `max_size_pct` | Maximum position size as % of portfolio (0-100) |\n| `leverage_max` | Maximum allowed leverage multiplier |\n| `allowed_actions` | What the agent CAN do at this policy level |\n| `blocked_actions` | What the agent CANNOT do |\n| `confidence_score` | Signal agreement x data quality (0-1) |\n\nThe API aggregates 9+ real-time data sources server-side. See [API docs](https://riskstate.ai/docs/api) for details.\n\n## What this wrapper does (and doesn't)\n\nThis is a **thin wrapper** — it translates MCP tool calls into REST API requests to `POST /v1/risk-state` and returns the response. All computation (scoring, policy engine, data ingestion) happens server-side.\n\n**This wrapper adds:**\n- MCP protocol compliance (stdio transport for Claude Desktop/Code)\n- Input validation via Zod schemas\n- Human-readable policy summary prepended to responses\n- Specific error messages (auth, rate limit, timeout) for agent recovery\n\n**This wrapper does NOT:**\n- Cache responses (the API has 60s server-side cache)\n- Perform any scoring or computation locally\n- Guarantee response schema stability (follows API versioning)\n\n## Installation\n\n```bash\nnpm install @riskstate/mcp-server\n```\n\n## Configuration\n\n### Environment Variables\n\n| Variable | Required | Description |\n|----------|----------|-------------|\n| `RISKSTATE_API_KEY` | Yes | API key from [riskstate.ai](https://riskstate.ai) (free during beta) |\n| `RISKSTATE_API_URL` | No | Custom API base URL (default: `https://api.riskstate.ai`) |\n\n### Claude Desktop\n\nAdd to `~/.config/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"riskstate\": {\n      \"command\": \"npx\",\n      \"args\": [\"-p\", \"@riskstate/mcp-server\", \"riskstate-mcp\"],\n      \"env\": {\n        \"RISKSTATE_API_KEY\": \"your-api-key\"\n      }\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add riskstate -- npx -p @riskstate/mcp-server riskstate-mcp\n```\n\nSet the API key in your environment:\n\n```bash\nexport RISKSTATE_API_KEY=your-api-key\n```\n\n### Global install (alternative)\n\n```bash\nnpm install -g @riskstate/mcp-server\nriskstate-mcp  # starts MCP server on stdio\n```\n\n## Usage\n\nThe server exposes one tool: `get_risk_policy`\n\n### Parameters\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `asset` | `\"BTC\"` \\| `\"ETH\"` | Yes | Asset to analyze |\n| `wallet_address` | string | No | DeFi wallet for on-chain position data |\n| `protocol` | `\"spark\"` \\| `\"aave\"` | No | Lending protocol (default: spark) |\n| `include_details` | boolean | No | Include full breakdown (subscores, macro, risk flags) |\n\n### Example Response\n\n```json\n{\n  \"exposure_policy\": {\n    \"policy_level\": \"CAUTIOUS\",\n    \"max_size_pct\": 35,\n    \"leverage_max\": 1.5,\n    \"allowed_actions\": [\"DCA\", \"WAIT\", \"SPOT_LONG_CONFIRMED\"],\n    \"blocked_actions\": [\"LEVERAGE_GT_2X\", \"NEW_POSITIONS_UNCONFIRMED\"]\n  },\n  \"classification\": {\n    \"cycle_phase\": \"MID\",\n    \"market_regime\": \"RANGE\",\n    \"macro_regime\": \"NEUTRAL\",\n    \"direction\": \"SIDEWAYS\"\n  },\n  \"auditability\": {\n    \"composite_score\": 52,\n    \"confidence_score\": 0.72,\n    \"policy_hash\": \"a3f8c2...\",\n    \"ttl_seconds\": 60\n  }\n}\n```\n\n## How Agents Should Use This\n\nCall `get_risk_policy` **before every trade**:\n\n1. If `policy_level` starts with `BLOCK` → do not open new positions\n2. Use `max_size_pct` to cap position sizing\n3. Check `blocked_actions` before executing\n4. Re-query after `ttl_seconds` (60s cache)\n\n## Limitations\n\n- **v1 scope:** BTC/USD and ETH/USD only (USD-denominated assessment). More assets planned.\n- **Markets:** Spot, perpetual futures, and DeFi borrowing. Same response — interpretation differs by market (see [API docs](https://riskstate.ai/docs/api)).\n- **Protocols:** Spark and Aave V3 only for DeFi position data.\n- **Rate limit:** 60 requests/minute per API key.\n- **Latency:** ~1-3s per request (9+ upstream data source aggregation).\n- **Tested with:** Claude Desktop, Claude Code. Should work with any MCP-compatible client.\n\n## Links\n\n- **Landing page:** [riskstate.ai](https://riskstate.ai)\n- **API docs:** [riskstate.ai/docs/api](https://riskstate.ai/docs/api)\n- **SKILL.md:** [agentskills.io](https://agentskills.io)\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:45:10.706Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_risk_state",
+      "description": "Current risk state of Bitcoin (BTC) or Ethereum (ETH): 5-level risk policy (BLOCK to GREEN) with max position size, leverage limit, direction bias and allowed/blocked actions, plus composite score (0-100), structural and tactical scores, market regime (BULL/SIDEWAYS/BEAR), volatility regime, cycle phase and macro state. Computed from 9+ real-time data sources (price, funding, RSI, MVRV, ETF flows, on-chain, macro). Use whenever the user asks how BTC or ETH is doing, whether it is a good time to buy/sell/hold, or how much risk to take."
+    },
+    {
+      "name": "get_market_structure",
+      "description": "Market Structure Engine view for BTC or ETH: validated structural events firing now (breakouts, breakdowns, cycle bottom/top, funding resets), expected asymmetry, distance to the next bullish/bearish triggers, key structural levels (ATH, 200W MA, 180d range) and a friction map of confluence-scored support/resistance walls between spot and the triggers. Use for questions about levels, support/resistance, breakouts or what would change the picture."
+    },
+    {
+      "name": "get_playbook_status",
+      "description": "Trading Playbook Engine status: the registry of rule-based trade setups (playbooks) for BTC and ETH and which ones are firing right now, with structure-gate verdicts, cooldown state and why non-firing setups do not match (failed predicates with live market readings). Strategy-level only — no prices, sizes or portfolio data. Use for questions about active trade setups or what the playbooks are watching."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:45:11.140Z",
+  "toolsPreviewStatus": "ok"
+}

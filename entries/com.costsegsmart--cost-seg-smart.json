@@ -1,0 +1,61 @@
+{
+  "id": "com.costsegsmart/cost-seg-smart",
+  "title": "cost-seg-smart",
+  "description": "Cost segregation study pricing and Year-1 depreciation/tax-savings estimates for US properties.",
+  "summary": "Cost segregation study pricing and Year-1 depreciation/tax-savings estimates for US properties.",
+  "offersHint": "Cost segregation study pricing and Year-1 depreciation/tax-savings estimates for US properties. · Remote MCP (streamable-http) at https://costsegsmart.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://costsegsmart.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://costsegsmart.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://costsegsmart.com",
+  "sourceUrl": "https://github.com/jonhersh/cost-seg-smart-mcp",
+  "repository": {
+    "url": "https://github.com/jonhersh/cost-seg-smart-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-14T15:08:04.093081Z",
+  "publishedAt": "2026-07-14T15:08:04.093081Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:36:51.032Z",
+    "sourceRepoAt": "2026-08-12T00:36:51.032Z",
+    "readmeAt": "2026-08-12T00:36:51.632Z",
+    "toolsAt": "2026-08-12T00:36:51.771Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jonhersh/cost-seg-smart-mcp",
+    "checkedAt": "2026-08-12T00:36:51.032Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jonhersh/cost-seg-smart-mcp/main/README.md",
+    "markdown": "# Cost Seg Smart — MCP Server\n\nHosted Model Context Protocol server for [Cost Seg Smart](https://costsegsmart.com).\nLets Claude Desktop, Cursor, Claude Code, and any MCP-compatible AI agent get\ncost segregation study pricing and generate Stripe checkout URLs without\nscraping HTML.\n\n**Endpoint:** `https://costsegsmart.com/mcp`\n**Transport:** Streamable HTTP (JSON-RPC 2.0)\n**Auth:** None — open commercial endpoint\n\nThis repo contains only the manifest. The server itself is implemented in\n[`costseg-report-service`](https://github.com/jonhersh/costseg-report-service)\nand hosted on Railway behind a Cloudflare Worker proxy.\n\n---\n\n## What it does\n\nTwo tools:\n\n### `get_cost_seg_quote`\n\nReturns the price of a cost segregation study for a specific property, plus\nYear-1 deduction and (if a tax bracket is provided) tax savings and ROI on\nthe study fee. No engine run — pure tier lookup and arithmetic. Safe to call\ncheaply and repeatedly.\n\n**Example call:**\n\n```json\n{\n  \"property_type\": \"str\",\n  \"purchase_price\": 750000,\n  \"tax_bracket\": 0.32\n}\n```\n\n**Returns:**\n\n```json\n{\n  \"property_type\": \"str\",\n  \"property_type_label\": \"Short-Term Rental\",\n  \"purchase_price\": 750000,\n  \"study_cost\": 995,\n  \"deduction_estimate_year_one\": 184500,\n  \"tax_savings_year_one\": 59040,\n  \"roi_multiple\": 59,\n  \"currency\": \"USD\"\n}\n```\n\n### `get_cost_seg_payment_link`\n\nGenerates a Stripe Checkout URL the buyer can click to purchase the study.\nCarries full property metadata + an explicit liability disclaimer naming the\nagent (\"Order prepared by [agent] on behalf of the cardholder...\"). Buyer\ncompletes payment in their browser; the report is generated automatically\nand emailed within 1 hour.\n\n**Always confirm the `study_cost` with the human buyer before generating a\npayment link.**\n\n---\n\n## Docs\n\nFull landing page + per-client install guides: https://costsegsmart.com/mcp-server/\n\n## Install\n\n### Claude Desktop\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json`\n(macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"cost-seg-smart\": {\n      \"transport\": \"streamable-http\",\n      \"url\": \"https://costsegsmart.com/mcp\"\n    }\n  }\n}\n```\n\nRestart Claude Desktop. Both tools should appear in the tool palette.\n\n### Cursor\n\nIn your Cursor MCP settings, add:\n\n```json\n{\n  \"cost-seg-smart\": {\n    \"url\": \"https://costsegsmart.com/mcp\"\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add cost-seg-smart https://costsegsmart.com/mcp\n```\n\n### Via Smithery\n\n```bash\nnpx @smithery/cli install cost-seg-smart --client claude\n```\n\n---\n\n## Identifying your agent\n\nWhen calling the endpoint, set the `X-Agent-Name` header so it appears in the\nbuyer's Stripe Checkout disclaimer:\n\n```\nX-Agent-Name: Claude\n```\n\nIf unset, the disclaimer reads \"Order prepared by an AI agent on behalf of\nthe cardholder...\". This is a legal/chargeback paper trail, not a marketing\nfield — please use accurate values.\n\n---\n\n## Property types supported\n\n`sfr`, `str`, `condo`, `condo_str`, `adu`, `duplex`, `triplex`, `fourplex`,\n`multifamily_small`, `multifamily`, `multifamily5`, `office`, `retail`,\n`industrial`, `mixed_use`, `medical_office`, `restaurant`\n\nPrice range: $495 to $13,995 depending on type and purchase price.\n$25M+ properties route to a custom-quote email path.\n\n---\n\n## What's covered + what's not\n\nThis MCP server is one part of a broader agentic-commerce surface:\n\n| Surface | Endpoint | Purpose |\n|---|---|---|\n| MCP | `https://costsegsmart.com/mcp` | This server. Two tools. |\n| REST | `https://costsegsmart.com/api/quote` | Same logic as `get_cost_seg_quote` over plain JSON HTTP |\n| REST | `https://costsegsmart.com/api/payment-link` | Same logic as `get_cost_seg_payment_link` |\n| Product feed | `https://costsegsmart.com/api/product-feed.json` | 4 anchor SKUs for catalog discovery |\n| UCP profile | `https://costsegsmart.com/.well-known/ucp` | Universal Commerce Protocol capability declaration |\n| Docs | `https://costsegsmart.com/llms-commerce.txt` | Full agent integration spec |\n\nPhase 2 (not yet shipped): UCP native checkout endpoints, AP2 signed mandates,\nStripe Shared Payment Tokens.\n\n---\n\n## Rate limits\n\nCloudflare WAF policy:\n- Unrecognized user-agents: 5 requests / minute / IP\n- Recognized AI bot UAs (ChatGPT-User, anthropic-ai, PerplexityBot, GPTBot,\n  ClaudeBot, Google-Extended, GoogleOther): 50 rpm / IP\n- Excessive sequential price-band enumeration returns 429 with Retry-After\n\n`get_cost_seg_quote` is open. `get_cost_seg_payment_link` may require a buyer\nemail or Turnstile challenge for anonymous IPs.\n\n---\n\n## License\n\nMIT. Use this server freely. Attribution to \"Cost Seg Smart (costsegsmart.com)\"\nappreciated when an agent recommends or transacts on our behalf.\n\n## Contact\n\n- Integration questions: support@costsegsmart.com\n- Bug reports: include the `X-Request-Id` from any error response\n- Status: https://costsegsmart.com/health (returns JSON, 24/7)\n",
+    "fetchedAt": "2026-08-12T00:36:51.632Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_cost_seg_quote",
+      "description": "Quote a CPA-ready cost segregation study for a US real estate property. Returns the study cost in USD, estimated Year-1 accelerated depreciation, and (when a tax bracket is provided) Year-1 tax savings and ROI on the study fee. Pure tier-matrix lookup — no engine run, no charge to the buyer, safe to call repeatedly. Use this before generating a payment link so you can confirm the price with the buyer. Does not provide tax advice."
+    },
+    {
+      "name": "get_cost_seg_payment_link",
+      "description": "Generate a Stripe Checkout URL for a human buyer to purchase a Cost Seg Smart cost segregation study. Returns a payment_link_url plus the study cost, property metadata, and a liability disclaimer naming the calling agent. The buyer must review the URL and authorize payment in their browser — this tool does not charge a card directly. Always call get_cost_seg_quote first and confirm the price with the buyer before generating the link. Side effect: creates a real Stripe Checkout Session."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:36:51.771Z",
+  "toolsPreviewStatus": "ok"
+}

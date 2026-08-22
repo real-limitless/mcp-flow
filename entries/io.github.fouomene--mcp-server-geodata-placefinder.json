@@ -1,0 +1,59 @@
+{
+  "id": "io.github.fouomene/mcp-server-geodata-placefinder",
+  "title": "mcp-server-geodata-placefinder",
+  "description": "MCP GeoData Placefinder: search places, reverse geocode, and find nearby locations.",
+  "summary": "MCP GeoData Placefinder: search places, reverse geocode, and find nearby locations.",
+  "offersHint": "MCP GeoData Placefinder: search places, reverse geocode, and find nearby locations. · Packages: npm:mcp-server-geodata-placefinder",
+  "version": "2.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-server-geodata-placefinder",
+    "version": "2.0.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-server-geodata-placefinder",
+      "version": "2.0.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/fouomene/geodataplacefinder",
+  "repository": {
+    "url": "https://github.com/fouomene/geodataplacefinder",
+    "source": "github",
+    "subfolder": "mcp-server"
+  },
+  "updatedAt": "2026-05-25T01:09:32.041879Z",
+  "publishedAt": "2026-05-25T01:09:32.041879Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:21.709Z",
+    "sourceRepoAt": "2026-08-11T23:45:57.806Z",
+    "readmeAt": "2026-08-11T23:45:58.505Z",
+    "toolsAt": "2026-08-12T01:22:21.710Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/fouomene/geodataplacefinder",
+    "checkedAt": "2026-08-11T23:45:57.806Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/fouomene/geodataplacefinder/main/README.md",
+    "markdown": "# GeoDataPlacefinder\n\nAn open-source geocoding API and demo site that converts addresses into geographic coordinates (and vice versa) using [Overture Maps](https://overturemaps.org/) data queried through [DuckDB](https://duckdb.org/).\n\n**Features**\n\n- **Geocoding** — convert free-form addresses, place names, or categories into coordinates\n- **Reverse geocoding** — find the nearest places to any latitude/longitude pair\n- **Nearest place** — single closest match within a configurable radius\n- **Place detail** — full Overture Maps record by place ID\n- **Zero external dependencies at runtime** — DuckDB reads Overture Parquet files directly over HTTPS; no PostGIS, no Elasticsearch, no third-party API keys\n\n---\n\n## Documentation\n\nFull API reference is available on the live demo site at `/docs`, or read the source in [`lib/api-spec/openapi.yaml`](lib/api-spec/openapi.yaml).\n\n### Endpoints\n\n| Method | Path | Description |\n|--------|------|-------------|\n| `GET` | `/api/health` | Server status and cache info |\n| `GET` | `/api/search` | Geocode by name, address, city, postcode, or category |\n| `GET` | `/api/reverse` | Reverse geocode — places near a coordinate |\n| `GET` | `/api/places/nearest` | Single closest place within a radius |\n| `GET` | `/api/places/:id` | Full place detail by Overture place ID |\n\n### Quick example\n\n```bash\n# Geocode by name\ncurl \"https://geodataplacefinder.org/api/search?q=Eiffel+Tower\"\n\n# Reverse geocode\ncurl \"https://geodataplacefinder.org/api/reverse?lat=48.8584&lon=2.2945\"\n\n# Nearest place within 500 m\ncurl \"https://geodataplacefinder.org/api/places/nearest?lat=48.8584&lon=2.2945&max_distance_m=500\"\n```\n\n---\n\n## Installation\n\n### Prerequisites\n\n- [Docker](https://docs.docker.com/get-docker/) (recommended)\n- Or: Node.js 20+ and pnpm 9+\n\n### Docker (recommended)\n\n```bash\n# 1. Clone the repository\ngit clone https://github.com/your-org/geodataplacefinder.git\ncd geodataplacefinder\n\n# 2. Build and start both services\ndocker compose up --build\n```\n\nThe API server is available at `http://localhost:8080` and the demo site at `http://localhost:3000`. The production deployment is at `https://geodataplacefinder.org`.\n\n> **Note:** On first start DuckDB fetches ~50 000 place records from Overture Maps S3 (~15 s). Subsequent restarts load the local cache instantly from `data/places.duckdb`.\n\n#### `Dockerfile` (API server)\n\n```dockerfile\nFROM node:20-alpine AS base\nWORKDIR /app\n\n# Install pnpm\nRUN corepack enable && corepack prepare pnpm@latest --activate\n\n# Install dependencies\nCOPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./\nCOPY artifacts/api-server/package.json ./artifacts/api-server/\nCOPY lib/ ./lib/\nRUN pnpm install --frozen-lockfile\n\n# Build\nCOPY . .\nRUN pnpm --filter @workspace/api-server run build\n\nEXPOSE 8080\nCMD [\"node\", \"artifacts/api-server/dist/index.js\"]\n```\n\n#### `docker-compose.yml`\n\n```yaml\nversion: \"3.9\"\nservices:\n  api:\n    build:\n      context: .\n      dockerfile: Dockerfile\n    ports:\n      - \"8080:8080\"\n    environment:\n      PORT: 8080\n    volumes:\n      - ./data:/app/data   # persist the DuckDB cache between restarts\n\n  web:\n    build:\n      context: .\n      dockerfile: artifacts/geodata-web/Dockerfile\n    ports:\n      - \"3000:3000\"\n    environment:\n      PORT: 3000\n    depends_on:\n      - api\n```\n\n### Manual installation (without Docker)\n\n```bash\n# 1. Clone\ngit clone https://github.com/your-org/geodataplacefinder.git\ncd geodataplacefinder\n\n# 2. Install dependencies (requires Node.js 20+ and pnpm 9+)\npnpm install\n\n# 3. Start the API server (port 8080)\npnpm --filter @workspace/api-server run dev\n\n# 4. In a separate terminal, start the frontend (port 25276 by default)\npnpm --filter @workspace/geodata-web run dev\n```\n\n### Environment variables\n\n| Variable | Default | Description |\n|----------|---------|-------------|\n| `PORT` | `8080` | API server port |\n| `SESSION_SECRET` | — | Secret used for session signing (set for production) |\n\n---\n\n## Contributing\n\nContributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.\n\n---\n\n## License\n\nGeoDataPlacefinder is released under the **GNU General Public License v3.0**. See [LICENSE](LICENSE) for the full text.\n\nData sourced from [Overture Maps Foundation](https://overturemaps.org/), released under [CDLA Permissive 2.0](https://cdla.dev/permissive-2-0/).\n",
+    "fetchedAt": "2026-08-11T23:45:58.505Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:21.710Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

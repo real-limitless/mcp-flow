@@ -1,0 +1,94 @@
+{
+  "id": "io.github.Ayo-Fam/mcp-cloudflare-dns",
+  "title": "MCP Cloudflare DNS",
+  "description": "Cloudflare DNS MCP server: manage zones, records, cache purge, and page rules.",
+  "summary": "Cloudflare DNS MCP server: manage zones, records, cache purge, and page rules.",
+  "offersHint": "Cloudflare DNS MCP server: manage zones, records, cache purge, and page rules. · Packages: pypi:mcp-cloudflare-dns · Env vars: CF_ALLOW_DESTRUCTIVE, CF_API_TOKEN",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-cloudflare-dns",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CF_API_TOKEN",
+        "description": "Cloudflare API token with Zone DNS Edit, Zone Read, and Cache Purge permissions",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "CF_ALLOW_DESTRUCTIVE",
+        "description": "Set to 'true' to enable DNS record deletion and full cache purge"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-cloudflare-dns",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CF_API_TOKEN",
+          "description": "Cloudflare API token with Zone DNS Edit, Zone Read, and Cache Purge permissions",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "CF_ALLOW_DESTRUCTIVE",
+          "description": "Set to 'true' to enable DNS record deletion and full cache purge"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CF_ALLOW_DESTRUCTIVE",
+      "description": "Set to 'true' to enable DNS record deletion and full cache purge"
+    },
+    {
+      "name": "CF_API_TOKEN",
+      "description": "Cloudflare API token with Zone DNS Edit, Zone Read, and Cache Purge permissions",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/apexradius/mcp-cloudflare-dns",
+  "repository": {
+    "url": "https://github.com/apexradius/mcp-cloudflare-dns",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-30T10:02:31.342988Z",
+  "publishedAt": "2026-06-30T10:02:31.342988Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:33.900Z",
+    "sourceRepoAt": "2026-08-12T00:16:39.783Z",
+    "readmeAt": "2026-08-12T00:16:40.482Z",
+    "toolsAt": "2026-08-12T01:46:33.900Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/apexradius/mcp-cloudflare-dns",
+    "checkedAt": "2026-08-12T00:16:39.783Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/apexradius/mcp-cloudflare-dns/main/README.md",
+    "markdown": "# mcp-cloudflare-dns\n\nCloudflare DNS MCP server for operators who need zone, record, cache, and page-rule control from\nan MCP client without opening the Cloudflare dashboard for every change.\n\nRelease posture: beta package, version `0.1.1` from [`pyproject.toml`](pyproject.toml).\n\n## Choose your path\n\n| You are... | Start here | Then |\n|---|---|---|\n| Installing the server in Claude/Codex/Cursor | [docs/start-here.md](docs/start-here.md) | Quick start below |\n| Verifying what the server can touch | [Available tools](#available-tools) | [docs/architecture.md](docs/architecture.md) |\n| Auditing packaging or release metadata | [`pyproject.toml`](pyproject.toml) | [`server.json`](server.json) |\n\n## Architecture\n\n```mermaid\nflowchart TD\n  U[AI operator] --> C[MCP client]\n  C --> S[FastMCP server]\n  E[CF_API_TOKEN] --> S\n  S --> T[Tool handlers]\n  T --> R[Retry wrapper]\n  R --> A[Cloudflare API]\n  A --> R --> T --> C\n```\n\n## Request flow\n\n```mermaid\nflowchart TD\n  Q[Operator asks for a DNS change] --> H[Selected MCP tool]\n  H --> I[Load token and build client]\n  I --> J{Cloudflare call succeeds?}\n  J -- yes --> K[Return normalized JSON result]\n  J -- retryable --> L[Backoff and retry]\n  L --> J\n  J -- no --> M[Return error payload]\n```\n\n## Quick start\n\n1. Install the package.\n\n```bash\npython -m pip install mcp-cloudflare-dns\n```\n\n2. Export a token with DNS permissions.\n\n```bash\nexport CF_API_TOKEN=\"your-cloudflare-api-token\"\n```\n\n3. Register it in your MCP client.\n\n```json\n{\n  \"mcpServers\": {\n    \"cloudflare-dns\": {\n      \"command\": \"uvx\",\n      \"args\": [\"mcp-cloudflare-dns\"],\n      \"env\": {\n        \"CF_API_TOKEN\": \"your-cloudflare-api-token\"\n      }\n    }\n  }\n}\n```\n\n## Available tools\n\n| Tool group | Tools | Purpose |\n|---|---|---|\n| Zone inventory | `list_zones`, `get_zone`, `get_zone_settings` | Inspect available zones and key settings |\n| DNS records | `list_dns_records`, `get_dns_record`, `create_dns_record`, `update_dns_record`, `delete_dns_record` | Read and mutate records |\n| Edge actions | `purge_cache`, `list_page_rules` | Invalidate cached content and inspect page rules |\n\n`delete_dns_record` and full-cache actions stay gated behind the destructive env flags described in\n[docs/start-here.md](docs/start-here.md).\n\n## Runtime proof\n\n| Claim | Proof |\n|---|---|\n| Package entry point is stable | `mcp-cloudflare-dns = \"cf.server:main\"` in [`pyproject.toml`](pyproject.toml) |\n| Server is MCP-specific, not a generic CLI | `FastMCP(\"mcp-cloudflare-dns\")` in [`cf/server.py`](cf/server.py) |\n| Cloudflare failures are retried | `_call()` in [`cf/server.py`](cf/server.py) |\n| Release artifacts are built | `dist/` wheel and tarball are checked into the repo |\n\n## Repo map\n\n| Path | Purpose |\n|---|---|\n| [`cf/server.py`](cf/server.py) | FastMCP tool surface, env loading, retry wrapper |\n| [`pyproject.toml`](pyproject.toml) | Package metadata, version, script entry point |\n| [`server.json`](server.json) | Registry-facing metadata for MCP discovery |\n| [`docs/start-here.md`](docs/start-here.md) | Setup, env, validation, common failures |\n| [`docs/architecture.md`](docs/architecture.md) | Component map and request lifecycle |\n\n## Validation\n\n| Check | Command |\n|---|---|\n| Import compiles | `python -m compileall cf` |\n| Package builds | `python -m build` |\n| README links stay local | `rg '\\\\]\\\\(([^)]+\\\\.md)\\\\)' README.md docs/` |\n\n## License\n\nMIT\n\n<!-- mcp-name: io.github.Ayo-Fam/mcp-cloudflare-dns -->\n",
+    "fetchedAt": "2026-08-12T00:16:40.482Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:33.900Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

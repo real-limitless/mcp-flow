@@ -1,0 +1,58 @@
+{
+  "id": "io.github.saagpatel/shadow-mcp",
+  "title": "shadow-mcp",
+  "description": "Local MCP server that inventories and risk-grades MCP servers configured on this machine.",
+  "summary": "Local MCP server that inventories and risk-grades MCP servers configured on this machine.",
+  "offersHint": "Local MCP server that inventories and risk-grades MCP servers configured on this machine. · Packages: pypi:shadow-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "shadow-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "shadow-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/saagpatel/shadow-mcp",
+  "repository": {
+    "url": "https://github.com/saagpatel/shadow-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-03T13:42:30.030792Z",
+  "publishedAt": "2026-07-03T13:42:30.030792Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:57.948Z",
+    "sourceRepoAt": "2026-08-11T23:23:07.929Z",
+    "readmeAt": "2026-08-11T23:23:08.462Z",
+    "toolsAt": "2026-08-12T01:02:57.948Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/saagpatel/shadow-mcp",
+    "checkedAt": "2026-08-11T23:23:07.929Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/saagpatel/shadow-mcp/main/README.md",
+    "markdown": "# shadow-mcp\n<!-- mcp-name: io.github.saagpatel/shadow-mcp -->\n\nDiscover and risk-grade the MCP servers actually present on **this** machine.\n\nMost MCP security tooling assumes you already have a list of servers to audit.\nOn a real developer machine you don't: servers are scattered across Claude Code,\nCodex, Claude Desktop, project-local `.mcp.json` files, DXT extensions, and live\nprocesses that bind no port. shadow-mcp finds them first, then grades them.\n\nThis is the local-first answer to **OWASP MCP09:2025 — Shadow MCP Servers**.\n\n## What it does\n\n```\ndiscover  ->  inventory  ->  risk-grade  ->  report\n```\n\n1. **Discover** (read-only) every place an MCP server is declared or running:\n   Claude Code (`~/.claude.json`, user + project scope), `claude mcp list`\n   (catches remote + plugin servers no file contains), Codex\n   (`~/.codex/config.toml` + profiles), project `.mcp.json`, Claude Desktop\n   config + DXT extension manifests, and the live process table.\n2. **Inventory**: merge sightings into one entry per logical server, even when a\n   server appears under different names across hosts (`personal-ops` vs\n   `personal_ops`), tracking every provenance.\n3. **Risk-grade** by **delegating** to the existing engines rather than\n   reimplementing them:\n   - [MCPAudit](../MCPAudit) for a 0-10 capability composite + injection findings\n   - [mcp-trust](../mcp-trust) for an authoritative A-F danger grade (when known)\n   - a thin local layer for the config-shaped OWASP dimensions the engines under-cover\n     (secrets/MCP01, supply-chain provenance/MCP04, transport exposure/MCP07).\n4. **Report**: a ranked terminal table, a machine-readable JSON inventory, or\n   markdown — plus a **Shadow & attention** section for the deltas that matter\n   (running-but-unconfigured, broad blast radius, capable-but-ungraded).\n\nThe risk model and its OWASP mapping live in [docs/risk-model.md](docs/risk-model.md).\n\n## Install\n\n```bash\nuv sync                 # installs deps incl. MCPAudit as a local editable engine\n```\n\nshadow-mcp grades against your local checkouts of MCPAudit (`../MCPAudit`) and\nmcp-trust (`../mcp-trust/registry.db`). Override with `SHADOW_MCP_MCPTRUST_DB`\nor `--registry-db`.\n\n## Use\n\n```bash\nuv run shadow-mcp scan                      # full pipeline, terminal report\nuv run shadow-mcp scan --json out.json      # machine-readable inventory\nuv run shadow-mcp scan --format markdown    # markdown report\nuv run shadow-mcp discover                  # inventory only, no grading\nuv run shadow-mcp sources                   # per-collector counts\nuv run shadow-mcp grade-missing             # A-F for servers the registry hasn't scanned\nuv run shadow-mcp deep-scan cost-tracker    # connect to a server, grade its real tools\n```\n\nUseful flags: `--no-processes` (skip the live process scan), `--no-cli` (skip\n`claude mcp list`), `--no-mcpaudit` (inventory + mcp-trust only), `--home PATH`\n(point discovery at a fixture tree).\n\n### Static vs connected grading\n\nBy default grading is **static** (config-only): no server is spawned, so grades\nreflect what's visible in the config. That's safe but coarse — a server's real\ncapability only shows once you connect and list its tools.\n\n`shadow-mcp scan --connect` (or `deep-scan [names...]`) **spawns** each stdio\nserver and enumerates its real tools, delegating to MCPAudit's connected engine\nfor a capability grade that actually differentiates (a filesystem server jumps\nfrom a static `A` to a connected `D`). This is **opt-in** because connecting\nexecutes the server; remote endpoints are never spawned (that's the network-scan\ntier), and a server that needs real secrets to start falls back to its static\ngrade.\n\n## Development\n\n```bash\nuv sync                       # dev tools + grading engines (the default groups)\nuv run pytest                 # full suite (61 + engine-backed tests)\nuv run ruff check .           # lint\n```\n\nThe grading engines are an optional `engines` dependency-group, resolved to your\nlocal checkouts of `../MCPAudit` and `../mcp-trust` via `[tool.uv.sources]`. The\ntool degrades to discovery-only without them (engine-backed tests skip cleanly),\nso CI installs without them:\n\n```bash\nuv sync --no-group engines    # discovery + local OWASP layer only (what CI runs)\n```\n\n## Safety\n\n- **Read-only discovery.** Collectors parse configs and list processes; nothing\n  they find is ever mutated. (`--connect`/`deep-scan` is the one path that\n  *executes* servers, and only when you explicitly ask.)\n- **Secrets stay out.** We record env variable *names* (to flag secret-bearing\n  servers per MCP01) but never their values. A captured inventory still contains\n  real local paths and hostnames, so treat `*.inventory.json` as private (it is\n  git-ignored by default).\n\n## Use as an MCP server\n\nshadow-mcp can serve its own inventory tools as an MCP server so an agent can\nquery your local MCP surface without leaving the conversation.\n\n### Tools\n\n| Tool | Description |\n|---|---|\n| `scan_local` | Full pipeline (discover → inventory → grade → report). Returns JSON. |\n| `discover_local` | Inventory every MCP server without grading. Returns JSON. |\n| `deep_scan` | Grade only the named servers (static, no spawning). Accepts `names: list[str]`. Returns JSON. |\n| `list_sources` | Per-collector source counts from a discover run. Returns JSON. |\n\n### Run the server\n\n```bash\n# directly from a local checkout\nshadow-mcp mcp-serve\n\n# via uvx (once published to PyPI)\nuvx shadow-mcp mcp-serve\n```\n\n**LOCAL only.** The MCP server never connects to hosted MCP endpoints — all\ngrading is static (config-based). `connect=False` is enforced unconditionally;\nno server is ever spawned from an MCP tool call.\n\n## Scope\n\nThis is the **local-first** tool: it inventories one machine from its configs\nand processes. A later network-scan expansion (probing hosts/ports for remote\nMCP endpoints, org-wide fleet inventory, typosquat-distance provenance checks)\nis deliberately out of scope here — see the bottom of `docs/risk-model.md` and\nthe project notes for what that would add.\n",
+    "fetchedAt": "2026-08-11T23:23:08.462Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:57.948Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

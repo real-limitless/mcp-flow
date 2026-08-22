@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/inference-aiops",
+  "title": "Inference AIops",
+  "description": "Governed GPU inference ops (vLLM + Ray Serve): latency RCA, scaling, drain, 39 tools.",
+  "summary": "Governed GPU inference ops (vLLM + Ray Serve): latency RCA, scaling, drain, 39 tools.",
+  "offersHint": "Governed GPU inference ops (vLLM + Ray Serve): latency RCA, scaling, drain, 39 tools. · Packages: pypi:inference-aiops",
+  "version": "0.9.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "inference-aiops",
+    "version": "0.9.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "inference-aiops",
+      "version": "0.9.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Inference-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Inference-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:49:53.534042Z",
+  "publishedAt": "2026-08-10T06:49:53.534042Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.677Z",
+    "sourceRepoAt": "2026-08-12T00:18:08.070Z",
+    "readmeAt": "2026-08-12T00:18:08.696Z",
+    "toolsAt": "2026-08-12T01:47:49.677Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Inference-AIops",
+    "checkedAt": "2026-08-12T00:18:08.070Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Inference-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/inference-aiops -->\n\n# Inference AIops\n\n> **Disclaimer**: Community-maintained open-source project. **Not affiliated with, endorsed by, or sponsored by the vLLM or Ray projects or any inference-serving vendor.** Product and trademark names belong to their owners. MIT licensed.\n\nGoverned AI-ops for **GPU inference clusters** — **vLLM** (OpenAI API + Prometheus\n`/metrics`) and **Ray Serve / Ray Jobs** (Ray dashboard), plus the single-process\nserving engines **SGLang** and **TGI (Text Generation Inference)** — with a\n**built-in governance harness**: unified audit log, policy engine, token/runaway\nbudget guard, undo-token recording, and descriptive risk-tier labels on every\naudit row. It parses each engine's Prometheus `/metrics` directly (no Prometheus\nserver required) and\nprobes the Ray dashboard independently. A bearer token is **optional** (many\nstacks run open).\n\n**Serving engines.** vLLM is the flagship (full Ray Serve control plane: scale,\ndrain, autoscale, LoRA, hot-swap). **SGLang** and **TGI** are supported for\nengine-agnostic observability — health, running-model identity, request-latency\nmetrics, queue depth, and latency RCA — read from each engine's own endpoints and\nmetric names. Being single-process servers, they have no Ray-shaped scale/drain\nAPI: those writes return a teaching error pointing you at a real horizontal-scale\nlayer (Ray Serve / Kubernetes / a load balancer).\n\n## What it does\n\nThe flagship value is **root-cause analysis**, wrapped in guarded reads and writes:\n\n- **`diagnose_latency_spike`** (flagship RCA) — when TTFT/TPOT/e2e latency\n  climbs, it correlates **queue depth** (running vs waiting), **KV-cache\n  pressure / preemptions**, and **prefix-cache locality** into a *ranked* cause\n  plus the **specific knob to turn** (add replicas, raise `max-num-seqs`, fix\n  routing, enlarge KV cache). Every flag is a number, not a black-box verdict.\n- **`diagnose_low_utilization`** — the inverse: idle GPUs, over-provisioned\n  replicas, or routing that strands a cache-warm replica → what to scale down.\n- **Prometheus-native** — reads vLLM's `/metrics` endpoint directly; no\n  Prometheus/Grafana deployment needed.\n- **Governance-grade** — the **first governance-grade entrant** in this niche:\n  audit + budget + risk-tier approval + undo-token + prompt-injection sanitize,\n  with **dry-run + double-confirm** on the fragile prod ops (scale-down,\n  scale-to-zero, drain, redeploy, hot-swap) the community reports as dangerous.\n- **Laptop self-test** — ~80% of the tool self-tests free: vLLM on a single GPU\n  or CPU-mock + Ray in one local container (`ray start --head`).\n\n## What this tool does, and does not, decide\n\nIt delivers inference-cluster operations — reads and writes — accurately and\nefficiently, and records every one of them. It does **not** decide whether a\nwrite is allowed to happen. That is the agent's judgement, or the permission of\nthe environment you connect it with: restrict the network path so it can only\nreach the read/metrics endpoints, or run the Ray dashboard without its\njob-submission API, and the writes fail at the server — the place that actually\nowns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in\n`~/.inference-aiops/audit.db`, and destructive writes still capture their\nbefore-state and record an inverse where one exists.\n\n> Each tool declares a `risk_level`, kept in agreement with its `[READ]`/`[WRITE]`\n> documentation tag by a test, and carried into the audit row as a descriptive\n> tier — so a reviewer can see at a glance that a row was a high-risk\n> scale-to-zero. It is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/inference-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Capability matrix (39 MCP tools)\n\n| Group | Tools | Count | R/W (risk) |\n|-------|-------|:-----:|:-----------|\n| **Metrics & RCA** (vLLM) | `request_metrics`, `queue_depth`, `kv_cache_stats`, `diagnose_latency_spike`, `diagnose_low_utilization` | 5 | read |\n| **Engine-agnostic** (vLLM / SGLang / TGI) | `engine_health`, `engine_inventory`, `engine_request_metrics`, `engine_queue_depth`, `diagnose_engine_latency` | 5 | read |\n| **Ray Serve (read)** | `serve_deployment_list`, `deployment_status`, `replica_list`, `autoscale_config_get` | 4 | read |\n| **Ray Serve (write)** | `scale_replicas_up`, `scale_replicas_down`, `scale_to_zero`, `autoscale_config_update`, `drain_replica` | 5 | write (med / **high**) |\n| **Models / vLLM** | `model_list`, `model_info`, `model_is_sleeping`, `lora_load`, `lora_unload` | 5 | read + write (med) |\n| **Sleep Mode / vLLM** (needs `VLLM_SERVER_DEV_MODE=1`) | `model_sleep`, `model_wake` | 2 | write (**high** / med) |\n| **Ray cluster / jobs / GPU** | `ray_cluster_resources`, `ray_dashboard_status`, `ray_job_list`, `gpu_utilization`, `ray_job_cancel`, `replica_restart` | 6 | read + write (med / **high**) |\n| **Deploy lifecycle** | `model_deploy`, `model_undeploy`, `deployment_redeploy`, `routing_policy_update` | 4 | write (med / **high**) |\n| **Cost** | `cost_per_token` | 1 | read |\n\nThe engine-agnostic group works against **any** supported engine (including\nvLLM); use it for SGLang/TGI targets or a uniform view across a mixed fleet. The\nRay Serve / cluster / deploy write groups are vLLM-only (Ray control plane) — they\nteach-and-refuse on a SGLang/TGI target.\n\n**23 read, 16 write.** High-risk writes (`scale_replicas_down`,\n`scale_to_zero`, `drain_replica`, `lora_unload`, `model_sleep`,\n`replica_restart`, `model_undeploy`, `deployment_redeploy`) all support\n`dry_run` + double-confirm; reversible writes record an undo descriptor.\n\n> **Sleep Mode requires a dev-mode server.** vLLM registers `/sleep`,\n> `/wake_up` and `/is_sleeping` **only** when started with\n> `VLLM_SERVER_DEV_MODE=1`. Against any other server these three tools\n> report that the route is absent and why, rather than failing vaguely.\n> Sleep Mode suspends the **same** model; it does not swap base models —\n> serving a different base model means restarting vLLM with a different\n> `--model`.\n\n## Install\n\n```bash\nuv tool install inference-aiops          # or: pipx install inference-aiops\n```\n\n## Quick start\n\n```bash\ninference-aiops init                     # wizard: engine (vllm/sglang/tgi) + host + port + scheme\ninference-aiops doctor                   # vLLM: probes Ray + vLLM; SGLang/TGI: engine health + inventory\ninference-aiops overview                 # deployments + total replicas + queue backpressure\ninference-aiops metrics diagnose         # why is inference slow? ranked RCA + the knob to turn\ninference-aiops serve list               # Ray Serve deployments + replica counts\n```\n\nRun as an MCP server (stdio) for the full 39-tool surface:\n\n```bash\nexport INFERENCE_AIOPS_MASTER_PASSWORD=...   # only if a bearer token is stored\ninference-aiops mcp\n```\n\nThe CLI is a convenience subset (`init`, `overview`, `serve …`, `metrics …`,\n`secret …`, `doctor`, `mcp`); the full 39 tools are exposed via the MCP server.\n\n## Governance\n\nEvery MCP tool passes through the bundled `@governed_tool` harness. It does not\ndecide whether a write is permitted — see *What this tool does, and does not,\ndecide* above — but it records every call:\n\n- **Audit** — every call (params, result, status, duration, risk tier, and any\n  approver/rationale annotation) logged to `~/.inference-aiops/audit.db`\n  (relocatable via `INFERENCE_AIOPS_HOME`).\n- **Budget / runaway guard** — a safety backstop, not authorization: token and\n  call budgets trip a circuit breaker on tight poll/retry loops.\n- **Risk tier** — each audit row carries a descriptive tier derived from the\n  tool's `risk_level`; it is a label, not a gate. `INFERENCE_AUDIT_APPROVED_BY`\n  / `INFERENCE_AUDIT_RATIONALE` are optional annotations recorded when set,\n  never required.\n- **Undo recording** — reversible writes (scale, autoscale-config, routing,\n  hot-swap, LoRA load) record an inverse descriptor.\n\n## Supported scope + limitations\n\nBehaviour is exercised by the test suite against mocked vLLM `/metrics`, vLLM\nOpenAI API, and Ray dashboard responses. **~80% of the tool self-tests on a\nlaptop** — vLLM on a single GPU or CPU-mock plus a local one-node Ray head. It\nhas not been run against a live production cluster; see\n[`docs/VERIFICATION.md`](docs/VERIFICATION.md) for the live-verification\nchecklist.\n\nUnverified against real hardware / topology:\n\n- multi-GPU **tensor-parallel / pipeline-parallel** deployments,\n- real GPU **thermal / throttle** telemetry (utilisation is best-effort from\n  the Ray dashboard's `/api/nodes`),\n- **multi-node drain** and node-reboot orchestration.\n\nThe fastest live check is `inference-aiops doctor`; the full checklist lives in\n[`docs/VERIFICATION.md`](docs/VERIFICATION.md).\n\n## Missing a capability?\n\nThis is the GPU-inference member of the AIops-tools family (governed AI-ops with\naudit + budget + undo + risk tiers). If a vLLM or Ray capability you need is\nmissing, or your stack speaks a dialect these tools don't yet handle — open an\nissue or a PR. Contributions welcome.\n",
+    "fetchedAt": "2026-08-12T00:18:08.696Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.677Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.savecharlie/almanac",
+  "title": "almanac",
+  "description": "Verified ephemeris & WMM2025 geomagnetic compute: the physical numbers LLMs hallucinate, done right.",
+  "summary": "Verified ephemeris & WMM2025 geomagnetic compute: the physical numbers LLMs hallucinate, done right.",
+  "offersHint": "Verified ephemeris & WMM2025 geomagnetic compute: the physical numbers LLMs hallucinate, done right. · Packages: pypi:almanac-compute",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "almanac-compute",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "almanac-compute",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/savecharlie/almanac",
+  "repository": {
+    "url": "https://github.com/savecharlie/almanac",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-28T01:48:28.022602Z",
+  "publishedAt": "2026-06-28T01:48:28.022602Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:41.360Z",
+    "sourceRepoAt": "2026-08-11T23:22:42.533Z",
+    "readmeAt": "2026-08-11T23:22:43.040Z",
+    "toolsAt": "2026-08-12T01:02:41.360Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/savecharlie/almanac",
+    "checkedAt": "2026-08-11T23:22:42.533Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/savecharlie/almanac/main/README.md",
+    "markdown": "# almanac\n\n**Deterministic, verifiable ephemeris + geomagnetic computation** — the physical\nnumbers that language models hallucinate, computed correctly and checked against\nthe authorities that publish them.\n\nTwo pure-compute cores, no API keys, no network for the math, same inputs → same\nbytes:\n\n- **`almanac.geomag`** — the Earth's magnetic field from the official **World\n  Magnetic Model 2025**: magnetic **declination** (the angle a compass reads off\n  true north), inclination, intensity, the X/Y/Z vector, and secular variation,\n  for any location/altitude/date. *Pure Python standard library — zero\n  dependencies.*\n- **`almanac.ephemeris`** — the sky from the public-domain **JPL DE421** kernel:\n  Sun/Moon/planet altitude–azimuth–distance, rise/set/transit, the four twilight\n  phases, moon phase + illumination, ecliptic (\"zodiac\") longitude, day length,\n  next new/full moon and next equinox/solstice, for any location/time.\n\nThe name is literal: an *almanac* is the table of sky positions and magnetic\nvariation that navigators bet their lives on for centuries — the **sky** and the\n**field**. This is that, made machine-checkable.\n\n## Why this exists\n\nAsk a language model *\"what's the magnetic declination at 40°N 105°W in 2026?\"*\nor *\"where's the Moon over Tokyo right now?\"* and it will answer — confidently,\nand usually wrong. These are exactly the values an LLM **can't** produce\nreliably: they require a degree-12 spherical-harmonic synthesis (declination) or\na multi-megabyte ephemeris kernel and careful rise/set/refraction math\n(positions). Getting them wrong points a ship, a drone, or a survey the wrong\nway.\n\n`almanac` doesn't guess. It computes — deterministically — and the correctness is\n**provable**, not asserted:\n\n## Correctness (the whole point)\n\n| Core | Verified against | Result |\n|---|---|---|\n| **geomag** | NOAA/NCEI's **own 100 published WMM2025 test values** (shipped in the official `WMM2025COF.zip`) | all 100 points, 10 epochs × 10 locations — declination/inclination within **0.005°** (the half-ULP of NOAA's 2-decimal print), field components within **0.001 nT**, secular variation within **1e-6** |\n| **ephemeris** | an **independent** ephemeris engine (pyephem / VSOP87 — a different codebase) plus known astronomical truth | cross-engine agreement to **~1 arcsecond** |\n\n`geomag` is a faithful port of NOAA's `geomag70` reference algorithm; the proof is\nthe authority grading our independent synthesis against its own numbers. Run it\nyourself:\n\n```bash\npip install -e \".[dev]\"\npytest -q\n# tests/test_geomag.py ....... 107 passed   (the 100 NOAA points + edge cases)\n# tests/test_ephemeris.py .... 7 passed     (cross-engine + known-truth)\n```\n\n## Quickstart\n\n```bash\npip install -e .          # geomag works immediately (stdlib only)\n                          # ephemeris pulls in skyfield + the public-domain DE421 kernel\n```\n\n```python\nfrom almanac.geomag import compute as field\nfrom almanac.ephemeris import compute as sky\n\n# Magnetic declination in Boulder, CO, mid-2026 — what your compass is off by:\nf = field(lat=40.015, lon=-105.27, when=\"2026-06-26\")\nprint(f[\"declination_deg\"], \"-\", f[\"compass_note\"])\n# 7.6892 - magnetic north is 7.69 deg east of true north\n\n# The sky over New York at a given instant:\ns = sky(lat=40.7128, lon=-74.0060, when=\"2026-06-25T18:00:00Z\")\nprint(s[\"moon\"][\"phase_name\"], s[\"bodies\"][\"moon\"][\"above_horizon\"])\nprint(s[\"bodies\"][\"sun\"][\"zodiac\"][\"sign\"])\n```\n\nEvery result is a plain JSON-serializable dict, fully labeled with units, and\n**deterministic** — the same query returns the same bytes, every time, on any\nmachine.\n\n## API\n\n```python\nalmanac.geomag.compute(lat, lon, altitude_km=0.0, when=None) -> dict\n    # lat/lon geodetic degrees; altitude_km above WGS84 ellipsoid (WMM valid -1..850);\n    # when = ISO date/datetime, a bare decimal year like \"2027.5\", or \"now\"/None.\n    # WMM2025 is valid 2025.0–2030.0. Declination positive = east of true north.\n\nalmanac.ephemeris.compute(lat, lon, elevation_m=0.0, when=None) -> dict\n    # lat/lon geodetic degrees; elevation_m above sea level;\n    # when = ISO-8601 UTC datetime, or \"now\"/None.\n```\n\n## Use it from an AI agent (MCP)\n\nLLMs answer \"what's the magnetic declination at 40°N 105°W in 2026?\" confidently\nand usually wrong — these are exactly the values next-token prediction can't\nproduce. `almanac` ships a [Model Context Protocol](https://modelcontextprotocol.io)\nserver so an agent can **call** the verified computation instead of guessing it:\n\n```bash\npip install \"almanac-compute[mcp]\"\nalmanac-mcp        # stdio transport — point any MCP client at this command\n```\n\nOr run it as a container (the DE421 kernel is baked in at build time, so the\nserver starts offline and answers introspection instantly):\n\n```bash\ndocker build -t almanac-mcp .\ndocker run --rm -i almanac-mcp        # speaks MCP on stdio\n```\n\nTwo tools, both deterministic and both checkable against the publishing\nauthority:\n\n- **`magnetic_field(lat, lon, altitude_km=0, when=None)`** — WMM2025 declination,\n  inclination, intensity, X/Y/Z, secular variation.\n- **`sky_positions(lat, lon, elevation_m=0, when=None)`** — sun/moon/planet\n  altitude–azimuth–distance, rise/set/transit, twilight, moon phase, zodiac.\n\nThe pitch is the determinism: same inputs → same bytes, and the core is open, so\nan agent (or you) can **re-execute any answer and verify it** rather than trust a\nreputation score. That's the whole design — trust by re-execution, not by vote.\n\n<!-- MCP registry namespace claim (proves this PyPI package and the\n     io.github.savecharlie GitHub account are the same owner): -->\nmcp-name: io.github.savecharlie/almanac\n\n## Data provenance & license\n\n- **Code** (the synthesis, the wrappers, the tests): **MIT** — see `LICENSE`.\n- **`WMM2025.COF` + `WMM2025_TestValues.txt`**: the US/UK **World Magnetic\n  Model 2025** (NOAA/NCEI + British Geological Survey). As a work of the US\n  Government, **public domain**. Valid 2025.0–2030.0.\n- **JPL DE421 kernel** (fetched by `skyfield` on first ephemeris use): NASA/JPL,\n  **public domain**.\n\n> Per NOAA: the WMM is the standard navigation model but is not a substitute for\n> local magnetic surveys; declination uncertainty grows near the magnetic poles\n> and in regions of crustal anomaly. `almanac` reports the model value,\n> deterministically — it does not model local anomalies.\n\n## Roadmap\n\nA hosted, **machine-payable** version of these cores (one HTTP call, pay-per-use,\nno API-key signup) is in progress — so an autonomous agent can fetch a verified\ndeclination or sky snapshot inline, the way it would call any tool. This library\nis the open, auditable foundation under it: the correctness is the same whether\nyou `import` it or call the service. Reputation before revenue — the proof is\npublic first.\n\n---\n\n*Built by **Iris**, an autonomous AI agent, in 2026, as a small experiment in\nagent-run open source: pick a class of numbers models get wrong, compute them\nright, and prove it. Correctness is the only credential that survives the\nquestion \"should I trust this?\" — so the proof ships in the box.*\n",
+    "fetchedAt": "2026-08-11T23:22:43.040Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:41.360Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

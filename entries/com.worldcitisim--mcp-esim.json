@@ -1,0 +1,59 @@
+{
+  "id": "com.worldcitisim/mcp-esim",
+  "title": "Worldcitisim eSIM",
+  "description": "Travel eSIMs for 193 countries. Stripe + Bitcoin checkout. QR by email in 30s. No API key.",
+  "summary": "Travel eSIMs for 193 countries. Stripe + Bitcoin checkout. QR by email in 30s. No API key.",
+  "offersHint": "Travel eSIMs for 193 countries. Stripe + Bitcoin checkout. QR by email in 30s. No API key. · Packages: npm:@worldcitisim/mcp-esim",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@worldcitisim/mcp-esim",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@worldcitisim/mcp-esim",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://worldcitisim.com/developers",
+  "sourceUrl": "https://github.com/isabellaliebgott/mcp-esim",
+  "repository": {
+    "url": "https://github.com/isabellaliebgott/mcp-esim",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-18T14:50:23.020742Z",
+  "publishedAt": "2026-07-18T14:50:23.020742Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:51:40.994Z",
+    "sourceRepoAt": "2026-08-12T00:24:02.207Z",
+    "readmeAt": "2026-08-12T00:24:02.923Z",
+    "toolsAt": "2026-08-12T01:51:40.994Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/isabellaliebgott/mcp-esim",
+    "checkedAt": "2026-08-12T00:24:02.207Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/isabellaliebgott/mcp-esim/main/README.md",
+    "markdown": "# @worldcitisim/mcp-esim\n\nMCP server that lets Claude and other MCP-compatible agents search and buy WorldCitiSim eSIM plans. Wraps `https://shop.worldcitisim.com/wp-json/esim/v1/*`.\n\n## Install\n\n### Claude Desktop / Claude Code\n\n```bash\nclaude mcp add --scope user wcs-esim npx -y @worldcitisim/mcp-esim\n```\n\nOr paste into `~/Library/Application Support/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"worldcitisim-esim\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@worldcitisim/mcp-esim\"]\n    }\n  }\n}\n```\n\n### Cursor / Windsurf / other MCP clients\n\nSame shape — `command: \"npx\", args: [\"-y\", \"@worldcitisim/mcp-esim\"]`.\n\n### ChatGPT Developer Mode\n\nSettings → Developer Mode → Add MCP server → same npx command.\n\n## Tools exposed\n\n| Tool | Purpose |\n|---|---|\n| `esim_search_plans` | Filter catalog by country / region / days / GB. Returns matching plans with their first 5 variations. |\n| `esim_get_plan` | Fetch one plan by slug with all variations. |\n| `esim_create_order` | Create a pending order. `payment_method: \"stripe\"` (default) returns a Stripe Checkout URL for the user to tap; `payment_method: \"btc\"` returns an on-chain `btc` block (address + amount + QR) to show the user directly. Both return an `order_token` for polling. |\n| `esim_check_order` | Poll an order's status. Returns activation data (ICCID, QR URL) once payment clears. |\n\n## Example interaction\n\n```\nUser: I'm going to Japan for 10 days, what eSIM should I get?\n\nClaude calls: esim_search_plans({ country: \"japan\", min_days: 7, max_days: 15 })\n→ returns matching plans with variations priced and in stock.\n\nClaude picks the best match, presents 2–3 options to the user.\n\nUser: the 10GB one\n\nClaude: \"Pay by card or Bitcoin?\"\n\nUser: card\n\nClaude calls: esim_create_order({ email: \"user@example.com\", variation_id: 44941 })\n→ returns { order_id, order_token, payment_link_url }.\n\nClaude: \"Tap this link to pay: <Stripe URL>. You'll get the eSIM QR in your email within ~30 seconds.\"\n\nUser pays. Claude optionally polls esim_check_order until status=completed.\n```\n\nFor Bitcoin, Claude calls `esim_create_order({ ..., payment_method: \"btc\" })` and gets back a\n`btc` block — `{ address, sats_amount, btc_amount, qr_data_uri, expires_at }` — which it shows\nthe user to pay from any on-chain wallet. No redirect. If BTC is declined for a small order\nduring a network-fee spike, the call returns a `btc_unavailable` error and Claude offers card\ninstead. Either way, `esim_check_order` polls until `status=completed`.\n\n## Environment\n\n- `WCS_ESIM_API_BASE` — override the API base URL. Default: `https://shop.worldcitisim.com/wp-json/esim/v1`.\n\n## Runtime\n\n- Node 20.11+ (for native fetch + ESM).\n- No secrets. No Stripe credentials touch this process. Payment happens on Stripe's hosted checkout page; the MCP just hands the agent the URL.\n- Catalog is client-side cached 5 minutes + ETag-aware; multiple search calls within a minute don't hit the network.\n\n## Development\n\n```bash\nnpm install\nnpm run dev                 # stdio MCP server on this terminal\nnpm run build               # compile to dist/\n```\n\nPoint a Claude Code session at the local dev build:\n\n```bash\nclaude mcp add wcs-esim-dev node \"$(pwd)/dist/index.js\"\n```\n\n## Related\n\n- [WorldCitiSim](https://worldcitisim.com) — eSIM travel service for 193 countries.\n- [WorldCitiSim eSIM API](https://shop.worldcitisim.com/wp-json/esim/v1/openapi.json) — OpenAPI 3.1 spec the server wraps.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:24:02.923Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:51:40.994Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

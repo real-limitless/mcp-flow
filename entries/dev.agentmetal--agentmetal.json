@@ -1,0 +1,58 @@
+{
+  "id": "dev.agentmetal/agentmetal",
+  "title": "agentmetal",
+  "description": "Rent a Linux VPS from an AI agent: provision, SSH in, run commands. Pay USDC (x402) or card.",
+  "summary": "Rent a Linux VPS from an AI agent: provision, SSH in, run commands. Pay USDC (x402) or card.",
+  "offersHint": "Rent a Linux VPS from an AI agent: provision, SSH in, run commands. Pay USDC (x402) or card. · Packages: npm:@agentmetal/mcp",
+  "version": "0.3.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@agentmetal/mcp",
+    "version": "0.3.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@agentmetal/mcp",
+      "version": "0.3.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/agentmetal/mcp",
+  "repository": {
+    "url": "https://github.com/agentmetal/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T03:45:20.249515Z",
+  "publishedAt": "2026-07-02T03:45:20.249515Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:51:17.889Z",
+    "sourceRepoAt": "2026-08-12T00:23:20.733Z",
+    "readmeAt": "2026-08-12T00:23:21.195Z",
+    "toolsAt": "2026-08-12T01:51:17.889Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/agentmetal/mcp",
+    "checkedAt": "2026-08-12T00:23:20.733Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/agentmetal/mcp/main/README.md",
+    "markdown": "# @agentmetal/mcp\n\nMCP server that exposes [AgentMetal](https://agentmetal.dev) as tools, so an agent can\n**discover → pay → provision → SSH in → run commands → manage → renew** its own Linux\nserver (VPS / cloud instance) with no human signup. Paid tools sign USDC payments over\n[x402 v2](https://x402.org) (or pay by card); the rest are plain HTTP.\n\n[![agentmetal/mcp MCP server](https://glama.ai/mcp/servers/agentmetal/mcp/badges/score.svg)](https://glama.ai/mcp/servers/agentmetal/mcp)\n[![CI](https://github.com/agentmetal/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/agentmetal/mcp/actions/workflows/ci.yml)\n[![smithery badge](https://smithery.ai/badge/luisalfonsocosioizcapa/agentmetal)](https://smithery.ai/servers/luisalfonsocosioizcapa/agentmetal)\n\n## Tools\n\n13 tools. Paid tools sign a USDC/x402 payment; account-gated tools need\n`AGENTMETAL_API_KEY` (`am_live_…`) and ownership of the server.\n\n| Tool | Pays? | Account key? | What it does |\n|---|---|---|---|\n| `get_catalog` | — | — | List plans, locations, and add-on pricing (bandwidth, storage). The free discovery hook. |\n| `provision_server` | ✅ USDC | — | Provision a VPS (`plan`, `days`, optional `ssh_key`/`via`, `managed_key`) → id, IPv4, SSH. With `managed_key:true`, a server-side keypair is generated, authorized, and the private key returned **once** (stored only encrypted) to enable `exec_command`. |\n| `get_server` | — | — | Status, IPv4, expiry, bandwidth, storage for a server id |\n| `list_servers` | — | — | Fleet for a wallet/account |\n| `extend_server` | ✅ USDC | — | Extend a lease by N days |\n| `destroy_server` | — | ✅ | Destroy now |\n| `reboot_server` | — | ✅ | Soft-reboot an owned server |\n| `server_logs` | — | ✅ | Hypervisor-level diagnostics without logging in: status, recent provider actions, a VNC console URL, and live CPU/disk/net metrics (no text boot log exists provider-side) |\n| `exec_command` | — | ✅ | Run a shell command as **root** over SSH → exit_code/stdout/stderr. Requires a server provisioned with `managed_key:true`. Bounded: 1–120 s timeout, 256 KB output cap. |\n| `get_firewall` | — | — | Read a box's edge-firewall rules. Callable from the box itself (source-IP identity) or with an account key. |\n| `manage_firewall` | — | — | Open/close inbound ports on a box's edge firewall (protocol/port/source_ips). From the box itself or with an account key; SSH-lockout guarded. |\n| `claim_account` | — | — | Email a one-time claim code (via AWS SES) |\n| `verify_claim` | — | — | Redeem the code for an account API key. Link a wallet by also passing `wallet` + `wallet_signature`. |\n\n**Add-ons** (currently API endpoints, not yet separate MCP tools): extra **storage**\n($0.01/GB/day, attached block volume) via `POST /v1/servers/{id}/storage` and extra\n**bandwidth** ($2/TB beyond the 20 TB included) via `POST /v1/servers/{id}/bandwidth`.\n\n## Configuration (env)\n\n| Var | Default | Purpose |\n|---|---|---|\n| `AGENTMETAL_BASE_URL` | `https://api.agentmetal.dev` | API base URL |\n| `WALLET_PRIVATE_KEY` | — | `0x…` EVM key used to pay 402s. Omit and paid tools fail with a clear message. |\n| `AGENTMETAL_NETWORK` | `eip155:8453` | CAIP-2 network (Base mainnet) |\n| `AGENTMETAL_MAX_USDC` | `50` | Per-request spend cap, in USDC |\n| `AGENTMETAL_API_KEY` | — | `am_live_…` account key, required for `destroy_server` / `reboot_server` / `server_logs` / `exec_command` |\n\n## Use with Claude Code\n\n```jsonc\n// .mcp.json (or claude mcp add)\n{\n  \"mcpServers\": {\n    \"agentmetal\": {\n      \"command\": \"node\",\n      \"args\": [\"packages/mcp/src/index.ts\"],\n      \"env\": {\n        \"WALLET_PRIVATE_KEY\": \"0x…\",\n        \"AGENTMETAL_MAX_USDC\": \"50\"\n      }\n    }\n  }\n}\n```\n\nThe wallet must hold USDC on Base. The spend cap (`AGENTMETAL_MAX_USDC`) bounds what any\nsingle tool call can pay; a 402 above the cap is refused before signing.\n\n> **Status:** client + server are unit-tested and the stdio handshake is verified.\n> Live USDC settlement needs a funded wallet + an x402 facilitator that supports the\n> `exact` / `eip155:8453` kind.\n",
+    "fetchedAt": "2026-08-12T00:23:21.195Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:51:17.889Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

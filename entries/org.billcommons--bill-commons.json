@@ -1,0 +1,97 @@
+{
+  "id": "org.billcommons/bill-commons",
+  "title": "bill-commons",
+  "description": "Search 209k+ US state bills, all 50 states + DC: full text, sponsors, votes, status. Free.",
+  "summary": "Search 209k+ US state bills, all 50 states + DC: full text, sponsors, votes, status. Free.",
+  "offersHint": "Search 209k+ US state bills, all 50 states + DC: full text, sponsors, votes, status. Free. · Remote MCP (streamable-http) at https://mcp.billcommons.org/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.billcommons.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.billcommons.org/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://billcommons.org",
+  "sourceUrl": "https://github.com/GDACS-droid/billcommons",
+  "repository": {
+    "url": "https://github.com/GDACS-droid/billcommons",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T17:26:24.043069Z",
+  "publishedAt": "2026-07-28T17:26:24.043069Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:10.268Z",
+    "sourceRepoAt": "2026-08-11T23:08:41.506Z",
+    "readmeAt": "2026-08-11T23:08:42.210Z",
+    "toolsAt": "2026-08-11T23:08:42.452Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/GDACS-droid/billcommons",
+    "checkedAt": "2026-08-11T23:08:41.506Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/GDACS-droid/billcommons/main/README.md",
+    "markdown": "# Bill Commons\n\nBill Commons is a public, open-source legislative search platform covering the\ncurrent session/biennium for all 50 U.S. states plus DC. It provides a web\nsearch UI, a REST API, an MCP (Model Context Protocol) server, and a public\nstatus/coverage page. Public infrastructure first: no paywall on ordinary\nsearch or reasonable API use.\n\nSee [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md)\nfor the locked architecture and data model.\n\n## Production\n\n* Web: https://billcommons.org (search UI + public status/coverage page at\n  https://status.billcommons.org)\n* API: https://api.billcommons.org/api/v1 — interactive OpenAPI docs at\n  https://api.billcommons.org/docs\n* MCP (Streamable HTTP): https://mcp.billcommons.org/mcp\n\nHosted on Railway (project `billcommons`: `api`, `mcp`, `worker` services +\nmanaged Postgres) and Vercel (project `billcommons-web`). See\n[`docs/operations/deployment-runbook.md`](docs/operations/deployment-runbook.md)\nfor the full deploy/rollback procedure.\n\n## Use with Claude (or any MCP client)\n\nThe hosted MCP server gives AI assistants direct access to all 209k+ bills —\nno API key, no setup beyond one command:\n\n```bash\nclaude mcp add bill-commons --transport http https://mcp.billcommons.org/mcp\n```\n\nClaude Desktop: **Settings → Connectors → Add custom connector** with URL\n`https://mcp.billcommons.org/mcp`. Cursor and other clients: add the same URL\nas a Streamable HTTP server in `mcp.json`.\n\nTen tools including `search_legislation`, `get_bill_record`,\n`compare_bill_versions`, and `trace_legislative_history`. Full walkthrough\n(including REST recipes for agents without MCP):\nhttps://billcommons.org/docs/agents\n\n## Architecture at a glance\n\n```\n                    ┌─────────────┐\n   users ─────────▶ │  apps/web   │  Next.js, billcommons.org\n                    │ (Vercel)    │  status.billcommons.org (rewrite → /coverage)\n                    └──────┬──────┘\n                           │ HTTPS (NEXT_PUBLIC_API_BASE)\n                           ▼\n                    ┌─────────────┐        ┌──────────────┐\n                    │  apps/api   │◀──────▶│  apps/mcp    │  Streamable HTTP\n                    │  FastAPI    │        │  10 MCP tools│  mcp.billcommons.org\n                    │ /api/v1     │        └──────────────┘\n                    │ api.billcommons.org\n                    └──────┬──────┘\n                           │ reads (SQLAlchemy)\n                           ▼\n                    ┌─────────────────────────────┐\n                    │   Postgres 16 (Railway)      │\n                    │  jurisdictions, sessions,     │\n                    │  bills, actions, sponsorships,│\n                    │  votes, ingest_jobs, coverage  │\n                    └──────────────▲──────────────┘\n                                   │ writes (idempotent upserts)\n                    ┌──────────────┴──────────────┐\n                    │  workers/ingest (worker svc)  │\n                    │  autoboot: seed → bootstrap →│\n                    │  schedule-refresh → job loop  │\n                    │  sources: Open States bulk CSV│\n                    │  (T2 bootstrap) + v3 API (T2  │\n                    │  incremental, OPENSTATES_API_ │\n                    │  KEY) + full-text fetcher     │\n                    └──────────────┬──────────────┘\n                                   ▼\n                    RawStore (filesystem, RAWSTORE_ROOT\n                    volume in prod) — sha256-addressed\n                    raw payload archive\n```\n\n`packages/schema` (SQLAlchemy models + Alembic) is the single source of\ntruth every other package/app imports from — no service owns its own copy\nof the data model.\n\n## Monorepo layout\n\n```\napps/web        Next.js 15 (App Router, TS) — search UI + status page\napps/api        FastAPI — REST API (/api/v1)\napps/mcp        MCP server (Streamable HTTP, mounted at /mcp)\nworkers/ingest  Ingestion workers, job queue, per-source adapters\npackages/schema SQLAlchemy models + Alembic migrations (single source of truth)\npackages/shared Shared Python utils: bill-number normalization, rawstore, http client\npackages/source-registry  Per-jurisdiction source registry (data + loader)\npackages/search Search SQL builders / query parsing\ninfra/docker    Dockerfiles + docker-compose.yml (local stack)\ninfra/deployment Railway/Vercel configs, DNS runbook\ndocs/           Architecture, API, sources, operations, state-coverage docs\ndata/registry   Machine-readable registry (sessions, sources)\n```\n\n## Local development setup\n\n### Prerequisites\n\n* Python 3.12\n* PostgreSQL 16 (with `pg_trgm`, `unaccent`, `pgcrypto` extensions available)\n* Node.js 20+ (for `apps/web`)\n\n### Python environment\n\n```bash\npython3 -m venv .venv\n.venv/bin/pip install -r requirements.txt\n```\n\nThis installs `packages/schema` and `packages/shared` as editable installs\n(single source of truth for the data model + shared utils), plus the\nworker package: `.venv/bin/pip install -e workers/ingest`. Install the API\npackage too if you're working on it: `.venv/bin/pip install -e apps/api`.\n\n### Database\n\nSet `DATABASE_URL` in your environment (or in `~/.config/billcommons/.env`,\nwhich is read as a fallback and is never committed):\n\n```\nDATABASE_URL=postgresql://user:password@host:port/dbname\n```\n\nRequires Postgres 16 with the `pg_trgm` and `unaccent` extensions available\n(created by migration `0001`). Run migrations:\n\n```bash\ncd packages/schema\n../../.venv/bin/alembic upgrade head\n```\n\n### Seeding data locally\n\n```bash\n# Seed all 51 jurisdictions/sessions/coverage rows from the registry:\n.venv/bin/python -m billcommons_ingest seed-registry\n\n# Download a state's Open States bulk-CSV zip and ingest it (see\n# docs/operations/ingestion-runbook.md for the full command reference):\npython3 workers/ingest/download_bulk.py --only NC\n.venv/bin/python -m billcommons_ingest bootstrap --state NC --zip data/bulkzips/NC_2025.zip\n.venv/bin/python -m billcommons_ingest recompute-coverage\n```\n\n### Running the apps locally\n\n```bash\n# API (FastAPI, http://localhost:8000, docs at /docs)\n.venv/bin/uvicorn main:app --app-dir apps/api --reload --port 8000\n\n# MCP server (Streamable HTTP, http://localhost:8400/mcp by default)\n.venv/bin/python apps/mcp/server.py\n\n# Ingestion worker (long-running queue loop; runs schedule-refresh\n# periodically inside the same process)\n.venv/bin/python -m billcommons_ingest worker\n\n# Web app (Next.js — separate from the Python stack)\ncd apps/web\nnpm install\nNEXT_PUBLIC_API_BASE=http://localhost:8000 npm run dev\n```\n\n### Tests\n\n```bash\n.venv/bin/pytest packages/shared/tests\n.venv/bin/pytest workers/ingest/tests\n.venv/bin/pytest apps/api/tests\n```\n\n### Running the stack locally with Docker\n\n```bash\ncd infra/docker\ndocker compose up --build\n```\n\nThis brings up Postgres, the API, the ingestion worker, and the MCP server.\nThe web app (`apps/web`) is run separately via `npm run dev` during local\ndevelopment (see `infra/docker/docker-compose.yml` for the placeholder\nservice definition).\n\n## Documentation\n\n* [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) — locked architecture + data model\n* [`docs/SPEC.md`](docs/SPEC.md) — requirements digest / acceptance gate\n* [`docs/operations/deployment-runbook.md`](docs/operations/deployment-runbook.md) — Railway/Vercel deploy, rollback, smoke checklist\n* [`docs/operations/ingestion-runbook.md`](docs/operations/ingestion-runbook.md) — CLI reference, job queue, refresh cadence\n* [`docs/operations/source-failure-runbook.md`](docs/operations/source-failure-runbook.md) — stale zips, 401/429, robots blocks\n* [`docs/operations/backup-restore.md`](docs/operations/backup-restore.md) — pg_dump/restore, raw-data re-fetch\n* [`docs/operations/add-a-jurisdiction.md`](docs/operations/add-a-jurisdiction.md) — onboarding a new territory/state\n* [`docs/state-coverage/methodology.md`](docs/state-coverage/methodology.md) — coverage state machine, GREEN criteria\n* [`docs/api/examples.md`](docs/api/examples.md) — curl/Python/JavaScript examples against the live API\n* [`docs/sources/openstates-csv.md`](docs/sources/openstates-csv.md) — Open States bulk CSV column mapping\n\n## License\n\nApache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for data attribution\n(Open States / Plural Policy, public-domain legislative data).\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md). This project follows the\n[Contributor Covenant](CODE_OF_CONDUCT.md).\n\n## Security\n\nSee [SECURITY.md](SECURITY.md) for responsible disclosure.\n",
+    "fetchedAt": "2026-08-11T23:08:42.210Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_legislation",
+      "description": "Search FULL BILL TEXT -- not just known-bill-number lookup. `q` is\n    matched against titles, descriptions, AND ingested document text via\n    Postgres websearch_to_tsquery (supports \"quoted phrases\", OR, and\n    -exclusion, same syntax as a search engine), with a fuzzy pg_trgm\n    title-similarity fallback when the exact query has no hits. `q` can\n    ALSO be a bill number (\"HB 123\", \"H.B. 123\", \"hb123\" all match) and\n    that fast path is tried first. Optionally filter by jurisdiction\n    (two-letter state code or name), chamber, and status.\n\n    For a curated cross-state slice of a subject (e.g. \"every AI bill in the\n    country\") rather than an ad-hoc keyword search, call list_topics first --\n    its membership rules also match on structured subject tags this\n    full-text search does not see."
+    },
+    {
+      "name": "get_bill_record",
+      "description": "Fetch the full record for one bill: metadata, sponsors, subjects,\n    actions, versions, and vote-event summaries. Look up by canonical\n    bill_id (UUID), or by jurisdiction + identifier (+ optional session to\n    disambiguate)."
+    },
+    {
+      "name": "compare_bill_versions",
+      "description": "Deterministic diff (unified + structured) between two versions of a\n    bill's extracted text. Defaults to earliest vs. latest texted version if\n    version ids are omitted. Errors if fewer than 2 versions have extracted\n    text. Result is labeled 'derived' (computed by Bill Commons, not an\n    official document)."
+    },
+    {
+      "name": "find_similar_bills",
+      "description": "Find bills with similar titles via deterministic trigram similarity,\n    across jurisdictions. Labeled 'derived' -- not an official\n    cross-reference or companion-bill designation."
+    },
+    {
+      "name": "get_vote_details",
+      "description": "Fetch vote event(s) with member-level (yes/no/other/absent) vote\n    records. Provide vote_event_id for one vote, or bill_id for all recorded\n    votes on that bill."
+    },
+    {
+      "name": "get_upcoming_hearings",
+      "description": "List upcoming (future-dated) legislative hearings/events, optionally\n    filtered by jurisdiction and/or bill."
+    },
+    {
+      "name": "trace_legislative_history",
+      "description": "Full chronological legislative history for a bill: merged timeline of\n    actions, version publications, and votes, plus related-bill links."
+    },
+    {
+      "name": "build_legislative_evidence_packet",
+      "description": "Compile a citation-ready evidence packet for a bill: full official\n    record, legislative history timeline, votes with member-level detail, and\n    hearings -- each explicitly labeled official vs. derived with source URLs.\n\n    Returns a `how_to_cite` block with a one-line `cite_as` sentence, a human\n    `permalink`, a JSON `download_url`, and a `snapshot_id` that changes if and\n    only if a cited fact about the bill changes -- so a reader can check later\n    whether the citation still holds. Snapshots are NOT archived; the id is a\n    change detector, not a way to retrieve an older packet.\n\n    Pass `question` to record what the packet was assembled to answer; it is\n    echoed into the artifact so a filed packet carries its own scope."
+    },
+    {
+      "name": "get_jurisdiction_coverage",
+      "description": "Return the jurisdiction_coverage state-machine status for one state\n    (abbreviation or name), or the full 51-jurisdiction coverage matrix if\n    state is omitted."
+    },
+    {
+      "name": "get_active_sessions",
+      "description": "List legislative sessions currently flagged active, optionally\n    filtered by jurisdiction (two-letter state code or name)."
+    },
+    {
+      "name": "list_topics",
+      "description": "List Bill Commons' curated cross-state topic trackers (e.g. artificial\n    intelligence, youth online safety, platform accountability,\n    cybersecurity, cryptocurrency, data privacy, local government &\n    preemption) -- the entry point for \"what subjects does Bill Commons\n    track across all 50 states + DC\" and \"how do I get every bill in one\".\n    Each topic is a title/subject membership rule tuned for precision over\n    recall, with a live bill_count and how_to_fetch_bills. This tool does\n    not itself return bill rows -- pair it with search_legislation or the\n    REST API's /topics/{slug} for the bills."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:08:42.452Z",
+  "toolsPreviewStatus": "ok"
+}

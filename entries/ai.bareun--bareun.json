@@ -1,0 +1,71 @@
+{
+  "id": "ai.bareun/bareun",
+  "title": "Bareun — Korean NLP & Spell/Grammar Checking",
+  "description": "Korean NLP MCP server: morphological analysis, tokenization, spell & grammar checking (Bareun)",
+  "summary": "Korean NLP MCP server: morphological analysis, tokenization, spell & grammar checking (Bareun)",
+  "offersHint": "Korean NLP MCP server: morphological analysis, tokenization, spell & grammar checking (Bareun) · Remote MCP (streamable-http) at https://api.bareun.ai/mcp · Requires headers: Authorization",
+  "version": "3.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.bareun.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.bareun.ai/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Send 'Bearer <your Bareun API key>'. Alternatively send the key in an 'api-key' header. Get a key at https://bareun.ai.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://bareun.ai",
+  "sourceUrl": "https://github.com/gih2yun/bareun-mcp",
+  "repository": {
+    "url": "https://github.com/gih2yun/bareun-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T06:04:45.980117Z",
+  "publishedAt": "2026-06-09T06:04:45.980117Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Send 'Bearer <your Bareun API key>'. Alternatively send the key in an 'api-key' header. Get a key at https://bareun.ai.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-22T05:24:50.740Z",
+    "sourceRepoAt": "2026-08-22T05:24:50.740Z",
+    "readmeAt": "2026-08-22T05:24:51.176Z",
+    "toolsAt": "2026-08-22T05:24:51.281Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gih2yun/bareun-mcp/main/README.md",
+    "markdown": "# Bareun MCP Server — Korean NLP & Spell/Grammar Checking\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)\n[![smithery badge](https://smithery.ai/badge/gih2yun/bareunai)](https://smithery.ai/servers/gih2yun/bareunai)\n\n> **바른(Bareun)** is a Korean natural-language platform. This is its **MCP (Model\n> Context Protocol)** server — it lets any MCP-compatible AI tool (Claude, Cursor,\n> VS Code, Claude Desktop, …) perform **Korean morphological analysis** and\n> **spell/grammar correction** by calling Bareun as a tool.\n\nLarge language models still miss the subtle spacing, particle agreement, and\nconfusable-word rules of Korean. Plug Bareun in as an MCP tool and your agent can\nhand off analysis and proofreading to a dedicated Korean engine, then use the\nresult to produce more accurate Korean output.\n\n- **Hosted endpoint:** `https://api.bareun.ai/mcp`\n- **Transport:** Streamable HTTP (JSON-RPC 2.0) — no SSE, no extra port, no install\n- **Auth:** API key (`api-key` header or `Authorization: Bearer <key>`)\n- **Get an API key:** https://bareun.ai\n\n> The `/mcp` endpoint is available on the **spell-checker–included** build of Bareun\n> (the morphological-analysis-only build does not expose `/mcp`). The same endpoint\n> works on self-hosted/on-prem installs — just swap the host.\n\n---\n\n## What it looks like\n\n**Spelling & spacing — `correct_grammar`** (real output from `https://api.bareun.ai/mcp`):\n\n| | |\n|---|---|\n| **In** | 회의결과를 정리해서 내일까지 보내주시기 바람니다. |\n| **Out** | 회의 결과를 정리해서 내일까지 보내 주시기 바랍니다. |\n\nEvery fix comes back as a block, so an agent can explain the edit instead of silently\nrewriting the sentence:\n\n| Original | Corrected | Category | Rule |\n|---|---|---|---|\n| 회의결과를 | 회의 결과를 | `SPACING` | compound noun spacing |\n| 보내주시기 | 보내 주시기 | `SPACING` | auxiliary-verb spacing |\n| 바람니다. | 바랍니다. | `TYPO` | misspelling |\n\n**Morphological analysis — `analyze_syntax`** (`format: compact`):\n\n| | |\n|---|---|\n| **In** | 나는 학교에 간다. |\n| **Out** | `나/NP 는/JX 학교/NNG 에/JKB 가/VV ㄴ다/EF ./SF` |\n\n**Homograph senses — `analyze_syntax` with `with_sense: true`** (_beta_): 배 in 배가 아프다\ncomes back with `senseNo: 1` and its dictionary definition — 사람이나 동물의 몸에서 …\n가슴과 엉덩이 사이의 부위 (*belly*, probability 0.87), plus the Urimalsaem entry id — so the\nagent knows which 배 it is reading.\n\n---\n\n## Tools\n\n| Tool | What it does | Key inputs |\n|---|---|---|\n| `analyze_syntax` | Splits a sentence into words/morphemes and tags parts of speech (morphological analysis). | `text` (required), `auto_split_sentence`, `auto_spacing`, `auto_jointing`, `custom_dict_names`, `encoding`, `format` (`full`\\|`compact`), `with_sense` |\n| `analyze_syntax_raw` | Same analysis **without post-processing** (no compound-noun/verb splitting, no auto spacing, no custom dictionaries) — the raw model output. | `text` (required), `auto_split_sentence`, `encoding`, `format`, `with_sense` |\n| `search_dict` | Searches the Urimalsaem Korean dictionary (~1.1M entries) by **jamo (phoneme-level) slot patterns** — conditions like \"verbs whose stem ends in the ㅎ coda\" or \"words ending in -아지\" that cannot be expressed with composed Hangul syllables. | `pattern` (required), `anchor` (`word`\\|`prefix`\\|`suffix`\\|`contains`), `pos`, `std_only`, `with_definition`, `limit`, `count_only` |\n| `tokenize` | Splits a sentence into word (token) units. | `text` (required), `auto_spacing`, `encoding` |\n| `correct_grammar` | Corrects spelling/spacing and returns correction blocks. | `text` (required), `custom_dict_names`, + 9 boolean correction options |\n| `list_pos_tags` | Returns the 47 part-of-speech tags Bareun uses (code · name · class). | _(none)_ |\n\n**`correct_grammar` options** (all boolean, default off): `treat_as_title`,\n`disable_split_sentence`, `disable_caret_spacing`, `disable_vx_spacing`,\n`enable_limited_punctuation`, `disable_confusion`, `enable_cleanup_whitespace`,\n`disable_typo_correction`, `enable_sentence_check`.\n\n**`encoding`** controls the unit for morpheme offsets: `utf32` (default, code points\n— matches Python), `utf16` (JS/Java), `utf8` (bytes — Go/C++).\n\n**`with_sense` — homograph sense disambiguation (WSD, _beta_).** Korean writes many\nunrelated words identically: 배 can be *belly*, *ship*, or *pear*. Set `with_sense: true`\non `analyze_syntax`/`analyze_syntax_raw` and each content morpheme carries a `sense`\nobject — the dictionary sense number, its Korean definition, the Urimalsaem entry id, and\nthe probability of the chosen sense among that word's candidate senses. It is **off by\ndefault** (one extra model pass; responses are byte-identical to before when omitted),\nand `format=compact` renders it inline as `배__002/NNG`. This feature is in **beta** and\nships officially with Bareun 3.1.0.\n\n## Resources\n\n| Resource URI | Contents | Auth |\n|---|---|---|\n| `bareun://pos-tags` | The 47 POS tags (code · name · class) — same data as `list_pos_tags` | API key |\n| `bareun://server-info` | Server metadata — name · version · build · active tools/resources | API key |\n| `bareun://custom-dicts` | Names of custom-dictionary domains registered for the key | **valid** API key |\n\n---\n\n## Quick start\n\n> **Tip — register globally.** Most tools default to *project* scope (the server is\n> only available in one project). To use Bareun across **all** your projects, register\n> it at **global / user** scope as shown below.\n\n### Claude Code\n\n```bash\n# -s user → global: available in every project\nclaude mcp add -s user --transport http bareun https://api.bareun.ai/mcp \\\n  --header \"api-key: YOUR_API_KEY\"\n```\n\nOmit `-s user` for project-local scope. Check with `claude mcp get bareun`.\n\n### Cursor\n\nGlobal: `~/.cursor/mcp.json` · Project: `<project>/.cursor/mcp.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"bareun\": {\n      \"url\": \"https://api.bareun.ai/mcp\",\n      \"headers\": { \"api-key\": \"YOUR_API_KEY\" }\n    }\n  }\n}\n```\n\n### VS Code\n\nGlobal: run **MCP: Open User Configuration** · Project: `<project>/.vscode/mcp.json`\n\n```json\n{\n  \"servers\": {\n    \"bareun\": {\n      \"type\": \"http\",\n      \"url\": \"https://api.bareun.ai/mcp\",\n      \"headers\": { \"api-key\": \"YOUR_API_KEY\" }\n    }\n  }\n}\n```\n\n### Claude Desktop — `claude_desktop_config.json`\n\nClaude Desktop bridges header-authenticated remote servers via `mcp-remote`\n(Node.js required):\n\n```json\n{\n  \"mcpServers\": {\n    \"bareun\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\", \"mcp-remote\",\n        \"https://api.bareun.ai/mcp\",\n        \"--header\", \"api-key: YOUR_API_KEY\"\n      ]\n    }\n  }\n}\n```\n\n### Cline — `cline_mcp_settings.json`\n\nOpen **MCP Servers → Configure MCP Servers** in Cline, then add:\n\n```json\n{\n  \"mcpServers\": {\n    \"bareun\": {\n      \"type\": \"streamableHttp\",\n      \"url\": \"https://api.bareun.ai/mcp\",\n      \"headers\": { \"api-key\": \"YOUR_API_KEY\" },\n      \"disabled\": false,\n      \"autoApprove\": []\n    }\n  }\n}\n```\n\nAll five tools are read-only (`readOnlyHint`), so listing them in `autoApprove` is\nsafe if you would rather not confirm every call.\n\n### ChatGPT — Developer Mode\n\nChatGPT talks to Streamable HTTP servers directly — no directory review needed.\nTurn on **Developer mode** (Settings → Apps & Connectors → Advanced), then **Create**\na connector:\n\n- **URL:** `https://api.bareun.ai/mcp`\n- **Authentication:** **OAuth** — Bareun runs its own OAuth 2.1 (PKCE) endpoint, so\n  ChatGPT opens a login page where you paste your Bareun API key. (ChatGPT's connector\n  dialog offers OAuth or no-auth; if your build also lets you set request headers, an\n  `api-key` header works just as well.)\n\nMenu wording and plan availability shift between ChatGPT releases — Developer mode is\nan account-level toggle, and on Business/Enterprise a workspace owner enables it first.\n\n### Test with MCP Inspector\n\n```bash\nnpx @modelcontextprotocol/inspector\n```\n\nSet **Transport** to `Streamable HTTP`, **URL** to `https://api.bareun.ai/mcp`, and\nadd header `api-key: YOUR_API_KEY`.\n\n---\n\n## Example\n\n```jsonc\n// tools/call → analyze_syntax  (format: compact)\n{ \"text\": \"나는 학교에 간다.\", \"format\": \"compact\" }\n// → \"나/NP 는/JX 학교/NNG 에/JKB 가/VV ㄴ다/EF ./SF\"\n```\n\n## Links\n\n- **Service:** https://bareun.ai\n- **Docs:** https://bareun.ai/docs\n- **MCP guide:** https://bareun.ai/docs/howtouse/mcp\n- **API keys & usage:** https://bareun.ai/docs/howtouse/cloud-api\n\n## License\n\nThe contents of this repository (documentation, registry manifests, examples) are\nreleased under the [MIT License](./LICENSE). The Bareun engine itself is a\nproprietary service operated by Baikal AI; access is governed by the bareun.ai\nterms of service.\n",
+    "fetchedAt": "2026-08-22T05:24:51.176Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gih2yun/bareun-mcp",
+    "checkedAt": "2026-08-22T05:24:50.740Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreviewAt": "2026-08-22T05:24:51.281Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: api key required: set 'api-key' header or 'Authorization: Bearer <key>'\n",
+  "toolsPreviewStatus": "auth_required"
+}

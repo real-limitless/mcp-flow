@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Dudude-bit/yandex-lavka-mcp",
+  "title": "yandex-lavka-mcp",
+  "description": "Unofficial MCP server for ordering Yandex Lavka groceries: search, cart, checkout.",
+  "summary": "Unofficial MCP server for ordering Yandex Lavka groceries: search, cart, checkout.",
+  "offersHint": "Unofficial MCP server for ordering Yandex Lavka groceries: search, cart, checkout. · Packages: pypi:yandex-lavka-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "yandex-lavka-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "yandex-lavka-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Dudude-bit/yandex-lavka-mcp",
+  "repository": {
+    "url": "https://github.com/Dudude-bit/yandex-lavka-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-22T20:30:09.596378Z",
+  "publishedAt": "2026-07-22T20:30:09.596378Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:43:54.293Z",
+    "sourceRepoAt": "2026-08-12T00:13:35.401Z",
+    "readmeAt": "2026-08-12T00:13:35.891Z",
+    "toolsAt": "2026-08-12T01:43:54.293Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Dudude-bit/yandex-lavka-mcp",
+    "checkedAt": "2026-08-12T00:13:35.401Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Dudude-bit/yandex-lavka-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.Dudude-bit/yandex-lavka-mcp -->\n\n# yandex-lavka-mcp\n\n[![PyPI](https://img.shields.io/pypi/v/yandex-lavka-mcp.svg)](https://pypi.org/project/yandex-lavka-mcp/)\n[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)\n[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)\n[![MCP](https://img.shields.io/badge/MCP-server-black.svg)](https://modelcontextprotocol.io)\n\nAn [MCP](https://modelcontextprotocol.io) server that lets an AI assistant order\ngroceries from **Yandex Lavka** — search products, build a cart, and place a real\norder — with an explicit human confirmation before any money is charged.\n\n> [!WARNING]\n> **Unofficial.** Yandex Lavka has no public API. This project talks to the same\n> private web API that `lavka.yandex.ru` uses, authenticated with **your own**\n> Yandex session cookies. It automates your own account, for your own shopping.\n>\n> - Not affiliated with or endorsed by Yandex. Using it may violate Yandex's\n>   Terms of Service, and the private API can change or be blocked at any time.\n> - `confirm_order` spends **real money** on your card. Use at your own risk.\n> - Provided **as is**, without warranty (see [LICENSE](LICENSE)).\n\n## What it does\n\n| Tool | Charges? | What it does |\n|------|:---:|------|\n| `lavka_status` | — | Is the session + location set up? |\n| `list_addresses` | — | Your saved Lavka addresses, by name. |\n| `use_address` | — | Switch delivery to a saved address by name. |\n| `set_delivery_address` | — | Set delivery to any address by text (any city). |\n| `set_location` | — | Set delivery point by raw lat/lon. |\n| `search_products` | — | Search the catalog at the current location. |\n| `get_product` | — | Product detail. |\n| `view_cart` | — | Show cart + total. |\n| `add_to_cart` | — | Add an item. |\n| `update_cart_item` | — | Set exact quantity (0 removes). |\n| `clear_cart` | — | Empty the cart. |\n| `checkout_preview` | **no** | Full summary: items, subtotal, discount, delivery, ETA, payment, total. |\n| `confirm_order` | **YES** | Places the order and charges the on-file card. |\n| `cancel_order` | — | Cancel an order by id. |\n| `active_orders` | — | Currently tracked orders with status/ETA. |\n\n**Money safety.** Placing an order is a deliberate two-step flow: `checkout_preview`\nreturns the full summary and charges nothing; `confirm_order(confirmed_total)`\nrefuses unless a preview was just run and you pass back the exact total it showed.\nChange the cart and the preview is invalidated — you must preview again.\n\n**3-D Secure.** `confirm_order` submits the order and charges the on-file card,\nthen polls payment status. If your bank requires 3-D Secure, `payment_status`\ncomes back `wait_user_action` and a `redirect_url` is returned — open it to\nfinish paying (a headless charge cannot complete 3DS). `cancel_order(order_id)`\ncancels.\n\n**Multiple locations / cities.** Catalog, prices and cart are location-scoped.\n`use_address(\"Дача\")` switches to a saved address; `set_delivery_address(\"Казань,\nулица Баумана, 1\", flat=\"12\")` works for any address in any city (it geocodes via\nLavka's own address search).\n\n## How it's built\n\n- Python 3.12+ · [FastMCP](https://github.com/modelcontextprotocol/python-sdk) · `httpx`.\n- `client.py` — the async API client (session auth, CSRF, request building, trims huge payloads).\n- `endpoints.py` — every API path in one place (overridable from config, no code change).\n- `server.py` — the MCP tools the assistant sees.\n\nThe API sits under `https://lavka.yandex.ru/api/v1/providers/*` (plus\n`/api/v1/orders/submit` for placing orders). Requests need the CSRF token from\nthe homepage HTML plus `X-Lavka-Web-*` headers — the client handles this.\n\n## Setup\n\n### 1. Install\n\n```bash\nuv venv && uv pip install -e .\n```\n\n### 2. Provide your Yandex session (one time)\n\nLog into Lavka in your browser first, then get the session cookies into\n`~/.config/yandex-lavka-mcp/config.json`.\n\n**macOS — pull cookies straight from Chrome** (one Keychain prompt → Allow):\n\n```bash\nuv pip install -e '.[browser]'\npython scripts/extract_chrome_cookies.py          # auto-detects your profile\n```\n\n**Any OS — paste the Cookie header** from DevTools (Network → any\n`lavka.yandex.ru` request → Request Headers → Cookie):\n\n```bash\npython scripts/import_cookies.py --header \"Session_id=...; yandexuid=...; L=...\"\n```\n\nSession cookies expire — re-run when calls start returning \"session expired\".\n\n### 3. Set a delivery location\n\nCopy `config.example.json` to `~/.config/yandex-lavka-mcp/config.json` and edit,\nor set it from the assistant with `use_address` / `set_delivery_address`. The\ncatalog only works once a location is set. Smoke-test:\n\n```bash\npython scripts/smoke.py \"молоко\"\n```\n\n### 4. Register with your assistant\n\nClaude Code:\n\n```bash\nclaude mcp add yandex-lavka -- uv run --directory /path/to/yandex-lavka-mcp yandex-lavka-mcp\n```\n\nClaude Desktop (`mcpServers`):\n\n```json\n{\n  \"yandex-lavka\": {\n    \"command\": \"uv\",\n    \"args\": [\"run\", \"--directory\", \"/path/to/yandex-lavka-mcp\", \"yandex-lavka-mcp\"]\n  }\n}\n```\n\n## Remote deploy (order from your phone)\n\nBy default the server speaks **stdio** (local clients). Set\n`YANDEX_LAVKA_MCP_TRANSPORT=streamable-http` to expose it over HTTP so a hosted\ninstance can back a [claude.ai custom connector](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)\n(phone / web).\n\nA prebuilt [`Dockerfile`](Dockerfile) is included. Secrets are injected at\nruntime — never baked into the image:\n\n```bash\ndocker build -t yandex-lavka-mcp .\ndocker run -p 8000:8000 \\\n  -e YANDEX_LAVKA_MCP_TRANSPORT=streamable-http \\\n  -e YANDEX_LAVKA_MCP_CONFIG_JSON=\"$(cat ~/.config/yandex-lavka-mcp/config.json)\" \\\n  yandex-lavka-mcp\n```\n\n(The image defaults to stdio; the `TRANSPORT` env above switches it to HTTP.)\n\n### Environment variables\n\n| Var | Purpose |\n|-----|---------|\n| `YANDEX_LAVKA_MCP_TRANSPORT` | `stdio` (default) or `streamable-http`. |\n| `YANDEX_LAVKA_MCP_HOST` / `_PORT` | Bind address for HTTP (default `0.0.0.0:8000` in Docker). |\n| `YANDEX_LAVKA_MCP_CONFIG_JSON` | The whole `config.json` as one secret (instead of a file). |\n\n### Authentication (any OIDC provider)\n\nA public endpoint spends real money, so **protect it**. `claude.ai`'s custom\nconnector UI only supports **OAuth** (no static bearer / custom header — that\nworks only in Claude Code/Desktop). This server is a provider-agnostic OAuth 2.1\nresource server: point it at *any* OpenID-Connect provider (Zitadel, Keycloak,\nAuth0, Google, …) and it validates JWT access tokens against that provider's\nJWKS and advertises it via OAuth protected-resource metadata.\n\nEnable it by installing the `server` extra (`pip install '.[server]'`, already in\nthe Docker image) and setting:\n\n| Var | Purpose |\n|-----|---------|\n| `YANDEX_LAVKA_MCP_OAUTH_ISSUER` | Your provider's issuer URL (enables OAuth). |\n| `YANDEX_LAVKA_MCP_SERVER_URL` | Public URL of this MCP server (the resource). |\n| `YANDEX_LAVKA_MCP_OAUTH_AUDIENCE` | Expected token audience (optional but recommended). |\n| `YANDEX_LAVKA_MCP_OAUTH_SCOPES` | Space-separated required scopes (optional). |\n| `YANDEX_LAVKA_MCP_OAUTH_SUBJECTS` | Allow-list of token `sub`s that may call the server (optional; strongest lock — every request spends *your* Lavka session). |\n| `YANDEX_LAVKA_MCP_OAUTH_JWKS_URL` | Override JWKS URL (optional; else discovered). |\n\nA network-exposed HTTP transport **refuses to start** unless OAuth is configured\n(it spends real money). Set `YANDEX_LAVKA_MCP_ALLOW_INSECURE=1` only if you front\nit with your own auth. Leaving OAuth unset is allowed for loopback/local use.\n\n> Session cookies expire; when calls start failing, re-capture them and update\n> the `YANDEX_LAVKA_MCP_CONFIG_JSON` secret. There is no headless Yandex login.\n\n## Develop\n\n```bash\nuv pip install -e \".[dev]\"\npytest\n```\n\n## One account = one cart\n\nLavka keeps a single server-side cart per account, guarded by an optimistic\n`cartVersion`. This server serializes its own cart writes and retries on version\nconflicts, so parallel tool calls in one session are safe. But **don't drive the\nsame Yandex account from two places at once** (e.g. this server *and* a second\nMCP session, *and* the Lavka app): they all write the one shared cart, and you'll\nsee items from the other writer appear in yours. Use a single client at a time.\n\n## Security & privacy\n\n- Cookies and address live only in `~/.config/yandex-lavka-mcp/config.json`\n  (chmod 600), git-ignored. Never commit them.\n- The server never adds payment methods or changes account settings.\n- Ordering always requires an explicit confirmed total.\n\n## License\n\n[MIT](LICENSE). Unofficial project, not affiliated with Yandex.\n",
+    "fetchedAt": "2026-08-12T00:13:35.891Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:43:54.293Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

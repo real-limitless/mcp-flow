@@ -1,0 +1,58 @@
+{
+  "id": "io.github.KoyoYeager/pystub",
+  "title": "pystub",
+  "description": "Auto-detect stubbable packages for Python exe builds and generate minimal stub code",
+  "summary": "Auto-detect stubbable packages for Python exe builds and generate minimal stub code",
+  "offersHint": "Auto-detect stubbable packages for Python exe builds and generate minimal stub code · Packages: pypi:mcp-pystub",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-pystub",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-pystub",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/KoyoYeager/mcp-pystub",
+  "repository": {
+    "url": "https://github.com/KoyoYeager/mcp-pystub",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-31T10:02:24.286655Z",
+  "publishedAt": "2026-03-31T10:02:24.286655Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:50.645Z",
+    "sourceRepoAt": "2026-08-12T00:08:54.813Z",
+    "readmeAt": "2026-08-12T00:08:55.336Z",
+    "toolsAt": "2026-08-12T01:39:50.646Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/KoyoYeager/mcp-pystub",
+    "checkedAt": "2026-08-12T00:08:54.813Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/KoyoYeager/mcp-pystub/master/README.md",
+    "markdown": "<!-- mcp-name: io.github.KoyoYeager/pystub -->\n\n# mcp-pystub\n\nPython exe ビルド（PyInstaller / Nuitka / cx_Freeze）時にスタブ置換可能なパッケージを自動検出し、最小スタブコードを生成する MCP サーバー。\n\n---\n\nAn MCP server that auto-detects stubbable packages for Python exe builds (PyInstaller / Nuitka / cx_Freeze) and generates minimal stub code to reduce executable size.\n\n## 背景 / Background\n\nPython アプリを exe 化すると、依存ライブラリがモジュールレベルで import する重量パッケージが丸ごと同梱され、exe サイズが膨張する。実際のコードパスで使わないパッケージは最小ダミー（スタブ）で置換すれば大幅なサイズ削減が可能。\n\nWhen building Python apps into executables, heavy packages imported at module level by dependencies get bundled entirely, bloating the exe size. Replacing unused packages with minimal stubs can significantly reduce size.\n\n### 実証データ / Verified Results\n\n**asammdf プロジェクト — PyInstaller exe ビルド（E2E 動作確認済み）:**\n\n| | exe サイズ | 動作 | PySide6 |\n|---|---|---|---|\n| スタブなし | 431 MB | OK | ロード済み |\n| asammdf.gui スタブ適用 | **259 MB** | OK | **排除** |\n| **削減** | **-40%（172 MB）** | 影響なし | |\n\n**asammdf 変換ツール（analyze 結果）:**\n```\nstubbable:          pandas (59.7 MB), canmatrix (4.0 MB) — 合計 63.7 MB\nsubmodule hints:    asammdf.gui → PySide6 (523 MB) 排除可能 — 50 hints 検出\n```\n\n> 手動でスタブ化していた 3 パッケージ（pandas, canmatrix, asammdf.gui）を**全て自動検出**\n\n## 機能 / Features\n\n| ツール / Tool | 説明 / Description |\n|---|---|\n| `analyze` | import グラフを解析しスタブ候補を自動検出。C拡張パッケージの間接排除ヒントも出力 / Auto-detect stubbable packages + submodule stub hints for C-extension elimination |\n| `graph` | import グラフをノード・エッジで可視化 / Visualize import graph as nodes and edges |\n| `check` | 特定パッケージの使用状況を詳細分析 / Deep analysis of a specific package's usage |\n| `generate` | パッケージスタブの最小コードを生成 + ビルド手順出力 / Generate minimal stub code + build instructions |\n| `generate_submodule` | **C拡張パッケージを間接排除するサブモジュールスタブを生成** / Generate submodule stubs to indirectly eliminate C-extension packages |\n\n### 判定結果 / Verdicts\n\n| 判定 / Verdict | 意味 / Meaning |\n|---|---|\n| **stubbable** | スタブ化可能。プロジェクトの実行パスで未使用 / Safe to stub. Not used in project's runtime path |\n| **nofollow** | try/except 保護あり。`--nofollow-import-to` で除外推奨 / Protected import. Use `--nofollow-import-to` |\n| **required** | スタブ化不可。実際に使用されている / Cannot stub. Actually used at runtime |\n\n## できること / What It Can Do\n\n- **ライブラリ非固定の汎用検出**: AST 構造のみで判定。ハードコードなし\n- **関数レベルの使用追跡**: `mdf.get()` は使うが `mdf.to_dataframe()` は使わない → pandas は stubbable\n- **Call と参照の区別**: `isinstance(x, pd.DataFrame)` は stub-safe、`pd.DataFrame(data)` は実使用\n- **クラス継承の検出**: `class User(BaseModel)` → pydantic は required\n- **module-level 呼び出し検出**: import 時に実行されるコードを追跡\n- **try/except 保護の自動検出**: 保護された import は `nofollow` と判定\n- **スタブコード自動生成**: 参照シンボルのみの最小スタブ + ビルド手順（バックアップ・復元・検証）\n- **C 拡張の自動検出**: .pyd / .so を含むパッケージは直接スタブ化不可と判定\n- **C 拡張の間接排除** *(v0.2 new)*: C拡張パッケージを import しているサブモジュールが未使用なら、そのサブモジュールをスタブ化して C拡張を排除可能。PySide6 (523 MB) → asammdf.gui スタブで **exe 40% 削減**を実証\n- **復元安全設計** *(v0.2 new)*: バックアップ + バージョン固定 pip + 検証コマンドの 3 重安全策\n- **PyInstaller フック情報**: 無効化が必要なフックファイルを通知\n\n## できないこと・制限事項 / Limitations\n\n- **C 拡張パッケージ**（.pyd / .so）は直接スタブ化すると C 拡張が欠落するため required 判定。ただし `generate_submodule` で**間接排除が可能**（v0.2 で対応）\n- **動的 import**（`importlib.import_module(変数)`）は静的解析で追跡不可（warnings で通知）\n- **PyInstaller カスタムフック**: スタブと衝突する場合がありフックの手動無効化が必要\n- **遅延初期化パターン**: `__init__` で直接呼ばず後のメソッドで使うパッケージは検出精度が下がる（安全側で required に判定）\n- **pip 名と import 名の不一致**: `python-dateutil` → `dateutil` 等のマッピングは未対応\n- **ランタイムの条件分岐**: `if sys.version < (3,11)` 内の import は静的解析で判定不可\n\n### 安全性の設計方針 / Safety Policy\n\n「stubbable と判定したが実は必要だった」は**絶対に起こさない設計**。判定に迷う場合は required（安全側）に倒す。逆方向の誤判定（本当は stubbable なのに required）は許容する。\n\n## 解析アルゴリズム / Analysis Algorithm\n\n1. **Import 抽出**: `ast.parse()` で各ファイルの import 文を解析（module-level / function-level / try-except 保護を区別）\n2. **Import グラフ構築**: エントリーポイントから BFS で依存関係を再帰解決（stdlib / third_party / local を自動分類）\n3. **使用分析**: gateway 関数（依存ライブラリ内でパッケージを**呼び出す**関数）を特定し、プロジェクトコードがそれを呼んでいるか追跡。名前参照のみ（isinstance, 型アノテーション）は stub-safe として除外\n4. **Module-level 検出**: import 時にパッケージの関数が呼ばれる場合は required に格上げ\n5. **サブモジュール間接排除** *(v0.2)*: C拡張パッケージを import しているサブモジュールを特定し、プロジェクトが直接 import していない + re-export シンボルを呼んでいない場合にスタブ化ヒントを出力\n\n## インストール / Installation\n\n```bash\npip install mcp-pystub\n```\n\n### 依存パッケージ / Dependencies\n\n- `mcp>=1.0.0` - Model Context Protocol SDK\n- 解析エンジンは Python 標準ライブラリのみ使用（ast, importlib, pathlib）\n\n## 使い方 / Usage\n\n### MCP サーバーとして起動 / Run as MCP server\n\n```bash\nmcp-pystub\n```\n\n### Claude Desktop / Claude Code 設定\n\n```json\n{\n  \"mcpServers\": {\n    \"pystub\": {\n      \"command\": \"mcp-pystub\"\n    }\n  }\n}\n```\n\n### ツール使用例 / Tool Examples\n\n#### analyze\n\n```\n入力 / Input:\n  entry_point: \"C:/project/converter.py\"\n  python_path: \"C:/project/.venv/Lib/site-packages\"\n\n出力 / Output:\n  {\n    \"stubbable\": [\n      {\"package_name\": \"pandas\", \"estimated_size_mb\": 59.7, \"reason\": \"依存ライブラリ経由でのみ import...\"}\n    ],\n    \"required\": [\n      {\"package_name\": \"numpy\", \"reason\": \"プロジェクトコードが直接 import し使用\"},\n      {\"package_name\": \"PySide6\", \"estimated_size_mb\": 523.2,\n       \"reason\": \"C 拡張...ただし asammdf.gui をスタブ化することで間接排除が可能\",\n       \"submodule_stubs\": [{\"submodule\": \"asammdf.gui\", \"target_package\": \"PySide6\"}]}\n    ],\n    \"nofollow\": [\n      {\"package_name\": \"mpmath\"}\n    ],\n    \"submodule_stub_hints\": [\n      {\"submodule\": \"asammdf.gui\", \"parent_package\": \"asammdf\",\n       \"target_package\": \"PySide6\", \"imported_symbols\": [\"plot\"]}\n    ],\n    \"analysis_time_ms\": 6478\n  }\n```\n\n#### generate\n\n```\n入力 / Input:\n  entry_point: \"C:/project/converter.py\"\n  package_name: \"pandas\"\n\n出力 / Output:\n  {\n    \"files\": {\n      \"pandas/__init__.py\": \"...\",\n      \"pandas/core/api.py\": \"class DataFrame: pass\\nclass Series: pass\\n...\"\n    },\n    \"original_file_count\": 2980,\n    \"stub_file_count\": 266,\n    \"stub_total_bytes\": 209530,\n    \"build_instructions\": {\n      \"install_commands\": [\"pip uninstall -y pandas\", \"# cp stubs to site-packages\"],\n      \"uninstall_commands\": [\"pip install pandas\"],\n      \"hook_disable\": [\"# hook-pandas*.py → .disabled\"]\n    }\n  }\n```\n\n#### generate_submodule *(v0.2 new)*\n\n```\n入力 / Input:\n  entry_point: \"C:/project/converter.py\"\n  parent_package: \"asammdf\"\n  submodule: \"asammdf.gui\"\n\n出力 / Output:\n  {\n    \"parent_package\": \"asammdf\",\n    \"submodule\": \"asammdf.gui\",\n    \"files\": {\n      \"asammdf/gui/__init__.py\": \"\\\"\\\"\\\"Auto-generated stub...\\\"\\\"\\\"\\ndef plot(*args, **kwargs): ...\"\n    },\n    \"eliminated_packages\": [\"PySide6\", \"scipy\", \"lxml\"],\n    \"original_size_bytes\": 5907331,\n    \"stub_size_bytes\": 144,\n    \"build_instructions\": {\n      \"backup_commands\": [\"cp -r .../asammdf/gui .../asammdf/gui.bak\"],\n      \"install_commands\": [\"rm -rf .../asammdf/gui\", \"cp -r _stubs/asammdf/gui/ .../asammdf/gui/\"],\n      \"uninstall_commands\": [\"mv .../asammdf/gui.bak .../asammdf/gui\"],\n      \"verify_commands\": [\"python -c \\\"import asammdf; print('OK')\\\"\"]\n    }\n  }\n```\n\n## パフォーマンス / Performance\n\n| プロジェクト規模 | 解析時間 | ノード数 |\n|-----------------|---------|---------|\n| 軽量 (click) | 335ms | 73 |\n| 中規模 (flask) | 1,743ms | 230 |\n| 重量級 (pandas) | 4,820ms | 491 |\n| 超重量級 (sympy) | 6,919ms | 681 |\n\n## テスト / Testing\n\n```bash\npython -m pytest tests/ -v\n```\n\n### テスト実績\n\n| テスト種別 | 件数 | 結果 |\n|-----------|------|------|\n| ユニットテスト（9モジュール） | 91 | 全通過 |\n| PyPI ライブラリ大規模テスト（requests, flask, pandas 等） | 84 | クラッシュ 0 |\n| PyInstaller exe ビルド + 動作テスト | 22 | **全 PASS** |\n| asammdf E2E（MDF作成→読取→リサンプリング） | 1 | **exe 40% 削減 + 正常動作** |\n| 復元テスト（バックアップ → 復元 → 検証） | 4 | 全成功 |\n\n## ライセンス / License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:08:55.336Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:50.646Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

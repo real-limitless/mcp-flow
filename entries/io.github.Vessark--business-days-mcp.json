@@ -1,0 +1,51 @@
+{
+  "id": "io.github.Vessark/business-days-mcp",
+  "title": "Business Days & SLA",
+  "description": "Business-day, SLA, cron and recurrence calculations — offline, holiday-aware, no network.",
+  "summary": "Business-day, SLA, cron and recurrence calculations — offline, holiday-aware, no network.",
+  "offersHint": "Business-day, SLA, cron and recurrence calculations — offline, holiday-aware, no network. · Remote MCP (streamable-http) at https://vessark.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://vessark.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://vessark.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Vessark/business-days-mcp",
+  "repository": {
+    "url": "https://github.com/Vessark/business-days-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T21:17:20.247866Z",
+  "publishedAt": "2026-07-27T21:17:20.247866Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:04.342Z",
+    "sourceRepoAt": "2026-08-12T00:00:35.243Z",
+    "readmeAt": "2026-08-12T00:00:35.897Z",
+    "toolsAt": "2026-08-12T01:33:04.342Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Vessark/business-days-mcp",
+    "checkedAt": "2026-08-12T00:00:35.243Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Vessark/business-days-mcp/main/README.md",
+    "markdown": "# business-days-mcp\n\n[![MCP server quality](https://glama.ai/mcp/servers/Vessark/business-days-mcp/badges/quality-score.svg)](https://glama.ai/mcp/servers/Vessark/business-days-mcp)\n\nAn MCP server for the date arithmetic that support, billing and operations\nteams actually do: **is this a working day, when is this SLA due, what is the\nnext working day after a bank holiday** — plus cron and recurrence-rule\nparsing for the recurring side of the same job.\n\nIt runs offline. No network calls, no stored data, no model calls — every\nanswer is computed from bundled public-holiday rules.\n\n## What it does\n\n**Business days and SLAs** — holiday-aware for ~150 countries and their\nsubdivisions (England and Scotland differ; so do US states), via the\n[`holidays`](https://pypi.org/project/holidays/) package.\n\n| Tool | Answers |\n| --- | --- |\n| `is_business_day` | Is this a working day? If not, is it a weekend or a named holiday? |\n| `next_business_day` / `previous_business_day` | The next/last working day around a date |\n| `add_business_days` | Move ±N working days from a date |\n| `business_days_between` | How many working days between two dates (half-open) |\n| `first_business_day_of_month` / `last_business_day_of_month` | Month boundaries |\n| `sla_due_time` | When does an N-business-hour SLA fall due, counting only open hours? |\n\n**Cron and recurrence — parsing only.** Nothing is scheduled, stored, or\nexecuted; there are no timers and no job store. If you want something *run* on\na schedule, this is deliberately not that tool.\n\n| Tool | Answers |\n| --- | --- |\n| `validate_cron_expression` / `explain_cron_expression` | Is this cron valid, and what does it mean in English? |\n| `next_cron_occurrences` | When would it next fire? |\n| `validate_recurrence_rule` / `explain_recurrence_rule` | Same, for an RFC 5545 RRULE |\n| `next_recurrence_occurrences` | Expand an RRULE to its next occurrences |\n\n## Install and run\n\nThe hosted endpoint needs no install at all — see\n[Client configuration](#client-configuration). To run it yourself, `uvx`\nfetches and runs it:\n\n```sh\nuvx --from git+https://github.com/Vessark/business-days-mcp business-days-mcp\n```\n\nFrom a clone:\n\n```sh\ngit clone https://github.com/Vessark/business-days-mcp\ncd business-days-mcp\nuv sync && uv run business-days-mcp\nuv run pytest                         # the tests are the documentation\n```\n\n## Client configuration\n\n### Hosted — nothing to install\n\nThe quickest way in. The same tools, no install, no credentials:\n\n```json\n{\n  \"mcpServers\": {\n    \"vessark\": {\n      \"url\": \"https://vessark.com/mcp\"\n    }\n  }\n}\n```\n\n### Run it yourself\n\nIf you would rather not depend on someone else's uptime, run it locally —\nit is the same code, and it never touches the network:\n\n```json\n{\n  \"mcpServers\": {\n    \"business-days\": {\n      \"command\": \"uvx\",\n      \"args\": [\n        \"--from\",\n        \"git+https://github.com/Vessark/business-days-mcp\",\n        \"business-days-mcp\"\n      ]\n    }\n  }\n}\n```\n\n## Examples\n\n```jsonc\n// is_business_day — 2026-12-28, UK\n{\"date\": \"2026-12-28\", \"country\": \"GB\"}\n→ {\"is_business_day\": false, \"reason\": \"holiday: Boxing Day (substitute day)\"}\n\n// sla_due_time — 8 business hours from Monday 16:00\n{\"start\": \"2026-07-27T16:00\", \"business_hours\": 8}\n→ {\"due\": \"2026-07-28T16:00:00\", \"started_within_business_hours\": true}\n\n// explain_cron_expression\n{\"expression\": \"30 9 * * MON-FRI\"}\n→ {\"explanation\": \"At 09:30, on Monday through Friday.\"}\n```\n\n## Design notes\n\nEvery tool is a pure function of its arguments, which is why the test suite is\nmostly tables. Invalid input is an ordinary typed result, never an exception —\na model that gets an argument wrong gets a readable reason and can correct\nitself. Every loop that a caller can influence is bounded, so no request can\nbuy an expensive computation. Error messages never echo what you sent, so the\nserver can't be used to relay text into someone else's agent.\n\nKnown limits, stated rather than hidden: a working week is Monday–Friday, so\ncountries with Sunday–Thursday weeks are wrong under this assumption; holiday\ndata covers only the years the underlying dataset knows about, and a date\noutside that range is refused rather than silently answered as an ordinary\nworking day.\n\n## Prior art\n\n[`fbdo/business-day-mcp`](https://github.com/fbdo/business-day-mcp) covers\nbusiness-day and holiday arithmetic and predates this server. If that is all\nyou need, use it — it also exposes timezone-aware \"today\" and holiday listing,\nwhich this server does not.\n\nThis one was built for a different centre of gravity: **SLA clocks** that count\nonly business hours, and **cron / RRULE parsing** for the recurring side of the\nsame work. The overlap in the business-day tools is real and the names are\nconventional; both servers are MIT licensed and both build on the excellent\n[`holidays`](https://pypi.org/project/holidays/) package.\n\n## Releasing\n\nBump the version in both `pyproject.toml` and `server.json`, then push a\nmatching tag:\n\n```sh\ngit tag v0.2.0 && git push origin v0.2.0\n```\n\nThat runs the test suite, checks the tag agrees with both version fields,\npublishes to PyPI, and republishes to the MCP registry. Both use GitHub OIDC —\nPyPI via Trusted Publishing — so there is no API token in this repository, in a\nsecret store, or on any machine.\n\n## About\n\nBuilt and maintained by [Vessark](https://vessark.com). The tools in this\nrepository are the free tier and are open source under the MIT licence.\nVessark's workspace tools — the ones that operate on a connected workspace —\nare the commercial product and are not open source.\n\nIssues and pull requests welcome.\n",
+    "fetchedAt": "2026-08-12T00:00:35.897Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:33:04.342Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

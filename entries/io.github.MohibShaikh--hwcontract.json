@@ -1,0 +1,58 @@
+{
+  "id": "io.github.MohibShaikh/hwcontract",
+  "title": "hwcontract",
+  "description": "Judge hardware timing/serial against a contract: pass/marginal/fail (WS2812, DShot, logs)",
+  "summary": "Judge hardware timing/serial against a contract: pass/marginal/fail (WS2812, DShot, logs)",
+  "offersHint": "Judge hardware timing/serial against a contract: pass/marginal/fail (WS2812, DShot, logs) · Packages: pypi:hwcontract",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "hwcontract",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "hwcontract",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/MohibShaikh/hwcontract",
+  "repository": {
+    "url": "https://github.com/MohibShaikh/hwcontract",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-23T07:57:51.817129Z",
+  "publishedAt": "2026-07-23T07:57:51.817129Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:44.155Z",
+    "sourceRepoAt": "2026-08-12T00:06:17.873Z",
+    "readmeAt": "2026-08-12T00:06:18.322Z",
+    "toolsAt": "2026-08-12T01:37:44.155Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MohibShaikh/hwcontract",
+    "checkedAt": "2026-08-12T00:06:17.873Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MohibShaikh/hwcontract/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.MohibShaikh/hwcontract -->\n\n# hwcontract\n\nA zero-dependency **MCP server that judges hardware against a contract**. Coding\nagents (Claude Code, Codex, opencode) write firmware that's correct on paper but\nwrong on the wire — a WS2812 pulse 180ns short, an ESC bit out of spec, a boot log\nthat silently panics. This closes the loop: it captures what the hardware *actually*\ndid and returns **pass / marginal / fail** the agent can iterate on.\n\n`marginal` is the valuable verdict — in-spec but low-headroom, the bug that works on\nyour bench and fails on a cold board in the field.\n\n## Demo — a real capture, no hardware needed\n\n`python3 demo/ws2812b_neopixel.py` downloads a **real** 24-LED NeoPixel capture\n(recorded off hardware by the sigrok project, 24 MHz), extracts the data line, and\njudges it against two contracts:\n\n```\nmeasured on the real WS2812B signal (300000 samples @24MHz):\n  T0H 333 ns   T1H 833 ns   T1L 417 ns   T0L 917 ns   RESET 992250 ns\n\n=== generic WS2812 contract -> FAIL ===\n  T1L   600   417   FAIL   183ns short (typ 600)      # real WS2812B low times are shorter\n  T0L   800   917   marginal\n  T1H   700   833   marginal\n\n=== matching WS2812B contract -> PASS ===\n  (all pass)\n```\n\nSame real signal: it **fails** the generic WS2812 contract (correctly — a WS2812B\nisn't a WS2812) and **passes** the matching WS2812B one. That's the tool doing its\njob: measure the real signal, hold it to a spec, and make contracts chip-specific.\n\n## How it fits together\n\n```\n  observers (capture)                judge (this repo)\n  ─────────────────────              ─────────────────\n  logic analyzer  ─ pulse widths ─┐\n  serial port     ─ log text ─────┼─►  contract × observation  ─►  pass/marginal/fail\n                                  ┘         (judge.py)\n```\n\n- **`judge.py`** — the pure judge (timing + serial). No hardware, no framework, cached.\n- **`sigrok_adapter.py`** — logic-analyzer capture → pulse-width observations (WS2812/DShot).\n- **`serial_adapter.py`** — serial log capture (or replay a saved log).\n- **`server.py`** — the MCP server (stdio JSON-RPC, stdlib only).\n- **`*.contract.yaml`** — what \"correct\" looks like. Human-editable. Also serve as regression tests.\n\n## Install\n\n```bash\npip install hwcontract              # judge + logic-analyzer adapter\npip install \"hwcontract[serial]\"    # + live serial capture (pyserial)\npip install \"hwcontract[untrusted]\" # + google-re2 (ReDoS-immune, for untrusted contracts)\npip install \"hwcontract[all]\"       # everything\n```\n\nAlso needs `sigrok-cli` on PATH for live logic-analyzer capture (`check_ws2812` /\n`check_dshot`). Judge-only tools (`judge_contract`, `judge_serial`) need nothing extra.\n\n## Wire it into an agent\n\nOne stanza per client (not auto-discovered — add it once). After `pip install`, the\n`hwcontract` command is on your PATH.\n\n**Claude Code**\n```bash\nclaude mcp add hwcontract -- hwcontract\n```\n\n**Codex CLI** — `~/.codex/config.toml`\n```toml\n[mcp_servers.hwcontract]\ncommand = \"hwcontract\"\n```\n\n**opencode / Cursor / Gemini / any stdio MCP client**\n```json\n{ \"mcpServers\": { \"hwcontract\": { \"command\": \"hwcontract\" } } }\n```\n\n> Transport is **stdio** by default (local, no auth surface). For remote-only clients\n> (e.g. ChatGPT connectors), run `hwcontract --http 8791` and expose it via a tunnel\n> with `HWCONTRACT_TOKEN` set for bearer auth.\n\n### If the client can't find `hwcontract` (PATH issues)\n\nGUI apps and some agents don't inherit your shell `PATH`, so a bare `hwcontract`\ncan fail with \"command not found\". Two robust fixes:\n\n- Use the **absolute path**: `which hwcontract` → put that full path in `command`.\n- Or invoke via Python (no PATH lookup for the script): `command: \"python3\"`,\n  `args: [\"-m\", \"hwcontract.server\"]` — works from any directory once installed.\n\n**Contract paths:** pass an **absolute** `contract_path`, or set `HWCONTRACT_ROOT`\nto your contracts folder — relative paths resolve against it (default: the process's\nworking directory, which the client controls and may not be your project). Paths\noutside the root are rejected. Bundled examples install with the package under\n`hwcontract/examples/`.\n\n## Tools\n\n| Tool | Hardware? | What it does |\n|------|-----------|--------------|\n| `judge_contract` | no | Judge given observations against a timing contract. Replay / testing. |\n| `judge_serial` | no | Judge a given log string against a serial contract's expect/forbid. |\n| `check_ws2812` | yes | Capture a live WS2812 line **and** judge it, one call. |\n| `check_dshot` | yes | Same, for a DShot600 ESC signal. |\n| `capture_ws2812` | yes | Just capture → observations (no judging). |\n| `check_serial` | yes | Read a serial port for N seconds and judge the log. |\n\n## Contracts\n\nTiming (`ws2812.contract.yaml`, `dshot.contract.yaml`) — pulse widths in ns:\n```yaml\ncontract: ws2812\nheadroom_pct: 20         # in-spec but within 20% of a rail => \"marginal\"\nedges:\n  - {name: T0H, min: 200, typ: 350, max: 500}   # '0' bit high time\n```\nSerial (`boot.contract.yaml`) — Python regex:\n```yaml\ncontract: boot\nkind: serial\nexpect: [\"IMU init OK\", \"boot v\\\\d+\"]\nforbid: [\"panic\", \"Guru Meditation\", \"\\\\bnan\\\\b\"]\n```\nAdd a protocol = drop a new YAML. No code change for another timing signal.\n\n## Kill switch\n\nInstantly disable every hardware-touching tool (captures) while leaving the pure\njudge tools working:\n\n```bash\nexport HWCONTRACT_SAFE=1          # env, or:\ntouch /home/tsd/projects/hardware/KILLSWITCH   # file next to server.py\n```\n\n## Security\n\nEvery tool argument is treated as hostile (the caller is an LLM that can be prompt-\ninjected): contract paths are confined to the server dir (override `HWCONTRACT_ROOT`),\n`driver`/`channel`/`port` are charset-validated, `samples`/`seconds`/`samplerate` are\nclamped, `sigrok-cli` runs with a timeout, YAML is `safe_load`. Do not expose this\nserver over the network without adding authentication.\n\n## Self-tests (no hardware, run from anywhere)\n\n```bash\nhwcontract --selftest                       # full MCP round-trip\npython3 -m hwcontract.judge --demo\npython3 -m hwcontract.sigrok_adapter --demo\npython3 -m hwcontract.serial_adapter --demo\n```\n",
+    "fetchedAt": "2026-08-12T00:06:18.322Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:37:44.155Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

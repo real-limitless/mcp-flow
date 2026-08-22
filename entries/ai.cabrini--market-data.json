@@ -1,0 +1,112 @@
+{
+  "id": "ai.cabrini/market-data",
+  "title": "Cabrini Market Data",
+  "description": "US equity data for AI agents — 23 years intraday + daily, SEC filings. x402 USDC payments.",
+  "summary": "US equity data for AI agents — 23 years intraday + daily, SEC filings. x402 USDC payments.",
+  "offersHint": "US equity data for AI agents — 23 years intraday + daily, SEC filings. x402 USDC payments. · Remote MCP (streamable-http) at https://cabrini.ai/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://cabrini.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://cabrini.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/nlapi/cabrini-py",
+  "repository": {
+    "url": "https://github.com/nlapi/cabrini-py",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T17:12:49.69068Z",
+  "publishedAt": "2026-07-29T17:12:49.69068Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-22T05:24:21.233Z",
+    "sourceRepoAt": "2026-08-22T05:24:21.233Z",
+    "readmeAt": "2026-08-22T05:24:21.762Z",
+    "toolsAt": "2026-08-22T05:24:21.914Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nlapi/cabrini-py/main/README.md",
+    "markdown": "# cabrini\n\nUS stock market data for AI agents. 23 years of intraday and daily bars, SEC fundamentals, filings, and insider data — every US equity from 2003 to present.\n\nPay per query with USDC on Base (x402). No API keys, no subscriptions, no signup.\n\n## Install\n\n```bash\npip install cabrini\n```\n\n## Quick start\n\n```python\nfrom cabrini import Cabrini\n\nc = Cabrini(private_key=\"0x...\")  # any Base wallet with USDC\n\n# Intraday bars (pct from daily open) — $0.025\nbars = c.query(\"AAPL\", \"2024-01-15\")\n\n# Daily OHLCV + VWAP (absolute prices) — $0.001/year\ndaily = c.daily(\"TSLA\", \"2024-01-01\", \"2024-03-31\")\n\n# SEC fundamentals — $0.02\nfins = c.fundamentals(\"NVDA\")\n\n# Full research brief — $0.25\nbrief = c.brief(\"MSFT\")\n```\n\n## LangChain\n\n```python\nfrom cabrini import get_langchain_tools\nfrom langchain_openai import ChatOpenAI\nfrom langgraph.prebuilt import create_react_agent\n\ntools = get_langchain_tools(private_key=\"0x...\")\nagent = create_react_agent(ChatOpenAI(model=\"gpt-4o\"), tools)\n\nresult = agent.invoke({\"messages\": [\n    {\"role\": \"user\", \"content\": \"What was NVDA's trading volume on the day of their last earnings?\"}\n]})\n```\n\n## CrewAI\n\n```python\nfrom cabrini import get_crewai_tools\nfrom crewai import Agent, Task, Crew\n\ntools = get_crewai_tools(private_key=\"0x...\")\n\nanalyst = Agent(\n    role=\"Financial Analyst\",\n    goal=\"Analyze stock performance using real market data\",\n    tools=tools,\n)\n\ntask = Task(\n    description=\"Compare AAPL and MSFT intraday volatility on 2024-06-15\",\n    agent=analyst,\n)\n\nCrew(agents=[analyst], tasks=[task]).kickoff()\n```\n\n## MCP (Claude, Cursor, etc.)\n\nPoint any MCP client at `https://cabrini.ai/mcp`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cabrini\": {\n      \"url\": \"https://cabrini.ai/mcp\"\n    }\n  }\n}\n```\n\n## All endpoints\n\n| Method | Price | Description |\n|--------|-------|-------------|\n| `query(ticker, date)` | $0.025 | Full trading day of intraday bars |\n| `daily(ticker, start, end)` | $0.001/year | Daily OHLCV + VWAP — the absolute prices |\n| `batch(tickers, date)` | $0.02/ticker | Several tickers, one date, no limit |\n| `range(ticker, start, end)` | $0.01/trading day | Multi-day intraday, no limit |\n| `bars(ticker, date, interval)` | $0.015/day | Resampled intraday, 3-240 min |\n| `scan(date, **criteria)` | $0.10 | Screen every US stock; needs >= 1 criterion |\n| `tickers(date)` | $0.005 | List traded tickers |\n| `company(ticker)` | $0.005 | Company profile from SEC EDGAR |\n| `fundamentals(ticker)` | $0.02 | SEC quarterly data |\n| `filings(ticker)` | $0.01 / $0.05 | SEC filing index; +extracted section text |\n| `insiders(ticker)` | $0.02 | Insider transactions (Form 4) |\n| `brief(ticker)` | $0.25 | Joined research brief |\n\nPrices are quoted live in each `402` response and the client pays whatever the server\nasks — this table is documentation, not the source of truth.\n\n## Output format\n\nIntraday methods (`query`, `range`, `batch`, `bars`) return **fractional change from the\ndaily open**, not price levels:\n\n```python\n{\"window_start\": \"2024-01-02T14:30:00\", \"timestamp\": 1704204600000000000,\n \"pct_open\": 0.0, \"pct_high\": 0.0012, \"pct_low\": -0.0003, \"pct_close\": 0.0008,\n \"volume\": 47000, \"transactions\": 312}\n```\n\n`pct_x = (bar_x - day_open) / day_open`, so `0.0012` is +0.12%.\n\n`daily()` carries the absolute levels — open, high, low, close, volume, transactions and\nVWAP. Combine the two to reconstruct prices:\n\n```python\nday = c.daily(\"AAPL\", \"2024-01-02\", \"2024-01-02\")[\"data\"][0]\nbars = c.query(\"AAPL\", \"2024-01-02\")[\"data\"]\nclose_price = day[\"open\"] * (1 + bars[-1][\"pct_close\"])\n```\n\nUse `daily()` rather than a third-party open: our reference is the first bar of the\nsession and includes pre-market, so an external 09:30 open will not reconcile exactly.\n\n## How payment works\n\nEvery paid request uses [x402](https://www.x402.org/) — an open protocol for HTTP micropayments:\n\n1. Client sends request → server returns `402` with a `PAYMENT-REQUIRED` header\n2. Client signs a USDC transfer authorization (EIP-3009)\n3. Client replays request with `X-PAYMENT` header containing the signed authorization\n4. Cloudflare edge worker verifies signature, submits to Base, forwards to origin\n5. Origin returns data\n\nThe `Cabrini` client handles all of this automatically. You just need a wallet with USDC on Base.\n\n## Get USDC on Base\n\n1. Bridge from Ethereum: [bridge.base.org](https://bridge.base.org)\n2. Buy directly: Coinbase → send USDC to your wallet on Base network\n3. Faucet (testnet): not needed, mainnet USDC is cheap ($0.025/query)\n\n## Links\n\n- Homepage: https://cabrini.ai\n- API docs: https://cabrini.ai/docs\n- Agent guide: https://cabrini.ai/agents\n- MCP endpoint: https://cabrini.ai/mcp\n\n<!-- mcp-name: ai.cabrini/market-data -->\n",
+    "fetchedAt": "2026-08-22T05:24:21.762Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nlapi/cabrini-py",
+    "checkedAt": "2026-08-22T05:24:21.233Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreview": [
+    {
+      "name": "query_minute_bars",
+      "description": "Full trading day of intraday bars for one US stock (interval 3-240 min, default 3m). Every bar carries absolute open/high/low/close plus pct_open/pct_high/pct_low/pct_close (fractional change from that day's open), volume and transactions. $0.025 USDC."
+    },
+    {
+      "name": "list_tickers",
+      "description": "List all tickers that traded on a given date. $0.005 USDC."
+    },
+    {
+      "name": "query_range",
+      "description": "Multi-day intraday bars for one ticker (interval 3-240 min, default 3m). Every bar carries absolute open/high/low/close plus fractional change from that day's own open — percentages reset daily, not cumulative. $0.01/day, no day limit."
+    },
+    {
+      "name": "query_batch",
+      "description": "Multiple tickers for one date. Every bar carries absolute open/high/low/close plus fractional change from that ticker's own daily open. $0.02/ticker, no limit."
+    },
+    {
+      "name": "scan_market",
+      "description": "Scan all US stocks on a date for custom criteria (gaps, volume, change). Returns pct_change, range_pct, pct_gap, true_range_pct, volume and volume_ratio per match — criteria in percent (5 = 5%), outputs fractional (0.05 = 5%). $0.10 USDC."
+    },
+    {
+      "name": "query_daily",
+      "description": "Daily OHLCV bars plus VWAP, range_pct and true_range_pct for one ticker over a date range. range_pct = (high - low) / open is a ready-made volatility read; true_range_pct also captures the overnight gap. Day-level aggregates — the cheapest way to cover long histories. $0.001/year."
+    },
+    {
+      "name": "get_brief",
+      "description": "Full research brief: price, fundamentals, insiders, splits for one ticker. $0.25 USDC."
+    },
+    {
+      "name": "get_company",
+      "description": "Company profile: name, CIK, industry, exchange, fiscal year. $0.005 USDC."
+    },
+    {
+      "name": "get_fundamentals",
+      "description": "Quarterly fundamentals from SEC EDGAR (revenue, EPS, margins, etc). $0.02 USDC."
+    },
+    {
+      "name": "get_insiders",
+      "description": "Insider transactions (Form 4) from SEC EDGAR. $0.02 USDC."
+    },
+    {
+      "name": "get_filings",
+      "description": "SEC filing index (10-K, 10-Q, 8-K, proxies) for a ticker. $0.01 USDC; add sections=[risk_factors, mdna] to extract full section text from the latest 10-K/10-Q for $0.05."
+    },
+    {
+      "name": "get_bars",
+      "description": "Resampled intraday bars at custom timeframes (3, 6, 9, 12, 15, 30, 60, 240 min) for one ticker. Every bar carries absolute open/high/low/close plus fractional change from the daily open, whatever the interval, and volume and transactions. $0.015 USDC per day."
+    },
+    {
+      "name": "get_sample",
+      "description": "FREE, no payment: real intraday OHLCV bars for AAPL on 2024-01-02, identical in shape to a paid query. Call this first to verify data quality before spending. Takes no arguments — fixed ticker and date."
+    },
+    {
+      "name": "get_pricing",
+      "description": "Pricing and data coverage information. Free."
+    },
+    {
+      "name": "get_stats",
+      "description": "Platform statistics. Free."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-22T05:24:21.914Z",
+  "toolsPreviewStatus": "ok"
+}

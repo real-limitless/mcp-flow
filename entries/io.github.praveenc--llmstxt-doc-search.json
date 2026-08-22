@@ -1,0 +1,58 @@
+{
+  "id": "io.github.praveenc/llmstxt-doc-search",
+  "title": "llmstxt-doc-search",
+  "description": "BM25 search over llms.txt doc indexes (Strands, Kiro, AWS); sources addable at runtime.",
+  "summary": "BM25 search over llms.txt doc indexes (Strands, Kiro, AWS); sources addable at runtime.",
+  "offersHint": "BM25 search over llms.txt doc indexes (Strands, Kiro, AWS); sources addable at runtime. · Packages: npm:@praveenc/llmstxt-doc-search",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@praveenc/llmstxt-doc-search",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@praveenc/llmstxt-doc-search",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/praveenc/llmstxt-doc-search",
+  "repository": {
+    "url": "https://github.com/praveenc/llmstxt-doc-search",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-14T20:49:00.612276Z",
+  "publishedAt": "2026-07-14T20:49:00.612276Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:27.902Z",
+    "sourceRepoAt": "2026-08-11T23:25:34.081Z",
+    "readmeAt": "2026-08-11T23:25:34.680Z",
+    "toolsAt": "2026-08-12T01:05:27.902Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/praveenc/llmstxt-doc-search",
+    "checkedAt": "2026-08-11T23:25:34.081Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/praveenc/llmstxt-doc-search/main/README.md",
+    "markdown": "# llmstxt-doc-search\n\n> Live, ranked search across any number of `llms.txt` documentation sites - Strands, Kiro, the AWS guides, and whatever you add at runtime.\n\n[![npm version](https://img.shields.io/npm/v/@praveenc/llmstxt-doc-search.svg)](https://www.npmjs.com/package/@praveenc/llmstxt-doc-search)\n[![MCP Registry](https://img.shields.io/badge/MCP-Registry-blue)](https://registry.modelcontextprotocol.io/v0.1/servers/io.github.praveenc%2Fllmstxt-doc-search/versions/0.1.0)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n[![Release](https://img.shields.io/github/v/release/praveenc/llmstxt-doc-search?include_prereleases)](https://github.com/praveenc/llmstxt-doc-search/releases)\n\n`llmstxt-doc-search` is a Model Context Protocol (MCP) server that turns the `llms.txt` index a documentation site publishes into a fast, ranked search tool your agent can call. It indexes titles at startup, ranks queries with BM25, and fetches the full document only when you open a result - so you get current docs with almost no local storage. Built on the search engine from [`@praveenc/mcp-docs-server`](https://github.com/praveenc/mcp-docs-server), generalized to a runtime registry of sources.\n\n---\n\n## Why\n\nAn `llms.txt` file is a curated index of a doc site's pages, published for tools like this one to consume. They can be large - AWS Bedrock's lists roughly a thousand documents - so downloading everything is wasteful and goes stale fast.\n\nThis server takes a leaner approach:\n\n- **Title-only index, built lazily.** On first search of a source, only the page titles are indexed. That is fast to build and tiny to hold in memory.\n- **Ranked with BM25.** Queries are scored with BM25 plus Porter stemming, bigrams, and markdown-aware weighting (headers, code, and links count for more). Technical terms like `mcp`, `json`, and `stdio` are preserved rather than stemmed.\n- **Content on demand.** The full markdown or HTML of a result is fetched only when you call `fetch_doc`.\n\nThe result is a good fit for broad, fast-moving reference material - the opposite tradeoff to snapshotting docs into a local vault.\n\n---\n\n## Installation\n\n### Quick start (recommended)\n\nAdd the server to your MCP client configuration (Claude Desktop, Kiro, and others). It is downloaded and run on demand via `npx` - no manual build:\n\n```json\n{\n  \"mcpServers\": {\n    \"llmstxt-doc-search\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@praveenc/llmstxt-doc-search\"]\n    }\n  }\n}\n```\n\n### Global install\n\n```bash\nnpm install -g @praveenc/llmstxt-doc-search\n```\n\nThen point your MCP client at the installed binary:\n\n```json\n{\n  \"mcpServers\": {\n    \"llmstxt-doc-search\": {\n      \"command\": \"llmstxt-doc-search\"\n    }\n  }\n}\n```\n\n---\n\n## Quick start\n\nOnce the server is connected, the typical flow is three calls:\n\n1. **`docs_home()`** - orient yourself: see the registered sources and how to search and fetch.\n2. **`search_docs(\"prompt caching\", \"aws-bedrock-userguide\")`** - rank matching docs. Omit the source to search everything.\n3. **`fetch_doc(url)`** - read the full content of a result you like.\n\nAdd your own source at any time and it is indexed immediately and persisted for future runs:\n\n```\nadd_doc_source(\"langgraph\", \"https://langchain-ai.github.io/langgraph/llms.txt\")\n```\n\n---\n\n## Tools\n\n| Tool | Purpose |\n|------|---------|\n| `docs_home()` | Orientation: registered sources plus how to search and fetch. Call this first. |\n| `list_doc_sources()` | List sources with their `llms.txt` URL and index status. |\n| `search_docs(query, source?, k?)` | BM25 search. Omit `source` to search all, or scope to one. Returns ranked `{source, url, title, score, snippet}`. `k` defaults to 5 (max 50). |\n| `fetch_doc(url)` | Fetch the full content of a result URL. The URL must belong to a registered source. |\n| `add_doc_source(name, llms_txt_url)` | Register and index a new `llms.txt` source at runtime. Persisted. |\n| `remove_doc_source(name)` | Remove a registered source. |\n| `refresh_doc_source(name)` | Re-index a source to pick up new or changed docs. |\n\n### Default sources\n\nSeeded into the registry on first run:\n\n`strands`, `kiro`, `aws-bedrock-userguide`, `aws-agentic-ai-lens`, `aws-bedrock-agentcore-devguide`, `mcp`.\n\nThe registry is persisted at `~/.config/llmstxt-doc-search/sources.json` (override with `LLMSTXT_REGISTRY_PATH`). Anything you add, remove, or refresh at runtime is saved there.\n\n---\n\n## Configuration\n\nAll configuration is via environment variables; none are required.\n\n| Variable | Default | Meaning |\n|----------|---------|---------|\n| `LLMSTXT_REGISTRY_PATH` | `~/.config/llmstxt-doc-search/sources.json` | Where the source registry is persisted. |\n| `LLMSTXT_SNIPPET_HYDRATE_MAX` | `5` | How many top hits to fetch when building result snippets. |\n| `LLMSTXT_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, or `error`. Logs go to stderr only. |\n\n---\n\n## Testing with MCP Inspector\n\n```bash\nnpx @modelcontextprotocol/inspector npx -y @praveenc/llmstxt-doc-search\n```\n\n---\n\n## Development\n\nClone the repository for local work:\n\n```bash\ngit clone https://github.com/praveenc/llmstxt-doc-search.git\ncd llmstxt-doc-search\nnpm install\n```\n\n### Commands\n\n```bash\nnpm run dev         # run from source with tsx (no build)\nnpm test            # offline unit tests\nnpm run typecheck   # type-check without emitting\nnpm run build       # compile to dist/\nnpm run inspect:dev # MCP Inspector against the source\n```\n\n### Local MCP client config (development)\n\nPoint your client at a source checkout instead of the published package:\n\n```json\n{\n  \"mcpServers\": {\n    \"llmstxt-doc-search\": {\n      \"command\": \"npx\",\n      \"args\": [\"tsx\", \"/ABS/PATH/llmstxt-doc-search/src/index.ts\"]\n    }\n  }\n}\n```\n\nOr, after `npm run build`, at the compiled entry point:\n\n```json\n{\n  \"mcpServers\": {\n    \"llmstxt-doc-search\": {\n      \"command\": \"node\",\n      \"args\": [\"/ABS/PATH/llmstxt-doc-search/dist/index.js\"]\n    }\n  }\n}\n```\n\n---\n\n## Architecture\n\n```text\nsrc/\n├── index.ts              # MCP server entry point and tool registration\n├── config.ts             # Defaults and environment configuration\n├── tools/\n│   └── docs.ts           # search_docs, fetch_doc, and source management\n└── utils/\n    ├── doc-fetcher.ts    # HTTP fetching, redirect handling, HTML parsing\n    ├── indexer.ts        # BM25 search index\n    ├── registry.ts       # Persisted source registry\n    ├── store.ts          # In-memory document store\n    ├── text-processor.ts # Tokenization and snippet helpers\n    ├── url-validator.ts   # SSRF guard and URL validation\n    ├── stopwords.ts      # Stop-word list\n    └── logger.ts         # Logging utilities\n```\n\n---\n\n## Search algorithm\n\nRanking uses BM25 (Best Matching 25) with several enhancements:\n\n- **Porter stemming** matches word variants (for example, `running` and `run`).\n- **Bigrams** capture phrase matches (for example, `prompt caching`).\n- **Weighted scoring** boosts title matches (3-8x), headers (4x), code blocks (2x), and link text (2x).\n- **Domain-term preservation** keeps technical terms like `mcp`, `json`, and `stdio` unstemmed so they match exactly.\n\n---\n\n## Security\n\nThis server fetches user-supplied URLs at runtime, so its SSRF surface is guarded in depth:\n\n- **Scoped fetches.** `fetch_doc` only retrieves URLs under a registered source's origin and path prefix, matched on a path boundary rather than a raw string prefix. There is no arbitrary fetch.\n- **Scheme allow-list.** Non-`http(s)` schemes are rejected.\n- **Range-based address blocking.** Private and reserved destinations are blocked using IP range classification (`ipaddr.js`), covering decimal, octal, and hex IPv4, IPv4-mapped IPv6, loopback, link-local, unique-local, carrier-grade NAT, and other reserved ranges - not just a hostname regex.\n- **Connection-time validation.** The resolved IP is checked at connection time via a custom DNS lookup, closing DNS-rebinding, and every redirect hop is re-validated.\n- **Bounded responses.** Response bodies are capped at 10 MB to limit memory and regular-expression (ReDoS) exposure.\n\nRuntime dependencies report zero known vulnerabilities.\n\n---\n\n## License\n\n[MIT](LICENSE) - Copyright (c) 2026 Praveen Chamarthi\n\n---\n\n## Contributing\n\nContributions are welcome. If you find a bug or have an idea:\n\n1. Open an issue describing the problem or proposal.\n2. For code changes, fork the repo and create a feature branch.\n3. Keep changes focused, add or update tests, and make sure `npm test`, `npm run typecheck`, and `npm run build` all pass.\n4. Open a pull request against `main` with a clear description of what changed and why.\n\nCommit messages follow the [Conventional Commits](https://www.conventionalcommits.org/) style.\n\n---\n\n## Support\n\n- **Questions and ideas:** open a [GitHub issue](https://github.com/praveenc/llmstxt-doc-search/issues).\n- **Bugs:** please include your MCP client, the tool call you made, and any relevant logs (set `LLMSTXT_LOG_LEVEL=debug` for more detail).\n- **Security issues:** open an issue marked as security-sensitive, or contact the maintainer directly rather than posting exploit details publicly.\n\n---\n\n<div align=\"center\">\n  <sub>Built for the MCP community ❤️</sub>\n</div>\n",
+    "fetchedAt": "2026-08-11T23:25:34.680Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:27.902Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

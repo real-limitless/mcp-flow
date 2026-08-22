@@ -1,0 +1,58 @@
+{
+  "id": "io.github.vola-trebla/playwright-spatial-layout-mcp",
+  "title": "playwright-spatial-layout-mcp",
+  "description": "MCP server that gives AI agents geometric spatial awareness of web page layouts using Playwright",
+  "summary": "MCP server that gives AI agents geometric spatial awareness of web page layouts using Playwright",
+  "offersHint": "MCP server that gives AI agents geometric spatial awareness of web page layouts using Playwright · Packages: npm:playwright-spatial-layout-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "playwright-spatial-layout-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "playwright-spatial-layout-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vola-trebla/playwright-spatial-layout-mcp",
+  "repository": {
+    "url": "https://github.com/vola-trebla/playwright-spatial-layout-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-19T02:00:42.620461Z",
+  "publishedAt": "2026-05-19T02:00:42.620461Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:34.173Z",
+    "sourceRepoAt": "2026-08-11T23:15:35.671Z",
+    "readmeAt": "2026-08-11T23:15:36.290Z",
+    "toolsAt": "2026-08-12T00:56:34.173Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vola-trebla/playwright-spatial-layout-mcp",
+    "checkedAt": "2026-08-11T23:15:35.671Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vola-trebla/playwright-spatial-layout-mcp/main/README.md",
+    "markdown": "# playwright-spatial-layout-mcp 🐸📐\n\n[![npm version](https://img.shields.io/npm/v/playwright-spatial-layout-mcp.svg)](https://www.npmjs.com/package/playwright-spatial-layout-mcp)\n[![npm downloads](https://img.shields.io/npm/dm/playwright-spatial-layout-mcp.svg)](https://www.npmjs.com/package/playwright-spatial-layout-mcp)\n[![CI](https://github.com/vola-trebla/playwright-spatial-layout-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vola-trebla/playwright-spatial-layout-mcp/actions/workflows/ci.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\nAn MCP server that gives AI agents **geometric spatial awareness** of web page layouts using Playwright.\n\nAI agents can read the DOM and know a button exists — but they can't see that it's hidden under a sticky header, pushed off-screen by a broken CSS rule, or overlapping another element on mobile. This MCP fixes that by exposing real bounding box mathematics from a live browser.\n\n---\n\n## 🤔 The Problem\n\nWhen an AI agent analyzes a Playwright test failure, it reads the accessibility tree:\n\n> _\"The Submit button exists in the DOM. It has role=button. It is visible.\"_\n\nWhat it **cannot** see:\n\n- 🙈 The button is at `y: 1450px` — below the fold on mobile\n- 🙈 A cookie banner overlaps it by 73%, making it unclickable\n- 🙈 On a 375px viewport the nav and hero section overlap each other\n- 🙈 An element shifted 200px to the right after a CSS refactor\n\n`playwright-spatial-layout-mcp` gives the agent coordinates, intersection ratios, and layout shift data so it can reason about the **rendered page** — not just the markup.\n\n---\n\n## 🛠️ Tools\n\n### `extract_bounding_boxes`\n\nReturns position, size, z-index, and viewport visibility for one or more elements.\n\n```json\n{\n  \"url\": \"https://your-app.com\",\n  \"selectors\": [\"header\", \".hero-cta\", \"footer\"],\n  \"viewport\": { \"width\": 375, \"height\": 812 }\n}\n```\n\n```json\n[\n  {\n    \"selector\": \".hero-cta\",\n    \"box\": { \"x\": 16, \"y\": 892, \"width\": 343, \"height\": 48 },\n    \"z_index\": \"auto\",\n    \"is_visible\": true,\n    \"is_in_viewport\": false\n  }\n]\n```\n\n---\n\n### `detect_visual_occlusion`\n\nChecks if one element physically overlaps another by computing bounding box intersection.\n\n```json\n{\n  \"url\": \"https://your-app.com\",\n  \"target_selector\": \".checkout-button\",\n  \"overlay_selector\": \".cookie-banner\"\n}\n```\n\n```json\n{\n  \"is_occluded\": true,\n  \"intersection_ratio\": 0.61,\n  \"occluded_area_px\": 4128\n}\n```\n\n---\n\n### `verify_spatial_relationships`\n\nValidates a set of layout rules and returns pass/fail with a human-readable reason per rule.\n\nSupported rule types: `left_of` · `right_of` · `above` · `below` · `contains` · `not_overlapping`\n\n```json\n{\n  \"url\": \"https://your-app.com\",\n  \"rules\": [\n    { \"type\": \"above\", \"element_a\": \"nav\", \"element_b\": \".hero\" },\n    { \"type\": \"not_overlapping\", \"element_a\": \".sidebar\", \"element_b\": \".main-content\" }\n  ]\n}\n```\n\n```json\n{\n  \"passed\": false,\n  \"results\": [\n    { \"passed\": true, \"reason\": \"'nav' bottom (64px) is above '.hero' top (64px)\" },\n    { \"passed\": false, \"reason\": \"'.sidebar' and '.main-content' overlap by 12%\" }\n  ]\n}\n```\n\n---\n\n### `compute_viewport_reflow`\n\nMeasures how element positions and sizes change across multiple viewport sizes.\n\n```json\n{\n  \"url\": \"https://your-app.com\",\n  \"selectors\": [\"nav\", \".hero\", \".cta-button\"],\n  \"viewports\": [\n    { \"width\": 375, \"height\": 812 },\n    { \"width\": 768, \"height\": 1024 },\n    { \"width\": 1280, \"height\": 720 }\n  ]\n}\n```\n\n```json\n[\n  {\n    \"selector\": \".cta-button\",\n    \"shifted\": true,\n    \"max_delta_x\": 442,\n    \"max_delta_y\": 318,\n    \"max_delta_width\": 897,\n    \"max_delta_height\": 0\n  }\n]\n```\n\n---\n\n## 🚀 Installation\n\n```bash\nnpx playwright-spatial-layout-mcp\n```\n\nOr install globally:\n\n```bash\nnpm install -g playwright-spatial-layout-mcp\nnpx playwright install chromium\n```\n\n### Claude Desktop config\n\n```json\n{\n  \"mcpServers\": {\n    \"playwright-spatial-layout-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"playwright-spatial-layout-mcp\"]\n    }\n  }\n}\n```\n\n---\n\n## 💡 Example Agent Prompts\n\n> _\"Check if the cookie banner is blocking the checkout button on mobile (375px viewport)\"_\n\n> _\"Verify that the navigation is above the hero section and the sidebar doesn't overlap the main content\"_\n\n> _\"Show me which elements shift the most when resizing from desktop to mobile\"_\n\n> _\"Is the promotional modal covering the primary CTA on iPad viewport?\"_\n\n---\n\n## 🔗 Related Projects\n\n- [playwright-trace-decoder-mcp](https://github.com/vola-trebla/playwright-trace-decoder-mcp) — root-cause analysis of CI failures from Playwright traces\n- [flakiness-knowledge-graph-mcp](https://github.com/vola-trebla/flakiness-knowledge-graph-mcp) — knowledge graph of flaky test patterns\n- [ast-impact-mapper-mcp](https://github.com/vola-trebla/ast-impact-mapper-mcp) — find affected tests from code changes via TypeScript AST\n- [zod-contract-mock-forge-mcp](https://github.com/vola-trebla/zod-contract-mock-forge-mcp) — deterministic mock generation from Zod schemas\n\n---\n\n## 📄 License\n\nMIT © [vola-trebla](https://github.com/vola-trebla)\n",
+    "fetchedAt": "2026-08-11T23:15:36.290Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:34.173Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

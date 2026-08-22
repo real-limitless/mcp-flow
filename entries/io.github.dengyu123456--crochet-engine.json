@@ -1,0 +1,58 @@
+{
+  "id": "io.github.dengyu123456/crochet-engine",
+  "title": "crochet-engine",
+  "description": "Deterministic photo-to-crochet-chart engine: stitch counts, 5 techniques, yarn estimates.",
+  "summary": "Deterministic photo-to-crochet-chart engine: stitch counts, 5 techniques, yarn estimates.",
+  "offersHint": "Deterministic photo-to-crochet-chart engine: stitch counts, 5 techniques, yarn estimates. · Packages: pypi:crochetpatterngen-engine",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "crochetpatterngen-engine",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "crochetpatterngen-engine",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dengyu123456/crochet-engine",
+  "repository": {
+    "url": "https://github.com/dengyu123456/crochet-engine",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T17:36:42.114287Z",
+  "publishedAt": "2026-07-24T17:36:42.114287Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:48.693Z",
+    "sourceRepoAt": "2026-08-11T23:49:43.642Z",
+    "readmeAt": "2026-08-11T23:49:44.227Z",
+    "toolsAt": "2026-08-12T01:24:48.693Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dengyu123456/crochet-engine",
+    "checkedAt": "2026-08-11T23:49:43.642Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dengyu123456/crochet-engine/main/README.md",
+    "markdown": "# crochetpatterngen-engine\n\nThe deterministic photo-to-crochet-chart engine behind [crochetpatterngen.com](https://crochetpatterngen.com) — packaged as a Python library, CLI, and MCP server so AI agents (Claude Desktop, Cursor, etc.) can turn photos into crochet charts with exact stitch counts.\n\n**Deterministic, not generative.** There is no AI image generation here — just resize, median-cut color quantization, and confetti cleanup. Same input, same chart, same stitch counts, every time. No hallucinated rows.\n\n## Why this engine\n\n- **Real stitch counts** — every chart comes with per-color hex + stitch counts that sum exactly to the grid size. What you see is what you crochet.\n- **C2C block aspect correction** — C2C blocks are physically wider than tall (0.7:1 h:w). The engine adjusts grid dimensions so the *worked piece* keeps the photo's proportions instead of coming out squashed.\n- **5 technique presets** — `graph`, `c2c`, `tapestry`, `mosaic`, `filet`.\n- **Yarn estimation** — per-color yardage for 6 yarn weights (fingering → super bulky).\n- **Zero heavy deps** — Pillow + numpy only. Optional `rembg` extra for background removal.\n\n## Install\n\n```bash\npip install crochetpatterngen-engine          # core\npip install crochetpatterngen-engine[mcp]     # + MCP server\npip install crochetpatterngen-engine[rembg]   # + background removal\n```\n\n## Python API\n\n```python\nfrom PIL import Image\nfrom crochet_chart_engine import generate_chart, render_design, estimate_yarn\n\npng_bytes, meta = generate_chart(\n    Image.open(\"photo.jpg\"),\n    technique=\"c2c\",     # graph | c2c | tapestry | mosaic | filet\n    grid_w=60,           # 20..120\n    n_colors=8,          # 2..16\n)\n# meta: {\"grid_w\", \"grid_h\", \"colors\": [{\"hex\", \"count\"}],\n#        \"total_stitches\", \"technique\", \"warning\"}\n\nyarn = estimate_yarn(meta, weight=\"worsted\")\n# {\"total_yards\": ..., \"colors\": [{\"hex\", \"count\", \"yards\"}], ...}\n\npng_bytes, meta = render_design(\"designs/frog.txt\")  # ASCII design -> chart\n```\n\n## CLI\n\n```bash\ncrochet-chart chart photo.jpg out.png --technique c2c --grid-w 60 --colors 8\ncrochet-chart design designs/frog.txt frog.png\ncrochet-chart yarn photo.jpg --technique graph --weight worsted\n```\n\n## MCP server (Claude Desktop & friends)\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"crochet\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"crochetpatterngen-engine[mcp]\", \"crochetpatterngen-mcp\"]\n    }\n  }\n}\n```\n\nOr with a regular pip install:\n\n```json\n{\n  \"mcpServers\": {\n    \"crochet\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"crochet_chart_engine.mcp_server\"]\n    }\n  }\n}\n```\n\nTools exposed (stdio transport):\n\n| Tool | What it does |\n| --- | --- |\n| `photo_to_chart` | Local image path → chart PNG (base64 or saved to `output_path`) + per-color stitch counts JSON |\n| `render_ascii_design` | ASCII design file → chart PNG + stitch counts |\n| `estimate_yarn_tool` | Stitch counts → per-color yardage for one yarn weight or `all` |\n\n## ASCII design format\n\nSee `designs/frog.txt` and `designs/dragon.txt`:\n\n```\n# comment\npalette: G=#58A05C, W=#FFFFFF, .=#FAFAF7\ntitle: Frog Face\ntechnique: graph\n---\n..GGGG..........GGGG....\n.GGWWGG........GGWWGG...\n```\n\nOne character per stitch; `.` is the background/padding color. Rows are padded to the longest row.\n\n## Development\n\n```bash\npip install -e .[dev,mcp]\npytest tests/\n```\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\n---\n\nFree web tool + pattern library at **[crochetpatterngen.com](https://crochetpatterngen.com)**.\n\n<!-- mcp-name: io.github.dengyu123456/crochet-engine -->\n",
+    "fetchedAt": "2026-08-11T23:49:44.227Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:48.693Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}
