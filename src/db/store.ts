@@ -3,6 +3,7 @@ import {
   deriveMasterKey,
   hashToken,
   mintApiToken,
+  mintSessionToken,
   newId,
   seal,
   unseal,
@@ -17,17 +18,31 @@ import type {
   BackendPublic,
   BackendRecord,
   CreateBackendInput,
+  CreateProjectInput,
+  DeviceCapabilities,
+  DeviceEnrolled,
+  DevicePublic,
   Placement,
+  Project,
+  ProjectSessionCreated,
+  SandboxConfig,
   UpdateBackendInput,
+  UpdateProjectInput,
   Workspace,
+  WorkspacePolicy,
 } from "../types.js";
-import { DEFAULT_PLACEMENT } from "../types.js";
+import { sanitizeForAudit } from "../audit/sanitize.js";
+import {
+  DEFAULT_PLACEMENT,
+  DEFAULT_WORKSPACE_POLICY,
+} from "../types.js";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  policy_json TEXT
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -55,6 +70,7 @@ CREATE TABLE IF NOT EXISTS backends (
   enabled INTEGER NOT NULL DEFAULT 0,
   tool_allowlist_json TEXT,
   placement_json TEXT NOT NULL,
+  sandbox_json TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(workspace_id, slug)
@@ -69,13 +85,56 @@ CREATE TABLE IF NOT EXISTS audit_events (
   backend_slug TEXT,
   tool TEXT,
   placement TEXT,
+  device_id TEXT,
   detail_json TEXT,
   ip TEXT
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  name TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  capabilities_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'offline',
+  last_seen TEXT,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  slug TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  backend_slugs_json TEXT NOT NULL DEFAULT '[]',
+  tool_prefix_json TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(workspace_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS project_sessions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  prefix TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
 CREATE INDEX IF NOT EXISTS idx_backends_ws ON backends(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON audit_events(workspace_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_devices_ws ON devices(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token_hash);
+CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
 `;
 
 function nowIso(): string {
@@ -90,10 +149,61 @@ function parseScopes(raw: unknown): ApiKeyScopes | null {
     if (s.toolPrefixAllowlist && !Array.isArray(s.toolPrefixAllowlist)) {
       return null;
     }
-    return s;
+    const out: ApiKeyScopes = {};
+    if (Array.isArray(s.toolPrefixAllowlist) && s.toolPrefixAllowlist.length) {
+      out.toolPrefixAllowlist = s.toolPrefixAllowlist.map(String);
+    }
+    if (s.admin === true) out.admin = true;
+    if (Array.isArray(s.projects) && s.projects.length) {
+      out.projects = s.projects.map(String);
+    }
+    if (typeof s.defaultProject === "string" && s.defaultProject.trim()) {
+      out.defaultProject = s.defaultProject.trim();
+    }
+    if (
+      !out.toolPrefixAllowlist &&
+      !out.admin &&
+      !out.projects &&
+      !out.defaultProject
+    ) {
+      return null;
+    }
+    return out;
   } catch {
     return null;
   }
+}
+
+function rowProject(r: Record<string, unknown>): Project {
+  let backendSlugs: string[] = [];
+  try {
+    const raw = r.backend_slugs_json;
+    backendSlugs = raw ? (JSON.parse(String(raw)) as string[]) : [];
+  } catch {
+    backendSlugs = [];
+  }
+  let toolPrefixAllowlist: string[] | null = null;
+  try {
+    const raw = r.tool_prefix_json;
+    if (raw != null && raw !== "") {
+      const p = JSON.parse(String(raw)) as string[];
+      if (Array.isArray(p) && p.length) toolPrefixAllowlist = p.map(String);
+    }
+  } catch {
+    toolPrefixAllowlist = null;
+  }
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    slug: String(r.slug),
+    title: String(r.title),
+    description: r.description == null ? null : String(r.description),
+    backendSlugs,
+    toolPrefixAllowlist,
+    isDefault: Boolean(r.is_default),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
 }
 
 function rowKey(r: Record<string, unknown>): ApiKeyRecord {
@@ -107,6 +217,30 @@ function rowKey(r: Record<string, unknown>): ApiKeyRecord {
     createdAt: String(r.created_at),
     revokedAt: r.revoked_at == null ? null : String(r.revoked_at),
   };
+}
+
+function parsePolicy(raw: unknown): WorkspacePolicy {
+  if (raw == null || raw === "") return { ...DEFAULT_WORKSPACE_POLICY };
+  try {
+    const p = JSON.parse(String(raw)) as WorkspacePolicy;
+    if (!p || typeof p !== "object") return { ...DEFAULT_WORKSPACE_POLICY };
+    return {
+      allowEdgeBare: Boolean(p.allowEdgeBare),
+    };
+  } catch {
+    return { ...DEFAULT_WORKSPACE_POLICY };
+  }
+}
+
+function parseSandbox(raw: unknown): SandboxConfig | null {
+  if (raw == null || raw === "") return null;
+  try {
+    const s = JSON.parse(String(raw)) as SandboxConfig;
+    if (!s || typeof s !== "object") return null;
+    return s;
+  } catch {
+    return null;
+  }
 }
 
 function rowBackend(r: Record<string, unknown>): BackendRecord {
@@ -125,8 +259,45 @@ function rowBackend(r: Record<string, unknown>): BackendRecord {
     toolAllowlistJson:
       r.tool_allowlist_json == null ? null : String(r.tool_allowlist_json),
     placementJson: String(r.placement_json),
+    sandboxJson: r.sandbox_json == null ? null : String(r.sandbox_json),
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
+  };
+}
+
+function rowWorkspace(r: Record<string, unknown>): Workspace {
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    createdAt: String(r.created_at),
+    policy: parsePolicy(r.policy_json),
+  };
+}
+
+function rowDevice(r: Record<string, unknown>): DevicePublic {
+  let tags: string[] = [];
+  try {
+    tags = JSON.parse(String(r.tags_json ?? "[]")) as string[];
+  } catch {
+    tags = [];
+  }
+  let capabilities: DeviceCapabilities = { sandbox: "none", bare: false };
+  try {
+    capabilities = JSON.parse(
+      String(r.capabilities_json),
+    ) as DeviceCapabilities;
+  } catch {
+    /* default */
+  }
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    name: String(r.name),
+    tags,
+    capabilities,
+    status: r.status === "online" ? "online" : "offline",
+    lastSeen: r.last_seen == null ? null : String(r.last_seen),
+    createdAt: String(r.created_at),
   };
 }
 
@@ -169,6 +340,7 @@ export function toPublicBackend(b: BackendRecord): BackendPublic {
       ? (JSON.parse(b.toolAllowlistJson) as string[])
       : null,
     placement: parsePlacement(b.placementJson),
+    sandbox: parseSandbox(b.sandboxJson),
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
@@ -188,12 +360,63 @@ export class Store {
   }
 
   private migrate(): void {
-    const cols = this.db
+    const keyCols = this.db
       .prepare(`PRAGMA table_info(api_keys)`)
       .all() as Array<{ name: string }>;
-    if (!cols.some((c) => c.name === "scopes_json")) {
+    if (!keyCols.some((c) => c.name === "scopes_json")) {
       this.db.exec(`ALTER TABLE api_keys ADD COLUMN scopes_json TEXT`);
     }
+
+    const wsCols = this.db
+      .prepare(`PRAGMA table_info(workspaces)`)
+      .all() as Array<{ name: string }>;
+    if (!wsCols.some((c) => c.name === "policy_json")) {
+      this.db.exec(`ALTER TABLE workspaces ADD COLUMN policy_json TEXT`);
+    }
+
+    const beCols = this.db
+      .prepare(`PRAGMA table_info(backends)`)
+      .all() as Array<{ name: string }>;
+    if (!beCols.some((c) => c.name === "sandbox_json")) {
+      this.db.exec(`ALTER TABLE backends ADD COLUMN sandbox_json TEXT`);
+    }
+
+    const audCols = this.db
+      .prepare(`PRAGMA table_info(audit_events)`)
+      .all() as Array<{ name: string }>;
+    if (!audCols.some((c) => c.name === "device_id")) {
+      this.db.exec(`ALTER TABLE audit_events ADD COLUMN device_id TEXT`);
+    }
+
+    // Ensure schema tables exist on older DBs (CREATE IF NOT EXISTS in SCHEMA)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        backend_slugs_json TEXT NOT NULL DEFAULT '[]',
+        tool_prefix_json TEXT,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, slug)
+      );
+      CREATE TABLE IF NOT EXISTS project_sessions (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        prefix TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+    `);
   }
 
   close(): void {
@@ -202,38 +425,58 @@ export class Store {
 
   ensureWorkspace(name: string): Workspace {
     const existing = this.db
-      .prepare("SELECT id, name, created_at FROM workspaces WHERE name = ?")
+      .prepare(
+        "SELECT id, name, created_at, policy_json FROM workspaces WHERE name = ?",
+      )
       .get(name) as Record<string, unknown> | undefined;
     if (existing) {
-      return {
-        id: String(existing.id),
-        name: String(existing.name),
-        createdAt: String(existing.created_at),
-      };
+      const ws = rowWorkspace(existing);
+      this.ensureDefaultProject(ws.id);
+      return ws;
     }
     const ws: Workspace = {
       id: newId("ws"),
       name,
       createdAt: nowIso(),
+      policy: { ...DEFAULT_WORKSPACE_POLICY },
     };
     this.db
       .prepare(
-        "INSERT INTO workspaces (id, name, created_at) VALUES (?, ?, ?)",
+        "INSERT INTO workspaces (id, name, created_at, policy_json) VALUES (?, ?, ?, ?)",
       )
-      .run(ws.id, ws.name, ws.createdAt);
+      .run(
+        ws.id,
+        ws.name,
+        ws.createdAt,
+        JSON.stringify(ws.policy),
+      );
+    this.ensureDefaultProject(ws.id);
     return ws;
   }
 
   getWorkspace(id: string): Workspace | null {
     const row = this.db
-      .prepare("SELECT id, name, created_at FROM workspaces WHERE id = ?")
+      .prepare(
+        "SELECT id, name, created_at, policy_json FROM workspaces WHERE id = ?",
+      )
       .get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return {
-      id: String(row.id),
-      name: String(row.name),
-      createdAt: String(row.created_at),
+    return rowWorkspace(row);
+  }
+
+  updateWorkspacePolicy(
+    workspaceId: string,
+    policy: WorkspacePolicy,
+  ): Workspace | null {
+    const existing = this.getWorkspace(workspaceId);
+    if (!existing) return null;
+    const next: WorkspacePolicy = {
+      allowEdgeBare: Boolean(policy.allowEdgeBare),
     };
+    this.db
+      .prepare(`UPDATE workspaces SET policy_json = ? WHERE id = ?`)
+      .run(JSON.stringify(next), workspaceId);
+    return this.getWorkspace(workspaceId);
   }
 
   createApiKey(
@@ -334,25 +577,21 @@ export class Store {
     backendSlug?: string | null;
     tool?: string | null;
     placement?: string | null;
+    deviceId?: string | null;
     detail?: Record<string, unknown> | null;
     ip?: string | null;
   }): void {
-    // Never persist obvious secret-looking values
     let detailJson: string | null = null;
     if (input.detail) {
-      const safe = { ...input.detail };
-      for (const k of Object.keys(safe)) {
-        if (/secret|token|password|authorization|api[_-]?key/i.test(k)) {
-          safe[k] = "[redacted]";
-        }
-      }
-      detailJson = JSON.stringify(safe);
+      const safe = sanitizeForAudit(input.detail);
+      detailJson = JSON.stringify(safe ?? null);
     }
     this.db
       .prepare(
         `INSERT INTO audit_events (
-          id, ts, workspace_id, key_id, action, backend_slug, tool, placement, detail_json, ip
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id, ts, workspace_id, key_id, action, backend_slug, tool, placement,
+          device_id, detail_json, ip
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         newId("aud"),
@@ -363,6 +602,7 @@ export class Store {
         input.backendSlug ?? null,
         input.tool ?? null,
         input.placement ?? null,
+        input.deviceId ?? null,
         detailJson,
         input.ip ?? null,
       );
@@ -399,6 +639,7 @@ export class Store {
       backendSlug: r.backend_slug == null ? null : String(r.backend_slug),
       tool: r.tool == null ? null : String(r.tool),
       placement: r.placement == null ? null : String(r.placement),
+      deviceId: r.device_id == null ? null : String(r.device_id),
       detail: r.detail_json
         ? (JSON.parse(String(r.detail_json)) as Record<string, unknown>)
         : null,
@@ -419,6 +660,10 @@ export class Store {
     const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
     const transport = input.transport ?? "streamable-http";
     const ts = nowIso();
+    const sandboxJson =
+      input.sandbox !== undefined && input.sandbox !== null
+        ? JSON.stringify(input.sandbox)
+        : null;
     const rec: BackendRecord = {
       id: newId("be"),
       workspaceId,
@@ -437,6 +682,7 @@ export class Store {
         ? JSON.stringify(input.toolAllowlist)
         : null,
       placementJson: JSON.stringify(placement),
+      sandboxJson,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -445,8 +691,8 @@ export class Store {
         `INSERT INTO backends (
           id, workspace_id, slug, title, transport, url, image, command_json,
           headers_enc, env_enc, enabled, tool_allowlist_json, placement_json,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          sandbox_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         rec.id,
@@ -462,9 +708,11 @@ export class Store {
         rec.enabled ? 1 : 0,
         rec.toolAllowlistJson,
         rec.placementJson,
+        rec.sandboxJson,
         rec.createdAt,
         rec.updatedAt,
       );
+    this.addBackendToDefaultProject(workspaceId, slug);
     return toPublicBackend(rec);
   }
 
@@ -542,6 +790,12 @@ export class Store {
     const placementJson = input.placement
       ? JSON.stringify(input.placement)
       : existing.placementJson;
+    const sandboxJson =
+      input.sandbox !== undefined
+        ? input.sandbox
+          ? JSON.stringify(input.sandbox)
+          : null
+        : existing.sandboxJson;
     const updatedAt = nowIso();
 
     this.db
@@ -549,7 +803,7 @@ export class Store {
         `UPDATE backends SET
           title = ?, transport = ?, url = ?, image = ?, command_json = ?,
           headers_enc = ?, env_enc = ?, enabled = ?, tool_allowlist_json = ?,
-          placement_json = ?, updated_at = ?
+          placement_json = ?, sandbox_json = ?, updated_at = ?
          WHERE id = ?`,
       )
       .run(
@@ -563,6 +817,7 @@ export class Store {
         enabled ? 1 : 0,
         toolAllowlistJson,
         placementJson,
+        sandboxJson,
         updatedAt,
         existing.id,
       );
@@ -619,5 +874,373 @@ export class Store {
     const existing = this.getBackend(workspaceId, idOrSlug);
     if (!existing) return null;
     return Object.keys(this.decryptHeaders(existing)).sort();
+  }
+
+  // --- Devices (P4+) ---
+
+  enrollDevice(
+    workspaceId: string,
+    input: {
+      name: string;
+      tags?: string[];
+      capabilities?: DeviceCapabilities;
+    },
+  ): DeviceEnrolled {
+    const { token, hash } = mintApiToken();
+    const id = newId("dev");
+    const createdAt = nowIso();
+    const capabilities: DeviceCapabilities = input.capabilities ?? {
+      sandbox: "docker",
+      bare: false,
+    };
+    const tags = input.tags ?? [];
+    this.db
+      .prepare(
+        `INSERT INTO devices (
+          id, workspace_id, name, tags_json, capabilities_json, status,
+          last_seen, token_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, 'offline', NULL, ?, ?)`,
+      )
+      .run(
+        id,
+        workspaceId,
+        input.name.trim() || id,
+        JSON.stringify(tags),
+        JSON.stringify(capabilities),
+        hash,
+        createdAt,
+      );
+    const pub = this.getDevice(workspaceId, id)!;
+    return { ...pub, token };
+  }
+
+  listDevices(workspaceId: string): DevicePublic[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM devices WHERE workspace_id = ? ORDER BY name ASC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map(rowDevice);
+  }
+
+  getDevice(workspaceId: string, id: string): DevicePublic | null {
+    const row = this.db
+      .prepare(`SELECT * FROM devices WHERE workspace_id = ? AND id = ?`)
+      .get(workspaceId, id) as Record<string, unknown> | undefined;
+    return row ? rowDevice(row) : null;
+  }
+
+  updateDevice(
+    workspaceId: string,
+    id: string,
+    input: {
+      name?: string;
+      tags?: string[];
+      capabilities?: DeviceCapabilities;
+      status?: "online" | "offline";
+      lastSeen?: string | null;
+    },
+  ): DevicePublic | null {
+    const existing = this.getDevice(workspaceId, id);
+    if (!existing) return null;
+    const name = input.name ?? existing.name;
+    const tags = input.tags ?? existing.tags;
+    const capabilities = input.capabilities ?? existing.capabilities;
+    const status = input.status ?? existing.status;
+    const lastSeen =
+      input.lastSeen !== undefined ? input.lastSeen : existing.lastSeen;
+    this.db
+      .prepare(
+        `UPDATE devices SET name = ?, tags_json = ?, capabilities_json = ?,
+         status = ?, last_seen = ? WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(
+        name,
+        JSON.stringify(tags),
+        JSON.stringify(capabilities),
+        status,
+        lastSeen,
+        id,
+        workspaceId,
+      );
+    return this.getDevice(workspaceId, id);
+  }
+
+  revokeDevice(workspaceId: string, id: string): boolean {
+    const res = this.db
+      .prepare(`DELETE FROM devices WHERE id = ? AND workspace_id = ?`)
+      .run(id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  authenticateDevice(token: string): {
+    workspaceId: string;
+    deviceId: string;
+    name: string;
+  } | null {
+    const hash = hashToken(token);
+    const row = this.db
+      .prepare(
+        `SELECT id, workspace_id, name FROM devices WHERE token_hash = ?`,
+      )
+      .get(hash) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return {
+      workspaceId: String(row.workspace_id),
+      deviceId: String(row.id),
+      name: String(row.name),
+    };
+  }
+
+  touchDeviceOnline(deviceId: string): void {
+    this.db
+      .prepare(
+        `UPDATE devices SET status = 'online', last_seen = ? WHERE id = ?`,
+      )
+      .run(nowIso(), deviceId);
+  }
+
+  markDeviceOffline(deviceId: string): void {
+    this.db
+      .prepare(`UPDATE devices SET status = 'offline' WHERE id = ?`)
+      .run(deviceId);
+  }
+
+  // --- Projects (collections) ---
+
+  ensureDefaultProject(workspaceId: string): Project {
+    const existing = this.getProjectBySlug(workspaceId, "default");
+    if (existing) return existing;
+    const slugs = this.listBackends(workspaceId).map((b) => b.slug);
+    return this.createProject(workspaceId, {
+      slug: "default",
+      title: "Default",
+      description: "All backends (auto-maintained membership for new backends)",
+      backendSlugs: slugs,
+      isDefault: true,
+    });
+  }
+
+  private addBackendToDefaultProject(
+    workspaceId: string,
+    slug: string,
+  ): void {
+    const def = this.getDefaultProject(workspaceId);
+    if (!def) return;
+    if (def.backendSlugs.includes(slug)) return;
+    this.updateProject(workspaceId, def.id, {
+      backendSlugs: [...def.backendSlugs, slug],
+    });
+  }
+
+  listProjects(workspaceId: string): Project[] {
+    this.ensureDefaultProject(workspaceId);
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? ORDER BY is_default DESC, slug ASC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map(rowProject);
+  }
+
+  getProject(workspaceId: string, idOrSlug: string): Project | null {
+    const byId = this.db
+      .prepare(`SELECT * FROM projects WHERE workspace_id = ? AND id = ?`)
+      .get(workspaceId, idOrSlug) as Record<string, unknown> | undefined;
+    if (byId) return rowProject(byId);
+    return this.getProjectBySlug(workspaceId, idOrSlug);
+  }
+
+  getProjectBySlug(workspaceId: string, slug: string): Project | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? AND slug = ?`,
+      )
+      .get(workspaceId, slug) as Record<string, unknown> | undefined;
+    return row ? rowProject(row) : null;
+  }
+
+  getDefaultProject(workspaceId: string): Project | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM projects WHERE workspace_id = ? AND is_default = 1 LIMIT 1`,
+      )
+      .get(workspaceId) as Record<string, unknown> | undefined;
+    if (row) return rowProject(row);
+    return this.getProjectBySlug(workspaceId, "default");
+  }
+
+  createProject(workspaceId: string, input: CreateProjectInput): Project {
+    const slug = input.slug.trim().toLowerCase();
+    if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+      throw new Error(
+        "project slug must be lowercase alphanumeric/underscore/hyphen",
+      );
+    }
+    const ts = nowIso();
+    const id = newId("proj");
+    const isDefault = Boolean(input.isDefault);
+    if (isDefault) {
+      this.db
+        .prepare(
+          `UPDATE projects SET is_default = 0 WHERE workspace_id = ?`,
+        )
+        .run(workspaceId);
+    }
+    this.db
+      .prepare(
+        `INSERT INTO projects (
+          id, workspace_id, slug, title, description, backend_slugs_json,
+          tool_prefix_json, is_default, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        workspaceId,
+        slug,
+        input.title?.trim() || slug,
+        input.description ?? null,
+        JSON.stringify(input.backendSlugs ?? []),
+        input.toolPrefixAllowlist?.length
+          ? JSON.stringify(input.toolPrefixAllowlist)
+          : null,
+        isDefault ? 1 : 0,
+        ts,
+        ts,
+      );
+    return this.getProject(workspaceId, id)!;
+  }
+
+  updateProject(
+    workspaceId: string,
+    idOrSlug: string,
+    input: UpdateProjectInput,
+  ): Project | null {
+    const existing = this.getProject(workspaceId, idOrSlug);
+    if (!existing) return null;
+    if (input.isDefault === true) {
+      this.db
+        .prepare(
+          `UPDATE projects SET is_default = 0 WHERE workspace_id = ?`,
+        )
+        .run(workspaceId);
+    }
+    const title = input.title ?? existing.title;
+    const description =
+      input.description !== undefined ? input.description : existing.description;
+    const backendSlugs =
+      input.backendSlugs !== undefined
+        ? input.backendSlugs
+        : existing.backendSlugs;
+    const toolPrefix =
+      input.toolPrefixAllowlist !== undefined
+        ? input.toolPrefixAllowlist
+        : existing.toolPrefixAllowlist;
+    const isDefault =
+      input.isDefault !== undefined ? input.isDefault : existing.isDefault;
+    this.db
+      .prepare(
+        `UPDATE projects SET title = ?, description = ?, backend_slugs_json = ?,
+         tool_prefix_json = ?, is_default = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(
+        title,
+        description,
+        JSON.stringify(backendSlugs),
+        toolPrefix?.length ? JSON.stringify(toolPrefix) : null,
+        isDefault ? 1 : 0,
+        nowIso(),
+        existing.id,
+        workspaceId,
+      );
+    return this.getProject(workspaceId, existing.id);
+  }
+
+  deleteProject(workspaceId: string, idOrSlug: string): boolean {
+    const existing = this.getProject(workspaceId, idOrSlug);
+    if (!existing) return false;
+    if (existing.slug === "default" || existing.isDefault) {
+      throw new Error("cannot delete the default project");
+    }
+    const res = this.db
+      .prepare(`DELETE FROM projects WHERE id = ? AND workspace_id = ?`)
+      .run(existing.id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  /** Mint short-lived mf_sess_* bound to key + project */
+  createProjectSession(
+    workspaceId: string,
+    keyId: string,
+    projectId: string,
+    ttlMs = 12 * 60 * 60 * 1000,
+  ): ProjectSessionCreated {
+    const project = this.getProject(workspaceId, projectId);
+    if (!project) throw new Error("project not found");
+    const { token, prefix, hash } = mintSessionToken();
+    const id = newId("mss");
+    const createdAt = nowIso();
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO project_sessions (
+          id, workspace_id, key_id, project_id, token_hash, prefix,
+          expires_at, created_at, revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        workspaceId,
+        keyId,
+        project.id,
+        hash,
+        prefix,
+        expiresAt,
+        createdAt,
+      );
+    return {
+      id,
+      keyId,
+      projectId: project.id,
+      projectSlug: project.slug,
+      expiresAt,
+      createdAt,
+      token,
+    };
+  }
+
+  authenticateProjectSession(token: string): {
+    workspaceId: string;
+    keyId: string;
+    keyName: string;
+    scopes: ApiKeyScopes | null;
+    projectId: string;
+    projectSlug: string;
+    projectSessionId: string;
+  } | null {
+    if (!token.startsWith("mf_sess_")) return null;
+    const hash = hashToken(token);
+    const row = this.db
+      .prepare(
+        `SELECT s.*, k.name AS key_name, k.scopes_json, k.revoked_at AS key_revoked,
+                p.slug AS project_slug
+         FROM project_sessions s
+         JOIN api_keys k ON k.id = s.key_id
+         JOIN projects p ON p.id = s.project_id
+         WHERE s.token_hash = ?`,
+      )
+      .get(hash) as Record<string, unknown> | undefined;
+    if (!row || row.revoked_at != null || row.key_revoked != null) return null;
+    if (String(row.expires_at) < nowIso()) return null;
+    return {
+      workspaceId: String(row.workspace_id),
+      keyId: String(row.key_id),
+      keyName: String(row.key_name),
+      scopes: parseScopes(row.scopes_json),
+      projectId: String(row.project_id),
+      projectSlug: String(row.project_slug),
+      projectSessionId: String(row.id),
+    };
   }
 }

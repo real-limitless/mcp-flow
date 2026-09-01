@@ -80,6 +80,32 @@ npx mcp-flow key create --name cursor
 # → { "key": { "token": "mf_…", "prefix": "mf_…", … } }  # secret shown once
 ```
 
+### Operator key (AI manages the gateway)
+
+Mint a key with `scopes.admin` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). Env `MCP_FLOW_ADMIN_TOKEN` remains break-glass for humans/UI.
+
+```bash
+npx mcp-flow key create --name openflow-ops --admin
+# Point the harness at http://127.0.0.1:8787/mcp with that mf_* token.
+```
+
+Examples of operator tools: `mf_admin_status`, `mf_admin_create_backend`, `mf_admin_create_key`,
+`mf_admin_list_audit`, `mf_admin_catalog_install`, devices/policy helpers. Normal agent keys never see these tools.
+
+Prefer operator keys over pasting the env admin token into IDE config (revocable, audited by key id).
+
+### Projects (per-chat tool collections)
+
+One agent key can span multiple **projects** — named sets of backends. Agents switch with MCP tools:
+
+```text
+mf_list_projects → mf_use_project({ project: "webdevelopment" }) → tools/list
+```
+
+- **`default`** project is auto-created and gains new backends automatically.
+- `mf_use_project` binds the chat (session sticky) and returns an optional **`mf_sess_*` session token** for project-scoped calls.
+- Admin UI → **Projects** tab, or `GET/POST /v1/projects`.
+
 ### Add a remote MCP (headers sealed)
 
 ```bash
@@ -153,6 +179,10 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 | `GET` | `/v1/backends` | List (redacted) |
 | `PATCH` | `/v1/backends/:id` | Update / enable |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
+| `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
+| `GET/POST/DELETE` | `/v1/devices` | Edge device enroll / list / revoke |
+| `WS` | `/v1/edge/connect` | Edge agent (device token) |
+| `GET` | `/admin/` | Operator admin UI |
 | `ALL` | `/mcp` | Agent MCP (API key) |
 
 ## Security
@@ -161,7 +191,29 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - Agent keys stored as SHA-256 hashes; plaintext shown once
 - GET payloads never include decrypted secrets
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
-- Placement modes other than `remote` are rejected until P3+
+- Placement: `remote`, `central-sandbox`, `edge-sandbox`, `edge-bare` (bare needs workspace policy)
+- Admin UI at `/admin/` (browser holds admin token in sessionStorage)
+
+## Placement (P3–P6)
+
+```bash
+# Central stdio / OCI
+npx mcp-flow backend add --slug local --transport stdio \
+  --command npx --command -y --command some-mcp --enable
+npx mcp-flow backend add --slug boxed --transport oci --image ghcr.io/example/mcp:latest
+
+# Edge device
+npx mcp-flow device enroll -n laptop
+npx mcp-flow edge --url http://127.0.0.1:8787 --token <device-token>
+npx mcp-flow backend add --slug on-laptop --transport stdio \
+  --command npx --command -y --command some-mcp \
+  --placement edge-sandbox --device-id <dev_id> --enable
+
+# Bare (opt-in)
+npx mcp-flow workspace policy --allow-edge-bare true
+```
+
+Catalog install maps npm/pypi/oci packages to `central-sandbox` when no remote URL.
 
 ## Catalog (P1b)
 
@@ -201,6 +253,8 @@ npx mcp-flow doctor
 ```
 
 Scoped keys only see/call matching tool name prefixes (`mf_status` always allowed).
+
+Tool-call audit rows store **redacted request arguments** and **response bodies** (size-capped; secrets scrubbed). Treat the SQLite DB as sensitive. Cap via `MCP_FLOW_AUDIT_MAX_DETAIL_BYTES`.
 
 ## Development
 

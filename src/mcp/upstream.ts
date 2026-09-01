@@ -4,8 +4,11 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { Store } from "../db/store.js";
-import type { BackendRecord } from "../types.js";
 import { toPublicBackend } from "../db/store.js";
+import type { BackendRecord, Placement } from "../types.js";
+import { connectOci } from "./runners/oci.js";
+import { connectStdioCommand } from "./runners/stdio.js";
+import type { EdgeRouter } from "../edge/router.js";
 
 export interface NamespacedTool extends Tool {
   /** Original upstream tool name */
@@ -35,14 +38,30 @@ interface PooledClient {
   transport: Transport;
   tools: Tool[];
   fetchedAt: number;
+  dispose?: () => Promise<void>;
+  placementMode: string;
+  deviceId?: string;
 }
 
 const TOOL_CACHE_MS = 30_000;
 
+function parsePlacement(backend: BackendRecord): Placement {
+  try {
+    return JSON.parse(backend.placementJson) as Placement;
+  } catch {
+    return { mode: "remote" };
+  }
+}
+
 export class UpstreamPool {
   private pool = new Map<string, PooledClient>();
+  private edgeRouter: EdgeRouter | null = null;
 
   constructor(private store: Store) {}
+
+  setEdgeRouter(router: EdgeRouter | null): void {
+    this.edgeRouter = router;
+  }
 
   async closeAll(): Promise<void> {
     const entries = [...this.pool.values()];
@@ -53,6 +72,13 @@ export class UpstreamPool {
           await e.client.close();
         } catch {
           /* ignore */
+        }
+        if (e.dispose) {
+          try {
+            await e.dispose();
+          } catch {
+            /* ignore */
+          }
         }
       }),
     );
@@ -67,29 +93,17 @@ export class UpstreamPool {
     if (e) {
       this.pool.delete(backendId);
       void e.client.close().catch(() => undefined);
+      if (e.dispose) void e.dispose().catch(() => undefined);
     }
   }
 
-  private async connect(backend: BackendRecord): Promise<PooledClient> {
-    try {
-      const placement = JSON.parse(backend.placementJson) as { mode?: string };
-      if (placement.mode && placement.mode !== "remote") {
-        throw new Error(
-          `placement ${placement.mode} is not implemented yet (stub remote only)`,
-        );
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith("placement ")) {
-        throw err;
-      }
-    }
-
+  private async connectRemote(backend: BackendRecord): Promise<PooledClient> {
     if (
       backend.transport !== "streamable-http" &&
       backend.transport !== "sse"
     ) {
       throw new Error(
-        `transport ${backend.transport} not supported in P1 (remote http/sse only)`,
+        `remote placement requires http/sse transport (got ${backend.transport})`,
       );
     }
     if (!backend.url) {
@@ -117,15 +131,90 @@ export class UpstreamPool {
 
     await client.connect(transport);
     const listed = await client.listTools();
-    const entry: PooledClient = {
+    return {
       backendId: backend.id,
       client,
       transport,
       tools: listed.tools ?? [],
       fetchedAt: Date.now(),
+      placementMode: "remote",
     };
-    this.pool.set(backend.id, entry);
-    return entry;
+  }
+
+  private async connectCentralSandbox(
+    backend: BackendRecord,
+  ): Promise<PooledClient> {
+    const env = this.store.decryptEnv(backend);
+    const pub = toPublicBackend(backend);
+
+    if (backend.transport === "stdio") {
+      if (!pub.command?.length) {
+        throw new Error(`stdio backend ${backend.slug} has no command`);
+      }
+      const run = await connectStdioCommand({
+        command: pub.command,
+        env,
+      });
+      return {
+        backendId: backend.id,
+        client: run.client,
+        transport: run.transport,
+        tools: run.tools,
+        fetchedAt: Date.now(),
+        dispose: run.dispose,
+        placementMode: "central-sandbox",
+      };
+    }
+
+    if (backend.transport === "oci") {
+      if (!backend.image) {
+        throw new Error(`oci backend ${backend.slug} has no image`);
+      }
+      const run = await connectOci({
+        image: backend.image,
+        command: pub.command,
+        env,
+        sandbox: pub.sandbox,
+      });
+      return {
+        backendId: backend.id,
+        client: run.client,
+        transport: run.transport,
+        tools: run.tools,
+        fetchedAt: Date.now(),
+        dispose: run.dispose,
+        placementMode: "central-sandbox",
+      };
+    }
+
+    throw new Error(
+      `central-sandbox does not support transport ${backend.transport}`,
+    );
+  }
+
+  private async connect(backend: BackendRecord): Promise<PooledClient> {
+    const placement = parsePlacement(backend);
+    const mode = placement.mode ?? "remote";
+
+    if (mode === "remote") {
+      return this.connectRemote(backend);
+    }
+
+    if (mode === "central-sandbox") {
+      return this.connectCentralSandbox(backend);
+    }
+
+    if (mode === "edge-sandbox" || mode === "edge-bare") {
+      if (!this.edgeRouter) {
+        throw new Error(
+          `placement ${mode} requires edge hub (not configured)`,
+        );
+      }
+      // Edge path uses RPC, not a local pooled client — handled in call/list
+      throw new Error(`EDGE_ROUTE:${mode}`);
+    }
+
+    throw new Error(`placement ${mode} is not implemented`);
   }
 
   private async getClient(backend: BackendRecord): Promise<PooledClient> {
@@ -140,8 +229,17 @@ export class UpstreamPool {
       } catch {
         /* ignore */
       }
+      if (existing.dispose) {
+        try {
+          await existing.dispose();
+        } catch {
+          /* ignore */
+        }
+      }
     }
-    return this.connect(backend);
+    const entry = await this.connect(backend);
+    this.pool.set(backend.id, entry);
+    return entry;
   }
 
   async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {
@@ -150,10 +248,33 @@ export class UpstreamPool {
 
     await Promise.all(
       backends.map(async (backend) => {
-        if (backend.transport !== "streamable-http" && backend.transport !== "sse") {
-          return;
-        }
+        const placement = parsePlacement(backend);
         try {
+          if (
+            placement.mode === "edge-sandbox" ||
+            placement.mode === "edge-bare"
+          ) {
+            if (!this.edgeRouter) return;
+            const tools = await this.edgeRouter.listTools(backend);
+            const allow = backend.toolAllowlistJson
+              ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
+              : null;
+            for (const t of tools) {
+              if (allow && !allow.has(t.name)) continue;
+              out.push({
+                ...t,
+                name: namespaceTool(backend.slug, t.name),
+                description: t.description
+                  ? `[${backend.slug}] ${t.description}`
+                  : `[${backend.slug}] ${t.name}`,
+                upstreamName: t.name,
+                backendSlug: backend.slug,
+                backendId: backend.id,
+              });
+            }
+            return;
+          }
+
           const pooled = await this.getClient(backend);
           const allow = backend.toolAllowlistJson
             ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
@@ -172,7 +293,6 @@ export class UpstreamPool {
             });
           }
         } catch (err) {
-          // Skip failed backends on list; surface via meta status
           console.error(
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
             err instanceof Error ? err.message : err,
@@ -233,7 +353,23 @@ export class UpstreamPool {
       }
     }
 
+    const placement = parsePlacement(backend);
+
     try {
+      if (
+        placement.mode === "edge-sandbox" ||
+        placement.mode === "edge-bare"
+      ) {
+        if (!this.edgeRouter) {
+          throw new Error("edge hub not configured");
+        }
+        return await this.edgeRouter.callTool(
+          backend,
+          parsed.tool,
+          args ?? {},
+        );
+      }
+
       const pooled = await this.getClient(backend);
       const result = await pooled.client.callTool({
         name: parsed.tool,
@@ -256,6 +392,28 @@ export class UpstreamPool {
     }
   }
 
+  /** Placement + device context for audit */
+  resolveCallContext(workspaceId: string, namespacedName: string): {
+    backendSlug: string | null;
+    placement: string | null;
+    deviceId: string | null;
+  } {
+    const parsed = parseNamespacedTool(namespacedName);
+    if (!parsed) {
+      return { backendSlug: null, placement: null, deviceId: null };
+    }
+    const backend = this.store.getBackend(workspaceId, parsed.slug);
+    if (!backend) {
+      return { backendSlug: parsed.slug, placement: null, deviceId: null };
+    }
+    const placement = parsePlacement(backend);
+    return {
+      backendSlug: backend.slug,
+      placement: placement.mode,
+      deviceId: placement.deviceId ?? null,
+    };
+  }
+
   async testBackend(backend: BackendRecord): Promise<{
     ok: boolean;
     toolCount?: number;
@@ -264,7 +422,23 @@ export class UpstreamPool {
     backend: ReturnType<typeof toPublicBackend>;
   }> {
     const pub = toPublicBackend(backend);
+    const placement = parsePlacement(backend);
     try {
+      if (
+        placement.mode === "edge-sandbox" ||
+        placement.mode === "edge-bare"
+      ) {
+        if (!this.edgeRouter) {
+          throw new Error("edge hub not configured");
+        }
+        const tools = await this.edgeRouter.listTools(backend);
+        return {
+          ok: true,
+          toolCount: tools.length,
+          tools: tools.map((t) => t.name),
+          backend: pub,
+        };
+      }
       this.invalidate(backend.id);
       const pooled = await this.getClient(backend);
       return {

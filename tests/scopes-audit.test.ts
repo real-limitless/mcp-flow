@@ -28,6 +28,25 @@ describe("scopes", () => {
       false,
     );
     expect(toolAllowedByScopes("anything", null)).toBe(true);
+    expect(toolAllowedByScopes("mf_admin_list_backends", null)).toBe(false);
+    expect(
+      toolAllowedByScopes("mf_admin_list_backends", { admin: true }),
+    ).toBe(true);
+    expect(
+      toolAllowedByScopes("mf_admin_status", {
+        toolPrefixAllowlist: ["x__"],
+      }),
+    ).toBe(false);
+  });
+
+  it("stores admin scope on keys", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    const created = store.createApiKey(ws.id, "ops", { admin: true });
+    expect(created.scopes?.admin).toBe(true);
+    const auth = store.authenticateApiKey(created.token);
+    expect(auth?.scopes?.admin).toBe(true);
+    store.close();
   });
 
   it("stores scopes on keys", () => {
@@ -62,6 +81,26 @@ describe("audit", () => {
     expect(events[0]!.tool).toBe("demo__echo");
     expect(JSON.stringify(events)).not.toContain("Bearer leak");
     expect(events[0]!.detail?.authorization).toBe("[redacted]");
+    store.close();
+  });
+
+  it("records deviceId and workspace policy", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    expect(ws.policy.allowEdgeBare).toBe(false);
+    const updated = store.updateWorkspacePolicy(ws.id, { allowEdgeBare: true });
+    expect(updated?.policy.allowEdgeBare).toBe(true);
+    store.writeAudit({
+      workspaceId: ws.id,
+      action: "bare_exec",
+      deviceId: "dev_1",
+      placement: "edge-bare",
+    });
+    const events = store.listAudit(ws.id);
+    expect(events[0]!.deviceId).toBe("dev_1");
+    const dev = store.enrollDevice(ws.id, { name: "x" });
+    expect(dev.token.startsWith("mf_")).toBe(true);
+    expect(store.listDevices(ws.id)).toHaveLength(1);
     store.close();
   });
 });
