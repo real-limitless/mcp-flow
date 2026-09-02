@@ -105,9 +105,10 @@ await execCli(args.length ? args : ["serve"]);
 
 function execCli(cliArgs) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["dist/cli.js", ...cliArgs], {
+    const child = spawn(process.execPath, ["/app/dist/cli.js", ...cliArgs], {
       stdio: "inherit",
       env: process.env,
+      cwd: "/app",
     });
     const forward = (sig) => {
       if (!child.killed) child.kill(sig);

@@ -25,7 +25,7 @@ EXPOSE 8787
 VOLUME ["/data"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=10 \
   CMD node -e "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-ENTRYPOINT ["node", "docker/entrypoint.mjs"]
+ENTRYPOINT ["node", "/app/docker/entrypoint.mjs"]
 CMD ["serve"]
 
 FROM gateway AS edge
@@ -43,4 +43,4 @@ RUN apt-get update \
   && chmod 755 /app/docker/github-mcp.sh \
   && ln -sf /app/docker/github-mcp.sh /usr/local/bin/github-mcp \
   && rm -rf /var/lib/apt/lists/*
-WORKDIR /repos
+WORKDIR /app
