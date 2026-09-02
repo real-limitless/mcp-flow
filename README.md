@@ -175,7 +175,17 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
 | **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
 
-Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. The compose **edge** agent starts with the stack (device `compose-edge` should show **online**). Central-sandbox OCI: uncomment the docker.sock volume in `docker-compose.yml`.
+Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. The compose **edge** agent starts with the stack (device `compose-edge` should show **online**). It includes `git`, `gh`, `/repos` (clone many projects here), and persisted `gh` login.
+
+Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-edge`, enable):
+
+| Slug | Transport | Command |
+| --- | --- | --- |
+| **fs** | stdio | `npx` `-y` `@modelcontextprotocol/server-filesystem` `/repos` |
+| **shell** | stdio | `sh` `-c` `cd /repos && exec npx -y @mako10k/mcp-shell-server` |
+| **github** | stdio | `github-mcp` |
+
+Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
 Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN — Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
 
