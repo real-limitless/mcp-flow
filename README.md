@@ -161,10 +161,21 @@ Tools appear as `{slug}__{tool}` plus meta tools `mf_list_backends`, `mf_list_to
 ### Docker Compose
 
 ```bash
-export MCP_FLOW_MASTER_KEY=$(openssl rand -base64 32)
-export MCP_FLOW_ADMIN_TOKEN=$(openssl rand -hex 32)
 docker compose up --build -d
+docker compose logs -f bootstrap   # wait until it writes /data/mcp-client.json
 ```
+
+Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
+
+| | |
+| --- | --- |
+| **MCP (agents)** | `http://127.0.0.1:8787/mcp` |
+| **Admin UI** | `http://127.0.0.1:8787/admin/` |
+| **Health** | `http://127.0.0.1:8787/health` |
+| **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
+| **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
+
+Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. Optional edge agent: `docker compose --profile edge up --build -d`. Central-sandbox OCI: uncomment the docker.sock volume in `docker-compose.yml`.
 
 ### Admin REST
 
