@@ -8,7 +8,7 @@ Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, 
 
 Also dual-tracked as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
 
-[PLAN.md](./PLAN.md) · [Campaign storyboard](docs/campaign/) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
+[PLAN.md](./PLAN.md) · [Agent tools](docs/AGENT-TOOLS.md) · [Campaign storyboard](docs/campaign/) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
 
 ## Visual tour
 
@@ -40,7 +40,7 @@ Every IDE holding vendor API keys is not a control plane. MCP sprawl with no rev
 
 ## Status
 
-**P1 gateway (remote proxy) implemented.** Catalog sync and edge runtimes are later phases — see [PLAN.md](./PLAN.md).
+**Gateway implemented** (remote proxy, catalog, edge placements). Agent MCP tools: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 | Issue | Topic |
 | --- | --- |
@@ -156,7 +156,7 @@ Stdio shim:
 MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
 ```
 
-Tools appear as `{slug}__{tool}` plus meta tools `mf_list_backends`, `mf_list_tools`, `mf_status`.
+Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. Backend tools are `{slug}__{tool}` and often do not appear in connector listings — [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Docker Compose
 
