@@ -169,7 +169,7 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 
 | | |
 | --- | --- |
-| **MCP (agents)** | `http://127.0.0.1:8787/mcp` |
+| **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only — map a domain in Dokploy/Traefik) |
 | **Admin UI** | `http://127.0.0.1:8787/admin/` |
 | **Health** | `http://127.0.0.1:8787/health` |
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
