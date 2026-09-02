@@ -175,7 +175,7 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
 | **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
 
-Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. Optional edge agent: `docker compose --profile edge up --build -d`. Central-sandbox OCI: uncomment the docker.sock volume in `docker-compose.yml`.
+Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. The compose **edge** agent starts with the stack (device `compose-edge` should show **online**). Central-sandbox OCI: uncomment the docker.sock volume in `docker-compose.yml`.
 
 Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`, then `docker compose --profile tailscale up --build -d`. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
 

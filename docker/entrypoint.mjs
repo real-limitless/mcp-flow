@@ -82,6 +82,11 @@ if (verb === "bootstrap") {
 
 if (verb === "edge") {
   const tokenPath = `${DATA}/device-token.txt`;
+  const deadline = Date.now() + 90_000;
+  while (!existsSync(tokenPath) && Date.now() < deadline) {
+    console.error("mcp-flow edge: waiting for /data/device-token.txt");
+    await new Promise((r) => setTimeout(r, 1000));
+  }
   if (!existsSync(tokenPath)) {
     console.error("mcp-flow edge: /data/device-token.txt missing — start bootstrap first");
     process.exit(1);
