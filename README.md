@@ -177,6 +177,8 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 
 Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. Optional edge agent: `docker compose --profile edge up --build -d`. Central-sandbox OCI: uncomment the docker.sock volume in `docker-compose.yml`.
 
+Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`, then `docker compose --profile tailscale up --build -d`. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
+
 ### Admin REST
 
 All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
