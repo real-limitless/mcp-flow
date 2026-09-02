@@ -40,7 +40,9 @@ RUN apt-get update \
   && apt-get update \
   && apt-get install -y --no-install-recommends gh \
   && mkdir -p /repos /root/.config/gh \
-  && chmod 755 /app/docker/github-mcp.sh \
+  && chmod 755 /app/docker/github-mcp.sh /app/docker/shell-mcp.mjs \
   && ln -sf /app/docker/github-mcp.sh /usr/local/bin/github-mcp \
+  && ln -sf /app/docker/shell-mcp.mjs /usr/local/bin/shell-mcp \
+  && npm install -g @modelcontextprotocol/server-filesystem \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app

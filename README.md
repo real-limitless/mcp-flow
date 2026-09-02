@@ -181,8 +181,8 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 
 | Slug | Transport | Command |
 | --- | --- | --- |
-| **fs** | stdio | `npx` `-y` `@modelcontextprotocol/server-filesystem` `/repos` |
-| **shell** | stdio | `sh` `-c` `cd /repos && exec npx -y @mako10k/mcp-shell-server` |
+| **fs** | stdio | `mcp-server-filesystem /repos` |
+| **shell** | stdio | `shell-mcp` |
 | **github** | stdio | `github-mcp` |
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.

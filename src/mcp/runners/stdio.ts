@@ -30,6 +30,7 @@ export async function connectStdioCommand(opts: {
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
       npm_config_yes: "true",
+      npm_config_update_notifier: "false",
       ...opts.env,
     },
     cwd: opts.cwd,
