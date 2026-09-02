@@ -25,7 +25,7 @@ interface Session {
   pending: Map<string, Pending>;
 }
 
-const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+const DEFAULT_RPC_TIMEOUT_MS = 120_000;
 
 /**
  * In-memory device session hub (one process).

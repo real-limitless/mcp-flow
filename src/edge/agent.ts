@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import WebSocket from "ws";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { connectOci } from "../mcp/runners/oci.js";
@@ -80,12 +81,14 @@ export async function runEdgeAgent(opts: {
             }),
           );
         } catch (err) {
+          const error = err instanceof Error ? err.message : String(err);
+          console.error(`[edge] rpc ${msg.method} failed:`, error);
           ws.send(
             encodeMsg({
               v: 1,
               id: msg.id,
               type: "rpc_error",
-              error: err instanceof Error ? err.message : String(err),
+              error,
             }),
           );
         }
@@ -126,6 +129,7 @@ async function ensureRuntime(
     const run = await connectStdioCommand({
       command: payload.command,
       env,
+      cwd: existsSync("/repos") ? "/repos" : undefined,
     });
     const rt: LocalRuntime = {
       listTools: async () => run.tools,
@@ -171,6 +175,7 @@ async function ensureRuntime(
       const run = await connectStdioCommand({
         command: payload.command,
         env,
+        cwd: existsSync("/repos") ? "/repos" : undefined,
       });
       const rt: LocalRuntime = {
         listTools: async () => run.tools,

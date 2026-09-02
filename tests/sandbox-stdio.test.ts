@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../src/db/store.js";
+import { connectStdioCommand } from "../src/mcp/runners/stdio.js";
 import { UpstreamPool } from "../src/mcp/upstream.js";
 
 const master = Buffer.alloc(32, 7).toString("base64");
@@ -74,6 +75,21 @@ rl.on("line", (line) => {
   chmodSync(path, 0o755);
   return path;
 }
+
+describe("stdio connect errors", () => {
+  it("includes child stderr in the thrown error", async () => {
+    await expect(
+      connectStdioCommand({
+        command: [
+          process.execPath,
+          "-e",
+          "process.stderr.write('boom-stdio'); process.exit(1)",
+        ],
+        env: {},
+      }),
+    ).rejects.toThrow(/boom-stdio/);
+  });
+});
 
 describe("central-sandbox stdio", () => {
   it("lists and calls tools via StdioClientTransport", async () => {

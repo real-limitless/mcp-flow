@@ -10,13 +10,9 @@ export interface StdioRunResult {
   client: Client;
   transport: Transport;
   tools: Tool[];
-  /** Extra cleanup (e.g. kill container) */
   dispose?: () => Promise<void>;
 }
 
-/**
- * Spawn a local stdio MCP via command[0] + args, with sealed env injected.
- */
 export async function connectStdioCommand(opts: {
   command: string[];
   env: Record<string, string>;
@@ -29,20 +25,41 @@ export async function connectStdioCommand(opts: {
   const transport = new StdioClientTransport({
     command: cmd!,
     args,
-    env: { ...getDefaultEnvironment(), ...opts.env },
+    env: {
+      ...getDefaultEnvironment(),
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      npm_config_yes: "true",
+      ...opts.env,
+    },
     cwd: opts.cwd,
     stderr: "pipe",
+  });
+
+  const errBuf: string[] = [];
+  transport.stderr?.on("data", (chunk: Buffer | string) => {
+    const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    errBuf.push(s);
+    process.stderr.write(s);
   });
 
   const client = new Client(
     { name: "mcp-flow-stdio", version: "0.1.0" },
     { capabilities: {} },
   );
-  await client.connect(transport);
-  const listed = await client.listTools();
-  return {
-    client,
-    transport,
-    tools: listed.tools ?? [],
-  };
+  try {
+    await client.connect(transport);
+    const listed = await client.listTools();
+    return {
+      client,
+      transport,
+      tools: listed.tools ?? [],
+    };
+  } catch (err) {
+    const tail = errBuf.join("").trim().slice(-8000);
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(tail ? `${msg}\n--- stderr ---\n${tail}` : msg);
+  }
 }
+
+export type { Transport, Tool };
