@@ -1,22 +1,92 @@
+name: mcp-flow
+
 services:
   mcp-flow:
     build: .
+    image: mcp-flow:local
+    container_name: mcp-flow
+    restart: unless-stopped
     ports:
       - "${MCP_FLOW_PORT:-8787}:8787"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      MCP_FLOW_MASTER_KEY: ${MCP_FLOW_MASTER_KEY:?set MCP_FLOW_MASTER_KEY}
-      MCP_FLOW_ADMIN_TOKEN: ${MCP_FLOW_ADMIN_TOKEN:?set MCP_FLOW_ADMIN_TOKEN}
-      MCP_FLOW_HOST: 0.0.0.0
+      MCP_FLOW_MASTER_KEY: ${MCP_FLOW_MASTER_KEY:-}
+      MCP_FLOW_ADMIN_TOKEN: ${MCP_FLOW_ADMIN_TOKEN:-}
+      MCP_FLOW_HOST: "0.0.0.0"
       MCP_FLOW_PORT: "8787"
       MCP_FLOW_DB_PATH: /data/mcp-flow.db
-      MCP_FLOW_ALLOW_PRIVATE_URLS: ${MCP_FLOW_ALLOW_PRIVATE_URLS:-false}
+      MCP_FLOW_DATA_DIR: /data
       MCP_FLOW_WORKSPACE_NAME: ${MCP_FLOW_WORKSPACE_NAME:-default}
+      MCP_FLOW_ALLOW_PRIVATE_URLS: ${MCP_FLOW_ALLOW_PRIVATE_URLS:-true}
       MCP_FLOW_CONTAINER_RUNTIME: ${MCP_FLOW_CONTAINER_RUNTIME:-docker}
+      MCP_FLOW_TRUST_PROXY: ${MCP_FLOW_TRUST_PROXY:-false}
+      MCP_FLOW_AUDIT_MAX_DETAIL_BYTES: ${MCP_FLOW_AUDIT_MAX_DETAIL_BYTES:-65536}
     volumes:
       - mcp-flow-data:/data
-      # Uncomment for central-sandbox OCI on the host docker:
+      - ./catalog:/app/catalog
+      # Central-sandbox OCI: uncomment the next line (and run the container as root)
       # - /var/run/docker.sock:/var/run/docker.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - mcp-flow
+
+  bootstrap:
+    image: mcp-flow:local
+    container_name: mcp-flow-bootstrap
+    restart: "no"
+    depends_on:
+      mcp-flow:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      MCP_FLOW_MASTER_KEY: ${MCP_FLOW_MASTER_KEY:-}
+      MCP_FLOW_ADMIN_TOKEN: ${MCP_FLOW_ADMIN_TOKEN:-}
+      MCP_FLOW_INTERNAL_URL: http://mcp-flow:8787
+      MCP_FLOW_PUBLIC_URL: ${MCP_FLOW_PUBLIC_URL:-http://127.0.0.1:8787}
+      MCP_FLOW_DATA_DIR: /data
+    volumes:
+      - mcp-flow-data:/data
+    command: ["bootstrap"]
+    networks:
+      - mcp-flow
+
+  edge:
+    profiles: ["edge"]
+    image: mcp-flow:local
+    container_name: mcp-flow-edge
     restart: unless-stopped
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    environment:
+      MCP_FLOW_DATA_DIR: /data
+      MCP_FLOW_URL: http://mcp-flow:8787
+    volumes:
+      - mcp-flow-data:/data
+    command: ["edge", "--url", "http://mcp-flow:8787", "--name", "compose-edge"]
+    networks:
+      - mcp-flow
+
+networks:
+  mcp-flow:
+    name: mcp-flow
 
 volumes:
   mcp-flow-data:
