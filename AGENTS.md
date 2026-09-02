@@ -71,7 +71,7 @@ docs/campaign/        # storyboard frames + styles (design SoT for site)
 
 Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN`, optional `MCP_FLOW_API_KEY` for harnesses.
 
-Compose: `docker compose up --build -d` — gateway + bootstrap (agent key + device token in the data volume) + edge agent. Optional `--profile tailscale` (Headscale/Tailscale sidecar; `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_LOGIN_SERVER`).
+Compose: `docker compose up --build -d` — gateway + bootstrap (agent key + device token in the data volume) + edge agent + Tailscale sidecar (userspace; `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_LOGIN_SERVER`).
 
 ---
 

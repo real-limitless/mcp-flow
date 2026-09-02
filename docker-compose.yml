@@ -76,20 +76,22 @@ services:
         condition: service_healthy
       bootstrap:
         condition: service_completed_successfully
+    user: "0:0"
     environment:
       MCP_FLOW_DATA_DIR: /data
       MCP_FLOW_URL: http://mcp-flow:8787
+      MCP_FLOW_CONTAINER_RUNTIME: ${MCP_FLOW_CONTAINER_RUNTIME:-docker}
     volumes:
       - mcp-flow-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     command: ["edge", "--url", "http://mcp-flow:8787", "--name", "compose-edge"]
     networks:
       - mcp-flow
 
   tailscale:
-    profiles: ["tailscale"]
     image: tailscale/tailscale:stable
     container_name: mcp-flow-tailscale
-    network_mode: service:mcp-flow
+    restart: unless-stopped
     depends_on:
       mcp-flow:
         condition: service_healthy
@@ -97,18 +99,16 @@ services:
       TS_AUTHKEY: ${TS_AUTHKEY:-}
       TS_HOSTNAME: ${TS_HOSTNAME:-mcp-flow}
       TS_STATE_DIR: /var/lib/tailscale
-      TS_USERSPACE: "false"
+      TS_USERSPACE: "true"
       TS_AUTH_ONCE: "true"
       TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /config/ts-serve.json
       TS_EXTRA_ARGS: --login-server=${TS_LOGIN_SERVER:-} ${TS_EXTRA_ARGS:-}
     volumes:
       - tailscale-state:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    restart: unless-stopped
+      - ./docker:/config:ro
+    networks:
+      - mcp-flow
 
 networks:
   mcp-flow:
