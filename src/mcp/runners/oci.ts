@@ -9,41 +9,39 @@ export function containerRuntime(): string {
   return process.env.MCP_FLOW_CONTAINER_RUNTIME?.trim() || "docker";
 }
 
-/**
- * Run an OCI image as a stdio MCP: `docker/podman run -i --rm … image [cmd…]`
- * Attaches via StdioClientTransport to the container process.
- */
-export async function connectOci(opts: {
+export function ociRunArgs(opts: {
   image: string;
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
-}): Promise<StdioRunResult> {
-  const runtime = containerRuntime();
+}): string[] {
   const args: string[] = ["run", "-i", "--rm"];
-
   const net = opts.sandbox?.networkMode ?? "bridge";
   args.push("--network", net);
-
   if (opts.sandbox?.memory) {
     args.push("--memory", opts.sandbox.memory);
   }
   if (opts.sandbox?.cpus) {
     args.push("--cpus", opts.sandbox.cpus);
   }
-
   for (const [k, v] of Object.entries(opts.env)) {
     args.push("-e", `${k}=${v}`);
   }
-
   args.push(opts.image);
   if (opts.command?.length) {
     args.push(...opts.command);
   }
+  return args;
+}
 
-  // Use StdioClientTransport with docker/podman as the command
+export async function connectOci(opts: {
+  image: string;
+  command?: string[] | null;
+  env: Record<string, string>;
+  sandbox?: SandboxConfig | null;
+}): Promise<StdioRunResult> {
   return connectStdioCommand({
-    command: [runtime, ...args],
+    command: [containerRuntime(), ...ociRunArgs(opts)],
     env: {},
   });
 }
