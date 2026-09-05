@@ -1,0 +1,53 @@
+{
+  "id": "ai.refd/refd",
+  "title": "refd",
+  "description": "Read AI search visibility, competitors, citations, prompts, and answer evidence from refd.",
+  "summary": "Read AI search visibility, competitors, citations, prompts, and answer evidence from refd.",
+  "offersHint": "Read AI search visibility, competitors, citations, prompts, and answer evidence from refd. · Remote MCP (streamable-http) at https://api.refd.ai/mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.refd.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.refd.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://refd.ai",
+  "sourceUrl": "https://github.com/emaitchess/refd",
+  "repository": {
+    "url": "https://github.com/emaitchess/refd",
+    "source": "github",
+    "id": "1300972638"
+  },
+  "updatedAt": "2026-07-29T18:24:26.940494Z",
+  "publishedAt": "2026-07-29T18:24:26.940494Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:45:19.485Z",
+    "sourceRepoAt": "2026-08-12T00:45:19.485Z",
+    "readmeAt": "2026-08-12T00:45:19.992Z",
+    "toolsAt": "2026-08-12T00:45:20.240Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/emaitchess/refd",
+    "checkedAt": "2026-08-12T00:45:19.485Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/emaitchess/refd/main/README.md",
+    "markdown": "# refd\n\n[![CI](https://github.com/emaitchess/refd/actions/workflows/ci.yml/badge.svg)](https://github.com/emaitchess/refd/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/github/license/emaitchess/refd)](LICENSE) [![Try refd.ai](https://img.shields.io/badge/try-refd.ai-111111)](https://refd.ai) [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)\n\nOpen-source AI search monitoring — track how AI answers talk about any brand: visibility, mentions, citations, and rank across ChatGPT, Perplexity, Gemini, Google AI Mode, and Google AI Overviews. Use the hosted app at [refd.ai](https://refd.ai) or self-host the whole stack.\n\nA Bun-workspace monorepo of three independently deployed Cloudflare Workers: **`apps/api`** (`api.refd.ai`) — the Hono API, OAuth, remote MCP, daily cron, and queue consumer, holding every binding; **`apps/dashboard`** (`dash.refd.ai`) — the React SPA as an assets-only Worker; **`apps/web`** (`refd.ai`) — the static Astro marketing site. Shared runtime-neutral code lives in **`packages/core`**. Data via BrightData (dataset scrapers + SERP API), stored in D1 (Drizzle) with gzipped raw payloads in R2.\n\nrefd also exposes the same workspace intelligence to AI agents through a\nread-only, OAuth-protected remote MCP connector. See the\n[MCP connector guide](docs/mcp.md) for Claude, Claude Code, ChatGPT, and\nself-hosting setup.\n\n## How it works\n\nAccounts hold **workspaces**; each workspace tracks one brand — its competitors, its prompt set, its runs. A daily cron creates an idempotent run for every workspace eligible for scheduled monitoring, then fans out queue messages: one batch-snapshot trigger per dataset surface × sample (trigger → notify → fetch, with a backstop poll), plus one sync SERP call per prompt × sample for AI Overviews. Every answer is scored for every tracked entity (mentioned / cited / first-mention position), and the raw payload is archived gzipped in R2. A missing AI Overview is recorded as a valid \"no AIO shown\", not a failure. Retries honor `Retry-After`, back off with jitter, and are idempotent at every layer — a redelivered message never re-spends provider quota.\n\n## Develop\n\n```bash\nbun install\nbun run dev    # applies local migrations, then runs all three Workers behind\n               # Caddy on same-site subdomains over real HTTPS\n```\n\nRegister on the login screen (business email + password ≥ 8 chars) — your first workspace is created automatically and drops you into a resumable setup wizard: name your brand, let it draft your description from your site, pick competitors and prompts, choose engines, then watch the first report fill in live. Every AI step falls back to typing it yourself. Standard accounts can create up to five workspaces, keep up to 25 active prompts in each, and enable up to three AI surfaces. Emails in `ADMIN_EMAILS` have no workspace or active-prompt cap and can enable all available surfaces.\n\n`bun run dev` starts Caddy (`Caddyfile`) fronting all three Workers on same-site subdomains — Astro at **https://refdlocal.io**, the dashboard at **https://dash.refdlocal.io**, the API at **https://api.refdlocal.io** (add all three to `/etc/hosts` as `127.0.0.1`, and run `caddy trust` once). Real HTTPS on same-site subdomains exercises secure cross-origin cookies, CORS, OAuth redirects, and SSE just like production. Caddy stops when dev exits.\n\nLocal secrets go in `apps/api/.dev.vars` (gitignored): `JWT_SECRET`, `BRIGHTDATA_API_TOKEN`, `BRIGHTDATA_WEBHOOK_SECRET` (optional locally; requires a publicly reachable `PUBLIC_BASE_URL`), `ADMIN_EMAILS` (comma-separated administrator and operator allowlist), and `EXA_API_KEY` (onboarding's competitor search, optional). Non-secret build-time origins (`VITE_API_ORIGIN`, `PUBLIC_DASHBOARD_ORIGIN`, …) are committed per environment in each app's `.env.development` / `.env.production`. Analytics is a self-hosted [Umami](https://umami.is) instance shared by the public site and the dashboard, so the activation funnel can span both: the web app needs `PUBLIC_UMAMI_HOST_URL`, `PUBLIC_UMAMI_WEBSITE_ID`, and `PUBLIC_ANALYTICS_HOSTNAME`, and the dashboard needs the same three as `VITE_*` (with the **same** website id). Leave any of them unset and the build emits no tracker at all, which is what a self-hosted deployment wants. Onboarding also uses two **bindings, not secrets** — Workers AI (`AI`) and Browser Rendering (`BROWSER`) — both `remote: true` in `apps/api/wrangler.jsonc`, so local dev proxies to the real services and the account needs both enabled.\n\n- `bun run check` — typecheck (all workspaces) · `bun run lint` / `lint:fix` — Biome · `bun test` — unit tests\n- `bun run build` — build all three Workers · `bun run deploy` — build, migrate D1, then deploy all three\n\n## Self-host\n\n```bash\nwrangler queues create refd-ingest && wrangler queues create refd-ingest-dlq\nwrangler secret put JWT_SECRET\nwrangler secret put BRIGHTDATA_API_TOKEN\nwrangler secret put ADMIN_EMAILS       # comma-separated admin/operator allowlist\nwrangler secret put EXA_API_KEY        # optional: onboarding competitor search\nbun run db:migrate:remote\nbun run deploy\n```\n\n`bun run deploy` builds all three Workers and deploys them (`refd-api`, `refd-dashboard`, `refd-web`); point their custom domains at `api.`, `dash.`, and the apex. You'll need a Cloudflare account (Workers paid plan for Queues, plus Workers AI and Browser Rendering enabled for onboarding), a D1 database + R2 bucket (ids/names in `apps/api/wrangler.jsonc`), and a BrightData account: fill the dataset IDs in `apps/api/wrangler.jsonc` `vars` (dashboard → Web Scrapers → each AI scraper) and create a SERP API zone matching `BRIGHTDATA_SERP_ZONE`. Set the deployment origins (`PUBLIC_BASE_URL`, `DASHBOARD_ORIGIN`, `PUBLIC_SITE_ORIGIN`, `API_ORIGIN`) and `SCHEDULED_MONITORING_POLICY=all` for a self-hosted deployment; the checked-in `entitled` policy is for refd.ai and limits cron to active `pilot` or `subscribed` workspaces. Cron schedule (daily 06:00 UTC), samples, and geo also live in `apps/api/wrangler.jsonc`.\n\n## Notes\n\n- AI answers are non-deterministic: `SAMPLES=2` per prompt/surface; read trends across runs, not single samples.\n- Each standard full run is capped at 25 active prompts × 3 enabled surfaces × samples (25 × 3 × 2 = 150 records at the default). Quota scales with the number of workspaces eligible for scheduled monitoring.\n- Design system: `docs/DESIGN.md`. Scoring/metrics contract: `docs/METRICS.md`. Remote MCP + OAuth: `docs/mcp.md`.\n\n## Contributing\n\nContributions welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the\nchecks your PR must pass, and [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for\ncommunity expectations. Found a security issue? Follow [`SECURITY.md`](SECURITY.md)\ninstead of opening a public issue.\n\n## License\n\n[MIT](LICENSE) © refd\n",
+    "fetchedAt": "2026-08-12T00:45:19.992Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:45:20.240Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid_token\",\"error_description\":\"Missing or invalid access token\"}",
+  "toolsPreviewStatus": "unreachable"
+}

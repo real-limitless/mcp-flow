@@ -1,0 +1,58 @@
+{
+  "id": "io.github.limey/cal-scheduler-mcp",
+  "title": "cal-scheduler",
+  "description": "Timezone-correct CalDAV scheduling MCP server with validated recurrence and single-occurrence edits.",
+  "summary": "Timezone-correct CalDAV scheduling MCP server with validated recurrence and single-occurrence edits.",
+  "offersHint": "Timezone-correct CalDAV scheduling MCP server with validated recurrence and single-occurrence edits. · Packages: pypi:cal-scheduler-mcp",
+  "version": "1.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "cal-scheduler-mcp",
+    "version": "1.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "cal-scheduler-mcp",
+      "version": "1.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/limey/cal-scheduler-mcp",
+  "repository": {
+    "url": "https://github.com/limey/cal-scheduler-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T03:26:29.758885Z",
+  "publishedAt": "2026-08-10T03:26:29.758885Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:46.210Z",
+    "sourceRepoAt": "2026-08-11T23:37:52.995Z",
+    "readmeAt": "2026-08-11T23:37:53.556Z",
+    "toolsAt": "2026-08-12T01:16:46.210Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/limey/cal-scheduler-mcp",
+    "checkedAt": "2026-08-11T23:37:52.995Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/limey/cal-scheduler-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.limey/cal-scheduler-mcp -->\n\n**If you are an agent installing this MCP, read [AGENTS.md](https://github.com/limey/cal-scheduler-mcp/blob/main/AGENTS.md) first.**\n\n# cal-scheduler\n[![cal-scheduler-mcp MCP server](https://glama.ai/mcp/servers/limey/cal-scheduler-mcp/badges/score.svg)](https://glama.ai/mcp/servers/limey/cal-scheduler-mcp)\n\nA thin, **timezone-correct** [MCP](https://modelcontextprotocol.io) server for\nscheduling against any [CalDAV](https://en.wikipedia.org/wiki/CalDAV) calendar.\nIt gives an LLM agent a small, strict set of calendar tools and does the\ndeterministic, fiddly parts of iCalendar correctly so the model doesn't have to.\n\nIt is **not** an NLP layer: the agent phrases the request, the server validates\nit, rejects bad input loudly, and persists clean zoned `.ics`.\n\n## Why it exists\n\nMost calendar tooling an LLM reaches for gets three things subtly wrong. cal-scheduler\nfixes them by construction:\n\n- **Stores zoned, not bare UTC.** Events are written with `TZID`/`VTIMEZONE`, so a\n  weekly 9am *stays* 9am across a daylight-saving boundary instead of drifting an\n  hour. Storing bare UTC is the classic cause of that drift.\n- **Validates recurrence.** It rejects an `RRULE` whose anchor contradicts it (e.g.\n  a series starting on the 30th but set to repeat on the 1st), and normalises\n  `UNTIL` to UTC under a zoned `DTSTART` as RFC 5545 requires.\n- **Does real single-occurrence edits.** Exclude one instance (`EXDATE`) or move one\n  instance (`RECURRENCE-ID`) without disturbing the rest of the series — the\n  operations naive wrappers tend to lack.\n\n## How it works\n\nA small `uv` Python package that **composes** mature libraries rather than\nimplementing a calendar engine:\n\n| Module | Role |\n|---|---|\n| `config.py` | environment config (`CALDAV_*`, `CAL_DEFAULT_TZ`) |\n| `timezones.py` | parse datetimes; naive → assume default-zone wall time, offset → normalise into the zone; report what was assumed |\n| `ical.py` | build/parse VEVENTs (`icalendar`), expand ranges (`recurring-ical-events`), recurrence validation, EXDATE/RECURRENCE-ID ops |\n| `store.py` | CalDAV transport (`caldav`) — list/create/delete calendars, get/put/delete events, read-modify-write with etag |\n| `server.py` | the FastMCP stdio server and the tool surface |\n\nIt runs as a **stdio MCP server** that an MCP host (Claude, an agent harness, etc.)\nspawns as a subprocess.\n\n## Install\n\nRequires Python ≥ 3.11. The package is on PyPI as\n`cal-scheduler-mcp`:\n\n```bash\nuv tool install cal-scheduler-mcp\n```\n\n(or `pip install cal-scheduler-mcp`, `uvx --from cal-scheduler-mcp cal-scheduler`,\netc.)\n\nFor editable dev work, install from a clone:\n\n```bash\n# run straight from the repo with uv (no global install)\nuv run --directory /path/to/cal-scheduler-mcp cal-scheduler\n\n# or install the console script into a tool environment\ngh repo clone limey/cal-scheduler-mcp\nuv tool install --editable /path/to/cal-scheduler-mcp\n# or, with SSH GitHub access, in one step:\nuv tool install git+ssh://git@github.com/limey/cal-scheduler-mcp\n```\n\n> Don't `uv add cal-scheduler-mcp` for the MCP — `uv add` writes\n> into whatever project you're sitting in, not into the tool\n> environment. For an MCP server (spawned as a subprocess),\n> `uv tool install` is the right shape.\n\n## Configure\n\nAll configuration is via environment variables:\n\n| Variable | Required | Default | Meaning |\n|---|---|---|---|\n| `CALDAV_BASE_URL` | ✅ | — | CalDAV server URL, e.g. `http://127.0.0.1:5232` |\n| `CALDAV_USERNAME` |  | — | CalDAV account user |\n| `CALDAV_PASSWORD` |  | — | CalDAV account password |\n| `CAL_DEFAULT_TZ` |  | `Pacific/Auckland` | IANA zone every event is stored in |\n\nMany MCP hosts strip inherited environment from stdio servers, so set these in the\nhost's per-server `env` block rather than relying on the ambient shell.\n\n### Example MCP host config\n\nThe MCP runs as a stdio subprocess that the host spawns. Many hosts strip\ninherited `PATH` from that subprocess, so wire the `uv run --directory`\nform rather than relying on the `cal-scheduler` shim being on the spawn\nhost's `PATH`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cal-scheduler\": {\n      \"command\": \"uv\",\n      \"args\": [\"run\", \"--directory\", \"/abs/path/to/cal-scheduler-mcp\", \"cal-scheduler\"],\n      \"env\": {\n        \"CALDAV_BASE_URL\": \"http://127.0.0.1:5232\",\n        \"CALDAV_USERNAME\": \"me\",\n        \"CALDAV_PASSWORD\": \"secret\",\n        \"CAL_DEFAULT_TZ\": \"Pacific/Auckland\"\n      }\n    }\n  }\n}\n```\n\n`/abs/path/to/cal-scheduler-mcp` is the absolute path to a local clone of\nthis repo (see *Install* above).\n\nIf you installed from PyPI with `uv tool install cal-scheduler-mcp`, use the\ninstalled shim directly:\n\n```json\n{\n  \"mcpServers\": {\n    \"cal-scheduler\": {\n      \"command\": \"/path/to/cal-scheduler\",\n      \"env\": {\n        \"CALDAV_BASE_URL\": \"http://127.0.0.1:5232\",\n        \"CALDAV_USERNAME\": \"me\",\n        \"CALDAV_PASSWORD\": \"secret\",\n        \"CAL_DEFAULT_TZ\": \"Pacific/Auckland\"\n      }\n    }\n  }\n}\n```\n\nFind the shim path with `which cal-scheduler` or `uv tool list --show-paths`.\n\nPair it with any CalDAV server. A simple self-hosted option is\n[Radicale](https://radicale.org/) (plain `http://`, no TLS needed for local use).\n\n## Tool surface\n\n**Events** — `list_events(start, end, [calendar])`, `create_event(summary, start,\n[end, calendar, description, location, rrule])`, `update_event(uid, …)`,\n`delete_event(uid, [calendar])`, `exclude_occurrence(uid, occurrence, [calendar])`,\n`move_occurrence(uid, occurrence, new_start, [new_end, calendar])`,\n`mark_done(uid, [calendar])` — tag an event done and record the timestamp.\n\n**Calendars** — `list_calendars`, `create_calendar(name)`, `delete_calendar(name)`.\n\n**Helper** — `resolve_datetime(value)` — preview how a datetime will be interpreted,\nwithout writing anything.\n\n### The timezone rule (the whole point)\n\nEvery event is stored zoned to `CAL_DEFAULT_TZ`.\n\n- A **naive** datetime (`2026-06-30T21:00`) is assumed to be wall time in that zone,\n  and the tool response says so (`\"assumed Pacific/Auckland wall time\"`).\n- An **offset-qualified** datetime (`…+12:00`) is honoured as an instant and\n  re-expressed in the zone — same wall clock when the offset matches, a correct\n  conversion otherwise.\n- A **date-only** value (`2026-06-30`) is an all-day event.\n\n## Develop\n\n```bash\nuv sync                 # install deps + dev tools\nuv run ruff check       # lint\nuv run pytest           # unit tests (no server required)\n```\n\nThe unit tests cover the pure layers (timezone resolution, recurrence validation,\nEXDATE/RECURRENCE-ID construction) and need no running CalDAV server. To exercise\nthe full stack end to end, point `CALDAV_BASE_URL` at a throwaway CalDAV account.\n\n## License\n\n[MIT](https://github.com/limey/cal-scheduler-mcp/blob/main/LICENSE) © 2026 Robert Clark\n",
+    "fetchedAt": "2026-08-11T23:37:53.556Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:46.210Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

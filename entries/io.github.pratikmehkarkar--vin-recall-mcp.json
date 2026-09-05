@@ -1,0 +1,61 @@
+{
+  "id": "io.github.pratikmehkarkar/vin-recall-mcp",
+  "title": "vin-recall-mcp",
+  "description": "Decodes US VINs and looks up open NHTSA safety recall campaigns for a vehicle.",
+  "summary": "Decodes US VINs and looks up open NHTSA safety recall campaigns for a vehicle.",
+  "offersHint": "Decodes US VINs and looks up open NHTSA safety recall campaigns for a vehicle. · Remote MCP (streamable-http) at https://vin-recall-mcp.zenithserver.duckdns.org/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://vin-recall-mcp.zenithserver.duckdns.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://vin-recall-mcp.zenithserver.duckdns.org/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/pratikmehkarkar/vin-recall-mcp",
+  "repository": {
+    "url": "https://github.com/pratikmehkarkar/vin-recall-mcp",
+    "source": "github",
+    "subfolder": "vin-recall-mcp"
+  },
+  "updatedAt": "2026-07-26T20:49:17.878712Z",
+  "publishedAt": "2026-07-26T20:49:17.878712Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:27.995Z",
+    "sourceRepoAt": "2026-08-11T23:25:35.778Z",
+    "readmeAt": "2026-08-11T23:25:36.186Z",
+    "toolsAt": "2026-08-11T23:25:36.275Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/pratikmehkarkar/vin-recall-mcp",
+    "checkedAt": "2026-08-11T23:25:35.778Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/pratikmehkarkar/vin-recall-mcp/main/README.md",
+    "markdown": "# vin-recall-mcp\n\n[![PR checks](https://github.com/pratikmehkarkar/vin-recall-mcp/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/pratikmehkarkar/vin-recall-mcp/actions/workflows/pr-checks.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n▶️ [Watch a 2-minute demo](https://www.loom.com/share/3d9b33266e1740008129534103e0f68d)\n\nA remote [MCP](https://modelcontextprotocol.io) server that gives any MCP client (Claude, or any other MCP-compatible agent) two tools for free U.S. government vehicle data: **decode a VIN** and **check open safety recalls**, both backed by NHTSA's public APIs.\n\n## What it does\n\n`vin-recall-mcp` exposes two tools over a single Streamable HTTP endpoint: `decode_vin`, which turns a 17-character VIN into make, model, year, body class, engine, fuel type, and assembly plant using NHTSA's vPIC database; and `check_recalls`, which decodes that same VIN internally and returns every open safety recall campaign NHTSA has on file for that vehicle configuration. Point an MCP client at the URL below and ask it a plain-English question — no API key, no signup, no auth.\n\n## Why it exists\n\nNHTSA's vPIC and Recalls APIs are free and genuinely useful, but they're not built for a conversation. `decodevin` alone returns 100+ key/value pairs per VIN, most of them empty or the literal string `\"Not Applicable\"`. The recalls endpoint returns `HTTP 400` for a *legitimate* zero-results case, the exact same status it uses for a bad request. Response times swing from a quarter-second to several seconds on the same VIN. None of that is something you want an agent — or a human — parsing raw. This server does the flattening, validation, timeout handling, and error translation once, so an MCP client can just ask \"what's this VIN, and does it have any open recalls?\" and get a clean answer back.\n\n## Architecture\n\n```\nMCP client (Claude, mcp-remote, MCP Inspector, ...)\n        │  Streamable HTTP, JSON-RPC\n        ▼\nNode/Express server  ──▶  NHTSA vPIC API        (decode_vin)\n(this repo, self-hosted   NHTSA Recalls API     (check_recalls)\n on Ubuntu behind Caddy)\n        │\n        ▼\nCleaned, structured response\n(flattened fields, human summary, error/caveat notes)\n```\n\nThe server is a stateless Node/Express process using `@modelcontextprotocol/sdk`'s `StreamableHTTPServerTransport` — a fresh `McpServer` per request, no sessions, no database, no auth layer. It's self-hosted on-prem (Ubuntu Server, \"Zenith\") behind a Caddy reverse proxy for HTTPS termination, rather than a serverless platform, so the tools run under a real long-lived process with straightforward logs and no cold starts. Tool logic (`src/tools.ts`) is fully decoupled from the transport (`src/server.ts`), so it can be — and is — imported and tested directly by the eval suite without a running server.\n\n## Tools\n\n### `decode_vin`\n\nDecode a 17-character US VIN into vehicle attributes.\n\n| | |\n|---|---|\n| **Input** | `vin` *(string, required)* — 17 characters, letters and digits, excluding `I`, `O`, `Q` |\n| **Output** | `make`, `model`, `year`, `bodyClass`, `engineCylinders`, `fuelType`, `driveType`, `plantCountry` (each omitted if NHTSA has no meaningful value), a one-line `summary`, and a `found` flag |\n| **Coverage** | US-market vehicles from the 1981 17-character VIN standard onward |\n\n### `check_recalls`\n\nList open NHTSA safety recall campaigns for a vehicle, by VIN.\n\n| | |\n|---|---|\n| **Input** | `vin` *(string, required)* — same 17-character format; decoded internally to get make/model/year, so there's no separate make/model/year input path |\n| **Output** | `checked` flag, `make`/`model`/`year`, `recallCount`, and a `recalls` array — each with `campaignNumber`, `summary`, `consequence`, `remedy`, `reportDate`, and the `parkIt`/`parkOutside` safety flags where NHTSA provides them |\n| **Zero recalls** | Returns an explicit \"No open recall campaigns found for this vehicle,\" never a silent empty array |\n\n## Install\n\n**Live endpoint:** `https://vin-recall-mcp.zenithserver.duckdns.org/mcp`\n\n**Claude.ai / Claude web:** Settings → Connectors → Add custom connector → paste the URL above.\n\n**Claude Desktop** (or any client that needs a local proxy) — add to your MCP config, using [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):\n\n```json\n{\n  \"mcpServers\": {\n    \"vin-recall\": {\n      \"command\": \"npx\",\n      \"args\": [\"mcp-remote\", \"https://vin-recall-mcp.zenithserver.duckdns.org/mcp\"]\n    }\n  }\n}\n```\n\nOnce connected, just ask naturally: *\"Can you decode VIN JM3KFBCM1R0123456 and tell me if it has any open recalls?\"*\n\n## Caveats\n\nThese aren't polish — they're correctness constraints this server is built around:\n\n- **A recall campaign is not proof of a repair.** `check_recalls` returns campaigns issued for a make/model/year *configuration*. It never confirms whether the specific VIN's vehicle was actually fixed at a dealer — that record isn't public. Every non-empty result carries this disclaimer.\n- **Coverage gap by design, not by bug.** vPIC reliably decodes US-market vehicles from the 1981 17-character VIN standard onward. Pre-1981 VINs are shorter by definition and are rejected by input validation before any network call; some foreign-market vehicles may also return partial or no data. Either way you get a clean \"not found\" message, never a crash.\n- **NHTSA is slow, and inconsistently so.** Real-world response times for the same VIN have ranged from ~0.3s to 3s+ in testing. Every outbound request carries a 9-second timeout; a timeout returns a plain \"NHTSA is slow or unavailable, try again,\" never a hang or a stack trace.\n- **Decoded fields are manufacturer-submitted.** NHTSA doesn't guarantee every field is populated even for a VIN that decodes successfully. Missing fields are silently dropped rather than shown as empty, and a note is attached whenever NHTSA's own error code flags the decode as non-clean.\n\n## Evals\n\n`evals/` contains 9 cases exercising both tools against the *real* NHTSA APIs (deliberately not mocked — the point is proving the tool logic survives NHTSA's actual response shapes, not a fake of them): a known-good modern VIN, a Tesla, a truck, a motorcycle, a malformed VIN, a pre-1981-length VIN, a well-formed-but-undecodable VIN, a VIN with known open recalls, and a VIN with none. Each case asserts on error/success state, required substrings, structured-content fields, and — for successful results — that the output actually satisfies the tool's declared Zod `outputSchema`.\n\n```bash\ncd vin-recall-mcp\nnpm install\nnpm run eval\n```\n\nThis also runs automatically on every pull request against `main` (see `.github/workflows/pr-checks.yml`), alongside a type-check.\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:25:36.186Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "decode_vin",
+      "description": "Decode a 17-character US vehicle VIN into make, model, year, body class, engine cylinders, fuel type, drive type, and assembly plant country, using the NHTSA vPIC database. Covers US-market vehicles built from 1981 onward (the 17-character VIN standard); pre-1981 and some foreign-market vehicles may return partial or no data. Decoded fields are manufacturer-submitted and individual fields may be missing even for a successfully decoded VIN."
+    },
+    {
+      "name": "check_recalls",
+      "description": "List open safety recall campaigns for a vehicle by VIN, using the NHTSA Recalls database. Decodes the VIN internally to get make/model/year, then looks up campaigns for that vehicle configuration. Important: results are recall campaigns issued for the make/model/year configuration — this does NOT confirm whether this specific VIN's vehicle was actually repaired at a dealer. Always describe results as 'open recall campaigns for this vehicle,' never as whether the car 'is' or 'isn't' fixed."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:25:36.275Z",
+  "toolsPreviewStatus": "ok"
+}

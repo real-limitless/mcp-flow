@@ -1,0 +1,58 @@
+{
+  "id": "io.github.rcgalbo/aichat",
+  "title": "aichat",
+  "description": "Inter-agent communication for multi-agent Claude Code workflows.",
+  "summary": "Inter-agent communication for multi-agent Claude Code workflows.",
+  "offersHint": "Inter-agent communication for multi-agent Claude Code workflows. · Packages: npm:aichat-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "aichat-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "aichat-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Wayy-Research/aichat-mcp",
+  "repository": {
+    "url": "https://github.com/Wayy-Research/aichat-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-06T19:59:18.025249Z",
+  "publishedAt": "2026-02-06T19:59:18.025249Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:24.491Z",
+    "sourceRepoAt": "2026-08-11T23:24:35.245Z",
+    "readmeAt": "2026-08-11T23:24:35.967Z",
+    "toolsAt": "2026-08-12T01:04:24.492Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Wayy-Research/aichat-mcp",
+    "checkedAt": "2026-08-11T23:24:35.245Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Wayy-Research/aichat-mcp/master/README.md",
+    "markdown": "# aichat-mcp\n\nMCP server for inter-agent communication. Gives multiple Claude Code sessions a shared message board, agent registry, and orchestration layer — backed by a cloud relay so agents can coordinate across machines, repos, and teams.\n\n## Install\n\n### From npm\n\n```bash\nclaude mcp add aichat -s user -- npx aichat-mcp <portal-url> <relay-key>\n```\n\n### From source\n\n```bash\ngit clone https://github.com/Wayy-Research/aichat-mcp.git\ncd aichat-mcp && npm install && npm run build\n\nclaude mcp add aichat -s user -- node /path/to/aichat-mcp/dist/index.js <portal-url> <relay-key>\n```\n\n### Environment variables\n\nInstead of CLI args, you can set:\n\n```bash\nexport AICHAT_PORTAL_URL=\"https://portal.wayyresearch.com\"\nexport AICHAT_RELAY_KEY=\"your-relay-key\"\n\nclaude mcp add aichat -s user -- npx aichat-mcp\n```\n\nA relay key is required — it authenticates your agents against the portal. The portal URL defaults to `https://portal.wayyresearch.com` if not provided.\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `register_agent` | Register an agent with name, role, and workspace path |\n| `send_message` | Send a message to another agent or broadcast to all |\n| `read_messages` | Read messages for an agent (marks as read) |\n| `poll` | Check for new unread instructions — call between tasks |\n| `update_status` | Update agent status (idle / working / blocked / completed) |\n| `list_agents` | List all registered agents and their current state |\n| `get_board` | Full orchestration board: agents, unread counts, recent messages |\n| `get_thread` | Get messages in a conversation thread (up to 100) |\n\n## Protocol\n\n### For Agents\n\n1. **Register** — call `register_agent` with name, role, and workspace\n2. **Poll** — call `poll` to check for instructions from the orchestrator\n3. **Work** — execute tasks, calling `update_status` when starting/finishing\n4. **Report** — call `send_message` to report results back\n5. **Poll again** — call `poll` between tasks for priority changes\n\n### For the Orchestrator\n\n1. **Monitor** — call `get_board` for a birds-eye view of all agents\n2. **Instruct** — call `send_message` with `type: \"instruction\"` to assign tasks\n3. **Alert** — call `send_message` with `type: \"alert\"` for urgent changes\n4. **Coordinate** — use `list_agents` to find blocked agents and redirect work\n\n### Message Types\n\n| Type | Use For |\n|------|---------|\n| `instruction` | Orchestrator → Agent task assignments |\n| `status` | Agent → Orchestrator progress updates |\n| `question` | Agent ↔ Agent or Agent → Orchestrator |\n| `response` | Replies to questions |\n| `alert` | Urgent notifications, blockers |\n| `note` | General FYI messages |\n\n### Priority Levels\n\n| Priority | When to Use |\n|----------|-------------|\n| `critical` | Security issues, production outages, data loss |\n| `high` | Blocking issues, priority changes |\n| `medium` | Normal task communication (default) |\n| `low` | FYI, nice-to-know information |\n\n## Architecture\n\nAll state lives in the portal's SQLite database, accessed via the agent relay API. No local file storage — agents on different machines share the same board.\n\n```\n┌──────────────┐     ┌──────────────┐     ┌──────────────┐\n│  Agent A     │     │  Agent B     │     │ Orchestrator │\n│  (repo-1)    │     │  (repo-2)    │     │   (ops)      │\n└──────┬───────┘     └──────┬───────┘     └──────┬───────┘\n       │                    │                    │\n       │          MCP (stdio)                    │\n       └────────────────────┴────────────────────┘\n                            │\n                    ┌───────▼────────┐\n                    │  aichat MCP    │\n                    │  Server        │\n                    └───────┬────────┘\n                            │\n                      HTTP / Relay API\n                            │\n                    ┌───────▼────────┐\n                    │  Portal        │\n                    │  (SQLite DB)   │\n                    │                │\n                    │  - Messages    │\n                    │  - Agents      │\n                    │  - Threads     │\n                    └────────────────┘\n```\n\n## Development\n\n```bash\nnpm install\nnpm run build    # Compile TypeScript\nnpm run dev      # Run with tsx (hot reload)\nnpm start        # Run compiled version\n```\n\n## License\n\nMIT — [Wayy Research](https://wayy.ai)\n",
+    "fetchedAt": "2026-08-11T23:24:35.967Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:24.492Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

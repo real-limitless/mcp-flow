@@ -1,0 +1,101 @@
+{
+  "id": "io.github.infraveilhq/agent-guard",
+  "title": "Infraveil Agent Guard",
+  "description": "Gate an AI agent's destructive actions behind human approval, with a tamper-evident log.",
+  "summary": "Gate an AI agent's destructive actions behind human approval, with a tamper-evident log.",
+  "offersHint": "Gate an AI agent's destructive actions behind human approval, with a tamper-evident log. · Packages: pypi:infraveil-guard · Env vars: INFRAVEIL_GUARD_HOME, INFRAVEIL_GUARD_MODE, INFRAVEIL_GUARD_THRESHOLD",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "infraveil-guard",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "INFRAVEIL_GUARD_THRESHOLD",
+        "description": "Severity at/above which an action is gated: none|low|medium|high|critical (default high)."
+      },
+      {
+        "name": "INFRAVEIL_GUARD_MODE",
+        "description": "enforce (block dangerous actions pending approval) or audit (log only, never block). Default enforce."
+      },
+      {
+        "name": "INFRAVEIL_GUARD_HOME",
+        "description": "Directory for the ledger and approval queue (default ~/.infraveil-guard)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "infraveil-guard",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "INFRAVEIL_GUARD_THRESHOLD",
+          "description": "Severity at/above which an action is gated: none|low|medium|high|critical (default high)."
+        },
+        {
+          "name": "INFRAVEIL_GUARD_MODE",
+          "description": "enforce (block dangerous actions pending approval) or audit (log only, never block). Default enforce."
+        },
+        {
+          "name": "INFRAVEIL_GUARD_HOME",
+          "description": "Directory for the ledger and approval queue (default ~/.infraveil-guard)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "INFRAVEIL_GUARD_HOME",
+      "description": "Directory for the ledger and approval queue (default ~/.infraveil-guard)."
+    },
+    {
+      "name": "INFRAVEIL_GUARD_MODE",
+      "description": "enforce (block dangerous actions pending approval) or audit (log only, never block). Default enforce."
+    },
+    {
+      "name": "INFRAVEIL_GUARD_THRESHOLD",
+      "description": "Severity at/above which an action is gated: none|low|medium|high|critical (default high)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://infraveil.com",
+  "sourceUrl": "https://github.com/infraveilhq/infraveil-guard",
+  "repository": {
+    "url": "https://github.com/infraveilhq/infraveil-guard",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-22T09:48:37.234774Z",
+  "publishedAt": "2026-06-22T09:48:37.234774Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:58.126Z",
+    "sourceRepoAt": "2026-08-11T23:42:21.442Z",
+    "readmeAt": "2026-08-11T23:42:21.938Z",
+    "toolsAt": "2026-08-12T01:19:58.126Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/infraveilhq/infraveil-guard",
+    "checkedAt": "2026-08-11T23:42:21.442Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/infraveilhq/infraveil-guard/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.infraveilhq/agent-guard -->\n\n# infraveil-guard\n\n**A seatbelt for your AI agent.** Put a governed, tamper-evident gate in front of\nthe destructive things an agent can do — `rm -rf`, `DROP TABLE`, `terraform\ndestroy`, `git push --force`, `kubectl delete namespace`, `DELETE FROM … `with no\n`WHERE`. The agent proposes; the dangerous ones are **blocked until a human\napproves them out of band**; every decision is written to a **local hash-chained\nledger you can verify**.\n\nOffline by design: **no account, no network, no telemetry.** It runs entirely on\nyour machine. Open your network tab — it talks to nobody.\n\n```bash\npip install infraveil-guard\n```\n\n---\n\n## Why\n\nCoding agents (Claude Code, Cursor, and friends) are great until the one time\nthey run `rm -rf` in the wrong directory, or drop the production database to \"fix\na migration.\" You don't want to read every command — you want the *catastrophic*\nones to stop and wait for you. That's all this does, and it does it well.\n\n## Wire it into your agent\n\nAdd it as an MCP server. For Claude Code / Cursor / any MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"infraveil-guard\": {\n      \"command\": \"infraveil-guard\"\n    }\n  }\n}\n```\n\nThen add one rule to your agent's instructions (CLAUDE.md, system prompt, etc.):\n\n> Before running any shell command, SQL statement, or infrastructure/cloud\n> operation, first call `guard_action` with the exact command. Only proceed if it\n> returns `proceed: true`. If it returns `decision: \"blocked\"`, stop and ask me to\n> approve it — I'll give you a one-time code to pass back as `approval_code`.\n\nThat's it. Safe commands sail through (and are logged). Dangerous ones stop.\n\n## How approval works (the part that matters)\n\nWhen the agent hits something dangerous, `guard_action` returns `blocked` and an\n`action_id`. **The agent cannot approve itself** — by construction, not by good\nbehavior. You approve in your *own* terminal:\n\n```bash\n$ infraveil-guard approvals\n1 action(s) blocked, waiting for approval:\n\n  [9b58e9c499b3]  CRITICAL  CRITICAL risk: drop table (+0 more). Irreversible.\n            DROP TABLE users;\n            approve with:  infraveil-guard approve 9b58e9c499b3\n\n$ infraveil-guard approve 9b58e9c499b3\n\n  Action requesting approval\n  id:        9b58e9c499b3\n  risk:      CRITICAL  (IRREVERSIBLE)\n  why:       CRITICAL risk: drop table. Irreversible.\n  command:\n    DROP TABLE users;\n\n  Approve this action? [y/N] y\n\n  APPROVED. Give the agent this one-time code:\n\n      8f2510\n\n  It is valid for 15 minutes and works exactly once.\n```\n\nYou hand the agent `8f2510`; it calls `guard_action(\"DROP TABLE users;\",\napproval_code=\"8f2510\")`; the guard checks it, lets it through once, and records\nthe approval. The code is minted only by the human CLI, is single-use, and\nexpires — so an agent can't forge or replay it.\n\n## Inspect everything — trust nothing\n\nEvery decision (allowed, blocked, approved, denied) is appended to a hash-chained\nledger at `~/.infraveil-guard/ledger.jsonl`. Editing, deleting, reordering, or\ninserting any line breaks the chain:\n\n```bash\n$ infraveil-guard verify\n{ \"ok\": true, \"count\": 42, \"message\": \"Hash chain verified across 42 entries - no tampering.\" }\n\n$ infraveil-guard log 10        # the last 10 decisions, raw\n```\n\nIt's ~400 lines of plain stdlib Python. Read it. That's the point.\n\n## Tools (MCP)\n\n| Tool | What it does |\n|------|--------------|\n| `guard_action(action, approval_code=\"\")` | Gate an action before running it. Returns `proceed` true/false. |\n| `assess_action(action)` | Classify blast radius **without** recording or gating. |\n| `verify_ledger()` | Verify the tamper-evident ledger's hash chain. |\n| `recent_decisions(limit=20)` | The most recent decisions, newest first. |\n\n## Configuration\n\n| Env var | Default | Meaning |\n|---------|---------|---------|\n| `INFRAVEIL_GUARD_THRESHOLD` | `high` | Gate actions at/above this severity: `none\\|low\\|medium\\|high\\|critical`. |\n| `INFRAVEIL_GUARD_MODE` | `enforce` | `enforce` blocks dangerous actions; `audit` logs everything but never blocks (use it to watch your agent before you trust the gate). |\n| `INFRAVEIL_GUARD_HOME` | `~/.infraveil-guard` | Where the ledger and approval queue live. |\n\n## What this is — and isn't\n\nIt **is** a high-signal classifier + an out-of-band human-approval gate + a\ntamper-evident local log. It's the smallest honest version of \"a human approves\nbefore anything irreversible happens.\"\n\nIt is **not** a sandbox. It works because your agent is told to route actions\nthrough `guard_action` — a cooperative guardrail, not an unbypassable jail. That\nis a deliberate trade: in exchange you get something you can install in one line,\nread end to end in an afternoon, and run with **no account, no network, and no\ndependency on anyone else's infrastructure — including ours.** Nothing here calls\nhome, checks a license, or needs a server to keep working. It does one job and\nowns it: stop the catastrophic actions and wait for a human. Yours to fork and\nrun forever.\n\n## Related\n\nPart of Infraveil's open-source tools for running backends you own:\n\n- [infraveil-lockin](https://github.com/infraveilhq/infraveil-lockin) — scan a repo and score how locked in your app is to one cloud provider (`npx infraveil-lockin`).\n- [infraveil](https://github.com/infraveilhq/infraveil) — a policy DSL you enforce in CI, plus offline audit-ledger and signature verification.\n\n## License\n\nAGPL-3.0-or-later. Use it, fork it, read every line. If you run a modified version\nas a network service, share your changes. © Infraveil Corporation.\n",
+    "fetchedAt": "2026-08-11T23:42:21.938Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:58.126Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

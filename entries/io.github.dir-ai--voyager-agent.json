@@ -1,0 +1,58 @@
+{
+  "id": "io.github.dir-ai/voyager-agent",
+  "title": "voyager-agent",
+  "description": "One universal Voyager: name a goal; it activates senses (repo, net) and runs a live mission.",
+  "summary": "One universal Voyager: name a goal; it activates senses (repo, net) and runs a live mission.",
+  "offersHint": "One universal Voyager: name a goal; it activates senses (repo, net) and runs a live mission. · Packages: npm:@dir-ai/voyager-agent",
+  "version": "0.22.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@dir-ai/voyager-agent",
+    "version": "0.22.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dir-ai/voyager-agent",
+      "version": "0.22.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dir-ai/voyager-agent",
+  "repository": {
+    "url": "https://github.com/dir-ai/voyager-agent",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-20T21:18:40.622348Z",
+  "publishedAt": "2026-07-20T21:18:40.622348Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:25.989Z",
+    "sourceRepoAt": "2026-08-11T23:48:34.557Z",
+    "readmeAt": "2026-08-11T23:48:35.125Z",
+    "toolsAt": "2026-08-12T01:24:25.989Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dir-ai/voyager-agent",
+    "checkedAt": "2026-08-11T23:48:34.557Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dir-ai/voyager-agent/main/README.md",
+    "markdown": "# @dir-ai/voyager-agent\n\n**The one universal Voyager.** A thin, model-independent orchestrator that turns\nthe modular Voyager senses — `voyager-repo` (code), `voyager-net` (hosts), and\nthe cognitive contract that binds them — into a single agent. You name a goal;\nVoyager activates the senses it needs, runs a **live mission**, links the\nevidence into one graph, and concludes.\n\nIt is **composition, not a monolith.** The agent never absorbs the senses — it\ncalls the published organs and adapts what they see into the shared\n[`CognitiveClaim`](https://www.npmjs.com/package/@dir-ai/voyager-contract)\nsubstrate. The reasoning model is a **swappable seam** (`Brain`); a rule-based\nbrain ships so it runs with no LLM at all.\n\n> **Sensing is autonomous. Acting is not.** Every sense here is read-only. Any\n> remediation a mission surfaces is carried as a *consent-gated, withheld*\n> action and is **never applied** by this orchestrator.\n\n## Install\n\n```bash\nnpm i -g @dir-ai/voyager-agent\n```\n\n## Use\n\n```bash\n# Orient in a repo and flag risk (voyager-repo)\nvoyager-agent mission \"audit this project\" --repo .\n\n# Audit ONE host you own (voyager-net — fail-closed, needs --authorized)\nvoyager-agent mission \"check my server's exposure\" --host example.com --authorized\n\n# Observe a live page (voyager-browser — read-only, static HTML)\nvoyager-agent mission \"check my landing page\" --url https://example.com\n\n# All three senses in one mission; vet 10 dependencies; machine-readable\nvoyager-agent mission \"full audit\" --repo . --host example.com --authorized --url https://example.com --check-deps 10 --json\n```\n\nSenses fan out in parallel and are **resilient**: a sense that errors (or even\nthrows) becomes a low-confidence, flagged observation — it never crashes the\nmission or discards a sibling sense's good result.\n\nThe mission then **re-plans**: it picks the single most informative next probe\n(by information gain) and executes it, bounded by `maxRounds`. How a probe is\nexecuted is an injectable `dispatch` seam (the model decides); the safe default\nonly ever *re-reads* (deepens repo dependency-vetting) and never acts. A `verify`\nclaim closes the mission so `state().satisfied` is meaningful.\n\n```\nVoyager — one agent, one entry.\ngoal: \"orient in this repo and flag risk\"\n\n  👁 observe  [repo]  (70% · moderate)\n     @dir-ai/voyager-agent@0.1.0 — The one universal Voyager…\n     ↳ [low] no-lockfile: no lockfile — installed versions are not pinned/reproducible\n  🧠 infer  [memory]  (70% · moderate)\n     repo observed; 0 high/critical signal(s). No high-severity issue surfaced.\n\nnext probe: [repo] open src/index.ts\n```\n\n## As an MCP server\n\nOne tool, `run_mission` — describe a goal, get back the full claim graph.\n\n```bash\nvoyager-agent mcp            # stdio\n```\n\n```json\n{\n  \"command\": \"voyager-agent\",\n  \"args\": [\"mcp\"]\n}\n```\n\n## As a library\n\n```ts\nimport { runMission, DeterministicBrain, type Brain } from '@dir-ai/voyager-agent'\n\nconst { mission } = await runMission(\n  'audit this repo and my host',\n  { repoPath: '.', host: 'example.com', authorized: true /* your own host */ },\n  Date.now(),\n)\n\nfor (const claim of mission.allClaims()) console.log(claim.operation, claim.sense, claim.verdict)\nconsole.log(mission.state().bestNextProbe)   // the most informative next step\nconsole.log(mission.state().contradictions)  // where two senses disagree\n```\n\n### Bring your own model\n\nThe `Brain` interface is the whole point — it's where an LLM plugs in without\ntouching the senses, the memory, or the mission machinery. A ready-made\n`LlmBrain` ships: give it one **model-agnostic** `complete()` function and it\nplans and synthesizes through the model. Wire Claude, a local server, or any\nOpenAI-compatible endpoint — Voyager never depends on a specific SDK.\n\n```ts\nimport { runMission, LlmBrain } from '@dir-ai/voyager-agent'\n\nconst brain = new LlmBrain({\n  // Return the model's text for these messages — that's the whole dependency.\n  async complete(messages) {\n    const res = await myModel.chat(messages)   // Claude, local, OpenAI-compatible…\n    return res.text\n  },\n})\n\nawait runMission('audit this repo and my host', { repoPath: '.', brain }, Date.now())\n```\n\n`LlmBrain` is **fail-safe**: if the model errors or returns unparseable output,\nit degrades to the built-in rule-based brain for that step — a bad completion\ncan never take a mission down, only make it less clever once. You can also\nimplement the `Brain` interface directly for full control.\n\n## How it works\n\n```\n        intent ─▶ Brain.decompose ─▶ goals\n                        │\n          ┌─────────────┼───────────────┐\n          ▼             ▼                ▼\n   voyager-repo    voyager-net      (more senses…)\n     scout()         scan()\n          │             │\n          ▼             ▼\n      adapters: brief ─▶ CognitiveClaim\n          │             │\n          └──────▶ MissionGraph ◀───────┘\n                 (contradictions, causal chain,\n                  best-next-probe, memory)\n                        │\n                        ▼\n              Brain.synthesize ─▶ conclusion\n```\n\nEach sense produces a `CognitiveClaim`; the\n[`MissionGraph`](https://www.npmjs.com/package/@dir-ai/voyager-contract) links\nthem — auto-detecting **cross-sense contradictions**, assembling the **causal\nchain**, and surfacing the single **most informative next probe** by information\ngain. A sense *error* becomes a low-confidence `observe` claim flagged with the\nunknown — never a false \"all clear\".\n\n## The Voyager family\n\n| Package | Sense | What it does |\n| --- | --- | --- |\n| [`@dir-ai/voyager`](https://www.npmjs.com/package/@dir-ai/voyager) | web | verified-internet retrieval, OSV-gated |\n| [`@dir-ai/voyager-repo`](https://www.npmjs.com/package/@dir-ai/voyager-repo) | code | orient in a repository, vet dependencies |\n| [`@dir-ai/voyager-net`](https://www.npmjs.com/package/@dir-ai/voyager-net) | hosts | authorized, read-only host audit |\n| [`@dir-ai/voyager-contract`](https://www.npmjs.com/package/@dir-ai/voyager-contract) | — | the cognitive contract the senses speak |\n| **`@dir-ai/voyager-agent`** | **all** | **the one agent that composes them** |\n\n## Safety\n\n- **Read-only senses.** Nothing is installed, executed, or mutated on your systems.\n- **Fail-closed host audit.** A host is only scanned with `--authorized` / `authorized: true`; single host only (no ranges/URLs), cloud-metadata blocked.\n- **Consent-gated action.** Remediation is described and withheld, surfaced as an `unknown` on the claim — this orchestrator never applies it.\n- **Honest uncertainty.** Confidence and `strength` are explicit; a sense error is a flagged unknown, not a clean verdict.\n\n## License\n\nMIT © dir-ai\n",
+    "fetchedAt": "2026-08-11T23:48:35.125Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:25.989Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

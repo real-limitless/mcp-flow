@@ -1,0 +1,58 @@
+{
+  "id": "io.github.BlackFoil/claude-token-saver-mcp",
+  "title": "claude-token-saver-mcp",
+  "description": "MCP server that offloads routine coding tasks to local LLM (Ollama) to save Claude API tokens",
+  "summary": "MCP server that offloads routine coding tasks to local LLM (Ollama) to save Claude API tokens",
+  "offersHint": "MCP server that offloads routine coding tasks to local LLM (Ollama) to save Claude API tokens · Packages: npm:claude-token-saver-mcp",
+  "version": "0.3.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "claude-token-saver-mcp",
+    "version": "0.3.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "claude-token-saver-mcp",
+      "version": "0.3.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/BlackFoil/claude-token-saver-mcp",
+  "repository": {
+    "url": "https://github.com/BlackFoil/claude-token-saver-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-31T09:23:54.013519Z",
+  "publishedAt": "2026-03-31T09:23:54.013519Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:25.908Z",
+    "sourceRepoAt": "2026-08-12T00:16:28.281Z",
+    "readmeAt": "2026-08-12T00:16:28.827Z",
+    "toolsAt": "2026-08-12T01:46:25.908Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/BlackFoil/claude-token-saver-mcp",
+    "checkedAt": "2026-08-12T00:16:28.281Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/BlackFoil/claude-token-saver-mcp/main/README.md",
+    "markdown": "[English](./README.en.md) | 日本語\n\n[![CI](https://github.com/BlackFoil/claude-token-saver-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackFoil/claude-token-saver-mcp/actions) [![npm](https://img.shields.io/npm/v/claude-token-saver-mcp)](https://www.npmjs.com/package/claude-token-saver-mcp) [![Coverage](https://img.shields.io/badge/coverage-97%25-brightgreen)](https://github.com/BlackFoil/claude-token-saver-mcp/actions) [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)\n\n# claude-token-saver-mcp\n\n<p align=\"center\">\n  <img src=\"./docs/assets/banner.svg\" alt=\"claude-token-saver-mcp banner\" width=\"100%\">\n</p>\n\n> **Beta** — 個人利用向け。736 テスト / カバレッジ 97%。\n\n**Claude Code の「それ、ローカルでよくない？」を自動化する MCP サーバー。**\n\nボイラープレート生成、テスト作成、テキスト要約 — Cloud API に投げるまでもない定型タスクを、手元の [Ollama](https://ollama.com/) でさばきます。セキュリティ対策込み。\n\n<!-- デモGIF: 以下の内容で録画してここに貼ってください -->\n<!-- Claude Code で「ソート関数を書いて」→ offload_work 実行 → コード生成 → cost_dashboard で節約額表示 -->\n<!-- 推奨: 800x450px, 15-20秒, asciinema or vhs -->\n\n## モチベーション\n\nClaude Code の API 利用を分析してみたら、**リクエストの約 40% は定型的なコード生成やテキスト処理**でした。この手のタスクは 7B クラスのローカルモデルでも実用的な品質が出ます。「推論は Cloud、作業は Local」— この振り分けを MCP で自動化したのがこのツールです。\n\n## ローカル LLM はどこまで来たか\n\nローカル LLM の進化は速いです。2024 年の Llama 3 から 2025 年の Qwen3 まで、わずか 1 年でコード生成ベンチマーク ([HumanEval](https://arxiv.org/abs/2107.03374)) のスコアは **60% → 85%** に跳ね上がりました。\n\nこの調子なら、Agent ワークフローにローカル LLM が当たり前に組み込まれる日もそう遠くないでしょう。claude-token-saver-mcp は **Cloud と Local を使い分けるための土台**を提供します。\n\n## しくみ\n\n[MCP (Model Context Protocol)](https://modelcontextprotocol.io/) は Claude Code が外部ツールを呼び出すための標準プロトコルです。このサーバーを登録すると、Claude Code が**タスクの内容を見て、定型的な処理を自動的にローカル LLM へ回します**。\n\n```text\nClaude Code ──MCP──▶ token-saver ──HTTP──▶ Ollama (ローカル)\n     │                                         │\n     │  「定型タスクだ → ローカルに振ろう」        │\n     │                                         │\n     └─── 高度な推論・設計判断は Cloud で継続 ───┘\n```\n\nOllama が落ちていたり応答が遅い場合は Cloud API にフォールバック可能です。\n\n## 30 秒セットアップ\n\n**前提:** [Node.js 20+](https://nodejs.org/) と [Ollama](https://ollama.com/) がインストール済みであること。\n\n**0.** Ollama を起動\n\n```bash\nollama serve\n```\n\n**1.** プロジェクトルートに `.mcp.json` を作成\n\n```json\n{\n  \"mcpServers\": {\n    \"token-saver\": { \"command\": \"npx\", \"args\": [\"-y\", \"claude-token-saver-mcp\"] }\n  }\n}\n```\n\n**2.** Claude Code を起動して、こう頼む\n\n```text\nコーディング用にローカルLLMをセットアップして\n```\n\nRAM に応じた最適モデルが推奨 → ダウンロード（約 4GB）→ プリロードまで自動で走ります。\n\n**3.** 動作確認\n\n```text\nTypeScript で配列をシャッフルする関数を書いて\n```\n\n「ローカルLLM（qwen2.5-coder:…）で生成しました」のようにローカルモデル名が表示されれば OK。\n出ない場合は `ollama list` でモデルを確認し、[トラブルシューティング](./docs/user/troubleshooting.md) を参照してください。\n\n<!-- TODO: セットアップ完了のスクリーンショットをここに貼る -->\n<!-- 内容: Claude Code で offload_work が実行され、応答末尾に Model / Tokens / Savings が表示されている様子 -->\n<!-- 推奨: 800x400px, ターミナルスクリーンショット -->\n\n<details>\n<summary>ソースからビルドする場合</summary>\n\n```bash\ngit clone https://github.com/BlackFoil/claude-token-saver-mcp.git\ncd claude-token-saver-mcp\nnpm ci && npm run build\n```\n\nプロジェクトルートの `.mcp.json` に追加：\n\n```json\n{\n  \"mcpServers\": {\n    \"token-saver\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/claude-token-saver-mcp/dist/server.js\"]\n    }\n  }\n}\n```\n\n</details>\n\n## 特徴\n\n- **ローカル完結** — 定型タスクは Cloud API を使わずに処理できる\n- **自動モデル選択** — RAM を検出して最適なモデルを推奨・DL・プリロード（`auto_setup`）\n- **セキュリティ内蔵** — プロンプトインジェクション検知 + 出力サニタイズ\n- **コスト可視化** — 節約額をリアルタイムで追跡（定型タスク比率 40% なら月 $50〜80 程度の削減が目安）\n- **Cloud フォールバック** — Ollama が落ちても Cloud に自動切り替え可能\n\n## 使用例\n\n```text\nあなた: 「ソート関数を書いて」    → offload_work がローカルで生成     💰 $0.02 節約\nあなた: 「このログを要約して」    → compress_context がローカルで圧縮  💰 $0.05 節約\nあなた: 「コスト節約を見せて」    → cost_dashboard: 累計 $47.89 節約\nあなた: 「3つのAPIを一括実装して」 → batch_offload: 3 タスクを順次処理\n```\n\n## ローカル品質の実際\n\nローカル 7B モデルの出力は Claude に及びません。それは前提です。ただ、定型タスクに限れば十分実用的です。\n\n| タスク | ローカル品質 | 向き不向き |\n|:---|:---:|:---:|\n| ボイラープレート生成 | ★★★★☆ | ✅ 得意 |\n| ユニットテスト作成 | ★★★★☆ | ✅ 得意 |\n| テキスト要約 | ★★★★☆ | ✅ 得意 |\n| 単純なリファクタリング | ★★★☆☆ | ✅ 実用的 |\n| アーキテクチャ設計 | ★★☆☆☆ | ❌ Cloud に任せるべき |\n| 複雑なデバッグ | ★★☆☆☆ | ❌ Cloud に任せるべき |\n\nClaude Code がタスクの複雑さを判断して自動で振り分けます。ローカルの品質が足りなければ Cloud で処理されます。\n\n## 自動ティアリング\n\n| RAM | Tier | モデル | DL サイズ |\n|:---:|:---:|:---|:---:|\n| < 16 GB | Light | phi4:latest | ~2.5 GB |\n| 16–48 GB | Standard | qwen2.5-coder:7b | ~4.7 GB |\n| > 48 GB | Ultra | qwen2.5-coder:32b | ~18 GB |\n\n## ツール一覧\n\n| ツール | 説明 |\n|:---|:---|\n| `offload_work` | コード生成・リファクタリングをローカルで実行 |\n| `compress_context` | 長大なテキストをローカルで要約 |\n| `auto_setup` | 最適モデルの推奨 → DL → プリロードをワンステップで |\n| `batch_offload` | 複数タスクを一括投入（順次 / 並列） |\n| `cost_dashboard` | 累計節約額・モデル使用統計 |\n\n<details>\n<summary>その他のツール（6 件）</summary>\n\n| ツール | 説明 |\n|:---|:---|\n| `get_metrics` | サーバーメトリクス（JSON / Prometheus） |\n| `recommend_model` | タスクカテゴリ別の最適モデル推奨 |\n| `pull_model` | Ollama モデルのダウンロード |\n| `preload_model` | VRAM へのプリロード |\n| `list_loaded_models` | ロード中モデルの一覧 |\n| `configure_model_selector` | モデルセレクターのランタイム設定 |\n\n</details>\n\n## セキュリティ\n\nローカル LLM への入出力を自動で保護します。\n\n- **プロンプトインジェクション検知** — 5 カテゴリ・20 パターンで悪意ある入力をブロック\n- **出力サニタイズ** — API キー・パスワード・JWT など 11 パターンを `[REDACTED]` に置換\n- **データプライバシー** — 全処理がローカル完結。外部への送信なし\n\n## ドキュメント\n\n| | |\n|:---|:---|\n| [クイックスタート](./docs/user/quickstart.md) | 5 分で始める |\n| [ユースケース集](./docs/user/use-cases.md) | 具体的な活用例 |\n| [設定リファレンス](./docs/user/configuration.md) | 全設定項目 |\n| [FAQ](./docs/user/faq.md) | よくある質問 |\n| [トラブルシューティング](./docs/user/troubleshooting.md) | エラー対応 |\n\n## アーキテクチャ\n\n```text\nsrc/\n├── server.ts          # MCP エントリポイント（11 ツール登録）\n├── tools/             # offload_work, compress_context, auto_setup, batch_offload 等\n├── ollama/            # Ollama クライアント & マルチノードロードバランサー\n├── queue/             # FIFO キュー & 優先度キュー（URGENT/HIGH/NORMAL/LOW）\n├── model-selector/    # モデル推奨エンジン, ベンチマーク DB, 実行トラッカー\n├── validators/        # 入力バリデーション & プロンプトインジェクション検知\n├── cost/              # コスト計算 & レポーター\n├── metrics/           # Prometheus メトリクス収集\n├── persistence/       # ExecutionTracker / BenchmarkStore のファイル永続化\n├── config/            # Zod 設定スキーマ & ローダー\n├── tiering/           # RAM ベースの自動ティアリング\n├── logging/           # 構造化ログヘルパー\n└── errors.ts          # CTS-XXXX エラー体系\n```\n\n## 開発\n\n```bash\nnpm ci\nnpm test             # 736 テスト（カバレッジ 97%）\nnpm run typecheck    # 型チェック\nnpm run lint         # ESLint\nnpm run build        # プロダクションビルド\n```\n\n**対応プラットフォーム:** macOS / Linux / Windows（Ollama が動く環境）\n\nコントリビューション歓迎です → [CONTRIBUTING.md](./CONTRIBUTING.md)\n\n## ライセンス\n\n[Apache License 2.0](./LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:16:28.827Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:25.908Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

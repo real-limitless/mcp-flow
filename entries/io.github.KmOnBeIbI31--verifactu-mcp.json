@@ -1,0 +1,58 @@
+{
+  "id": "io.github.KmOnBeIbI31/verifactu-mcp",
+  "title": "verifactu-mcp",
+  "description": "MCP server para VeriFactu (AEAT). Facturación electrónica española desde Claude Code.",
+  "summary": "MCP server para VeriFactu (AEAT). Facturación electrónica española desde Claude Code.",
+  "offersHint": "MCP server para VeriFactu (AEAT). Facturación electrónica española desde Claude Code. · Packages: pypi:verifactu-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "verifactu-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "verifactu-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/KmOnBeIbI31/verifactu-mcp",
+  "repository": {
+    "url": "https://github.com/KmOnBeIbI31/verifactu-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T18:02:24.621936Z",
+  "publishedAt": "2026-05-20T18:02:24.621936Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:45.746Z",
+    "sourceRepoAt": "2026-08-12T00:08:55.298Z",
+    "readmeAt": "2026-08-12T00:08:55.723Z",
+    "toolsAt": "2026-08-12T01:39:45.747Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/KmOnBeIbI31/verifactu-mcp",
+    "checkedAt": "2026-08-12T00:08:55.298Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/KmOnBeIbI31/verifactu-mcp/main/README.md",
+    "markdown": "# verifactu-mcp\n\n<!-- mcp-name: io.github.KmOnBeIbI31/verifactu-mcp -->\n\nServidor MCP para integrar **VeriFactu (AEAT)** con Claude Code y Cursor.\n\nPermite generar, encadenar y enviar registros de facturación electrónica desde\nlenguaje natural, sin necesidad de leer la documentación técnica de la AEAT.\n\n---\n\n## Herramientas disponibles\n\n| Herramienta | Descripción |\n|---|---|\n| `generate_invoice_xml` | Genera XML válido con hash SHA-256 encadenado (sin enviar) |\n| `send_invoice` | Envía registro de alta a la AEAT via API y persiste la huella |\n| `cancel_invoice` | Envía registro de anulación |\n| `check_invoice_status` | Consulta el estado de un registro |\n| `list_invoices` | Lista los registros enviados (filtros opcionales por emisor y paginación) |\n| `get_last_hash` | Devuelve la última huella registrada localmente para un emisor |\n| `calculate_hash` | Calcula el hash SHA-256 de cualquier registro |\n\nEl encadenamiento real lo gestiona la API verifactuapi.es internamente (vía\n`previous_id`). El servidor MCP **persiste la huella canónica que devuelve la\nAPI** en SQLite local (`~/.verifactu-mcp/state.db`) como **audit log**, no como\nmecanismo de encadenamiento operativo. La herramienta `get_last_hash` consulta\nese log.\n\n`calculate_hash` y la huella `huella_local_estimada` de `send_invoice` son\n**estimaciones heurísticas** para inspección — la huella canónica AEAT incluye\nel timestamp server-side y solo el servidor puede generarla.\n\n### Smoke test contra sandbox\n\n```bash\n$env:VERIFACTU_API_TOKEN = \"<tu_token_sandbox>\"\npython smoke_test.py <id_emisor> [nif_receptor]\n```\n\nEjecuta `list_invoices` + `send_invoice` (¡emite registro real en sandbox!) +\n`check_invoice_status` + `get_last_hash`. NO ejecutar contra producción.\n\n---\n\n## Instalación\n\n```bash\n# 1. Clona el repositorio\ngit clone https://github.com/tuusuario/verifactu-mcp\ncd verifactu-mcp\n\n# 2. Instala las dependencias\npip install -e .\n```\n\n---\n\n## Configuración en Claude Code\n\nTras `pip install -e .`, el script `verifactu-mcp` queda disponible globalmente.\nAñade esto a tu `~/.claude.json` (o `claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"verifactu\": {\n      \"command\": \"verifactu-mcp\",\n      \"env\": {\n        \"VERIFACTU_API_TOKEN\": \"tu_token_aqui\"\n      }\n    }\n  }\n}\n```\n\nAlternativa sin script instalado (vía `python -m`):\n\n```json\n{\n  \"mcpServers\": {\n    \"verifactu\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"verifactu_mcp.server\"],\n      \"cwd\": \"/ruta/a/verifactu-mcp\",\n      \"env\": {\n        \"VERIFACTU_API_TOKEN\": \"tu_token_aqui\"\n      }\n    }\n  }\n}\n```\n\n---\n\n## Uso desde Claude Code\n\n```\n# Generar un XML sin enviar (ideal para pruebas)\n\"Genera un registro VeriFactu para una factura de 100€ + 21% IVA,\n emisor B12345678, serie 2025/001, fecha 15-05-2025,\n descripción: Servicios de desarrollo web\"\n\n# Enviar a la AEAT — la huella anterior se resuelve automáticamente\n\"Envía a la AEAT la factura 2025/001 del emisor B12345678,\n base 100€, IVA 21%, fecha hoy\"\n\n# Consultar estado\n\"¿Cuál es el estado del registro con ID 42?\"\n\n# Anular una factura\n\"Anula la factura 2025/001 del emisor B12345678\"\n\n# Listar las facturas enviadas\n\"Lista las últimas 50 facturas enviadas para el emisor B12345678\"\n\n# Inspeccionar el último hash del emisor\n\"¿Cuál es la última huella encadenada para B12345678?\"\n```\n\n---\n\n## Variables de entorno\n\n| Variable | Descripción | Requerida |\n|---|---|---|\n| `VERIFACTU_API_TOKEN` | Token de acceso a verifactuapi.es | Sí (para enviar) |\n| `VERIFACTU_API_BASE` | URL base de la API (por defecto producción) | No |\n| `VERIFACTU_STATE_DB` | Ruta a la DB SQLite de estado (por defecto `~/.verifactu-mcp/state.db`) | No |\n\n---\n\n## Entornos AEAT\n\n| Entorno | URL |\n|---|---|\n| Sandbox | `https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP` |\n| Producción | `https://www1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP` |\n\nPara certificados de prueba (sandbox): `catentidades@correo.aeat.es`\n\n<!-- mcp-name: io.github.KmOnBeIbI31/verifactu-mcp -->\n\n---\n\n## Licencia\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:08:55.723Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:45.747Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

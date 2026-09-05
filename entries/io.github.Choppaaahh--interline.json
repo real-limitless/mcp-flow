@@ -1,0 +1,91 @@
+{
+  "id": "io.github.Choppaaahh/interline",
+  "title": "interline",
+  "description": "Neutral, non-custodial MCP payment router: discover rails, then pay across them.",
+  "summary": "Neutral, non-custodial MCP payment router: discover rails, then pay across them.",
+  "offersHint": "Neutral, non-custodial MCP payment router: discover rails, then pay across them. · Packages: pypi:interline · Env vars: APV0_BUYER_PRIVATE_KEY, APV0_NETWORK",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "interline",
+    "version": "0.1.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "APV0_BUYER_PRIVATE_KEY",
+        "description": "Your own wallet private key (0x...). Stays in your env; the server never holds funds. Required only for pay_for_resource, not for discovery.",
+        "secret": true
+      },
+      {
+        "name": "APV0_NETWORK",
+        "description": "base-sepolia (testnet) or base (mainnet). Default base-sepolia."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "interline",
+      "version": "0.1.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "APV0_BUYER_PRIVATE_KEY",
+          "description": "Your own wallet private key (0x...). Stays in your env; the server never holds funds. Required only for pay_for_resource, not for discovery.",
+          "secret": true
+        },
+        {
+          "name": "APV0_NETWORK",
+          "description": "base-sepolia (testnet) or base (mainnet). Default base-sepolia."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "APV0_BUYER_PRIVATE_KEY",
+      "description": "Your own wallet private key (0x...). Stays in your env; the server never holds funds. Required only for pay_for_resource, not for discovery.",
+      "secret": true
+    },
+    {
+      "name": "APV0_NETWORK",
+      "description": "base-sepolia (testnet) or base (mainnet). Default base-sepolia."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Choppaaahh/interline-routes",
+  "repository": {
+    "url": "https://github.com/Choppaaahh/interline-routes",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-23T19:58:39.161285Z",
+  "publishedAt": "2026-06-23T19:58:39.161285Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:45:04.319Z",
+    "sourceRepoAt": "2026-08-12T00:14:49.386Z",
+    "readmeAt": "2026-08-12T00:14:49.868Z",
+    "toolsAt": "2026-08-12T01:45:04.319Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Choppaaahh/interline-routes",
+    "checkedAt": "2026-08-12T00:14:49.386Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Choppaaahh/interline-routes/main/README.md",
+    "markdown": "# Interline — agent-to-agent payment router\n\nAn **agent-to-agent payment router**: one agent does work, another agent pays for\nit, no human keys a card. **Interline** is a neutral, non-custodial router over the\nfragmented agent-payment-rail stack — *\"OpenRouter for agent payments.\"* Built on\n[x402](https://x402.org) (HTTP-402 micropayments, USDC), aggregator-shaped so adding\na rail is one adapter, not a rewrite.\n\nToday it routes payments across **three live rails** — **x402** USDC on EVM\n(Base Sepolia) and on Solana (devnet), plus **MPP** on Tempo (Moderato testnet) —\nall behind one `Paywall.gate()` call. Real on-chain agent-to-agent settles are\nconfirmed on all three. It ships an **MCP router** so agents can discover + pay\nendpoints, and includes a **Google-AP2 inbound adapter** — a signed AP2 mandate\n(verified, constraint-checked + freshness-gated) settles non-custodially on the rails.\n\n\n## Run the demo (no wallet, no faucet, no risk)\n\n```bash\npython3 -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt\npython3 run_demo.py\n```\n\nExpected: `DEMO PASS — agent paid agent, settlement receipt issued`.\n\nWhat just happened (the x402 \"exact-evm\" loop):\n\n```\nbuyer GET /work\n  -> seller 402 + PaymentRequirements {amount, asset=USDC, payTo, network}\n  -> buyer signs an EIP-3009 transferWithAuthorization (gasless USDC auth)\n  -> buyer retries with X-PAYMENT header (base64 signed payload)\n  -> facilitator VERIFIES the signature (real signer-recovery) + checks policy\n  -> facilitator SETTLES (mock: fake tx hash; live: on-chain USDC transfer)\n  -> seller 200 + work product + X-PAYMENT-RESPONSE receipt (tx hash)\n```\n\nThe facilitator's verify step is **real cryptography** even in mock mode — it\nrecovers the EIP-712 signer and matches it to the authorization. Only the\non-chain broadcast is mocked. So a passing demo proves the buyer's signing is\nprotocol-correct against real USDC.\n\n## Files\n\n| file | role |\n|---|---|\n| `router/paywall.py` | the reusable `Paywall` primitive — gate any endpoint behind x402 in one `.gate()` call |\n| `router/ledger.py` | settlement receipt-ledger → `logs/agent_payment_settlements.jsonl` (audit trail) |\n| `router/seller.py` | FastAPI agent that sells work — defines the requirements + work, wires one `Paywall.gate()` |\n| `router/buyer.py` | agent that auto-pays 402s (`pay_and_get`) with a client-side spend limit |\n| `router/eip3009.py` | the one crypto-subtle file: EIP-3009 typed-data, shared by buyer+facilitator so they can't drift |\n| `router/facilitator_mock.py` | in-process verify+settle (real sig check, mock chain) — the dry-run rail |\n| `router/facilitator_real.py` | live x402 facilitator over HTTP via the x402 SDK's own client; `get_facilitator()` picks mock↔real by config |\n| `router/config.py` | network/asset facts + `.env` loader; mock↔testnet↔mainnet is a one-line env change |\n| `run_demo.py` | end-to-end smoke (ephemeral keys, mock facilitator) |\n| `run_live.py` | live runner — settles a real x402 payment on Base Sepolia |\n\n## Go live (Base Sepolia testnet)\n\n1. **Two testnet wallets** (buyer signs, seller receives):\n   ```bash\n   python3 -c \"from eth_account import Account; a=Account.create(); print('addr', a.address); print('key', a.key.hex())\"\n   ```\n   Do this twice. Keep the keys out of git (use `.env`).\n2. **Fund the buyer** with Base Sepolia testnet USDC (Circle faucet) + a little\n   testnet ETH for any gas the facilitator relays.\n3. **`.env`** (copy `.env.example` → `.env`, it's gitignored + auto-loaded):\n   ```\n   APV0_NETWORK=base-sepolia\n   APV0_BUYER_PRIVATE_KEY=0x...        # buyer testnet key (signs)\n   APV0_SELLER_ADDRESS=0x...           # seller address (receives)\n   APV0_FACILITATOR_URL=https://x402.org/facilitator\n   ```\n4. **Run it live:**\n   ```bash\n   python3 run_live.py\n   ```\n   The seller now uses `RealFacilitator` (the x402 SDK's own facilitator client),\n   the buyer auto-pays the 402, and x402.org broadcasts the EIP-3009 USDC transfer\n   on-chain. You get a real tx hash → `https://sepolia.basescan.org/tx/<hash>`.\n\n   > Gasless: with EIP-3009 the **facilitator relays gas**, so the buyer only needs\n   > testnet **USDC**, not ETH.\n\n## Gate your own endpoint (the product primitive)\n\n```python\nfrom router.paywall import Paywall\nfrom router.facilitator_real import get_facilitator\n\npaywall = Paywall(get_facilitator(), my_requirements_fn)   # mock ↔ real by env\n\n@app.get(\"/my-endpoint\")\ndef my_endpoint(request: Request):\n    return paywall.gate(request, lambda: do_expensive_work())\n```\n\nThat one `.gate()` call handles the whole x402 V2 dance — 402 challenge → verify →\nsettle → record receipt → deliver — and appends every settlement to the\nreceipt-ledger. The deployer never touches the protocol or holds a key.\n\n## v1 dogfood — pay an agent, get REAL work back\n\nv0 proved the *payment*. v1 proves the *loop*: a buyer agent pays → a seller agent\ndoes **real inference** → returns the result + a settlement receipt. The seller's\n`_do_the_work(task)` is the product's integration point (plug in your own\nmodel/compute/service).\n\n```bash\nAPV0_OPENROUTER_KEY=sk-or-... python3 run_v1_dogfood.py \"your task here\"\n```\n→ `V1 DOGFOOD PASS — agent paid agent for real work ✅` (mock payment + real model\ncall by default; set `APV0_NETWORK=base-sepolia` for a real on-chain settle under\nthe same loop). Without a key it returns a stub so the product still runs.\n\nThis is the authentic loop: an agent doing real work, metered + paid-for over\nx402 — the same primitive whether the work is a model call, a compute job, or\nany other billable agent task.\n\n",
+    "fetchedAt": "2026-08-12T00:14:49.868Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:45:04.319Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,80 @@
+{
+  "id": "io.github.zekebuilds-lab/captcha-mcp",
+  "title": "captcha-mcp",
+  "description": "Charge AI agents per-call without accounts. PoW solve = free tier, Lightning = paid tier.",
+  "summary": "Charge AI agents per-call without accounts. PoW solve = free tier, Lightning = paid tier.",
+  "offersHint": "Charge AI agents per-call without accounts. PoW solve = free tier, Lightning = paid tier. · Packages: npm:@powforge/captcha-mcp · Env vars: CAPTCHA_URL",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@powforge/captcha-mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CAPTCHA_URL",
+        "description": "PowForge captcha backend URL. Defaults to public production endpoint when running via npx; override for self-hosted or local dev.",
+        "default": "https://captcha.powforge.dev"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@powforge/captcha-mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CAPTCHA_URL",
+          "description": "PowForge captcha backend URL. Defaults to public production endpoint when running via npx; override for self-hosted or local dev.",
+          "default": "https://captcha.powforge.dev"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CAPTCHA_URL",
+      "description": "PowForge captcha backend URL. Defaults to public production endpoint when running via npx; override for self-hosted or local dev.",
+      "default": "https://captcha.powforge.dev"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://powforge.dev/captcha",
+  "sourceUrl": "https://github.com/zekebuilds-lab/captcha-mcp",
+  "repository": {
+    "url": "https://github.com/zekebuilds-lab/captcha-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-10T01:26:14.353949Z",
+  "publishedAt": "2026-05-10T01:26:14.353949Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:50.990Z",
+    "sourceRepoAt": "2026-08-11T23:13:29.532Z",
+    "readmeAt": "2026-08-11T23:13:30.010Z",
+    "toolsAt": "2026-08-12T00:54:50.990Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/zekebuilds-lab/captcha-mcp",
+    "checkedAt": "2026-08-11T23:13:29.532Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/zekebuilds-lab/captcha-mcp/main/README.md",
+    "markdown": "# @powforge/captcha-mcp\n\n**Charge AI agents per-call without accounts.** PoW solve = free tier. Lightning payment = paid tier.\n\nOpenAI's Sora API does not let you charge per call. Anthropic's billing does not pass through to your tools. If you ship an MCP server today and an autonomous agent finds it, you eat the bill.\n\nThis is the gate. Three tools over stdio or HTTP. Stdlib only.\n\n## Quickstart\n\n```bash\nnpx -y @powforge/captcha-mcp\n```\n\nThat is it. No install, no config, no API key. The server starts on stdio and waits for an MCP client.\n\nTo wire it into Claude Code, Cursor, or any MCP-compatible host, add to your config:\n\n```json\n{\n  \"mcpServers\": {\n    \"powforge-captcha\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@powforge/captcha-mcp\"]\n    }\n  }\n}\n```\n\nOr run `npx @powforge/captcha-mcp --install` to print the config block.\n\n## What it does\n\nWraps the PowForge pow-captcha service ([captcha.powforge.dev](https://captcha.powforge.dev)) as three MCP tools:\n\n| Tool        | Purpose                                                                 |\n|-------------|-------------------------------------------------------------------------|\n| `challenge` | Request a fresh proof-of-work puzzle. Returns `{id, salt, difficulty, signature}`. |\n| `verify`    | Submit a solved nonce. Returns a 5-minute HMAC-signed access token.     |\n| `status`    | Server health, lifetime stats, L402 endpoint metadata.                  |\n\nThe free tier costs the agent ~5-10 seconds of CPU time (SHA-256, default 14 leading zero bits). The paid tier costs 3 sats over Lightning via L402 (RFC 7235 + bolt11 invoice in `WWW-Authenticate`).\n\n## Why this and not OAuth, API keys, or Stripe\n\n| Approach                  | Per-call cost      | Account required | Self-hosted | Agent-friendly |\n|---------------------------|--------------------|------------------|-------------|----------------|\n| API keys                  | $0                 | yes              | n/a         | no             |\n| OAuth                     | $0                 | yes              | n/a         | no             |\n| Stripe metering           | high overhead      | yes              | n/a         | no             |\n| Managed MCP auth platform | 100–2000 sats      | no               | no          | yes            |\n| **PoW + L402 (this)**     | seconds or 3 sats  | **no**           | **yes**     | **yes**        |\n\nAgents do not have email addresses. They do not click confirmation links. They do not enter credit cards. PoW + Lightning is the only auth primitive that works for fully autonomous callers.\n\nManaged MCP auth platforms work, but they charge 100–2000 sats per call on vendor infrastructure — your revenue flows through their rails. This package runs on your server, your Lightning node, your keys. You keep the sats.\n\n## Configuration\n\nSet `CAPTCHA_URL` to point at a different captcha backend. Default is `http://localhost:3077` so you can run the full stack locally for development. Production deployments point it at `https://captcha.powforge.dev`.\n\n```bash\nCAPTCHA_URL=https://captcha.powforge.dev npx @powforge/captcha-mcp\n```\n\n## HTTP Streamable transport\n\nHosted MCP clients (Smithery, browser-based hosts) need HTTP, not stdio. Pass `--http` or set `HTTP_MODE=1`:\n\n```bash\nHTTP_MODE=1 PORT=3200 npx @powforge/captcha-mcp\n# or\nnpx @powforge/captcha-mcp --http\n```\n\nThe server then listens on:\n\n| Endpoint     | Method | Purpose                                                                        |\n|--------------|--------|--------------------------------------------------------------------------------|\n| `/mcp`       | POST   | Single JSON-RPC request, single JSON-RPC response. Notifications return 202.   |\n| `/mcp`       | GET    | SSE stream for server-pushed notifications (kept open with a 25s heartbeat).  |\n| `/health`    | GET    | Liveness probe — returns `{ok, server, transport}`. Not part of MCP.           |\n\nStateless. No session ids. CORS open (`Access-Control-Allow-Origin: *`) so browser clients work. Stdio mode is unchanged and remains the default — `npx @powforge/captcha-mcp` with no flag still talks JSON-RPC over stdin/stdout.\n\nSmoke test the HTTP transport:\n\n```bash\nHTTP_MODE=1 PORT=3200 node src/server.js &\ncurl -X POST http://localhost:3200/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}'\n```\n\nReturns `{jsonrpc:\"2.0\", id:1, result:{protocolVersion:\"2024-11-05\", capabilities:{tools:{}}, serverInfo:{...}}}`.\n\n## Local development\n\nClone the [captcha widget repo](https://www.npmjs.com/package/@powforge/captcha) or run the public service. The MCP server only needs HTTP access to the captcha endpoints listed under `status`.\n\n```bash\ngit clone https://github.com/zekebuilds-lab/captcha-mcp\ncd captcha-mcp\nnode src/server.js\n```\n\nIt prints `ready` to stderr and waits for JSON-RPC on stdin.\n\nSmoke-test the protocol manually:\n\n```bash\necho '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}' | node src/server.js\n```\n\nYou should see a JSON response with `serverInfo: { name: \"@powforge/captcha-mcp\", version: \"0.1.0\" }`.\n\n## Token verification from your own backend\n\nWhen an agent submits a token to your service, verify it without trusting the agent:\n\n```bash\ncurl -X POST https://captcha.powforge.dev/api/token/verify \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"token\":\"<token-from-verify-tool>\"}'\n```\n\nReturns `{valid: true, method, issued_at, expires_at}` or `{valid: false, reason}`.\n\n## Related packages\n\n- [`@powforge/captcha`](https://www.npmjs.com/package/@powforge/captcha) — the browser widget for the same service.\n- [`@powforge/mcp-l402-gate`](https://www.npmjs.com/package/@powforge/mcp-l402-gate) — Express middleware to gate any MCP server with L402 + Depth-of-Identity scoring.\n- [`@powforge/mcp-identity`](https://www.npmjs.com/package/@powforge/mcp-identity) — agent reputation oracle. Pair with this gate for first-call abuse protection.\n\n## How this compares to other MCP agent-auth primitives\n\nA side-by-side breakdown against `x402-mcp`, `@agentauth/mcp`, and Cloudflare ARC/ACT is published at [powforge.dev/mcp/compare/x402-mcp](https://powforge.dev/mcp/compare/x402-mcp/). Short version: `captcha-mcp` is the only entrant that ships a free PoW tier alongside a Lightning paid skip on an MCP transport. The other three price every call (USDC) or require platform-issued credentials.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:13:30.010Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:54:50.990Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

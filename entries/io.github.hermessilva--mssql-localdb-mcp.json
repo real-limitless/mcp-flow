@@ -1,0 +1,56 @@
+{
+  "id": "io.github.hermessilva/mssql-localdb-mcp",
+  "title": "MSSQL LocalDB MCP",
+  "description": "MCP server for SQL Server Express LocalDB on Windows: manage instances, run T-SQL, discover DBs",
+  "summary": "MCP server for SQL Server Express LocalDB on Windows: manage instances, run T-SQL, discover DBs",
+  "offersHint": "MCP server for SQL Server Express LocalDB on Windows: manage instances, run T-SQL, discover DBs · Packages: binary:https://github.com/hermessilva/LocalDB-MCP/releases/download/v0.1.0/mssql-localdb-mcp-0.1.0-win64.mcpb",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/hermessilva/LocalDB-MCP/releases/download/v0.1.0/mssql-localdb-mcp-0.1.0-win64.mcpb",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/hermessilva/LocalDB-MCP/releases/download/v0.1.0/mssql-localdb-mcp-0.1.0-win64.mcpb",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/hermessilva/LocalDB-MCP",
+  "repository": {
+    "url": "https://github.com/hermessilva/LocalDB-MCP",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T19:08:27.13729Z",
+  "publishedAt": "2026-07-01T19:08:27.13729Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:43.354Z",
+    "sourceRepoAt": "2026-08-11T23:43:25.561Z",
+    "readmeAt": "2026-08-11T23:43:26.072Z",
+    "toolsAt": "2026-08-12T01:20:43.354Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/hermessilva/LocalDB-MCP",
+    "checkedAt": "2026-08-11T23:43:25.561Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/hermessilva/LocalDB-MCP/master/README.md",
+    "markdown": "# mssql-localdb-mcp\n\nRust [MCP](https://modelcontextprotocol.io) server for SQL Server Express LocalDB on Windows. Gives AI agents (Claude Desktop, Claude Code, and any MCP client) full control over LocalDB instances: create/manage instances, run any T-SQL script, find loose database files in project folders and attach them, introspect schema.\n\n> Status: MVP (Phase 1) functional and tested against real LocalDB — see `docs/PLANNING.md` for the roadmap and current phase.\n\n## Why\n\nExisting MCP tools for SQL Server assume an already-configured remote server and require an external runtime (Python, .NET, Node). This project is:\n- **Single Rust binary**, no external runtime, no Docker.\n- **LocalDB-focused**: local dev workflow — find a loose `.mdf` in a project folder, attach it, run a script, no need to open SSMS.\n- **Windows-only by design**, not a generic multi-database abstraction.\n\n## Requirements\n\n- Windows with SQL Server Express LocalDB installed (`SqlLocalDB.exe` on `PATH`).\n- A compatible MCP client (Claude Desktop, Claude Code, etc.).\n\n## Installation\n\n### Via MCP Registry\n\nPublished on the [official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.hermessilva/mssql-localdb-mcp`. Install through any MCP client that supports the registry.\n\n### Via VS Code extension\n\nThe [`vscode-extension/`](vscode-extension/) directory packages the server as a VS Code extension that registers it automatically through the MCP provider API (VS Code 1.101+), with the Windows binary bundled — nothing to download or configure by hand. Build the `.vsix` locally with:\n\n```powershell\n./build-vsix.ps1                 # bumps the build segment; -Version x.y.z or -NoBump to control it\ncode --install-extension .\\mssql-localdb-mcp-1.0.1-win32-x64.vsix\n```\n\nThe extension has its own version line, independent from `Cargo.toml` — the crate version is what\nthe `vX.Y.Z` tag and the MCP Registry publish.\n\n### Via Claude Code plugin\n\nThe [`claude-plugin/`](claude-plugin/) directory in this repo is a self-contained Claude Code plugin (bundles the Windows binary directly, no separate download). Load it directly with:\n\n```powershell\nclaude --plugin-dir path\\to\\LocalDB-MCP\\claude-plugin\n```\n\nSubmitted to the [`claude-community` marketplace](https://github.com/anthropics/claude-plugins-community) for review — once approved, install it with `claude plugin marketplace add anthropics/claude-plugins-community` followed by `claude plugin install mssql-localdb-mcp@claude-community`.\n\n### From source\n\nRequires [Rust](https://rustup.rs) and LocalDB installed.\n\n```powershell\ngit clone https://github.com/hermessilva/LocalDB-MCP.git\ncd LocalDB-MCP\ncargo build --release\n```\n\nBinary at `target\\release\\mssql-localdb-mcp.exe`.\n\n### Configure `config.toml`\n\n`db_scan_folder` requires at least one explicitly allowed root — without it, the tool refuses to run. Create `%APPDATA%\\mssql-localdb-mcp\\config.toml`:\n\n```toml\n# Windows paths in TOML need single quotes (literal string) — double\n# quotes interpret \\U... as a unicode escape and break parsing.\nscan_allowlist = ['C:\\Users\\YourUser\\source\\repos']\nscan_max_depth = 6\ndefault_query_timeout_secs = 30\ndefault_max_rows = 1000\n```\n\n### Configure in your MCP client\n\n**Claude Desktop / Claude Code** (`claude_desktop_config.json` or equivalent):\n\n```json\n{\n  \"mcpServers\": {\n    \"mssql-localdb\": {\n      \"command\": \"C:\\\\path\\\\to\\\\LocalDB-MCP\\\\target\\\\release\\\\mssql-localdb-mcp.exe\"\n    }\n  }\n}\n```\n\n**Claude Code via CLI:**\n\n```powershell\nclaude mcp add mssql-localdb -- \"C:\\path\\to\\LocalDB-MCP\\target\\release\\mssql-localdb-mcp.exe\"\n```\n\nAfter that, the agent has access to the `localdb_*`, `sql_*`, and `db_*` tools — see [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) for the full list.\n\n## Documentation\n\n- [`docs/PLANNING.md`](docs/PLANNING.md) — roadmap, phases, scope of each milestone.\n- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — modules, technical decisions, data flow.\n- [`docs/MCP_SPEC.md`](docs/MCP_SPEC.md) — exact contract of every tool/resource/prompt exposed.\n- [`docs/SECURITY.md`](docs/SECURITY.md) — threat model and guardrails.\n- [`CLAUDE.md`](CLAUDE.md) — guide for AI agents working in this repository.\n- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute.\n- [`CHANGELOG.md`](CHANGELOG.md) — change history.\n\n## Security — read before using\n\n- Windows Integrated Authentication only (no SQL Auth).\n- Every destructive action (DROP, TRUNCATE, DELETE, ALTER, etc.) requires explicit confirmation (`confirm: true`) — never executes silently.\n- Database discovery (`db_scan_folder`) only scans folders explicitly allowed in `config.toml` (allowlist).\n- Full detail in [`docs/SECURITY.md`](docs/SECURITY.md).\n\n## License\n\n[MIT](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:43:26.072Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:43.354Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

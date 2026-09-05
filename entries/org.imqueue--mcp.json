@@ -1,0 +1,92 @@
+{
+  "id": "org.imqueue/mcp",
+  "title": "@imqueue",
+  "description": "Search @imqueue docs and scaffold typed services & clients from your AI coding agent.",
+  "summary": "Search @imqueue docs and scaffold typed services & clients from your AI coding agent.",
+  "offersHint": "Search @imqueue docs and scaffold typed services & clients from your AI coding agent. · Remote MCP (streamable-http) at https://mcp.imqueue.org/mcp · Packages: npm:@imqueue/mcp",
+  "version": "3.5.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.imqueue.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.imqueue.org/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@imqueue/mcp",
+    "version": "3.5.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@imqueue/mcp",
+      "version": "3.5.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://imqueue.org/mcp/",
+  "sourceUrl": "https://github.com/imqueue/mcp",
+  "repository": {
+    "url": "https://github.com/imqueue/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T10:30:49.962985Z",
+  "publishedAt": "2026-08-08T10:30:49.962985Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:06.190Z",
+    "sourceRepoAt": "2026-08-11T23:08:39.423Z",
+    "readmeAt": "2026-08-11T23:08:40.246Z",
+    "toolsAt": "2026-08-11T23:08:40.340Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/imqueue/mcp",
+    "checkedAt": "2026-08-11T23:08:39.423Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/imqueue/mcp/main/README.md",
+    "markdown": "# @imqueue/mcp\n\n[![smithery badge](https://smithery.ai/badge/mikhus/imqueue)](https://smithery.ai/servers/mikhus/imqueue)\n\nA [Model Context Protocol](https://modelcontextprotocol.io) server for **[@imqueue](https://imqueue.org)**. It lets AI coding agents (Claude Code, Cursor, VS Code, JetBrains, …) **search the @imqueue documentation**, **scaffold typed services & clients**, and **drive the `imq` CLI** — so they generate correct, idiomatic @imqueue code instead of guessing.\n\n📖 **Full documentation: [imqueue.org/mcp](https://imqueue.org/mcp/)** — per-client setup, complete tools reference, agent workflows and the safety model.\n\n## Tools\n\nTwo surfaces, and they are not the same. The **local** server (`npx -y @imqueue/mcp`) has all 13 tools. The **hosted** server ([`mcp.imqueue.org/mcp`](#hosted-server-no-install)) has six, all read-only — see [below](#hosted-server-no-install) for why.\n\n### Hosted + local\n\n| Tool | What it does |\n|---|---|\n| `search_docs` | Search the official docs (guides, tutorial, CLI manual, API reference, articles) and return the most relevant pages + URLs. |\n| `get_doc` | Fetch the full markdown of a doc page by URL. |\n| `list_packages` | List the main @imqueue packages with install commands. |\n| `scaffold_service` | Generate an `IMQService` subclass with `@expose()`d, JSDoc-typed methods + a bootstrap (offline, no CLI needed). |\n| `scaffold_client` | Show how to generate and use the fully-typed client for a service (offline). |\n\nAll five are read-only: they fetch or generate text and write nothing.\n\nAll five also declare an MCP **`outputSchema`** and return `structuredContent` alongside the human-readable markdown, so a client can consume results as data — take `results[0].url` from `search_docs` and hand it to `get_doc`, or write `scaffold_service`'s `files[]` straight to disk — instead of parsing prose and code fences. For the scaffolders and the catalogue the markdown is *rendered from* that same structure, so the two can't drift.\n\n**`get_doc`'s schema is metadata only, on purpose** — and that turns out to be the more interesting design than having no schema at all. A schema obliges the server to send `structuredContent`, but nothing says `structuredContent` must repeat what is in `content`: it describes the structured *part* of the answer. So the page travels once, in `content`, and the schema carries `url` (the mirror actually fetched, which is not always the URL you passed), `mimeType`, `bytes` (so a caller can decide before reading) and `truncated`. Putting `markdown` in there as well would have doubled the largest response the server can produce — measured on `/api/rpc/latest/`, 16.6 kB of text plus 16.6 kB of structure for one read. The absence of a body field is itself self-describing: a caller reading the schema sees no content field and knows the page is in `content`, which is where every client already looks.\n\nThe CLI-backed tools have no schema: they return `imq` stdout, which has no shape worth promising.\n\n### CLI-backed tools — local only (require `@imqueue/cli` on PATH)\n\nThese drive the **real** CLI, so they act on the machine the server runs on. They exist in the local install only; the hosted server does not register them.\n\n| Tool | What it does |\n|---|---|\n| `cli_status` | Detect `imq` and report its version. |\n| `cli_install` | Install `@imqueue/cli` globally (`npm i -g @imqueue/cli`) when it's missing. |\n| `cli_help` | `imq <command> --help` — exact, version-accurate flags (no side effects). |\n| `create_service` | `imq service create` — **dry-run by default** (writes nothing); pass `apply: true` to actually create the project. |\n| `generate_client` | `imq client generate <Service>` — the real typed client (the service must be running). |\n| `fleet` | `imq ctl <start\\|stop\\|restart\\|status>` — manage a directory of service repos. `status` is read-only. |\n| `config` | `imq config <check\\|get\\|set\\|init>` — read/write CLI configuration (`set` for automation; `init` is interactive). |\n| `logs` | `imq log` — `dump` current fleet logs (never follows; capped) or `clean` them. |\n\nCalls run with stdin closed and a timeout, so a missing-flag prompt fails fast instead of hanging. If `imq` isn't installed, run `cli_install` or use the offline `scaffold_*` tools.\n\nDocs are fetched live from imqueue.org's machine-readable feeds (`/llms.txt`, per-page `…/index.md` mirrors), so the server never ships stale content. It only ever fetches `imqueue.org`.\n\n## Install\n\nRequires Node.js ≥ 18. No build step for users — run straight from npm:\n\n```bash\nnpx -y @imqueue/mcp\n```\n\n### Claude Code\n\n```bash\nclaude mcp add imqueue -- npx -y @imqueue/mcp\n```\n\n### Other clients (Cursor, Claude Desktop, JetBrains, Windsurf, Zed, …)\n\nAdd to your MCP config (`.cursor/mcp.json`, `claude_desktop_config.json`, …):\n\n```json\n{\n  \"mcpServers\": {\n    \"imqueue\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@imqueue/mcp\"]\n    }\n  }\n}\n```\n\n> **VS Code and Visual Studio** use a top-level `servers` key with `\"type\": \"stdio\"` instead of `mcpServers`. See **[imqueue.org/mcp/installation](https://imqueue.org/mcp/installation/)** for the exact config file path and snippet for every client.\n\n## Hosted server (no install)\n\nIf your client supports remote MCP servers and you only need docs and scaffolding, point it at the hosted endpoint instead:\n\n```json\n{ \"mcpServers\": { \"imqueue\": { \"url\": \"https://mcp.imqueue.org/mcp\" } } }\n```\n\nIt serves six tools, **all read-only**: the five above plus `local_install_guide`, which returns the setup steps for the local install.\n\n**It does not offer the CLI-backed tools, by design.** Those act on *your* machine — your project files, your running services, your CLI config — which a server running on Cloudflare's edge cannot reach. Advertising them there would mean listing tools that can never do what their names say, so they are not registered at all in remote mode. If you need them, install locally.\n\n## Develop\n\n```bash\nnpm install\nnpm run build      # tsc -> dist/\nnpm run dev        # run from source with tsx\nnpm test           # unit tests (node:test under tsx) — no network needed\nnpm run smoke      # local surface: handshake + tools/list + annotations + tool calls\nnpm run verify     # all of the above plus both type-checks; also the publish gate\n```\n\nThe unit tests cover what does not need the network: the ranker on a fixed corpus,\nthe exact identifiers the scaffolders emit, URL resolution, telemetry, and the hosted\nWorker's HTTP surface — `worker/worker.ts` is a plain fetch handler, so it is called\nwith a `Request` and asserted on the `Response`, with no wrangler and no deploy.\n\nThe hosted surface has its own check, because it is a different contract:\n\n```bash\nnpm run dev:worker                                   # wrangler dev on :8787\nnode scripts/remote-smoke.mjs http://localhost:8787/mcp\nnpm run smoke:remote                                 # or against production\n```\n\nIt asserts the **exact** six-tool list and that every one of them is read-only — the assertion that stops a future refactor from quietly re-exposing a CLI tool on the hosted endpoint.\n\n## Example\n\n> **User:** *\"Create an @imqueue user service with a getUser(id) method.\"*\n>\n> The agent calls `scaffold_service({ name: \"user\", methods: [{ name: \"getUser\", params: [{ name: \"id\", type: \"number\" }], returns: \"User\" }] })` and gets a ready-to-paste `UserService` + bootstrap, then `search_docs(\"run a service\")` / `get_doc(...)` to wire it up.\n\n## License\n\nGPL-3.0 — free and open source.\n\n## Commercial licensing\n\nNeed to use @imqueue/mcp in a closed-source product, or want commercial support? A commercial license is available — see [imqueue.com](https://imqueue.com).\nFull docs: **[imqueue.org/mcp](https://imqueue.org/mcp/)**. See [SPEC.md](./SPEC.md) for the design and registry-distribution plan.\n",
+    "fetchedAt": "2026-08-11T23:08:40.246Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_docs",
+      "description": "Search the official @imqueue docs (guides, tutorial, CLI manual, articles) and every exported symbol of every @imqueue package that publishes a generated API reference, returning the most relevant pages with their URLs. Each result names the package it belongs to. Takes a plain question or an exact symbol name such as 'RedisQueue.send', 'PgPubSub.listen' or 'watcherCheckDelay'. Answers 'how do I do X in @imqueue' and confirms a signature before code is written against it. Every result carries the page URL, which get_doc reads in full. Some capabilities are covered by two mutually exclusive packages — @imqueue/pg-prisma vs @imqueue/pg-sequelize, @imqueue/opentelemetry vs @imqueue/datadog — so for a query like 'tracing' or 'database', call list_packages for the choosing rule rather than taking whichever package ranks first, and pass `package` here to search within the one you settled on."
+    },
+    {
+      "name": "get_doc",
+      "description": "Fetch the markdown of an @imqueue documentation page by its URL (as returned by search_docs). Returns plain markdown suitable for reading and quoting. Pass a URL with a #fragment — which is what search_docs returns for a section result — to get just that section plus the heading path above it; pass the URL without one to read the whole page. Only imqueue.org (framework docs) and imqueue.com (licensing, pricing, support) URLs are fetched; anything else is refused. Very large pages are truncated, which the result reports."
+    },
+    {
+      "name": "list_packages",
+      "description": "The complete, authoritative catalogue of documented @imqueue packages, each with a one-line summary and its exact install command. Call this BEFORE adding any @imqueue dependency: search_docs can only find a package you already suspect exists, and this is the list. Covers typed RPC over a message queue, the Redis queue engine, the `imq` CLI, jobs and scheduling, Prisma and Sequelize database toolkits, method caching, tag-invalidated caching, PostgreSQL LISTEN/NOTIFY, Zod validation, OpenTelemetry or Datadog tracing, async logging, GraphQL N+1 batching across services, CIDR/IP checks and HTTP rate limiting. Some pairs are mutually exclusive — pg-prisma vs pg-sequelize, opentelemetry vs datadog — and installing both of a pair breaks silently, so read the `pick` rule on those entries before choosing."
+    },
+    {
+      "name": "scaffold_service",
+      "description": "READ-ONLY: returns generated source code as text and writes nothing to disk, creates no project and runs no command. Generates an idiomatic @imqueue/rpc service (an IMQService subclass with @expose()d, JSDoc-typed methods) plus a bootstrap that starts it. Provide the methods you want, or omit them for a starter template. Any non-primitive parameter or return type also gets a types.ts with the required @classType()/@property() declarations — without those the generated client types it `any`, which compiles. Use create_service (local install only) if you want files actually written."
+    },
+    {
+      "name": "scaffold_client",
+      "description": "READ-ONLY: returns text and writes nothing to disk, and does NOT run the command it shows you. Explains how to generate and use the fully-typed client for an @imqueue service: @imqueue generates the real client from a running service via `imq client generate`, so this returns that exact command plus an illustrative usage snippet. The generated file exports a single namespace holding the client class, so the import shape is not the obvious one — take it from `namespace` rather than guessing. Use generate_client (local install only) if you want the command actually run."
+    },
+    {
+      "name": "local_install_guide",
+      "description": "Return the setup instructions for running the full @imqueue MCP server on your own machine. The local server adds the CLI-backed tools, which act on your project files and running services and so cannot be offered by a hosted server. Returns instructions only — it installs nothing."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:08:40.340Z",
+  "toolsPreviewStatus": "ok"
+}

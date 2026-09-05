@@ -1,0 +1,71 @@
+{
+  "id": "io.github.vedux98/faro",
+  "title": "Faro",
+  "description": "Verify URLs, payees, and messages before acting: red/yellow/green trust verdicts for agents.",
+  "summary": "Verify URLs, payees, and messages before acting: red/yellow/green trust verdicts for agents.",
+  "offersHint": "Verify URLs, payees, and messages before acting: red/yellow/green trust verdicts for agents. · Remote MCP (streamable-http) at https://mcp.farofinance.app/mcp · Requires headers: Authorization",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.farofinance.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.farofinance.app/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Faro API key as a Bearer token. Get a key at https://farofinance.app (format: Bearer faro_live_…)",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://farofinance.app/docs/mcp",
+  "sourceUrl": "https://github.com/vedux98/Faro",
+  "repository": {
+    "url": "https://github.com/vedux98/Faro",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-23T09:12:33.501546Z",
+  "publishedAt": "2026-06-23T09:12:33.501546Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Faro API key as a Bearer token. Get a key at https://farofinance.app (format: Bearer faro_live_…)",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:57:14.118Z",
+    "sourceRepoAt": "2026-08-11T23:16:18.307Z",
+    "readmeAt": "2026-08-11T23:16:19.027Z",
+    "toolsAt": "2026-08-12T00:57:14.118Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vedux98/Faro",
+    "checkedAt": "2026-08-11T23:16:18.307Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vedux98/Faro/main/README.md",
+    "markdown": "# Faro\n\n**Check before an agent pays, clicks, or trusts.**\n\nFaro is a trust layer for AI agents and apps. You send a URL, payee, message, or\nagent-payment payload — Faro returns one clear answer: **green**, **yellow**, or\n**red**, a one-line reason, and what to do next (`allow` / `warn` / `block` /\n`review`).\n\nThis repo is the **open interface** (Apache-2.0): the verdict contract, client\nSDKs, and auditable payment-protocol adapters. Scoring and the reputation graph\nstay on Faro’s hosted API, so you can audit what leaves your process without\nforking a black-box engine.\n\nGet an API key → [farofinance.app](https://farofinance.app)\n\n---\n\n## What can you do with this package?\n\n| You want to… | Use |\n|--------------|-----|\n| Verify a link before an agent opens or shares it | Python/TS SDK `verify_url`, REST, or MCP `verify_url` |\n| Check a UPI / payee / account before sending money | `verify_payee` |\n| Screen an inbound SMS, email, or chat for scam tactics | `verify_message` |\n| Gate an **AP2 / x402 / ACP** payment before settle | Open adapters in `adapters/faro_agentpay/` → then verify each artifact |\n| Let Claude / Cursor / any MCP client call Faro | Hosted MCP at `https://mcp.farofinance.app/mcp` |\n| Branch in code on a stable contract | `contracts/verdict.schema.json` + typed SDKs |\n\n**Typical users:** agent builders, wallet/checkout integrators, MCP app authors,\nand security teams who need a single red/yellow/green decision at the moment of\naction — not a dashboard full of raw threat intel.\n\n---\n\n## Quick start\n\n```bash\npip install faro-client\n```\n\n```python\nimport asyncio, os\nfrom faro_client import FaroClient\n\nasync def main() -> None:\n    async with FaroClient(os.environ[\"FARO_API_KEY\"]) as client:\n        result = await client.verify_url(\"https://example.com\")\n        print(result.verdict, result.reason, result.recommended_action)\n        # Branch: allow | warn | block | review\n        if result.recommended_action == \"block\":\n            raise SystemExit(\"blocked by Faro\")\n\nasyncio.run(main())\n```\n\n```bash\ncurl -s -X POST https://api.farofinance.app/v1/verify/url \\\n  -H \"Authorization: Bearer $FARO_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"value\":\"https://example.com\"}'\n```\n\nTypeScript: see [`sdk/typescript/`](sdk/typescript/).  \nPayment parsers (no engine inside): [`adapters/faro_agentpay/`](adapters/faro_agentpay/).  \nRecipes: [`recipes/`](recipes/).\n\n---\n\n## What’s in this repo\n\n| Piece | Path |\n|-------|------|\n| Verdict JSON Schema | [`contracts/verdict.schema.json`](contracts/verdict.schema.json) |\n| OpenAPI | [`sdk/openapi.json`](sdk/openapi.json) |\n| Python SDK (`faro-client`) | [`sdk/python/`](sdk/python/) |\n| TypeScript SDK | [`sdk/typescript/`](sdk/typescript/) |\n| AP2 / x402 / ACP adapters | [`adapters/faro_agentpay/`](adapters/faro_agentpay/) |\n| Verify-before-pay recipes | [`recipes/`](recipes/) |\n| MCP registry manifest | [`server.json`](server.json) · [`docs/tools.md`](docs/tools.md) |\n\n---\n\n## Why open / what’s closed\n\n**Open here:** schema, SDKs, protocol adapters, recipes, MCP tool docs — so\nintegrators and protocol ecosystems can cite and fork the interface.\n\n**Closed (hosted API):** signal providers, scoring, reputation graph, prompts.\nAdapters stop at a documented seam: parse → artifacts → `POST /v1/verify` (or\nyour own checks) → optional `worst_of`.\n\n---\n\n## Trust, plainly\n\nHosted verifies can carry **signed trust receipts** and a **transparency log**\n(hashes and signatures — not your raw PII). Product docs:\n[farofinance.app](https://farofinance.app).\n\n---\n\n## Roadmap / future scope\n\nShipped or in flight on the hosted product (not all of this lives in this public\nrepo):\n\n- Stronger **verify-before-pay** coverage across AP2 / x402 / ACP as specs churn\n- Richer **payee / message / URL** signals and reputation write-back\n- **Watches & webhooks** when a previously clean entity flips\n- **Trust receipts** and day-rooted transparency log verification tooling\n- More SDK languages and framework examples (LangGraph, Crew, etc.)\n- Optional public examples (e.g. agent defense patterns) without opening the engine\n\nCommunity PRs welcome for **adapter/SDK/docs** fixes (DCO required). Engine\nchanges are not accepted here — see [`CONTRIBUTING.md`](CONTRIBUTING.md).\n\n---\n\n## What this is not\n\n- Not a self-hosted scam ML model — default is the hosted API\n- Not a generic prompt-injection detector — Faro verifies *artifacts* at action time\n\nBranches: [`BRANCHES.md`](BRANCHES.md) · Security: [`SECURITY.md`](SECURITY.md)\n\n## License\n\n[Apache-2.0](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:16:19.027Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:57:14.118Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\",\"message\":\"Missing or invalid API key.\"}",
+  "toolsPreviewStatus": "auth_required"
+}

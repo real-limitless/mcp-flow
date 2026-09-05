@@ -1,0 +1,57 @@
+{
+  "id": "com.acjlabs/catalog-normalizer",
+  "title": "Catalog Attribute Normalizer",
+  "description": "Catalog attribute normalizer, taxonomy-grounded — no fabricated Google/Shopify category IDs.",
+  "summary": "Catalog attribute normalizer, taxonomy-grounded — no fabricated Google/Shopify category IDs.",
+  "offersHint": "Catalog attribute normalizer, taxonomy-grounded — no fabricated Google/Shopify category IDs. · Remote MCP (streamable-http) at https://catalog-normalizer.acjlabs.com/mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://catalog-normalizer.acjlabs.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://catalog-normalizer.acjlabs.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://acjlabs.com/products",
+  "sourceUrl": "https://github.com/acjlabs/catalog-normalizer",
+  "repository": {
+    "url": "https://github.com/acjlabs/catalog-normalizer",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T00:59:22.496324Z",
+  "publishedAt": "2026-07-31T00:59:22.496324Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:31.179Z",
+    "sourceRepoAt": "2026-08-12T00:39:31.179Z",
+    "readmeAt": "2026-08-12T00:39:31.786Z",
+    "toolsAt": "2026-08-12T00:39:32.176Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/acjlabs/catalog-normalizer",
+    "checkedAt": "2026-08-12T00:39:31.179Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/acjlabs/catalog-normalizer/main/README.md",
+    "markdown": "# Catalog Attribute Normalizer\n\n**Taxonomy-grounded catalog attribute normalizer** — verified against the real Google Product Taxonomy, so\nit catches the plausible-but-wrong category IDs a generic LLM invents. Messy multi-source catalogs — titles,\ndescriptions, images — in; consistent attributes, units, and grounded category mappings out. For\nmerchant-ops teams and feed-tool developers wrangling a Shopify export, a supplier CSV, and a marketplace\nscrape that each spell \"size\" or \"material\" differently.\n\n## What it does\n\n- Accepts a batch of raw products (`title`, `description`, `raw_attributes`), returns normalized\n  attributes (canonicalized sizes/colors/units) plus category mappings for whichever taxonomies you\n  request (Google Product Taxonomy, Shopify, Amazon).\n- Works as an MCP server (`normalize_catalog` tool) or a plain HTTPS API.\n\n### Example (MCP tool call)\n\n```json\n{\n  \"tool\": \"normalize_catalog\",\n  \"input\": {\n    \"products\": [{ \"title\": \"...\", \"description\": \"...\", \"raw_attributes\": { \"size\": \"Lrg\", \"Color\": \"Navy Blue\" } }],\n    \"target_taxonomies\": [\"google\", \"shopify\"]\n  }\n}\n```\n\n```json\n{\n  \"results\": [\n    {\n      \"schema_version\": \"2.0\",\n      \"source_title\": \"...\",\n      \"category_paths\": {\n        \"google\": { \"path\": [\"Apparel & Accessories\", \"Clothing\", \"Shirts & Tops\"], \"leaf_id\": null, \"confidence\": 0.9 },\n        \"shopify\": { \"path\": [\"Apparel & Accessories\", \"Clothing\", \"Tops\"], \"leaf_id\": \"aa-3-1\", \"confidence\": 0.85 }\n      },\n      \"attributes\": {\n        \"size\": { \"value\": \"L\", \"provenance\": \"canonicalized\" },\n        \"color\": { \"value\": \"navy\", \"provenance\": \"canonicalized\" }\n      }\n    }\n  ]\n}\n```\n\n`attributes` is keyed by a controlled vocabulary (`size`, `color`, `material`, `gender`, `sleeve_length` —\nunrecognized keys are dropped, not passed through under a model-chosen name). Each value's `provenance`\nis `\"canonicalized\"` when it came from your own `raw_attributes` input for that product (deterministic\ncleanup only, no recall) or `\"extracted\"` when the model inferred it from the title/description and it\nwasn't in your input — treat `\"extracted\"` values as a suggestion, the same way you'd treat a\nlow-confidence `category_paths` entry.\n\n**Attributes are reliable by construction** — canonicalizing values already in your input, not recall.\n**Category classification is retrieval-grounded**, not recalled from memory: candidates are retrieved\nfrom the real, current Google and Shopify taxonomy files and offered to the model as suggestions, so a\n`leaf_id` almost always names a node that actually exists — measured against a 12-product evaluation set,\neach product checked against both the Google and Shopify taxonomies: **22 of 24 checks (91.7%) exact\npath + leaf-ID matches**. Still treat `confidence` and a `null` `leaf_id` as \"worth a quick check,\" not\na guarantee — a `leaf_id` is only ever returned when the path independently verifies against the real\ntaxonomy file, so a `null` there is an honest \"check this\" signal, never a fabricated ID. Amazon has no\ncomprehensive public taxonomy reference file to retrieve candidates from, so it stays best-effort\n(recall from memory) rather than retrieval-grounded.\n\n## Pricing\n\nThe free tier is self-serve today; paid plans are opening soon.\n\n- **Free** — 500 products/month, no card required. Self-serve today.\n- **Pay-as-you-go** *(opening soon)* — $0.01/product, no minimum.\n- **Pro** *(opening soon)* — $29/month for 5,000 products (~$0.0058/product effective).\n\nWant a paid plan now?\n[Register your interest](https://catalog-normalizer-signup.acjlabs.com/#pro-intent) and we'll set you up first.\n\n**What counts as one unit:** one product, not one call. A `normalize_catalog` call carrying 40 products\nuses 40 of your monthly allowance; batching is a convenience, not a discount. A batch is all-or-nothing\n— if it is larger than your remaining balance, the whole call is refused with `402` (the body names\n`required` and `remaining`) and nothing is classified, so you are never billed for a partial result\nthat looks complete. A call that fails outright costs nothing.\n\n## Getting a key\n\nThe MCP server is live at `https://catalog-normalizer.acjlabs.com/mcp` (the alternate\n`https://acjlabs-catalog-normalizer.acjlabs.workers.dev/mcp` address reaches the same deployment and\nkeeps working, so existing configurations need no change). Free-tier keys\nself-serve — `POST /v1/signup` with `{ \"email\": \"you@example.com\" }` returns your key directly in the\nresponse, good for 500 products/month, no card required. **Store it immediately — it is shown once and\ncannot be recovered if lost** (re-signup for a new one). See\n**<https://acjlabs-catalog.pages.dev>** for the same steps plus pricing and a comparison against\nalternatives. Paid keys provision the same way via a\none-time claim link once Pro/pay-as-you-go billing is live.\n\n## Connecting it to an MCP client\n\nWith Claude Code:\n\n```bash\nclaude mcp add --transport http catalog-normalizer \\\n  https://catalog-normalizer.acjlabs.com/mcp \\\n  --header \"Authorization: Bearer YOUR_API_KEY\"\n```\n\nAny other MCP client that supports a remote HTTP server with a custom header (Cursor, Cline, VS Code,\netc.) works the same way: point it at the URL above with an `Authorization: Bearer YOUR_API_KEY`\nheader. A gateway or scanner that can only forward the raw key value (no `Bearer` prefix) also works —\nboth forms authenticate. Tool discovery (`initialize`/`tools/list`) doesn't require a key at all; only\ncalling `normalize_catalog` does.\n\nSee [docs/quickstart.md](docs/quickstart.md) for a full copy-paste walkthrough (getting a key, per-client\nconfigs, confirming the connection with `curl`) if you'd rather follow one linear guide.\n\n## npm client\n\nPrefer a typed function over hand-rolling MCP JSON-RPC calls?\n[`@acjlabs/catalog-attribute-normalizer-client`](https://www.npmjs.com/package/@acjlabs/catalog-attribute-normalizer-client)\n(live on npm) wraps the `normalize_catalog` tool call:\n\n```sh\nnpm install @acjlabs/catalog-attribute-normalizer-client\n```\n\n```ts\nimport { createCatalogNormalizerClient } from \"@acjlabs/catalog-attribute-normalizer-client\";\n\nconst client = createCatalogNormalizerClient({\n  baseUrl: \"https://catalog-normalizer.acjlabs.com\",\n  apiKey: \"...\",\n});\nconst results = await client.normalizeCatalog(products, [\"google\", \"shopify\"]);\n```\n\n## Why not just use a category classifier?\n\nCategory-classification APIs tell you *what* a product is. They don't touch the messier problem:\nstandardizing *attributes* across sources that each spell them differently. The vendors that do take on\nthe broader job are enterprise sales-led — demo request, annual contract, no self-serve signup and no\npublic price. See the [full comparison](docs/comparison.md), or read\n[why \"clean product data\" is actually two different problems](docs/attribute-normalization-vs-classification.md)\n(canonicalization vs. classification, and why they fail differently).\n\n## Source availability & support\n\nThis repository hosts the documentation for the hosted service. The service implementation is not open source. Bug reports and feature requests are welcome in this repo's Issues; you can also reach us at <contact@acjlabs.com>.\n",
+    "fetchedAt": "2026-08-12T00:39:31.786Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "normalize_catalog",
+      "description": "Normalizes a batch of catalog products (attribute canonicalization/extraction + category-path mapping into the requested target taxonomies: google, shopify, amazon). Returns one result per input product, same order: a NormalizedProduct on success, or { error, source_title } if that specific product's classification failed — one product's failure never voids the rest of the batch. attributes is keyed by a controlled vocabulary (size, color, material, gender, sleeve_length — unrecognized keys are dropped, not passed through under a model-chosen name) and each value carries provenance: \"canonicalized\" means it came from your own raw_attributes input for that product (deterministic cleanup only, no recall); \"extracted\" means the model inferred it from the title/description and it wasn't in your input — treat extracted values as a suggestion, not a confirmed fact about the product, the same way you'd treat a low-confidence category_paths entry. category_paths for google and shopify is retrieval-grounded against the real, current taxonomy files (not recalled from memory) — measured at 22/24 (91.7%) exact path+leaf_id matches on a 12-product evaluation set; amazon has no comparable public reference file, so it stays best-effort. Each entry's confidence (0-1) and leaf_id (null when not confident it matches a real node) are the honest signal regardless of taxonomy — treat a low-confidence or null-leaf_id result as a suggestion worth a quick human check, not a confirmed classification."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:39:32.176Z",
+  "toolsPreviewStatus": "ok"
+}

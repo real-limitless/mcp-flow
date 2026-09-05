@@ -1,0 +1,85 @@
+{
+  "id": "io.github.travisbergen2/rpcs1-agent-tuner",
+  "title": "RPCS-1 Agent Tuner & Translation Bridge",
+  "description": "Find your AI agent's likely failure mode, get runtime settings, and clarify ambiguous prompts.",
+  "summary": "Find your AI agent's likely failure mode, get runtime settings, and clarify ambiguous prompts.",
+  "offersHint": "Find your AI agent's likely failure mode, get runtime settings, and clarify ambiguous prompts. · Remote MCP (streamable-http) at https://rpcs1.dev/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://rpcs1.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://rpcs1.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://rpcs1.dev/tuner?utm_source=official-mcp-registry&utm_medium=mcp-directory&utm_campaign=listing",
+  "sourceUrl": "https://github.com/travisbergen2/rpcs1-sdk",
+  "repository": {
+    "url": "https://github.com/travisbergen2/rpcs1-sdk",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T12:33:37.749283Z",
+  "publishedAt": "2026-07-28T12:33:37.749283Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:37.808Z",
+    "sourceRepoAt": "2026-08-11T23:17:51.104Z",
+    "readmeAt": "2026-08-11T23:17:51.610Z",
+    "toolsAt": "2026-08-11T23:17:51.722Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/travisbergen2/rpcs1-sdk",
+    "checkedAt": "2026-08-11T23:17:51.104Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/travisbergen2/rpcs1-sdk/main/README.md",
+    "markdown": "# RPCS-1 SDK — AI Agent Tuner\n\n<!-- mcp-name: io.github.travisbergen2/rpcs1-agent-tuner -->\n\n**Start with the free tuner: find your AI agent’s likely failure mode, get runtime settings to try, and validate them with a harder case.**\n\nRPCS-1 helps teams make agent settings deliberate rather than guessed. Describe the task, change rate, predictability, stakes, relevant context horizon, and commitment style; it returns a five-primitive profile, a runtime recommendation, and a next test. The suite also includes SendRight for catching ambiguous prompts before handoff and the Translation Bridge for profile-aware communication rendering.\n\n## Repository Structure\n\n```\nrpcs1-sdk/\n├── packages/core/          # TypeScript engine (@rpcs1/core): tuner + translation layer + receiver-profile intake\n├── packages/web/           # Next.js app serving rpcs1.dev (tuner, translator, docs, Stripe, /mcp endpoint)\n├── packages/mcp-server/    # Standalone STDIO MCP server (what Glama and MCP clients build)\n├── sdk/python/             # Python SDK (pip install rpcs1)\n├── skills/                 # Canonical agent skill package (HF-HATP v2.0 SKILL.md)\n├── docs/                   # Architecture, deployment, launch playbook\n└── .github/workflows/      # CI/CD\n```\n\n## Quick Start — Python SDK\n\n```bash\npip install rpcs1\n```\n\n```python\nfrom rpcs1 import recommend_params\n\nconfig = recommend_params(\n    task_description=\"Customer support agent\",\n    environment_entropy=\"dynamic\",\n    environment_predictability=\"somewhat_predictable\",\n    stakes=\"high\",\n    target_platform=\"anthropic\",\n)\n\nprint(config.platform_parameters.temperature)   # e.g. 0.52\nprint(config.predicted_regime)                  # 'stable'\nprint(config.reasoning)                         # cites Matching Principle\n```\n\n## Quick Start — TypeScript Core\n\n```typescript\nimport { recommend } from '@rpcs1/core';\n\nconst rec = recommend({\n  task: { task_summary: 'Customer support agent' },\n  environment: {\n    entropy: 'dynamic',\n    predictability: 'somewhat_predictable',\n    stakes: 'high',\n    context_relevance: 'medium',\n    commitment_style: 'cautious',\n  },\n  target_platform: 'anthropic',\n});\n\nconsole.log(rec.platform_parameters.temperature);\nconsole.log(rec.predicted_regime);\n```\n\n## Development\n\n```bash\n# Install dependencies\nnpm ci --include=optional\n\n# Build and test TypeScript core\nnpm run build --workspace=@rpcs1/core\nnpm run test --workspace=@rpcs1/core\n\n# Test Python SDK\ncd sdk/python\npip install -e \".[dev]\"\npytest -v\n```\n\nWeb environment variables are documented in [`packages/web/.env.example`](./packages/web/.env.example)\n(Stripe, Resend, license signing, rate limits). MCP production controls are listed under\n[Production controls](#mcp-server) below.\n\n## The Matching Principle\n\nThe SDK implements Pred-09-5 from IMM Paper 9:\n\n> Stable receivers in an environment with entropy H satisfy TI ~ 1/H.\n\nHigh-entropy environments → short attention windows (TI ~ 10).\nLow-entropy environments → long attention windows (TI ~ 90).\n\nEvery parameter recommendation traces back to this principle or the basin stability geometry (oscillation/overload/freeze boundary conditions).\n\n## Web App\n\n- Free Tuner: [https://rpcs1.dev/tuner](https://rpcs1.dev/tuner)\n- SendRight: [https://rpcs1.dev/send](https://rpcs1.dev/send)\n- Translation Bridge: [https://rpcs1.dev/translator](https://rpcs1.dev/translator)\n- Calibrate a communication-preference profile: [https://rpcs1.dev/calibrate](https://rpcs1.dev/calibrate)\n\nThe site can also explain the same product facts in technical, executive, plain-language, or literal-and-precise registers. The explanation changes; pricing, deliverables, and limitations do not.\n\n## SendRight (Interpretation Mirror + Hand-off)\n\nSendRight is the type-and-send front door: type a prompt the way you'd say it\nout loud, see the readings it actually supports, lock in the one you meant, and\nhand it to your own model app with one click.\n\n**Modules (packages/core):**\n\n- `mirror(text)` — deterministic fork detectors (no ML, no API calls). Returns\n  `{ clean, readings[], ambiguousSpans[] }`. Detectors: compare-or-choose\n  (\"X or Y?\" questions without an explicit verb), grouping forks (\"A and B or C\"),\n  scope forks (\"only ... and ...\"), dangling pronouns, bare objects (\"fix it\"),\n  external references (\"the above\"). **Contract: silent on clean prompts** —\n  zero-fork controls in `tests/mirror.test.ts` enforce it. Pure function,\n  callable from any front end (web box, NL2Build, CLI).\n- `applyReading(text, clarifier)` — appends the chosen reading's clarifier so\n  the locked interpretation travels with the prompt.\n- `buildHandoff(vendor, prompt)` / `listVendors()` — per-vendor capability\n  table for opening the user's own model app with the prompt pre-filled.\n  Prefill URL parameters are **undocumented vendor behavior and churn without\n  notice**; each entry carries a `verified` date and must be re-checked at\n  release. Verified 2026-07-25: ChatGPT, Claude, Perplexity, Grok support URL\n  prefill; Gemini and Copilot are clipboard-fallback only. Logged-out users may\n  lose the prefill at login. All vendors degrade gracefully to clipboard.\n\n**Web:** `/send` (packages/web/app/send) renders the box via\n`components/SendBox.tsx` — mirror runs client-side (debounced, zero network);\nthe hand-off happens in the user's own app. SendRight never makes the model\ncall and never sees the answer.\n\n**Feasibility boundary (honest scope):** reasoning-stream digests and\nmid-generation stop/realign are only possible where rpcs1 itself owns the API\ncall (the fan-out / power-user mode, not yet shipped). They are structurally\nimpossible in vendor chat UIs and via the MCP surface — SendRight's hand-off\npath intentionally trades those away for zero keys, zero cost, and zero data\ncustody.\n\n## MCP Server\n\nRPCS-1 is also available as a public, anonymous, read-only MCP server:\n\n```text\nhttps://rpcs1.dev/mcp\n```\n\nIt exposes seven read-only tools across three families:\n\n- `recommend_agent_configuration` — diagnose an AI agent against environmental entropy,\n  predictability, stakes, context horizon, and commitment style; receive runtime settings to try and a next test.\n- `interpret`, `normalize`, and `rewrite` — detect ambiguity, turn fragmented text into coherent prose,\n  and return style-specific rewrite instructions.\n- `calibrate_profile`, `prepare_prompt`, and `render_reply` — create a continuous communication-preference\n  profile, recover intended meaning before an action, and render a reply for that profile.\n\n### Translation Layer\n\n> \"Say what you mean. Hear what they meant.\"\n\nThe Translation Bridge treats the profile as a transportable parameter, not a category label. The five-question\nCalibrate flow measures communication preferences for rendering only; it is not a psychological assessment or diagnosis.\n`prepare_prompt` / `render_reply` use that profile on the inbound and outbound sides of an interaction. The canonical\nagent-facing specification lives at [`skills/rpcs1-translation-layer/SKILL.md`](./skills/rpcs1-translation-layer/SKILL.md).\n\n### Tuner examples\n\nThe first useful call is a support copilot under live pressure:\n\n```text\nUse recommend_agent_configuration to diagnose my support copilot.\n\nTask: refund and billing dispute triage\nEnvironment: dynamic, somewhat_predictable, high stakes\nContext relevance: medium\nCommitment style: cautious\nTarget platform: anthropic\n```\n\nThe output should lead with the five-primitive profile, failure-risk score, predicted regime,\nruntime posture, and next test to run.\n\nThe second useful call is a coding agent in a changing repository:\n\n```text\nUse recommend_agent_configuration to diagnose my coding agent.\n\nTask: inspect a changing repository, edit files, run tests, and open a pull request\nEnvironment: moderate, somewhat_predictable, medium stakes\nContext relevance: long\nCommitment style: balanced\nTarget platform: openai\n```\n\nThe output should still lead with the five-primitive profile, failure-risk score, predicted regime,\nruntime posture, and next test to run.\n\nConnection details and client compatibility notes are available at\n[https://rpcs1.dev/docs/mcp](https://rpcs1.dev/docs/mcp).\nPractical coding, support, and research examples are available at\n[https://rpcs1.dev/docs/examples](https://rpcs1.dev/docs/examples).\n\nHyperagent uses the fixed public OAuth client `hyperagent-rpcs1` with PKCE and the registered\ncallback `https://hyperagent.com/api/mcp-servers/callback`. No client secret is required.\n\nThe MCP surface exposes the deterministic agent-tuning workflow alongside read-only translation and\nper-user rendering tools. New tools should be added only after their scoring or behavior contracts are\nimplemented and tested in the core package.\n\nDiscovery metadata:\n\n- OpenAPI: [https://rpcs1.dev/openapi.json](https://rpcs1.dev/openapi.json)\n- LLM overview: [https://rpcs1.dev/llms.txt](https://rpcs1.dev/llms.txt)\n- MCP Registry manifest: [`server.json`](./server.json)\n\nProduction controls:\n\n- `MCP_HOURLY_LIMIT` controls per-instance MCP throttling (default: `120` requests per IP/hour).\n- `MCP_MAX_BODY_BYTES` limits request bodies (default: `65536` bytes).\n- `MCP_ALLOWED_HOSTS` is a comma-separated production host allowlist.\n- `MCP_ALLOWED_ORIGINS` is an optional comma-separated browser-origin allowlist. Leave it blank to reject cross-origin browser requests.\n- `MCP_OAUTH_JWT_SECRET` signs short-lived OAuth authorization codes and access tokens.\n- `/api/health` reports deployment and MCP readiness metadata.\n\nFor globally consistent abuse protection across Vercel instances, configure a Vercel Firewall\nrate-limit rule for `/mcp`. The in-process limiter is defense in depth, not a distributed quota.\n\nGlama Docker checks should build and launch the local STDIO server, not connect to the hosted\n`https://rpcs1.dev/mcp` endpoint. Use this build spec:\n\n```json\n{\n  \"buildSteps\": [\n    \"npm ci --include=optional\",\n    \"npm run build --workspace=@rpcs1/core\",\n    \"npm run build --workspace=@rpcs1/mcp-server\"\n  ],\n  \"cmdArguments\": [\n    \"mcp-proxy\",\n    \"--\",\n    \"node\",\n    \"packages/mcp-server/dist/index.js\"\n  ],\n  \"environmentVariablesJsonSchema\": {\n    \"type\": \"object\",\n    \"properties\": {},\n    \"required\": []\n  },\n  \"placeholderArguments\": {}\n}\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:17:51.610Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "recommend_agent_configuration",
+      "description": "Diagnose why a deployed AI agent may fail. Takes environmental entropy, predictability, stakes, context horizon, and commitment style, then returns receiver profile values (TI, SG, FT, UE, AR), platform parameters (temperature, top_p, strategy), regime prediction, reasoning, and warnings. Optionally pass target_model (the actual model id) to attach MEASURED per-model receiver posture (E-LIT table): evidence-graded literalness, truth-override boundary, and translation directives. Deterministic, stateless, read-only — does not store past recommendations."
+    },
+    {
+      "name": "interpret",
+      "description": "Detect ambiguity in user messages using the RPCS-1 Signature Ambiguity Framework. Returns AR level (AR0-AR5), confidence, candidate interpretations with scores, clarifying questions, and suggested next step. Use when a user says something vague, passive-aggressive, or underspecified."
+    },
+    {
+      "name": "normalize",
+      "description": "Clean up text with ellipses, fragments, and run-on thoughts into coherent prose. Use when a user types stream-of-consciousness or fragmented input."
+    },
+    {
+      "name": "rewrite",
+      "description": "Get rewrite instructions for adapting text to a specific style: technical, plain, socially_gentle, concise, detailed, or direct. Use when communication needs tone adjustment."
+    },
+    {
+      "name": "calibrate_profile",
+      "description": "Build a ReceiverProfile (TI, SG, FT, UE, AR — continuous 0-100, never a category label) from five behavioral forced-choice answers. Call with NO answers to get the five questions to ask the user; call again with their answers (a/b/c per primitive) to get the profile. Store the returned profile JSON in the user’s notes or memory and pass it to render_reply / prepare_prompt on every turn. Deterministic and stateless — nothing is stored server-side. Schema: https://rpcs1.dev/v1/receiver-profile.json"
+    },
+    {
+      "name": "prepare_prompt",
+      "description": "The inbound half of the Translation Bridge loop. Takes the user’s raw message (possibly ambiguous, fragmented, or underspecified) plus their ReceiverProfile, and returns the recovered intent, a canonical translation to act on, ambiguity level, and — profile-aware — whether to clarify or commit. Call this before acting on any ambiguous user request. Scope note: its detectors are lexical/structural (vague signals, ambiguous references) — for the commit-vs-clarify DECISION, route_intent (with your own proposed readings) is the authority; when they disagree, follow route_intent."
+    },
+    {
+      "name": "render_reply",
+      "description": "The outbound half of the Translation Bridge loop. Takes your draft reply plus the user’s ReceiverProfile and returns deterministic rendering instructions (structure, warmth, explicitness, revision posture, ambiguity handling — each with a why-trace). Apply the instructions to your draft before answering. Call this on every reply to a calibrated user."
+    },
+    {
+      "name": "route_intent",
+      "description": "Entropy routing over competing interpretations — the model proposes, the deterministic core disposes. YOU generate the candidate readings of the user’s message (3–7 short hypotheses covering the plausible interpretations, INCLUDING likely-typo readings, idiom-vs-literal readings, and domain senses) and pass them as hypotheses, ideally with your own likelihoods (0–1 per reading) AND a paraphrase per reading — the user’s message rewritten unambiguously under that interpretation, so the user can VERIFY intent by recognition before anything commits (one misread prompt skews a whole thread). The router computes the posterior and its normalized entropy T̂ and returns the decision: commit (one reading dominates), commit_with_note (close alternative disclosed), present_options (several readings live), or clarify (ask before acting — open-endedly when nothing discriminates). Thresholds adapt to the user’s ReceiverProfile (AR widens/narrows the commit region; high FT discloses near-ties). This tool is the commit-vs-clarify AUTHORITY in the pipeline. Omitting hypotheses falls back to a generic six-intent PRODUCT-ROUTING starter set — do not use the fallback for interpreting arbitrary sentences. Deterministic, stateless, read-only. Benchmarked: RTEB v1.1 (developer-bench grade; see docs/routing.md)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:17:51.722Z",
+  "toolsPreviewStatus": "ok"
+}

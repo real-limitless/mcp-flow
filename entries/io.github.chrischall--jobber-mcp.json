@@ -1,0 +1,58 @@
+{
+  "id": "io.github.chrischall/jobber-mcp",
+  "title": "jobber-mcp",
+  "description": "Read the Jobber Client Hub your service providers share: appointments, invoices and quotes",
+  "summary": "Read the Jobber Client Hub your service providers share: appointments, invoices and quotes",
+  "offersHint": "Read the Jobber Client Hub your service providers share: appointments, invoices and quotes · Packages: npm:@chrischall/jobber-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@chrischall/jobber-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@chrischall/jobber-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chrischall/jobber-mcp",
+  "repository": {
+    "url": "https://github.com/chrischall/jobber-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T16:23:12.511944Z",
+  "publishedAt": "2026-08-11T16:23:12.511944Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:07.698Z",
+    "sourceRepoAt": "2026-08-11T23:52:52.562Z",
+    "readmeAt": "2026-08-11T23:52:53.142Z",
+    "toolsAt": "2026-08-12T01:27:07.698Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chrischall/jobber-mcp",
+    "checkedAt": "2026-08-11T23:52:52.562Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chrischall/jobber-mcp/main/README.md",
+    "markdown": "# Jobber Client Hub MCP\n\n[![CI](https://github.com/chrischall/jobber-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/chrischall/jobber-mcp/actions/workflows/ci.yml)\n[![npm](https://img.shields.io/npm/v/@chrischall/jobber-mcp)](https://www.npmjs.com/package/@chrischall/jobber-mcp)\n[![license](https://img.shields.io/npm/l/@chrischall/jobber-mcp)](LICENSE)\n\nA [Model Context Protocol](https://modelcontextprotocol.io) server that connects\nClaude to the **Jobber Client Hub** — the customer portal that home-service\nbusinesses (pest control, lawn care, HVAC, cleaning) use to send you\nappointments, quotes and invoices.\n\n> [!WARNING]\n> **AI-developed project.** This codebase was built and is actively maintained\n> by [Claude Code](https://www.anthropic.com/claude). No human has audited the\n> implementation. Review all code and tool permissions before use.\n\n## This is the customer side, not the business side\n\nJobber has two surfaces, and they share nothing:\n\n| | Developer API | Client Hub (**this repo**) |\n| --- | --- | --- |\n| Serves | the business running on Jobber | that business's customers |\n| Auth | OAuth2 app you register | the hub link your provider emailed you |\n| Reachable from a server | yes | no — Cloudflare |\n\nIf you *run* a business on Jobber, you want the Developer API instead —\n[`jobber-mcp`](https://www.npmjs.com/package/jobber-mcp) by justinvogel covers\nthat surface. This server is for being someone's customer, and the reasoning is\nwritten up in [`skills/jobber-fpx/references/why-not-the-api.md`](skills/jobber-fpx/references/why-not-the-api.md).\n\n## What you can do\n\n- *\"When is the exterminator coming next?\"*\n- *\"Do I owe Queen Bee's anything?\"*\n- *\"Show me every invoice they've sent this year.\"*\n- *\"What did I ask them to do in my last work request?\"*\n\nRead-only, and not by omission — see [Why there are no writes](#why-there-are-no-writes).\n\n## Requirements\n\n- [Claude Desktop](https://claude.ai/download) or [Claude Code](https://docs.anthropic.com/en/docs/claude-code)\n- [Node.js](https://nodejs.org) 22 or later\n- Chrome with the **Transporter** (fetchproxy) extension, its Site access\n  allowing `getjobber.com`, and a signed-in Client Hub tab\n- A Client Hub link from a provider — the \"View Details\" button in any of their\n  emails\n\n## Setup\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"jobber\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@chrischall/jobber-mcp\"],\n      \"env\": { \"JOBBER_HUB_ID\": \"<the UUID from your hub URL>\" }\n    }\n  }\n}\n```\n\nYour hub URL looks like `clienthub.getjobber.com/client_hubs/<UUID>/`. The UUID\nis the whole credential — anyone holding it can read the hub — so treat it like\na password.\n\nSeveral providers, several hubs (there is no combined view):\n\n```jsonc\n\"env\": {\n  \"JOBBER_HUBS\": \"[{\\\"label\\\":\\\"queenbee\\\",\\\"hubId\\\":\\\"…\\\"},{\\\"label\\\":\\\"greenworx\\\",\\\"hubId\\\":\\\"…\\\"}]\"\n}\n```\n\nThen pass `hub: \"greenworx\"` to any tool. With one hub configured you never\nneed the argument.\n\n| Variable | Meaning |\n| --- | --- |\n| `JOBBER_HUB_ID` | Single hub UUID |\n| `JOBBER_HUB_LABEL` | Name for that hub (default `default`) |\n| `JOBBER_HUBS` | JSON array of `{label, hubId}` for several providers |\n| `JOBBER_WS_PORT` | fetchproxy concentrator port (default `37149` — don't change it) |\n| `JOBBER_DEBUG_LOG` | Bridge debug logging to stderr |\n\n## Tools\n\n| Tool | Returns |\n| --- | --- |\n| `jobber_list_appointments` | Visits, grouped Today / Upcoming / Past |\n| `jobber_list_invoices` | Invoices with number, subject and section (`Paid`, `Overdue`, …) |\n| `jobber_list_quotes` | Quotes with their approval section |\n| `jobber_list_work_requests` | Requests you raised |\n| `jobber_read_page` | Readable text of any hub page, including detail pages |\n| `jobber_list_hubs` | Configured hubs (labels only — never the ids) |\n| `jobber_healthcheck` | Which layer is broken: bridge, config, or hub |\n\n`jobber_list_*` keeps each record's metadata rows raw in `details` rather than\nforcing a schema. Which rows a card shows depends on its state — an unpaid\ninvoice carries a balance row a paid one does not — so a fixed schema would\ninvent fields for some records and drop rows from others.\n\n## Why the browser bridge is not optional\n\nVerified live 2026-08-09: `clienthub.getjobber.com` sits behind a Cloudflare\nmanaged challenge that fingerprints the **TLS client**, not the User-Agent.\ncurl and Node both get `403` with the `Just a moment` interstitial, and keep\ngetting it when handed a current Chrome UA and the full browser `Accept*`\nheader set. The identical request from inside a real tab returns 200.\n\nThere is also no JSON API to fall back on: the hub is a server-rendered Rails\napp that makes zero API calls to its own origin. `clienthub.getjobber.com/api/graphql`\nexists and answers introspection, but it serves the same staff schema as the\nDeveloper API — it is not a client-facing endpoint.\n\n## Why this is not hosted on mcp-host\n\nEvery other reason to run an MCP server rather than a shell script is about\nreach — using it from claude.ai, on a phone, anywhere the CLI is not. This\nserver cannot deliver that, and the reason is structural rather than a\nmissing afternoon of work.\n\n[`mcp-host`](https://github.com/chrischall/mcp-host) runs children on a Fly\nmachine. There is no browser there and no Transporter extension, and a lifted\ncookie does not help: `cf_clearance` is bound to IP, User-Agent and TLS\nfingerprint together, so a session captured on a laptop is dead the moment a\ndatacenter replays it. mcp-host's own\n[`docs/BROWSER-BRIDGE.md`](https://github.com/chrischall/mcp-host/blob/main/docs/BROWSER-BRIDGE.md)\ndesigns a path for exactly this class of server and states plainly that no\nhosting path is implemented yet.\n\nSo this repo is built to be ready rather than hosted: the concentrator port\ncomes from `JOBBER_WS_PORT` via `readPortEnv`, matching the twelve of thirteen\nbrowser-bridge MCPs that already do this, so a future host can attribute a\nsocket to this child without a code change. It deliberately does **not** use the\n`@fetchproxy/bootstrap` \"lift the session once\" pattern, which is the one shape\nthat cannot name a port at all.\n\n## Why there are no writes\n\nThe hub can submit work requests, approve quotes and pay invoices. None of them\nare here:\n\n- Those flows are form POSTs carrying CSRF tokens and, on some paths, a\n  Turnstile token read from the DOM. The bridge does `fetch()`, not DOM reads,\n  so it cannot complete them — a write tool would fail unpredictably rather\n  than work.\n- Paying an invoice means handling card or bank details. That belongs in your\n  hands, in your browser, not in an agent's tool call.\n\n## Without the MCP\n\n[`skills/jobber-fpx/`](skills/jobber-fpx) does the same reads from a shell with\nthe [`fpx`](https://www.npmjs.com/package/@fetchproxy/cli) CLI — no server\nprocess. Same bridge, same pages, one command.\n\n## Development\n\n```sh\nnpm install\nnpm run build\nnpm test\n```\n\nThe suite mocks the network entirely; `tests/server-boot.test.ts` additionally\nboots the real built artifacts — including the bundle in a directory with no\n`node_modules`, as the `.mcpb` runs — and drives a full `initialize` +\n`tools/list` handshake.\n\n## Acknowledgement of terms\n\n**1. This server accesses your own Client Hub.** Every request is dispatched\nthrough your own signed-in browser session via the fetchproxy extension,\nreusing the session you already have. It does not — and cannot — reach anyone\nelse's hub.\n\n**2. [Jobber's Terms of Service](https://getjobber.com/terms-of-service/)\ngovern your use of this server**, exactly as they govern your direct use of the\nhub in a browser. Review them, and stop using this server if your use of it\nwould not comply.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:52:53.142Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:07.698Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

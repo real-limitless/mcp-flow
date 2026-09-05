@@ -1,0 +1,58 @@
+{
+  "id": "io.github.qinisolabs/bizdays",
+  "title": "bizdays",
+  "description": "Verified business-day math for AI agents: holidays + per-country weekends, not guesses.",
+  "summary": "Verified business-day math for AI agents: holidays + per-country weekends, not guesses.",
+  "offersHint": "Verified business-day math for AI agents: holidays + per-country weekends, not guesses. · Packages: npm:@qinisolabs/bizdays",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@qinisolabs/bizdays",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@qinisolabs/bizdays",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/qinisolabs/bizdays",
+  "repository": {
+    "url": "https://github.com/qinisolabs/bizdays",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-17T14:11:44.190151Z",
+  "publishedAt": "2026-06-17T14:11:44.190151Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:00.885Z",
+    "sourceRepoAt": "2026-08-11T23:25:09.086Z",
+    "readmeAt": "2026-08-11T23:25:09.563Z",
+    "toolsAt": "2026-08-12T01:05:00.885Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/qinisolabs/bizdays",
+    "checkedAt": "2026-08-11T23:25:09.086Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/qinisolabs/bizdays/main/README.md",
+    "markdown": "<div align=\"center\">\n\n<img src=\"docs/logo.svg\" width=\"96\" height=\"96\" alt=\"Qiniso\" />\n\n# bizdays\n\n**Verified business-day math for AI agents — holidays + per-country weekends, not guesses.**\n\n*Verified, trustworthy data tools for AI agents. \"Qiniso\" means \"truth\" in Zulu.*\n\n[Website](https://qinisolabs.github.io/bizdays/) · [npm](https://www.npmjs.com/package/@qinisolabs/bizdays) · [MCP endpoint](https://bizdays.qinisolabs.workers.dev/mcp) · [MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=bizdays)\n\n</div>\n\n---\n\nLLMs answer \"what date is 5 business days after Dec 22nd in the UK?\", \"how many working days are in this month?\", and \"is Friday a working day in Saudi Arabia?\" confidently and often **wrongly** — they miscount, forget public holidays, and assume every country's weekend is Saturday/Sunday. **bizdays** gives an agent the deterministic answer from real public-holiday calendars and per-country weekend rules, showing the weekend rule and the exact holidays it skipped.\n\nTwo things break naive business-day math, and bizdays fixes both: **weekends aren't Sat/Sun everywhere** (Fri/Sat in Saudi Arabia, Egypt & Israel; Fri in Iran; Sun in India; Sat/Sun in the UAE since 2022), and **\"holiday\" must mean a real day off** — off-the-shelf data counts observances like Valentine's Day and Christmas Eve, which are not days off.\n\n> Counting the working days in a month, a frontier LLM with no tools is **wrong 63% of the time**, cold — and **23% across business-day questions** overall. **bizdays: 0%.**\n\n## Add it to Claude\n\nSettings → Connectors → **Add custom connector**, and paste — no login, no key:\n\n```\nhttps://bizdays.qinisolabs.workers.dev/mcp\n```\n\nStateless, reads no user data, requires no secrets. Prefer to run it locally over stdio? Add `{ \"command\": \"npx\", \"args\": [\"-y\", \"@qinisolabs/bizdays\"] }` under `mcpServers` in your client config.\n\n## Use it as a library\n\nEvery tool is also a typed function — no MCP required:\n\n```bash\nnpm i @qinisolabs/bizdays\n```\n\n```ts\nimport { addBusinessDays, countBusinessDays, isBusinessDay } from \"@qinisolabs/bizdays\";\n\naddBusinessDays(\"2025-12-22\", 5, \"GB\").result;       // \"2025-12-31\" (skips Christmas + Boxing Day)\ncountBusinessDays(\"2025-12-01\", \"2025-12-31\", \"US\"); // { businessDays: 22, ... }\nisBusinessDay(\"2025-06-13\", \"SA\").isBusinessDay;      // false — Friday is weekend in Saudi Arabia\nisBusinessDay(\"2025-02-14\", \"US\").isBusinessDay;      // true  — Valentine's Day is not a public holiday\n```\n\nEvery function returns a rich result: the answer, the weekday, exactly which weekends and named holidays were skipped, the weekend rule and its source, and a confidence flag.\n\n## What it does — 6 tools\n\n| Tool | What it answers |\n| --- | --- |\n| **add_business_days** | What date is N working days from a start date? (N may be negative) |\n| **count_business_days** | How many working days between two dates? (endpoints inclusive by default) |\n| **is_business_day** | Is this date a working day? If not, why (weekend / public holiday with its name)? |\n| **next_business_day** | First working day strictly after a date |\n| **previous_business_day** | Last working day strictly before a date |\n| **country_rule** | The weekend rule + its source, whether holidays apply, and a confidence flag |\n\nPublic holidays for **206 countries** (and subdivisions) come from [`date-holidays`](https://github.com/commenthol/date-holidays), filtered to `type: \"public\"`. Weekends come from **Unicode CLDR** via the runtime `Intl` API, plus a curated `data/weekend-overrides.json` correction layer (e.g. Bangladesh Fri/Sat, Nepal Sat-only) — the maintained data is the moat.\n\n## What it is *not*\n\n- **Not all-holidays.** It counts weekends and **public** holidays only — not regional or optional observances. Pass company shutdowns or regional days via `extraHolidays`.\n- **Not uniformly verified.** A Tier-1 set of ~65 countries is verified; others work but are flagged `unverified`. Where no holiday calendar exists (e.g. Qatar, Kuwait, Oman), the correct weekend still applies and the response says so (`holidaysApplied: false`).\n- **Not a live service dependency.** The library makes no network calls; dates are `YYYY-MM-DD` in UTC.\n\n## Architecture\n\nA single TypeScript package exposing one MCP server over two transports — **stdio** (local / `npx`) and a **Cloudflare Worker** (the hosted edge endpoint) — both driven by the same `core.ts` tool definitions, which also power the importable library.\n\n```bash\nnpm install\nnpm run build\nnpm test\n```\n\n## Privacy\n\nThis tool runs locally on your machine and is built not to collect, store, or transmit your data — no analytics, no telemetry, no account. All reference data is bundled — no network calls, and nothing leaves your device. Full policy: <https://qinisolabs.github.io/privacy.html>.\n\n## License\n\nApache-2.0. Bundled holiday data is from `date-holidays` (ISC AND CC-BY-3.0); see `NOTICE`.\n",
+    "fetchedAt": "2026-08-11T23:25:09.563Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:00.885Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "io.github.pavle-Scalably/shopify-mcp",
+  "title": "Shopify Admin MCP Server (Read-Only)",
+  "description": "Read-only MCP for the Shopify Admin GraphQL API. 6 tools, full read surface, multi-store.",
+  "summary": "Read-only MCP for the Shopify Admin GraphQL API. 6 tools, full read surface, multi-store.",
+  "offersHint": "Read-only MCP for the Shopify Admin GraphQL API. 6 tools, full read surface, multi-store. · Packages: binary:https://github.com/scalably-io/shopify-mcp/releases/download/v1.0.0/shopify-mcp.mcpb",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/scalably-io/shopify-mcp/releases/download/v1.0.0/shopify-mcp.mcpb",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/scalably-io/shopify-mcp/releases/download/v1.0.0/shopify-mcp.mcpb",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/scalably-io/shopify-mcp",
+  "repository": {
+    "url": "https://github.com/scalably-io/shopify-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-21T09:54:33.738208Z",
+  "publishedAt": "2026-06-21T09:54:33.738208Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:09:21.623Z",
+    "sourceRepoAt": "2026-08-11T23:30:09.084Z",
+    "readmeAt": "2026-08-11T23:30:09.729Z",
+    "toolsAt": "2026-08-12T01:09:21.623Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/scalably-io/shopify-mcp",
+    "checkedAt": "2026-08-11T23:30:09.084Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/scalably-io/shopify-mcp/main/README.md",
+    "markdown": "# Shopify MCP — Universal, Read-Only\n\n![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)\n![MCP](https://img.shields.io/badge/Model_Context_Protocol-compatible-01e9ac)\n![Shopify Admin API](https://img.shields.io/badge/Shopify_Admin_GraphQL-2026--04-black)\n\nA single MCP server exposing **100% of the Shopify Admin GraphQL API read surface** (version `2026-04`) through 6 universal tools. **Read-only is enforced at the query-parser level** — mutations are rejected before they ever reach Shopify, not merely discouraged. **Multi-store** by design: one server instance can serve many shops.\n\nBuilt and maintained by [Scalably](https://scalably.io). Runs on the [Model Context Protocol](https://modelcontextprotocol.io). License: MIT.\n\n> **Why read-only at the parser level?** Giving an AI agent write access to a live store is how you end up with a deleted product or a wrong-priced variant. This server enforces read-only by *parsing* every query and rejecting mutations before they leave the process — not by trusting the model to behave, and not by relying on Shopify-side scopes alone. It's the safety boundary an agent in production actually needs. ([more on the pattern](https://scalably.io/blog/how-to-build-mcp-server-python))\n\n## Quick start\n\n```bash\npip install -r requirements.txt\n\n# Single store (simplest)\nexport SHOPIFY_DOMAIN=\"my-store.myshopify.com\"\nexport SHOPIFY_ACCESS_TOKEN=\"shpat_...\"   # or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET\npython server.py\n```\n\nThen point any MCP client at the server. See **Authentication** below for multi-store and OAuth client-credentials setup.\n\n---\n\n## Tools (6)\n\n| Tool | Description |\n|------|-------------|\n| `shopify_list_stores` | Lists configured stores. Agent calls first. |\n| `shopify_graphql_query` | Arbitrary read-only GraphQL. Mutations rejected by the parser. |\n| `shopify_graphql_introspect` | Schema introspection — full catalog or single type. |\n| `shopify_bulk_query` | Launch async bulk export (JSONL). |\n| `shopify_bulk_poll` | Poll bulk operation status + download URL. |\n| `shopify_shopifyql` | ShopifyQL analytics (SQL-like; requires `read_reports`). |\n\nEvery non-list tool takes an optional `shop` argument (alias or domain). Required when >1 store configured; auto-selected when exactly 1.\n\n## Coverage\n\n100% of Admin GraphQL API read surface — any object, field, or connection accessible with the token's scopes is reachable via `shopify_graphql_query`. Anything large-scale (>10k records) should use `shopify_bulk_query`. Analytics goes through `shopify_shopifyql`.\n\n## Authentication\n\n### Multi-store (preferred for agency setups)\n\nSet `SHOPIFY_STORES` to a JSON object mapping alias → store config:\n\n```json\n{\n  \"main\":   {\"domain\": \"my-store.myshopify.com\",        \"client_id\": \"...\", \"client_secret\": \"...\"},\n  \"outlet\": {\"domain\": \"my-store-outlet.myshopify.com\", \"client_id\": \"...\", \"client_secret\": \"...\"},\n  \"legacy\": {\"domain\": \"legacy-store.myshopify.com\",    \"access_token\": \"shpat_...\"}\n}\n```\n\n- Each store can use EITHER `client_id`+`client_secret` (Dev Dashboard OAuth, 24h tokens auto-refreshed per store) OR `access_token` (legacy `shpat_`).\n- Aliases: `[a-z0-9][a-z0-9_-]{0,63}`. Lowercase-normalized on load.\n- Token cache is per-store-domain; one throttled store doesn't block others.\n\n### Single-store (backward-compat)\n\nIf `SHOPIFY_STORES` is unset, the MCP falls back to single-store env vars:\n\n- `SHOPIFY_DOMAIN` or `SHOPIFY_SHOP_DOMAIN` — `<shop>.myshopify.com`\n- Auth path A: `SHOPIFY_CLIENT_ID` + `SHOPIFY_CLIENT_SECRET` (Dev Dashboard)\n- Auth path B: `SHOPIFY_ACCESS_TOKEN` (legacy `shpat_`)\n\nThe single store registers under alias `default` — callers can omit `shop` argument on tool calls.\n\n## Read-only enforcement\n\nEvery query is parsed with `graphql-core` before transmission. The parser rejects:\n- `subscription` operations (not supported by Admin API anyway)\n- Any top-level `mutation` EXCEPT `bulkOperationCancel` (cancels an in-flight bulk job, no shop-data write)\n- Malformed GraphQL (syntax errors)\n- Queries > 100KB\n\n`bulkOperationRunQuery` is **NOT** in the generic parser allowlist. Legitimate bulk exports go through the dedicated `shopify_bulk_query` tool, which validates the inner query with `_assert_read_only` BEFORE wrapping it in the bulk mutation. Single source of truth — no reliance on Shopify-side validation.\n\n## Rate limiting\n\nPer-store cost-based leaky bucket (Shopify's model). Each response includes `extensions.cost.throttleStatus`. On `THROTTLED` errors, the MCP sleeps `ceil((requestedQueryCost - currentlyAvailable) / restoreRate)` seconds (minimum 1s) and retries up to 3 times. Over limit → surfaced to caller.\n\nBuckets are independent per store — throttle on store A doesn't affect store B.\n\n## Security hardening\n\n- Shop domain validated against `^[a-z0-9][a-z0-9-]*\\.myshopify\\.com$` (no arbitrary hostnames — defeats SSRF).\n- Alias pattern `^[a-z0-9][a-z0-9_-]{0,63}$`.\n- `allow_redirects=False` on both token exchange and GraphQL calls.\n- `X-Shopify-Access-Token`, `client_secret`, and all token prefixes (`shpua_`, `shpat_`, `shpss_`, `shpca_`) redacted from logs and error messages.\n- Input validation: GraphQL parsed, operation IDs regex-matched, type names validated, query-size ceiling 100KB.\n- Per-store token cache in memory only; flushed on 401/ACCESS_DENIED with one retry.\n\n## Service name\n\n`shopify`\n\n## API version\n\nDefault pin: `2026-04`. Callers can override per-tool via `api_version=\"YYYY-MM\"`. Bump the module constant `SHOPIFY_API_VERSION` quarterly after smoke-testing new versions.\n\n## Scopes needed (read-only)\n\nMinimum viable: `read_products read_orders read_customers`.\n\nRecommended baseline:\n`read_products read_orders read_customers read_inventory read_locations read_fulfillments read_discounts read_content read_themes read_files read_markets read_metaobjects read_metaobject_definitions read_reports read_translations read_locales read_shipping`.\n\nAdd `read_all_orders` for >60-day order history. Enable **Protected customer data access** in Dev Dashboard → Configuration if the agent needs customer PII.\n\n## Privacy Policy\n\nThis connector runs **locally**, on your own machine, under your own Shopify credentials. It is a thin read-only bridge between your MCP client and Shopify's Admin API.\n\n- **Data collection:** The connector collects **no** personal data and contains **no** telemetry, analytics, or external reporting. It does not phone home.\n- **Data usage:** Shopify store data you query is returned to your local MCP client to fulfill your request, and is not used for any other purpose.\n- **Data storage:** The connector stores **nothing** persistently. Access tokens are held in memory only for the life of the process and are never written to disk. The only network destination is Shopify's own API (`*.myshopify.com`), enforced by a domain allowlist.\n- **Third-party sharing:** **None.** Data flows only between your machine and Shopify. No third party (including the connector's author) ever receives your data or credentials.\n- **Retention:** No data is retained by the connector after the process exits.\n- **Secret handling:** Access tokens, client secrets, and all Shopify token prefixes are redacted from logs and error messages.\n- **Contact:** hello@scalably.io\n\nThe canonical hosted version of this policy: https://scalably.io/connector-privacy.html\n\n## Learn more\n\nWe write about building production MCP servers and AI agents at [scalably.io/blog](https://scalably.io/blog):\n- [How to build an MCP server in Python](https://scalably.io/blog/how-to-build-mcp-server-python) — the read-only enforcement pattern used here, from a server we run in production\n- [What is an MCP server?](https://scalably.io/blog/what-is-an-mcp-server) — the host/client/server model\n- [MCP Inspector: debug your MCP server](https://scalably.io/blog/mcp-inspector-debug-mcp-server) — the silent failures to watch for\n\n## References\n\n- [Shopify Admin GraphQL API](https://shopify.dev/docs/api/admin-graphql)\n- [Client credentials grant](https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/client-credentials-grant)\n- [Rate limits](https://shopify.dev/docs/api/usage/rate-limits)\n- [Bulk operations](https://shopify.dev/docs/api/usage/bulk-operations/queries)\n- [ShopifyQL](https://shopify.dev/docs/api/shopifyql)\n",
+    "fetchedAt": "2026-08-11T23:30:09.729Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:09:21.623Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

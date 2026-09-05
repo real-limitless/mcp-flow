@@ -1,0 +1,58 @@
+{
+  "id": "io.github.beepboop2025/noisefloor",
+  "title": "noisefloor — is this number real?",
+  "description": "Is this number real, or is it noise? Peek-safe A/B tests, change detection, honest forecasts.",
+  "summary": "Is this number real, or is it noise? Peek-safe A/B tests, change detection, honest forecasts.",
+  "offersHint": "Is this number real, or is it noise? Peek-safe A/B tests, change detection, honest forecasts. · Packages: pypi:noisefloor",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "noisefloor",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "noisefloor",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/beepboop2025/noisefloor",
+  "repository": {
+    "url": "https://github.com/beepboop2025/noisefloor",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T09:13:05.639823Z",
+  "publishedAt": "2026-08-02T09:13:05.639823Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:18.581Z",
+    "sourceRepoAt": "2026-08-11T23:55:19.517Z",
+    "readmeAt": "2026-08-11T23:55:20.317Z",
+    "toolsAt": "2026-08-12T01:29:18.581Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/beepboop2025/noisefloor",
+    "checkedAt": "2026-08-11T23:55:19.517Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/beepboop2025/noisefloor/main/README.md",
+    "markdown": "# noisefloor\n\n**Is this number real, or is it noise?**\n\nZero dependencies. Standard library only. Works as a Python package or as an MCP server.\n\n---\n\n## The problem\n\nYou ship a change and check the A/B test. Then you check again an hour later. Then tomorrow. You stop when it looks like a win.\n\nThat procedure lies to you, and not by a little:\n\n| 400 A/A tests, both arms identical, peeked every 20 observations | False winners |\n|---|---|\n| Two-proportion z-test | **40.2%** |\n| noisefloor | **0.0%** |\n\nBoth arms had the *same* 10% conversion rate, so every \"winner\" was false. A test tuned to be wrong 5% of the time was wrong 40% of the time, purely because someone looked more than once.\n\nThis isn't a discipline problem. Peeking is the rational thing to do when a bad variant is costing money. It's a maths problem, and it has a solution.\n\nReproduce the table with `pytest tests/test_calibration.py`.\n\n## Install\n\n```bash\npip install noisefloor\n```\n\n## Use\n\n```python\nfrom noisefloor import experiment\n\nexperiment.compare(a_successes=500, a_total=5000,\n                   b_successes=750, b_total=5000)\n# {'decided': True, 'winner': 'B',\n#  'reading': \"B wins: its interval sits entirely above A's\",\n#  'A': {'rate': 0.1, 'interval': [0.08366, 0.11809]},\n#  'B': {'rate': 0.15, 'interval': [0.13049, 0.17101]}, ...}\n```\n\nRun it after every single observation if you like. The guarantee holds at every sample size simultaneously, so stopping early, stopping late, or stopping because your manager walked past all cost you nothing.\n\n### The other four checks\n\n```python\nfrom noisefloor import change, coverage, forecast, multiple\n\n# Did this metric actually change? Catches collapses as well as spikes.\nchange.scan(daily_signups)\n# {'state': 'changed', 'direction': 'down',\n#  'reading': 'CHANGED (down), 8.5x its usual spread', ...}\n\n# Did the metric move, or did my sample size move?\ncoverage.check(conversion_rate, sessions_per_day)\n# {'verdict': 'SAMPLING_ARTIFACT',\n#  'reading': 'your sample size changed by -41% at the same time and it tracks\n#              this metric historically (correlation 0.70)...'}\n\n# What should the next reading be?\nforecast.next_value(latency_p95)\n\n# How good have these forecasts actually been?\nforecast.score(latency_p95)\n# {'empirical_coverage': 0.803, 'calibrated': True, 'n_misses': 197,\n#  'worst_misses': [...]}   # misses are always published\n\n# I watch 40 metrics. Which genuinely stand out?\nmultiple.select({'signups': 3.2, 'latency': 812.0, 'errors': 1.1, ...})\n# {'selected': ['latency'],\n#  'reading': '1 of 40 metrics worth looking at: latency'}\n```\n\n## As an MCP server\n\nAssistants read metrics constantly and assert significance the way people do — by eyeballing a change and calling it. This gives them a way to check.\n\n```json\n{\n  \"mcpServers\": {\n    \"noisefloor\": { \"command\": \"uvx\", \"args\": [\"--from\", \"noisefloor\", \"noisefloor-mcp\"] }\n  }\n}\n```\n\n```\nmcp-name: io.github.beepboop2025/noisefloor\n```\n\nSix tools: `ab_test`, `did_it_change`, `real_or_sampling`, `forecast_next`, `score_forecasts`, `which_metrics_matter`.\n\n## Why these methods\n\nEvery check is **anytime-valid** or **distribution-free** — the two properties that survive contact with how dashboards are really used: looked at whenever someone feels like it, and stopped when they see what they want.\n\n- **`experiment`** — beta-binomial mixture test martingale. A mixture of likelihood ratios is a non-negative martingale under the null, so Ville's inequality bounds the chance it *ever* crosses `1/alpha`. Exact for Bernoulli outcomes rather than a worst-case bound, which is where the power comes from. ([theory](https://arxiv.org/abs/2210.01948), [safe testing](https://arxiv.org/abs/1906.07801))\n- **`change`** — conformal Shiryaev-Roberts detector. Rank-based p-values, no distributional assumption, with a stated average time between false alarms. Two-sided by default, because half of what goes wrong is a number going to zero. ([nonexchangeable conformal](https://arxiv.org/abs/2202.13415))\n- **`coverage`** — conditions the metric on its own denominator. Almost every metric worth watching is a rate over a sample you don't control.\n- **`forecast`** — adaptive conformal intervals, valid under arbitrary distribution shift, graded by the Weighted Interval Score, a *proper* rule so the scoreboard can't be gamed by hedging. ([ACI](https://arxiv.org/abs/2106.00170), [decaying steps](https://arxiv.org/abs/2402.01139), [WIS](https://arxiv.org/abs/2005.12881))\n- **`multiple`** — e-Benjamini-Hochberg. Controls false discoveries across all your metrics at once, under *arbitrary dependence* — which matters, because real metrics move together. ([e-BH](https://arxiv.org/abs/2009.02824), [merging](https://arxiv.org/abs/1912.06116))\n\n## What it costs\n\nAnytime validity isn't free. At any fixed sample size the interval is wider than a one-look interval, so calling the same effect takes roughly twice the data — 10% vs 13% resolves at a median of about 14,300 observations here, against roughly 7,000 for a correctly run one-look test.\n\nYou're buying the right to stop whenever you want. For most teams that's a bargain, because the realistic alternative isn't a clean one-look test. It's a one-look test being peeked at, which is the 40% column above.\n\n## Design\n\nNothing here returns a number it can't stand behind. Not enough history returns `NOT_ENOUGH_HISTORY`, not a confident zero. A metric that moved with its own sample size returns `SAMPLING_ARTIFACT`, not a finding. Forecast misses are published in full and there's no flag to hide them.\n\nEvery result carries its `method` and, where one exists, its `guarantee`. Quote them — the point is that the claim can be backed rather than asserted.\n\nZero dependencies means it installs in Lambda, edge runtimes and locked-down build images where adding scipy is a procurement conversation. Every result is deterministic: same input, same answer, forever, with no RNG anywhere.\n\n## Provenance\n\nThese engines were built for [Palimpsest](https://palimpsest.info), a public-good censorship observatory, where publishing a number you can't defend is the whole failure mode. The sampling-artifact check exists because a censorship index there fell 60.3 → 55.6 while the measurements underneath it fell 353,676 → 208,933. The index hadn't moved. The instrument had.\n\n## Licence\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:55:20.317Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:18.581Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

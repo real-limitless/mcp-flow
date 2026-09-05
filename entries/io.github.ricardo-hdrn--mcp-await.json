@@ -1,0 +1,58 @@
+{
+  "id": "io.github.ricardo-hdrn/mcp-await",
+  "title": "mcp-await",
+  "description": "Condition watcher for AI assistants — wait for ports, files, URLs, processes, and more",
+  "summary": "Condition watcher for AI assistants — wait for ports, files, URLs, processes, and more",
+  "offersHint": "Condition watcher for AI assistants — wait for ports, files, URLs, processes, and more · Packages: npm:mcp-await",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-await",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-await",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ricardo-hdrn/mcp-await",
+  "repository": {
+    "url": "https://github.com/ricardo-hdrn/mcp-await",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-08T15:11:22.639333Z",
+  "publishedAt": "2026-03-08T15:11:22.639333Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:09.557Z",
+    "sourceRepoAt": "2026-08-11T23:24:21.575Z",
+    "readmeAt": "2026-08-11T23:24:22.409Z",
+    "toolsAt": "2026-08-12T01:04:09.557Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ricardo-hdrn/mcp-await",
+    "checkedAt": "2026-08-11T23:24:21.575Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ricardo-hdrn/mcp-await/main/README.md",
+    "markdown": "# mcp-await\n\n[![crates.io](https://img.shields.io/crates/v/mcp-await.svg)](https://crates.io/crates/mcp-await)\n[![CI](https://github.com/ricardo-hdrn/mcp-await/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/ricardo-hdrn/mcp-await/actions/workflows/ci.yml)\n[![license](https://img.shields.io/crates/l/mcp-await.svg)](LICENSE)\n\nCondition watcher MCP server + CLI for AI CLI assistants (Claude Code, Codex, Cursor, etc.).\n\nInstead of polling with `sleep` loops and `curl --retry` that waste API round-trips, call a wait tool once — it blocks until the condition is met and returns the result.\n\n![demo](docs/images/demo.gif)\n\n## Installation\n\n```bash\n# Prebuilt binary (Linux, macOS, Windows) — download from GitHub Releases\n# https://github.com/ricardo-hdrn/mcp-await/releases/latest\n\n# From crates.io\ncargo install mcp-await\n\n# From source\ngit clone https://github.com/ricardo-hdrn/mcp-await.git\ncd mcp-await\ncargo build --release\n```\n\n## Quick Start\n\n```bash\n# Wait for a service to be ready\nmcp-await port localhost 8080 --timeout 30\n\n# Wait for a file to appear\nmcp-await file /tmp/deploy.lock --event create --timeout 60\n\n# Wait for a command to succeed\nmcp-await cmd \"curl -sf http://localhost:8080/health\" --interval 2 --timeout 30\n```\n\n## Tools\n\n| Tool | Key Params | How it watches |\n|------|------------|----------------|\n| `wait_for_port` | `host`, `port` | TCP dial loop, 500ms interval |\n| `wait_for_file` | `path`, `event` (create/modify/delete) | inotify via `notify` crate, no polling |\n| `wait_for_url` | `url`, `expected_status` (default 200) | `curl` loop, 2s interval (requires `curl`) |\n| `wait_for_pid` | `pid` | `/proc/{pid}` check, 500ms interval |\n| `wait_for_docker` | `container` | `docker wait` (requires `docker`) |\n| `wait_for_gh_run` | `run_id`, `repo` (optional) | `gh run watch` (requires `gh`) |\n| `wait_for_command` | `command`, `interval_seconds` (default 5) | Re-run via `sh -c` until exit 0 |\n| `cancel_watch` | `watch_id` | Cancels a non-blocking watch |\n\nAll tools accept `timeout_seconds` (default: 300) and `blocking` (default: true).\n\n## CLI Usage\n\nThe binary doubles as a standalone CLI tool:\n\n```bash\n# TCP port\nmcp-await port localhost 5432 --timeout 30\n\n# File events\nmcp-await file /var/log/app.log --event modify --timeout 120\nmcp-await file /tmp/flag --event create --timeout 60\nmcp-await file /tmp/old.pid --event delete --timeout 30\n\n# HTTP status\nmcp-await url https://api.example.com/health --status 200 --timeout 120\n\n# Process exit\nmcp-await pid 12345 --timeout 300\n\n# Docker container exit\nmcp-await docker my-container --timeout 600\n\n# GitHub Actions run\nmcp-await gh-run 12345678 --repo owner/repo --timeout 1800\n\n# Arbitrary shell command (exit 0 = success)\nmcp-await cmd \"test -f /tmp/ready\" --interval 2 --timeout 30\n```\n\n### Exit Codes\n\n| Code | Meaning |\n|------|---------|\n| 0 | Condition met (success) |\n| 1 | Timeout |\n| 2 | Error |\n\n### Output Format\n\nAll commands output JSON:\n\n```json\n{\n  \"status\": \"success\",\n  \"elapsed_seconds\": 1.23,\n  \"detail\": \"localhost:8080 is accepting connections\"\n}\n```\n\n## MCP Server Setup\n\n### Claude Code\n\nAdd to `~/.claude.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"await\": {\n      \"command\": \"/path/to/mcp-await\"\n    }\n  }\n}\n```\n\nThe binary runs as a stdio MCP server when invoked without a subcommand (or with `mcp-await serve`).\n\n### MCP Inspector\n\n```bash\nnpx @modelcontextprotocol/inspector ./target/release/mcp-await\n```\n\n## Blocking vs Non-Blocking Mode\n\n### Blocking (default)\n\nThe tool call holds until the condition is met, times out, or is cancelled. This is the simplest mode — the AI assistant waits for the result.\n\n### Non-Blocking\n\nSet `blocking: false` to get an immediate response with a `watch_id` and resource URI. The server monitors in the background and pushes a notification when done.\n\nFlow:\n\n1. Call `wait_for_port` with `blocking: false`\n2. Get back immediately:\n   ```json\n   {\"watch_id\": \"port-1\", \"resource\": \"watch://port-1\", \"status\": \"watching\"}\n   ```\n3. Do other work while waiting\n4. Receive `notifications/resources/updated` when the condition is met\n5. Read `watch://port-1` for the full result\n\n### Cancellation\n\nCancel any non-blocking watch with `cancel_watch`:\n\n```json\n{\"watch_id\": \"port-1\"}\n```\n\n## Resources\n\nNon-blocking watches are exposed as MCP resources at `watch://{watch_id}`.\n\n- `list_resources` — returns all active and completed watches\n- `read_resource(\"watch://port-1\")` — returns JSON with the watch status and result\n\n## Reinforcing Agent Usage\n\nAgents sometimes fall back to shell workarounds instead of using mcp-await. Add a snippet to your project's agent instructions file to reinforce the behavior:\n\n| Agent | Instructions file |\n|-------|-------------------|\n| Claude Code | `CLAUDE.md` |\n| Codex | `AGENTS.md` |\n| Gemini CLI | `GEMINI.md` |\n| Cursor | `.cursor/rules/` |\n| Windsurf | `.windsurfrules` |\n\n```markdown\n## Waiting for conditions\n\nUse mcp-await tools instead of shell workarounds:\n- `wait_for_port` instead of `while ! nc ...; do sleep 1; done`\n- `wait_for_url` instead of `curl --retry`\n- `wait_for_file` instead of polling loops\n- `wait_for_command` instead of `while ! cmd; do sleep N; done`\n\nPrefer `blocking: false` when there is independent work to do in parallel.\n```\n\n## Roadmap\n\n- [ ] Agent-level instructions to enforce mcp-await usage across all agents (system prompts, tool metadata hints)\n- [ ] Broader agent compatibility testing (Codex, Gemini CLI, Cursor, Windsurf)\n\n## Development\n\n```bash\ncargo build           # debug build\ncargo build --release # release build\ncargo test            # run tests\ncargo clippy          # lint\ncargo fmt             # format\n```\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:24:22.409Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:09.557Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

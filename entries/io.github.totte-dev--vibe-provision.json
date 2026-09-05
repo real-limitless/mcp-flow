@@ -1,0 +1,58 @@
+{
+  "id": "io.github.totte-dev/vibe-provision",
+  "title": "vibe-provision",
+  "description": "Provision SaaS services from YAML and inject .env. Supports Clerk, Stripe, Resend and more.",
+  "summary": "Provision SaaS services from YAML and inject .env. Supports Clerk, Stripe, Resend and more.",
+  "offersHint": "Provision SaaS services from YAML and inject .env. Supports Clerk, Stripe, Resend and more. · Packages: npm:vibe-provision",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "vibe-provision",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "vibe-provision",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/totte-dev/vibe-provision",
+  "repository": {
+    "url": "https://github.com/totte-dev/vibe-provision",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-27T03:27:06.379897Z",
+  "publishedAt": "2026-03-27T03:27:06.379897Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:43.035Z",
+    "sourceRepoAt": "2026-08-11T23:18:06.902Z",
+    "readmeAt": "2026-08-11T23:18:07.311Z",
+    "toolsAt": "2026-08-12T00:58:43.035Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/totte-dev/vibe-provision",
+    "checkedAt": "2026-08-11T23:18:06.902Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/totte-dev/vibe-provision/main/README.md",
+    "markdown": "# vibe-provision\n\nProvision external SaaS services from YAML. One command to set up Clerk, Stripe, Resend and inject `.env`.\n\n> \"AI can write code, but it can't click dashboards.\" — vibe-provision solves that.\n\n## Quick Start\n\n```bash\n# 1. Generate a config template\nnpx vibe-provision init\n\n# 2. Authenticate with providers (one-time)\nnpx vibe-provision auth\n\n# 3. Provision resources and generate .env\nnpx vibe-provision up\n```\n\nThat's it. Your `.env` is ready — run your dev server.\n\n`vp` is a short alias: `npx vp up` works too.\n\n## vibe.yaml\n\n```yaml\nproject: my-saas-app\n\noutput:\n  - .env\n  - vercel        # auto-inject env vars to Vercel\n  - terraform     # generate terraform.tfvars.json\n\nservices:\n  auth:\n    provider: clerk\n    config:\n      app_name: \"My SaaS App\"\n      redirect_urls:\n        - http://localhost:3000/callback\n\n  payments:\n    provider: stripe\n    config:\n      products:\n        - name: \"Pro Plan\"\n          prices:\n            - amount: 1900\n              currency: usd\n              interval: month\n      webhooks:\n        events:\n          - checkout.session.completed\n          - customer.subscription.updated\n\n  email:\n    provider: resend\n    config:\n      domain: my-app.com\n\n  database:\n    provider: neon\n    config:\n      region: aws-ap-northeast-1\n\n  cache:\n    provider: upstash\n    config:\n      region: ap-northeast-1\n```\n\nAI (Cursor, Claude Code, etc.) can generate this file alongside your app code.\n\n## Supported Providers\n\n| Provider | Category | What it creates | Auth method |\n|---|---|---|---|\n| Clerk | Auth | Redirect URL config + env vars | API key paste |\n| Stripe | Payments | Products, Prices, Webhook Endpoints | API key paste |\n| Resend | Email | Domain registration | API key paste |\n| Supabase | DB + Auth | Project + API keys | Access token |\n| Neon | Postgres | Project + database | API key |\n| Upstash | Redis | Database | Email + API key |\n\n## Output Targets\n\nControl where env vars are written via the `output` section:\n\n| Target | Description |\n|---|---|\n| `.env` | Local `.env` file (default) |\n| `vercel` | Vercel environment variables via CLI |\n| `terraform` | `.vibe-provision/terraform.tfvars.json` with merge semantics |\n\n## Environment-Specific Config\n\nUse `--env` to manage multiple environments:\n\n```bash\nnpx vp up --env dev      # merges vibe.yaml + vibe.dev.yaml → .env.dev\nnpx vp up --env staging  # merges vibe.yaml + vibe.staging.yaml → .env.staging\nnpx vp up --env prod     # merges vibe.yaml + vibe.prod.yaml → .env.prod\nnpx vp up                # uses vibe.yaml only → .env\n```\n\n**Base config** (`vibe.yaml`) holds shared settings. **Override files** (`vibe.{env}.yaml`) deep-merge on top:\n\n```yaml\n# vibe.dev.yaml — only override what differs\nservices:\n  payments:\n    provider: stripe\n    config:\n      webhooks:\n        url: https://dev.example.com/api/webhooks/stripe\n```\n\n## MCP Server (AI Agent Integration)\n\nvibe-provision includes an MCP server so AI agents (Claude Code, Cursor) can provision services directly.\n\n### Setup\n\nAdd to your `.mcp.json` (global or per-project):\n\n```json\n{\n  \"mcpServers\": {\n    \"vibe-provision\": {\n      \"command\": \"npx\",\n      \"args\": [\"vibe-provision\", \"mcp\"]\n    }\n  }\n}\n```\n\n### Available Tools\n\n| Tool | Description |\n|---|---|\n| `vibe_provision_status` | Check auth and provisioning state for all providers |\n| `vibe_provision_up` | Provision resources and generate .env (requires prior auth) |\n| `vibe_provision_add` | Add a new service to vibe.yaml |\n\n### Example Flow\n\n```\nUser: \"Add Stripe payments to my app\"\n  → AI generates vibe.yaml with stripe config\n  → AI calls vibe_provision_status → \"stripe: NOT authenticated\"\n  → AI: \"Run npx vp auth in your terminal\"\n  → User authenticates (one-time)\n  → AI calls vibe_provision_up → Products, Prices, Webhooks created\n  → .env updated, app ready to run\n```\n\n## Idempotency\n\n`vibe-provision up` is safe to run multiple times. It tracks created resources in `.vibe-provision/state.json` and skips anything that already exists.\n\n## How It Works\n\n1. **`init`** — generates a `vibe.yaml` template\n2. **`auth`** — walks you through authenticating each provider, stores credentials locally in `~/.vibe-provision/auth/`\n3. **`up`** — reads `vibe.yaml`, calls provider APIs to create resources, writes to configured output targets\n\nCredentials never leave your machine.\n\n## Examples\n\n- **[saas-starter-simple](./examples/saas-starter-simple/)** — Next.js + Clerk + Stripe + Resend, direct webhook handling\n- **[saas-starter](./examples/saas-starter/)** — Same stack + [qhook](https://github.com/totte-dev/qhook) for production webhook processing\n\n## Development\n\n```bash\nnpm install\nnpm run lint          # type check\nnpm test              # run tests (47 tests)\nnpm run dev -- init   # run CLI in dev mode\n```\n\n## License\n\n[FSL-1.1-Apache-2.0](./LICENSE) — Free to use for any purpose except competing hosted services. Converts to Apache 2.0 on 2028-03-26.\n",
+    "fetchedAt": "2026-08-11T23:18:07.311Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:43.035Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

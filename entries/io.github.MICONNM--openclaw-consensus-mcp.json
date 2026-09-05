@@ -1,0 +1,82 @@
+{
+  "id": "io.github.MICONNM/openclaw-consensus-mcp",
+  "title": "OpenClaw Consensus",
+  "description": "9-LLM consensus + disagreement scoring + cheapest-route picks to fight hallucinations.",
+  "summary": "9-LLM consensus + disagreement scoring + cheapest-route picks to fight hallucinations.",
+  "offersHint": "9-LLM consensus + disagreement scoring + cheapest-route picks to fight hallucinations. · Packages: pypi:openclaw-consensus-mcp · Env vars: RAPIDAPI_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "openclaw-consensus-mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "RAPIDAPI_KEY",
+        "description": "Your RapidAPI key from https://rapidapi.com/yanmiayn/api/openclaw-consensus",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "openclaw-consensus-mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "RAPIDAPI_KEY",
+          "description": "Your RapidAPI key from https://rapidapi.com/yanmiayn/api/openclaw-consensus",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "RAPIDAPI_KEY",
+      "description": "Your RapidAPI key from https://rapidapi.com/yanmiayn/api/openclaw-consensus",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/MICONNM/openclaw-consensus-mcp",
+  "repository": {
+    "url": "https://github.com/MICONNM/openclaw-consensus-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-30T08:01:00.133462Z",
+  "publishedAt": "2026-04-30T08:01:00.133462Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:38:52.614Z",
+    "sourceRepoAt": "2026-08-12T00:07:44.030Z",
+    "readmeAt": "2026-08-12T00:07:44.829Z",
+    "toolsAt": "2026-08-12T01:38:52.614Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MICONNM/openclaw-consensus-mcp",
+    "checkedAt": "2026-08-12T00:07:44.030Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MICONNM/openclaw-consensus-mcp/main/README.md",
+    "markdown": "# OpenClaw Consensus MCP\n\n[![CI](https://github.com/MICONNM/openclaw-consensus-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/MICONNM/openclaw-consensus-mcp/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/openclaw-consensus-mcp.svg)](https://pypi.org/project/openclaw-consensus-mcp/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n> Multi-model consensus inside MCP clients: compare answers, surface disagreement, and escalate only when needed.\n\nOpenClaw Consensus MCP wraps the OpenClaw Consensus API as three Model Context Protocol tools. It is designed for workflows where a maintainer wants a second opinion before accepting a risky answer, review summary, or routing decision.\n\n<!-- mcp-name: io.github.MICONNM/openclaw-consensus-mcp -->\n\n## What it does\n\nOpenClaw runs the same prompt across multiple models, then returns:\n\n- a **consensus answer** with confidence and model response metadata,\n- a **disagreement heuristic** derived from the deep consensus response, and\n- a **cheapest route** recommendation that tries smaller model sets before escalating.\n\nThis MCP server exposes those three capabilities as tools so Claude Desktop / Claude Code can call them mid-conversation.\n\n## Why consensus?\n\nA single model can produce a confident but incorrect answer. Comparing multiple responses does not prove correctness, but disagreement is a useful signal that a maintainer should review the output more carefully.\n\n## Install\n\n```bash\npip install openclaw-consensus-mcp\n# or\nuv pip install openclaw-consensus-mcp\n```\n\nYou also need a RapidAPI key for the OpenClaw Consensus API:\n<https://rapidapi.com/yanmiayn/api/openclaw-consensus>\n\nSet it in your environment:\n\n```bash\nexport RAPIDAPI_KEY=\"your-rapidapi-key\"\n```\n\n## Claude Desktop config\n\nAdd to `~/.claude/claude_desktop_config.json` (macOS/Linux) or\n`%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"openclaw-consensus\": {\n      \"command\": \"openclaw-consensus\",\n      \"env\": {\n        \"RAPIDAPI_KEY\": \"your-rapidapi-key\"\n      }\n    }\n  }\n}\n```\n\nFor Claude Code:\n\n```bash\nclaude mcp add openclaw-consensus -- openclaw-consensus\n```\n\n## Tools\n\n### `consensus(prompt, mode=\"balanced\")`\n\nGet a 9-LLM consensus answer.\n\n- **prompt** *(string)* — the question.\n- **mode** *(string, default `balanced`)* — `deep` (9 models), `balanced` (5), or `fast` (3).\n\n**Returns**\n\n```json\n{\n  \"consensus\": \"string\",\n  \"confidence\": 0.0,\n  \"models_responded\": 5,\n  \"votes\": []\n}\n```\n\nThe `consensus` tool returns the upstream API response as-is. Fields may expand as the endpoint evolves.\n\n### `disagreement_score(prompt)`\n\nHow much the deep consensus response disagrees on a prompt.\n\n**Returns**\n\n```json\n{\n  \"disagreement\": 0.0,\n  \"confidence\": 1.0,\n  \"models_responded\": 9,\n  \"votes\": []\n}\n```\n\n### `cheapest_route(prompt, target_quality=0.85)`\n\nTry `fast`, `balanced`, and `deep` modes in order until the confidence threshold is met.\n\n**Returns**\n\n```json\n{\n  \"selected_mode\": \"balanced\",\n  \"models_used\": 5,\n  \"confidence\": 0.9,\n  \"answer\": \"string\"\n}\n```\n\n## Local development\n\n```bash\ngit clone https://github.com/MICONNM/openclaw-consensus-mcp\ncd openclaw-consensus-mcp\nuv venv && source .venv/bin/activate\nuv pip install -e \".[dev]\"\npytest\n```\n\nSmoke-test the server with the official MCP Inspector:\n\n```bash\nnpx @modelcontextprotocol/inspector openclaw-consensus\n```\n\n## Publish\n\n```bash\nuv build\nuv publish      # to PyPI\nmcp-publisher publish   # to the official MCP Registry\n```\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [docs/maintainer-workflow.md](docs/maintainer-workflow.md) for triage, review, security, and release responsibilities.\n\n## Limitations\n\n- Consensus is a review aid, not a correctness guarantee.\n- Network-backed tools require a configured OpenClaw endpoint and may incur provider charges.\n- Do not send secrets, private source code, or personal data unless your endpoint policy explicitly allows it.\n\n## Security\n\nPlease report vulnerabilities privately using the process in [SECURITY.md](SECURITY.md).\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:07:44.829Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:38:52.614Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

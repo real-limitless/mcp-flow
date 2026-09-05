@@ -1,0 +1,92 @@
+{
+  "id": "com.mnemopay/sdk",
+  "title": "sdk",
+  "description": "Memory + wallet for AI agents. Real payment rails, Agent FICO 300-850, Merkle audit, identity.",
+  "summary": "Memory + wallet for AI agents. Real payment rails, Agent FICO 300-850, Merkle audit, identity.",
+  "offersHint": "Memory + wallet for AI agents. Real payment rails, Agent FICO 300-850, Merkle audit, identity. · Packages: npm:@mnemopay/sdk · Env vars: MNEMOPAY_API_KEY, MNEMOPAY_PERSIST_DIR",
+  "version": "1.11.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@mnemopay/sdk",
+    "version": "1.11.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "MNEMOPAY_API_KEY",
+        "description": "MnemoPay API key from https://mnemopay.com/dashboard",
+        "secret": true
+      },
+      {
+        "name": "MNEMOPAY_PERSIST_DIR",
+        "description": "Directory where the local ledger + memory store persist (default: ~/.mnemopay)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@mnemopay/sdk",
+      "version": "1.11.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "MNEMOPAY_API_KEY",
+          "description": "MnemoPay API key from https://mnemopay.com/dashboard",
+          "secret": true
+        },
+        {
+          "name": "MNEMOPAY_PERSIST_DIR",
+          "description": "Directory where the local ledger + memory store persist (default: ~/.mnemopay)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MNEMOPAY_API_KEY",
+      "description": "MnemoPay API key from https://mnemopay.com/dashboard",
+      "secret": true
+    },
+    {
+      "name": "MNEMOPAY_PERSIST_DIR",
+      "description": "Directory where the local ledger + memory store persist (default: ~/.mnemopay)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://mnemopay.com",
+  "sourceUrl": "https://github.com/mnemopay/mnemopay-sdk",
+  "repository": {
+    "url": "https://github.com/mnemopay/mnemopay-sdk",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-22T11:36:02.420125Z",
+  "publishedAt": "2026-05-22T11:36:02.420125Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:59:20.866Z",
+    "sourceRepoAt": "2026-08-12T00:30:21.823Z",
+    "readmeAt": "2026-08-12T00:30:22.885Z",
+    "toolsAt": "2026-08-12T01:59:20.866Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mnemopay/mnemopay-sdk",
+    "checkedAt": "2026-08-12T00:30:21.823Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mnemopay/mnemopay-sdk/main/README.md",
+    "markdown": "# MnemoPay Mobile SDK\n\nOn-device persistent memory (encrypted SQLite + `sqlite-vec`), agent-to-agent payments, and spatial proofs. TypeScript / Node 20+.\n\n## Development\n\n```bash\nnpm ci\nnpm run lint    # tsc --noEmit\nnpm test        # unit tests (excludes tests/benchmarks/)\nnpm run build   # emits dist/\n```\n\n## Crypto keys and migration\n\n`MnemoPay.create()` wires `NodeCrypto` with:\n\n- **`encryptionKey`** — AES-GCM; defaults to `SHA256(\"mnemopay:\" + agentId)` when omitted.\n- **`hmacKey`** — memory integrity HMAC; defaults to `SHA256(\"mnemopay:mac:\" + agentId)`.\n- **`signingKey`** — Ed25519 seed; defaults to `SHA256(\"mnemopay:sign:\" + agentId)`.\n\nOlder builds only fixed the encryption key and drew **random** HMAC/signing material per process. That broke cross-device sync and manifest signatures. If you open an existing database after upgrading:\n\n- **Same device, same code**: keys are now deterministic per `agentId`, so behavior is stable.\n- **Existing rows** written under random HMAC keys may **fail integrity verification** on recall unless you still have the old keys. For production, set `encryptionKey`, `hmacKey`, and `signingKey` explicitly and store them in the platform keystore.\n\nSee `MnemoPayConfig` in `src/types/index.ts` for optional overrides.\n\n## Memory embeddings\n\n`MemoryStore` / `EncryptedSync` use one async embedder, configured on `MnemoPayConfig`:\n\n| Option | Behavior |\n|--------|----------|\n| *(default)* | **Hash** — `embedHash()` (SHA-256 expanded + L2 normalize). Fast, deterministic, not semantic. |\n| `embeddings: 'semantic'` | **Xenova** [`Xenova/all-MiniLM-L6-v2`](https://huggingface.co/Xenova/all-MiniLM-L6-v2) via ONNX Runtime (384-d, mean pooling, normalized). Requires optional peer **`@xenova/transformers`**. Also set `embeddingDimensions: 384` (default). |\n| `embed: (text, dim) => …` | **Custom** — sync or async; overrides `embeddings`. Vector length must match `dim` / `memory_vectors` (384). |\n\nInstall semantic backend when you need it:\n\n```bash\nnpm install @xenova/transformers\n```\n\n```typescript\nMnemoPay.create({\n  agentId: 'agent-1',\n  embeddings: 'semantic',\n  embeddingDimensions: 384,\n});\n```\n\n## LongMem eval (memory scale + recall)\n\n```bash\nnpm run eval:longmem              # default hash embeddings\nnpm run eval:longmem:semantic     # same benchmark with Xenova MiniLM (peer dep installed)\n```\n\n| Variable | Default | Purpose |\n|----------|---------|---------|\n| `LONGMEM_N` | `200` | How many memories to retain |\n| `LONGMEM_SAMPLES` | scales with N | How many query points (spread across indices) |\n| `LONGMEM_RECALL_LIMIT` | scales with N | `recall({ limit })`; sqlite-vec uses `k ≈ limit × 3` internally |\n| `LONGMEM_EMBEDDINGS` | *(unset)* | Set to `semantic` to match `eval:longmem:semantic` |\n\nExamples:\n\n```bash\nLONGMEM_N=1000 npm run eval:longmem\nLONGMEM_N=5000 LONGMEM_SAMPLES=64 LONGMEM_RECALL_LIMIT=60 npm run eval:longmem\n```\n\nThe benchmark resets the in-process memory write rate limiter every 200 retains so `LONGMEM_N=5000` can finish in one run. Production apps still enforce normal limits.\n\nThe eval prints two JSON blocks:\n\n1. **exact query** — recall text identical to the stored line. With **hash** embeds this stays near **100%** hit@3 at large N unless `k` is too small; with **semantic** embeds it should also stay very high for identical strings.\n2. **paraphrase query** — natural-language question referencing the fact index **without** copying the stored string. **Hash** embeds yield near-zero hit@5/hit@15; **semantic** embeds should improve this materially (run `npm run eval:longmem:semantic` to measure).\n\n**Observed locally (hash, default `LONGMEM_RECALL_LIMIT`):** exact **hit@3 = 1.0** for `LONGMEM_N` through 5000; paraphrase **hit@5 ≈ 0** (occasional hit@15). Raise `LONGMEM_RECALL_LIMIT` if exact recall starts missing at huge N.\n\nThe first semantic run downloads model weights into the Hugging Face cache (can take a minute on CI — default CI keeps hash-only eval).\n\nThis repo’s Jest config uses **`jest-environment-node-single-context`** so `onnxruntime-node`’s `instanceof Float32Array` checks succeed under Jest (the default VM-isolated environment breaks typed-array identity).\n\n## CI\n\nGitHub Actions runs `npm test` and `npm run eval:longmem` (with a small `LONGMEM_N`) on push and pull requests. See `.github/workflows/ci.yml`.\n\n## License\n\nMIT — see `package.json`.\n",
+    "fetchedAt": "2026-08-12T00:30:22.885Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:59:20.866Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

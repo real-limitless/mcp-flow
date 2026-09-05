@@ -1,0 +1,76 @@
+{
+  "id": "uk.qart/qart",
+  "title": "qart.uk QR studio",
+  "description": "qart.uk MCP server: resolve scanned codes, browse the free pool, and buy QR artwork.",
+  "summary": "qart.uk MCP server: resolve scanned codes, browse the free pool, and buy QR artwork.",
+  "offersHint": "qart.uk MCP server: resolve scanned codes, browse the free pool, and buy QR artwork. · Remote MCP (streamable-http) at https://qart.uk/api/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://qart.uk/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://qart.uk/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-08-10T00:58:48.75487Z",
+  "publishedAt": "2026-08-10T00:58:48.75487Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:48:41.707Z",
+    "sourceRepoAt": "2026-08-11T23:05:31.994Z",
+    "readmeAt": "2026-08-12T00:48:41.708Z",
+    "toolsAt": "2026-08-11T23:05:31.994Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:05:31.994Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:48:41.708Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "resolve_qart_code",
+      "description": "Resolve a scanned qart.uk code to the URL it currently points at. Accepts the alias ('_ab12cde'), or a full qart.uk URL to pull it out of. Returns targetUrl, or disabledReason if the owner retired it. This does not count as a scan and will not affect the owner's statistics. Only the '_' code class resolves here; older qart.uk links of other shapes are not in this pool."
+    },
+    {
+      "name": "browse_free_pool",
+      "description": "List the QR artwork currently claimable for free on qart.uk, one per style, with a preview image URL for each. This is the ANONYMOUS shelf — the same selection every signed-out visitor sees, and these codes are what a guest can claim. Use it to show someone what is available or to describe the styles on offer. If you are acting for a signed-in account and want codes THAT account can actually claim, use browse_my_pool instead — the two storefronts differ, and a code from here may 403 on a claim."
+    },
+    {
+      "name": "preview_qr_encoding",
+      "description": "Work out how a payload will encode as a QR code, without creating anything. Returns the exact string the pixels would carry, its byte length, the QR version and module count required, the capacity remaining at that version, and any warnings. Costs nothing and mints nothing.\n\nUse this to answer questions like \"will this URL fit at error correction level H\" or \"how much does a long Wi-Fi password cost me in QR density\". Higher ECC survives damage better but needs more modules for the same data; more modules print smaller and get harder to scan.\n\npayloadKind 'qart_code' sizes the RETARGETABLE variant instead: the pixels carry a 16-byte qart.uk/_ link rather than your data, which is usually several versions smaller. Compare the two before committing to a print.\n\nThis returns metadata only, never the module grid. For the actual black/white matrix, call get_qr_matrix."
+    },
+    {
+      "name": "get_qr_matrix",
+      "description": "Return the actual QR MODULE GRID for a payload — the black/white matrix, plus a per-module map of which modules are function patterns (finder, separator, timing, alignment, format info, version info, dark module) and which carry data. Both come back as one row string per row. Costs nothing, mints nothing, stores nothing.\n\nUse this when you are going to RENDER or transform a QR yourself: dithering a photo into it, drawing it as an SVG, laying it out for print, or reasoning about which modules are safe to alter. The function-pattern map is the point — any technique that paints over a QR has to know which modules a scanner uses to FIND the code (finder, timing, alignment) versus which merely carry bits.\n\nDo NOT use it to check whether a payload fits — preview_qr_encoding is smaller and answers that. Do NOT use it to get a qart.uk product: this is a plain standards QR, with no artwork, no scan verdict and no alias behind it. The matrix is canonical and untransformed: invert, rotation, mirror and any subpixel scaling are yours to apply afterwards."
+    },
+    {
+      "name": "get_dither_qr_parameters",
+      "description": "The complete parameter contract for qart.uk's dithered photo QR recipe — an error-diffused technique (after andrew-t) that dithers a photograph into the space around each QR module, so the finished 1-bit image reads as a picture and still scans.\n\nTHIS TOOL GENERATES NOTHING. There is no API for the technique and no endpoint that will run it for you: it is a browser-side generator, and this tool returns the parameters, ranges, defaults and algorithm order so that YOU can implement it or instruct someone who will. Pair it with get_qr_matrix, which supplies the module grid and the function-pattern map the algorithm needs.\n\nIt also returns the honest limits, which matter before anyone prints anything: no scan verdict is computed anywhere in this path, error correction wants to stay at H, and stricter detectors (zbar) reject output that phone-grade detectors accept. Treat a dithered code as untested until someone scans the actual printed sheet."
+    },
+    {
+      "name": "get_credit_packs",
+      "description": "What Studio credits cost: the packs on sale, their price in USD, and roughly how many images each buys. Anonymous — this is a price list. Read it rather than quoting a price from memory; packs change.\n\nAn agent that runs out mid-task can top up WITHOUT a human, paying from its OWN wallet: POST /api/qart/x402/credits?pack=... with a qart:purchase bearer token. The money comes from the application's wallet, never the user's card. Stripe checkout (POST /api/qart/checkout) remains human-only; hand the user the purchase URL for that."
+    },
+    {
+      "name": "buy_qr_outright",
+      "description": "How to buy ONE finished QR artwork with no account at all, paying from your own wallet over x402. Returns the live price and the exact request to make. \n\nThis is the right tool when you have a wallet but no qart.uk account: get_credit_packs buys CREDITS, which still need an account to spend, and the Studio tools all require an OAuth token. This path requires neither — you GET https://qart.uk/api/v1/qr?url=..., it answers 402, you retry with a PAYMENT-SIGNATURE header, and the PNG comes back in the response body.\n\nYou are charged ONLY if a real QR detector decodes the image: settlement runs after the scan verdict, so a request that produces nothing scannable is never settled and costs you nothing. Pay in USDC on Base — you do not need ETH, because the facilitator submits the transaction.\n\nCannot be performed through MCP itself: a payment rides in an HTTP header and there is nowhere to put one here. This tool tells you the call; you make it."
+    },
+    {
+      "name": "explain_qart",
+      "description": "Explain how qart.uk works: scan verification, retargeting a printed code, the free claim pool and its daily allowances, Studio pricing, and what happens to credits when a run is stopped or fails. Use this before guessing at product details — pricing and allowances change and this returns the current text."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:05:31.994Z",
+  "toolsPreviewStatus": "ok"
+}

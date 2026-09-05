@@ -1,0 +1,58 @@
+{
+  "id": "io.github.hs3434/sandbox-env-mcp",
+  "title": "Sandbox Env MCP",
+  "description": "Persistent Docker/SSH sandbox for AI agents: shell exec, file ops, audit log.",
+  "summary": "Persistent Docker/SSH sandbox for AI agents: shell exec, file ops, audit log.",
+  "offersHint": "Persistent Docker/SSH sandbox for AI agents: shell exec, file ops, audit log. · Packages: pypi:sandbox-env-mcp",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "sandbox-env-mcp",
+    "version": "0.3.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "sandbox-env-mcp",
+      "version": "0.3.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/hs3434/sandbox-env-mcp",
+  "repository": {
+    "url": "https://github.com/hs3434/sandbox-env-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T16:03:29.458005Z",
+  "publishedAt": "2026-07-27T16:03:29.458005Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:30.338Z",
+    "sourceRepoAt": "2026-08-11T23:43:04.773Z",
+    "readmeAt": "2026-08-11T23:43:05.493Z",
+    "toolsAt": "2026-08-12T01:20:30.338Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/hs3434/sandbox-env-mcp",
+    "checkedAt": "2026-08-11T23:43:04.773Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/hs3434/sandbox-env-mcp/main/README.md",
+    "markdown": "# sandbox-mcp\n\n<!-- mcp-name: io.github.hs3434/sandbox-env-mcp -->\n\nMCP server that gives AI agents a real working environment: persistent\nshells, a filesystem, and multi-machine management — backed by Docker\ncontainers or remote SSH hosts.\n\n## Features\n\n- **Persistent shells** — stateful bash or PowerShell sessions that\n  survive across tool calls.  Set env vars, activate venvs, change\n  directories, and they stay.\n- **Multi-machine** — manage several Docker containers and SSH hosts\n  simultaneously.  Each has its own isolated workspace and shell pool.\n- **Full filesystem access** — read, write, patch, and search files on\n  any target machine.  All writes are atomic (temp-file + rename).\n- **Zero-config startup** — creates a default Docker container\n  automatically on first run.  One command, ready to go.\n- **Progressive discovery** — `env` tool exposes capabilities step by\n  step.  Agents call `env(action=\"help\")` to see what's available.\n- **Docker lifecycle** — create, stop, start, restart, remove containers.\n  Build images, inspect configs, commit state, view logs.\n- **SSH remote access** — connect to Linux and Windows machines over\n  SSH.  Windows targets get automatic code-page probing.\n- **Safety net** — sensitive-path warnings (`.ssh`, `.aws`, `.env*`)\n  without blocking access.  Pre-write syntax lint for JSON/YAML/TOML.\n- **Audit trail** — every tool call is logged with timestamps,\n  parameters, and outcomes.  Queryable from within the agent session.\n\n## Quick start\n\n```bash\npip install sandbox-env-mcp\n\n# stdio — for Claude Desktop, Cline, Continue\nsandbox-mcp\n\n# HTTP — for remote agents\nsandbox-mcp-http\n```\n\nOn first run a default container (`python:3.14-slim`, named `admin`)\nstarts automatically with a persistent bash shell.  No other setup.\n\n**Requirements**: Python 3.12+, Docker SDK, running Docker daemon.\nSSH mode needs `openssh-client`.\n\n## Tools\n\nAll tools target the default machine unless an explicit `machine`\nparameter is passed.\n\n| Tool | What it does |\n|------|--------------|\n| `shell_exec` | Run a command in a persistent shell.  Blocks until the command finishes (`wait=true`, 10 s timeout) or fire-and-forget with `wait=false`. |\n| `shell_read` | Read buffered output from a running or finished command. |\n| `shell_new` | Create a fresh shell on a machine.  Returns a `shell_id`. |\n| `shell_remove` | Terminate and remove a shell by `shell_id`. |\n| `shell_list` | List all shells with state, machine, uptime, last command. |\n| `write_stdin` | Write raw bytes to a running shell — interrupt with Ctrl-C (`\\x03`) or feed input to interactive programs like `read` / `Read-Host`.  On Windows/PowerShell, Ctrl-C is unsupported (pipe mode has no terminal driver); kill the shell instead. |\n| `machine_list` | List all registered machines with backend, status, purpose, shell count. |\n| `default_set` | Set the default machine or default shell for a machine. |\n| `file_read` | Read a file with line numbers.  Supports offset + limit pagination. |\n| `file_write` | Write content atomically.  Creates parent directories automatically. |\n| `file_patch` | Targeted edits with fuzzy matching. `mode=replace` (find-and-replace) or `mode=patch` (unified diff). |\n| `file_search` | Search file contents (ripgrep) or find files (glob).  Sorted by modification time. |\n| `env` | Progressive-discovery portal.  Start with `env(action=\"help\")`. |\n\n`audit_query` is exposed when the audit log is a SQLite database —\nit lets the agent search historical tool calls.\n\n### Shell states\n\nEvery shell is in one of four states:\n\n| State | What it means | What the agent can do |\n|-------|---------------|-----------------------|\n| `init` | Shell just created; booting up.  Times out → `terminated` at 10 s. | Wait — `shell_exec` returns an error until ready. |\n| `ready` | At a prompt, accepting commands. | Send commands, read output, write stdin. |\n| `waiting` | A command is running. | Poll output with `shell_read`.  Send Ctrl-C with `write_stdin`. |\n| `terminated` | Shell process exited (signal, exit, timeout, broken pipe).  Last output is preserved. | Read remaining output, then `shell_remove` + `shell_new` to continue.  Default shells are **never** auto-replaced. |\n\nKey `shell_exec` parameters:\n\n- `wait` (default `true`): block until the command completes.\n- `timeout` (default `10` s): on expiry returns `status=\"waiting\"`\n  with a hint to switch to `wait=false` + `shell_read` for\n  long-running commands.\n- `max_output` (default `50000` bytes): caps returned output;\n  excess is shown as the tail (last N bytes).\n\n## env actions\n\n`env(action=\"help\")` lists what's available.  `env(action=\"help\",\ntopic=\"<action>\")` returns full docs for a specific action.\n\n### Always available\n\n| Action | Params | Description |\n|--------|--------|-------------|\n| `help` | `topic?` | List actions or get docs for one. |\n| `status` | — | Default machine, machines, shells. |\n| `list_targets` | — | Pre-defined SSH targets from config. |\n| `machine_list` | — | Registered machines. |\n| `shell_list` | `machine?` | Shells, optionally filtered. |\n| `shell_new` | `machine?`, `purpose?` | New shell session. |\n| `shell_remove` | `shell_id` | Terminate and remove. |\n| `default_set` | `machine` or `shell_id` | Set default machine or shell. |\n\n### Docker\n\n| Action | Required params | Description |\n|--------|----------------|-------------|\n| `docker_run` | `name`, `image`, `purpose` | Create/start container.  Reattaches on name collision. |\n| `docker_ps` | — | List managed containers. |\n| `docker_images` | — | List all images on daemon. |\n| `docker_image_history` | `image` | Layer-by-layer build history. |\n| `docker_build` | `image_tag`, `machine` | Build from a Dockerfile in `/workspace`. |\n| `docker_commit` | `machine`, `image_tag` | Commit container as new image. |\n| `docker_stop` | `machine` | Stop (state preserved). |\n| `docker_start` | `machine` | Start a stopped container. |\n| `docker_remove` | `machine` | Stop + remove container and its shells. |\n| `docker_inspect` | `machine` | Curated config.  `kind=image` for images. |\n| `docker_logs` | `machine` | Logs with `tail`, `since`, `until`. |\n| `docker_diff` | `machine` | Filesystem changes vs image. |\n| `docker_stats` | `machine` | CPU/memory/network/IO snapshot. |\n| `docker_restart` | `machine` | Stop + start + verify. |\n\n### SSH\n\n| Action | Required params | Description |\n|--------|----------------|-------------|\n| `connect` | `name` | Connect to a configured target. |\n| `close` | `name` | Disconnect and unregister. |\n\nAvailable when `[ssh.targets]` is configured.\n\n## File operations\n\n| Tool | Key params | Highlights |\n|------|-----------|------------|\n| `file_read` | `path`, `offset`, `limit` | Line-numbered.  Rejects files > 50 KB with a hint. |\n| `file_write` | `path`, `content` | Atomic (temp + rename), auto-creates parent dirs, post-write verification. |\n| `file_patch` | `path`, `old_string`, `new_string` (replace mode) or `patch` (unified diff) | Fuzzy matching.  Preserves BOM and line endings. |\n| `file_search` | `pattern`, `search_type`, `path`, `file_glob`, `limit` | Powered by ripgrep.  Results sorted by modification time. |\n\nSafety warnings are surfaced for sensitive paths (`.ssh`, `.aws`,\n`.env*`, `/etc/shadow`, etc.) — advisory only, agents still have full\naccess.  Writes to `.json`, `.yaml`, `.yml`, `.toml` are\nsyntax-checked before writing (fail-closed).\n\n## Configuration\n\nConfig lives at `~/.sandbox-mcp/config.toml` (copy\n`config/config.example.toml`).  Every field can be overridden with\n`SANDBOX_MCP_<SECTION>_<KEY>` env vars.\n\n```toml\n[server]\nport = 8010\nauth_tokens_file = \"~/.sandbox-mcp/auth_tokens\"\n\n[storage]\nwork_home = \"/var/lib/sandbox-mcp\"\n\n[docker]\ndefault_image = \"python:3.14-slim\"\nauto_network = \"sandbox-mcp\"      # \"\" = none\nadmin_machine = \"admin\"           # \"\" = no /host mount\nhost = \"\"                         # \"\" = from Docker environment\n\n[ssh]\nconnect_timeout = 10\n[ssh.targets.win-build]\nhost = \"192.168.1.100\"\nuser = \"builder\"\nos_type = \"windows\"\n\n[default_machine]\nenabled = true\nbackend = \"docker\"\nname = \"admin\"\n\n[shell]\ndefault_max_output = 50000\n\n[files]\nmax_file_size = 51200\n```\n\n## Backends\n\n### Docker\n\nContainers get bind mounts for workspace isolation:\n\n- `work_home/<name>/` → `/workspace` (rw)\n- `work_home/<share_subdir>/` → `/share/` (ro, shared across peers)\n- `work_home/<share_subdir>/<name>/` → `/share/<name>/` (rw overlay)\n\nWhen a container's name matches `admin_machine`, it also gets\n`work_home/` → `/host` (rw) — a global view of all workspaces.\n\nServer startup auto-reconciles with the Docker daemon: surviving\ncontainers are re-adopted into the registry.\n\n### SSH\n\nConnects over SSH with ControlMaster for connection reuse.  Windows\ntargets get automatic code-page probing and encoded-command execution.\n\n## Deployment\n\n```yaml\n# docker-compose.yml\nservices:\n  sandbox-mcp:\n    image: ghcr.io/hs3434/sandbox-env-mcp:latest\n    network_mode: host\n    volumes:\n      - /var/run/docker.sock:/var/run/docker.sock\n      - /var/lib/sandbox-mcp:/var/lib/sandbox-mcp\n      - ./config:/root/.sandbox-mcp\n```\n\nHTTP mode reads bearer tokens from `auth_tokens_file` (hot-reload on\nevery request).  If the file is empty or missing and\n`auto_generate_if_empty=true`, a random token is printed to stderr at\nstartup.\n\n## Audit\n\nEvery tool call is recorded: timestamp, machine, action, status,\nduration, and hashed parameters.  Defaults to SQLite at\n`~/.sandbox-mcp/audit.db`.  Set `log_path=\"\"` for JSON-line stderr\noutput instead.\n",
+    "fetchedAt": "2026-08-11T23:43:05.493Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:30.338Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

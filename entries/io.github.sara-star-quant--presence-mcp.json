@@ -1,0 +1,58 @@
+{
+  "id": "io.github.sara-star-quant/presence-mcp",
+  "title": "presence-mcp",
+  "description": "Read-only MCP access to presence: living project model and outcome telemetry.",
+  "summary": "Read-only MCP access to presence: living project model and outcome telemetry.",
+  "offersHint": "Read-only MCP access to presence: living project model and outcome telemetry. · Packages: pypi:presence-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "presence-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "presence-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sara-star-quant/presence-mcp",
+  "repository": {
+    "url": "https://github.com/sara-star-quant/presence-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-18T14:25:11.950093Z",
+  "publishedAt": "2026-06-18T14:25:11.950093Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:47.611Z",
+    "sourceRepoAt": "2026-08-11T23:22:48.680Z",
+    "readmeAt": "2026-08-11T23:22:49.325Z",
+    "toolsAt": "2026-08-12T01:02:47.611Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sara-star-quant/presence-mcp",
+    "checkedAt": "2026-08-11T23:22:48.680Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sara-star-quant/presence-mcp/main/README.md",
+    "markdown": "# presence-mcp\n\n<!-- mcp-name: io.github.sara-star-quant/presence-mcp -->\n\n[![PyPI](https://img.shields.io/pypi/v/presence-mcp.svg)](https://pypi.org/project/presence-mcp/)\n[![Python versions](https://img.shields.io/pypi/pyversions/presence-mcp.svg)](https://pypi.org/project/presence-mcp/)\n[![License: Apache 2.0](https://img.shields.io/pypi/l/presence-mcp.svg)](./LICENSE)\n[![CI](https://github.com/sara-star-quant/presence-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/sara-star-quant/presence-mcp/actions/workflows/ci.yml)\n[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-active-2ea44f)](https://registry.modelcontextprotocol.io/v0/servers?search=presence-mcp)\n\n> PyPI launcher that exposes [presence](https://github.com/sara-star-quant/presence)'s living project model and outcome telemetry as MCP resources for Claude Desktop, Cursor, Continue, and other MCP-aware clients.\n\n`presence` is a Claude Code plugin. It already ships a stdio MCP server at `lib/cli.py mcp` and exposes two read-only resources per repository (see [What you get](#what-you-get)). This package is the PyPI shim that lets that server be listed in the official [MCP Registry](https://github.com/mcp) and invoked with a single command name in every per-client config, instead of an absolute path that varies per machine.\n\nThe launcher itself speaks no MCP. It locates a local presence install and forwards stdio to `python lib/cli.py mcp`. About 40 lines of Python, stdlib only.\n\n## Quick start\n\n```bash\npip install presence-mcp\n```\n\nThen point any MCP client at the `presence-mcp` command. For Claude Desktop, that's:\n\n```json\n{\n  \"mcpServers\": {\n    \"presence\": {\n      \"command\": \"presence-mcp\"\n    }\n  }\n}\n```\n\nFull per-client config for [Cursor](#cursor) and [Continue](#continue) below. Requires Python 3.12+ and a local [presence](https://github.com/sara-star-quant/presence) install.\n\n## What you get\n\nTwo read-only MCP resources, one per repository you've worked on:\n\n| URI | Content | MIME type |\n|---|---|---|\n| `presence://<repo_id>/model` | Living `model.md` (Markdown) | `text/markdown` |\n| `presence://<repo_id>/telemetry` | Recent commit / revert / verification claims (JSON array) | `application/json` |\n\n`<repo_id>` is a 12-char SHA-256 prefix of the repo. The server resolves the current repo from the launcher's working directory; see [Working-directory caveat](#working-directory-caveat). Resource schema and protocol details: [presence's `docs/mcp.md`](https://github.com/sara-star-quant/presence/blob/main/docs/mcp.md).\n\n## Per-client configuration\n\nThe same `presence-mcp` command works in every client.\n\n### Claude Desktop\n\n`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), or the equivalent on Windows / Linux:\n\n```json\n{\n  \"mcpServers\": {\n    \"presence\": {\n      \"command\": \"presence-mcp\"\n    }\n  }\n}\n```\n\n### Cursor\n\n`.cursor/mcp.json` in the project root, or the global Cursor MCP settings:\n\n```json\n{\n  \"mcpServers\": {\n    \"presence\": {\n      \"command\": \"presence-mcp\"\n    }\n  }\n}\n```\n\n### Continue\n\n`~/.continue/config.json`:\n\n```json\n{\n  \"mcpServers\": [\n    {\n      \"name\": \"presence\",\n      \"command\": \"presence-mcp\"\n    }\n  ]\n}\n```\n\n### Verify the install\n\nThe launcher accepts JSON-RPC on stdin. Pasting `{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}` and pressing Enter should yield an `initialize` response. You can also invoke it as `python -m presence_mcp` if a console script isn't convenient.\n\n## Environment variables\n\n| Variable | Purpose |\n|---|---|\n| `PRESENCE_MCP_CLI` | Absolute path to presence's `lib/cli.py`. Overrides the default `~/.claude/plugins/presence/lib/cli.py` lookup. If set but the path is missing, the launcher errors out instead of falling back, so typos surface. |\n| `PRESENCE_MCP_PYTHON` | Python interpreter to run presence with. Defaults to `sys.executable` of the launcher itself. Useful when presence is installed under a different Python (for example, a project venv). |\n\nIf `presence-mcp` reports it could not locate presence, install presence at the standard Claude Code plugin path, or set `PRESENCE_MCP_CLI`.\n\n## Working-directory caveat\n\npresence's MCP server resolves the current repo from the launcher's working directory via `git rev-parse --show-toplevel`. MCP clients that launch the server from a fixed directory will only see one repo. To switch repos, either launch a separate instance per project (set `cwd` in the client's per-server config), or restart the server from the target project root.\n\n## Compatibility\n\n- **Python:** 3.12 or newer. CI matrix covers 3.12 / 3.13 / 3.14.\n- **presence:** tested with `>= 0.6.0`. Older versions back to v0.4.1 (where the MCP server first shipped) may still work but are not exercised by CI.\n- **Platforms:** Linux and macOS exercised in CI. Windows is untested in v0.1.0. The launcher uses `subprocess.run` which is cross-platform, but the default presence install path (`~/.claude/plugins/presence/lib/cli.py`) needs a real Windows install to confirm. Report issues if you try it.\n\nThis launcher is protocol-agnostic: it does **not** rev when presence ships new MCP resources. It only revs when its own resolution logic, CLI surface, or `server.json` content changes.\n\n## Where to file issues\n\n- **Launcher bugs** (path detection, install errors, CLI argument forwarding): [issues on this repo](https://github.com/sara-star-quant/presence-mcp/issues).\n- **Resource-content bugs** (what `presence://*/model` returns, telemetry schema, working-directory behavior, anything about the protocol itself): [issues on the presence repo](https://github.com/sara-star-quant/presence/issues).\n\n## Disambiguation\n\npresence's MCP server advertises `serverInfo.name = \"presence-mcp\"` in its `initialize` response. That's the server's MCP identity. This package is the PyPI launcher. The names match by intent.\n\n## Links\n\n- PyPI: https://pypi.org/project/presence-mcp/\n- MCP Registry: https://registry.modelcontextprotocol.io/v0/servers?search=presence-mcp (`io.github.sara-star-quant/presence-mcp`)\n- Upstream (presence): https://github.com/sara-star-quant/presence\n\n## License\n\nApache-2.0. See [LICENSE](./LICENSE) and [NOTICE](./NOTICE).\n",
+    "fetchedAt": "2026-08-11T23:22:49.325Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:47.611Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

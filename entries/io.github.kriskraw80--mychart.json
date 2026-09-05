@@ -1,0 +1,76 @@
+{
+  "id": "io.github.kriskraw80/mychart",
+  "title": "mychart",
+  "description": "Connects to Epic MyChart patient portals: interactive login, list and download your own test results",
+  "summary": "Connects to Epic MyChart patient portals: interactive login, list and download your own test results",
+  "offersHint": "Connects to Epic MyChart patient portals: interactive login, list and download your own test results · Packages: npm:mychart-mcp-server · Env vars: MYCHART_URL",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mychart-mcp-server",
+    "version": "1.0.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "MYCHART_URL",
+        "description": "Default MyChart provider URL (alternative to the mychart_set_provider tool)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mychart-mcp-server",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "MYCHART_URL",
+          "description": "Default MyChart provider URL (alternative to the mychart_set_provider tool)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MYCHART_URL",
+      "description": "Default MyChart provider URL (alternative to the mychart_set_provider tool)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kriskraw80/mychart-mcp-server",
+  "repository": {
+    "url": "https://github.com/kriskraw80/mychart-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T01:54:10.306787Z",
+  "publishedAt": "2026-08-04T01:54:10.306787Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:26.974Z",
+    "sourceRepoAt": "2026-08-11T23:38:49.799Z",
+    "readmeAt": "2026-08-11T23:38:50.243Z",
+    "toolsAt": "2026-08-12T01:17:26.974Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kriskraw80/mychart-mcp-server",
+    "checkedAt": "2026-08-11T23:38:49.799Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kriskraw80/mychart-mcp-server/main/README.md",
+    "markdown": "# MyChart MCP Server\n\nAn MCP (Model Context Protocol) server that connects to any Epic **MyChart** patient portal to log in, list your test results, and download them as PDFs — so an AI assistant can help you understand your own lab work.\n\nEpic offers no simple public login API (the official FHIR route requires per-organization app registration), so this server drives the MyChart **website** with Playwright:\n\n- **Login is interactive and private** — a visible browser window opens; you type your username/password and complete MFA yourself. Credentials never pass through the AI, the MCP protocol, or this server's tool arguments.\n- **Session persists** — cookies (including MyChart's session-scoped auth cookie) are exported to disk after login and replayed on every launch, so subsequent operations run headless until the portal expires the session server-side.\n- **Works across MyChart versions** — scraping tries the modern SPA routes (`/app/test-results`) first, then classic routes, with permissive selectors.\n\n## Tools\n\n| Tool | Purpose |\n|------|---------|\n| `mychart_set_provider` | Set your health system's MyChart URL (one-time). Paste any URL from their MyChart site. |\n| `mychart_login` | Opens a visible browser window; you sign in + complete MFA there. |\n| `mychart_session_status` | Check provider config + whether the saved session is still valid. |\n| `mychart_list_test_results` | List ALL test results (auto-expands \"Show more\"), with ids `r1, r2, ...`. |\n| `mychart_get_test_result` | Full readable content of one result (values, ranges, comments). |\n| `mychart_download_test_result` | Save a result as PDF to `~/.mychart-mcp/downloads`. |\n| `mychart_screenshot` | Debug: full-page PNG of what the automation browser sees. |\n| `mychart_close_browser` | Close the browser process (session stays saved on disk). |\n\n## Installation\n\n```bash\nnpm install -g mychart-mcp-server\nnpx playwright install chromium\n```\n\nOr from source:\n\n```bash\ngit clone https://github.com/kriskraw80/mychart-mcp-server.git\ncd mychart-mcp-server\nnpm install\nnpx playwright install chromium\nnpm run build\n```\n\n### Register with Claude Code / Claude Desktop\n\n```json\n{\n  \"mcpServers\": {\n    \"mychart\": {\n      \"command\": \"npx\",\n      \"args\": [\"mychart-mcp-server\"]\n    }\n  }\n}\n```\n\n(Or point `command` at `node` with `args: [\"<path>/dist/index.js\"]` for a source checkout.) Restart your MCP client after config changes.\n\n### Optional environment variables\n\n| Variable | Purpose |\n|----------|---------|\n| `MYCHART_URL` | Default provider URL (alternative to `mychart_set_provider`). |\n| `MYCHART_USERNAME` / `MYCHART_PASSWORD` | If set on the server process, the login form is pre-filled (MFA is still completed by you in the window). Optional — typing in the window is the default and safest. |\n\n## Typical flow\n\n1. `mychart_set_provider` with your portal URL (e.g. `https://mychart.example-health.org/MyChart`)\n2. `mychart_login` → sign in + MFA in the window that opens (check \"Remember this device\")\n3. `mychart_list_test_results` → returns `r1, r2, ...`\n4. `mychart_get_test_result r1` or `mychart_download_test_result r1`\n\n## Data locations\n\nEverything lives in `~/.mychart-mcp/` — keep it out of synced folders (the Chromium profile does not tolerate file sync):\n\n- `config.json` — provider URL\n- `browser-profile/` — persistent Chromium profile\n- `storage-state.json` — exported session cookies (replayed on each launch)\n- `results-cache.json` — id → result-URL map from the last list call\n- `downloads/` — PDFs and screenshots\n\n## Notes & limitations\n\n- **Personal use, no warranty.** This tool automates the MyChart web portal to access *your own* health records — a right you have under HIPAA — but portal scraping is not officially sanctioned by Epic. Use at your own discretion.\n- MyChart's DOM varies by health system and Epic version. If listing finds nothing, use `mychart_screenshot` to see the rendered page; selectors may need a tweak for your provider. Some systems host MyChart on non-obvious domains (e.g. `secure.<org>.org` rather than `mychart.<org>.org`) — paste the URL straight from your browser.\n- The server prefers your system-installed Chrome (then Edge, then Playwright's bundled Chromium) — real Chrome's app-bound cookie encryption requires the whole profile to stay on one browser brand, and some Windows machines can't run the bundled build.\n- PDF download renders the result detail page via headless Chrome (`page.pdf`), which is version-independent, rather than hunting for per-version \"Download\" buttons.\n- Sessions expire server-side after idle time; just run `mychart_login` again.\n- `login-helper.mjs`, `run-direct.mjs`, and `run-batch.mjs` drive the built `dist/` code directly — handy for re-login or batch fetching without an MCP client in the loop.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:38:50.243Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:26.974Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

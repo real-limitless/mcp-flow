@@ -1,0 +1,58 @@
+{
+  "id": "io.github.doazvjettu/leakguard-mcp",
+  "title": "leakguard-mcp",
+  "description": "Static analyzer flagging lookahead bias & data leakage in ML/trading code before backtest.",
+  "summary": "Static analyzer flagging lookahead bias & data leakage in ML/trading code before backtest.",
+  "offersHint": "Static analyzer flagging lookahead bias & data leakage in ML/trading code before backtest. · Packages: pypi:leakguard-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "leakguard-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "leakguard-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/doazvjettu/leakguard-mcp",
+  "repository": {
+    "url": "https://github.com/doazvjettu/leakguard-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-13T04:07:50.521586Z",
+  "publishedAt": "2026-06-13T04:07:50.521586Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:18.854Z",
+    "sourceRepoAt": "2026-08-11T23:48:28.855Z",
+    "readmeAt": "2026-08-11T23:48:29.377Z",
+    "toolsAt": "2026-08-12T01:24:18.854Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/doazvjettu/leakguard-mcp",
+    "checkedAt": "2026-08-11T23:48:28.855Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/doazvjettu/leakguard-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.doazvjettu/leakguard-mcp -->\n# leakguard-mcp\n\n[![PyPI](https://img.shields.io/pypi/v/leakguard-mcp)](https://pypi.org/project/leakguard-mcp/)\n[![Python](https://img.shields.io/pypi/pyversions/leakguard-mcp)](https://pypi.org/project/leakguard-mcp/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)\n[![release](https://github.com/doazvjettu/leakguard-mcp/actions/workflows/release.yml/badge.svg)](https://github.com/doazvjettu/leakguard-mcp/actions/workflows/release.yml)\n[![MCP registry](https://img.shields.io/badge/MCP-registry-blue)](https://registry.modelcontextprotocol.io)\n[![glama](https://img.shields.io/badge/Glama-listed-8A2BE2)](https://glama.ai/mcp/servers/doazvjettu/leakguard-mcp)\n\n**Squawk for backtests.** A local-first MCP server that static-analyzes agent-generated\nPython code and flags **lookahead bias & data leakage** *before* the backtest runs.\n\nWorks for any time-series ML code — quant trading (crypto, equities, forex, futures),\ndemand forecasting, energy, weather, IoT sensors — wherever a wrong `.shift()` or a\nglobal normalization silently poisons your results.\n\n- Pure source analysis (libcst) — **your code never leaves the machine**, no API calls.\n- Heuristic, not a proof: severity tiers (🔴 error / 🟡 warning), like an aviation squawk.\n- Framework-agnostic: pandas / numpy / polars, any stack.\n- MCP-native (stdio): works directly inside Claude Code, Cursor, and any MCP-compatible agent.\n- **All 10 rules ship free** — no license, no tiers, no phone-home.\n\n![leakguard flagging three lookahead leaks in a strategy file](demo/leakguard_demo.gif)\n\n---\n\n## Why this exists\n\nAI agents (Claude Code, Cursor) write feature engineering and strategy code faster than\nhumans can review it. But they introduce lookahead bias *at scale* — subtle time-boundary\nerrors that backtest perfectly and fail catastrophically in live trading or production:\n\n```python\n# Agent writes this — looks fine, is catastrophically wrong\ndf['momentum'] = df['close'].shift(-5)   # uses FUTURE prices as a feature\ndf['vol_norm'] = (df['close'] - df['close'].mean()) / df['close'].std()  # leaks future mean\n```\n\nleakguard catches these in the same agent loop — before the backtest runs:\n\n```\nLG001 🔴 line 2: Future shift used as feature — shift(-5) references 5 bars ahead.\n  Fix: df['momentum'] = df['close'].shift(5)   (lag, not lead)\n\nLG003 🔴 line 3: Global-fit normalization — mean/std computed over the full series\n  before any train/test split, leaking future statistics into the past.\n  Fix: df['vol_norm'] = (df['close'] - df['close'].expanding().mean()) / df['close'].expanding().std()\n```\n\nThe agent reads the finding + fix snippet and self-corrects in one turn. No human review needed.\n\n---\n\n## Install\n\n### Requirements\n- Python 3.11+\n- [uv](https://docs.astral.sh/uv/) (recommended) or pip\n\n### From PyPI\n```bash\npip install leakguard-mcp\n```\n\n### From source\n```bash\ngit clone https://github.com/doazvjettu/leakguard-mcp\ncd leakguard-mcp\nuv sync\n```\n\n---\n\n## Setup with Claude Code\n\nAdd to your MCP config (`~/.claude/claude_desktop_config.json` or `.claude/settings.json`\nin your project):\n\n```json\n{\n  \"mcpServers\": {\n    \"leakguard\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"leakguard.server\"]\n    }\n  }\n}\n```\n\nOr if installed via uv:\n```json\n{\n  \"mcpServers\": {\n    \"leakguard\": {\n      \"command\": \"uv\",\n      \"args\": [\"run\", \"python\", \"-m\", \"leakguard.server\"]\n    }\n  }\n}\n```\n\nRestart Claude Code. leakguard's tools are now available to the agent.\n\n### Setup with Cursor\n\nAdd the same block under `mcpServers` in your Cursor MCP settings file.\n\n---\n\n## MCP Tools\n\n| Tool | Description |\n|---|---|\n| `lint_code(code)` | Analyze a code string, return findings |\n| `lint_file(path)` | Analyze a file on disk |\n| `lint_paths(glob)` | Analyze all matching files |\n| `list_rules()` | List all rules with severities |\n| `explain_rule(rule_id)` | Full rationale + fix patterns for a rule |\n\n---\n\n## CLI\n\nThe same scanner is available as a CLI — handy for a pre-commit hook or CI step (exits\nnon-zero when leakage is found):\n\n```bash\nuv run leakguard path/to/strategy.py\n# or, installed:  leakguard path/to/strategy.py\n```\n\nIt prints each finding with its severity, line/col, and a concrete fix snippet — the\nsame output shown in the demo above.\n\n---\n\n## Rules\n\nAll 10 rules active, no tiers:\n\n| ID | Severity | Pattern |\n|---|---|---|\n| LG001 | 🔴 | Future shift as feature: `shift(-n)` / `diff(-n)` / `pct_change(-n)` |\n| LG002 | 🔴 | Centered windows: `rolling(center=True)` |\n| LG003 | 🔴 | Global-fit scaling: `StandardScaler().fit(full_df)` / hand-rolled mean-std before split |\n| LG004 | 🔴 | Shuffled time-series split: `train_test_split` default, `KFold`, `cross_val_score(cv=n)` |\n| LG005 | 🔴 | Label leakage: future-derived target column reused in features |\n| LG006 | 🟡 | Whole-history aggregates as features: `.max()` / `.mean()` over full series |\n| LG007 | 🔴 | Backfill imputation: `bfill()` / `fillna(method='bfill')` |\n| LG008 | 🔴 | Forward asof-joins: `merge_asof(direction='forward'/'nearest')` |\n| LG009 | 🟡 | Resample label/closed mismatch on bar timestamps |\n| LG010 | 🟡 | `groupby().transform()/agg()` spanning train/test boundary |\n\nEach finding includes a **concrete fix snippet** so the calling agent can self-correct immediately.\n\n---\n\n## Benchmark\n\nMeasured on two labeled corpora, 49 snippets total.\nReproduce with `uv run python -m benchmark.run`.\n\n**Honesty note:** the trading corpus was written by the tool's author — treat its numbers\nas *regression fixtures*, not independent validation. The general-ML corpus is one arm's\nlength removed in domain (author-composed reproductions of widely documented leakage\nanti-patterns, not a downloaded public dataset). The corpus deliberately includes\nadversarial snippets the scanner is known to miss; they are counted against it.\n\n**Trading corpus — 39 snippets (23 leaky, 16 clean + hard negatives):**\n\n| Rule | Precision | Recall | TP | FP | FN |\n|------|-----------|--------|----|----|----|\n| LG001 | 75% | 100% | 6 | 2 | 0 |\n| LG002 | 100% | 100% | 5 | 0 | 0 |\n| LG003 | 75% | 100% | 3 | 1 | 0 |\n| LG004 | 100% | 100% | 4 | 0 | 0 |\n| LG005 | 100% | 100% | 5 | 0 | 0 |\n| LG006 | 100% | 100% | 5 | 0 | 0 |\n| LG007 | 100% | 100% | 5 | 0 | 0 |\n| LG008 | 100% | 100% | 2 | 0 | 0 |\n| LG009 | 75% | 100% | 3 | 1 | 0 |\n| LG010 | 100% | 100% | 2 | 0 | 0 |\n| **Overall** | **91%** | **100%** | 40 | 4 | 0 |\n\n**General-ML corpus — 10 snippets (LG003/LG004/LG010):**\nPrecision 88%, Recall 100% (TP 7 / FP 1 / FN 0).\n\n**Combined: Precision 90.4%, Recall 100% (TP 47 / FP 5 / FN 0).**\n\nRecall is 100% *on this corpus* — every adversarial miss exposed has since been fixed\n(constant propagation, hand-rolled normalization, `cv=<int>`, drop-based selection).\nLeak shapes not yet in the corpus are still missed — see Known Limitations below.\n\n### Known false positives (clean code that gets flagged)\n\n- **LG001:** a forward-return *label* built with a negative shift and used only as `y` —\n  pure AST cannot distinguish a target column from a feature.\n- **LG003:** fit inside a helper *defined above* the split call site — line-order heuristic\n  confuses definition order with execution order.\n- **LG004:** shuffled splits on genuinely non-temporal data — no datetime-index inference yet.\n- **LG009:** resampling for reporting/plotting rather than features — intent is invisible to\n  static analysis.\n\n### Known false negatives (leak shapes not yet covered)\n\n- **LG004:** `cross_val_score(...)` with `cv` *omitted* (defaults to KFold).\n- **LG005:** taint through `df.loc[:, 'col'] = ...` or `df.assign(col=...)`.\n- **All rules:** values flowing through function calls, dicts, or non-constant variables —\n  no cross-function dataflow.\n\nThese sets are pinned in `tests/test_benchmark.py`: any new miss *or* silent fix fails the\nsuite until docs and corpus are updated to match.\n\n---\n\n## Develop\n\n```bash\nuv sync --extra dev\nuv run pytest                              # 96 tests\nuv run python -m leakguard.server          # stdio MCP server\nuv run leakguard demo/strategy_leaky.py    # CLI on the demo file\nuv run python -m benchmark.run             # precision/recall tables + FP/FN lists\n```\n\nThe scanner core lives in `leakguard/core/` (pure, no MCP imports); `server.py` and\n`cli.py` are thin wrappers. Each rule has a fixture pair under `tests/fixtures/`.\n\n---\n\n## Limitations (v1)\n\n- Heuristic static analysis — catches ~90% of common patterns, not 100%.\n- Single-file only — no cross-module taint tracking.\n- Python only (pandas / numpy / polars).\n- No runtime execution — cannot catch patterns that only emerge at runtime.\n\nContributions welcome: new corpus snippets (especially real bugs you've hit) strengthen the\nbenchmark more than new rules do.\n",
+    "fetchedAt": "2026-08-11T23:48:29.377Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:18.854Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

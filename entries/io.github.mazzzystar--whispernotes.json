@@ -1,0 +1,45 @@
+{
+  "id": "io.github.mazzzystar/whispernotes",
+  "title": "whispernotes",
+  "description": "Search, read, and create speech-to-text transcripts on-device with the Whisper Notes Mac app.",
+  "summary": "Search, read, and create speech-to-text transcripts on-device with the Whisper Notes Mac app.",
+  "offersHint": "Search, read, and create speech-to-text transcripts on-device with the Whisper Notes Mac app.",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://whispernotes.app/cli-mcp",
+  "sourceUrl": "https://github.com/mazzzystar/whispernotes-mcp",
+  "repository": {
+    "url": "https://github.com/mazzzystar/whispernotes-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T06:14:05.323861Z",
+  "publishedAt": "2026-08-02T06:14:05.323861Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:08.495Z",
+    "sourceRepoAt": "2026-08-11T23:35:11.925Z",
+    "readmeAt": "2026-08-11T23:35:12.362Z",
+    "toolsAt": "2026-08-12T01:14:08.495Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mazzzystar/whispernotes-mcp",
+    "checkedAt": "2026-08-11T23:35:11.925Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mazzzystar/whispernotes-mcp/main/README.md",
+    "markdown": "# Whisper Notes MCP Server & CLI\n\nMCP server and command-line access to [Whisper Notes](https://whispernotes.app) — on-device speech-to-text for Mac and iPhone. Claude and any MCP client can search your transcript history, read transcripts (plain, timestamped, or speaker-labeled), and transcribe audio or video files.\n\n**100% on-device.** The server speaks over a local Unix socket (`0600` permissions) — no open ports, no network interface, no cloud. Your audio and transcripts never leave your Mac.\n\n> The MCP server is built into the Whisper Notes Mac app — there is nothing to `npx` or `pip install`. This repository is its documentation and registry home. Canonical docs live at [whispernotes.app/cli-mcp](https://whispernotes.app/cli-mcp) (agent-readable markdown: [whispernotes.app/cli-mcp.md](https://whispernotes.app/cli-mcp.md)).\n\n## Set up\n\n1. Download [Whisper Notes for Mac](https://dl.whispernotes.app/WhisperNotes-latest.dmg) **1.5.5 or later** — Direct Download (DMG) version (the Mac App Store build does not include the Local API). macOS 14+, Apple Silicon.\n2. Open the app → **Settings → Integrations** → toggle on **Local CLI & MCP**.\n3. Click **Install CLI** in the same section — this puts `whispernotes` (and the `wn` shorthand, when that name is free) in your terminal.\n\n## Connect Claude or any MCP client\n\n**Claude Code** — one line:\n\n```bash\nclaude mcp add whispernotes -- whispernotes mcp\n```\n\n**Claude Desktop** — add this to `~/Library/Application Support/Claude/claude_desktop_config.json`, then restart Claude Desktop:\n\n```json\n{\n  \"mcpServers\": {\n    \"whispernotes\": {\n      \"command\": \"/usr/local/bin/whispernotes\",\n      \"args\": [\"mcp\"]\n    }\n  }\n}\n```\n\nUse the full path from `which whispernotes` — GUI apps don't read your shell's PATH. Any other local MCP client (Cursor, etc.) works the same way: command `whispernotes`, args `[\"mcp\"]`. Transport is stdio; there is no HTTP endpoint.\n\nThen just ask:\n\n- \"Read my last five transcripts and tell me what I should follow up on.\"\n- \"Find the meeting where we discussed the invoice, and draft a reply email.\"\n- \"Transcribe ~/Desktop/podcast.mp3 and pull out every action item.\"\n\n## MCP tools\n\n| Tool | Parameters | Returns |\n|---|---|---|\n| `list_transcripts` | `limit` (default 20) · `source` | Recent transcripts with ids, dates, titles |\n| `search_transcripts` | `query` (required) · `limit` | Full-text matches with snippets |\n| `get_transcript` | `id` (required) · `timestamps` · `speakers` · `max_chars` · `offset` | One transcript's text |\n| `get_latest_transcript` | `timestamps` · `speakers` | Your most recent transcript |\n| `transcribe_file` | `path` (required) | Transcribes an audio or video file, saves it to history |\n| `list_models` | — | Installed models and which one is active |\n\nLong recordings are paged: when a transcript exceeds `max_chars`, the response ends with an explicit truncation marker telling the agent which `offset` to continue from — hour-long meetings never overflow a context window.\n\n## CLI\n\nThe same binary is a full command-line tool:\n\n```bash\n$ whispernotes status\nWhisperNotes 1.5.5 (340) · SenseVoice Small · ready · 3081 notes\n\n$ whispernotes list --limit 3\n9f3c21a8  2026-08-01 09:14  0:42   meeting   Weekly sync — pricing review\nb2d84e07  2026-07-31 18:03  12:26  recorded  Idea dump on the walk home\n5a1f9c33  2026-07-30 10:52  47:10  imported  interview-with-anna.m4a\n\n$ whispernotes show latest | ollama run llama3 \"Summarize the key points:\"\n\n$ whispernotes export --format md --audio --output-dir ~/Transcripts\n✓ exported 312/312 transcript(s), 312 audio file(s) → /Users/you/Transcripts\n```\n\n| Command | Options | What it does |\n|---|---|---|\n| `status` | — | App version, active model, readiness, note count |\n| `list` | `--limit N` · `--source T` · `--json` | Recent transcripts, newest first |\n| `search <query>` | `--limit N` · `--json` | Full-text search across your history, with snippets |\n| `show [id or latest]` | `--timestamps` · `--speakers` · `--max-chars N` · `--offset N` · `--json` | Print one transcript (defaults to `latest`) |\n| `transcribe <file>` | `--json` | Transcribe an audio or video file, save it to history |\n| `export` | `--format txt or md` · `--output-dir DIR` · `--source T` · `--limit N` · `--audio` · `--speakers` | Batch-export transcripts, optionally copying the audio alongside |\n| `models` | `list` · `select <id>` | List or switch models: `parakeet`, `sensevoice`, `whisper-small`, `whisper-large-v3-turbo` |\n| `language` | `list` · `select <code>` | List or switch transcription language — choices follow the active model |\n| `mcp` | — | Run the MCP server on stdio |\n| `version` · `help` | — | CLI version · usage |\n\nResults go to stdout, progress and errors to stderr — safe to pipe or redirect. `--json` always emits a single JSON object or array. `whispernotes help` prints the full usage; a misused command replies with its exact usage line. `wn` is a convenience alias — scripts and agents should call `whispernotes`, which always exists.\n\n## Privacy & security\n\n- Transport is a Unix domain socket at `~/Library/Application Support/WhisperNotes/api.sock` with `0600` permissions — only your macOS user account can connect. No TCP port, no network interface, unreachable from any other machine.\n- Off by default: nothing is served until you enable the toggle in Settings.\n- MCP clients like Claude ask for your approval before each tool call.\n- Transcription runs on-device (Parakeet V3, Whisper, SenseVoice on the Neural Engine / MLX); results are stored only in your local history.\n\n## Links\n\n- Docs: [whispernotes.app/cli-mcp](https://whispernotes.app/cli-mcp) · raw markdown for agents: [/cli-mcp.md](https://whispernotes.app/cli-mcp.md)\n- Download: [Whisper Notes for Mac (DMG)](https://dl.whispernotes.app/WhisperNotes-latest.dmg)\n- iPhone & Mac App Store: [App Store](https://apps.apple.com/app/id6447090616)\n- Website: [whispernotes.app](https://whispernotes.app) · [Changelog](https://whispernotes.app/changelog) · [Privacy](https://whispernotes.app/privacy)\n- Support: support@whispernotes.app\n\n## License\n\nThe contents of this repository (documentation and metadata) are [MIT-licensed](LICENSE). Whisper Notes itself — the application, including the embedded MCP server and CLI — is commercial software; see [whispernotes.app](https://whispernotes.app) for terms.\n",
+    "fetchedAt": "2026-08-11T23:35:12.362Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:08.495Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "io.github.psyb0t/talkies",
+  "title": "Talkies",
+  "description": "Self-hosted MCP server for speech: ASR transcription, TTS synthesis, and file staging tools.",
+  "summary": "Self-hosted MCP server for speech: ASR transcription, TTS synthesis, and file staging tools.",
+  "offersHint": "Self-hosted MCP server for speech: ASR transcription, TTS synthesis, and file staging tools. · Packages: oci:docker.io/psyb0t/talkies:v0.15.3",
+  "version": "0.15.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/psyb0t/talkies:v0.15.3",
+    "transport": "streamable-http"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/psyb0t/talkies:v0.15.3",
+      "transport": "streamable-http"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/psyb0t/docker-talkies",
+  "repository": {
+    "url": "https://github.com/psyb0t/docker-talkies",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T20:35:40.726657Z",
+  "publishedAt": "2026-08-08T20:35:40.726657Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:09.443Z",
+    "sourceRepoAt": "2026-08-11T23:25:23.094Z",
+    "readmeAt": "2026-08-11T23:25:23.615Z",
+    "toolsAt": "2026-08-12T01:05:09.443Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/psyb0t/docker-talkies",
+    "checkedAt": "2026-08-11T23:25:23.094Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/psyb0t/docker-talkies/main/README.md",
+    "markdown": "# talkies\n\n[![CI](https://github.com/psyb0t/docker-talkies/actions/workflows/pipeline.yml/badge.svg?branch=main)](https://github.com/psyb0t/docker-talkies/actions/workflows/pipeline.yml)\n[![version](https://raw.githubusercontent.com/psyb0t/docker-talkies/badges/version.svg)](https://github.com/psyb0t/docker-talkies/releases)\n[![license](https://raw.githubusercontent.com/psyb0t/docker-talkies/badges/license.svg)](LICENSE)\n[![Docker Pulls](https://img.shields.io/docker/pulls/psyb0t/talkies?style=flat-square)](https://hub.docker.com/r/psyb0t/talkies)\n\nSelf-hosted speech services in one Docker image: OpenAI-compatible file\ntranscription and text-to-speech, Talkies live ASR over WebSocket, file\nstaging, model lifecycle controls, and an MCP endpoint for ASR workflows.\n\n## Contents\n\n- [Start here](#start-here)\n- [What it provides](#what-it-provides)\n- [Models at a glance](#models-at-a-glance)\n  - [Prompting Chatterbox with emotion](#prompting-chatterbox-with-emotion)\n- [Documentation](#documentation)\n- [Agent integrations](#agent-integrations)\n- [Security in one minute](#security-in-one-minute)\n- [Development](#development)\n\n## Start here\n\nRestrict the first boot to the models you need; otherwise the entrypoint\ndownloads every model in the bundled registry.\n\n```bash\ndocker run --rm -it --name talkies \\\n  -p 127.0.0.1:8000:8000 \\\n  -v \"$PWD/talkies-data:/data\" \\\n  -e TALKIES_ENABLED_MODELS=whisper-large-v3-turbo,kokoro-82m \\\n  psyb0t/talkies:latest\n\ncurl -s http://127.0.0.1:8000/healthz\ncurl -s http://127.0.0.1:8000/v1/audio/transcriptions \\\n  -F \"file=@/path/to/clip.wav\" \\\n  -F \"model=whisper-large-v3-turbo\"\n```\n\nFor CUDA-only models — Parakeet-TDT, the larger Canary models, Qwen3 TTS and\nChatterbox Turbo — use `psyb0t/talkies:latest-cuda` with `--gpus all`. The\nloopback port mapping keeps the service local; see\n[Getting started](docs/getting-started.md) for first boot and authentication.\n\n## What it provides\n\n| Surface | Purpose | Reference |\n|---|---|---|\n| `POST /v1/audio/transcriptions` | File transcription and subtitles | [HTTP API](docs/api.md#transcription) |\n| `WS /v1/audio/transcriptions/stream` | Live 16 kHz PCM ASR | [Streaming](docs/streaming.md#live-asr-over-websocket) |\n| `POST /v1/audio/speech` | Speech synthesis in six formats | [HTTP API](docs/api.md#speech) |\n| `GET /v1/models` | Enabled slugs and their modality | [HTTP API](docs/api.md) |\n| `GET /v1/audio/voices` | Per-model voice catalog with origin tags | [Models](docs/models.md) |\n| `GET/PUT/DELETE /v1/files/*` | Server-side file staging | [HTTP API](docs/api.md#file-staging) |\n| `/api/ps`, `/unload` | Model inspection and eviction | [Operations](docs/operations.md#model-lifecycle) |\n| `/v1/mcp` | Streamable HTTP MCP with ASR/file tools | [HTTP API](docs/api.md#mcp) |\n| `GET /healthz` | Liveness probe; the only unauthenticated route | [Operations](docs/operations.md) |\n\nThe HTTP transcription and speech routes use the corresponding OpenAI wire\nshapes where those contracts overlap. Streaming ASR, files, lifecycle controls,\nand MCP are Talkies extensions.\n\n## Models at a glance\n\n- CPU: two Whisper models, Canary-180M-Flash, Nemotron ASR via parakeet.cpp,\n  four English Sherpa-ONNX Zipformer choices, Vosk small English, and two\n  Kokoro TTS backends.\n- CUDA: the CPU set plus Parakeet-TDT, Canary 1B/Qwen ASR, five Qwen3 TTS\n  variants, and Chatterbox Turbo.\n- Live ASR: bundled Nemotron, Sherpa-ONNX, and Vosk are native; bundled Whisper\n  is a bounded rolling decoder. Sherpa and Vosk also work through the\n  OpenAI-compatible file-transcription endpoint.\n- Per-model concurrency limits cover WebSocket, HTTP, MCP, ASR, and TTS; the\n  bundled Nemotron CPU and CUDA entries admit two requests.\n- Streaming TTS: Qwen3 returns incremental raw PCM for\n  `response_format=\"pcm\"`; other TTS formats and Kokoro are buffered.\n- Expressive TTS: Chatterbox Turbo (English) takes 19 inline tags such as\n  `[sigh]`, `[whispering]` and `[laugh]` directly in the input text. Its output\n  carries a neural watermark applied by the upstream model.\n- Voice cloning: drop a `.wav` into `/data/custom-voices` and it appears on\n  `GET /v1/audio/voices`. Qwen3 pairs it with an optional sibling `.txt`\n  transcript; Chatterbox needs only the clip, longer than five seconds.\n\nExact slugs, executors, tag list, and registry format:\n[Models and registries](docs/models.md).\n\n### Prompting Chatterbox with emotion\n\nTags go inline in `input`, in square brackets, lowercase. They are real tokens\nin the model's tokenizer, so only these 19 do anything — any other bracketed\nword is spoken as literal text:\n\n```\n[angry] [fear] [surprised] [whispering] [advertisement] [dramatic] [narration]\n[crying] [happy] [sarcastic] [clear throat] [sigh] [shush] [cough] [groan]\n[sniff] [gasp] [chuckle] [laugh]\n```\n\n```bash\ncurl -s http://127.0.0.1:8000/v1/audio/speech \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n        \"model\": \"chatterbox-turbo\",\n        \"voice\": \"builtin\",\n        \"input\": \"Oh, that is hilarious. [chuckle] Anyway [sigh] back to work.\",\n        \"response_format\": \"mp3\"\n      }' --output out.mp3\n```\n\nSwap `\"voice\"` for the name of any `.wav` you dropped in `/data/custom-voices`\n(extension stripped) to speak the same line in a cloned voice.\n\n## Documentation\n\n| Guide | Contents |\n|---|---|\n| [Getting started](docs/getting-started.md) | Run CPU/CUDA, persist data, authenticate, verify |\n| [Models and registries](docs/models.md) | Bundled slugs, image availability, custom registries |\n| [Architecture](docs/architecture.md) | Request flow, backend selection, on-disk layout |\n| [HTTP API](docs/api.md) | Requests, responses, files, lifecycle, MCP |\n| [Streaming](docs/streaming.md) | Live ASR protocol, streaming backends, PCM TTS |\n| [Configuration](docs/configuration.md) | Supported environment variables and limits |\n| [Operations and security](docs/operations.md) | Exposure, model memory, data retention, logs |\n| [Development](docs/development.md) | Make targets, test suites, image builds |\n\n## Agent integrations\n\nThe [Talkies skill](.agents/skills/talkies) teaches agents to use the HTTP,\nWebSocket, and MCP surfaces. Install it through the shared `psyb0t` marketplace\nor let Codex discover it directly from this checkout.\n\n### Claude Code\n\n```bash\nclaude plugin marketplace add psyb0t/agents\nclaude plugin install talkies@psyb0t\n```\n\nClaude Code prompts for the Talkies URL and, when enabled, the bearer token;\nthe sensitive token is stored through the client's protected configuration.\n\n### Codex\n\n```bash\ncodex plugin marketplace add psyb0t/agents\ncodex plugin add talkies@psyb0t\n```\n\nA marketplace install invokes the skill as `$talkies:talkies`. Codex also\ndiscovers `.agents/skills/talkies` directly in this repository, where it is\ninvoked as `$talkies` without installation.\n\n### OpenClaw\n\nThe skill and MCP bridge are published through ClawHub:\n\n```bash\nopenclaw skills install @psyb0t/talkies\nopenclaw plugins install clawhub:@psyb0t/talkies\n```\n\nThe bridge connects local stdio MCP clients to a running Talkies `/v1/mcp`\nendpoint. Set `TALKIES_URL` and, when authentication is enabled,\n`TALKIES_AUTH_TOKEN`.\n\n## Security in one minute\n\n`TALKIES_AUTH_TOKEN` enables a shared bearer token for every HTTP and WebSocket\nroute except `/healthz`. It is unset by default. Keep the port loopback-only or\nput Talkies behind TLS, authentication, and rate limiting. If untrusted callers\ncan supply remote `file_path` URLs, set `TALKIES_BLOCK_PRIVATE_DOWNLOADS=true`.\nSee [Operations and security](docs/operations.md) for the complete posture.\n\n## Development\n\n```bash\nmake check                 # lint + unit tests in the dev image\nmake lint                  # flake8 + mypy only\nmake test-unit             # fast offline unit tests\nmake run                   # run the CPU image locally\nmake test-streaming        # real CPU native WebSocket ASR test\nmake test-streaming-custom # real CPU Sherpa/Vosk WebSocket + HTTP tests\nmake test-streaming-custom-cuda # real CUDA Sherpa WebSocket + HTTP test\nmake compile-heavy         # regenerate the hash-locked ML requirements\nmake build-all             # CPU and CUDA production images\n```\n\n`make help` lists every target.\n\nTalkies is released under the [WTFPL](LICENSE). Model weights are downloaded at\nruntime and have their own terms; image component notices are in\n[THIRD_PARTY.md](THIRD_PARTY.md). Release notes are in [CHANGELOG.md](CHANGELOG.md).\n",
+    "fetchedAt": "2026-08-11T23:25:23.615Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:09.443Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

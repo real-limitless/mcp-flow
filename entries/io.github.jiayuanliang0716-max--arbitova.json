@@ -1,0 +1,94 @@
+{
+  "id": "io.github.jiayuanliang0716-max/arbitova",
+  "title": "arbitova",
+  "description": "Escrow + AI arbitration for A2A payments. Lock funds, confirm delivery, dispute if needed.",
+  "summary": "Escrow + AI arbitration for A2A payments. Lock funds, confirm delivery, dispute if needed.",
+  "offersHint": "Escrow + AI arbitration for A2A payments. Lock funds, confirm delivery, dispute if needed. · Packages: npm:@arbitova/mcp-server · Env vars: ARBITOVA_API_KEY, ARBITOVA_BASE_URL",
+  "version": "3.4.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@arbitova/mcp-server",
+    "version": "3.4.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ARBITOVA_API_KEY",
+        "description": "Your Arbitova API key. Register an agent at https://arbitova.com to get one.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "ARBITOVA_BASE_URL",
+        "description": "Override the Arbitova API base URL. Defaults to production."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@arbitova/mcp-server",
+      "version": "3.4.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ARBITOVA_API_KEY",
+          "description": "Your Arbitova API key. Register an agent at https://arbitova.com to get one.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "ARBITOVA_BASE_URL",
+          "description": "Override the Arbitova API base URL. Defaults to production."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ARBITOVA_API_KEY",
+      "description": "Your Arbitova API key. Register an agent at https://arbitova.com to get one.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "ARBITOVA_BASE_URL",
+      "description": "Override the Arbitova API base URL. Defaults to production."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jiayuanliang0716-max/Arbitova",
+  "repository": {
+    "url": "https://github.com/jiayuanliang0716-max/Arbitova",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-17T18:28:16.70462Z",
+  "publishedAt": "2026-04-17T18:28:16.70462Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:56.614Z",
+    "sourceRepoAt": "2026-08-11T23:41:11.654Z",
+    "readmeAt": "2026-08-11T23:41:12.153Z",
+    "toolsAt": "2026-08-12T01:18:56.615Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jiayuanliang0716-max/Arbitova",
+    "checkedAt": "2026-08-11T23:41:11.654Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jiayuanliang0716-max/Arbitova/master/README.md",
+    "markdown": "# Arbitova\n\n[![jiayuanliang0716-max/Arbitova MCP server](https://glama.ai/mcp/servers/jiayuanliang0716-max/Arbitova/badges/score.svg)](https://glama.ai/mcp/servers/jiayuanliang0716-max/Arbitova)\n\n**Non-custodial USDC escrow + AI arbitration for agent-to-agent payments on Base.**\n\nTwo agents lock USDC into a contract, one delivers, the other confirms or disputes, and a neutral AI arbiter resolves. Arbitova never holds the money — the contract does.\n\nNo API keys. No registration. No custody. Your Ethereum address is your identity.\n\n- Contract: [`EscrowV1`](./contracts/src/EscrowV1.sol) at `0xA8a031bcaD2f840b451c19db8e43CEAF86a088fC` on Base Sepolia — [verified on Basescan](https://sepolia.basescan.org/address/0xA8a031bcaD2f840b451c19db8e43CEAF86a088fC#code), mainnet launching after audit\n- Spec: [`A2A-ESCROW-RFC-v0.1`](./spec/A2A-ESCROW-RFC-v0.1.md)\n- Machine-readable descriptor: [`/.well-known/arbitova.json`](https://arbitova.com/.well-known/arbitova.json)\n- Per-case verdict dashboard: [arbitova.com/verdicts](https://arbitova.com/verdicts)\n- Integration paths: [arbitova.com/integrate](https://arbitova.com/integrate) (raw contract / reference SDKs / agent-native)\n- Reference UI (non-canonical, for humans): [arbitova.com/pay](https://arbitova.com/pay)\n- 15-minute tutorial: [`docs/tutorials/15-min-paid-agent.md`](./docs/tutorials/15-min-paid-agent.md)\n\n---\n\n## Why this exists\n\nEvery A2A / agent-commerce spec in the wild — MCP, Google's A2A, ERC-7683, Coinbase's Agent Commerce — defines *how agents talk*. None of them define *how money moves when the agents don't trust each other*.\n\nArbitova is the missing settlement primitive:\n\n- **Deterministic state machine.** `createEscrow → markDelivered → {confirmDelivery | dispute → resolve | cancel}`. No hidden branches, no admin override.\n- **No auto-release after timeout.** Review windows expire into `DISPUTED`, not into seller payout. Silence is safer than a wrong confirmation.\n- **Content-hash pinned on-chain.** Sellers can't swap the delivery file after the buyer inspects.\n- **Per-case verdict transparency.** Every arbiter decision is a signed JSON blob; its `keccak256` is stored on-chain. The full verdict history is queryable at [`/verdicts`](https://arbitova.com/verdicts) — no aggregation, no delay.\n\nThis is not a marketplace. There is no Arbitova account, no listing fee, no Pro tier. The protocol is the whole product.\n\n---\n\n## Quick start — Node.js SDK\n\n```bash\nnpm install @arbitova/sdk ethers\n```\n\n```js\nimport { Arbitova } from '@arbitova/sdk';\n\nconst buyer = await Arbitova.fromPrivateKey({ privateKey: process.env.BUYER_PK });\n\nconst { escrowId, txHash } = await buyer.createEscrow({\n  seller: process.env.SELLER_ADDRESS,\n  amount: '5.00',\n  deliveryHours: 24,\n  reviewHours: 24,\n  verificationURI: 'https://example.com/spec.json',\n});\n\nconsole.log(`Escrow #${escrowId} locked — ${buyer.explorerTx(txHash)}`);\n```\n\nSeller-side, arbiter-side, browser wallet integration: see [`packages/sdk-js/README.md`](./packages/sdk-js/README.md).\n\n## Quick start — Python SDK\n\n```bash\npip install \"arbitova[path_b]\"\n```\n\n```python\nfrom arbitova import path_b\n\nresult = path_b.arbitova_create_escrow(\n    seller=\"0x...\",\n    amount=5.00,\n    verification_uri=\"https://example.com/spec.json\",\n)\nprint(result)\n```\n\n## Quick start — Claude / any MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"arbitova\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@arbitova/mcp-server\"],\n      \"env\": {\n        \"ARBITOVA_RPC_URL\": \"https://sepolia.base.org\",\n        \"ARBITOVA_ESCROW_ADDRESS\": \"0xA8a031bcaD2f840b451c19db8e43CEAF86a088fC\",\n        \"ARBITOVA_USDC_ADDRESS\": \"0x036CbD53842c5426634e7929541eC2318f3dCF7e\",\n        \"ARBITOVA_AGENT_PRIVATE_KEY\": \"0x...\"\n      }\n    }\n  }\n}\n```\n\nSix tools: `arbitova_create_escrow`, `arbitova_mark_delivered`, `arbitova_confirm_delivery`, `arbitova_dispute`, `arbitova_cancel_if_not_delivered`, `arbitova_get_escrow`. All sign locally via `ethers` v6. Your private key never leaves the process.\n\nOmit `ARBITOVA_AGENT_PRIVATE_KEY` for read-only introspection mode (useful for observability).\n\n---\n\n## Lifecycle\n\n```\n                      ┌──────────────────┐\n                      │     CREATED      │ buyer locked USDC\n                      └────────┬─────────┘\n                               │\n                               ▼ seller.markDelivered()\n                      ┌──────────────────┐\n                      │    DELIVERED     │ deliveryHash on-chain\n                      └────────┬─────────┘\n                               │\n        buyer.confirmDelivery()│        │ buyer.dispute()\n                               │        │ or seller.dispute()\n                               ▼        ▼\n                   ┌─────────────┐  ┌──────────┐\n                   │  RELEASED   │  │ DISPUTED │ waiting for arbiter\n                   └─────────────┘  └────┬─────┘\n                                         │ arbiter.resolve(bps split + verdictHash)\n                                         ▼\n                                   ┌──────────┐\n                                   │ RESOLVED │\n                                   └──────────┘\n```\n\nTwo terminal states not drawn: `CANCELLED` (buyer calls `cancelIfNotDelivered` after delivery window) and auto-escalation into `DISPUTED` if the review window expires without confirmation.\n\n---\n\n## Framework reference agents\n\nThree end-to-end A2A demos on Base Sepolia with a live AI arbiter:\n\n- **[Claude Agent SDK](./demo)** — in-process MCP tools\n- **[LangGraph](./demo)** — ReAct agent, buyer + seller + arbiter\n- **[CrewAI](./demo)** — Agent + Task + Crew\n\nEach demo runs the full CREATED → DELIVERED → CONFIRMED (or DISPUTED → RESOLVED) flow with real on-chain transactions.\n\n---\n\n## Packages\n\n| Package | Purpose |\n|---|---|\n| [`@arbitova/sdk`](https://www.npmjs.com/package/@arbitova/sdk) | Node.js / browser SDK (`ethers` v6) |\n| [`arbitova`](https://pypi.org/project/arbitova/) | Python SDK, install with `[path_b]` extra for on-chain support |\n| [`@arbitova/mcp-server`](https://www.npmjs.com/package/@arbitova/mcp-server) | MCP server (6 on-chain tools) for Claude Desktop, Claude Code, any MCP client |\n\nEach ships the same six-entrypoint surface so an agent using the Python SDK can settle with an agent using the MCP server — they're hitting the same contract.\n\n---\n\n## Fees\n\n| When | Fee | Paid by |\n|---|---|---|\n| `confirmDelivery` / review-window expiry auto-settle | 0.5% | deducted from seller payout |\n| Arbiter resolves a dispute | 2% | split per arbiter verdict |\n\nFees accrue in the contract. The protocol runs on them; there is no subscription.\n\n---\n\n## Networks\n\n| Network | Status | Contract |\n|---|---|---|\n| Base Sepolia | live, real Circle USDC | `0xA8a031bcaD2f840b451c19db8e43CEAF86a088fC` |\n| Base mainnet | pending audit + multisig arbiter | TBA |\n\nWatch the [Dev Log](https://arbitova.com/blog) for mainnet launch.\n\n---\n\n## Legacy (Path A)\n\nv2.x of the SDKs and v3.4.0 of the MCP server were a custodial HTTP client against `api.arbitova.com`. That architecture had four structural problems (DB-vs-onchain drift, custody wallet gas, single `ADMIN_KEY`, single `WALLET_ENCRYPTION_KEY` point of failure) and was deprecated in favor of Path B — the non-custodial on-chain design described above.\n\n- Migration for SDK users: [`sdk/MIGRATION_PATH_A_TO_B.md`](./sdk/MIGRATION_PATH_A_TO_B.md)\n- Migration for MCP users: [`mcp-server/MIGRATION.md`](./mcp-server/MIGRATION.md)\n\nOld packages remain on npm/PyPI but are deprecated.\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:41:12.153Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:56.615Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

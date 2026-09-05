@@ -1,0 +1,71 @@
+{
+  "id": "in.flowgraf/flowgraf",
+  "title": "Flowgraf",
+  "description": "Create and edit architecture diagrams from your AI agent; get an SVG and a live editable canvas.",
+  "summary": "Create and edit architecture diagrams from your AI agent; get an SVG and a live editable canvas.",
+  "offersHint": "Create and edit architecture diagrams from your AI agent; get an SVG and a live editable canvas. · Remote MCP (streamable-http) at https://flowgraf.in/api/mcp · Packages: npm:flowgraf-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://flowgraf.in/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://flowgraf.in/api/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "flowgraf-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "flowgraf-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "updatedAt": "2026-07-09T17:24:06.184041Z",
+  "publishedAt": "2026-07-09T17:24:06.184041Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:49:04.794Z",
+    "sourceRepoAt": "2026-08-12T00:20:18.700Z",
+    "readmeAt": "2026-08-12T01:49:04.794Z",
+    "toolsAt": "2026-08-12T00:20:18.700Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:20:18.700Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:49:04.794Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "create_diagram",
+      "description": "Create a NEW architecture diagram from a graph that YOU author, and get back a shareable, editable canvas URL plus a rendered SVG and Mermaid.\n\nYou produce only the SEMANTICS — nodes, the groups (VPC/cluster/...) they live in, and the directed edges between them. You do NOT lay anything out: never send x/y/position/pinned. A deterministic layout engine computes all geometry and an icon layer picks the pictures from each node's kind.\n\nkind.catalog is one of aws | gcp | azure | k8s | saas | generic, each with rich per-catalog kind.types (e.g. aws:lambda, gcp:bigquery, azure:cosmos_db, k8s:deployment, saas:kafka):\n- \"aws\" (api_gateway, lambda, s3, rds, dynamodb, sqs, bedrock, kinesis, fargate, eventbridge, aurora, ...).\n- \"gcp\" (compute_engine, gke, cloud_run, cloud_sql, spanner, firestore, bigquery, pubsub, dataflow, vertex_ai, ...).\n- \"azure\" (virtual_machine, aks, app_service, functions, blob_storage, sql_database, cosmos_db, service_bus, event_hubs, key_vault, ...).\n- \"k8s\" (pod, deployment, statefulset, daemonset, job, cronjob, service, ingress, configmap, secret, hpa, ...).\n- \"saas\" for hosted third-parties (redis, postgresql, mysql, mongodb, kafka, stripe, twilio, auth0, github, cloudflare, ...).\n- \"generic\" primitive when nothing branded fits: service, database, cache, queue, user, external_system, storage, gateway, function, note.\n- \"generic\" FLOWCHART kinds for processes/flowcharts: process, decision, terminator, data, document, subprocess.\nedge.kind is one of: request, response, async_event, data_flow, dependency, network, generic.\n\nWORKED EXAMPLE — a user hitting an API in a VPC that talks to Postgres:\n{\n  \"title\": \"Web API\",\n  \"domain\": \"cloud_architecture\",\n  \"graph\": {\n    \"groups\": [{ \"id\": \"g_vpc\", \"label\": \"VPC\", \"type\": \"vpc\" }],\n    \"nodes\": [\n      { \"id\": \"n_user\", \"label\": \"User\", \"kind\": { \"catalog\": \"generic\", \"type\": \"user\" } },\n      { \"id\": \"n_api\", \"label\": \"API\", \"kind\": { \"catalog\": \"aws\", \"type\": \"api_gateway\" }, \"parentId\": \"g_vpc\" },\n      { \"id\": \"n_db\", \"label\": \"Postgres\", \"kind\": { \"catalog\": \"aws\", \"type\": \"rds\" }, \"parentId\": \"g_vpc\" }\n    ],\n    \"edges\": [\n      { \"id\": \"e1\", \"source\": \"n_user\", \"target\": \"n_api\", \"kind\": \"request\" },\n      { \"id\": \"e2\", \"source\": \"n_api\", \"target\": \"n_db\", \"kind\": \"data_flow\" }\n    ]\n  }\n}\n\nReturns { diagramId, url, svg, mermaid, version }. Give the user the url — opening it shows the same diagram on an editable canvas (anonymous; it's theirs to claim by signing in). To change the diagram afterwards, use get_diagram then edit_diagram."
+    },
+    {
+      "name": "edit_diagram",
+      "description": "Apply a list of operations to an EXISTING diagram. The ops re-use this tool's op vocabulary; you author them, we validate + apply + re-layout + re-render.\n\nALWAYS call get_diagram(diagramId) first: it returns the current ids and the `version`. Pass that version as `baseVersion`. If the diagram changed since you fetched it, you get a STALE_VERSION error telling you the current version — refetch with get_diagram, recompute your ops, and retry.\n\nThe operations (each element of `ops`):\n- add_node    { op, node:{ id, label, kind, parentId? } }\n- remove_node { op, id }                       (also drops edges touching the node)\n- update_node { op, id, patch:{ label?, kind?, parentId?, metadata? } }\n- add_edge    { op, edge:{ id, source, target, kind, label?, directed? } }\n- remove_edge { op, id }\n- update_edge { op, id, patch:{ source?, target?, label?, kind?, directed? } }\n- add_group   { op, group:{ id, label, type, parentId? } }\n- remove_group{ op, id }\n- move_to_group { op, nodeId, groupId }        (groupId null un-nests the node)\n- set_layout  { op, patch:{ direction?, spacing? } }\n- insert_between { op, newNode:{ id, label, kind, parentId? }, sourceId, targetId, inKind?, outKind? }\n\ninsert_between IS THE KEY OP for \"add X between A and B\" requests. It splices newNode onto the existing A→B edge: removes that edge, adds the node, and wires A→newNode→B so the connection re-routes through it automatically.\n\nWORKED EXAMPLE — \"add a Redis cache between the API and the DB\" on the diagram above:\n1) get_diagram(diagramId) → shows nodes n_api, n_db and version 1.\n2) edit_diagram({ diagramId, baseVersion: 1, ops: [\n     { \"op\": \"insert_between\", \"sourceId\": \"n_api\", \"targetId\": \"n_db\",\n       \"newNode\": { \"id\": \"n_redis\", \"label\": \"Redis\", \"kind\": { \"catalog\": \"saas\", \"type\": \"redis\" }, \"parentId\": \"g_vpc\" },\n       \"inKind\": \"request\", \"outKind\": \"data_flow\" }\n   ] })\nThe API→DB edge is gone and now flows API→Redis→DB. Never send x/y/position — geometry is computed for you.\n\nNode kinds: catalog ∈ {aws, gcp, azure, k8s, saas, generic} with rich per-catalog types (e.g. aws:lambda, gcp:bigquery, azure:cosmos_db, k8s:deployment, saas:kafka), plus generic flowchart kinds (process, decision, terminator, data, document, subprocess).\n\nReturns { url, svg, mermaid, appliedOps, version }."
+    },
+    {
+      "name": "get_diagram",
+      "description": "Fetch a diagram's raw IR (nodes, groups, edges with their real ids) and its current `version`. Call this before edit_diagram so your ops reference ids that actually exist and you pass the correct baseVersion. Returns { diagram, version }."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:20:18.700Z",
+  "toolsPreviewStatus": "ok"
+}

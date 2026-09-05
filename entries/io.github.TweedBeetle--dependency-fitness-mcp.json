@@ -1,0 +1,58 @@
+{
+  "id": "io.github.TweedBeetle/dependency-fitness-mcp",
+  "title": "dependency-fitness-mcp",
+  "description": "npm dependency fitness: deprecated/yanked/superseded + verified safe migration target.",
+  "summary": "npm dependency fitness: deprecated/yanked/superseded + verified safe migration target.",
+  "offersHint": "npm dependency fitness: deprecated/yanked/superseded + verified safe migration target. · Packages: npm:dependency-fitness-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "dependency-fitness-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "dependency-fitness-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/TweedBeetle/dependency-fitness-mcp",
+  "repository": {
+    "url": "https://github.com/TweedBeetle/dependency-fitness-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-08T13:42:41.785987Z",
+  "publishedAt": "2026-06-08T13:42:41.785987Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:31.767Z",
+    "sourceRepoAt": "2026-08-12T00:00:48.660Z",
+    "readmeAt": "2026-08-12T00:00:49.396Z",
+    "toolsAt": "2026-08-12T01:33:31.767Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/TweedBeetle/dependency-fitness-mcp",
+    "checkedAt": "2026-08-12T00:00:48.660Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/TweedBeetle/dependency-fitness-mcp/main/README.md",
+    "markdown": "# dependency-fitness-mcp — npm dependency **fitness** verdicts for coding agents\n\n> Is this npm package safe to depend on — and if not, what do I move to?\n\nAn [MCP](https://modelcontextprotocol.io) server that gives a coding agent a\n**cross-validated fitness verdict** for an npm package before it writes or\nupgrades a dependency:\n\n```jsonc\n{\n  \"deprecated\": true,\n  \"yanked\": false,\n  \"malicious\": false,\n  \"superseded_by\": { \"latest\": \"14.0.0\", \"majors_behind\": 13, \"breaking_boundary\": true },\n  \"safe_migration_target\": {\n    \"package\": \"uuid\",\n    \"version\": \"14.0.0\",\n    \"rationale\": \"Maintainer's deprecation notice recommends 'uuid' (verified present and not deprecated).\",\n    \"confidence\": \"high\"\n  },\n  \"confidence\": \"high\",\n  \"last_verified\": \"2026-06-05T18:10:31Z\"\n}\n```\n\nIt reconciles **four free, sanctioned sources** — the npm registry, Google's\n[deps.dev](https://deps.dev), [OSV.dev](https://osv.dev), and GitHub — into one\nconfidence-scored answer, and **infers a safe migration target** when a package\nis deprecated or superseded.\n\n## Why this exists (and what it deliberately isn't)\n\n\"Is it deprecated?\" is already free — deps.dev serves that flag, and several free\nMCP servers already answer \"what's the latest version?\". This tool does the part\nnobody serves as data:\n\n- **Migration-target inference.** When a package is deprecated, it parses the\n  maintainer's own deprecation notice for a named successor, **then verifies that\n  successor actually exists and isn't itself deprecated** before recommending it.\n- **Cross-validation, not a guess.** It reconciles deprecation across the npm\n  registry and deps.dev, catches \"deceptive deprecation\" (registry says active\n  but the GitHub repo is archived), and **flags disagreement with a confidence\n  level instead of inventing an answer.**\n- **It refuses to guess.** If a package is deprecated but no successor can be\n  established, it says exactly that (low confidence) rather than recommending a\n  plausible-but-wrong replacement. A wrong \"use X instead\" ships broken code.\n- **Anti-slopsquatting.** A non-existent / hallucinated package name returns a\n  clear \"not found\" verdict (with an OSV malicious-record check), so an agent\n  won't silently install a hallucinated dependency.\n\nThis is intentionally a **narrow** tool: the deprecation / yank / supersede /\nmigration *middle*, where the free incumbents sit on either side but leave the\nseam open.\n\n## Tools\n\n### `check_package_fitness`\nSingle-package verdict. Input: `package` (e.g. `request`, `@babel/core`), optional\n`version` (exact, semver range, or dist-tag — omit for `latest`). Output: the full\n`Verdict` (structured) plus a human-readable summary.\n\n### `audit_dependencies`\nBatch verdict for a CI / pre-merge gate. Input: `packages` (e.g.\n`[\"react@18.2.0\", \"request\"]`) and/or the raw contents of a `package.json`. Output:\na per-package verdict array plus a summary (how many deprecated / malicious /\nvulnerable / behind). Capped at 50 packages per call.\n\n## Install / connect\n\nRequires Node ≥ 18. Run via `npx` (no install) or install globally.\n\n**Claude Code:**\n```bash\nclaude mcp add dependency-fitness -- npx -y dependency-fitness-mcp\n```\n\n**Claude Desktop / Cursor / any MCP client** (`mcp.json` / `claude_desktop_config.json`):\n```jsonc\n{\n  \"mcpServers\": {\n    \"dependency-fitness\": { \"command\": \"npx\", \"args\": [\"-y\", \"dependency-fitness-mcp\"] }\n  }\n}\n```\n\nOptional env: `GITHUB_TOKEN` raises the GitHub rate limit (used only for the\narchived-repo cross-check); everything else needs no key.\n\n## Run locally / develop\n\n```bash\nnpm install\nnpm run build        # tsc -> dist/\nnpm test             # vitest (offline, deterministic synthesis tests)\nnpm run smoke        # live: hits the real registries, prints verdicts\nnpm run dev          # run the server from source over stdio\n```\n\n## How a verdict is built\n\n```\n        ┌─ npm registry ── per-version `deprecated` string, dist-tags, repo URL  (authoritative)\nquery ──┼─ deps.dev ────── isDeprecated / deprecatedReason / advisoryKeys        (corroborator)\n        ├─ OSV.dev ─────── advisories + MAL-* malicious markers + \"fixed in\"      (corroborator)\n        └─ GitHub ──────── archived flag + last-push recency                       (deceptive-deprecation check)\n                    │\n                    ▼\n   cross-validate deprecation ─→ infer + verify migration target ─→ confidence + warnings ─→ Verdict\n```\n\nnpm is the source of truth; the others corroborate. A corroborator being\nunreachable lowers `confidence` and adds a `warning` — it never fabricates a\nsignal.\n\n## Status\n\nv0.1 — thin, working, npm-only. This is a fast public validation of whether a\nnarrow \"agent-data endpoint via MCP directory\" can find its users organically.\nRoadmap and the explicit **kill criterion** live in\n[`KILL_CRITERION.md`](./KILL_CRITERION.md). Next layers (documented, not yet\nbuilt): PyPI, and de-facto-successor inference by mining what high-trust\npackages actually depend on now.\n\n## License\n\nMIT © Christo Wilken / 9592 Solutions UG. Built in public.\n",
+    "fetchedAt": "2026-08-12T00:00:49.396Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:33:31.767Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

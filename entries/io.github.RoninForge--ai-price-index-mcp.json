@@ -1,0 +1,59 @@
+{
+  "id": "io.github.RoninForge/ai-price-index-mcp",
+  "title": "AI Price Index",
+  "description": "Read-only, zero-key MCP server for point-in-time AI model API prices. Open data, CC BY 4.0.",
+  "summary": "Read-only, zero-key MCP server for point-in-time AI model API prices. Open data, CC BY 4.0.",
+  "offersHint": "Read-only, zero-key MCP server for point-in-time AI model API prices. Open data, CC BY 4.0. · Packages: npm:ai-price-index-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "ai-price-index-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "ai-price-index-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://roninforge.org/data/ai-price-index/",
+  "sourceUrl": "https://github.com/RoninForge/ai-price-index-mcp",
+  "repository": {
+    "url": "https://github.com/RoninForge/ai-price-index-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-24T12:22:16.380576Z",
+  "publishedAt": "2026-06-24T12:22:16.380576Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:35:37.148Z",
+    "sourceRepoAt": "2026-08-12T00:03:53.680Z",
+    "readmeAt": "2026-08-12T00:03:54.264Z",
+    "toolsAt": "2026-08-12T01:35:37.148Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/RoninForge/ai-price-index-mcp",
+    "checkedAt": "2026-08-12T00:03:53.680Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/RoninForge/ai-price-index-mcp/main/README.md",
+    "markdown": "# ai-price-index-mcp\n\nRoninForge ai-price-index-mcp is a read-only [Model Context Protocol](https://modelcontextprotocol.io)\nserver that answers what an AI model's API price was on a given date, with the first-party\nsource that proves it. It is MIT licensed, runs entirely on your machine, and requires no\nAPI keys.\n\nPart of [RoninForge.org](https://roninforge.org), an independent open-source workshop that\nkeeps dated, reproducible records of the AI developer tooling economy. It serves the open\n[AI Price Index](https://roninforge.org/data/ai-price-index/) dataset to any MCP client,\nincluding Claude Code and Cursor.\n\nMost pricing tools tell an agent what a model costs **today**. This one also answers what a model\ncost **on a given date**, and returns the first-party source URL plus the date that price was last\nvalidated, so the agent can cite the number. That point-in-time lookup is the differentiator.\n\n- **Zero keys, zero prompts, zero network at runtime.** The dated dataset is bundled inline inside the\n  `ai-price-index` dependency. The server reads it locally and adds nothing to your traffic.\n- **Read-only.** It only looks prices up. It cannot write, configure, or call out.\n- **Cite-ready.** Every result carries `source_url`, `last_validated`, `confidence`, and the CC BY 4.0\n  attribution string.\n\n## Install\n\nRequires Node.js 18 or newer. No build step, no API key.\n\n```bash\nnpx -y ai-price-index-mcp\n```\n\nThat command runs the stdio server; an MCP client launches it for you using the config below.\n\n## Client configuration\n\nDrop this into your MCP client config. The server speaks stdio.\n\nClaude Code (`~/.claude.json` or a project `.mcp.json`), and Cursor (`~/.cursor/mcp.json`), use the\nsame `mcpServers` shape:\n\n```json\n{\n  \"mcpServers\": {\n    \"ai-price-index\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ai-price-index-mcp\"]\n    }\n  }\n}\n```\n\nOr, with Claude Code's CLI:\n\n```bash\nclaude mcp add ai-price-index -- npx -y ai-price-index-mcp\n```\n\n## Tools\n\nAll tools return structured JSON as text content. Prices are `usd_per_mtok` (USD per million tokens).\nModel ids resolve through the dataset's aliases, so short ids work (e.g. `claude-opus-4-5` resolves to\n`claude-opus-4-5-20251101`).\n\n| Tool | Arguments | Returns |\n| --- | --- | --- |\n| `current_price` | `model`, `provider?` | Today's input/output price for a model, with its source. |\n| `price_on` | `model`, `date` (YYYY-MM-DD), `provider?` | The price **in effect on that date** (the point-in-time lookup). |\n| `compare` | `models[]`, `date?` | Side-by-side input/output prices for several models on one date. |\n| `cost_from_usage` | `model`, `tokens`, `date?`, `provider?` | USD value of a token rollup at a point in time, with cache multipliers. |\n| `list_models` | `provider?` | Known model ids (optionally one provider), each with its aliases. |\n\n`tokens` for `cost_from_usage` accepts `input`, `output`, `cache_read`, `cache_write_5m`,\n`cache_write_1h` (all optional, missing counts as 0). Cache read is 0.1x input, cache write is 1.25x\n(5 minute) or 2x (1 hour).\n\nPass `provider` (for example `openai`, `anthropic`, `google`) to disambiguate a bare id that exists\nunder more than one vendor.\n\n### Example result\n\n`price_on` with `{ \"model\": \"gpt-4\", \"date\": \"2024-01-01\" }`:\n\n```json\n{\n  \"query\": \"gpt-4\",\n  \"provider\": \"openai\",\n  \"model\": \"gpt-4\",\n  \"date\": \"2024-01-01\",\n  \"covered\": true,\n  \"input\": {\n    \"usd_per_mtok\": 30,\n    \"unit\": \"usd_per_mtok\",\n    \"effective_from\": \"2023-03-14\",\n    \"effective_to\": null,\n    \"last_validated\": \"2023-04-15\",\n    \"confidence\": \"archived\",\n    \"source_url\": \"https://web.archive.org/web/20230415223802/https://openai.com/pricing\"\n  },\n  \"output\": { \"usd_per_mtok\": 60, \"...\": \"...\" },\n  \"provenance\": {\n    \"dataset\": \"AI Price Index by RoninForge\",\n    \"data_version\": \"2026-06-17\",\n    \"license\": \"CC-BY-4.0\",\n    \"attribution\": \"AI Price Index by RoninForge (https://roninforge.org/data/ai-price-index/), CC BY 4.0\",\n    \"source\": \"https://roninforge.org/data/ai-price-index/\"\n  }\n}\n```\n\n## How it works\n\nThis server is a thin wrapper over the [`ai-price-index`](https://www.npmjs.com/package/ai-price-index)\nnpm library, which ships the dated dataset bundled inline. There is no pricing logic, no separate data\nlayer, and no network call here. The data version a result reports is the dataset release that the\ninstalled `ai-price-index` pins to. To move to newer prices, update that dependency.\n\n## Data license and attribution\n\nThe price data is from the AI Price Index and is licensed **CC BY 4.0**. When you publish anything\nderived from it, attribute it:\n\n> AI Price Index by RoninForge (https://roninforge.org/data/ai-price-index/), CC BY 4.0.\n\nThe code of this server is licensed MIT (see [LICENSE](LICENSE)). Data and tooling licenses are\ntracked upstream in the [ai-price-index](https://github.com/RoninForge/ai-price-index) repository.\n\n## Links\n\n- Data page: https://roninforge.org/data/ai-price-index/\n- Library: https://www.npmjs.com/package/ai-price-index\n- Dataset repo: https://github.com/RoninForge/ai-price-index\n- DOI: https://doi.org/10.5281/zenodo.20730241\n",
+    "fetchedAt": "2026-08-12T00:03:54.264Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:35:37.148Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

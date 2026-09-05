@@ -1,0 +1,59 @@
+{
+  "id": "io.github.sqlsure/sqlsure",
+  "title": "sqlsure",
+  "description": "Semantic SQL inspector: catches double-counting, wrong joins, PII exposure before execution.",
+  "summary": "Semantic SQL inspector: catches double-counting, wrong joins, PII exposure before execution.",
+  "offersHint": "Semantic SQL inspector: catches double-counting, wrong joins, PII exposure before execution. · Packages: pypi:sqlsure",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "sqlsure",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "sqlsure",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://sqlsure.ai",
+  "sourceUrl": "https://github.com/sqlsure/sqlsure",
+  "repository": {
+    "url": "https://github.com/sqlsure/sqlsure",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-03T15:44:28.885435Z",
+  "publishedAt": "2026-07-03T15:44:28.885435Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:45.445Z",
+    "sourceRepoAt": "2026-08-11T23:20:22.890Z",
+    "readmeAt": "2026-08-11T23:20:23.514Z",
+    "toolsAt": "2026-08-12T01:00:45.446Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sqlsure/sqlsure",
+    "checkedAt": "2026-08-11T23:20:22.890Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sqlsure/sqlsure/main/README.md",
+    "markdown": "# sqlsure\n\n[![CI](https://github.com/sqlsure/sqlsure/actions/workflows/ci.yml/badge.svg)](https://github.com/sqlsure/sqlsure/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/sqlsure)](https://pypi.org/project/sqlsure/)\n[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![Python](https://img.shields.io/pypi/pyversions/sqlsure)](https://pypi.org/project/sqlsure/)\n\n**AI writes your SQL. sqlsure makes sure it's right.**\n\nA query can be perfectly valid, run without error, and return a number\nthat's silently wrong — revenue double-counted by a join, an average\nsummed, a patient identifier exposed. Databases don't catch this.\nLinters don't catch this. LLMs reviewing their own SQL don't catch this.\n\nsqlsure does — deterministically, in 0.1 ms, before the query runs.\n\n> **Proof, not promises:** we ran sqlsure over the gold answers of the two\n> benchmarks every text-to-SQL model is graded on. **2,568 expert-written\n> queries, 45 flags, zero false alarms** — including a BIRD dev gold answer\n> that is [provably wrong by 8×](docs/reports/bird-audit.md) from the exact\n> bug class sqlsure targets, and a schema defect\n> [now filed upstream](https://github.com/bird-bench/mini_dev/issues/37).\n\n## How it works\n\nsqlsure judges SQL against facts your team already declared — dbt `unique`\ntests become grain, `relationships` tests become join cardinality, one-line\n`meta` tags mark what's safe to sum. No new language to learn, no model to\nmaintain by hand. Rules are dictionary lookups, not LLM calls: same input,\nsame verdict, every time, offline.\n\nEvery rejection carries a machine-actionable `fix`, so AI agents\nself-repair: **draft → check → fix → check → execute.** In our benchmark,\napplying the fix verbatim produced a passing query 10/10 times.\n\n## Quick start\n\n```bash\npip install sqlsure\n```\n\n```python\nfrom sqlsure import SemanticModel, check\nviolations = check(sql, model)   # [] means semantically safe\n```\n\nOr clone and run the 30-second demo:\n\n```bash\npython check.py                   # 5 wrong queries rejected, 1 approved — with fixes\npython -m sqlsure.scan path/to/dbt-repo --report report.md   # audit any dbt repo\n```\n\n## Three doors, one engine\n\n**1. CI gate** — blocks the merge when a PR double-counts:\n\n```bash\npython -m sqlsure.cli --model model.json query.sql   # exit 1 on violations\n```\n\n**2. MCP server** — your AI agent must pass inspection before executing:\n\n```bash\nclaude mcp add sqlsure -- python -m sqlsure.mcp_server --model /abs/path/model.json\n```\n\nSee [docs/MCP.md](docs/MCP.md) for tool reference and agent-loop patterns.\n\n**3. Library** — embed `check()` inside any text-to-SQL product or agent\nframework. A drop-in [SemanticGate](integrations/semantic_gate.py) wraps\nVanna/WrenAI-style generators; a\n[semantic eval metric](integrations/eval_metric.py) scores NL2SQL output\nwhere execution-accuracy is blind.\n\n**Also available as an [Agent Skill](skills/sql-semantic-check/SKILL.md)** —\na single SKILL.md your agent loads directly; no server process needed.\n\n## The rules (v0.1)\n\n| Rule | Severity | Catches |\n|---|---|---|\n| FANOUT | error | SUM/COUNT of additive measure after one-to-many join |\n| CHASM | error | two+ fan-out joins multiplying each other |\n| ADDITIVITY | error | SUM of a non-additive measure (rates, averages) |\n| SEMI_ADDITIVE | error | balances/censuses summed across their snapshot dimension |\n| JOIN_KEY | error | join on columns matching no declared relationship |\n| CROSS_JOIN | error | join with no predicate |\n| WEIGHTED_AVG | warning | AVG silently re-weighted by fan-out |\n| UNDECLARED_JOIN | warning | join with no declared relationship (unverifiable ≠ safe) |\n| SENSITIVE_COLUMN | policy | PHI/PII column exposed in query output |\n\nWhen sqlsure can't verify something, it says \"can't verify\" — never \"looks\nfine.\" Honest uncertainty is a feature.\n\n## Trust properties\n\n- **Deterministic** — same SQL + same rulebook = same verdict, always;\n  rules are dictionary lookups, auditable line by line\n- **Offline** — zero network calls; **your SQL never leaves your machine**\n- **No data access** — parses query *text*; never connects to a database\n- **No telemetry** — nothing collected, ever ([SECURITY.md](SECURITY.md))\n- **Supply chain** — releases ship exclusively via PyPI Trusted Publishing\n  (OIDC) from tagged commits with public CI runs; two runtime deps\n\n## Where the rulebook comes from\n\n- **dbt** (works today): `manifest.json` or `schema.yml` — the tests teams\n  already wrote become enforceable semantics, zero config\n- **Plain PK/FK declarations** (works today — powered the benchmark audits)\n- **The live database itself** (works today): no semantic layer at all?\n  `sqlsure.introspect` builds the rulebook from the catalog — SQLite\n  PRAGMAs or `information_schema` PK/FK (postgres/mysql). Introspecting\n  BIRD's own database files recovered 2 foreign keys missing from the\n  benchmark's published schema\n  ([bird-bench/mini_dev#37](https://github.com/bird-bench/mini_dev/issues/37))\n\n  ```python\n  from sqlsure.introspect import model_from_sqlite\n  model = model_from_sqlite(\"app.db\")   # PK -> grain, FK -> join edges\n  ```\n- **Hand-written JSON** — [model.example.json](model.example.json)\n- **OSI and WrenAI MDL** (working loaders in\n  [integrations/](integrations/)): [OSI](integrations/osi_loader.py)\n  demonstrated on the spec's published examples;\n  [WrenAI MDL](integrations/mdl_loader.py) demonstrated on WrenAI's own\n  shipped example manifest — `primaryKey` → grain, relationship\n  `joinType` + `condition` → join edges, cube measures → additivity\n- Cube, Snowflake Semantic Views — adapters on the roadmap; the\n  engine only ever sees one `SemanticModel`\n\n## Validated on\n\n- **16/16 rule tests, 100% recall / 0% false positives** on the paired\n  benchmark ([docs/METRICS.md](docs/METRICS.md))\n- **Real production repos** (Mattermost's warehouse, Fivetran packages,\n  dbt's jaffle shop) — [docs/TEST-REPORTS.md](docs/TEST-REPORTS.md)\n- **Spider + BIRD gold queries** — the zero-noise external audit above\n\n## Learn more\n\n- [docs/EVIDENCE.md](docs/EVIDENCE.md) — what it does for you, every\n  claim linked to a rerunnable measurement\n- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it physically works,\n  ELI5 → god level, with real intermediate outputs\n- [docs/FOR-DUMMIES.md](docs/FOR-DUMMIES.md) — every concept from zero\n- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) — GitHub Action, pre-commit,\n  MCP, Snowflake UDF / Cortex Agent tool, query-history audit\n- [docs/MCP.md](docs/MCP.md) — MCP server documentation\n- [CONTRIBUTING.md](CONTRIBUTING.md) — adding rules and loaders\n\nApache-2.0 · [sqlsure.ai](https://sqlsure.ai)\n\n<!-- mcp-name: io.github.sqlsure/sqlsure -->\nmcp-name: io.github.sqlsure/sqlsure\n",
+    "fetchedAt": "2026-08-11T23:20:23.514Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:45.446Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

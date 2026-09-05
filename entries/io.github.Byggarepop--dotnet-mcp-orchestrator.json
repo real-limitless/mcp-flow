@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Byggarepop/dotnet-mcp-orchestrator",
+  "title": "McpOrchestrator",
+  "description": "Route one agent through one MCP server to many, with progressive tool discovery to shrink context.",
+  "summary": "Route one agent through one MCP server to many, with progressive tool discovery to shrink context.",
+  "offersHint": "Route one agent through one MCP server to many, with progressive tool discovery to shrink context. · Packages: binary:McpOrchestrator",
+  "version": "0.5.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "McpOrchestrator",
+    "version": "0.5.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "McpOrchestrator",
+      "version": "0.5.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/Byggarepop/dotnet-mcp-orchestrator",
+  "sourceUrl": "https://github.com/Byggarepop/dotnet-mcp-orchestrator",
+  "repository": {
+    "url": "https://github.com/Byggarepop/dotnet-mcp-orchestrator",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T11:50:07.379926Z",
+  "publishedAt": "2026-08-08T11:50:07.379926Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:45:58.824Z",
+    "sourceRepoAt": "2026-08-12T00:15:50.243Z",
+    "readmeAt": "2026-08-12T00:15:50.961Z",
+    "toolsAt": "2026-08-12T01:45:58.824Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Byggarepop/dotnet-mcp-orchestrator",
+    "checkedAt": "2026-08-12T00:15:50.243Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Byggarepop/dotnet-mcp-orchestrator/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.Byggarepop/dotnet-mcp-orchestrator -->\n\n![McpOrchestrator — one relay between your agent and every MCP server](https://raw.githubusercontent.com/Byggarepop/dotnet-mcp-orchestrator/main/McpOrchestrator/img/social-preview.png)\n\n# McpOrchestrator — a .NET-native MCP orchestrator\n\n[![NuGet](https://img.shields.io/nuget/v/McpOrchestrator.svg)](https://www.nuget.org/packages/McpOrchestrator)\n[![Downloads](https://img.shields.io/nuget/dt/McpOrchestrator.svg)](https://www.nuget.org/packages/McpOrchestrator)\n[![License: MIT](https://img.shields.io/github/license/Byggarepop/dotnet-mcp-orchestrator.svg)](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/LICENSE)\n\n**Every MCP server you connect costs context before the agent does anything — its tool manifests sit in the prompt on every turn.** McpOrchestrator puts one server between your agent and all the others and loads downstream tool manifests **on demand**, so the agent's always-on context stays flat no matter how many servers you add. The agent sees three meta-tools — `list_capabilities` → `discover_tools` → `route` — and the orchestrator is a **pure relay**: it forwards exactly what the agent sends, never interpreting it. It can also serve **[Agent Skills](https://agentskills.io)** with the same on-demand discipline.\n\n## See it in 70 seconds\n\nhttps://github.com/user-attachments/assets/741c1afa-4bef-4870-9b84-e2c245b8117e\n\n## Measured impact\n\nAgainst a real workplace MCP setup, measured with the Copilot CLI's `/usage`:\n\n| | Tokens in context |\n| --- | --- |\n| MCP connected directly (manifests loaded upfront) | **17,900** |\n| Same MCP behind McpOrchestrator | **1,400** |\n| **Reduction** | **~13x** |\n\nThe savings scale with the number of servers. Measure your own setup first — one command, nothing installed, not a single file changed (needs the .NET SDK):\n\n```bash\ncd ~/my-project          # a folder with a .mcp.json / .vscode/mcp.json / Cursor config\ndotnet tool execute McpOrchestrator profile\n```\n\n## Quick start\n\nFrom an existing MCP setup, `cd` to the folder holding your host config (`.mcp.json`, `.vscode/mcp.json`, or a Cursor config) and run:\n\n```bash\ndotnet tool execute McpOrchestrator --yes init      # dnx McpOrchestrator --yes init  works too\n```\n\nIt lifts your stdio servers into a generated `orchestrator.config.json`, backs up the host config, and rewrites it to launch only the orchestrator. The generated catalog looks like this — one entry per downstream server:\n\n```jsonc\n{\n  \"capabilities\": [\n    {\n      \"name\": \"files\",\n      \"summary\": \"Read and search files under the project root.\", // auto-generated\n      \"transport\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"C:/projects\"]\n    }\n    // …one entry per server init found\n  ]\n}\n```\n\nThe `summary` line is what the agent routes on — refine any that read poorly. Restart your MCP host and you're done: the agent discovers everything on its own through `list_capabilities` → `discover_tools` → `route`, and every later edit to this file [hot-reloads](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#hot-reload) without a restart.\n\n## Add a skill\n\nA skill is a folder with a `SKILL.md` — instructions the agent discovers and follows by itself when a task matches. Create one:\n\n```\nmy-skills/\n└── release-notes/\n    └── SKILL.md\n```\n\n```markdown\n---\nname: release-notes\ndescription: Writes user-facing release notes from a git commit range. Use when asked for release notes or a changelog entry.\n---\n\n1. Collect the commits since the last release tag.\n2. Group by user impact; drop internal-only changes.\n3. One sentence per change, present tense.\n```\n\nPoint the orchestrator at the folder in `orchestrator.config.json`:\n\n```jsonc\n\"skills\": {\n  \"sources\": [{ \"id\": \"local\", \"type\": \"directory\", \"path\": \"C:/my-skills\" }]\n}\n```\n\nSave — it hot-reloads. The agent now sees the skill's name + one-line description via `list_skills` and loads the full instructions only when a task calls for it. Skills can also come from a shared git repo or an HTTP index, with allow/deny lists and integrity pinning — see [docs/skills.md](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/docs/skills.md).\n\n> Note: these skills are **for the agent only** — the model discovers and follows them through tools. They do not become host-native skills (no `/skills` listing or slash command in Claude Code, no IDE skill picker entry).\n\n## Documentation\n\nEverything else lives in **[McpOrchestrator/README.md](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md)** and **[docs/](https://github.com/Byggarepop/dotnet-mcp-orchestrator/tree/main/docs)**:\n\n- [How it works & the three tools](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#how-it-works) — architecture and token scaling\n- [Profiling token economics](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#profiling-token-economics-profile) — the `profile` command in depth, trace mode, CI gating\n- [CLI reference](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/docs/cli.md) — every command and flag: the server, `init`, and `profile`, plus all environment variables\n- [Manual setup](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/docs/manual-setup.md) — the two config files `init` generates, written by hand\n- [Configuration reference](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#configuration-reference) — every field, placeholders, [proactive capabilities](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#proactive-capabilities-promote), [hot reload](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#hot-reload), [central (team) configuration](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#central-configuration)\n- [Agent Skills](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/docs/skills.md) — sources (directory/git/HTTP), governance, delivery modes, how it works\n- [Packaging & Native AOT](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#packaging-install-as-a-net-tool) — install as a .NET tool or a self-contained binary from [Releases](https://github.com/Byggarepop/dotnet-mcp-orchestrator/releases)\n- [How it compares](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#how-it-compares) — vs. mcp-aggregator and gateways, and when *not* to use this\n- [Troubleshooting](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/McpOrchestrator/README.md#troubleshooting--pitfalls)\n\n## License\n\n[MIT](https://github.com/Byggarepop/dotnet-mcp-orchestrator/blob/main/LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:15:50.961Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:45:58.824Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

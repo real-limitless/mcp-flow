@@ -1,0 +1,56 @@
+{
+  "id": "io.github.encodi/lookup-holiday",
+  "title": "lookup-holiday",
+  "description": "Real public holiday lookup for 206 countries via a rule-based calendar engine. Paid via x402.",
+  "summary": "Real public holiday lookup for 206 countries via a rule-based calendar engine. Paid via x402.",
+  "offersHint": "Real public holiday lookup for 206 countries via a rule-based calendar engine. Paid via x402. · Remote MCP (streamable-http) at https://lookup-holiday.encodari.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://lookup-holiday.encodari.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://lookup-holiday.encodari.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/encodi/lookup-holiday",
+  "repository": {
+    "url": "https://github.com/encodi/lookup-holiday",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T18:38:56.123414Z",
+  "publishedAt": "2026-08-11T18:38:56.123414Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:07.864Z",
+    "sourceRepoAt": "2026-08-11T23:46:53.928Z",
+    "readmeAt": "2026-08-11T23:46:54.432Z",
+    "toolsAt": "2026-08-11T23:46:54.531Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/encodi/lookup-holiday",
+    "checkedAt": "2026-08-11T23:46:53.928Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/encodi/lookup-holiday/main/README.md",
+    "markdown": "# lookup-holiday\n\n[![lookup-holiday MCP server](https://glama.ai/mcp/servers/encodi/lookup-holiday/badges/score.svg)](https://glama.ai/mcp/servers/encodi/lookup-holiday)\n\nRemote MCP server (Cloudflare Workers) with one tool that looks up real public holidays:\n\n- **`lookup_holiday`** — real holidays for a country (and optionally a state/subdivision and region) and year, from a rule-based calendar engine covering 206 countries. Moveable holidays (Easter, lunar calendars, \"nth weekday of month\" rules, etc.) are computed with real date arithmetic, not guessed by the model.\n\nNo database, no persistent state: each call builds a fresh `McpServer` (see `createServer()` in `src/index.ts`). The calendar engine is [`date-holidays`](https://github.com/commenthol/date-holidays), bundled directly into the Worker.\n\n## Data attribution\n\nThe holiday **data** (which dates are holidays, their names) comes from the `date-holidays` project and is licensed **CC BY-SA 3.0**, since it's compiled from Wikipedia articles — see [`NOTICE`](./NOTICE) and [their LICENSE file](https://github.com/commenthol/date-holidays/blob/master/LICENSE) for the full per-country attribution list. Only the **code** in this repository is MIT; see [`LICENSE`](./LICENSE).\n\n## Billing (x402)\n\nCharges per call via [x402](https://x402.org) — real USDC payment on **Base mainnet**, against the Coinbase Developer Platform (CDP) facilitator. The payment travels inside the MCP JSON-RPC itself (`_meta`), not as an HTTP header; see `src/payments.ts`.\n\n| Tool | Price |\n|---|---|\n| `lookup_holiday` | $0.01 USDC |\n\nAn unpaid `tools/call` returns `isError: true` with the `accepts` (network, amount, `payTo`) the client needs to pay and retry — not an unexplained exception.\n\n## Structure\n\n```\nsrc/\n  index.ts          # registers the tool in the McpServer and exposes the MCP HTTP handler\n  payments.ts       # x402 billing on Base mainnet via the CDP facilitator\n  tools/\n    holiday.ts         # pure logic for lookup_holiday (testable without Workers)\n    holiday.test.ts\nscripts/\n  dev-node.ts       # dev server that runs the handler in plain Node, no wrangler\n```\n\n## Running it locally\n\n⚠️ **Note on `wrangler dev`**: the real Cloudflare Workers runtime (`workerd`) requires **macOS 13.5+**. If your Mac has an older version, `wrangler dev` (and `npm run dev`) will fail. This project includes a plain-Node shim that runs the exact same `fetch()` handler without needing `workerd`.\n\n### 1. Install dependencies\n\n```bash\nnpm install\n```\n\n### 2. Run the unit tests\n\n```bash\nnpm test\n```\n\n### 3a. If your wrangler dev works (macOS 13.5+, Linux, Windows)\n\n```bash\nnpm run dev\n```\n\n### 3b. If `wrangler dev` fails because of the macOS version\n\n```bash\nnpm run dev:node\n```\n\nStarts at `http://localhost:8787/mcp`, reading CDP credentials from `~/.mcp-tools-factory-credentials.env` (shared across all tools in this factory).\n\n### 4. Test with curl\n\n```bash\n# 1) initialize\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl-test\",\"version\":\"0.0.1\"}}}'\n\n# 2) tools/list\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}'\n\n# 3) tools/call — lookup_holiday\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"lookup_holiday\",\"arguments\":{\"country\":\"US\",\"state\":\"TX\",\"year\":2026}}}'\n```\n\nResponses come as Server-Sent Events (`event: message` + `data: {...}`); the `data:` line is the usual JSON-RPC response.\n\n## Deploy and listings\n\nDeployed at `https://lookup-holiday.encodari.workers.dev/mcp` (Cloudflare Workers). Published on the [official MCP registry](https://registry.modelcontextprotocol.io), [Smithery](https://smithery.ai), [mcp.so](https://mcp.so), [Glama](https://glama.ai), and with an open PR to [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers).\n\n## What it doesn't do (yet)\n\n- Charges on Base mainnet with real money. To switch back to testnet (Base Sepolia, `eip155:84532`) during development, change `NETWORK` in `src/payments.ts`.\n- No database or persistent state between calls (beyond the billing config, cached in memory per isolate — see `src/payments.ts`).\n- Doesn't model when a holiday was first introduced — a rule like \"3rd Monday in January\" is applied to any requested year even if the holiday didn't exist yet historically. Fine for scheduling near-term years; not a historical record.\n",
+    "fetchedAt": "2026-08-11T23:46:54.432Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "lookup_holiday",
+      "description": "Looks up real public/bank/school holidays for a country (and optionally a state/region) and year from a real rule-based calendar engine covering 206 countries — moveable holidays like Easter are computed astronomically, not guessed. Costs $0.01 USDC (Base) per call."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:54.531Z",
+  "toolsPreviewStatus": "ok"
+}

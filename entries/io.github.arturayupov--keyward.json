@@ -1,0 +1,45 @@
+{
+  "id": "io.github.arturayupov/keyward",
+  "title": "keyward",
+  "description": "Local encrypted secret broker for AI agents: request keys by name, approve each use over MCP.",
+  "summary": "Local encrypted secret broker for AI agents: request keys by name, approve each use over MCP.",
+  "offersHint": "Local encrypted secret broker for AI agents: request keys by name, approve each use over MCP.",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://github.com/arturayupov/keyward",
+  "sourceUrl": "https://github.com/arturayupov/keyward",
+  "repository": {
+    "url": "https://github.com/arturayupov/keyward",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-22T07:37:08.140645Z",
+  "publishedAt": "2026-06-22T07:37:08.140645Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:30:00.968Z",
+    "sourceRepoAt": "2026-08-11T23:56:14.611Z",
+    "readmeAt": "2026-08-11T23:56:15.242Z",
+    "toolsAt": "2026-08-12T01:30:00.968Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/arturayupov/keyward",
+    "checkedAt": "2026-08-11T23:56:14.611Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/arturayupov/keyward/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"docs/images/cover.png\" alt=\"keyward — a secret broker for AI agents\" width=\"100%\">\n</p>\n\n<h1 align=\"center\">keyward</h1>\n\n<p align=\"center\">\n  <strong>Store your API keys once. Let any AI tool request them with your approval — without ever seeing the value.</strong>\n</p>\n\n<p align=\"center\">\n  <a href=\"https://github.com/arturayupov/keyward/actions\"><img src=\"https://github.com/arturayupov/keyward/actions/workflows/ci.yml/badge.svg\" alt=\"CI\"></a>\n  <img src=\"https://img.shields.io/badge/license-MIT-blue\" alt=\"MIT\">\n  <img src=\"https://img.shields.io/badge/MCP-compatible-5E6AD2\" alt=\"MCP compatible\">\n  <img src=\"https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-informational\" alt=\"cross platform\">\n</p>\n\n---\n\nkeyward is an open-source, local, encrypted **secret broker for AI coding agents**. Instead of pasting API keys into chat (where they leak into context and transcripts) or re-entering the same key in every new session, project, and IDE, you keep your keys in one encrypted vault. When Claude Code, Cursor, Gemini CLI, or any [MCP](https://modelcontextprotocol.io)-capable tool needs a key, it **requests it by name**, you **approve that single request** in a native OS prompt, and keyward **injects only that key** into your project. The model never receives the value.\n\n## The problem\n\n1. **Leaking keys into AI chat** — paste a key into a prompt and it lands in context, transcripts, and logs.\n2. **Re-entry tax** — you type the same key again in every new session, project, IDE, and machine.\n3. **Scattered `.env` files** — no single source of truth; you forget which key lives where.\n4. **Zero control** — an agent can read or grab every secret at once instead of the one it needs.\n5. **Tool lock-in friction** — switch IDE or model and you redo all key setup.\n\n## How it works\n\n```\nAI tool ──request_key(\"STRIPE_KEY\", project)──▶ keyward ──native approval──▶ you\n                                                    │ approved\n        ◀── \"injected STRIPE_KEY → ./.env\" ─────────┘   (value never shown to the model)\n```\n\n- **Vault** — an [age](https://age-encryption.org)-encrypted file (`~/.keyward/vault.age`, `0600`). The master key lives in the **OS keystore** (macOS Keychain / Windows Credential Manager / Linux libsecret), never on disk in plaintext.\n- **Two faces** — an **MCP server** (`list_keys`, `request_key`) for AI tools, and a **`keyward` CLI** for everything else.\n- **Out-of-band approval** — the approval dialog is fired by keyward itself, not rendered in the agent's stream, so the agent **cannot** auto-approve. Choose *Approve once*, *Approve for session*, or *Deny*.\n- **Value-free by construction** — `list_keys` returns names only; `request_key` returns a confirmation; the audit log records the decision but never the value.\n\n## Install\n\n```bash\n# Homebrew (macOS / Linux)\nbrew install arturayupov/tap/keyward\n\n# Scoop (Windows)\nscoop bucket add arturayupov https://github.com/arturayupov/scoop-bucket\nscoop install keyward\n\n# Go\ngo install github.com/arturayupov/keyward/cmd/keyward@latest\n```\n\nPre-built binaries (macOS/Windows/Linux, amd64+arm64) are also attached to each [release](https://github.com/arturayupov/keyward/releases). See [INSTALL.md](INSTALL.md) for per-OS notes (incl. Linux libsecret) and [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if something doesn't work.\n\n## Quickstart\n\n```bash\n# 1. create the encrypted vault (master key goes into your OS keystore)\nkeyward init\n\n# 2. import keys you already have scattered in .env files\nkeyward import ~/projects\n\n# 3. point your AI tool at keyward's MCP server (see below), then just ask:\n#    \"use my STRIPE_KEY for this project\" → approve the prompt → done\n```\n\n### Use it as an MCP server\n\nkeyward is a standard **stdio MCP server**, registered the same way as the\nofficial MCP servers. Two steps:\n\n**1. Install the binary** (once) — `go install` above, or Homebrew/Scoop (soon),\nor a [release](https://github.com/arturayupov/keyward/releases) binary.\n\n**2. Register it with your AI tool:**\n\n```bash\n# Claude Code — one command:\nclaude mcp add keyward -- keyward serve-mcp\n```\n\nOr add it to the config by hand (`~/.claude.json`, or a project `.mcp.json`):\n\n```json\n{ \"mcpServers\": { \"keyward\": { \"command\": \"keyward\", \"args\": [\"serve-mcp\"] } } }\n```\n\nCursor, Windsurf, Cline, and other MCP clients use the same `command`/`args`\nshape in their MCP settings. Restart the tool and ask it to use a key by name.\n\n> **Why not \"paste a repo URL\"?** No MCP client auto-installs a server from a\n> GitHub link — by design, clients won't run arbitrary remote code. keyward is\n> also intentionally **local** (it needs your OS keystore and writes to your\n> local files), so it isn't a remote/hosted URL server. The two steps above are\n> the standard, secure install path. Full walkthrough in [USAGE.md](USAGE.md).\n\n## CLI reference\n\n| Command | Description |\n|---|---|\n| `keyward init` | Create the encrypted vault and master key |\n| `keyward import [root]` | Import secrets from `.env` files under `root`, grouped by project |\n| `keyward add NAME --ns NS` | Add/update one secret, value read from stdin (for non-`.env` creds) |\n| `keyward ls [--ns NS]` | List key names and namespaces (**never values**) |\n| `keyward inject NAME --ns NS --into PATH` | Inject one key into a target env file (prompts for approval) |\n| `keyward serve-mcp` | Run the MCP server over stdio |\n\n## Security model\n\n- The secret **value is never returned to the AI agent** — `request_key` injects it into a target file and returns only a confirmation.\n- The value is **never written to the audit log** (`~/.keyward/audit.jsonl` records tool, key, namespace, target, decision — no value) and **never printed** by `ls`/`inject`.\n- Approval is **out-of-band**: a native OS dialog the agent cannot click. All dialog backends **fail closed** — any error or cancellation is a **Deny**.\n- The vault is **encrypted at rest** with `age`; the master key lives in the OS keystore.\n\nThese invariants are enforced by automated tests. Details and threat model in [SECURITY.md](SECURITY.md).\n\n## How it compares\n\n| | keyward | envchain | pass / sops | 1Password CLI |\n|---|---|---|---|---|\n| Encrypted local store | ✅ | ✅ (Keychain) | ✅ | ✅ (cloud) |\n| **Agent requests a key by name** | ✅ | ❌ | ❌ | ❌ |\n| **Per-request human approval** | ✅ | ❌ | ❌ | ❌ |\n| **Value never reaches the model** | ✅ | n/a | n/a | n/a |\n| MCP server for AI tools | ✅ | ❌ | ❌ | ❌ |\n| Open source | ✅ (MIT) | ✅ | ✅ | ❌ |\n\nThe encrypted-storage problem is solved; keyward adds the missing **agent-facing, approval-gated broker** on top. See [docs/comparisons](docs/comparisons/) for honest long-form comparisons (including when each alternative is the better choice).\n\n## Roadmap\n\nFull detail in [ROADMAP.md](ROADMAP.md). Highlights:\n\n- **v0.2** — signed/notarized binaries (no keystore prompt), Homebrew/Scoop, biometric approval (Touch ID / Windows Hello), Windows ACL hardening.\n- **v1.0** — tray/menubar app, per-key policy & allowlists, rotation reminders, `target: \"env\"` injection.\n- **v2.0** — encrypted multi-device sync (user-owned backend), team mode.\n\n## Contributing\n\nContributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Found a security issue? See [SECURITY.md](SECURITY.md) for responsible disclosure.\n\n## License\n\n[MIT](LICENSE) © 2026 Artur Ayupov\n",
+    "fetchedAt": "2026-08-11T23:56:15.242Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:30:00.968Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

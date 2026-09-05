@@ -1,0 +1,94 @@
+{
+  "id": "io.github.ozers/hooksense",
+  "title": "hooksense",
+  "description": "Webhook & callback layer for AI agents: create a URL, wait_for_callback, and verify over MCP.",
+  "summary": "Webhook & callback layer for AI agents: create a URL, wait_for_callback, and verify over MCP.",
+  "offersHint": "Webhook & callback layer for AI agents: create a URL, wait_for_callback, and verify over MCP. · Packages: npm:@hooksense/mcp · Env vars: HOOKSENSE_API, HOOKSENSE_TOKEN",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@hooksense/mcp",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "HOOKSENSE_TOKEN",
+        "description": "API token from https://hooksense.com/account/tokens",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "HOOKSENSE_API",
+        "description": "Override the API base URL (self-hosted / staging). Defaults to https://hooksense.com"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@hooksense/mcp",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "HOOKSENSE_TOKEN",
+          "description": "API token from https://hooksense.com/account/tokens",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "HOOKSENSE_API",
+          "description": "Override the API base URL (self-hosted / staging). Defaults to https://hooksense.com"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "HOOKSENSE_API",
+      "description": "Override the API base URL (self-hosted / staging). Defaults to https://hooksense.com"
+    },
+    {
+      "name": "HOOKSENSE_TOKEN",
+      "description": "API token from https://hooksense.com/account/tokens",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ozers/hooksense-mcp",
+  "repository": {
+    "url": "https://github.com/ozers/hooksense-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T20:14:09.713786Z",
+  "publishedAt": "2026-07-06T20:14:09.713786Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:09:30.804Z",
+    "sourceRepoAt": "2026-08-11T23:30:35.437Z",
+    "readmeAt": "2026-08-11T23:30:35.872Z",
+    "toolsAt": "2026-08-12T01:09:30.804Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ozers/hooksense-mcp",
+    "checkedAt": "2026-08-11T23:30:35.437Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ozers/hooksense-mcp/main/README.md",
+    "markdown": "# @hooksense/mcp\n\nModel Context Protocol server for [HookSense](https://hooksense.com) — the webhook & callback layer for AI agents. Lets Claude Desktop, Cursor, Claude Code, Continue, and any MCP client create a callback URL, **wait for the result instead of polling**, and verify its signature — all from the agent session.\n\n## Why\n\nAgents that kick off async work — a deploy, a render, a human-in-the-loop approval, a long tool call, another agent — need the result back without burning context on polling loops. With this server the agent creates a callback endpoint, hands the URL to the job, then calls `wait_for_callback` and is woken the instant the webhook lands — signature-verified and decrypted. Stop polling for async results; await them.\n\n## Setup\n\n1. Get an API token at <https://hooksense.com/account/tokens>\n2. Configure your MCP client (examples below)\n\n### Claude Desktop / Claude Code\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"hooksense\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@hooksense/mcp\"],\n      \"env\": {\n        \"HOOKSENSE_TOKEN\": \"hsk_your_token_here\"\n      }\n    }\n  }\n}\n```\n\n### Cursor\n\nAdd to `~/.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"hooksense\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@hooksense/mcp\"],\n      \"env\": {\n        \"HOOKSENSE_TOKEN\": \"hsk_your_token_here\"\n      }\n    }\n  }\n}\n```\n\n## Hello callback (60 seconds)\n\nOnce configured, ask your agent:\n\n1. **Create** — \"Create a callback endpoint.\" → the agent calls `create_callback_endpoint` and gets back a `callbackUrl` like `https://hooksense.com/w/ab12cd`.\n2. **Fire** — point any job at that URL (or just `curl -X POST <callbackUrl> -d '{\"status\":\"done\"}'` from another terminal).\n3. **Await** — \"Wait for the callback.\" → the agent calls `wait_for_callback` and blocks until the webhook lands, then receives `{ status: \"received\", request: { body, headers, … } }`.\n4. **Verify** (optional) — set a webhook secret on the endpoint, then \"Verify the signature.\" → `verify_signature` confirms the payload is authentic before the agent acts on it.\n\nNo polling, no dashboards, no copy-paste.\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `create_callback_endpoint` | Create a callback endpoint; returns the `callbackUrl` |\n| `wait_for_callback` | Block until the next callback lands, then return it (`timeoutMs`, `after` cursor) |\n| `list_callbacks` | List callbacks received by an endpoint (summary view) |\n| `get_callback_payload` | Fetch one callback with full headers + decrypted body |\n| `verify_signature` | Timing-safe HMAC check against the endpoint's configured secret |\n| `replay_callback` | POST a received callback to any target URL |\n| `list_endpoints` | List your endpoints |\n| `get_endpoint` | Get one endpoint's full settings |\n\n## Environment\n\n| Variable | Default | Notes |\n|---|---|---|\n| `HOOKSENSE_TOKEN` | _(required)_ | API token from /account/tokens |\n| `HOOKSENSE_API` | `https://hooksense.com` | Override for self-hosted/staging |\n\n## Example agent prompts\n\n> \"Create a callback endpoint, use it as the webhook for my Replicate prediction, and wait for the result — then summarize the output.\"\n\n> \"Open a callback URL, give it to the approval step, and block until a human approves before continuing.\"\n\n> \"Wait for the next Stripe callback on `payments-prod`, verify its signature, and tell me the amount.\"\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:30:35.872Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:09:30.804Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

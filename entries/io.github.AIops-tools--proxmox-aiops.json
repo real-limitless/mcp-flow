@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/proxmox-aiops",
+  "title": "Proxmox AIops",
+  "description": "Governed Proxmox VE VM/container ops — 43 MCP tools with audit, budget, undo & risk-tier guards.",
+  "summary": "Governed Proxmox VE VM/container ops — 43 MCP tools with audit, budget, undo & risk-tier guards.",
+  "offersHint": "Governed Proxmox VE VM/container ops — 43 MCP tools with audit, budget, undo & risk-tier guards. · Packages: pypi:proxmox-aiops",
+  "version": "0.12.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "proxmox-aiops",
+    "version": "0.12.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "proxmox-aiops",
+      "version": "0.12.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Proxmox-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Proxmox-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:50:43.435694Z",
+  "publishedAt": "2026-08-10T06:50:43.435694Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:48.543Z",
+    "sourceRepoAt": "2026-08-12T00:18:08.080Z",
+    "readmeAt": "2026-08-12T00:18:08.598Z",
+    "toolsAt": "2026-08-12T01:47:48.543Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Proxmox-AIops",
+    "checkedAt": "2026-08-12T00:18:08.080Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Proxmox-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/proxmox-aiops -->\n\n# Proxmox AIops\n\n> **Disclaimer**: Community-maintained open-source project. **Not affiliated with, endorsed by, or sponsored by Proxmox Server Solutions GmbH.** \"Proxmox\" is a trademark of its owner. MIT licensed.\n\nAI-powered Proxmox VE VM and container lifecycle operations with a **built-in\ngovernance harness** — unified audit log, token/runaway budget\nguard, undo-token recording, and descriptive risk-tier labels. Self-contained:\nno external dependencies beyond `proxmoxer` and the MCP SDK. Coverage is not\nyet exhaustive across every Proxmox operation.\n\n> **Verification status**: the test suite is mock-based; this package has not\n> yet been validated end-to-end against a live Proxmox VE cluster. See\n> [docs/VERIFICATION.md](docs/VERIFICATION.md) for the live-verification checklist.\n\n## What works\n\n- **CLI** (`proxmox-aiops ...`): `vm list/get/config/start/stop/shutdown/reboot/reconfigure/clone/delete/migrate`, `vm resize-disk/move-disk/agent-ping`, `vm snapshot-create/snapshot-delete/snapshot-list/snapshot-rollback`, `backup create/list/restore`, `ct list/start/stop`, `cluster nodes/status/task-status/resources/node-status/task-log/next-vmid`, `ha status/resources`, `pool list/members`, `firewall vm-rules/cluster-status`, `storage list/content`, `diagnose node-pressure/guest-health`, `undo list/apply`, `init`, `secret set/list/rm/migrate/rotate-password`, `doctor`, `mcp`.\n- **MCP server** (`proxmox-aiops mcp` or `proxmox-aiops-mcp`): **43 tools**, every one wrapped with the bundled `@governed_tool` harness.\n- **Diagnostics / RCA** (read-only): `diagnose node-pressure` ranks cluster nodes by CPU/memory/root-fs pressure; `diagnose guest-health` scans VMs/containers for stopped guests, memory saturation, and disks near full. Every finding cites the measured number that tripped it and a concrete action — transparent heuristics, not a black-box verdict.\n- **Credentials**: `proxmox-aiops init` (onboarding wizard) and `proxmox-aiops secret ...` manage an encrypted secret store — no plaintext passwords in `config.yaml`.\n- **Reversibility**: write ops with a clean inverse (start/stop/shutdown/reconfigure/clone/migrate/snapshot-create/move-disk, container start/stop, and restore-into-a-free-vmid) record an inverse undo descriptor; irreversible ops (delete, snapshot-rollback, forced restore) declare none and are tagged `high` risk. Disk resize is grow-only (shrink refused).\n- **Async tasks**: Proxmox writes return a task UPID — poll completion with `cluster task-status` / read lines with `cluster task-log` (the runaway budget guard prevents poll loops from running away).\n\n## What this tool does, and does not, decide\n\nIt delivers Proxmox VE operations — reads and writes — accurately and\nefficiently, and records every one of them. It does **not** decide whether a write is allowed to\nhappen. That is the agent's judgement, or the permission of the account you connect it with:\nuse a Proxmox VE user or API token granted only read privileges (no VM.*/Datastore.* write roles),\nand the writes fail at the server — the place that actually owns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure. The one thing the\ntool guarantees is that nothing is silent: **every call, over MCP and over the CLI alike, lands an\naudit row** in `~/.proxmox-aiops/audit.db`, and destructive writes still capture their before-state\nand record an inverse where one exists.\n\n> Each tool declares a `risk_level`, carried into the audit row as a descriptive tier\n> (none/confirm/review) — so a reviewer can see at a glance that a row was a high-risk delete. It\n> is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/proxmox-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool now enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Quick start\n\n```bash\nuv tool install proxmox-aiops\nmkdir -p ~/.proxmox-aiops\n# create ~/.proxmox-aiops/config.yaml with a targets: list\n# put secrets in ~/.proxmox-aiops/.env  (chmod 600)\nproxmox-aiops doctor\n```\n\nExample `~/.proxmox-aiops/config.yaml`:\n\n```yaml\ntargets:\n  - name: pve-lab\n    host: 10.0.0.10\n    user: \"root@pam!claude\"   # API token: user@realm!tokenid\n    node: pve1\n    auth_kind: token\n    verify_ssl: false          # self-signed lab certs only\n```\n\n`~/.proxmox-aiops/.env` (chmod 600): `PROXMOX_PVE_LAB_SECRET=<token-uuid>`\n\n## Audit & safety\n\nAll operations are logged to a local SQLite audit DB under `~/.proxmox-aiops/`\n(relocatable via `PROXMOX_AIOPS_HOME`). Every write tool passes through the\ngovernance harness: token/runaway budget guard, risk-tier tagging, and audit\nlogging. Destructive CLI commands (`vm stop`,\n`vm delete`, `vm snapshot-delete`, `vm snapshot-rollback`, `ct stop`) require\ndouble confirmation and support `--dry-run` (notably `backup restore`, which is\n`high` risk). API-returned text is run through a prompt-injection sanitizer.\n\n## Contributing & feature requests\n\nCoverage is intentionally focused. **Missing a device, action, or feature you need?** Open an issue or pull request at [github.com/AIops-tools/Proxmox-AIops](https://github.com/AIops-tools/Proxmox-AIops/issues) — feature requests, contributions, and comments are all welcome.\n\nLicense: MIT.\n",
+    "fetchedAt": "2026-08-12T00:18:08.598Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:48.543Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

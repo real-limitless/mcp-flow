@@ -1,0 +1,59 @@
+{
+  "id": "io.github.John0King/adomcp",
+  "title": "AdoMcp",
+  "description": "Database MCP server for schema discovery, comments, and SQL queries.",
+  "summary": "Database MCP server for schema discovery, comments, and SQL queries.",
+  "offersHint": "Database MCP server for schema discovery, comments, and SQL queries. · Packages: binary:adomcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "adomcp",
+    "version": "1.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "adomcp",
+      "version": "1.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/John0King/AdoMCP",
+  "sourceUrl": "https://github.com/John0King/AdoMCP",
+  "repository": {
+    "url": "https://github.com/John0King/AdoMCP",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T06:07:29.736146Z",
+  "publishedAt": "2026-08-07T06:07:29.736146Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:16.471Z",
+    "sourceRepoAt": "2026-08-12T00:09:21.740Z",
+    "readmeAt": "2026-08-12T00:09:22.366Z",
+    "toolsAt": "2026-08-12T01:40:16.471Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/John0King/AdoMCP",
+    "checkedAt": "2026-08-12T00:09:21.740Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/John0King/AdoMCP/main/README.md",
+    "markdown": "# AdoMcp\n\n[![NuGet](https://img.shields.io/nuget/v/AdoMcp.svg)](https://www.nuget.org/packages/AdoMcp)\n\n**AdoMcp** is a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that helps large language models (LLMs) understand database structure, read table comments, and execute SQL queries.\n\nAdoMcp 是一个基于 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 的数据库工具服务，帮助大型语言模型（LLM）理解数据库结构、读取表注释、执行 SQL 查询。\n\n<!-- mcp-name: io.github.John0King/adomcp -->\n\n## MCP Tools\n\n| Tool | Description |\n|---|---|\n| `list_connections` | List configured database connections |\n| `add_connection` | Add (or replace) a database connection at runtime |\n| `remove_connection` | Remove a dynamically-added connection |\n| `list_objects` | List database objects (table/view/procedure/function/trigger/sequence/synonym, etc.) |\n| `get_table_schema` | Get table schema details (columns/types/nullability/PK/default/comments) |\n| `get_table_indexes` | Get table indexes |\n| `query_sql` | Execute read-only SQL and return CSV |\n| `execute_sql` | Execute write SQL (requires `--allow-any-sql`) |\n\n## Recommended Tool Workflow (for LLM agents)\n\nTo reduce mistakes (wrong database/schema/object), use tools in this order:\n\n1. `list_connections` to discover available connections.\n2. If none are available, call `add_connection`.\n3. Before inspecting a table/view, call `list_objects` to locate `schema + objectType + objectName`.\n4. Use `get_table_schema` for column details (type, nullability, PK, default, comments).\n5. Use `get_table_indexes` when index/key design matters.\n6. Use `query_sql` only for read-only verification.\n7. Use `execute_sql` only when explicitly authorized and server is started with `--allow-any-sql`.\n\nOracle note: objects without owner prefix may be synonyms. Always confirm the real schema via `list_objects` first.\n\n## Supported Databases\n\n| Database | Driver | Comment support |\n|---|---|---|\n| **SQL Server** | `Microsoft.Data.SqlClient` | `MS_Description` extended properties |\n| **MySQL / MariaDB** | `MySqlConnector` | `TABLE_COMMENT` / `COLUMN_COMMENT` |\n| **PostgreSQL** | `Npgsql` | `obj_description` / `col_description` |\n| **SQLite** | `Microsoft.Data.Sqlite` | — (SQLite has no native comments) |\n| **Oracle** | `Oracle.ManagedDataAccess.Core` | `ALL_TAB_COMMENTS` / `ALL_COL_COMMENTS` (includes PUBLIC synonyms) |\n\nORM support: [Dapper](https://github.com/DapperLib/Dapper)\n\n## Requirements\n\n- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)\n\n---\n\n## Quick Start\n\n### 1. Configure database connections (optional)\n\nAdoMcp loads configuration from multiple sources (later sources override earlier ones):\n\n1. `appsettings.json` (in the app directory)\n2. `appsettings.{Environment}.json`\n3. **`~/.adomcp.json`** — user-level config (`%USERPROFILE%\\.adomcp.json` on Windows), persists connections and `AllowAnySql` without touching the app directory\n4. Environment variables prefixed `ADOMCP_`\n5. [.NET User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets)\n\nYou can pre-configure connections in any of these. You can also skip this step entirely and let the LLM add connections dynamically via the `add_connection` tool.\n\n```json\n{\n  \"AllowAnySql\": false,\n  \"Databases\": [\n    {\n      \"Name\": \"mydb\",\n      \"DbType\": \"SqlServer\",\n      \"ConnectionString\": \"Server=localhost;Database=MyDb;User Id=sa;Password=***;TrustServerCertificate=true;\",\n      \"Description\": \"Main business database\"\n    }\n  ]\n}\n```\n\nSupported `DbType` values: `SqlServer` | `MySql` | `PostgreSql` | `Sqlite` | `Oracle`\n\n> **Security tip**: Use [.NET User Secrets](https://learn.microsoft.com/aspnet/core/security/app-secrets) or environment variables to manage connection strings in production.\n\n#### User-level config example (`~/.adomcp.json`)\n\nCreate `~/.adomcp.json` in your home directory to persist personal connections and settings across projects:\n\n```json\n{\n  \"AllowAnySql\": true,\n  \"Databases\": [\n    {\n      \"Name\": \"local-pg\",\n      \"DbType\": \"PostgreSql\",\n      \"ConnectionString\": \"Host=localhost;Database=dev;Username=postgres;Password=***;\",\n      \"Description\": \"Local PostgreSQL dev DB\"\n    }\n  ]\n}\n```\n\n### 2. Run the server\n\n#### Default mode\n\nBy default the server runs in **stdio** mode (the standard MCP transport for local clients).\nUse `--http` (or `ADOMCP_MODE=http`) to switch to **HTTP/SSE** mode.\n\n```bash\n# stdio mode (default) - all logs go to stderr; stdout carries only MCP JSON-RPC\ndnx -y AdoMcp\n```\n\n#### Specify mode manually\n\n```bash\n# stdio mode (all logs go to stderr; stdout carries only MCP JSON-RPC)\ndnx -y AdoMcp -- --stdio\n\n# HTTP/SSE mode (default: http://localhost:5100, MCP endpoint /mcp)\ndnx -y AdoMcp -- --http\n\n# Via environment variable\nADOMCP_MODE=http \ndnx -y AdoMcp\n```\n\n#### Enable execute_sql (write operations)\n\nBy default the `execute_sql` tool is **disabled** to prevent unauthorised writes.  \nEnable it via CLI flag, config file, or environment variable (CLI flag wins when explicitly set):\n\n```bash\n# CLI flag\n# Combine with transport mode\ndnx -y AdoMcp -- --http --allow-any-sql\n```\n\n```jsonc\n// ~/.adomcp.json or appsettings.json\n{\n  \"AllowAnySql\": true\n}\n```\n\n```bash\n# Environment variable\n# ADOMCP_ALLOWANYSQL=true dnx -y AdoMcp\n```\n\nPriority: `--allow-any-sql` CLI > `ADOMCP_ALLOWANYSQL` env > `~/.adomcp.json` `AllowAnySql` > `appsettings.json` `AllowAnySql` > `false` (default).\n\n### 3. Alternative: Install as a global .NET tool\n\nAfter the package is published to NuGet.org, you can also install it as a global tool:\n\n```bash\ndotnet tool install -g AdoMcp\nadomcp\n```\n\nYou can also run dnx directly (installs and runs on demand, .NET 10+):\n\n```bash\ndnx -y AdoMcp -- --allow-any-sql\n```\n\n---\n\n## Dynamic connections at runtime (no config file needed)\n\nLLMs can add new database connections during a session using `add_connection`:\n\n```\nUser: Connect me to Oracle database oradb01\nLLM → calls add_connection(\n    connectionString = \"Data Source=oradb01:1521/PROD;User Id=appuser;Password=***;\",\n    dbType = \"Oracle\",\n    name = \"prod-oracle\",\n    description = \"Production Oracle DB\"\n)\n→ returns: Connection 'prod-oracle' (Oracle) added successfully.\nLLM → calls list_objects(connectionName = \"prod-oracle\")\n```\n\nDynamically-added connections exist only for the lifetime of the process; restart the server or add the connection to `appsettings.json` for persistence.\n\n---\n\n## Client configuration\n\n### Via dnx (stdio)\n\n```json\n{\n  \"mcpServers\": {\n    \"adomcp\": {\n      \"command\": \"dnx\",\n      \"args\": [\"-y\", \"AdoMcp\"]\n    }\n  }\n}\n```\n\n### Via HTTP/SSE\n\nStart the server first:\n```bash\ndnx -y AdoMcp -- --http\n```\n\nThen configure the client:\n```json\n{\n  \"mcpServers\": {\n    \"adomcp\": {\n      \"url\": \"http://localhost:5100/mcp\"\n    }\n  }\n}\n```\n\n---\n\n## Environment variables\n\nAll environment variables are prefixed with `ADOMCP_` (override `appsettings.json`):\n\n| Variable | Description |\n|---|---|\n| `ADOMCP_MODE` | Transport mode: `stdio` or `http` (auto-detected when not set) |\n| `ADOMCP_URLS` | HTTP listen address, e.g. `http://0.0.0.0:5100` |\n| `ADOMCP_ALLOWANYSQL` | Enable the `execute_sql` tool: `true` or `false` (default `false`) |\n| `ADOMCP_DATABASES` | JSON-encoded `Databases` array (overrides config-file connections) |\n\n---\n\n## MCP Registries\n\nAdoMcp is registered in the official [MCP Registry](https://registry.modelcontextprotocol.io/) under the server name `io.github.John0King/adomcp`.\n",
+    "fetchedAt": "2026-08-12T00:09:22.366Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:16.471Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

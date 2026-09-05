@@ -1,0 +1,59 @@
+{
+  "id": "io.github.spyyps/menus-recommender",
+  "title": "Menus Recommender",
+  "description": "全球美食加权随机推荐：基于 396 道菜的知识库，给出多样化的就餐推荐。",
+  "summary": "全球美食加权随机推荐：基于 396 道菜的知识库，给出多样化的就餐推荐。",
+  "offersHint": "全球美食加权随机推荐：基于 396 道菜的知识库，给出多样化的就餐推荐。 · Packages: pypi:menus-mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "menus-mcp",
+    "version": "1.0.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "menus-mcp",
+      "version": "1.0.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/spyyps/recommend-dish",
+  "repository": {
+    "url": "https://github.com/spyyps/recommend-dish",
+    "source": "github",
+    "subfolder": "mcp-server"
+  },
+  "updatedAt": "2026-06-09T10:26:32.706593Z",
+  "publishedAt": "2026-06-09T10:26:32.706593Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:50.664Z",
+    "sourceRepoAt": "2026-08-11T23:20:16.433Z",
+    "readmeAt": "2026-08-11T23:20:16.923Z",
+    "toolsAt": "2026-08-12T01:00:50.664Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/spyyps/recommend-dish",
+    "checkedAt": "2026-08-11T23:20:16.433Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/spyyps/recommend-dish/main/README.md",
+    "markdown": "# 环球美食推荐 Plugin\n\n一个 AI agent 插件：当用户表达就餐意向（「推荐晚餐」「不知道吃什么」「想吃点辣的」），基于 462 道菜的全球美食知识库做加权随机推荐。\n\n- **零依赖**：纯 Python 3 标准库\n- **跨 agent**：Claude Code（plugin）+ Gemini CLI（GEMINI.md）+ 任何 MCP 兼容 agent（规划中）\n- **智能兜底**：本地知识库 → 自动放宽 → 网络搜索 → LLM 常识，4 层兜底\n- **去偏置 + 多样性**：避免大菜系（如中餐）压制小菜系；避免推荐 3 道全是同一菜系\n\n## 快速测试\n\n```bash\npython3 scripts/recommender.py --count 3 --keywords \"辣,牛肉\"\n```\n\n返回 JSON：\n\n```json\n{\"dishes\": [{\"id\": \"...\", \"name\": \"麻婆豆腐\", \"price\": 38, \"cuisine\": \"川菜\", ...}, ...], \"exhausted\": false, ...}\n```\n\n完整参数：\n\n```bash\npython3 scripts/recommender.py --help\n```\n\n## 安装到不同 AI Agent\n\n### Claude Code\n\n**方式 A：自建 marketplace（推荐）**\n\n```\n/plugin marketplace add spyyps/recommend-dish\n/plugin install menus-recommender@spyyps-recommend-dish\n```\n\n安装后在任意目录的 Claude Code 会话里说「推荐晚餐」「想吃点辣的」即可触发。\n后续更新插件：`/plugin update menus-recommender`。\n\n**方式 B：本地 git clone**\n\n```bash\ngit clone https://github.com/spyyps/recommend-dish ~/.claude/plugins/menus-recommender\n```\n\n### Gemini CLI\n\n```bash\ngit clone https://github.com/spyyps/recommend-dish\ncd recommend-dish\ngemini   # 在本目录运行 Gemini CLI，会自动加载 GEMINI.md\n```\n\n### Cursor / Codex\n\n待添加（参考 `.cursor-plugin/` 与 `.codex-plugin/` 的多 manifest 适配，第二阶段交付）。\n\n### MCP 兼容的任意 Agent\n\n适用于 Claude Desktop / Cline / Cursor / Continue 等任何 MCP 客户端。\n\n**uvx 方式（推荐，无需 pip install）：**\n\n```json\n{\n  \"mcpServers\": {\n    \"menus\": {\n      \"command\": \"uvx\",\n      \"args\": [\"menus-mcp\"]\n    }\n  }\n}\n```\n\n**或者 pip install：**\n\n```bash\npip install menus-mcp\n```\n\n```json\n{\n  \"mcpServers\": {\n    \"menus\": { \"command\": \"menus-mcp\" }\n  }\n}\n```\n\n详见 [`mcp-server/README.md`](mcp-server/README.md)。\n\n## 触发示例\n\n| 用户说 | 触发 | 解析为 |\n|--------|------|--------|\n| 「推荐晚餐」 | ✓ | 默认 3 道，无筛选 |\n| 「想吃点辣的」 | ✓ | `--keywords \"辣\"` |\n| 「来 5 道便宜的海鲜」 | ✓ | `--count 5 --keywords \"海鲜\" --price-tier \"实惠\"` |\n| 「推荐两道川菜」 | ✓ | `--count 2 --cuisine \"川菜\"` |\n| 「换一批」（紧接上一次推荐） | ✓ | `--exclude-ids \"<上轮所有 id>\"` |\n| 「100 块以内的欧洲菜」 | ✓ | `--max-price 100 --geo \"欧洲\"` |\n\n## 算法核心\n\n1. **关键词硬过滤**：用户传了关键词时，菜品必须至少命中一个（OR 语义）\n2. **多重命中加权**：命中 N 个关键词的菜，权重 ×2^(N-1)\n3. **菜系反偏置**：权重 ×1/√(该菜系总菜数)，平衡中餐占 35% 的天然偏差\n4. **多样性贪心**：同一菜系上限 ≤ ceil(count/3)\n5. **价格档松弛**：候选不足自动去掉价格档重试一次\n\n## 关键词白名单\n\n只接受以下关键词，超出范围的（如「不辣」「清淡」）由 LLM 在调用前消化掉：\n\n- **口味**：麻辣 / 辣 / 甜 / 酸 / 咸 / 鲜\n- **食材**：海鲜 / 牛肉 / 羊肉 / 猪肉 / 鸡肉 / 素食\n- **类型**：面食 / 米饭类 / 汤 / 甜品 / 烧烤 / 火锅 / 咖喱 / 汉堡披萨 / 饮品\n\n## 数据来源\n\n- 全球菜系 462 道菜（10 个地区、41 个菜系、69 个子风味）\n- 价格范围 ¥6 ~ ¥388（CNY）\n- 完整数据见 `menu.json` 与 `knowledge_base/` 各索引文件\n\n## 发布到他人（仓库 owner 视角）\n\n### 作为 Plugin 分享\n\n1. `git push` 到 GitHub（本仓库已就绪：`spyyps/recommend-dish`）\n2. 仓库内 `.claude-plugin/marketplace.json` 已配置好，列出所有可装插件\n3. 在 README 贴出一行安装命令，分享仓库链接即可\n\n### 作为 MCP 分享\n\n仓库内 `mcp-server/` 目录已实现 MCP server（Python，复用同一 `recommender.py`），暴露 `recommend_dishes` 与 `list_keywords` 两个工具。发布方式：\n\n- **PyPI**（推荐）：\n  ```bash\n  cd mcp-server\n  pip install build twine\n  python3 -m build\n  twine upload dist/*\n  ```\n  用户 `uvx menus-mcp` 或 `pip install menus-mcp` 即可。\n- **社区目录**：发布完成后，提 PR 到 [`github.com/modelcontextprotocol/servers`](https://github.com/modelcontextprotocol/servers) 把 menus-mcp 加进列表。\n- **MCPB 单文件（Claude Desktop 专用）**：`npx @anthropic-ai/mcpb pack` → GitHub Release → 用户拖入 Claude Desktop 即装。\n\n详见 [`mcp-server/README.md`](mcp-server/README.md)。\n\n## 许可\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:20:16.923Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:50.664Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

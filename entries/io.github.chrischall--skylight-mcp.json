@@ -1,0 +1,115 @@
+{
+  "id": "io.github.chrischall/skylight-mcp",
+  "title": "skylight-mcp",
+  "description": "Skylight Calendar for Claude — family events, chores, and rewards.",
+  "summary": "Skylight Calendar for Claude — family events, chores, and rewards.",
+  "offersHint": "Skylight Calendar for Claude — family events, chores, and rewards. · Packages: npm:skylight-mcp · Env vars: SKYLIGHT_EMAIL, SKYLIGHT_FRAME_ID, SKYLIGHT_NAME, SKYLIGHT_PASSWORD",
+  "version": "0.6.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "skylight-mcp",
+    "version": "0.6.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SKYLIGHT_EMAIL",
+        "description": "Skylight account email. Pair with SKYLIGHT_PASSWORD for direct login."
+      },
+      {
+        "name": "SKYLIGHT_PASSWORD",
+        "description": "Skylight account password — required iff SKYLIGHT_EMAIL is set.",
+        "secret": true
+      },
+      {
+        "name": "SKYLIGHT_FRAME_ID",
+        "description": "Optional: pick a specific Skylight frame when the account has more than one."
+      },
+      {
+        "name": "SKYLIGHT_NAME",
+        "description": "Friendly account name used in startup logs."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "skylight-mcp",
+      "version": "0.6.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SKYLIGHT_EMAIL",
+          "description": "Skylight account email. Pair with SKYLIGHT_PASSWORD for direct login."
+        },
+        {
+          "name": "SKYLIGHT_PASSWORD",
+          "description": "Skylight account password — required iff SKYLIGHT_EMAIL is set.",
+          "secret": true
+        },
+        {
+          "name": "SKYLIGHT_FRAME_ID",
+          "description": "Optional: pick a specific Skylight frame when the account has more than one."
+        },
+        {
+          "name": "SKYLIGHT_NAME",
+          "description": "Friendly account name used in startup logs."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SKYLIGHT_EMAIL",
+      "description": "Skylight account email. Pair with SKYLIGHT_PASSWORD for direct login."
+    },
+    {
+      "name": "SKYLIGHT_FRAME_ID",
+      "description": "Optional: pick a specific Skylight frame when the account has more than one."
+    },
+    {
+      "name": "SKYLIGHT_NAME",
+      "description": "Friendly account name used in startup logs."
+    },
+    {
+      "name": "SKYLIGHT_PASSWORD",
+      "description": "Skylight account password — required iff SKYLIGHT_EMAIL is set.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chrischall/skylight-mcp",
+  "repository": {
+    "url": "https://github.com/chrischall/skylight-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T17:12:52.119556Z",
+  "publishedAt": "2026-08-10T17:12:52.119556Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:09.042Z",
+    "sourceRepoAt": "2026-08-11T23:52:44.808Z",
+    "readmeAt": "2026-08-11T23:52:45.296Z",
+    "toolsAt": "2026-08-12T01:27:09.042Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chrischall/skylight-mcp",
+    "checkedAt": "2026-08-11T23:52:44.808Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chrischall/skylight-mcp/main/README.md",
+    "markdown": "# skylight-mcp\n\n[![CI](https://github.com/chrischall/skylight-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/chrischall/skylight-mcp/actions/workflows/ci.yml)\n[![npm](https://img.shields.io/npm/v/skylight-mcp)](https://www.npmjs.com/package/skylight-mcp)\n[![license](https://img.shields.io/npm/l/skylight-mcp)](LICENSE)\n\nMCP server for [Skylight Calendar](https://www.ourskylight.com) — 111 tools across calendar events (read+write), shared lists (read+write), chores and rewards (read+write), task-box items (read+write), meals (read+write), AI auto-creation (meal-plan + activity-idea generators with draft review/approve), messages and albums (read+write), photo/video upload, and frame/device/account settings + calendar + member management (read+write, incl. preset and custom-photo avatars).\n\nEvery API request carries the `skylight-api-version: 2026-05-01` header (matching the official mobile app); without it some features 422 with \"API version does not support …\".\n\n## Auth\n\nThe server uses a headless email+password OAuth2 authorization-code flow — no SSO, no 2FA, no browser extension required. Credentials are always `SKYLIGHT_EMAIL` + `SKYLIGHT_PASSWORD`.\n\nOn first tool call, the server performs four steps against `https://app.ourskylight.com`:\n1. `GET /auth/session/new` — fetch the Rails CSRF token and session cookie.\n2. `POST /auth/session` — log in with email + password (must happen before OAuth authorize).\n3. `GET /oauth/authorize` — receive the one-time authorization code via redirect.\n4. `POST /oauth/token` — exchange the code for a bearer `access_token` + `refresh_token` (7-day expiry).\n\nThe client then refreshes the token proactively (~60 s before expiry) and reactively on any 401. No bot wall has been observed — the headless flow works directly from Node.\n\n**No env vars → clean start:** if credentials are not set, the server still starts without error. Auth is deferred to the first tool call, so MCP hosts can complete install-time tool listing before credentials are configured.\n\n## Frame model\n\nAll data in Skylight is scoped to a *frame* (the family hub device). On first use the client auto-discovers the single frame on the account. If the account has more than one frame, set `SKYLIGHT_FRAME_ID` to the frame ID you want. Every tool that reads frame-scoped data accepts an optional `frameId` arg to override the default.\n\n## Tools\n\n| Module | Tool | R/W | Description |\n|---|---|---|---|\n| frames | `skylight_list_frames` | R | List all frames on the account |\n| frames | `skylight_get_frame` | R | Get details for a specific frame |\n| frames | `skylight_list_frame_members` | R | List members associated with a frame |\n| frames | `skylight_list_devices` | R | List physical devices linked to a frame |\n| frames | `skylight_get_plus_access` | R | Get Skylight Plus subscription / entitlement status |\n| frames | `skylight_get_reward_points` | R | Get reward-point balances per family member |\n| frames | `skylight_get_household_config` | R | Get household configuration for the frame |\n| frames | `skylight_list_calendars` | R | List the frame's calendar accounts and active calendars |\n| frames | `skylight_get_event_notification_settings` | R | Get the frame's calendar-event notification settings |\n| frames | `skylight_resolve_member` | R | Resolve a family-member name to its category id |\n| frames | `skylight_get_calendar` | R | Get one calendar account |\n| frames | `skylight_list_nudges` | R | List nudges (reminders) in a date range |\n| frames | `skylight_update_frame` | W | Update frame display/sleep settings |\n| frames | `skylight_rename_frame` | W | Rename a frame |\n| frames | `skylight_update_profile` | W | Update the frame profile (name, birthday) |\n| frames | `skylight_update_household_config` | W | Update household configuration |\n| frames | `skylight_set_reminder_profile` | W | Set the global reminder cadence (interval_weeks) |\n| frames | `skylight_add_webcal` | W | Subscribe the frame to a webcal/ICS calendar URL |\n| frames | `skylight_update_calendar` | W | Set which sub-calendars of a connected account are active |\n| frames | `skylight_delete_source_calendar` | W | Remove a connected source calendar (incl. webcal subscriptions) |\n| frames | `skylight_set_default_calendar` | W | Set the default source calendar for new events |\n| frames | `skylight_link_apple_calendar` | W | Link an Apple/iCloud calendar using an app-specific password |\n| frames | `skylight_categorize_source_calendar` | W | Attribute a source calendar's events to one or more family members |\n| frames | `skylight_create_source_calendar` | W | Create a source calendar from raw provider attributes (advanced) |\n| frames | `skylight_invite_user` | W | Invite a user to the frame by email |\n| frames | `skylight_approve_user` | W | Approve a pending frame user |\n| frames | `skylight_remove_user` | W | Remove a user from the frame |\n| frames | `skylight_delete_category` | W | Delete a category / family member (optional `reassign_to_category_id`, inferred) |\n| frames | `skylight_update_family_member` | W | Update a family member's profile — birthday, dietary preferences (the name is the category label; set via `skylight_update_category`) |\n| frames | `skylight_update_category` | W | Update a category — rename/recolor, or convert a label into a family-member profile (`linked_to_profile`) |\n| frames | `skylight_create_category` | W | Create a category / family member (optional `linked_to_profile`, `avatar_id`) |\n| frames | `skylight_list_avatars` | R | List the preset avatar library (emoji/icon images) |\n| frames | `skylight_set_member_avatar` | W | Set a family member's avatar to a custom photo (dry-run unless `confirm:true`) |\n| frames | `skylight_set_device_album` | W | Set which photo album a device displays (inferred) |\n| frames | `skylight_rename_device` | W | Rename a Skylight device |\n| events | `skylight_list_events` | R | List calendar events within a date range |\n| events | `skylight_get_event` | R | Get details for a specific event |\n| events | `skylight_create_event` | W | Create a new calendar event (optional `category_ids` assigns members) |\n| events | `skylight_update_event` | W | Update an existing calendar event (optional `category_ids` assigns members) |\n| events | `skylight_delete_event` | W | Delete a calendar event |\n| events | `skylight_list_categories` | R | List event categories for a frame |\n| events | `skylight_list_source_calendars` | R | List external source calendars linked to a frame |\n| events | `skylight_list_recent_invited_emails` | R | List recently-invited email addresses |\n| events | `skylight_update_event_notification_settings` | W | Update calendar-event notification settings |\n| lists | `skylight_list_lists` | R | List all shared lists on a frame |\n| lists | `skylight_get_list_items` | R | Get items in a specific shared list |\n| lists | `skylight_create_list` | W | Create a new shared list (label + color + kind) |\n| lists | `skylight_update_list` | W | Update a list's name, color, or type |\n| lists | `skylight_delete_list` | W | Delete a shared list |\n| lists | `skylight_add_list_item` | W | Add an item to a shared list |\n| lists | `skylight_update_list_item` | W | Rename a list item, check/uncheck it, or set its section |\n| lists | `skylight_delete_list_item` | W | Delete an item from a shared list |\n| lists | `skylight_delete_list_items` | W | Bulk-delete specific list items |\n| lists | `skylight_move_list_item` | W | Reorder a list item |\n| lists | `skylight_clear_list` | W | Remove all items from a list (single bulk delete) |\n| lists | `skylight_set_list_item_section` | W | Move list items into a named section (or clear it) |\n| chores | `skylight_list_chores` | R | List chores within a date range |\n| chores | `skylight_search_chores` | R | Search chores (incl. unscheduled/template chores) |\n| chores | `skylight_create_chore` | W | Create a new chore (summary + category) |\n| chores | `skylight_create_recurring_chore` | W | Create a recurring chore or routine (RRULE) |\n| chores | `skylight_complete_chore` | W | Mark a chore complete |\n| chores | `skylight_uncomplete_chore` | W | Reopen (un-complete) a chore |\n| chores | `skylight_update_chore` | W | Update a chore (supports recurrence + `apply_to`) |\n| chores | `skylight_complete_chore_instance` | W | Mark a specific recurring-chore occurrence complete |\n| chores | `skylight_delete_chore` | W | Delete a chore (occurrence or whole series via `apply_to`) |\n| chores | `skylight_list_rewards` | R | List rewards configured for a frame |\n| rewards | `skylight_get_reward` | R | Get one reward |\n| rewards | `skylight_create_reward` | W | Create a reward (name + description + point_value + respawn_on_redemption + category_ids) |\n| rewards | `skylight_update_reward` | W | Update a reward |\n| rewards | `skylight_delete_reward` | W | Delete a reward |\n| rewards | `skylight_redeem_reward` | W | Redeem a reward |\n| rewards | `skylight_unredeem_reward` | W | Reverse a reward redemption |\n| rewards | `skylight_add_reward_points` | W | Grant or deduct reward points to members |\n| meals | `skylight_list_meals` | R | List planned meals in a date range (date_min + date_max both required) |\n| meals | `skylight_list_recipes` | R | List meal recipes for the frame |\n| meals | `skylight_list_meal_categories` | R | List meal categories for the frame |\n| meals | `skylight_get_recipe` | R | Get one meal recipe |\n| meals | `skylight_create_recipe` | W | Create a meal recipe (meal_category_id + summary) |\n| meals | `skylight_update_recipe` | W | Update a meal recipe |\n| meals | `skylight_delete_recipe` | W | Delete a meal recipe |\n| meals | `skylight_add_recipe_to_grocery_list` | W | Add a recipe's ingredients to a grocery list |\n| meals | `skylight_plan_meal` | W | Plan a meal on a date (optionally repeating, link a recipe, add to grocery list) |\n| messages | `skylight_list_messages` | R | List messages posted to the frame |\n| messages | `skylight_list_albums` | R | List photo albums on the frame |\n| messages | `skylight_get_message` | R | Get one frame message |\n| messages | `skylight_create_album` | W | Create a photo album |\n| messages | `skylight_update_album` | W | Update a photo album (rename, hide from slideshow) |\n| messages | `skylight_delete_album` | W | Delete a photo album |\n| messages | `skylight_add_to_album` | W | Add messages/photos to albums |\n| messages | `skylight_remove_from_album` | W | Remove messages/photos from albums |\n| messages | `skylight_copy_messages_to_frames` | W | Copy messages/photos to other frames on the account (inferred) |\n| messages | `skylight_add_message_comment` | W | Comment on a frame message/photo |\n| messages | `skylight_set_message_caption` | W | Set a message/photo caption |\n| messages | `skylight_like_message` | W | Like a frame message/photo |\n| messages | `skylight_unlike_message` | W | Remove a like from a message/photo |\n| messages | `skylight_delete_message` | W | Delete a frame message/photo |\n| messages | `skylight_delete_messages` | W | Bulk-delete messages/photos from the frame |\n| tasks | `skylight_list_tasks` | R | List task-box items |\n| tasks | `skylight_create_task` | W | Create a task-box item |\n| tasks | `skylight_update_task` | W | Update a task-box item |\n| tasks | `skylight_delete_task` | W | Delete a task-box item |\n| ai | `skylight_generate_meal_plan` | W | Generate an AI meal plan for given dates (draft meal sittings — async) |\n| ai | `skylight_generate_activity_ideas` | W | Generate AI activity/event ideas for a location + time range (draft events — async) |\n| ai | `skylight_get_auto_creation_intent` | R | Get an AI auto-creation intent (status + draft results) |\n| ai | `skylight_list_auto_creation_drafts` | R | List the events an AI intent drafted (review before approving) |\n| ai | `skylight_list_auto_creation_intents` | R | List all AI auto-creation intents on the frame |\n| ai | `skylight_list_auto_creation_items` | R | List every draft item an AI intent created (meals, activities, list items) |\n| ai | `skylight_approve_auto_creation` | W | Approve AI-drafted events into real calendar events |\n| ai | `skylight_undo_auto_creation` | W | Undo/discard an AI auto-creation intent and its drafts |\n| photos | `skylight_upload_photo` | W | Upload a photo/video from a local file to the frame (dry-run unless `confirm:true`) |\n| photos | `skylight_import_events_from_photo` | W | Import calendar events from a photo of a flyer/invite using Skylight's AI (best-effort) |\n\n## Configuration\n\n### Required\n\n```\nSKYLIGHT_EMAIL=you@example.com\nSKYLIGHT_PASSWORD=your-password\n```\n\n### Optional\n\n| Env var | Default | Purpose |\n|---|---|---|\n| `SKYLIGHT_FRAME_ID` | auto-discovered | Force a specific frame when the account has multiple |\n| `SKYLIGHT_NAME` | *(none)* | Friendly label used in startup logs |\n| `SKYLIGHT_BASE_URL` | `https://app.ourskylight.com/api` | Override the API base URL |\n\nTreat `.env` like a password file — it is gitignored, do not commit it.\n\n## Local dev\n\n```\nnpm install\nnpm run build\nnpm test\nnpm run dev   # requires .env with credentials\n```\n\nTests: vitest, 100% line/branch/function/statement coverage enforced. All tests are mocked — no network calls in CI.\n\nDeveloped and maintained by AI (Claude). Use at your own discretion.\n",
+    "fetchedAt": "2026-08-11T23:52:45.296Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:09.042Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

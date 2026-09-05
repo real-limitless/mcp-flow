@@ -1,0 +1,73 @@
+{
+  "id": "com.onchaindiligence/compliance",
+  "title": "OnchainDiligence",
+  "description": "Pay-per-call compliance via x402: wallet sanctions, OFAC name, UK + US company verification.",
+  "summary": "Pay-per-call compliance via x402: wallet sanctions, OFAC name, UK + US company verification.",
+  "offersHint": "Pay-per-call compliance via x402: wallet sanctions, OFAC name, UK + US company verification. · Remote MCP (streamable-http) at https://mcp.onchaindiligence.com/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.onchaindiligence.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.onchaindiligence.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://onchaindiligence.com",
+  "sourceUrl": "https://github.com/Qazza1/onchaindiligence-mcp",
+  "repository": {
+    "url": "https://github.com/Qazza1/onchaindiligence-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-27T11:18:22.509325Z",
+  "publishedAt": "2026-06-27T11:18:22.509325Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:55:46.748Z",
+    "sourceRepoAt": "2026-08-12T00:29:35.850Z",
+    "readmeAt": "2026-08-12T00:29:36.322Z",
+    "toolsAt": "2026-08-12T00:29:36.410Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Qazza1/onchaindiligence-mcp",
+    "checkedAt": "2026-08-12T00:29:35.850Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Qazza1/onchaindiligence-mcp/main/README.md",
+    "markdown": "# OnchainDiligence — MCP Server\n\nA paid, non-custodial **Model Context Protocol** server that exposes on-chain compliance checks as tools AI agents can discover and pay for autonomously. Sanctions screening and UK company verification, billed per call in **USDC on Base** via the [x402](https://x402.org) protocol — no API keys, no accounts, no subscriptions.\n\nLive at **`https://mcp.onchaindiligence.com/mcp`** · Listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=onchaindiligence) as `com.onchaindiligence/compliance` · Part of [onchaindiligence.com](https://onchaindiligence.com).\n\n---\n\n## What it does\n\nAn agent connects over Streamable HTTP and finds three tools:\n\n| Tool | Description | Price |\n|------|-------------|-------|\n| `screen_wallet` | Screen a wallet address against the Chainalysis on-chain sanctions oracle (US/EU/UN lists). | $0.01 |\n| `verify_uk_company` | Look up a UK company by registration number: status, type, incorporation, registered address, and people with significant control. | $0.01 |\n| `diligence` | Run both checks in parallel, with an explicit disclaimer that no link between wallet and company is established. | $0.015 |\n\nEach result is the same factual data the [HTTP API](https://api.onchaindiligence.com) returns — the check logic is shared byte-for-byte, so an agent calling via MCP gets results identical to one calling over HTTP.\n\n## How payment works\n\nPayment rides on [x402](https://x402.org), the open agent-payment standard built on HTTP `402 Payment Required`:\n\n1. The agent calls a tool with no payment attached.\n2. The server returns the payment requirements (amount, asset, recipient, network).\n3. The agent signs a USDC payment authorization from its own wallet.\n4. The agent retries the call with the payment in the tool-call `_meta`.\n5. The server verifies and settles via the Coinbase facilitator, runs the check, and returns the result.\n\nThe flow is **non-custodial**: USDC moves directly from the agent's wallet to the recipient. This server never holds funds and runs no billing system — which is deliberate, given the product is about *not* being a trusted intermediary.\n\n## Two payment rails by design\n\nOnchainDiligence settles two ways, because the agent-payment landscape is split between two standards:\n\n| | HTTP API | MCP server (this repo) |\n|---|---|---|\n| Protocol | Machine Payments Protocol (Stripe/Tempo) | x402 (Coinbase/Base) |\n| Chain | Tempo | Base mainnet |\n| Currency | pathUSD | USDC |\n| Settlement | session-based | per-call, on-chain |\n\nSame checks, same signed results, different rails for different ecosystems.\n\n## Architecture\n\n```\nagent (MCP client + x402 wallet)\n      │  Streamable HTTP\n      ▼\nindex.ts ──────────── Hono app, routes /mcp to the handler\n      ▼\nsrc/server.ts ─────── createPaidMcpHandler: 3 paidTools, x402 gating\n      │\n      ├── src/chainalysis.ts ──── sanctions oracle read (viem, Ethereum mainnet)\n      └── src/companiesHouse.ts ─ UK Companies House lookup\n```\n\n- **`src/server.ts`** — defines the three `paidTool`s with their prices and Zod schemas, wired to the Coinbase facilitator for x402 settlement.\n- **`src/chainalysis.ts` / `src/companiesHouse.ts`** — the check logic, reused unchanged from the HTTP API so results stay consistent across rails.\n- **`index.ts`** — a Hono app exposing the handler at `/mcp`; deployed as a Vercel function, and the same app is served locally by `src/local.ts`.\n- **`test/client.ts`** — a low-level test client that performs the full x402 pay-and-retry loop by hand (see *Design notes*).\n\n### Sanctions data\n\nScreening reads the **Chainalysis on-chain sanctions oracle** — a free, public smart contract on Ethereum mainnet (`0x40C57923924B5c5c5455c48D93317139ADDaC8fb`), queried with a read-only `isSanctioned()` call via [viem](https://viem.sh). No Chainalysis API key or commercial relationship is required; the oracle is a public good reflecting US/EU/UN sanctions lists. The per-call fee covers infrastructure, not the data.\n\n## Running locally\n\nRequires Node 22+.\n\n```bash\nnpm install\ncp .env.example .env   # fill in the values below\nnpm run dev            # serves http://localhost:3000/mcp\n```\n\nEnvironment variables:\n\n| Variable | Purpose |\n|----------|---------|\n| `COMPANIES_HOUSE_API_KEY` | UK Companies House API key (free). |\n| `SANCTIONS_ORACLE_RPC_URL` | Ethereum RPC for the oracle read. |\n| `X402_RECIPIENT_ADDRESS` | Base address that receives USDC. |\n| `X402_NETWORK` | `base-sepolia` (testnet) or `base` (mainnet). |\n| `CDP_API_KEY_ID` / `CDP_API_KEY_SECRET` | Coinbase Developer Platform keys for the x402 facilitator. |\n\nTo exercise the full paid loop against the running server:\n\n```bash\n# in .env, also set PAYER_PRIVATE_KEY to a wallet funded with testnet USDC + ETH\nnpm run test:client\n```\n\n## Design notes\n\nA few decisions worth explaining, since they reflect real constraints rather than preference:\n\n- **Why Base and not Tempo.** The HTTP API settles on Tempo, so unifying on one chain would have been cleaner. But the `x402-mcp` package hardcodes its network type to `\"base\" | \"base-sepolia\"` — Tempo is not a permitted value. Rather than fork the package or write a custom facilitator, this server settles on Base, and OnchainDiligence accepts two rails. The constraint is documented, not papered over.\n\n- **The test client is hand-rolled.** `x402-mcp` ships a `withPayment` helper, but it imports an MCP client API (`experimental_MCPClient`) that the `ai` SDK removed in v5. Rather than pin an old `ai` version, `test/client.ts` performs the x402 loop directly on the MCP SDK plus `x402/client` — calling unpaid to get requirements, building a payment header, and retrying with payment in `_meta`. The server itself doesn't depend on `ai`, so this is a test-only concern.\n\n- **Check logic is shared, not reimplemented.** `chainalysis.ts` and `companiesHouse.ts` are copied unchanged from the HTTP API so that a result is the same regardless of which rail an agent uses. Consistency across surfaces matters more than DRY across repos here.\n\n## Not a compliance program\n\nOnchainDiligence returns factual checks and signed attestations. It is **not** legal or compliance advice and is not a substitute for a full compliance program. The sanctions oracle returns a match flag, not rich case detail. Results are never cached.\n\n## Security\n\nFound a vulnerability? Please report it to **security@onchaindiligence.com**. Responsible disclosure is appreciated. See [onchaindiligence.com/.well-known/security.txt](https://onchaindiligence.com/.well-known/security.txt).\n\n## License\n\nMIT — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:29:36.322Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "screen_wallet",
+      "description": "Sanctions screening for a crypto wallet address. Checks an EVM address against the Chainalysis on-chain sanctions oracle, which covers OFAC SDN, EU, and UN designated addresses (including Tornado Cash and other sanctioned protocols). Returns a clear sanctioned / not-sanctioned result with the matching program. Use for AML compliance, counterparty due diligence, and payment screening before sending USDC or any funds to an address."
+    },
+    {
+      "name": "screen_name",
+      "description": "OFAC name screening: fuzzy-match a person or company name against the official US Treasury OFAC Specially Designated Nationals (SDN) list (primary names + strong aliases). Returns scored candidate matches with the matched name, SDN type, and program. SCOPE: this is a screening aid for AML / KYC / sanctions compliance — a match is a candidate to investigate with secondary identifiers (DOB, nationality, ID), NOT a determination. Weak AKAs are not screened, per OFAC guidance."
+    },
+    {
+      "name": "verify_uk_company",
+      "description": "UK company verification and KYB (know-your-business) lookup via the official Companies House register. Given a UK company registration number, returns legal status (active / dissolved), company type, incorporation date, registered office address, and the people with significant control (PSC / beneficial owners). Use for KYB onboarding, supplier and counterparty due diligence, and confirming a UK business is real, active, and who controls it. Authoritative UK government open data."
+    },
+    {
+      "name": "verify_us_company",
+      "description": "US public company verification via the SEC EDGAR system. Given a ticker, SEC CIK, or company name, returns the registered entity name, CIK, industry (SIC code), state of incorporation, listed exchanges and tickers, business address, and most recent SEC filing. SCOPE: EDGAR covers SEC-registered PUBLIC companies and funds only — NOT private US companies, which register at the state level. Use for KYB and counterparty due diligence on listed US entities. Authoritative US government open data."
+    },
+    {
+      "name": "diligence",
+      "description": "Combined counterparty due diligence in one call: runs sanctions screening on a crypto wallet (Chainalysis oracle — OFAC SDN, EU, UN) AND a UK Companies House KYB lookup (status, type, PSC / beneficial owners) in parallel. Built for compliance agents vetting a counterparty that has both an on-chain wallet and a UK company. Returns both independent results, plus an explicit disclaimer that no verified link between the wallet and the company is established by the data."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:29:36.410Z",
+  "toolsPreviewStatus": "ok"
+}

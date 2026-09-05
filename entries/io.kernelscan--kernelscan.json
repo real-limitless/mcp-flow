@@ -1,0 +1,99 @@
+{
+  "id": "io.kernelscan/kernelscan",
+  "title": "KernelScan",
+  "description": "Linux kernel CVE analyzer: upload a .config, get a CycloneDX VEX report of affecting CVEs.",
+  "summary": "Linux kernel CVE analyzer: upload a .config, get a CycloneDX VEX report of affecting CVEs.",
+  "offersHint": "Linux kernel CVE analyzer: upload a .config, get a CycloneDX VEX report of affecting CVEs. · Remote MCP (streamable-http) at https://kernelscan.io/mcp/ · Optional headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://kernelscan.io/mcp/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://kernelscan.io/mcp/",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer ks_live_<your API key> — create one at https://kernelscan.io/api/auth/api-keys",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://kernelscan.io",
+  "updatedAt": "2026-06-20T07:43:00.058874Z",
+  "publishedAt": "2026-06-20T07:43:00.058874Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer ks_live_<your API key> — create one at https://kernelscan.io/api/auth/api-keys",
+      "secret": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:35.012Z",
+    "sourceRepoAt": "2026-08-11T23:12:55.303Z",
+    "readmeAt": "2026-08-12T00:54:35.012Z",
+    "toolsAt": "2026-08-11T23:12:55.303Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:12:55.303Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:54:35.012Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_cves",
+      "description": "Search Linux kernel CVEs.\n\n        No API key required: keyless callers get the free public tier — recent\n        high-severity Linux kernel CVEs (capped at 25 results). Free *keyed*\n        callers see only CVEs published in the last 60 days; basic+ keyed\n        callers get the full corpus.\n        ``query`` matches against CVE id and description (case-insensitive).\n        ``severity`` filters by effective severity (``critical``/``high``/``medium``/``low``).\n        ``cvss_min`` filters by effective CVSS score.\n        ``published_after`` (ISO 8601) returns only CVEs newer than that date.\n        Returns up to ``limit`` (max 100) CVEs, newest first.\n        "
+    },
+    {
+      "name": "get_cve",
+      "description": "Fetch a single Linux kernel CVE by ID (e.g. ``CVE-2024-12345``).\n\n        No API key required: keyless callers get the public representation of a\n        CVE, but only for CVEs in the public set (recent high-severity); any\n        other id returns ``not found``. Free *keyed* callers get a 404 for CVEs\n        published more than 60 days ago. AI risk-summary / analysis fields are\n        included for any keyed user on CVEs in the public set, and for pro /\n        enterprise on every assessed CVE.\n        "
+    },
+    {
+      "name": "list_products",
+      "description": "List the calling user's products with denormalized analysis stats.\n\n        Paid plans only (basic / pro / enterprise). Free callers get a clear\n        upgrade message.\n        "
+    },
+    {
+      "name": "get_product",
+      "description": "Fetch one product owned by the caller, including the CVE breakdown.\n\n        Returns 404 (not 403) if the product belongs to another user, so\n        product existence isn't leaked across accounts.\n        "
+    },
+    {
+      "name": "get_product_vex",
+      "description": "Return the CycloneDX 1.6 VEX document for one of the caller's products.\n\n        Reads from the 24h ProductVexCache; if the cache is empty/expired the\n        next call to ``get_product`` (or the REST endpoint) will regenerate it.\n        "
+    },
+    {
+      "name": "create_product",
+      "description": "Create a new product, run analysis, and return its initial stats.\n\n        ``config_upload_id`` references a previously-staged .config that the\n        caller POSTed to ``/api/configs/uploads`` over plain HTTP — the LLM\n        does NOT emit the config text itself (a real kernel .config is\n        ~100–200 KB and exceeds a single tool-call output budget). Workflow:\n\n        1. Caller / wrapper script:\n           ``curl -H \"Authorization: Bearer ks_live_...\" \\\n                  -F \"config_file=@.config\" \\\n                  https://kernelscan.io/api/configs/uploads``\n           returns ``{config_upload_id, sha256, size_bytes, expires_at}``.\n        2. Pass that ``config_upload_id`` into this tool.\n\n        Uploads are per-user, single-use, and expire 30 minutes after upload.\n        Same gates as POST /api/products: free can't create products; paid\n        plans are capped at their resolved product limit — read it (and any\n        per-account override) from ``whoami.product_limit`` rather than assuming\n        a fixed per-tier number. ``factor_ids`` are silently ignored unless the\n        plan allows security factors (``whoami.can_use_factors``). Re-using a\n        product name returns 409.\n\n        Creating a product RUNS an analysis, so it spends one unit of the\n        team's SHARED monthly analysis allowance (``whoami.monthly_analyses_used``\n        / ``monthly_analyses_limit``). When the allowance is exhausted the tool\n        fails with \"Monthly analysis limit reached (…/month) [429]\". This is a\n        durable monthly quota — NOT the transient per-call rate limit that also\n        surfaces as 429: it will not clear until next month, so report it to the\n        user instead of retrying. Check ``whoami`` before a batch of creates.\n        "
+    },
+    {
+      "name": "update_product",
+      "description": "Update a product owned by the caller. Re-runs analysis if the\n        kernel_version, arch, or referenced .config changed.\n\n        To change the .config, first POST the new file to\n        ``/api/configs/uploads`` (see ``create_product`` for the curl recipe)\n        and pass the returned ``config_upload_id`` here. Leave\n        ``config_upload_id`` as ``None`` to keep the existing .config.\n        ``factor_ids=None`` leaves factor selections untouched; an empty\n        list clears them. Same tier gates as PUT /api/products/{id}.\n\n        A change that re-runs analysis (``kernel_version``, ``arch``, or the\n        ``.config``) spends one unit of the team's shared monthly analysis\n        allowance and can fail with the same durable \"Monthly analysis limit\n        reached … [429]\" quota error as ``create_product`` (distinct from the\n        transient rate-limit 429 — don't retry it). A rename / description /\n        factor-only edit runs no analysis and is free.\n        "
+    },
+    {
+      "name": "whoami",
+      "description": "Return the caller's identity, plan, and quota state.\n\n        Works without an API key: keyless callers get a lightweight public-tier\n        payload (no account) describing how to request access.\n        "
+    },
+    {
+      "name": "request_access",
+      "description": "Request an invitation to KernelScan from inside MCP (no API key needed).\n\n        Use this when a keyless caller wants the full service. It records an\n        invitation request and emails a confirmation; an admin reviews it and,\n        if approved, sends an invitation code. This tool does NOT create an\n        account or mint an API key — you finish signup (including accepting the\n        terms) on the website after you receive the invitation.\n\n        ``email`` is required. ``name`` and ``reason`` are optional context for\n        the reviewer. The response is identical whether or not the email is\n        already known, so it never reveals account state.\n        "
+    },
+    {
+      "name": "submit_support_report",
+      "description": "Send a support / dispute report to KernelScan staff.\n\n        Use this when an automated CVE or factor assessment looks wrong, or\n        when you need to hand human-needed context back to the team. The\n        caller's API-key user is attached automatically (id, email, plan)\n        so support can look the account up.\n\n        ``category`` should be one of:\n        - ``cve_assessment`` — wrong AI verdict / CVSS / CWE on a CVE\n        - ``factor_assessment`` — wrong factor verdict for a product\n        - ``bug`` — broken behavior in the API or UI\n        - ``other`` — anything else\n\n        ``cve_id`` / ``product_id`` / ``assessment_id`` are optional but\n        recommended — they let support jump straight to the relevant row.\n        "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:12:55.303Z",
+  "toolsPreviewStatus": "ok"
+}

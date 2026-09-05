@@ -1,0 +1,45 @@
+{
+  "id": "io.github.tickiti/tickiti-mcp",
+  "title": "Tickiti",
+  "description": "Connect AI assistants to the Tickiti helpdesk API: tickets, queries, reports and admin.",
+  "summary": "Connect AI assistants to the Tickiti helpdesk API: tickets, queries, reports and admin.",
+  "offersHint": "Connect AI assistants to the Tickiti helpdesk API: tickets, queries, reports and admin.",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://docs.tickiti.com/topic/mcp_server/",
+  "sourceUrl": "https://github.com/tickiti/tickiti-mcp",
+  "repository": {
+    "url": "https://github.com/tickiti/tickiti-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-07T17:56:03.699073Z",
+  "publishedAt": "2026-06-07T17:56:03.699073Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:02.046Z",
+    "sourceRepoAt": "2026-08-11T23:18:22.576Z",
+    "readmeAt": "2026-08-11T23:18:23.096Z",
+    "toolsAt": "2026-08-12T00:59:02.046Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/tickiti/tickiti-mcp",
+    "checkedAt": "2026-08-11T23:18:22.576Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/tickiti/tickiti-mcp/main/README.md",
+    "markdown": "# tickiti-mcp\n\nAn [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server that exposes the\n**Tickiti** helpdesk API to AI assistants such as Claude. It is a thin shim over the\n**Tickiti Public API v1** (`/api/v1/...`): each MCP tool forwards to a v1 endpoint, adding\nyour bearer token and — for writes — an idempotency key. The token's abilities are the\nsecurity boundary: the server only relays calls, it never widens them, so a read-only token\ngives a read-only assistant.\n\n📖 Full documentation: <https://docs.tickiti.com/topic/mcp_server/>\n\n## Tools\n\nThe ticket tools have full, validated inputs; the rest of the API is reachable through two\ngeneral tools, so the whole surface is available without a separate tool per endpoint.\n\n| Tool | Ability | Purpose |\n|---|---|---|\n| `create_ticket` | `tickets:write` | Open a ticket (subject+content, template, or intervention) |\n| `respond_to_ticket` | `tickets:write` | Post a response to an existing ticket |\n| `query_tickets` | `tickets:read` | List tickets for a perspective |\n| `list_perspectives` | `settings:read` | List saved perspectives |\n| `list_watchlists` | `settings:read` | List watchlists |\n| `list_stock_responses` | `settings:read` | List stock responses |\n| `list_queues` | `workflow:read` | List ticket queues |\n| `list_workflow` | `workflow:read` | List resolution categories, interventions or escalations |\n| `run_report` | `reports:read` | Run an analytics report |\n| `list_endpoints` | — | Discover every available API endpoint, with abilities and parameters |\n| `tickiti_call` | per endpoint | Call any `/api/v1` endpoint by family and action |\n\nFor anything beyond the named tools (mail, templates, workflow writes, administration,\nsupervisor), the assistant uses `list_endpoints` to discover the action, then `tickiti_call`\nto run it — covering all of the v1 API.\n\n## Requirements\n\n- **Node.js** 20 or newer\n- A **Tickiti API token**, minted from **Administration → API keys**, scoped to the\n  abilities you want the assistant to have\n- An **MCP-capable client** — e.g. Claude Code or the Claude desktop app\n\n## Install\n\n```bash\ngit clone https://github.com/tickiti/tickiti-mcp.git\ncd tickiti-mcp\nnpm install\nnpm run build\n```\n\nThe built server is `dist/server.js`.\n\n## Configure\n\nThe server reads two environment variables (it fails fast on startup if either is missing):\n\n| Variable | Purpose |\n|---|---|\n| `TICKITI_API_BASE` | Your Tickiti install's public address, no trailing slash — e.g. `https://support.example.com`. The server appends `/api/v1/…`. |\n| `TICKITI_API_TOKEN` | The bearer token. Its abilities determine what the assistant can do. |\n\n## Use with Claude Code\n\n```bash\nclaude mcp add tickiti \\\n  --env TICKITI_API_BASE=https://support.example.com \\\n  --env TICKITI_API_TOKEN=YOUR_TICKITI_API_TOKEN \\\n  -- node /absolute/path/to/tickiti-mcp/dist/server.js\n```\n\nConfirm with `claude mcp list` (or `/mcp` in a session). Remove with `claude mcp remove tickiti`.\n\nOther MCP clients configure servers in their own settings file, but the shape is the same:\nrun `node /absolute/path/to/tickiti-mcp/dist/server.js` as a **stdio** server with\n`TICKITI_API_BASE` and `TICKITI_API_TOKEN` set in its environment.\n\n## Permissions & security\n\nThe server adds no permissions of its own. Every call runs as the staff user the token\nbelongs to, gated by the token's abilities — exactly as a direct API call would be. To limit\nwhat an assistant can do, mint a narrowly-scoped token:\n\n- A read-only token (e.g. `tickets:read`, `reports:read`) gives an assistant that can look\n  but not change anything.\n- Grant write abilities only for the families the assistant needs to act on.\n- If a call is refused, the server reports the reason (missing ability, role or plan).\n\nThe two ticket-writing tools send an idempotency key with every call, so a retried request\nnever creates a duplicate ticket or response.\n\n## How it works\n\n| File | Role |\n|---|---|\n| `src/client.ts` | Request core: base URL, bearer auth, idempotency, error normalisation |\n| `src/result.ts` | Maps an API result into the MCP tool-result envelope |\n| `src/manifest.ts` | Helpers over the generated route manifest (lookup, path building) |\n| `src/generated/manifest.ts` | Auto-generated route table (do not edit) |\n| `src/tools/tickets.ts` | Tickets family — verified input schemas |\n| `src/tools/reads.ts` | Named read tools (settings / workflow / reports) |\n| `src/tools/generic.ts` | `list_endpoints` + `tickiti_call` |\n| `src/server.ts` | Entry point: registers tools, connects the stdio transport |\n| `scripts/build-manifest.mjs` | Regenerates the manifest from the Tickiti route table |\n\n## Maintainers\n\n`src/generated/manifest.ts` is generated from Tickiti's own route table\n(`php artisan route:list --json`), so abilities, roles, plan gates and path params are never\nhand-maintained. Regenerate against a Tickiti checkout after the API changes:\n\n```bash\nTICKITI_DIR=/path/to/tickiti npm run manifest\n```\n\nThere is an end-to-end sweep over every endpoint in `tests/all-paths.mjs`\n(`npm run test:paths`, needs a base URL and a full-ability token against a scratch instance).\n\n## License\n\n[MIT](LICENSE) © Oxenic\n",
+    "fetchedAt": "2026-08-11T23:18:23.096Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:02.046Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,56 @@
+{
+  "id": "io.github.LabForgeDev/copilot-memory-mcp",
+  "title": "Copilot Memory MCP",
+  "description": "Persistent semantic memory for AI agents using local ChromaDB vector search. No cloud required.",
+  "summary": "Persistent semantic memory for AI agents using local ChromaDB vector search. No cloud required.",
+  "offersHint": "Persistent semantic memory for AI agents using local ChromaDB vector search. No cloud required. · Packages: oci:ghcr.io/labforgedev/copilot-memory-mcp:1.0.0",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/labforgedev/copilot-memory-mcp:1.0.0",
+    "transport": "sse"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/labforgedev/copilot-memory-mcp:1.0.0",
+      "transport": "sse"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/LabForgeDev/copilot-memory-mcp",
+  "repository": {
+    "url": "https://github.com/LabForgeDev/copilot-memory-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-15T17:56:20.547768Z",
+  "publishedAt": "2026-03-15T17:56:20.547768Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:34.955Z",
+    "sourceRepoAt": "2026-08-12T00:08:32.108Z",
+    "readmeAt": "2026-08-12T00:08:32.798Z",
+    "toolsAt": "2026-08-12T01:39:34.955Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/LabForgeDev/copilot-memory-mcp",
+    "checkedAt": "2026-08-12T00:08:32.108Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/LabForgeDev/copilot-memory-mcp/main/README.md",
+    "markdown": "# copilot-memory-mcp\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\nPersistent semantic memory for GitHub Copilot in VS Code.\n\nA local MCP server that gives Copilot durable, project-scoped memory across sessions. Memories are stored in an embedded ChromaDB vector database with `all-MiniLM-L6-v2` embeddings, enabling semantic retrieval (RAG). Everything runs in a single Docker container — no cloud services required.\n\n---\n\n## Why this exists\n\nCopilot starts every session with a blank slate. This MCP server gives it a persistent, searchable knowledge base so decisions, conventions, and context carry over between sessions — all running locally in Docker.\n\n---\n\n## Quick start\n\n```bash\ndocker compose up -d\n```\n\nThe server starts on `http://localhost:8000/sse`.\n\nThe `.vscode/mcp.json` already points Copilot at the server — no further VS Code configuration needed.\n\nA sample config is provided in [`examples/vscode/mcp.json`](examples/vscode/mcp.json). Copy it to your project's `.vscode/mcp.json`.\n\n---\n\n## MCP tools\n\n| Tool | Description |\n|---|---|\n| `create_memory` | Store a new memory with title, content, optional project scope and tags |\n| `search_memories` | Semantic vector search; filter by project and/or tags |\n| `update_memory` | Update an existing memory by ID; re-embeds on change |\n| `delete_memory` | Permanently delete a memory by ID |\n| `list_memories` | Browse memories with pagination (lightweight, no content) |\n\n---\n\n## Copilot instructions & agents (examples)\n\nReady-to-use examples are in [`examples/`](examples/). Copy the relevant file(s) into the root or `.github/` of your own project.\n\n| File | Consumed by |\n|---|---|\n| [`AGENTS.md`](examples/AGENTS.md) | OpenAI Codex, Claude Code, and most agent runtimes |\n| [`CLAUDE.md`](examples/CLAUDE.md) | Claude Code (`claude` CLI) |\n| [`.cursorrules`](examples/.cursorrules) | Cursor (legacy format, project-root) |\n| [`.cursor/rules/memory-tools.mdc`](examples/.cursor/rules/memory-tools.mdc) | Cursor (modern per-rule format) |\n| [`.github/copilot-instructions.md`](examples/.github/copilot-instructions.md) | GitHub Copilot in VS Code |\n| [`.github/prompts/save-memory.prompt.md`](examples/.github/prompts/save-memory.prompt.md) | VS Code `/save-memory` prompt |\n| [`.github/prompts/recall-memory.prompt.md`](examples/.github/prompts/recall-memory.prompt.md) | VS Code `/recall-memory` prompt |\n| [`.github/agents/memory.md`](examples/.github/agents/memory.md) | VS Code `@memory` custom agent mode |\n\n---\n\n## Architecture\n\n```\nVS Code / Copilot\n      │  MCP HTTP/SSE (port 8000)\n      ▼\n┌─────────────────────────────────┐\n│  Docker Container               │\n│                                 │\n│  FastMCP Server (port 8000)     │\n│    └── 5 MCP tools              │\n│                                 │\n│  sentence-transformers          │\n│    └── all-MiniLM-L6-v2        │\n│        (384-dim embeddings)     │\n│                                 │\n│  ChromaDB (embedded)            │\n│    └── collection \"memories\"   │\n└──────────┬──────────────────────┘\n           │ Docker named volume\n           ▼\n    /data/chroma  (persisted DB)\n```\n\n---\n\n## Project layout\n\n```\ncopilot-memory-mcp/\n├── app/\n│   ├── main.py              # FastMCP server, tool registration\n│   ├── memory_store.py      # ChromaDB wrapper (CRUD + search)\n│   ├── embeddings.py        # sentence-transformers loader + encode()\n│   └── tools/\n│       ├── create_memory.py\n│       ├── search_memories.py\n│       ├── update_memory.py\n│       ├── delete_memory.py\n│       └── list_memories.py\n├── tests/\n│   ├── test_memory_store.py\n│   └── test_tools.py\n├── Dockerfile\n├── docker-compose.yml\n└── pyproject.toml\n```\n\n---\n\n## Development\n\n### Install dependencies\n\n```bash\npip install -e \".[dev]\"\n```\n\n### Run tests\n\n```bash\npytest\n```\n\nTests use an ephemeral in-memory ChromaDB and a mocked embedding function — no Docker, no model download required.\n\n### Run the server locally (no Docker)\n\n```bash\npip install -e .\nPYTHONPATH=. python app/main.py\n```\n\n---\n\n## Environment variables\n\n| Variable | Default | Description |\n|---|---|---|\n| `SENTENCE_TRANSFORMERS_HOME` | `/app/models` | Model cache directory |\n| `CHROMA_PATH` | `/data/chroma` | ChromaDB persistence path |\n| `PORT` | `8000` | HTTP server port |\n\nCopy `.env.example` to `.env` and adjust if needed.\n\n---\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:08:32.798Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:34.955Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

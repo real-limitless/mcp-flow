@@ -1,0 +1,74 @@
+{
+  "id": "io.github.your-ko/mcp-k8s-ro",
+  "title": "mcp-k8s-ro",
+  "description": "Read-only Kubernetes MCP server: inspect resources, logs, events, and metrics. Secrets are masked.",
+  "summary": "Read-only Kubernetes MCP server: inspect resources, logs, events, and metrics. Secrets are masked.",
+  "offersHint": "Read-only Kubernetes MCP server: inspect resources, logs, events, and metrics. Secrets are masked. · Packages: oci:ghcr.io/your-ko/mcp-k8s-ro:1.2.0 · Env vars: KUBECONFIG",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/your-ko/mcp-k8s-ro:1.2.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "KUBECONFIG",
+        "description": "Path to the kubeconfig file. Defaults to ~/.kube/config."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/your-ko/mcp-k8s-ro:1.2.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "KUBECONFIG",
+          "description": "Path to the kubeconfig file. Defaults to ~/.kube/config."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "KUBECONFIG",
+      "description": "Path to the kubeconfig file. Defaults to ~/.kube/config."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/your-ko/mcp-k8s-ro",
+  "repository": {
+    "url": "https://github.com/your-ko/mcp-k8s-ro",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T13:14:30.337363Z",
+  "publishedAt": "2026-07-27T13:14:30.337363Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:07.693Z",
+    "sourceRepoAt": "2026-08-11T23:13:42.265Z",
+    "readmeAt": "2026-08-11T23:13:42.789Z",
+    "toolsAt": "2026-08-12T00:55:07.693Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/your-ko/mcp-k8s-ro",
+    "checkedAt": "2026-08-11T23:13:42.265Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/your-ko/mcp-k8s-ro/main/README.md",
+    "markdown": "[![Main](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/main.yaml/badge.svg)](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/main.yaml)\n[![golangci-lint](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/golangci-lint.yaml/badge.svg)](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/golangci-lint.yaml)\n[![Link validation](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/link-validator.yaml/badge.svg)](https://github.com/your-ko/mcp-k8s-ro/actions/workflows/link-validator.yaml)\n# mcp-k8s-ro\n\nA read-only MCP server that gives Claude access to Kubernetes clusters. Built in Go, it communicates over stdio using the MCP protocol.\n\n## Design\n\n- **Read-only** — only `get`, `describe`, `logs`, and `top` style operations. No create, update, or delete. If a mutating operation is needed, the server prints the equivalent `kubectl` command for you to run manually. Safe to use while on-call at night: Claude can never accidentally mutate your cluster, even under prompt fatigue.\n- **Secret-safe** — secret values are masked before being sent to the model, so your secrets cannot leak due to misconfiguration or prompt injection.\n- **Token-efficient** — responses include only relevant fields (name, status, restarts, etc.) rather than raw Kubernetes API objects, keeping context usage low.\n- **Cluster-aware** — every response includes the active context and cluster name, so Claude always knows which cluster it is talking to.\n- **Context-pinned** — the server locks to the active kubeconfig context at startup. Switching contexts in another terminal has no effect on the running server.\n- **No extra infra** — runs as a local binary or Docker container, connects to whatever kubeconfig context is active at startup.\n\n## Redacted fields\n\n| Object/Field                                           | Reason                                                   | \n|--------------------------------------------------------|----------------------------------------------------------|\n| Secret.data                                            | Secret leak prevention                                   |\n| Secret.stringData                                      | Secret leak prevention                                   |\n| CertificateSigningRequest.spec.request                 | Large base64 PEM blob, no diagnostic value, saves tokens |\n| Certificate (cert-manager) .spec.keystores             | Cert chain PEM blobs, no diagnostic value, saves tokens  |\n| Certificate (cert-manager) status.conditions[].message | Cert chain PEM blobs, no diagnostic value, saves tokens  |\n| *.managedFields                                        | No diagnostic value, saves tokens                        |\n\n\n## Tools\n\n| Tool                      | Description                                                                                                                                                                                 |\n|---------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|\n| `k8s_list_resources`      | List any resource type by name — pods, deployments, CRDs, etc. Accepts optional namespace filter. Returns name, status, readiness, restarts, node, IP, and more depending on resource kind. |\n| `k8s_describe_resource`   | Return the full YAML of a single resource. Secret data is masked.                                                                                                                           |\n| `k8s_list_resource_types` | List all available resource types via the discovery API. Accepts optional API group filter.                                                                                                 |\n| `k8s_get_logs`            | Fetch pod logs. Supports container selector, tail lines, and `--previous` for crashed containers.                                                                                           |\n| `k8s_get_events`          | List Kubernetes events for a namespace or the whole cluster, sorted by most recent.                                                                                                         |\n| `k8s_top_pods`            | CPU and memory usage per pod, with per-container breakdown. Requires metrics-server.                                                                                                        |\n| `k8s_top_nodes`           | CPU and memory usage per node, with percentage of allocatable capacity. Requires metrics-server.                                                                                            |\n\n## Configuration\n\n| Environment variable | Default          | Description             |\n|----------------------|------------------|-------------------------|\n| `KUBECONFIG`         | `~/.kube/config` | Path to kubeconfig file |\n\n## Usage with Claude\n\n### Docker (recommended)\n\n```bash\nclaude mcp add --scope user --transport stdio k8s-ro \\\n  -- docker run --rm -i -v ~/.kube:/home/nonroot/.kube:ro ghcr.io/your-ko/mcp-k8s-ro:latest\n```\n\nPinning a specific version (check the [latest release](https://github.com/your-ko/mcp-k8s-ro/releases/latest) ) is recommended for production use:\n\n```bash\nclaude mcp add --scope user --transport stdio k8s-ro \\\n  -- docker run --rm -i -v ~/.kube:/home/nonroot/.kube:ro ghcr.io/your-ko/mcp-k8s-ro:1.1.0\n```\n\n### Binary\n\nDownload a pre-built binary from [GitHub Releases](https://github.com/your-ko/mcp-k8s-ro/releases):\n\n```bash\n# macOS Apple Silicon — change ARCH for other platforms: darwin-amd64, linux-amd64, linux-arm64\nARCH=darwin-arm64\nVERSION=$(curl -fsSL https://api.github.com/repos/your-ko/mcp-k8s-ro/releases/latest | grep tag_name | cut -d'\"' -f4)\ncurl -fsSL \"https://github.com/your-ko/mcp-k8s-ro/releases/download/${VERSION}/mcp-k8s-ro-${VERSION}-${ARCH}\" -o ~/.local/bin/mcp-k8s-ro\nchmod +x ~/.local/bin/mcp-k8s-ro\nxattr -d com.apple.quarantine ~/.local/bin/mcp-k8s-ro 2>/dev/null  # macOS only: remove Gatekeeper quarantine\nclaude mcp add --scope user --transport stdio k8s-ro ~/.local/bin/mcp-k8s-ro\n```\n\n> **macOS Gatekeeper**: The binary is not code-signed, so macOS will block it. \n> The `xattr` command above removes the quarantine flag. Alternatively, go to System Settings → Privacy & Security and click \"Allow Anyway\" after the first blocked attempt.\n![img.png](img/img.png)\n\nOr build from source:\n\n```bash\nmake build\nclaude mcp add --scope user --transport stdio k8s-ro ./bin/mcp-k8s-ro\n```\n\n### Custom kubeconfig location\n\nIf your kubeconfig is not at `~/.kube/config`, set the `KUBECONFIG` environment variable:\n\n```bash\n# Binary\nclaude mcp add --scope user --transport stdio -e KUBECONFIG=/path/to/kubeconfig k8s-ro ~/.local/bin/mcp-k8s-ro\n\n# Docker\nclaude mcp add --scope user --transport stdio k8s-ro \\\n  -- docker run --rm -i -e KUBECONFIG=/config/kubeconfig -v /path/to/kubeconfig:/config/kubeconfig:ro ghcr.io/your-ko/mcp-k8s-ro:latest\n```\n\n## Single-cluster design\n\nThe server intentionally operates on one kubeconfig context and provides no tool to switch clusters at runtime. The reasons are:\n\n- **Prompt injection isolation** — a malicious value in one cluster's resources (e.g. a pod annotation) cannot instruct Claude to pivot to a different cluster, including production.\n- **Explicit audit boundary** — every tool response includes the context and cluster name, so there is never ambiguity about which cluster was queried.\n\n**To point the server at a different cluster**, stop the server, switch context, and restart:\n\n```bash\nkubectl config use-context my-other-cluster\n# then restart the MCP server / reload Claude Desktop\n```\n\n**To work with multiple clusters simultaneously**, register a separate server instance per cluster in your MCP config:\n\n```json\n{\n  \"mcpServers\": {\n    \"k8s-staging\": {\n      \"type\": \"stdio\",\n      \"command\": \"/path/to/bin/mcp-k8s-ro\",\n      \"env\": { \"KUBECONFIG\": \"/path/to/.kube/config\" }\n    },\n    \"k8s-prod\": {\n      \"type\": \"stdio\",\n      \"command\": \"/path/to/bin/mcp-k8s-ro\",\n      \"env\": { \"KUBECONFIG\": \"/path/to/.kube/config-prod\" }\n    }\n  }\n}\n```\n\nClaude will address each server by name and each instance only ever sees its own cluster.\n\n## MCP registry\nThis server is published on [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/?q=mcp-k8s-ro)\n",
+    "fetchedAt": "2026-08-11T23:13:42.789Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:07.693Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

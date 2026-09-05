@@ -1,0 +1,57 @@
+{
+  "id": "com.acjlabs/receipt-extraction",
+  "title": "Receipt Extraction",
+  "description": "AU GST/ABN receipt extraction — assigns entertainment/ITC tax codes per line, not just OCR.",
+  "summary": "AU GST/ABN receipt extraction — assigns entertainment/ITC tax codes per line, not just OCR.",
+  "offersHint": "AU GST/ABN receipt extraction — assigns entertainment/ITC tax codes per line, not just OCR. · Remote MCP (streamable-http) at https://receipt-extraction.acjlabs.com/mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://receipt-extraction.acjlabs.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://receipt-extraction.acjlabs.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://acjlabs.com/products",
+  "sourceUrl": "https://github.com/acjlabs/receipt-extraction",
+  "repository": {
+    "url": "https://github.com/acjlabs/receipt-extraction",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T00:59:20.854901Z",
+  "publishedAt": "2026-07-31T00:59:20.854901Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:31.184Z",
+    "sourceRepoAt": "2026-08-12T00:39:31.184Z",
+    "readmeAt": "2026-08-12T00:39:31.752Z",
+    "toolsAt": "2026-08-12T00:39:32.175Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/acjlabs/receipt-extraction",
+    "checkedAt": "2026-08-12T00:39:31.184Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/acjlabs/receipt-extraction/main/README.md",
+    "markdown": "# Receipt Extraction\n\n**AU GST/ABN-aware receipt & invoice extraction** — applies documented AU entertainment/ITC tax-code\nrules per line item, returning a `tax_code`, a `confidence`, and a one-line `rationale` for each, not\njust OCR text. You supply the document; get validated structured JSON: vendor, line items, tax, totals —\nwith Australian GST and ABN checksum validation built in from day one. One API call, no hand-rolled\nvision-LLM prompts, no re-deriving ABN/GST rules from the ATO's own documentation.\n\n## What it does\n\n- Accepts a receipt/invoice image or PDF (base64), returns a clean, versioned `Receipt` JSON object.\n- Validates the vendor's ABN (11-digit modulus-89 checksum) and cross-checks GST across line items and\n  totals, excluding non-creditable GST on entertainment-coded expenses per the documented rule set.\n- Each line item carries its `tax_code` plus a `confidence` (0–1) and a one-line `rationale` naming the\n  actual rule applied (e.g. \"entertainment ITC denied, no exception context\", or the incidental-to-travel\n  exception that flips a restaurant-style meal back to claimable) — so you can check the call, not just\n  trust it.\n- Works as an MCP server (`extract_receipt` tool) or a plain HTTPS API — usable from Claude, Cursor, or\n  any HTTP client.\n\nGST handling reflects publicly documented Australian tax law and is provided as software output, not\ntax advice.\n\n### Example (MCP tool call)\n\n```json\n{\n  \"tool\": \"extract_receipt\",\n  \"input\": { \"document_base64\": \"<base64 image or PDF>\", \"mime_type\": \"image/jpeg\" }\n}\n```\n\n```json\n{\n  \"vendor\": { \"name\": \"Acme Pty Ltd\", \"abn\": \"51824753556\", \"abn_valid\": true },\n  \"date\": \"2026-07-14\",\n  \"line_items\": [\n    {\n      \"description\": \"Widget\",\n      \"qty\": 2,\n      \"unit_price\": 12.5,\n      \"gst\": 2.5,\n      \"tax_code\": \"taxable\",\n      \"confidence\": 0.95,\n      \"rationale\": \"Standard-rated retail good; 10% GST applies.\"\n    }\n  ],\n  \"totals\": { \"subtotal\": 25.0, \"gst\": 2.5, \"total\": 27.5 },\n  \"schema_version\": \"1.0\"\n}\n```\n\n## Pricing\n\nThe free tier is self-serve today; paid plans are opening soon.\n\n- **Free** — 20 documents/month, no card required. Self-serve today.\n- **Pay-as-you-go** *(opening soon)* — $0.02/document, no minimum.\n- **Pro** *(opening soon)* — $19/month for 1,500 documents (~$0.013/doc effective), with priority support.\n\nWant a paid plan now?\n[Register your interest](https://receipt-extraction-signup.acjlabs.com/#pro-intent) and we'll set you up first.\n\n## Getting a key\n\nThe MCP server is live at `https://receipt-extraction.acjlabs.com/mcp` (the alternate\n`https://acjlabs-receipt-extraction.acjlabs.workers.dev/mcp` address reaches the same deployment and\nkeeps working, so existing configurations need no change). Free-tier keys\nself-serve — `POST /v1/signup` with `{ \"email\": \"you@example.com\" }` returns your key directly in the\nresponse, good for 20 documents/month, no card required. **Store it immediately — it is shown once and\ncannot be recovered if lost** (re-signup for a new one). Paid keys provision the same way via a\none-time claim link once Pro/pay-as-you-go billing is live. See\n**<https://acjlabs-receipts.pages.dev>** for the same steps plus pricing and a comparison against\nalternatives.\n\n## Connecting it to an MCP client\n\nWith Claude Code:\n\n```bash\nclaude mcp add --transport http receipt-extraction \\\n  https://receipt-extraction.acjlabs.com/mcp \\\n  --header \"Authorization: Bearer YOUR_API_KEY\"\n```\n\nAny other MCP client that supports a remote HTTP server with a custom header (Cursor, Cline, VS Code,\netc.) works the same way: point it at the URL above with an `Authorization: Bearer YOUR_API_KEY`\nheader. A gateway or scanner that can only forward the raw key value (no `Bearer` prefix) also works —\nboth forms authenticate. Tool discovery (`initialize`/`tools/list`) doesn't require a key at all; only\ncalling `extract_receipt` does.\n\nSee [docs/quickstart.md](docs/quickstart.md) for a full copy-paste walkthrough (getting a key, per-client\nconfigs, confirming the connection with `curl`) if you'd rather follow one linear guide.\n\n## How accurate is it?\n\nValidated 4/4 against hand-built (but genuinely readable) test documents covering net-priced,\nGST-inclusive-only, checksum-invalid-ABN, and unreadable-document cases. Real production accuracy\nacross more document formats will be tracked once live traffic exists.\n\n## npm client\n\nPrefer a typed function over hand-rolling MCP JSON-RPC calls?\n[`@acjlabs/receipt-extraction-client`](https://www.npmjs.com/package/@acjlabs/receipt-extraction-client)\n(live on npm) wraps the `extract_receipt` tool call:\n\n```sh\nnpm install @acjlabs/receipt-extraction-client\n```\n\n```ts\nimport { createReceiptExtractionClient } from \"@acjlabs/receipt-extraction-client\";\n\nconst client = createReceiptExtractionClient({\n  baseUrl: \"https://receipt-extraction.acjlabs.com\",\n  apiKey: \"...\",\n});\nconst receipt = await client.extractReceipt(base64EncodedImageOrPdf, \"image/png\");\n```\n\n## Why not just use generic OCR?\n\nGeneric OCR extraction APIs return raw fields. None of them apply the AU layer on top: that an\nAustralian ABN carries an 11-digit modulus-89 checksum, or that GST apportionment differs for\nentertainment-coded expenses. You'd build and maintain that yourself, against someone else's schema\nthat can change under you. See the [full comparison](docs/comparison.md), or read\n[why AU GST rules break most receipt-extraction tools](docs/au-gst-receipt-extraction.md) (the ABN\nchecksum, the three real GST cases, and how to test any tool against them).\n\n## Source availability & support\n\nThis repository hosts the documentation for the hosted service. The service implementation is not open source. Bug reports and feature requests are welcome in this repo's Issues; you can also reach us at <contact@acjlabs.com>.\n",
+    "fetchedAt": "2026-08-12T00:39:31.752Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "extract_receipt",
+      "description": "Extracts a structured Receipt (vendor, ABN-checked, GST-aware line items and totals) from a base64-encoded receipt or invoice image/PDF."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:39:32.175Z",
+  "toolsPreviewStatus": "ok"
+}

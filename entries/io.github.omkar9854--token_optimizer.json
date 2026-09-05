@@ -1,0 +1,58 @@
+{
+  "id": "io.github.omkar9854/token_optimizer",
+  "title": "token_optimizer",
+  "description": "Reversible context compression for AI agents: cut token usage up to 94%, originals retrievable",
+  "summary": "Reversible context compression for AI agents: cut token usage up to 94%, originals retrievable",
+  "offersHint": "Reversible context compression for AI agents: cut token usage up to 94%, originals retrievable · Packages: pypi:slimctx",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "slimctx",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "slimctx",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/omkar9854/token_optimizer",
+  "repository": {
+    "url": "https://github.com/omkar9854/token_optimizer",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-19T22:27:24.900892Z",
+  "publishedAt": "2026-07-19T22:27:24.900892Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:05.540Z",
+    "sourceRepoAt": "2026-08-11T23:30:48.174Z",
+    "readmeAt": "2026-08-11T23:30:48.905Z",
+    "toolsAt": "2026-08-12T01:10:05.540Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/omkar9854/token_optimizer",
+    "checkedAt": "2026-08-11T23:30:48.174Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/omkar9854/token_optimizer/main/README.md",
+    "markdown": "# slimctx — the token optimizer for AI agents\n\n<!-- mcp-name: io.github.omkar9854/token_optimizer -->\n\n[![CI](https://github.com/omkar9854/token_optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/omkar9854/token_optimizer/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/slimctx.svg)](https://pypi.org/project/slimctx/)\n[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.omkar9854%2Ftoken__optimizer-blue)](https://registry.modelcontextprotocol.io/?search=token_optimizer)\n[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)\n[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue.svg)](pyproject.toml)\n[![Dependencies: zero](https://img.shields.io/badge/dependencies-zero-brightgreen.svg)](pyproject.toml)\n\n**Zero-dependency, fully-reversible context compression for AI agents.**\n\nslimctx compresses what your agent reads — tool outputs, logs, JSON, source\nfiles, prose — before it reaches the LLM. Same answers, fraction of the\ntokens. Pure Python stdlib: no ML models, no downloads, no network calls,\never. Auditable end to end in ~1,600 lines.\n\n<p align=\"center\">\n  <img src=\"demo.gif\" alt=\"slimctx demo: 61,700 tokens compressed to 298 in 29ms, FATAL lines preserved, byte-exact retrieval\" width=\"820\">\n  <br><sub>Live output of <code>python3 benchmarks/demo.py</code> — run it yourself, nothing is staged.</sub>\n</p>\n\n```python\nfrom slimctx import Pipeline, Config\n\npipe = Pipeline(Config(target_tokens=32_000))\nresult = pipe.compress(messages)        # OpenAI/Anthropic-style dicts\nprint(result.savings_ratio)             # e.g. 0.82\n\noriginal = pipe.retrieve(\"a1b2c3d4...\")  # byte-exact original, any time\n```\n\n## Results (synthetic workloads modeled on real agent traffic)\n\n| Workload                   | Before | After  | Savings | Key facts kept |\n|----------------------------|-------:|-------:|--------:|:--------------:|\n| Code search (100 results)  |  5,557 |    916 | **84%** | ✓ |\n| SRE incident debugging     | 61,699 |    298 | **100%** | ✓ |\n| GitHub issue triage        | 12,836 |    975 | **92%** | ✓ |\n| Codebase exploration       |  5,734 |  2,760 | **52%** | ✓ |\n\nEvery run also verifies that each planted \"needle\" (the FIXME, the OOMKill,\nthe outlier) survives compression, and that every lossy transform is\nbyte-exact reversible. Reproduce with `python3 benchmarks/bench.py`.\n\n## How it works\n\n```\nmessages ──► ContentRouter ──► one of:\n                ├─ JSON  : lossless tabularization (repeated keys → header,\n                │          constant columns → legend), then relevance-ranked\n                │          row selection only if still over budget\n                ├─ LOG   : Drain-style template mining — repeated lines\n                │          collapse to `pattern [x1432]`; errors verbatim\n                ├─ CODE  : AST skeleton — signatures + docstrings kept,\n                │          bodies elided EXCEPT those relevant to the query\n                └─ TEXT  : extractive sentence selection (BM25 + salience\n                           + position), verbatim, never paraphrased\n```\n\n### The four guarantees\n\n1. **Universal reversibility.** Before *any* lossy transform, the original\n   goes into a content-addressed store (memory / SQLite / bring-your-own\n   cipher) and the output carries a `[slimctx-ref <hash> ...]` marker. The\n   model — or you — can always get the byte-exact original back.\n2. **Errors are never dropped.** Every compressor pins error/warning\n   content: log errors pass verbatim, salient JSON rows are kept, salient\n   sentences outrank filler.\n3. **Deterministic output.** Same input → byte-identical output, across\n   runs and processes. Compressed prefixes stay stable, so provider\n   prompt-caches (Anthropic/OpenAI) keep hitting.\n4. **Net gain or no-op.** If a transform doesn't save enough tokens to pay\n   for its marker, the original is kept untouched. The live zone (system\n   prompt + last N messages) is never modified at all.\n\n## Why not just use Headroom?\n\n[Headroom](https://github.com/headroomlabs-ai/headroom) is the established\nproject in this space and is more featureful today (provider proxy with SSE\nstreaming, agent wrappers, cross-agent memory, an ML compression model).\nslimctx makes a different set of trade-offs, aimed at locked-down /\nclient-site deployments:\n\n| | Headroom | slimctx |\n|---|---|---|\n| Reversibility | JSON only (CCR); dropped text is gone | **every** lossy transform |\n| Log handling | generic text scoring | **template mining** (`[x1432]` collapse) |\n| Code handling | AST skeleton | AST skeleton **+ query-relevant bodies kept** |\n| Dependencies | Rust core, ONNX runtime, 261MB HF model | **stdlib only** |\n| Network egress | HuggingFace pull on first run | **none, ever** |\n| Store encryption | none (plaintext SQLite) | **cipher hook** (bring your own) |\n| Determinism | cache-aligner component | **by construction** (pure functions + memo) |\n| Audit surface | ~10s of KLOC across 3 languages | **~1,200 lines of Python** |\n\nIf you need the proxy/wrap ecosystem, use Headroom. If you need something\nyou can read in an afternoon, run air-gapped, and certify for a client\nenvironment, use slimctx.\n\n## Install / test\n\n```bash\npip install slimctx           # from PyPI — or vendor the slimctx/ directory\npython -m pytest tests/ -q    # 26 tests: invariants, not examples\npython3 benchmarks/bench.py   # reproduce the numbers above\n```\n\n## Integration sketches\n\n**As a library (any framework):** call `pipe.compress(messages)` right\nbefore your provider SDK call; expose `pipe.retrieve` as a tool named\n`retrieve` so the model can pull originals.\n\n**As an MCP server (GitHub Copilot, Claude Code, Cursor, ...):** ships\nbuilt in, stdlib-only:\n\n```bash\npython3 -m slimctx.mcp_server --db ~/.slimctx/store.db\n```\n\nSee [USAGE.md](USAGE.md) for the GitHub Copilot (`.vscode/mcp.json`) setup\nand a security deployment checklist.\n\n**Encrypted store:**\n\n```python\nfrom cryptography.fernet import Fernet          # optional, your choice\nf = Fernet(key)\nstore = SqliteStore(\"ccr.db\", cipher=(f.encrypt, f.decrypt))\npipe = Pipeline(store=store)\n```\n\n## License\n\nApache-2.0. Original implementation — no code derived from Headroom.\n",
+    "fetchedAt": "2026-08-11T23:30:48.905Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:05.540Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

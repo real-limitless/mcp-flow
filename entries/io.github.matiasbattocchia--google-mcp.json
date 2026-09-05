@@ -1,0 +1,70 @@
+{
+  "id": "io.github.matiasbattocchia/google-mcp",
+  "title": "google-mcp",
+  "description": "Streamable HTTP MCP server for Google Calendar and Sheets with OAuth login.",
+  "summary": "Streamable HTTP MCP server for Google Calendar and Sheets with OAuth login.",
+  "offersHint": "Streamable HTTP MCP server for Google Calendar and Sheets with OAuth login. · Remote MCP (streamable-http) at https://g.mcp.openbsp.dev/mcp · Requires headers: Authorization",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://g.mcp.openbsp.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://g.mcp.openbsp.dev/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token with your API key from https://g.mcp.openbsp.dev",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/matiasbattocchia/google-mcp",
+  "repository": {
+    "url": "https://github.com/matiasbattocchia/google-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-01-25T18:46:12.714032Z",
+  "publishedAt": "2026-01-25T18:46:12.714032Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token with your API key from https://g.mcp.openbsp.dev",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:26.883Z",
+    "sourceRepoAt": "2026-08-11T23:35:19.351Z",
+    "readmeAt": "2026-08-11T23:35:20.070Z",
+    "toolsAt": "2026-08-12T01:14:26.883Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/matiasbattocchia/google-mcp",
+    "checkedAt": "2026-08-11T23:35:19.351Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/matiasbattocchia/google-mcp/main/README.md",
+    "markdown": "# OpenBSP MCP for Google Workspace\n\nA public [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that lets AI assistants access your Google Calendar and Sheets.\n\n**Live at: https://g.mcp.openbsp.dev**\n\n## Why this exists\n\nMost Google MCP servers require you to create your own Google Cloud project, set up OAuth credentials, and run a local server. This is tedious and error-prone.\n\n**This project is different.** It's a hosted public server with proxy OAuth. You just:\n\n1. Click \"Login with Google\"\n2. Get an API key\n3. Add it to your MCP client\n\nNo Google Cloud setup. No local servers. No environment variables. Just connect and go.\n\n## What you can do\n\nOnce connected, ask your AI assistant to:\n\n- List and search your calendar events\n- Create, update, or delete events\n- Read and write to Google Sheets\n- Create new spreadsheets\n\n## How it works\n\n```\n┌──────────────┐     ┌──────────────────┐     ┌──────────────┐\n│  AI Client   │────▶│  OpenBSP MCP     │────▶│  Google APIs │\n│  (Claude)    │◀────│  Server          │◀────│              │\n└──────────────┘     └──────────────────┘     └──────────────┘\n```\n\n1. You select which Google products to connect (Calendar, Sheets)\n2. You authenticate with Google and grant permissions\n3. You receive an API key to configure your MCP client\n4. Your AI assistant can now access your Google data\n\n## Privacy & Security\n\n### What we store\n\n| Data | Purpose | Protection |\n|------|---------|------------|\n| API Key | Authenticate your MCP client | Stored as-is (random 256-bit value) |\n| OAuth Tokens | Access Google APIs on your behalf | AES-256-GCM encrypted |\n| Scopes | Remember which products you authorized | Not encrypted |\n\nOAuth tokens are encrypted at rest using AES-256-GCM. The encryption key is stored separately from the database, so a database breach alone cannot expose your Google tokens.\n\n### What we DON'T store\n\n- Your Google password\n- Your email content\n- Your calendar events or spreadsheet data\n- Any personal information\n\n### Data retention\n\n- **API keys**: Stored until you revoke them (or until expiration if set)\n- **OAuth tokens**: Stored alongside your API key\n- **Temporary auth states**: Deleted after 10 minutes\n\n### How to revoke access\n\n**Option 1: Delete your API key**\n```bash\ncurl -X DELETE https://g.mcp.openbsp.dev/key/YOUR_API_KEY\n```\n\n**Option 2: Revoke from Google**\n1. Go to [Google Account Security](https://myaccount.google.com/permissions)\n2. Find \"OpenBSP MCP\" in the list\n3. Click \"Remove Access\"\n\nBoth options will immediately invalidate your API key.\n\n## Setup for MCP Clients\n\nAfter authenticating, add this to your MCP client configuration:\n\n```json\n{\n  \"mcpServers\": {\n    \"google-mcp\": {\n      \"url\": \"https://g.mcp.openbsp.dev/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer YOUR_API_KEY\"\n      }\n    }\n  }\n}\n```\n\n### Programmatic integration\n\nMCP clients can automate the setup by redirecting users to:\n\n```\nhttps://g.mcp.openbsp.dev/auth/google?products=calendar,sheets&callback=YOUR_CALLBACK_URL\n```\n\nAfter authentication, the user is redirected to your callback with credentials in the URL fragment:\n\n```\nYOUR_CALLBACK_URL#api_key=gmc_xxx&url=https://g.mcp.openbsp.dev/mcp&email=user@gmail.com&files=Budget.xlsx,Sales.xlsx\n```\n\n| Parameter | Description |\n|-----------|-------------|\n| `api_key` | The generated API key |\n| `url` | The MCP endpoint URL |\n| `email` | The Google account email that authorized access |\n| `files` | Comma-separated file names (only when Sheets authorized and files selected) |\n\n## Available Tools\n\n### Calendar\n\n**Scopes requested:**\n- `calendar.events` - read and write events\n- `calendar.calendarlist.readonly` - list your calendars (read-only)\n\n| Tool | Description |\n|------|-------------|\n| `list_calendars` | List all your calendars |\n| `list_events` | Get events with optional date filters |\n| `check_availability` | Check busy/free times (no event details exposed) |\n| `create_event` | Create a new calendar event |\n| `update_event` | Update an existing event |\n| `delete_event` | Delete an event |\n\n### Sheets\n\n**Scope requested:**\n- `drive.file` - access only files you select or files created by the app\n\n| Tool | Description |\n|------|-------------|\n| `list_authorized_files` | List files the user has authorized for access |\n| `get_spreadsheet` | Get spreadsheet metadata, sheets, and tables |\n| `get_sheet_schema` | Get column names and inferred types |\n| `describe_sheet` | Get statistical summary of all columns |\n| `search_rows` | Search for rows matching filter criteria |\n| `semantic_search` | AI-powered semantic search over rows (finds by meaning, not exact match) |\n| `read_sheet` | Read data from a range (e.g., \"A1:D10\") |\n| `write_sheet` | Write data to a range |\n| `append_rows` | Append rows (supports Tables with `tableId` for footer-aware append) |\n| `create_spreadsheet` | Create a new spreadsheet |\n\nThe `drive.file` scope only grants access to files the user explicitly selects during authentication (via Google Drive Picker) or files created by the app. Use `list_authorized_files` to discover which spreadsheets are available.\n\n**Tables support:** The `get_spreadsheet` tool returns table metadata including `tableId`. Pass this to `append_rows` for proper table-aware appending that respects footers and auto-expands the table.\n\n**Semantic search:** The `semantic_search` tool uses AI embeddings to find rows by meaning. Powered by [TAG](https://github.com/matiasbattocchia/table-augmented-generation).\n\n## Self-Hosting\n\nWant to run your own instance? See [DEPLOY.md](DEPLOY.md) for instructions.\n\n## FAQ\n\n**Is this official?**\nNo, this is an independent open-source project. It is not affiliated with Google or Anthropic.\n\n**Is it safe?**\nWe only request the minimum permissions needed. Your data flows directly between Google and your AI client through our server - we don't store or log it.\n\n**Can I see the code?**\nYes! This project is open source. Review the code, run your own instance, or contribute improvements.\n\n**What if I lose my API key?**\nGenerate a new one by authenticating again. Old keys remain valid unless you revoke them.\n\n**Does it cost anything?**\nThis public instance is free. If you self-host, you'll pay for Cloudflare Workers (generous free tier available).\n",
+    "fetchedAt": "2026-08-11T23:35:20.070Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:26.883Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Missing or invalid Authorization header\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

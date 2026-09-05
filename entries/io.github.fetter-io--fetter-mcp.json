@@ -1,0 +1,65 @@
+{
+  "id": "io.github.fetter-io/fetter-mcp",
+  "title": "Fetter MCP",
+  "description": "Real-time Python package and vulnerability data for AI coding agents.",
+  "summary": "Real-time Python package and vulnerability data for AI coding agents.",
+  "offersHint": "Real-time Python package and vulnerability data for AI coding agents. · Remote MCP (streamable-http) at https://mcp.fetter.io/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.fetter.io/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.fetter.io/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://fetter.io/mcp",
+  "sourceUrl": "https://github.com/fetter-io/fetter-mcp",
+  "repository": {
+    "url": "https://github.com/fetter-io/fetter-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-26T05:35:26.633546Z",
+  "publishedAt": "2026-02-26T05:35:26.633546Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:42.193Z",
+    "sourceRepoAt": "2026-08-11T23:46:18.661Z",
+    "readmeAt": "2026-08-11T23:46:19.136Z",
+    "toolsAt": "2026-08-11T23:46:19.389Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/fetter-io/fetter-mcp",
+    "checkedAt": "2026-08-11T23:46:18.661Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/fetter-io/fetter-mcp/master/README.md",
+    "markdown": "# Fetter MCP\n\nFetter provides a remote [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server at `https://mcp.fetter.io/mcp` that gives AI coding agents real-time access to Python package vulnerability data. Built on [fetter](https://github.com/fetter-io/fetter-rs), it queries PyPI and OSV to surface known CVEs, CVSS scores, and safe versions so your agent can make informed dependency decisions as it writes code.\n\n**Tools:**\n- `most_recent_not_vulnerable`: find the latest release of a package that is free of known vulnerabilities\n- `is_vulnerable`: check whether a specific pinned version has known CVEs\n- `lookup`: find available versions and their vulnerabilities for any package or specifier\n\n\n## Installation\n\nThe Fetter MCP server uses the HTTP transport and requires no local installation. Just register the remote URL with your MCP client.\n\n### Claude Code\n\n```bash\nclaude mcp add --transport http fetter https://mcp.fetter.io/mcp\n```\n\n### Codex\n\n```bash\ncodex mcp add fetter --url https://mcp.fetter.io/mcp\n```\n\n### Other MCP Clients\n\nFor any other MCP-compatible client, provide the following remote server URL using the HTTP transport:\n\n```\nhttps://mcp.fetter.io/mcp\n```\n\n\n## Agent Usage\n\nOnce installed, the Fetter MCP tools are available to your AI agent during coding sessions. The agent can call them automatically when adding or auditing dependencies; no explicit tool invocation is required in your prompts.\n\n**Example prompts**\n- \"Add the latest safe version of requests to requirements.txt\"\n- \"Are there any known vulnerabilities in my current dependencies?\"\n- \"What is the most recent version of pillow with no CVEs?\"\n- \"Before pinning cryptography, check whether 42.0.5 is vulnerable\"\n\nThe agent selects the appropriate tool based on context:\n- Adding a new package: `most_recent_not_vulnerable` to find a safe version\n- Validating a specific pinned version: `is_vulnerable` for a definitive answer\n- Auditing an existing specifier: `lookup` to see affected versions\n\n\n## `most_recent_not_vulnerable`\n\nFind the most recent version of a package that has no known vulnerabilities. Provide only a package name and the server will search recent releases for a safe version. Useful when pinning a dependency to the latest clean release.\n\n**Parameters**\n- `package_name` — package name only (no version specifier), e.g. `\"requests\"`\n\n\n**Example Request**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"tools/call\",\n  \"id\": 2,\n  \"params\": {\n    \"name\": \"most_recent_not_vulnerable\",\n    \"arguments\": {\n      \"name\": \"cryptography\"\n    }\n  }\n}\n```\n\n**Example Response:**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"result\": {\n    \"content\": [],\n    \"structuredContent\": {\n      \"package\": \"cryptography\",\n      \"version\": \"46.0.5\",\n      \"vulnerabilities\": [],\n      \"vulnerable\": false\n    },\n    \"isError\": false\n  }\n}\n```\n\n\n## `is_vulnerable`\n\nCheck if a specific package version has known vulnerabilities. Requires an exact version specifier. Returns vulnerability IDs, summaries, CVSS scores, severity ratings, and reference URLs.\n\n**Parameters**\n- `dep_spec` — exact version specifier, e.g. `\"requests==2.31.0\"`\n\n**Example Request**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"tools/call\",\n  \"id\": 2,\n  \"params\": {\n    \"name\": \"is_vulnerable\",\n    \"arguments\": {\n      \"name\": \"requests==2.19.1\"\n    }\n  }\n}\n```\n\n**Example Response:**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"result\": {\n    \"content\": [],\n    \"structuredContent\": {\n      \"package\": \"requests\",\n      \"version\": \"2.19.1\",\n      \"vulnerabilities\": [\n        {\n          \"cvss_score\": 5.3,\n          \"id\": \"GHSA-9hjg-9r4m-mvj7\",\n          \"severity\": \"(Medium):\",\n          \"summary\": \"Requests vulnerable to .netrc credentials leak via malicious URLs\",\n          \"url\": \"https://osv.dev/vulnerability/GHSA-9hjg-9r4m-mvj7\"\n        },\n        {\n          \"cvss_score\": 5.6,\n          \"id\": \"GHSA-9wx4-h78v-vm56\",\n          \"severity\": \"(Medium):\",\n          \"summary\": \"Requests Session object does not verify requests after making first request with verify=False\",\n          \"url\": \"https://osv.dev/vulnerability/GHSA-9wx4-h78v-vm56\"\n        },\n        {\n          \"cvss_score\": 6.1,\n          \"id\": \"GHSA-j8r2-6x86-q33q\",\n          \"severity\": \"(Medium):\",\n          \"summary\": \"Unintended leak of Proxy-Authorization header in requests\",\n          \"url\": \"https://osv.dev/vulnerability/GHSA-j8r2-6x86-q33q\"\n        },\n        {\n          \"cvss_score\": 7.5,\n          \"id\": \"GHSA-x84v-xcm2-53pg\",\n          \"severity\": \"(High):\",\n          \"summary\": \"Insufficiently Protected Credentials in Requests\",\n          \"url\": \"https://osv.dev/vulnerability/GHSA-x84v-xcm2-53pg\"\n        },\n        {\n          \"cvss_score\": null,\n          \"id\": \"PYSEC-2018-28\",\n          \"severity\": null,\n          \"summary\": \"\",\n          \"url\": \"https://osv.dev/vulnerability/PYSEC-2018-28\"\n        },\n        {\n          \"cvss_score\": null,\n          \"id\": \"PYSEC-2023-74\",\n          \"severity\": null,\n          \"summary\": \"\",\n          \"url\": \"https://osv.dev/vulnerability/PYSEC-2023-74\"\n        }\n      ],\n      \"vulnerable\": true\n    },\n    \"isError\": false\n  }\n}\n```\n\n\n## `lookup`\n\nLook up a package by name and optional version specifier to find which versions are available and whether they have known vulnerabilities. Supports specifiers such as `\"requests\"`, `\"numpy>=2.0\"`, or `\"flask==3.0.0\"`.\n\n**Parameters**\n- `dep_specs` — package name or version specifier\n- `cvss_threshold` — filter to vulnerabilities at or above this CVSS score (0–10)\n- `max_observed_score` — return only the highest CVSS score per version rather than all individual vulnerabilities\n- `count` — limit the number of recent versions checked\n- `retain_passing` — include versions with no known vulnerabilities in the results\n\n\n**Example Request**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"method\": \"tools/call\",\n  \"id\": 2,\n  \"params\": {\n    \"name\": \"lookup\",\n    \"arguments\": {\n      \"name\": \"requests>=2.32.0\",\n      \"retain_passing\": true\n    }\n  }\n}\n```\n\n**Example Response:**\n```json\n{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"result\": {\n    \"content\": [],\n    \"structuredContent\": {\n      \"package\": \"requests\",\n      \"versions\": [\n        {\n          \"version\": \"2.32.0\",\n          \"vulnerabilities\": [\n            {\n              \"cvss_score\": 5.3,\n              \"id\": \"GHSA-9hjg-9r4m-mvj7\",\n              \"severity\": \"(Medium):\",\n              \"summary\": \"Requests vulnerable to .netrc credentials leak via malicious URLs\",\n              \"url\": \"https://osv.dev/vulnerability/GHSA-9hjg-9r4m-mvj7\"\n            }\n          ],\n          \"vulnerable\": true\n        },\n        {\n          \"version\": \"2.32.1\",\n          \"vulnerabilities\": [\n            {\n              \"cvss_score\": 5.3,\n              \"id\": \"GHSA-9hjg-9r4m-mvj7\",\n              \"severity\": \"(Medium):\",\n              \"summary\": \"Requests vulnerable to .netrc credentials leak via malicious URLs\",\n              \"url\": \"https://osv.dev/vulnerability/GHSA-9hjg-9r4m-mvj7\"\n            }\n          ],\n          \"vulnerable\": true\n        },\n        {\n          \"version\": \"2.32.2\",\n          \"vulnerabilities\": [\n            {\n              \"cvss_score\": 5.3,\n              \"id\": \"GHSA-9hjg-9r4m-mvj7\",\n              \"severity\": \"(Medium):\",\n              \"summary\": \"Requests vulnerable to .netrc credentials leak via malicious URLs\",\n              \"url\": \"https://osv.dev/vulnerability/GHSA-9hjg-9r4m-mvj7\"\n            }\n          ],\n          \"vulnerable\": true\n        },\n        {\n          \"version\": \"2.32.3\",\n          \"vulnerabilities\": [\n            {\n              \"cvss_score\": 5.3,\n              \"id\": \"GHSA-9hjg-9r4m-mvj7\",\n              \"severity\": \"(Medium):\",\n              \"summary\": \"Requests vulnerable to .netrc credentials leak via malicious URLs\",\n              \"url\": \"https://osv.dev/vulnerability/GHSA-9hjg-9r4m-mvj7\"\n            }\n          ],\n          \"vulnerable\": true\n        },\n        {\n          \"version\": \"2.32.4\",\n          \"vulnerabilities\": [],\n          \"vulnerable\": false\n        },\n        {\n          \"version\": \"2.32.5\",\n          \"vulnerabilities\": [],\n          \"vulnerable\": false\n        }\n      ]\n    },\n    \"isError\": false\n  }\n}\n```\n",
+    "fetchedAt": "2026-08-11T23:46:19.136Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "most_recent_not_vulnerable",
+      "description": "Find the most recent version of a package that has no known vulnerabilities."
+    },
+    {
+      "name": "is_vulnerable",
+      "description": "Check if a specific package version has known vulnerabilities. Requires an exact version specifier (e.g., 'requests==2.31.0')."
+    },
+    {
+      "name": "lookup",
+      "description": "Look up a package by name and (optionally) version number to find which versions are available and/or have vulnerabilities."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:19.389Z",
+  "toolsPreviewStatus": "ok"
+}

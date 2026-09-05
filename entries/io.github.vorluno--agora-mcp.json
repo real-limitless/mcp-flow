@@ -1,0 +1,58 @@
+{
+  "id": "io.github.vorluno/agora-mcp",
+  "title": "agora-mcp",
+  "description": "Shared per-repo space for Claude Code sessions: see activity, get collision warnings, notes.",
+  "summary": "Shared per-repo space for Claude Code sessions: see activity, get collision warnings, notes.",
+  "offersHint": "Shared per-repo space for Claude Code sessions: see activity, get collision warnings, notes. · Packages: npm:@vorluno/agora-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@vorluno/agora-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@vorluno/agora-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vorluno/agora-mcp",
+  "repository": {
+    "url": "https://github.com/vorluno/agora-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-22T12:30:07.089437Z",
+  "publishedAt": "2026-06-22T12:30:07.089437Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:29.879Z",
+    "sourceRepoAt": "2026-08-11T23:15:37.054Z",
+    "readmeAt": "2026-08-11T23:15:37.804Z",
+    "toolsAt": "2026-08-12T00:56:29.879Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vorluno/agora-mcp",
+    "checkedAt": "2026-08-11T23:15:37.054Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vorluno/agora-mcp/master/README.md",
+    "markdown": "<div align=\"center\">\n\n<img src=\"./assets/banner.jpg\" alt=\"agora — a shared space for your Claude Code sessions\" width=\"100%\" />\n\n# agora\n\n**A shared, persistent space for your Claude Code sessions — per repository.**\n\nSee what other sessions are doing, get warned before you overwrite their work, and leave notes. No daemon, no server to run.\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)\n[![Bun](https://img.shields.io/badge/Bun-1.3+-fbf0df?logo=bun&logoColor=black)](https://bun.sh)\n[![Model Context Protocol](https://img.shields.io/badge/MCP-compatible-6E56CF)](https://modelcontextprotocol.io)\n[![Built with Claude Code](https://img.shields.io/badge/Built_with-Claude_Code-D97757)](https://claude.com/claude-code)\n\n</div>\n\n---\n\n## Why\n\nWhen several Claude Code sessions work on the same repository — in parallel, or just over the course of a day — they're **blind to each other**. None of them knows what the others touched, they overwrite the same files silently, and the context is lost when you close them.\n\n**agora** gives every session a shared place to leave a trail and look at each other's work.\n\n## How it works\n\nThe whole system is **one SQLite file per repo**: `<repo-root>/.agora/space.db` (in WAL mode, so multiple processes read and write it at once without corruption).\n\n- **No one runs a server.** There's no daemon, no web app. The \"space\" *is* the file.\n- Every session of the repo **writes** what it does and **reads** what the others did.\n- Because it's a file, it **persists by itself** — close everything, come back tomorrow, the state is still there.\n- It's a **shared board**, not a live chat: sessions find out when they **start**, when they're **about to edit** (collision), or when they **ask** (the tools).\n\n> Multi-worktree friendly: the `.db` lives at the **main repo root**, so every session of the repo — including those in different worktrees — shares **one** agora.\n\n## Features\n\n- 🟢 **See who's here** and what files each session is touching, live.\n- ⚠️ **Collision warnings** — before you edit a file (or work a branch) another active session already holds.\n- 📋 **Project resume** — open a session and get a summary of what the others did.\n- 📓 **Activity log** — a per-repo timeline of everything that happened.\n- ✉️ **Notes** between sessions (directed or broadcast).\n- 🛡️ **Best-effort hooks** — they exit `0` no matter what; they never block your session.\n\n## Requirements\n\n- [Bun](https://bun.sh) 1.3+\n- `git` 2.x\n- [Claude Code](https://claude.com/claude-code) (or any MCP client)\n\n## Installation\n\n```bash\ngit clone https://github.com/vorluno/agora-mcp.git\ncd agora-mcp\nbun install\n\n# Install the 5 hooks (idempotent). Add --project to scope to the current repo only.\nbun run src/cli.ts init\n\n# Register the MCP server\nclaude mcp add agora -- bun run /absolute/path/to/agora-mcp/src/index.ts\n```\n\n## Configuration\n\nAny MCP client works. The `mcpServers` entry:\n\n```json\n{\n  \"mcpServers\": {\n    \"agora\": {\n      \"command\": \"bun\",\n      \"args\": [\"run\", \"/absolute/path/to/agora-mcp/src/index.ts\"]\n    }\n  }\n}\n```\n\nFor **Claude Code**, `claude mcp add` (above) writes this for you. For **Warp** or **Cursor**, paste the snippet into their MCP settings.\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `resume_project` | Summary of the agora: active sessions, recent activity, collisions, unread notes. |\n| `who_is_here` | Active sessions and which files each one is touching. |\n| `activity_log` | The repo's event log, filterable by time/session. |\n| `check_collision` | Is another active session touching these files or this branch? |\n| `leave_note` | Leave a note for another session (or broadcast to all). |\n| `read_notes` | Read notes addressed to a session (marks them read). |\n\n## How collisions are detected\n\n- **File collision:** 2+ distinct sessions with an active `writing` claim on the **same file**.\n- **Branch collision:** 2+ active sessions on the **same branch** but in **different worktrees**.\n\nOnly **live** sessions are counted, so a session that died without a clean exit won't produce false positives.\n\n## Automatic capture (hooks)\n\n`init` installs 5 best-effort hooks (they always `exit 0`):\n\n| Hook | What it does |\n|------|--------------|\n| `SessionStart` | Registers the session **and injects the agora summary** into your context (also fires on `/resume` and after a context compaction). |\n| `PostToolUse` (Edit/Write) | Records the file claim + event; warns if a new collision appears. |\n| `PreToolUse` (Edit/Write) | Warns you *before* editing if another session already holds the file. |\n| `Stop` / `SessionEnd` | Marks the session idle / stopped and releases its claims. |\n\n## Development\n\n```bash\nbun test          # full suite (incl. a real WAL concurrency test)\nbunx tsc --noEmit # type-check\n```\n\nBuilt test-first across 14 TDD tasks with per-task and whole-branch review.\n\n## License\n\n[MIT](./LICENSE) © 2026 Vorluno\n\n---\n\n<div align=\"center\">\n\nBuilt by **[Vorluno](https://vorluno.dev)** — a software studio from Panamá 🇵🇦\n\nPart of the [`mcp-s`](https://github.com/vorluno/mcp-s) family of MCP servers.\n\n</div>\n",
+    "fetchedAt": "2026-08-11T23:15:37.804Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:29.879Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

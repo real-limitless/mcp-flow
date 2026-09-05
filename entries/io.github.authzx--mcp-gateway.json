@@ -1,0 +1,82 @@
+{
+  "id": "io.github.authzx/mcp-gateway",
+  "title": "mcp-gateway",
+  "description": "AuthzX MCP Gateway — policy-enforcing proxy between AI agents and MCP servers",
+  "summary": "AuthzX MCP Gateway — policy-enforcing proxy between AI agents and MCP servers",
+  "offersHint": "AuthzX MCP Gateway — policy-enforcing proxy between AI agents and MCP servers · Packages: npm:@authzx/mcp-gateway · Env vars: YOUR_API_KEY",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@authzx/mcp-gateway",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "YOUR_API_KEY",
+        "description": "Your API key for the service",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@authzx/mcp-gateway",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "YOUR_API_KEY",
+          "description": "Your API key for the service",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "YOUR_API_KEY",
+      "description": "Your API key for the service",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/authzx/mcp-gateway",
+  "repository": {
+    "url": "https://github.com/authzx/mcp-gateway",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-30T05:40:37.818047Z",
+  "publishedAt": "2026-05-30T05:40:37.818047Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:28.836Z",
+    "sourceRepoAt": "2026-08-11T23:55:46.844Z",
+    "readmeAt": "2026-08-11T23:55:47.543Z",
+    "toolsAt": "2026-08-12T01:29:28.836Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/authzx/mcp-gateway",
+    "checkedAt": "2026-08-11T23:55:46.844Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/authzx/mcp-gateway/main/README.md",
+    "markdown": "# Vengtoo MCP Gateway\n\n[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![Node](https://img.shields.io/badge/Node-≥18-339933.svg)](https://nodejs.org)\n[![npm](https://img.shields.io/npm/v/@vengtoo/mcp-gateway)](https://www.npmjs.com/package/@vengtoo/mcp-gateway)\n\n**Authorization gateway for AI agents and MCP tool calls.**\n\n> Open-source. Drop-in. Works with any MCP client.\n\n## Why\n\nAI agents connected to MCP servers can call any tool they have access to — read your database, delete files, execute arbitrary SQL. Vengtoo MCP Gateway puts a policy enforcement point between the agent and those tools, so every call is authorized before it executes.\n\n## What it does\n\n- Sits between MCP clients (Claude Code, Cursor, VS Code, GitHub Copilot) and any MCP server\n- Intercepts every tool call and checks authorization before forwarding\n- Two modes: **cloud** (Vengtoo Cloud API) and **local** (Vengtoo Agent + .rego policy file)\n- Full audit trail of every tool invocation — subject, tool name, arguments, and decision are logged as structured JSON:\n\n```json\n{\"ts\":\"2026-05-25T10:03:11.482Z\",\"level\":\"info\",\"msg\":\"mcp_tool_call\",\"subject\":\"agent:ai-assistant\",\"tool\":\"database__query\",\"allowed\":true,\"latency_ms\":0.8}\n```\n\n## Quick Start\n\n1. Install and start the [Vengtoo Agent](https://github.com/vengtoo/agent). The agent runs locally and evaluates your authorization policy — no cloud account needed.\n\n```bash\ngo install github.com/vengtoo/agent/cmd/agent@latest\nvengtoo-agent --policy ./policy.rego\n```\n\nCreate a `policy.rego` to define what your agent can do:\n\n```rego\npackage vengtoo.mcp\n\ndefault allow := false\n\n# Allow read-only tools\nallow if { input.resource.name == \"database__query\" }\nallow if { input.resource.name == \"database__list_tables\" }\n\n# Allow writes, but block destructive SQL\nallow if {\n    input.resource.name == \"database__execute\"\n    not contains(lower(input.resource.attributes.sql), \"drop\")\n    not contains(lower(input.resource.attributes.sql), \"delete from\")\n}\n```\n\nSee [`demo/policies/`](demo/policies/) for more examples including Kubernetes namespace protection.\n\n2. Create a `gateway.config.json`:\n\n```json\n{\n  \"vengtoo\": {\n    \"agentUrl\": \"http://localhost:8181\"\n  },\n  \"subject\": \"agent:ai-assistant\",\n  \"servers\": {\n    \"database\": {\n      \"command\": \"node\",\n      \"args\": [\"./my-database-mcp-server.js\"]\n    }\n  }\n}\n```\n\n3. Add to your MCP client (e.g. Claude Code):\n\n```bash\nclaude mcp add --transport stdio vengtoo-gateway -- \\\n  npx vengtoo-mcp-gateway --config /path/to/gateway.config.json\n```\n\n## Configuration\n\n### Config schema\n\n| Field              | Type   | Required | Description                                                    |\n| ------------------ | ------ | -------- | -------------------------------------------------------------- |\n| `vengtoo.agentUrl`  | string | \\*       | URL of local Vengtoo Agent (local mode)                         |\n| `vengtoo.cloudUrl`  | string | \\*       | URL of Vengtoo Cloud API (cloud mode)                           |\n| `vengtoo.apiKey`    | string |          | API key from [Vengtoo Cloud](https://console.vengtoo.com) (or set `VENGTOO_API_KEY` env var) |\n| `vengtoo.timeoutMs` | number |          | Authorization request timeout (default: 5000)                  |\n| `subject`          | string | yes      | Identity of the agent making tool calls                        |\n| `subjectType`      | string |          | Subject type (default: `\"agent\"`)                              |\n| `resourceType`     | string |          | Resource type for authorization checks (default: `\"mcp_tool\"`) |\n| `servers`          | object | yes      | Map of downstream MCP servers to proxy                         |\n\n\\* Provide either `agentUrl` (local mode) or `cloudUrl` (cloud mode).\n\nEach entry in `servers` has:\n\n| Field     | Type     | Required | Description                      |\n| --------- | -------- | -------- | -------------------------------- |\n| `command` | string   | yes      | Command to spawn the MCP server  |\n| `args`    | string[] |          | Command arguments                |\n| `env`     | object   |          | Additional environment variables |\n\n## Modes\n\n### Cloud mode\n\nConnect to Vengtoo Cloud for managed policies:\n\n```json\n{\n  \"vengtoo\": {\n    \"cloudUrl\": \"https://api.vengtoo.com/access/v1/evaluation\",\n    \"apiKey\": \"azx_...\"\n  },\n  \"subject\": \"agent:prod-assistant\",\n  \"servers\": {\n    \"database\": {\n      \"command\": \"node\",\n      \"args\": [\"./db-server.js\"]\n    }\n  }\n}\n```\n\n### Local mode\n\nRun the Vengtoo Agent locally with a .rego policy file for offline, self-contained authorization:\n\n```bash\n# Start the agent with your policy\nvengtoo-agent --policy ./policy.rego\n```\n\n```json\n{\n  \"vengtoo\": {\n    \"agentUrl\": \"http://localhost:8181\"\n  },\n  \"subject\": \"agent:dev-assistant\",\n  \"servers\": {\n    \"database\": {\n      \"command\": \"node\",\n      \"args\": [\"./db-server.js\"]\n    }\n  }\n}\n```\n\n## CLI Flags\n\n| Flag                       | Description                                                                            |\n| -------------------------- | -------------------------------------------------------------------------------------- |\n| `--config <path>`          | Path to gateway config file (default: `./gateway.config.json`)                         |\n| `--list-tools`             | List all tools from configured downstream servers and exit                             |\n| `--generate-policy [path]` | Generate a starter .rego policy file for the configured tools (default: `policy.rego`) |\n\nEnvironment variable overrides: `VENGTOO_API_KEY`, `VENGTOO_AGENT_URL`, `AUTHZX_SUBJECT`.\n\n## MCP Client Setup\n\nThe gateway runs as a stdio MCP server. Point your MCP client at it instead of the downstream server directly.\n\n### Claude Code\n\n```bash\nclaude mcp add --transport stdio vengtoo-gateway -- \\\n  npx vengtoo-mcp-gateway --config /path/to/gateway.config.json\n```\n\n### Cursor\n\nAdd to `.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"vengtoo-gateway\": {\n      \"command\": \"npx\",\n      \"args\": [\"vengtoo-mcp-gateway\", \"--config\", \"/path/to/gateway.config.json\"]\n    }\n  }\n}\n```\n\n### Claude Desktop\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"vengtoo-gateway\": {\n      \"command\": \"npx\",\n      \"args\": [\"vengtoo-mcp-gateway\", \"--config\", \"/path/to/gateway.config.json\"]\n    }\n  }\n}\n```\n\n### VS Code / GitHub Copilot\n\nAdd to `.vscode/mcp.json`:\n\n```json\n{\n  \"servers\": {\n    \"vengtoo-gateway\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"vengtoo-mcp-gateway\", \"--config\", \"/path/to/gateway.config.json\"]\n    }\n  }\n}\n```\n\nSee [`demo/`](demo/) for full end-to-end examples with sample policies.\n\n## Feedback\n\n- [GitHub Issues](https://github.com/vengtoo/mcp-gateway/issues) — Bug reports and feature requests\n- [Documentation](https://docs.vengtoo.com) — Guides and API reference\n\n## License\n\nApache-2.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:55:47.543Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:28.836Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

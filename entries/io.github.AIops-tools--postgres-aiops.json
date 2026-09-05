@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/postgres-aiops",
+  "title": "Postgres AIops",
+  "description": "Governed PostgreSQL DBA ops: slow-query RCA, bloat/vacuum & blocking-lock analysis; 35 MCP tools.",
+  "summary": "Governed PostgreSQL DBA ops: slow-query RCA, bloat/vacuum & blocking-lock analysis; 35 MCP tools.",
+  "offersHint": "Governed PostgreSQL DBA ops: slow-query RCA, bloat/vacuum & blocking-lock analysis; 35 MCP tools. · Packages: pypi:postgres-aiops",
+  "version": "0.9.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "postgres-aiops",
+    "version": "0.9.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "postgres-aiops",
+      "version": "0.9.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Postgres-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Postgres-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:49:55.71821Z",
+  "publishedAt": "2026-08-10T06:49:55.71821Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:46.792Z",
+    "sourceRepoAt": "2026-08-12T00:18:06.439Z",
+    "readmeAt": "2026-08-12T00:18:06.927Z",
+    "toolsAt": "2026-08-12T01:47:46.792Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Postgres-AIops",
+    "checkedAt": "2026-08-12T00:18:06.439Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Postgres-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/postgres-aiops -->\n\n# Postgres AIops\n\n> **Disclaimer**: Community-maintained open-source project. **Not affiliated with, endorsed by, or sponsored by the PostgreSQL Global Development Group or any vendor.** \"PostgreSQL\" and the elephant logo are trademarks of the PostgreSQL Community Association; all product/trademark names belong to their respective owners. MIT licensed.\n\nGoverned AI-ops for **PostgreSQL DBA operations** — connecting to a server with\n**psycopg 3** and reading the system catalogs and `pg_stat_*` views — with a\n**built-in governance harness**: unified audit log, token/runaway\nbudget guard, undo-token recording, and descriptive risk-tier labels.\nBeyond the mock test suite, the reads, a governed write, and its undo have been\nexercised against a live PostgreSQL 16.14 instance — see [`docs/VERIFICATION.md`](docs/VERIFICATION.md).\n\n## What it does\n\nThree flagship signature analyses, plus the guarded reads and writes around them:\n\n- **Slow-query RCA** — take the worst `pg_stat_statements` entry (plus an optional\n  `EXPLAIN` plan) and map its numbers — mean time, cache-hit ratio, temp spill,\n  call count, plan node types — to a cited cause and a concrete action. Every\n  finding carries its measured number, not a black-box verdict.\n- **Bloat & vacuum analysis** — combine per-table dead-tuple ratio and autovacuum\n  recency into a ranked, cited recommendation (VACUUM / tune autovacuum).\n- **Blocking lock-chain RCA** — build the wait-for tree from `pg_blocking_pids`,\n  name the **root blocker** (blocks others, waits on none), and give the action;\n  a cycle is flagged as a likely deadlock.\n\n## What works\n\n- **CLI** (`postgres-aiops ...`): `init`, `overview`, `server`, `activity`, `query`, `index`, `table`, `repl`, `analyze`, `remediate`, `secret`, `doctor`, `mcp`.\n- **MCP server** (`postgres-aiops mcp` or `postgres-aiops-mcp`): **35 tools** (25 read, 10 write), every one wrapped with the bundled `@governed_tool` harness.\n- **Encrypted credentials**: the role password lives in an encrypted store `~/.postgres-aiops/secrets.enc` (Fernet + scrypt) — **never plaintext on disk**. Unlock with a master password from `POSTGRES_AIOPS_MASTER_PASSWORD` (MCP/CI) or an interactive prompt (CLI).\n- **Reversibility**: mutating writes fetch the **real before-state first** and record a faithful inverse — `create_index`↔`drop_index`; `drop_index` captures `pg_get_indexdef` so undo recreates it exactly; `update_setting` captures the prior value so undo sets it back. Irreversible ops (`terminate_backend`, `cancel_query`, `run_vacuum`, `run_analyze`, `reindex`, `reset_query_stats`) record prior stats for audit but declare no undo.\n- **Safety**: every state-changing CLI op supports `--dry-run` and requires double confirmation; every write MCP tool takes a `dry_run` preview. All identifiers that cannot be parameterised (table/index/GUC names) are validated and quoted; all values are bound query parameters.\n\n## Capability matrix (35 MCP tools)\n\n| Domain | Tools | Count | R/W |\n|--------|-------|:-----:|:---:|\n| **Overview** | `overview` | 1 | read |\n| **Server** | `server_version`, `show_settings`, `list_extensions`, `list_databases`, `list_roles` | 5 | read |\n| **Activity** | `list_activity`, `long_running_queries`, `list_locks` | 3 | read |\n| **Queries** | `top_queries`, `explain_query` | 2 | read |\n| **Indexes** | `unused_indexes`, `missing_index_hints`, `index_bloat`, `invalid_indexes` | 4 | read |\n| **Tables** | `table_sizes`, `table_bloat`, `autovacuum_status` | 3 | read |\n| **Replication** | `replication_status`, `replication_slots`, `wal_status` | 3 | read |\n| **Analysis (flagship)** | `slow_query_rca`, `bloat_and_vacuum_analysis`, `blocking_lock_chain_rca` | 3 | read |\n| **Writes** | `terminate_backend`, `cancel_query`, `drop_index` | 3 | write (high) |\n| | `run_vacuum`, `run_analyze`, `create_index`, `reindex`, `update_setting`, `reset_query_stats` | 6 | write (medium) |\n| **Undo** | `undo_list` | 1 | read |\n| | `undo_apply` | 1 | write (medium) |\n\nThe flagship analyses accept injected records for pure/offline analysis, or pull\nlive from a configured target. `top_queries`/`slow_query_rca` require the\n`pg_stat_statements` extension; the read role should have `pg_monitor`.\n\n## What this tool does, and does not, decide\n\nIt delivers PostgreSQL DBA operations — reads and writes — accurately and\nefficiently, and records every one of them. It does **not** decide whether a\nwrite is allowed to happen. That is the agent's judgement, or the permission of\nthe account you connect it with: connect with a PostgreSQL role that has no\nwrite privileges (a read-only role, or one without INSERT/UPDATE/DELETE/DDL),\nand the writes fail at the server — the place that actually owns the\npermission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in `~/.postgres-aiops/audit.db`,\nand destructive writes still capture their before-state and record an inverse\nwhere one exists.\n\n> Each tool declares a `risk_level`, carried into the audit row as a descriptive\n> tier (none/confirm/review) — so a reviewer can see at a glance that a row was\n> a high-risk delete. It is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/postgres-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool now enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Quick start\n\n```bash\nuv tool install postgres-aiops             # or: pipx install postgres-aiops\npostgres-aiops init                        # wizard: add a target + store the password (encrypted)\npostgres-aiops doctor                      # verify config, secrets, connectivity\npostgres-aiops overview                    # one-shot cluster health snapshot\npostgres-aiops analyze slow-query          # RCA the worst pg_stat_statements entry\npostgres-aiops table bloat                 # dead-tuple bloat proxy per table\n```\n\nRun as an MCP server (stdio):\n\n```bash\nexport POSTGRES_AIOPS_MASTER_PASSWORD=...  # unlock secrets non-interactively\npostgres-aiops-mcp\n```\n\n## Governance\n\nEvery MCP tool passes through the bundled `@governed_tool` harness:\n\n- **Audit** — every call (params, result, status, duration, risk tier, and any\n  operator-supplied approver/rationale) is logged to `~/.postgres-aiops/audit.db`\n  (relocatable via `POSTGRES_AIOPS_HOME`). The CLI writes the same row the MCP\n  path does — there is no unaudited entry point.\n- **Runaway guard** — a safety backstop, not an authorization gate: the same call\n  hammered in a tight loop trips a circuit breaker. Disable with\n  `POSTGRES_RUNAWAY_MAX=0`; optional hard ceilings via `POSTGRES_MAX_TOOL_CALLS` /\n  `POSTGRES_MAX_TOOL_SECONDS`.\n- **Undo recording** — reversible writes record an inverse descriptor built from\n  the fetched before-state.\n- **Risk tier** — a descriptive label on the audit row derived from `risk_level`;\n  it gates nothing.\n\n## Scope\n\nThis is the **PostgreSQL DBA-ops** member of the AIops-tools family (governed\nAI-ops with audit + budget + undo + risk tiers). Do **NOT** use it for OT /\nindustrial edge (Modbus, OPC-UA, PROFINET) — see the separate `industrial-aiops`\nline — nor for application-schema migrations or ORM management.\n\n## Missing a capability?\n\nCoverage is intentionally a curated subset of PostgreSQL's catalogs and\nmaintenance surface. Missing a view, a metric, or a maintenance command? **Open\nan issue or PR** — contributions welcome.\n\n## Status\n\nThe mock test suite is complemented by a live run: the catalog / `pg_stat_*`\nreads, the `bloat_and_vacuum_analysis` RCA, and the `create_index` / `drop_index`\ngoverned write path (audit + undo, with `drop_index` capturing\n`pg_get_indexdef` first) were exercised against a live PostgreSQL 16.14 instance running in\nDocker. [`docs/VERIFICATION.md`](docs/VERIFICATION.md) records exactly what was\nand was not covered. `postgres-aiops doctor` is the fastest live check.\n",
+    "fetchedAt": "2026-08-12T00:18:06.927Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:46.792Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

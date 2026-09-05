@@ -1,0 +1,344 @@
+{
+  "id": "cloud.redu/mcp",
+  "title": "mcp",
+  "description": "Agent-native cloud, EU-hosted. Provision VMs, networks & databases on redu.cloud via MCP.",
+  "summary": "Agent-native cloud, EU-hosted. Provision VMs, networks & databases on redu.cloud via MCP.",
+  "offersHint": "Agent-native cloud, EU-hosted. Provision VMs, networks & databases on redu.cloud via MCP. · Remote MCP (streamable-http) at https://mcp.redu.cloud/mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.redu.cloud/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.redu.cloud/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-06-09T21:56:22.463537Z",
+  "publishedAt": "2026-06-09T21:56:22.463537Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:40:01.689Z",
+    "sourceRepoAt": "2026-08-12T00:40:01.690Z",
+    "readmeAt": "2026-08-12T00:40:01.690Z",
+    "toolsAt": "2026-08-12T00:40:01.690Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:40:01.690Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:40:01.690Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "whoami",
+      "description": "Verifies your redu.cloud credential with a REAL server round-trip and returns your identity + live quota. A green result means the key actually works — not merely that one is configured. Use this first if anything is 401ing."
+    },
+    {
+      "name": "check_deploy_prerequisites",
+      "description": "The deploy ENTRY GATE — run this first when a user wants to deploy. Verifies the account is ready and AUTO-SELECTS the network_id + keypair_name to pass to deploy_app (so you never hunt for them): (1) account reachable + quota, (2) a private network (picks your default — every account has one), (3) an SSH keypair (if you have none, returns ssh_key_recipe: the exact local ssh-keygen → import_keypair → write SSH_KEY_LOCATION-to-.env steps — run them, in yolo mode without asking). Returns { ready, network_id, keypair_name, missing, ssh_key_recipe }."
+    },
+    {
+      "name": "deploy_overview",
+      "description": "Orientation for deploying an app on redu.cloud: the end-to-end flow, the two source modes (git vs upload), how to handle a missing Dockerfile or a database, when (and when NOT) to split a deploy across multiple VMs, verifying a deploy functionally, and how to debug a failed build. Call this first when a user asks to deploy/ship/host an app and you're unsure where to start."
+    },
+    {
+      "name": "create_api_key",
+      "description": "Mints a NEW least-privilege redu API key for a deployed app or automation to use (e.g. to add a backup feature). GUARDRAIL: the first call does NOT create anything. It returns a confirmation the user must approve, because a key is a long-lived credential that acts on the account and ANY usage of it is BILLED to the account owner. Show the user the name, the exact scopes, and the billing notice, get their explicit approval, then call again with confirm:true. This is required even in yolo/auto mode. The secret is returned ONCE."
+    },
+    {
+      "name": "integrate_overview",
+      "description": "Orientation for wiring a redu.cloud capability (backups, DNS, extra storage, a managed DB, ...) INTO an app already deployed on redu, e.g. 'add a backup feature to the Supabase I deployed on redu'. Explains the pattern: mint a LEAST-PRIVILEGE scoped API key (with the user's approval via create_api_key), inject it into the app, and call the redu API from the app. Call this when a user asks to add/integrate a redu feature into a running deployment and you are unsure how."
+    },
+    {
+      "name": "prepare_upload",
+      "description": "Returns the LOCAL shell commands to package your working directory and upload it for an upload-mode deploy (no git, no PAT). Run them in the user's terminal, capture `source_token` from the upload's JSON response, then call deploy_app with that source_token (omit repo). The upload authenticates AUTOMATICALLY with a short-lived ticket minted from your MCP credential — NO API key needed in the command and nothing secret is printed (it falls back to needing $REDU_API_KEY only if minting is unavailable). Excludes node_modules/.git/.venv/build output and .env by default; honors .gitignore when is_git_repo=true."
+    },
+    {
+      "name": "scaffold_local",
+      "description": "OPTIONAL preflight: returns a podman-compose.yml + .env so the user can run the app (and a throwaway local Postgres) on THEIR machine before deploying to redu — to see it run / sanity-check the container. Requires local podman/podman-compose. It's a suggestion, not a gate — skip it and go straight to deploy_app any time. Honest caveat: the local Postgres is NOT the managed Postgres, so a green local run does not prove the prod DB wiring."
+    },
+    {
+      "name": "plan_instance",
+      "description": "Aggregates images/flavors/keypairs/networks/security groups into human-friendly choices. Does not create anything. Happy path: import_keypair → plan_instance → create_instance → get_ssh_command. Call this second (after import_keypair, if you have no keypairs)."
+    },
+    {
+      "name": "plan_managed_datastore",
+      "description": "Plans a direct managed datastore create without provisioning anything. Use this before create_database, create_relational_database, create_redis, or create_clickhouse. For app deployments, prefer deploy_app database:'managed' so plan_deploy includes and wires the datastore automatically. Pass ha:true to plan a highly available datastore (postgres or clickhouse): three machines instead of one, surviving the loss of a machine without manual failover, at roughly 3x the hourly rate. The returned plan carries the machine count so you can show the user the cost before anything is created."
+    },
+    {
+      "name": "select_surface",
+      "description": "For a repo with SEVERAL runnable parts, call this BEFORE plan_deploy. You enumerate the candidate surfaces (find every Dockerfile/Containerfile, OPEN each, classify by its EXPOSE + CMD — never by directory name) and pass them in; redu RANKS them with fixed rules (a standalone browser desktop/noVNC > a self-contained web app > a keys-required playground > an API > a headless worker > docs/examples). GUIDED: returns the ranked list to present to the user, who picks. YOLO: auto-selects the TOP-ranked surface. Then run plan_deploy on the chosen surface's path + http_port. (A single-surface repo doesn't need this.)"
+    },
+    {
+      "name": "plan_deploy",
+      "description": "Turns YOUR repo classification (you scan the repo and pass what you found) into a complete, approvable deploy plan WITHOUT creating anything. ⚡ PASTE THREE FILES IF THEY EXIST - `redu_md` (cat redu.md), `compose_yaml` (the compose file), `dockerfile`. You do NOT read or interpret them; redu parses them SERVER-SIDE and returns (a) a short digest, (b) `pin_dname` so a redeploy keeps the SAME public URL, and (c) `preflight` - preemptive fixes for known failure patterns found in YOUR repo, each learned from a real failed build. Pasting them is the single highest-value thing you can do for a first deploy. picks the VM + managed-Postgres sizes, prices them at the real pricing_rules rates, and checks they FIT your quota — so a plan that can't provision is caught HERE, before any spend. You pass what you detected in the repo (runtime, port, needs_postgres/redis/clickhouse/vector_db); it returns resources + £/hr + £/mo + a feasibility verdict + a checkpoint summary to confirm with the user. Defaults: app VM m1.medium, managed Postgres m1.small, managed ClickHouse m1.medium; pass single_vm to collapse the app + Postgres onto one VM. SET needs_clickhouse:true FOR ANY ANALYTICS-SHAPED APP (Plausible, PostHog, Langfuse, Matomo, SigNoz, or anything with a clickhouse image / CLICKHOUSE_* env / a ClickHouse client dep): those products keep config in Postgres and EVERY EVENT in ClickHouse, so the events tier is a second VM with a second line on the bill: measured 2026-08-07, omitting it quoted GBP 53.29/mo for a GBP 65.99/mo deployment. It is sized, quota-checked and priced here; unlike Postgres and Redis it is not auto-wired by deploy_app, so the plan tells you to run plan_managed_datastore engine:'clickhouse' -> create_clickhouse and pass CLICKHOUSE_* env yourself. Vector-DB needs are flagged, not provisioned. Any containerizable app works (node, python, go, ...) — it deploys as a container, so the language doesn't gate it. Set serves_http:false for a non-web repo (a library, CLI, or language runtime with no HTTP server) and it returns a clean not-a-web-service verdict instead of a costed VM plan. Set heavy_build:true for resource-heavy builds (compiled-from-source native code, a monorepo/turborepo build, a large Node heap) and it raises the app VM to a build-capable floor so the on-VM build doesn't get OOM-killed. Set memory_heavy:true for a RAM-forward app whose persistent state lives in a MANAGED DB / external store (Next.js like cal.com/cal.diy, Rails, Django, JVM/Java apps) — it sizes onto a memory-optimized SMALL-DISK flavor (m1.mem16/m1.mem32: full RAM, a lean 40 GB disk instead of 160 GB) that costs less and snapshots/clusters far faster; do NOT set it if the app keeps lots of data on local disk. Also returns a brand-named markdown report (Mermaid diagram + cost) to save as redu-deploy-plan.md and show the user. Every deploy leaves TWO MANDATORY files at the repo root with DIFFERENT purposes: redu-deploy-plan.md = THIS run's plan/estimate, and redu.md = the DURABLE deploy memory the NEXT deploy reads. If a redu.md exists, READ it FIRST and reuse its known-good plan + recorded fixes; if NONE exists, one MUST be created at the end of the deploy (from get_deployment's redu_md_markdown). They are SEPARATE files — even if your own memory/notes from a prior deploy call redu-deploy-plan.md 'the record', the durable record is redu.md, so do not skip creating it."
+    },
+    {
+      "name": "list_instances",
+      "description": "Lists your compute instances."
+    },
+    {
+      "name": "list_flavors",
+      "description": "Lists available instance sizes."
+    },
+    {
+      "name": "list_images",
+      "description": "Lists available OS images."
+    },
+    {
+      "name": "list_keypairs",
+      "description": "Lists your SSH keypairs. If empty, call import_keypair first before creating instances."
+    },
+    {
+      "name": "list_security_groups",
+      "description": "Lists your security groups."
+    },
+    {
+      "name": "list_private_networks",
+      "description": "Lists your private networks."
+    },
+    {
+      "name": "list_volumes",
+      "description": "Lists your block storage volumes."
+    },
+    {
+      "name": "list_snapshots",
+      "description": "Lists your instance snapshots."
+    },
+    {
+      "name": "list_backups",
+      "description": "Lists your volume backups."
+    },
+    {
+      "name": "list_clusters",
+      "description": "Lists your autoscaling clusters."
+    },
+    {
+      "name": "list_dns_entries",
+      "description": "Lists DNS proxy host entries."
+    },
+    {
+      "name": "list_domains",
+      "description": "Lists custom domains you have verified ownership of."
+    },
+    {
+      "name": "list_regions",
+      "description": "Lists available regions."
+    },
+    {
+      "name": "list_databases",
+      "description": "Lists your managed PostgreSQL databases. Once a row's status is 'ready', it carries the private-network connection details (private_ip, port 5432, db_name, db_user)."
+    },
+    {
+      "name": "list_relational_databases",
+      "description": "Lists your managed MySQL/MariaDB databases (the relational-database resource). Each row carries its engine ('mysql'|'mariadb'); once status is 'ready' it has the private-network connection details (private_ip, port 3306, db_name, db_user)."
+    },
+    {
+      "name": "list_media_spaces",
+      "description": "Lists Redu media spaces: private NFS media VMs backed by persistent volumes. For WordPress/WooCommerce clusters, reuse one on the app's private network for wp-content/uploads, or pass create_media_space:true to deploy_app/deploy_compose/upgrade_to_cluster so Redu creates one."
+    },
+    {
+      "name": "list_clickhouse_databases",
+      "description": "Lists your managed ClickHouse databases (OLAP / analytics — its own resource, not a relational DB). Once a row's status is 'ready' it carries the private-network connection details (private_ip, ClickHouse HTTP port 8123, db_name, db_user)."
+    },
+    {
+      "name": "list_redis",
+      "description": "Lists your managed Redis instances. Once a row's status is 'ready' it carries the private-network connection details (private_ip, port 6379) — connect from another instance on the same private network with redis-cli -h <private_ip> -p 6379 -a <password>."
+    },
+    {
+      "name": "create_media_space",
+      "description": "Creates a private Redu media space: a small NFS VM backed by a persistent volume, intended for WordPress/WooCommerce wp-content/uploads in autoscaling clusters. Prefer letting deploy_app/deploy_compose create this by passing create_media_space:true after plan_deploy approval; use this tool when manually preparing or reusing shared uploads storage."
+    },
+    {
+      "name": "upgrade_to_cluster",
+      "description": "THE WAY TO MAKE AN EXISTING APP HIGHLY AVAILABLE. If the user asks for high availability, redundancy, no single point of failure, surviving a host or VM failure, or 'stay up if a machine dies', this is the tool: point it at their running VM and pass high_availability:true. It needs no rebuild and no redeploy, and the URL does not change. Turns a single running instance into a horizontally-autoscaling cluster: snapshots the instance and puts your SOURCE VM behind a load balancer as its ALWAYS-ON BASELINE MEMBER, then an autoscaling group adds EXTRA members (booted from that snapshot) on CPU load and scales them back down to zero. FLAVOR — LEAD WITH A MEMORY-OPTIMIZED SMALL-DISK FLAVOR (m1.mem16/m1.mem32) for the cluster, and ideally have the SOURCE VM on one too: clustering snapshots the source VM's FULL disk, so DISK size (not RAM) drives how long the cluster takes to build and to add each member under load — a 40 GB mem flavor is several times faster to snapshot and scale than a 160 GB standard flavor (m1.xlarge) and costs less for the same RAM. If the source VM is on a big-disk flavor, RECOMMEND migrating the app onto a mem-flavor VM first (a root disk cannot be shrunk in place), even though it is extra work — it pays off on every scale-out, and a clustered app is stateless anyway (state in the managed DB) so the lean disk fits. Expect a DRASTICALLY better clustering experience on a mem flavor: far faster cluster-create, snapshots, and every scale-out. The user can override with any flavor. At rest ONLY your source VM serves — there is NO idle extra VM to pay for (the source VM is the cluster's minimum, so the floor is 0 extra members). Use it to LOAD-SCALE a stateless app tier while managed services hold state: it becomes highly-available UNDER LOAD (multiple members behind the LB), but at rest a SINGLE source VM serves — and that source VM is a plain VM, not an autoscaled member, so it is NOT auto-replaced if it fails while idle (only the autoscaled extra members are ASG-managed and self-healed). If you need always-on redundancy, keep the app under enough load to hold >=1 extra member, or use a separate always-on setup. BILLED — at rest it costs just your source VM (which you already run) plus the load balancer; under load it adds up to max_size EXTRA members at the member flavor (flavor_id), billed only while they run. In guided mode show the cost that way (now: source VM already running + the LB; under load: up to max_size x the member flavor) and get the user's explicit go first. redu automatically repoints the extra members from the old single-VM URL to the load-balancer URL across app config. It REFUSES a STATEFUL VM with 409 cluster_needs_stateless unless confirm_stateless:true. To have redu FIX a stateful VM for you instead of refusing, pass auto_restructure:true — for a single_vm Postgres it fully-automatically provisions a managed DB + migrates the data + repoints the members; for a compose-stack DB it provisions the matching managed DB (set restructure_engine, e.g. 'mysql'/'mariadb' for WordPress) and returns migration commands to run from the app VM. WordPress/WooCommerce is not generic autoscaling: managed DB alone is not enough because wp-content/uploads is file state. Use app_profile:'wordpress'/'woocommerce', cluster_media_mode:'media_space', and either media_space_id or create_media_space:true so all members mount the same uploads filesystem; otherwise the backend refuses with 409 cluster_needs_media_space. PUT THE CLUSTER ON THE SAME private network as the managed DB and media space. HA: cluster members are spread across DIFFERENT physical hosts automatically, and an autoscaled member that is destroyed is REBUILT AUTOMATICALLY in 1.5 to 5 minutes depending on how it failed with no action from you (the always-on source/hero VM is a plain VM and is NOT covered by that). CRITICAL for members: the app must start on EVERY boot (systemd unit or container restart policy) - if it only starts from a first-boot cloud-init script, a rebooted or resized member comes back with no app, silently never rejoins the load balancer, and the cluster quietly loses capacity with nothing reporting an error. Pass startup_command if the app does not already auto-start on boot, and have it bind its port only once it is genuinely ready to serve (the health check can only see whether the port is open). SEQUENCING - this catches people: the snapshot is taken IMMEDIATELY, and every member boots from it, so the source VM's app must already be RUNNING before you call this. Clustering a freshly-created VM whose cloud-init has not finished captures an image with no enabled service, and all members then come up ACTIVE while failing the load-balancer health check forever - a cluster that looks built and serves nothing. Verify the app answers on its port first (get_ssh_command, or just fetch the VM's URL). The snapshot upload can take several minutes; poll list_clusters until CREATE_COMPLETE."
+    },
+    {
+      "name": "update_cluster",
+      "description": "Updates a running autoscaling cluster to a new app version IN PLACE, with NO URL change: snapshots the 'hero' VM (the source/master VM you SSH into and change — it is also the always-on baseline member that serves traffic), then redu rolling-updates the autoscaled extra members to that snapshot ONE AT A TIME and refreshes the image the group boots future members from — the SAME load balancer and SAME *.redu.cloud URL are kept, and the service stays up during the roll. This is the ONLY way to update a cluster: you do NOT edit live members (they are disposable clones); you change the hero VM (SSH into it, deploy the new version), then update_cluster snapshots it and spreads it to the fleet (the hero already runs your change; this propagates it to the autoscaled members). Zero-downtime is measured, not aspirational: a full roll of every member of a 3-member cluster served 699/699 requests with no failures and never dropped below a majority. That holds ONLY if the app starts on every boot - a member whose app is launched by a first-boot-only script returns empty after replacement, never rejoins the pool, and the roll silently drains the cluster. The snapshot upload can take several minutes on a large disk; poll list_clusters until the stack status is UPDATE_COMPLETE."
+    },
+    {
+      "name": "set_cluster_domain",
+      "description": "Changes the PUBLIC HOSTNAME a cluster serves on, so the user can put THEIR OWN production domain (shop.acme.com, app.theircompany.com) in front of it instead of the auto-generated redu.cloud URL. That is what this tool is for: a real product on a real brand. The cluster itself is untouched - same members, same load balancer, same data - only the name in front of it changes. TWO RULES, and getting either wrong wastes a call: (1) A CUSTOM DOMAIN MUST BE VERIFIED FIRST. Call get_domain_verification for the TXT record, have the user add it at their DNS provider, then call verify_domain until it reports verified (list_domains shows what is already verified). Binding an unverified domain is refused, on purpose: without proof of ownership anyone could bind, and obtain a certificate for, a hostname that is not theirs. Also make sure the domain's own DNS actually points at this cluster, or it will verify and still not serve. (2) A redu.cloud NAME CANNOT BE FREELY CHOSEN. The redu.cloud base domain is shared by every customer, so names under it always keep a short-id suffix - the real form is `<label>-<8chars>.redu.cloud`. Ask for a bare `myapp.redu.cloud` and you will NOT get it: the server normalises it and binds something else. If the first caller could pick any name under the shared domain, the good ones would all be gone. SO: the response carries `access_point`, the hostname the server ACTUALLY bound, which may differ from what you asked for. Report that value to the user and use it everywhere afterwards - never repeat your requested label back as if it were the URL. Finally, changing the hostname changes the URL: anything wired to the old one (OAuth callbacks, cookie domains, webhooks, an app told its own address) breaks until it is updated, so say so before you call this."
+    },
+    {
+      "name": "delete_cluster",
+      "description": "Deletes an autoscaling cluster — tears down the WHOLE cluster: every autoscaled EXTRA member VM, the load balancer, the pool, the cluster security group, and the cluster's *.redu.cloud proxy host. Your SOURCE (hero) VM is NOT part of the stack and is NOT deleted — it was the always-on baseline member but it is your own VM; delete_instance it separately if you no longer need it. Pass stack_name + stack_id from list_clusters. Deleting extra members individually does NOT work (the autoscaling group re-creates them under load) — this deletes the group itself. The managed database / external store the cluster used is NOT touched (data safety); delete_database it separately when you are done with the data. Cannot be undone."
+    },
+    {
+      "name": "import_keypair",
+      "description": "Registers an existing SSH public key on your account. Use this to import your own public key so you can SSH into instances. The private key never leaves your machine."
+    },
+    {
+      "name": "delete_keypair",
+      "description": "Removes an SSH keypair from your account by name."
+    },
+    {
+      "name": "get_ssh_command",
+      "description": "Returns the SSH command to connect to an instance via the redu.cloud TCP proxy. For a DEPLOYMENT VM (created by deploy_app/deploy_compose) pass keypair_name — read it from get_deployment — so the command uses `-i ~/.ssh/<keypair_name>` and authenticates with the RIGHT key instead of your default identity (without it, SSH to a deploy VM usually fails). The tool also best-effort looks up the keypair from the deployment if you omit it. Example: ssh -i ~/.ssh/redu-deploy -o IdentitiesOnly=yes -p 22011 ubuntu@myinstance-abc12345.redu.cloud"
+    },
+    {
+      "name": "get_instance_logs",
+      "description": "Returns the console log output from an instance."
+    },
+    {
+      "name": "instance_action",
+      "description": "Start, stop, or reboot an instance. action must be START, STOP, REBOOT_SOFT, or REBOOT_HARD."
+    },
+    {
+      "name": "create_instance",
+      "description": "Creates a raw compute instance for custom OS/cloud-init workflows. For app/source deployments, prefer check_deploy_prerequisites -> plan_deploy -> deploy_app/deploy_compose; do not use create_instance as a shortcut around the deployment plan. Requires a recent plan_instance. For reduOS, set cloud_init_template='reduos' and flavor m1.xlarge (16GB). SSH keypair must exist. For a public web app on a raw VM, pass dns_entries (gives a .redu.cloud URL through redu's automatic public proxy). The origin app should listen on dns_entries[].port; do not install nginx on the VM unless the app itself needs it, because redu.cloud already creates the public Nginx proxy host."
+    },
+    {
+      "name": "delete_instance",
+      "description": "Permanently deletes an instance. This cannot be undone."
+    },
+    {
+      "name": "create_database",
+      "description": "Provisions a managed PostgreSQL database on a dedicated VM on your private network. Requires a recent plan_managed_datastore. For app deployments, prefer deploy_app database:'managed' so plan_deploy includes and wires the DB automatically. It is PRIVATE — reachable only from another instance on the same private network, via the DB's internal/private IP (not a public address). Get the ids from plan_managed_datastore/list_flavors/list_private_networks/list_keypairs. Provisioning takes ~5 min; poll list_databases until status='ready', then the connection details (private_ip, port 5432, db_name, db_user) are populated. HIGH AVAILABILITY: pass ha:true to get THREE machines on three different physical hosts behind a load balancer with automatic failover instead of one machine: the database survives losing a machine, and nobody has to fail it over by hand. It costs about 3x the hourly rate (three machines instead of one), it provisions more slowly, and one connection string still serves the whole thing. Default is a single machine; show the user the price difference and get an explicit yes before turning HA on."
+    },
+    {
+      "name": "delete_database",
+      "description": "Deletes a managed Postgres database and its underlying VM. Pass the numeric database id from list_databases. This cannot be undone."
+    },
+    {
+      "name": "create_relational_database",
+      "description": "Provisions a managed MySQL (or MariaDB) database on a dedicated VM on your private network — the relational-database resource (use this instead of create_database when the app needs MySQL/MariaDB, e.g. WordPress, NextCloud, Matomo, many PHP/LAMP apps). Requires a recent plan_managed_datastore. For app deployments, prefer deploy_app database:'managed' with db_engine mysql/mariadb so plan_deploy includes and wires the DB automatically. It is PRIVATE — reachable only from another instance on the same private network, via the DB's internal/private IP (port 3306), not a public address. Get the ids from plan_managed_datastore/list_flavors/list_private_networks/list_keypairs. Provisioning takes ~5 min; poll list_relational_databases until status='ready', then the connection details (private_ip, port 3306, db_name, db_user) are populated. MySQL is created with mysql_native_password auth so older clients/apps connect cleanly. (ClickHouse is a separate resource — use create_clickhouse / list_clickhouse_databases.)"
+    },
+    {
+      "name": "delete_relational_database",
+      "description": "Deletes a managed MySQL/MariaDB database and its underlying VM. Pass the numeric id from list_relational_databases. This cannot be undone."
+    },
+    {
+      "name": "create_clickhouse",
+      "description": "Provisions a managed ClickHouse database (OLAP / columnar analytics engine, Apache-2.0) on a dedicated VM on your private network — its OWN resource, NOT a relational database. Requires a recent plan_managed_datastore. Use it for analytics / observability workloads that need a column store (PostHog, Langfuse, event analytics, time-series). It is PRIVATE — reachable only from another instance on the same private network, via the DB's internal/private IP on the ClickHouse HTTP port 8123 (CLICKHOUSE_HOST/PORT/USER/PASSWORD/DB env, http://host:8123). Get the ids from plan_managed_datastore/list_flavors (use m1.small+ — ClickHouse needs >=2GB RAM), list_private_networks, list_keypairs. Provisioning takes ~5 min; poll list_clickhouse_databases until status='ready'. HIGH AVAILABILITY: pass ha:true to get THREE machines on three different physical hosts behind a load balancer instead of one: all three take reads and writes, so losing a machine costs no failover and no write pause, and the replacement refills itself from the survivors before it serves again. It costs about 3x the hourly rate (three machines instead of one) and provisions more slowly. Default is a single machine; show the user the price difference and get an explicit yes before turning HA on."
+    },
+    {
+      "name": "delete_clickhouse",
+      "description": "Deletes a managed ClickHouse database and its underlying VM. Pass the numeric id from list_clickhouse_databases. This cannot be undone."
+    },
+    {
+      "name": "upgrade_to_ha",
+      "description": "Turns an EXISTING, running single-machine managed Postgres or ClickHouse into a THREE-machine highly available cluster, in place, keeping the data and the same username, password and database name. Use this when the user has a live database and wants it to survive a machine or host failure: they do NOT have to create a new one and migrate by hand. How it works: a full backup is taken first (kept whatever happens), the cluster is built alongside, the data is copied in and verified by counting both sides, and only then does the database's address move to the load balancer. The original machine is left running and untouched throughout, so a failure changes nothing and the user is never without a database. SAY THREE THINGS TO THE USER AND GET A YES BEFORE CALLING: (1) COST, it becomes three machines behind a load balancer instead of one, so roughly 3x the hourly rate, and the old single machine keeps billing until they delete it; (2) WRITE LOSS, anything written to the old machine during the copy is not carried over (see acknowledge_write_loss); (3) THEY MUST REPOINT THE APP afterwards, the connection address changes and nothing redeploys their app for them. Takes about 20 minutes and returns immediately; poll list_databases / list_clickhouse_databases until the address changes. Requires a payment method: high availability is not available on the no-card trial. ⛔ CLICKHOUSE ONLY, a FOURTH thing to say: after the upgrade every table has to use a REPLICATED engine. The existing tables are converted for them as part of the copy, but any NEW `CREATE TABLE ... ENGINE = MergeTree` is refused from then on (ClickHouse error 56) and has to be written `ENGINE = ReplicatedMergeTree`. It is refused rather than accepted because a plain MergeTree on three machines replicates its schema and not its rows, which would leave two of the three answering with an empty table and no error. If their app ships plain-MergeTree migrations (Plausible, PostHog and Langfuse all do), those migrations will fail after the upgrade and they should stay on the single machine. For the app tier rather than the database, use upgrade_to_cluster instead."
+    },
+    {
+      "name": "create_redis",
+      "description": "Provisions a managed Redis instance on a dedicated VM on your private network. Requires a recent plan_managed_datastore. It is PRIVATE — reachable only from another instance on the same private network, via its internal/private IP on port 6379 (not a public address). AUTH (requirepass) is always enabled. Get the ids from plan_managed_datastore/list_flavors, list_private_networks (or check_deploy_prerequisites), list_keypairs — use the SAME network_id as the app that will connect. Provisioning takes ~5 min; poll list_redis until status='ready', then the connection details (private_ip, port 6379) are populated. Wire an app with REDIS_URL=redis://:<password>@<private_ip>:6379 (pass it via deploy_app env)."
+    },
+    {
+      "name": "delete_redis",
+      "description": "Deletes a managed Redis instance and its underlying VM. Pass the numeric id from list_redis. This cannot be undone."
+    },
+    {
+      "name": "deploy_app",
+      "description": "Deploys an app to a VM and exposes it at a public https://<name>-<id>.redu.cloud URL. The container is built ON the VM. PREREQS — run check_deploy_prerequisites first for network_id + keypair_name, then plan_deploy for cost approval. Source can be git repo or prepare_upload source_token. PORT must be the real app listen port. To wire a DB, pass database:'managed' (dedicated managed datastore VM on the same private network, reused on same-name redeploy) or database:'single_vm' for Postgres on the app VM. Choose db_engine ('postgres' default; 'mysql'/'mariadb' for WordPress/Matomo/LAMP, managed only). For WordPress/WooCommerce cluster intent, do not use generic stateless deploy: pass app_profile, cluster_target:true, database:'managed', db_engine:'mariadb' or 'mysql', cluster_media_mode:'media_space', and either media_space_id or create_media_space:true. Redu mounts the media space into wp-content/uploads and refuses unsafe local uploads. Build+provision takes minutes; poll list_deployments/get_deployment."
+    },
+    {
+      "name": "deploy_compose",
+      "description": "Deploys a MULTI-CONTAINER app — a repo that ships docker-compose.yml / compose.yaml — onto ONE VM via podman-compose, and exposes one or more services at redu.cloud URLs. Use this instead of deploy_app when the repo is a compose stack. Same prereqs + source modes as deploy_app; always run plan_deploy first. PORT is the HOST port for the exposed service. DB: 'compose' uses the stack's own db container; 'managed' provisions a separate managed Postgres/MySQL/MariaDB VM and appends connection env. For WordPress/WooCommerce cluster intent, do not leave the compose db service/local uploads as state: pass app_profile, cluster_target:true, database:'managed', db_engine:'mariadb' or 'mysql', cluster_media_mode:'media_space', and either media_space_id or create_media_space:true. Redu writes an override file that points the WordPress service at managed DB env and mounts the media space into /var/www/html/wp-content/uploads. Poll get_deployment until ready."
+    },
+    {
+      "name": "deploy_vpn",
+      "description": "Stands up a redu VPN gateway (WireGuard tunnelled over wstunnel on WSS/443) on your PRIVATE network, so you (or your team) can reach the private IPs of the VMs you deployed on redu, over a single https endpoint — no UDP, no extra ports. This is the TENANT VPN for reaching your OWN deployed resources; it is NOT a general internet VPN. GUARDRAIL: the first call does NOT deploy — it returns the plan + hourly cost for approval, because it creates a BILLED VM. Show the user, get their explicit 'go', then call again with confirm:true (required even in yolo mode). The gateway asset is redu's, deployed onto YOUR VM (you can SSH in to read it). Fresh WireGuard keys are generated per deploy; the client PRIVATE key is returned ONCE and is never stored server-side."
+    },
+    {
+      "name": "list_deployments",
+      "description": "Lists your app deployments. Each row carries status (provisioning/ready/build_failed/error), the current build phase while provisioning (installing/source/building/built/starting), the public access_point URL, port, repo, and build_log on failure."
+    },
+    {
+      "name": "delete_deployment",
+      "description": "Deletes a deployment and its underlying app VM. Pass the numeric id from list_deployments. IMPORTANT: if the deployment used database:'managed', the managed Postgres VM is NOT deleted (data safety) — this tool returns its id so you can delete_database it when you're done with the data. Cannot be undone."
+    },
+    {
+      "name": "get_deployment",
+      "description": "Fetches ONE deployment by its numeric id (from list_deployments). Returns its current status, the public access_point URL, the underlying VM id, AND the build_log — read this when status is 'build_failed' or 'error' to see exactly why the on-VM build/run failed (no SSH needed). Also returns a reality report_markdown showing the REAL provisioned size + cost (the plan was only an estimate; the user may have up-sized)."
+    },
+    {
+      "name": "architecture_diagram",
+      "description": "Read-only. Fetches EVERY resource on your redu.cloud account (VMs, volumes, private networks, managed databases: Postgres/MySQL/MariaDB/ClickHouse/Redis/Qdrant, load balancers, and DNS access points) and renders ONE Mermaid diagram of the whole account, grouped into per-private-network subgraphs with repetition collapsed into count nodes (e.g. \"App VM x12\"). Returns report_markdown to save as redu_architecture_diagram.md at the repo root, PLUS a redu_md_section that enriches the repo's redu.md with the current account topology, so the NEXT deploy is account-aware: it integrates with services that already exist and picks models/versions/sizes that fit the stack (better decisions, not just avoiding duplicate networks/databases). Nothing is created or changed."
+    },
+    {
+      "name": "create_snapshot",
+      "description": "Creates a snapshot of a running instance."
+    },
+    {
+      "name": "delete_snapshot",
+      "description": "Deletes a snapshot by ID."
+    },
+    {
+      "name": "create_backup",
+      "description": "Creates a backup, by volumeId or by instanceId (the instance's volume is resolved for you). The backup is held independently of the instance, so it survives the VM. Poll list_backups until the new backup is available."
+    },
+    {
+      "name": "restore_backup",
+      "description": "Restores a backup into an existing volume (volumeId), an instance's volume (instanceId), or a new one (volumeName). Poll list_volumes for the restored volume. DISASTER RECOVERY (the original VM is gone, so its volume died with it): restore with volumeName to rebuild the data as a NEW volume. To bring the MACHINE back, pass that volume as create_instance's boot_volume_id - it boots from the restored disk, so the VM returns with its filesystem intact and nothing to mount. Use attach_volume instead only when you want the data as an EXTRA disk on an existing machine (then get_ssh_command -> lsblk -> mount). A restored volume is inert until it is booted from or attached."
+    },
+    {
+      "name": "delete_backup",
+      "description": "Deletes a backup by ID."
+    },
+    {
+      "name": "set_managed_backups",
+      "description": "Turns nightly AUTOMATED (scheduled) backups ON or OFF for a MANAGED data service — the toggle that create_backup (a one-off volume snapshot) is NOT. Once enabled, redu's nightly job backs the service up on its own and prunes to the retention window; see them with list_backups and recover with the service's restore. Works for managed Postgres/MySQL/MariaDB/Redis/Qdrant/ClickHouse and can be flipped ANY time after provisioning, not only at create. Requires a card (automated backups are a paid feature; no-card trials cannot enable them). Pass the service type + its numeric id, enabled, and optional retention (days)."
+    },
+    {
+      "name": "create_volume",
+      "description": "Creates a block storage volume."
+    },
+    {
+      "name": "attach_volume",
+      "description": "Attaches an EXISTING block volume to a running instance as an extra disk. This is how you finish a RESTORE after a VM is gone: restore_backup (volumeName) rebuilds the data into a new volume, then attach_volume puts that volume on a replacement instance — then SSH in (get_ssh_command) and mount it (`lsblk` to find it, usually /dev/vdb, then `mount /dev/vdb /mnt/...`). The volume must be 'available' (not already in-use — detach_volume it first) and in the same project. Attaching does NOT mount or boot from it: the instance keeps booting from its own root disk, the volume shows up as an extra block device. Poll list_volumes until status is 'in-use'."
+    },
+    {
+      "name": "detach_volume",
+      "description": "Detaches a block volume from an instance, leaving the volume (and its data) intact and 'available' to attach elsewhere. Unmount it INSIDE the guest first (`umount /mnt/...`) or you risk a dirty filesystem. You cannot detach an instance's ROOT/boot disk while it runs. Use this to move a data volume to another VM, or to free a restore target before restore_backup writes into it. Poll list_volumes until status is 'available'."
+    },
+    {
+      "name": "delete_volume",
+      "description": "Permanently deletes a block storage volume and the data on it. This cannot be undone. The volume must be 'available' (detached) — detach_volume it first, and note you cannot detach a running instance's boot disk. A volume left behind after a restore keeps billing, so delete the ones you no longer need. Any BACKUP the volume was restored from is independent and survives this."
+    },
+    {
+      "name": "get_domain_verification",
+      "description": "Returns the DNS TXT record to add for custom domain ownership verification. Add the record to your DNS provider, then call verify_domain."
+    },
+    {
+      "name": "verify_domain",
+      "description": "Checks the DNS TXT ownership record for a custom domain and marks it verified when the record is present. Call get_domain_verification first, add the TXT record at your DNS provider, then call this until status is verified."
+    },
+    {
+      "name": "check_agent_prerequisites",
+      "description": "Checks if your account has everything needed to run autonomous coding agents. Returns a checklist: API key validity, private network, SSH keypair, and billing. Safe to call anytime — read-only. Call this first before create_controller."
+    },
+    {
+      "name": "create_controller",
+      "description": "Creates a self-configuring controller VM on redu.cloud. Auto-discovers your network, Ubuntu image, and flavor. Generates and uploads an SSH keypair if you don't have one. The VM bootstraps itself — no SSH or VPN needed. After ~7 minutes, authorize the fleet (run the authorize.sh one-liner it returns) then call trigger_agent_batch."
+    },
+    {
+      "name": "trigger_agent_batch",
+      "description": "Starts the autonomous agent batch on your controller VM. Agents read agent-ready tasks from your ROADMAP.md, implement them in parallel, and open PRs. No VPN needed — runs over HTTPS; the controller stays running after you disconnect. Each ROADMAP task MUST be a single checkbox line `- [ ] **Title** — short description *(agent-ready)*` (the `- [ ]`, `**bold title**`, and `*(agent-ready)*` are all required; `##` headings and plain bullets are ignored). If this returns 'No agent-ready tasks', the tasks are mis-formatted — fix them to that exact format and retry."
+    },
+    {
+      "name": "get_agent_status",
+      "description": "Returns the current status of your controller VM. On a freshly set-up VM also returns the trigger token needed to authorize the fleet and to call trigger_agent_batch. Call this after setup_agent_fleet to confirm the VM is ready."
+    },
+    {
+      "name": "setup_agent_session",
+      "description": "One-shot tool that guides you through the complete agent setup: checks prerequisites, creates the controller VM, and returns next steps. Ideal for first-time setup. Call this when a user says 'set up autocoding agents for my repo'."
+    },
+    {
+      "name": "setup_agent_fleet",
+      "description": "Complete one-shot setup: validates prerequisites, creates a controller VM + worker VMs, auto-creates a public HTTPS URL on port 7070, seeds a starter ROADMAP.md into the repo if absent, and returns the trigger token. Call this when a user says 'set up autocoding agents for my repo' or 'I want agents to work on my codebase'. HOW THE AGENT WORKS: each worker runs Claude Code inside the repo, implements one task, runs the test suite, and opens a pull request. It excels at focused, single-PR, testable units of work — add an endpoint, write tests for a module, fix a specific bug, add a UI page — and is poor at vague/large tasks, design decisions, or anything needing external credentials. TASK FORMAT (strict, one line each): `- [ ] **Title** — short description *(agent-ready)*` — the `- [ ]` checkbox, `**bold title**`, ` — ` separator, and `*(agent-ready)*` are ALL required; `##` headings and plain bullets are ignored. After this returns, the user needs to: (1) authorize the fleet by running the authorize.sh one-liner it returns (it runs `claude setup-token` for a long-lived token installed on the controller) — agents use the user's existing Claude Max/Pro subscription, NOT an API key. This is a shell command the USER runs in their own terminal; do NOT try to read or push the user's credentials yourself. The controller takes ~7 min to boot, so PREFER to poll get_agent_status until it reports the controller is reachable and present the authorize command only once it's ready — that way the user doesn't run it into a long wait. (The command also waits on its own, showing a live progress counter, so a user who runs it early is fine too.) (2) add well-scoped tasks in the format above to ROADMAP.md; (3) call trigger_agent_batch."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:40:01.690Z",
+  "toolsPreviewStatus": "ok"
+}

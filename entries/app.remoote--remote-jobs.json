@@ -1,0 +1,77 @@
+{
+  "id": "app.remoote/remote-jobs",
+  "title": "Remoote Remote Jobs MCP",
+  "description": "Search remote jobs, compare salaries, create alerts, and request user-confirmed apply links.",
+  "summary": "Search remote jobs, compare salaries, create alerts, and request user-confirmed apply links.",
+  "offersHint": "Search remote jobs, compare salaries, create alerts, and request user-confirmed apply links. · Remote MCP (streamable-http) at https://api.remoote.app/remoote/agents/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.remoote.app/remoote/agents/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.remoote.app/remoote/agents/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://remoote.app/agents",
+  "sourceUrl": "https://github.com/asmisha/remoote-mcp",
+  "repository": {
+    "url": "https://github.com/asmisha/remoote-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-13T07:53:25.435779Z",
+  "publishedAt": "2026-07-13T07:53:25.435779Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:42:01.769Z",
+    "sourceRepoAt": "2026-08-12T00:42:01.769Z",
+    "readmeAt": "2026-08-12T00:42:02.226Z",
+    "toolsAt": "2026-08-12T00:42:02.393Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/asmisha/remoote-mcp",
+    "checkedAt": "2026-08-12T00:42:01.769Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/asmisha/remoote-mcp/main/README.md",
+    "markdown": "# Remoote Remote Jobs MCP\n\nThis is the public metadata and docs repository for **Remoote Remote Jobs MCP**.\n\n- Website and docs: <https://remoote.app/agents>\n- MCP endpoint: <https://api.remoote.app/remoote/agents/mcp>\n- Token setup: <https://remoote.app/agents/connect>\n\nRemoote MCP gives agents a structured way to search current remote jobs, read job details, compare salary stats, show popular roles, create job alerts, and request user-confirmed apply redirects. It is meant for agent builders who need job data without scraping pages or exposing raw employer application links.\n\n## Tools\n\n| Tool | Access | What it does |\n| --- | --- | --- |\n| `search_jobs` | Public or token | Searches active Remoote jobs by role title, broader posting keywords, skills, location filters, seniority, employment type, and salary visibility. |\n| `get_job` | Public or token | Returns public details for one active job, including salary fields, location rules, skills, excerpts, and the Remoote job URL. |\n| `get_salary_stats` | Public or token | Returns salary stats for matching jobs when enough normalized compensation data is available. |\n| `get_top_jobs` | Public or token | Returns a capped list of currently popular remote jobs. |\n| `create_apply_intent` | Token required | Creates a Remoote apply redirect for an authenticated user after the agent asks for confirmation. |\n| `create_alert` | Token required | Creates a daily or weekly Remoote job alert for the authenticated user. |\n\n## Job search fields\n\nUse `role_title` for the role or job title the user wants, such as `backend engineer`. It matches job titles only. Use `query` for broader keywords that may appear elsewhere in the posting, such as `python` or `postgresql`. The two fields can be combined.\n\nMCP job searches may return `total_available: null` because the endpoint avoids an expensive exact count. `result_count` is always the number of jobs returned in the current response.\n\n## Public vs. token-authenticated behavior\n\nPublic calls are available without a token for discovery and read-only job research. They are capped and return public Remoote fields, canonical Remoote URLs, and safe next actions.\n\nToken-authenticated calls use a user-created bearer token. Use them only when the agent needs account-tied workflows such as alerts or apply intents. Create or revoke a token at <https://remoote.app/agents/connect>, then pass it as:\n\n```http\nAuthorization: Bearer rma_...\n```\n\nOnly grant the scopes your workflow needs.\n\n## Apply safety\n\nPublic responses do not include raw employer apply URLs. They point users back to Remoote job pages.\n\n`create_apply_intent` also returns a Remoote redirect, not a raw employer URL. The agent should ask the user to confirm before opening it, because opening the redirect may count as an application redirect or entitlement check.\n\n## Quick curl examples\n\nAll examples call the remote MCP endpoint directly over JSON-RPC.\n\n### List tools\n\n```bash\ncurl -sS \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}' \\\n  https://api.remoote.app/remoote/agents/mcp\n```\n\nExpected result: `tools` includes `search_jobs`, `get_job`, `get_salary_stats`, `get_top_jobs`, `create_apply_intent`, and `create_alert`.\n\n### Search public jobs\n\n```bash\ncurl -sS \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search_jobs\",\"arguments\":{\"role_title\":\"backend engineer\",\"query\":\"python\",\"limit\":3,\"salary_required\":false}}}' \\\n  https://api.remoote.app/remoote/agents/mcp\n```\n\nExpected result: `structuredContent.status` is `ok`, `result_count` matches the jobs returned, and each job links back to Remoote instead of exposing a raw employer apply URL. `total_available` may be `null`.\n\n### Create an alert with a token\n\n```bash\nexport REMOOTE_AGENT_TOKEN='rma_...'\n\ncurl -sS \\\n  -H 'content-type: application/json' \\\n  -H \"Authorization: Bearer $REMOOTE_AGENT_TOKEN\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"create_alert\",\"arguments\":{\"name\":\"Python remote jobs\",\"criteria\":{\"query\":\"python\",\"salary_required\":true},\"frequency\":\"daily\",\"limit\":10}}}' \\\n  https://api.remoote.app/remoote/agents/mcp\n```\n\nUse a placeholder like `rma_...` in examples. Do not put real tokens in docs, logs, or prompts.\n\n## More examples\n\n- [Verify the endpoint with curl and MCP Inspector](examples/mcp-inspector.md)\n- [Prompt examples for job-search agents](examples/prompts.md)\n\n## Registry metadata\n\n`server.json` is prepared for MCP directories and registries. The repository URL points to the intended future public GitHub location: <https://github.com/asmisha/remoote-mcp>.\n",
+    "fetchedAt": "2026-08-12T00:42:02.226Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_jobs",
+      "description": "Search active Remoote remote jobs. Use role_title to match job titles and query for broad keyword search. Returns capped public results with canonical Remoote URLs and no raw employer apply URLs."
+    },
+    {
+      "name": "get_job",
+      "description": "Fetch public details for one active Remoote job, including salary, location, skills, excerpts, and a Remoote job URL."
+    },
+    {
+      "name": "get_salary_stats",
+      "description": "Return salary stats for active Remoote jobs matching supported filters when enough normalized compensation data exists."
+    },
+    {
+      "name": "get_top_jobs",
+      "description": "Return a capped public list of currently popular Remoote remote jobs."
+    },
+    {
+      "name": "create_apply_intent",
+      "description": "Create a user-confirmed Remoote apply redirect for an authenticated agent token. Requires the apply:intent scope and never returns raw employer apply URLs."
+    },
+    {
+      "name": "create_alert",
+      "description": "Create a daily or weekly Remoote job alert for the authenticated user. Requires the alerts:write scope."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:42:02.393Z",
+  "toolsPreviewStatus": "ok"
+}

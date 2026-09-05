@@ -1,0 +1,71 @@
+{
+  "id": "ai.avasis/quant-research",
+  "title": "quant-research",
+  "description": "Crypto backtest statistics: the server owns the trial count, so it cannot be understated.",
+  "summary": "Crypto backtest statistics: the server owns the trial count, so it cannot be understated.",
+  "offersHint": "Crypto backtest statistics: the server owns the trial count, so it cannot be understated. · Remote MCP (streamable-http) at https://quant-mcp.avasis.ai/mcp · Requires headers: Authorization",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://quant-mcp.avasis.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://quant-mcp.avasis.ai/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <API key>. Request one at https://quant-mcp.avasis.ai",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://quant-mcp.avasis.ai",
+  "sourceUrl": "https://github.com/abhayjnayakk/quant-integrity",
+  "repository": {
+    "url": "https://github.com/abhayjnayakk/quant-integrity",
+    "source": "github"
+  },
+  "updatedAt": "2026-09-01T12:19:43.073489Z",
+  "publishedAt": "2026-09-01T12:19:43.073489Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <API key>. Request one at https://quant-mcp.avasis.ai",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-09-05T05:24:47.269Z",
+    "sourceRepoAt": "2026-09-05T05:24:47.270Z",
+    "readmeAt": "2026-09-05T05:24:47.777Z",
+    "toolsAt": "2026-09-05T05:24:47.922Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/abhayjnayakk/quant-integrity/main/README.md",
+    "markdown": "<div align=\"center\">\n\n# quant-integrity\n\n**Statistical tests for whether a backtest means anything.**\n\n[![PyPI](https://img.shields.io/pypi/v/quant-integrity?color=FFB224&label=pypi)](https://pypi.org/project/quant-integrity/)\n[![Python](https://img.shields.io/pypi/pyversions/quant-integrity?color=FFB224)](https://pypi.org/project/quant-integrity/)\n[![Licence](https://img.shields.io/badge/licence-AGPL--3.0--or--later-FFB224)](LICENSE)\n[![CI](https://github.com/abhayjnayakk/quant-integrity/actions/workflows/ci.yml/badge.svg)](https://github.com/abhayjnayakk/quant-integrity/actions/workflows/ci.yml)\n[![Typed](https://img.shields.io/badge/typing-py.typed-FFB224)](src/)\n\n</div>\n\n> **This library will not find you a profitable strategy. Its function is to reject\n> them.** Everything here exists to answer one question: given how many\n> configurations you tried before reporting this one, does the result survive?\n\n```bash\npip install quant-integrity\n```\n\n---\n\n## The problem, in one picture\n\nA moving-average crossover on BTC-USD hourly bars. After sweeping parameters, the\nbest configuration returned an annualised Sharpe of **0.95** — and a\nProbabilistic Sharpe of 0.86, which reads as *\"probably beats zero\"*.\n\nThat is where most backtests stop. Here is the same result next to the bar that\n28 attempts actually sets:\n\n![Observed Sharpe against the bar set by the trial count](docs/figures/deflation.svg)\n\nThe best of 28 tries is large **even when every underlying edge is exactly\nzero**. Against that bar the deflated Sharpe is 0.157. The observed result is not\nmarginal; it is below half of what luck alone produces.\n\nA high PSR with a low DSR is the signature of an overfit search, not a borderline\nedge.\n\n## What the search was actually selecting on\n\nThe cause was visible in the trials themselves. Sorting the 28 recorded runs by\ntrade count against Sharpe:\n\n![Sharpe against trade count across every trial](docs/figures/turnover.svg)\n\nEvery configuration that traded less looked better, at ρ = **−0.96**. That is not\na signal being discovered — it is cost drag being measured, plus a slow moving\naverage approximating buy-and-hold in a rising market. The search was not finding\nan edge. It was finding the configuration that traded least.\n\n## And the interval was never tight to begin with\n\n![Bootstrap confidence interval on Sharpe](docs/figures/interval.svg)\n\nReported alone, `Sharpe = 0.95` implies a precision the data does not support.\n\n### Every number above is reproducible\n\n```bash\ngit clone https://github.com/abhayjnayakk/quant-integrity\ncd quant-integrity && pip install -e .\npython docs/make_figures.py        # regenerates all three figures and prints the values\n```\n\n| | |\n|---|---|\n| Trials evaluated | 28 |\n| Sharpe (annualised, after costs) | 0.9500 |\n| Probabilistic Sharpe (PSR) | 0.8556 |\n| E[max Sharpe] under the null, 28 trials | 1.8525 |\n| **Deflated Sharpe (DSR)** | **0.1568** |\n| Bootstrap 95% CI on Sharpe | [−0.93, 2.69] — straddles zero |\n| Excess kurtosis | 18.61 |\n| Spearman ρ(Sharpe, trades) | −0.9618 (p = 3.8e−16) |\n| Minimum backtest length | 1.94 years required, 1.25 available |\n\nThe trial count is taken from the recorded runs rather than typed in. An earlier\nversion of this page hardcoded 29 while the file recorded 28, and quoted a\ndeflated Sharpe from one and a minimum backtest length from the other.\n\nThe figures and this table are generated by the same script from\n`examples/btc_ma_runs.npz` (24 KB, the actual return series and per-trial\nresults). No server and no account. There is also a longer walkthrough in\n[`examples/btc_ma_postmortem.ipynb`](examples/btc_ma_postmortem.ipynb).\n\n> **On one number that is *not* in this repo.** The same specification was later\n> run across a basket rather than a single asset, and pooled to a Sharpe of\n> −1.376 over 10 assets with 3 of them positive. That result lives in the hosted\n> server's ledger, not in this repository — the example file here carries only the\n> single-asset trials, so you cannot reproduce the basket figure from it. It is\n> quoted here because it is the strongest part of the story, and flagged because\n> a number you cannot check should always be labelled as one.\n\n---\n\n## What's in it\n\n| Function | Question it answers |\n|---|---|\n| `deflated_sharpe(returns, n_trials)` | Does this Sharpe beat what the best of N trials produces by luck? |\n| `probability_backtest_overfitting(matrix)` | Does your selection procedure carry information at all? |\n| `combinatorial_purged_cv(...)` | Cross-validation splits with purging AND embargo |\n| `stationary_bootstrap_ci(returns)` | How wide is the interval really? |\n| `reality_check(family, benchmark)` | Is the family's best member better than the benchmark it was chosen over? |\n| `effective_tests(matrix)` | How many INDEPENDENT tests does a correlated basket give? |\n| `min_backtest_length(n_trials, ...)` | Is your sample even long enough for the search you ran? |\n| `triple_barrier_labels(...)`, `dollar_bars(...)` | Labelling and activity-based sampling |\n| `spec_hash(spec)` | Content-addressed strategy identity |\n| `verify_attestation(record, key)` | Independently check a signed research record |\n\n```python\nimport quant_integrity as qi\n\nout = qi.deflated_sharpe(returns, n_trials=28)\nprint(out[\"dsr\"], out[\"psr\"])\n```\n\n`n_trials` means **every** configuration you evaluated, including the ones you\ndiscarded. Understating it produces a flattering answer. Nothing in this library\ncan check it — which is exactly the problem the next section is about.\n\n---\n\n## Commercial intent, stated on day one\n\n**The statistics in this repository are AGPL-3.0 and free forever.** Every method\nhere is published academic work. There is no moat in the arithmetic and no\nversion of this library is crippled to sell you an upgrade — a teaser would fail\nas a funnel and would forfeit the only thing an integrity tool has.\n\n**Hosted attestation is a paid service.** Verification is public and lives here.\n*Issuance* is not, for the reason below. Saying this up front so nobody can later\nclaim a rug-pull.\n\n### Why self-hosting can't attest\n\nA trial count is only meaningful if it cannot be revised downward. But if you run\nyour own ledger, you can edit it. Not through malice, usually — through the\nordinary temptation to restart the count after a rewrite, or to not record the\nsweep that went nowhere. A self-attested integrity record certifies nothing,\nbecause the person attesting is the person who benefits.\n\n> **Verification is public. Issuance is the service.**\n\nAnyone can check an attestation with this library and an issuer's public key. No\ncooperation from the issuer is required, and none of the checking code is\nwithheld. What you cannot do is *make* one, because a signature is only worth\nsomething when the signer is not the beneficiary.\n\nThe property that does the work is not any single signature — it is the chain.\n`verify_chain` confirms that, across a sequence of attestations:\n\n- sequence numbers are consecutive, so no record was removed from the middle;\n- each references the previous record's digest, so none was altered afterwards;\n- **`n_trials` never decreases.**\n\nAn outside party can establish all of that without ever seeing the ledger. Someone\nwho edits their own records cannot reproduce it, because they would have to\nre-sign every subsequent record with a key they do not hold.\n\nThat is the whole business: not the arithmetic, which is here and free, but\noperating an instance that has no stake in the answer. That instance is\n[quant.avasis.ai](https://quant.avasis.ai) — an MCP server, so the research runs\ninside Claude, Cursor, VS Code or any MCP client, and the trial count is kept by\nthe server rather than by the conversation.\n\n---\n\n## Scope\n\nThis is a statistical instrument. Deliberately absent, and staying absent:\n\n- No buy, sell or hold signals. No target prices, position sizes or stop levels.\n- No model portfolios or allocations.\n- No claims about returns, and no examples implying any.\n\nThe library takes return series and trial counts and returns statistics about\nthem. It does not know what you are trading and does not offer an opinion on it.\n\n---\n\n## Install and contribute\n\n```bash\npip install quant-integrity                 # statistics\npip install \"quant-integrity[attestation]\"  # + signature verification\n```\n\nPython 3.10+. Depends on numpy, scipy and pandas. Fully typed (`py.typed`).\n\nContributions require a CLA and a DCO sign-off — see\n[CONTRIBUTING.md](CONTRIBUTING.md), which explains why without apology.\n\n## Licence\n\nAGPL-3.0-or-later. See [LICENSE](LICENSE) and [NOTICE](NOTICE).\n\nThe network-use clause is deliberate: it means a competitor cannot run a closed\nhosted fork of this code. It does not restrict you from using the library in your\nown research, hosted or otherwise, without publishing anything.\n",
+    "fetchedAt": "2026-09-05T05:24:47.777Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/abhayjnayakk/quant-integrity",
+    "checkedAt": "2026-09-05T05:24:47.270Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreviewAt": "2026-09-05T05:24:47.922Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

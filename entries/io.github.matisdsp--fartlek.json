@@ -1,0 +1,59 @@
+{
+  "id": "io.github.matisdsp/fartlek",
+  "title": "Fartlek",
+  "description": "A coach's morning report from your Garmin data, for any LLM via MCP.",
+  "summary": "A coach's morning report from your Garmin data, for any LLM via MCP.",
+  "offersHint": "A coach's morning report from your Garmin data, for any LLM via MCP. · Packages: pypi:fartlek-mcp",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "fartlek-mcp",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "fartlek-mcp",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/matisdsp/fartlek",
+  "sourceUrl": "https://github.com/matisdsp/fartlek",
+  "repository": {
+    "url": "https://github.com/matisdsp/fartlek",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T09:29:04.605785Z",
+  "publishedAt": "2026-07-24T09:29:04.605785Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:24.186Z",
+    "sourceRepoAt": "2026-08-11T23:35:19.350Z",
+    "readmeAt": "2026-08-11T23:35:19.991Z",
+    "toolsAt": "2026-08-12T01:14:24.186Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/matisdsp/fartlek",
+    "checkedAt": "2026-08-11T23:35:19.350Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/matisdsp/fartlek/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.matisdsp/fartlek -->\n\n# Fartlek\n\n*A coach's morning report from your Garmin data, for any LLM via MCP.*\n\nEvery other Garmin MCP server hands the LLM a filing cabinet of raw JSON — one night of sleep is ~52K tokens, one activity stream ~155K. The model can't read it, so it skims and improvises. Fartlek does the synthesis server-side: computed sports-science metrics (CTL/ATL/TSB, ACWR, monotony, calibrated training load), personal baselines with significance floors, safety alerts — delivered as compact, verdict-first reports the model can actually reason about.\n\n**The token contract (v0.1):** calling every tool in the catalog once, at default arguments, costs **under 9K tokens** — a sixth of one raw Garmin sleep payload. Excluding the `garmin_raw` escape hatch, the whole synthesis surface sums to **under 4K**. Hard caps are enforced per response by the renderer, with disclosed truncation.\n\n> **Status: v0.1 (Phase 1).** 8 synthesis tools; the trend suite (weekly review, multi-week load, fitness/race outlook, recovery audit) ships with v0.2. Design: [`docs/DESIGN.md`](docs/DESIGN.md) · plan: [`ROADMAP.md`](ROADMAP.md) · contributors: [`docs/HANDOFF.md`](docs/HANDOFF.md).\n\n## The tools\n\n| Tool | What it answers | Cap |\n|---|---|---|\n| `garmin_brief` | \"How am I today — can I train hard?\" Fused GREEN/AMBER/RED verdict vs your own baselines | 600 |\n| `garmin_activities` | Browse the log, get activity IDs | 1,300 |\n| `garmin_activity` | One session in depth: reps, fade, comparison to your most similar past session | 1,000–4,000 |\n| `garmin_athlete` | Reference card: zones, PRs, goal, data coverage | 600 |\n| `garmin_gear` | Shoe/bike mileage vs your Garmin-set retirement limits, and what you're actually rotating | 500 |\n| `garmin_set_profile` | Tell it your goal race / phase / availability (local only) | 200 |\n| `garmin_log` | Log RPE, wellness, illness/injury — the athlete outranks the sensors | 120 |\n| `garmin_sync` | Force refresh / deepen history backfill | 150 |\n| `garmin_raw` | Bounded, compacted escape hatch to named raw sources | 5,000 |\n\nFirst call on a fresh install runs the cold start automatically (~30 API calls, ≈1 minute): 180 days of history, warm CTL/ATL from day 0, then background sleep/HRV backfill.\n\n## Quickstart\n\nInstall with either:\n\n```bash\n# uv (recommended) — runs without cloning\nuvx fartlek-mcp\n\n# or pipx\npipx install fartlek-mcp\n```\n\nOr clone and run from source (requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/)):\n\n```bash\ngit clone https://github.com/matisdsp/fartlek && cd fartlek\nuv sync\n\n# One-time Garmin login (email/password + MFA if enabled).\n# Credentials are never stored; OAuth tokens go to ~/.fartlek/tokens/.\nuv run fartlek auth\n\n# Optional but recommended: warm the local store now instead of on first use\nuv run fartlek sync --nights 60\n\nuv run fartlek doctor   # check everything is healthy\n```\n\nThen point your MCP client at the server.\n\n> **Any MCP-compatible client works** — the server speaks standard JSON-RPC over stdio, so it is client-agnostic. The snippets below are just the per-client config formats; Claude Desktop, Claude Code, Cursor, Continue, Cline, Windsurf, Zed, VS Code (Copilot Chat), and Gemini CLI all work. The universal invocation is `uvx fartlek-mcp`.\n\n**Claude Code** — from this directory, `.mcp.json` is picked up automatically. From anywhere else:\n\n```bash\nclaude mcp add fartlek -- uvx fartlek-mcp\n```\n\n**Claude Desktop** — `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"fartlek\": {\n      \"command\": \"uvx\",\n      \"args\": [\"fartlek-mcp\"]\n    }\n  }\n}\n```\n\n**Cursor** — `.cursor/mcp.json`, same `command`/`args` block as above.\n\n**Continue / Cline / Windsurf / Zed** — same pattern: wherever the client keeps its MCP server list, add a `fartlek` entry with `command: \"uvx\"`, `args: [\"fartlek-mcp\"]`. Most editors adopt the Claude Desktop format verbatim.\n\n**Any other stdio MCP client** — invoke the server binary directly:\n\n```bash\nfartlek-mcp          # speaks JSON-RPC over stdin/stdout\n```\n\nAsk things like *\"can I go hard today?\"*, *\"analyze my last run\"*, *\"how did I sleep this week?\"* — and tell it how sessions felt: your reported RPE and illness notes gate the readiness verdict.\n\n## Docker\n\nBuild and run locally:\n\n```bash\ndocker build -t fartlek-mcp .\n# Tokens and store are persisted in ./fartlek-data on the host\nmkdir -p fartlek-data\ndocker run -i --rm -v \"$PWD/fartlek-data:/data\" fartlek-mcp\n```\n\nFor `fartlek auth`, run it interactively once to populate the volume, then use the image as the MCP server:\n\n```bash\ndocker run -it --rm -v \"$PWD/fartlek-data:/data\" --entrypoint fartlek fartlek-mcp auth\n```\n\n## CLI\n\n| Command | What it does |\n|---|---|\n| `fartlek auth` | one-time Garmin Connect login (MFA supported), tokens stored locally |\n| `fartlek sync [--nights N]` | manual sync (tier 0+1, optional N-night sleep/HRV backfill) |\n| `fartlek doctor` | check tokens, Garmin connectivity, local store health |\n| `fartlek accounts` | list local accounts |\n| `fartlek export [dir]` | export the store (consistent SQLite snapshot + CSV per table) |\n| `fartlek reset` | wipe all local tokens and data (asks confirmation) |\n\nEnvironment: `GARMINTOKENS` overrides the token location, `FARTLEK_HOME` the data directory (default `~/.fartlek`).\n\n### Releasing to PyPI (maintainers)\n\nReleases are published via **trusted publishing** (OIDC) — no API tokens anywhere.\n\n1. On pypi.org → Account settings → Publishing → add a GitHub publisher:\n   - PyPI project name: `fartlek-mcp` · owner: `matisdsp` · repo: `fartlek`\n   - Workflow: `release.yml` · environment: `pypi`\n2. Bump `version` in `pyproject.toml`, commit, then tag and push:\n\n```bash\ngit tag v0.1.0 && git push origin v0.1.0\n```\n\nThe `release` workflow builds, runs tests, and uploads to PyPI. A published version can't be overwritten — to fix a mistake, bump to the next patch (`0.1.1`).\n\n## Privacy\n\nLocal-first: stdio transport, your credentials and health data never leave your machine. The server only talks to Garmin's API with your own tokens, sequentially and rate-limited. `fartlek export` gives you everything; `fartlek reset` removes everything.\n\n## How Fartlek reaches your data — read this before connecting an account\n\nGarmin has an official developer programme, and Fartlek is **not** part of it. Like every other open-source Garmin client, it signs in with your own credentials and reads the same endpoints the Garmin Connect apps use. Those endpoints are not published for third-party use, and Garmin's [Terms of Use](https://www.garmin.com/en-US/legal/terms-of-use/) list, among examples of prohibited conduct, *\"using any process, whether automated or manual, that accesses, copies, or scrapes content from the Site through any means not purposely made available through the Site.\"*\n\nWhat that means in practice:\n\n- **Your account is yours to risk.** Garmin can rate-limit, block, or suspend accounts for automated access. Fartlek is deliberately polite — sequential calls, backoff on 429, and Garmin is contacted only by the sync process, never per question — but politeness is not permission.\n- **It can break without warning.** Garmin changed its login in March 2026 and broke every third-party client for weeks. This will happen again.\n- **Read-only, by decision.** Fartlek never writes to Garmin: no workouts pushed to your watch, no training plans, no edits to your activities. The two tools that write (`garmin_log`, `garmin_set_profile`) write to the local SQLite store and nothing else. Pushing structured workouts was specified and then dropped — see `docs/DESIGN.md` §2.4. Garmin's Training API is the sanctioned route for that, and it requires a cloud-to-cloud integration, which would mean your data leaving your machine.\n- **Nothing is redistributed.** Your data stays on your disk. Fartlek's own responses are derived from it and are shown only to you and the LLM client you chose.\n\nIf that trade-off is not one you want to make, do not connect an account. This is stated here rather than buried, because it is the kind of thing you should decide before installing, not discover afterwards.\n\n## License & trademark\n\nApache 2.0. Fartlek is an independent open-source project, **not affiliated with, endorsed by, or sponsored by Garmin Ltd.** \"Garmin\" is used only to describe compatibility with Garmin Connect data.\n",
+    "fetchedAt": "2026-08-11T23:35:19.991Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:24.186Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,100 @@
+{
+  "id": "ai.revuo/revuo",
+  "title": "Revuo",
+  "description": "Agent-callable B2B SaaS directory: capability-structured, continuously verified listings.",
+  "summary": "Agent-callable B2B SaaS directory: capability-structured, continuously verified listings.",
+  "offersHint": "Agent-callable B2B SaaS directory: capability-structured, continuously verified listings. · Remote MCP (streamable-http) at https://www.revuo.ai/api/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://www.revuo.ai/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.revuo.ai/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-07-15T15:32:20.613792Z",
+  "publishedAt": "2026-07-15T15:32:20.613792Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:45:01.495Z",
+    "sourceRepoAt": "2026-08-12T00:45:01.495Z",
+    "readmeAt": "2026-08-12T00:45:01.495Z",
+    "toolsAt": "2026-08-12T00:45:01.495Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:45:01.495Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:45:01.495Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "tools.get",
+      "description": "Get detailed information about a specific MCP tool, scoped to one product. Pass both the productSlug and the tool name — same-named tools across products are distinct. Response: { tool: { normalizedName, displayName, description, inputSchema, productSlug, productName, serverQualifiedName, isRemoteCapable, accessModel, healthScore, readOnly, destructive, tier, unverified, verifiedAt, position (always 1), rank (always 1.0) } }. Errors: { error: { code: 'not_found', ... } }."
+    },
+    {
+      "name": "categories.list",
+      "description": "Lists all product categories in the directory. Use category slugs to filter product searches in products.search / products.find_by_capability. Response: { categories: [{ slug, name, description }] }. Note: this is a thin call. For a full directory briefing (subcategories, capability slugs per category, product counts, locked-vertical flags), prefer directory.overview as a single up-front call."
+    },
+    {
+      "name": "mcp.score_server",
+      "description": "Score an MCP server against the Revuo quality rubric. Pass either a product slug (scored from cached probe data on the product's direct-probe MCP entry; fast) OR an endpoint URL (probed live). Returns: { target, server, summary { coreAwarded/Max/Percent, extensionAwarded/Max/Percent, probedAt }, categories[] (ServerMetadata, CapabilityQuality, ConfigurationUX, RevuoExtensions), checks[] (every rubric check with awarded/max/passed/evaluated/fixSuggestion/evidence), topFixes[] (failed checks ranked by points-at-stake), probe (probe diagnostics) }. Core score (max 100) is Smithery-comparable. Extension score covers Revuo-specific signals (response time today; freshness, error envelope, schema stability are not yet implemented and report evaluated=false — excluded from totals, never counted as a failure). A check with evaluated=false is a Revuo gap, not the server's fault. Errors: { error: { code: 'bad_input'|'not_found', ... } }."
+    },
+    {
+      "name": "products.get_mcp_setup",
+      "description": "Get MCP server setup instructions for a product. Returns available servers, their tools, connection details, and whether they support remote (hosted) access. Each server carries a machine-usable connect block: { transport ('http'|'local'), url, mcpJson (paste-ready snippet), claudeMcpAddCommand (`claude mcp add ...`), installLinkUrl (a tracked link that routes through Revuo for vendor attribution, then redirects to the product) }. For remote servers use mcpJson/claudeMcpAddCommand directly; for local servers follow repositoryUrl. Each server also carries schema { hash, stable, lastChangeAt } — cache the hash and pass it to tools.changes(knownHash) later to detect tool-schema drift (rug-pull / tool-poisoning). Response when MCP support exists: { product: { slug, name, websiteUrl, tier, unverified, verifiedAt }, hasMcpSupport: true, totalToolCount, servers[], agentReadiness? }. Response when product exists but lacks MCP: { product: {...}, hasMcpSupport: false, message }. Errors: { error: { code: 'not_found', ... } }."
+    },
+    {
+      "name": "products.get",
+      "description": "Get full details for a product by slug, including MCP integration data and agent readiness scores. Response: { product: { slug, name, tagline, description, websiteUrl, logoUrl, pricingModel, currentScore (0-100), tier (free|verified|featured), unverified (true when no approved vendor claim), verifiedAt (ISO; absent if never crawled), categories[], knownLimitations?[] (sourced weaknesses, each with evidenceUrl — weigh before recommending), alternatives?[] (neutral, score-ranked same-category options, self excluded, houseProduct disclosed) }, mcp?: { hasMcpSupport, totalToolCount, totalUseCount, servers[] }, agentReadiness?: { compositeScore (0-100), aiSummary } }. Errors: { error: { code: 'not_found', ... } }."
+    },
+    {
+      "name": "tools.find_for_task",
+      "description": "Find the best MCP tools for a given task. Describe what you want to accomplish (e.g. 'manage github issues', 'send slack messages', 'query a database') and get ranked results — each result is one (product, tool) pair, since same-named tools across providers are NOT interchangeable. By default only shows tools available via remote (network-hosted) servers. Audience: agent builders looking for installable MCP tools — for B2B SaaS recommendations, prefer products.search or products.find_by_capability. Ranking basis: relevance score desc (+1 per term hit, +3 for full-phrase hit); within an equal relevance tier, callable-now (Open access) + remote + healthy tools are boosted ahead — never a hard filter (a product-bound tool stays in its own money query), then productName. Paid tier is NOT a ranking input — it appears only as an annotation. Every result carries { position (1-based), rank (0..1; 1.0 = top, scales linearly down by ordinal position) } plus preflight annotations { accessModel (open|keyed|account|commercial), healthScore (0-100, nullable), readOnly, destructive, callableNow (true = usable anonymously right now), setup (one-line 'how to get access' pointer for non-Open tools) }. Response: { task, matchType (none|exactSlug|canonicalSlug|nlpFallback), resolvedCapabilities[], capabilityProducts[] (B2B SaaS products that claim the same capability — empty when matchType=none), results[] (MCP-tool-level matches), buckets { callableNow, requiresSetup } }. Each result: { position, rank, normalizedName, displayName, description, inputSchema, relevance, accessModel, healthScore, readOnly, destructive, callableNow, setup, productSlug, productName, serverQualifiedName, isRemoteCapable, tier, unverified, verifiedAt }. Empty case: { task, matchType, message, suggestedQueries[], suggestedCapabilities[] }."
+    },
+    {
+      "name": "directory.overview",
+      "description": "Single 'call this first' entry-point that briefs an agent on the entire Revuo directory. Returns the taxonomy with subcategories, product counts per category, locked-vertical flags (the three verticals Revuo prioritizes), capability slugs valid per category, and the canonical capability-kind taxonomy (integration/compliance/format/standard/workflow). Use this once at the start of a session to ground every subsequent products.search / products.find_by_capability / tools.find_for_task call. Response: { directory: { name, tagline, url, policyUrl, capabilityKinds[] }, lockedVerticals[], categories[] (each with subcategories[], productCount, isLockedVertical, capabilitySlugs[]), tools: { ...tool-name hints } }."
+    },
+    {
+      "name": "rankings.get",
+      "description": "Get the published editorial ranking (\"Best {Category}\") for a category. Ordering basis: computed editorial score ONLY (verified capability coverage, evidence verification rate & freshness, agent readiness, data completeness — weights published at /api/methodology). Tier is NOT a ranking input for this tool; positions are never sold. Rankings are published snapshots (monthly schedule; manual publishes are marked) — stable between recomputes and citable. Each entry carries { position, rank (0..1), slug, name, score (0-100), breakdown (raw 0-100 per dimension), tier (annotation only), houseProduct (true = built by Revuo's founder — same formula as everyone, disclosed machine-readably), unverified, verifiedAt }. unrankedCount + unranked[] name the category products that failed an eligibility gate, with reasons. Response: { category, computedAt, methodologyVersion, methodologyUrl, trigger, entries[], unranked[] }. Errors: { error: { code: 'not_found', ... } } — also returned when a category has no published ranking yet."
+    },
+    {
+      "name": "tools.search",
+      "description": "Search for MCP tools by capability. Each result is one (product, tool) pair — tools sharing a name across providers are NOT interchangeable, so each provider's tool is its own row with its own description and input schema. Ranking basis: semantic relevance to the query (embedding search); on the lexical fallback (searchMode='lexical') results are name-ordered and rank does NOT reflect relevance. Paid tier is NOT a ranking input — it appears only as an annotation. Every result carries { position (1-based), rank (0..1; 1.0 = top) } so callers can merge results across tools consistently, plus preflight annotations { accessModel (open|keyed|account|commercial; whether an agent can call it without becoming a customer first), healthScore (0-100, nullable), readOnly, destructive } so you can judge callability and safety BEFORE selecting. Optional access filter narrows to a single access class. Response: { searchMode ('semantic'|'lexical'), tools: [{ position, rank, normalizedName, displayName, description, inputSchema, productSlug, productName, serverQualifiedName, isRemoteCapable, accessModel, healthScore, readOnly, destructive, tier, unverified (true when no approved vendor claim), verifiedAt (ISO; nullable) }] }. Errors: { error: { code: 'bad_input', ... } }."
+    },
+    {
+      "name": "tools.list_by_name",
+      "description": "List every (product, tool) pair that shares a normalized name. A disambiguation lookup — same name across providers does NOT mean the tools are interchangeable. Ranking basis: productName. Paid tier is NOT a ranking input — it appears only as an annotation. Every result carries { position (1-based), rank (0..1) } plus preflight annotations { accessModel, healthScore, readOnly, destructive }. Response: { normalizedName, total, tools[] (each: position, rank, productSlug, productName, displayName, description, inputSchema, serverQualifiedName, isRemoteCapable, accessModel, healthScore, readOnly, destructive, tier, unverified, verifiedAt) }."
+    },
+    {
+      "name": "tools.changes",
+      "description": "Detect whether a product's MCP tool schema has DRIFTED since you cached it — rug-pull / tool-poisoning detection (a server silently changing a tool's description or input schema after you approved it; web search structurally cannot answer this). Pass the product slug and EITHER the schema hash you cached earlier (knownHash, from products.get_mcp_setup → server.schema.hash — the strongest signal: an exact mismatch means the tools changed) OR the ISO-8601 timestamp you cached at (since). With neither, it returns the current fingerprint to cache for next time. A product may expose MULTIPLE servers: knownHash is per-server, so pass `server` (a qualifiedName) with knownHash on a multi-server product — otherwise knownHash is applied only when there's exactly one server. Re-verify before trusting a previously-approved tool. Response: { product, hasMcpSupport, drifted (did ANY tracked server change vs your reference; null when no reference given), servers[] (each: qualifiedName, currentSchemaHash, schemaStable, lastSchemaChangeAt, toolCount, directlyProbed, driftedSinceKnownHash, driftedSince, advice) }. Errors: { error: { code: 'not_found'|'bad_input', ... } }."
+    },
+    {
+      "name": "products.search",
+      "description": "Search for B2B SaaS products by name OR by capability. The query is first resolved against the canonical capability taxonomy (e.g. 'salesforce-integration', 'xrechnung-support', 'soc2'); on hit, products that claim that capability are returned. Falls back to name/slug/tagline substring search. Optional category scope. Ranking basis: currentScore desc (computed editorial score), then name. Paid tier is NOT a ranking input — tier appears only as an annotation on results. Every result carries { position (1-based), rank (0..1; 1.0 = top, scales linearly down by ordinal position) } so callers can merge results across tools consistently. Response: { query, matchType (none|exactSlug|canonicalSlug|nlpFallback), resolvedCapabilities[], products[] }. Each product carries { position, rank, tier (free|verified|featured — annotation only), houseProduct (true = built by Revuo's founder; conflict-of-interest disclosure), sponsored (true = paid Featured placement), unverified (true when the listing has no approved vendor claim; omitted otherwise — absence means an approved vendor claim, NOT crawl freshness; use verifiedAt for that), verifiedAt (ISO timestamp of last claim crawl; absent if never crawled), currentScore (0-100), compositeScore (agent-readiness 0-100, nullable), matchedCapability (true if surfaced by capability path) }. Errors: { error: { code: 'not_found'|'bad_input', ... } }."
+    },
+    {
+      "name": "products.find_agent_ready",
+      "description": "Find products with the highest agent readiness scores — products that are easiest for AI agents to integrate with. Sorted by compositeScore desc; supports skip/limit pagination. All readiness scores are 0-100, higher better. Calibration: <30 = not agent-ready (default minimumScore filter), 30-49 = early/limited, 50-69 = decent, 70-89 = strong, 90+ = exceptional. Ranking basis: compositeScore desc. Tier is NOT a tiebreaker here — buyer intent is technical fit, not paid placement. Every result carries { position (1-based, within the returned page), rank (0..1; 1.0 = top of this page) } so callers can merge results across tools consistently. Response: { products: [{ position, rank, slug, name, tagline, websiteUrl, tier (free|verified|featured), unverified (true when no approved vendor claim), verifiedAt (ISO; nullable), agentReadiness: { compositeScore, apiScore, protocolScore, sdkScore, integrationScore, dxScore } (each 0-100), mcp?: { hasMcpSupport, totalToolCount, serverCount } }] }."
+    },
+    {
+      "name": "products.find_by_capability",
+      "description": "Find B2B SaaS products that support a specific capability — an integration with a named service ('salesforce-integration'), a data format ('xrechnung-support'), an industry standard ('eclass-support'), or a compliance certification ('soc2'). Accepts either a canonical capability slug or natural language; resolves to a structured capability when possible. Ranking basis: currentScore desc (computed editorial score), then name. Paid tier is NOT a ranking input — it appears only as an annotation. Every result carries { position (1-based), rank (0..1; 1.0 = top, scales linearly down by ordinal position) } so callers can merge results across tools consistently. Response: { capability, matchType (none|exactSlug|canonicalSlug|nlpFallback — exactSlug & canonicalSlug are deterministic; nlpFallback is heuristic), resolvedFeatures[], products[] }. Each product: { position, rank, slug, name, tagline, websiteUrl, tier, unverified (true when no approved vendor claim), verifiedAt, evidence[] (per-claim: featureSlug, evidenceUrl, notes, source, confidence) }. Empty: { capability, matchType, message, suggestedSlugs[] } when no capability matched, or products: [] when capability matched but no products claim it yet."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:45:01.495Z",
+  "toolsPreviewStatus": "ok"
+}

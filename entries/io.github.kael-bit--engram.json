@@ -1,0 +1,91 @@
+{
+  "id": "io.github.kael-bit/engram",
+  "title": "engram",
+  "description": "Hierarchical memory for AI agents. Three-layer (buffer/working/core) with decay and promotion.",
+  "summary": "Hierarchical memory for AI agents. Three-layer (buffer/working/core) with decay and promotion.",
+  "offersHint": "Hierarchical memory for AI agents. Three-layer (buffer/working/core) with decay and promotion. · Packages: npm:engram-rs-mcp · Env vars: ENGRAM_API_KEY, ENGRAM_URL",
+  "version": "0.10.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "engram-rs-mcp",
+    "version": "0.10.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ENGRAM_URL",
+        "description": "URL of the engram server"
+      },
+      {
+        "name": "ENGRAM_API_KEY",
+        "description": "API key for authentication",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "engram-rs-mcp",
+      "version": "0.10.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ENGRAM_URL",
+          "description": "URL of the engram server"
+        },
+        {
+          "name": "ENGRAM_API_KEY",
+          "description": "API key for authentication",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ENGRAM_API_KEY",
+      "description": "API key for authentication",
+      "secret": true
+    },
+    {
+      "name": "ENGRAM_URL",
+      "description": "URL of the engram server"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kael-bit/engram-rs",
+  "repository": {
+    "url": "https://github.com/kael-bit/engram-rs",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-26T07:04:19.772719Z",
+  "publishedAt": "2026-02-26T07:04:19.772719Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:00.088Z",
+    "sourceRepoAt": "2026-08-11T23:39:42.556Z",
+    "readmeAt": "2026-08-11T23:39:43.343Z",
+    "toolsAt": "2026-08-12T01:18:00.088Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kael-bit/engram-rs",
+    "checkedAt": "2026-08-11T23:39:42.556Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kael-bit/engram-rs/main/README.md",
+    "markdown": "# engram-rs\n\n[![CI](https://img.shields.io/github/actions/workflow/status/kael-bit/engram-rs/ci.yml?style=flat-square&logo=github&label=CI)](https://github.com/kael-bit/engram-rs/actions/workflows/ci.yml)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)\n[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange?style=flat-square&logo=rust)](https://www.rust-lang.org)\n[![GitHub stars](https://img.shields.io/github/stars/kael-bit/engram-rs?style=flat-square&color=yellow)](https://github.com/kael-bit/engram-rs)\n[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue?style=flat-square&logo=docker)](https://ghcr.io/kael-bit/engram-rs)\n\nMemory engine for AI agents. Two axes: **time** (three-layer decay & promotion) and **space** (self-organizing topic tree). Important memories get promoted, noise fades, related knowledge clusters automatically.\n\nMost agent memory is a flat store — dump everything in, keyword search to get it back. No forgetting, no organization, no lifecycle. engram-rs adds the part that makes memory actually useful: the ability to forget what doesn't matter and surface what does.\n\n<p align=\"center\">\n  <img src=\"docs/engram-quickstart.gif\" alt=\"engram demo — store, context reset, recall\" width=\"720\">\n</p>\n\nSingle Rust binary, one SQLite file, zero external dependencies. No Python, no Redis, no vector DB — `curl | bash` and it runs. ~10 MB binary, ~100 MB RSS, single-digit ms search latency.\n\n## Quick Start\n\n```bash\n# Install (interactive — will prompt for embedding provider config)\ncurl -fsSL https://raw.githubusercontent.com/kael-bit/engram-rs/main/install.sh | bash\n\n# Store a memory\ncurl -X POST http://localhost:3917/memories \\\n  -d '{\"content\": \"Always run tests before deploying\", \"tags\": [\"deploy\"]}'\n\n# Recall by meaning\ncurl -X POST http://localhost:3917/recall \\\n  -d '{\"query\": \"deployment checklist\"}'\n\n# Restore full context (session start)\ncurl http://localhost:3917/resume\n```\n\n## What It Does\n\n### Three-Layer Lifecycle\n\nInspired by the [Atkinson–Shiffrin memory model](https://en.wikipedia.org/wiki/Atkinson%E2%80%93Shiffrin_memory_model), memories are managed across three layers by importance:\n\n```\nBuffer (short-term) → Working (active knowledge) → Core (long-term identity)\n      ↓                       ↓                           ↑\n   eviction              importance decay           LLM quality gate\n```\n\n- **Buffer**: Entry point for all new memories. Temporary staging — evicted when below threshold\n- **Working**: Promoted via consolidation. Never deleted, importance decays at different rates by kind\n- **Core**: Promoted through LLM quality gate. Never deleted\n\n### LLM Quality Gate\n\nPromotion isn't rule-based guesswork — an LLM evaluates each memory in context and decides whether it genuinely warrants long-term retention.\n\n```\nBuffer → [LLM gate: \"Is this a decision, lesson, or preference?\"] → Working\nWorking → [sustained access + LLM gate] → Core\n```\n\n### Automatic Decay\n\nDecay is activity-driven — it only fires during active consolidation cycles, not wall-clock time. If the system is idle, memories stay intact.\n\n**Exponential decay** follows the [Ebbinghaus forgetting curve](https://en.wikipedia.org/wiki/Forgetting_curve) — fast at first, then long-tail. Memories never fully vanish (floor = 0.01), remaining retrievable under precise queries. When a memory is recalled, it gets an **activation boost**, strengthening frequently-used knowledge.\n\n| Kind | Decay rate | Half-life | Use case |\n|------|-----------|-----------|----------|\n| `episodic` | Fastest | ~35 epochs | Events, experiences, time-bound context |\n| `semantic` | Medium | ~58 epochs | Knowledge, preferences, lessons (default) |\n| `procedural` | Slowest | ~173 epochs | Workflows, instructions, how-to |\n\n### Algorithm Visualizations\n\n| Chart | What it shows |\n|-------|---------------|\n| <img src=\"docs/images/chart_scoring.png\" width=\"600\"> | **Sigmoid score compression.** Raw scores are mapped through a sigmoid function, approaching 1.0 asymptotically. High-relevance results remain distinguishable instead of being crushed into the same value. |\n| <img src=\"docs/images/chart_decay.png\" width=\"600\"> | **Ebbinghaus forgetting curve.** Exponential decay with kind-differentiated rates — episodic memories fade fastest, procedural slowest. Floor at 0.01 means memories never fully vanish; they remain retrievable under precise queries. |\n| <img src=\"docs/images/chart_bias.png\" width=\"600\"> | **Kind × layer weight bias.** Additive biases adjust memory weight by type and layer. Procedural+core memories rank highest, episodic+buffer lowest — but the spread stays bounded so no single combination dominates. |\n| <img src=\"docs/images/chart_reinforcement.png\" width=\"600\"> | **Reinforcement signals.** Repetition and access bonuses follow logarithmic saturation. Early interactions matter most; later ones contribute diminishing returns, discriminating between \"used occasionally\" and \"used daily\". |\n| <img src=\"docs/images/chart_lifecycle.png\" width=\"600\"> | **Use it or lose it.** Left: a memory that's never recalled decays into the buffer layer. Right: periodic recall triggers activation boosts that keep the memory in the working layer. Dashed line shows the unrecalled trajectory for comparison. |\n\n### Semantic Dedup & Merge\n\nTwo memories saying the same thing in different words? Detected and merged automatically:\n\n```\n\"use PostgreSQL for auth\" + \"auth service runs on Postgres\"\n→ Merged into one, preserving context from both\n```\n\n### Self-Organizing Topic Tree\n\nVector clustering groups related memories together, LLM names the clusters. No manual tagging required:\n\n```\nMemory Architecture\n├── Three-layer lifecycle [4]\n├── Embedding pipeline [3]\n└── Consolidation logic [5]\nDeploy & Ops\n├── CI/CD procedures [3]\n└── Production incidents [2]\nUser Preferences [6]\n```\n\nThe problem this solves: vector search requires asking the right question. Topic trees let agents **browse by subject** — scan the directory, drill into the right branch.\n\n### Triggers\n\nTag a memory with `trigger:deploy`, and the agent can recall all deployment lessons before executing:\n\n```bash\ncurl -X POST http://localhost:3917/memories \\\n  -d '{\"content\": \"LESSON: always backup DB before migration\", \"tags\": [\"trigger:deploy\", \"lesson\"]}'\n\n# Pre-deployment check\ncurl http://localhost:3917/triggers/deploy\n```\n\n## Session Recovery\n\nAgent wakes up, calls `GET /resume`, gets full context back. No file scanning needed:\n\n```\n=== Core (24) ===\ndeploy: test → build → stop → start (procedural)\nLESSON: never force-push to main\n...\n\n=== Recent ===\nswitched auth to OAuth2\npublished API docs\n\n=== Topics (Core: 24, Working: 57, Buffer: 7) ===\nkb1: \"Deploy Procedures\" [5]\nkb2: \"Auth Architecture\" [3]\nkb3: \"Memory Design\" [8]\n...\n\nTriggers: deploy, git-push, database-migration\n```\n\n| Section | Content | Purpose |\n|---------|---------|---------|\n| **Core** | Full text of permanent rules and identity | The unforgettable stuff |\n| **Recent** | Recently changed memories | Short-term continuity |\n| **Topics** | Topic index (table of contents) | Drill in on demand, no full load |\n| **Triggers** | Pre-action tags | Auto-recall lessons before risky ops |\n\nAgent reads the directory, finds relevant topics, calls `POST /topic` to expand on demand.\n\n## Search & Retrieval\n\nSemantic embeddings + BM25 keyword search with CJK tokenization ([jieba](https://github.com/messense/jieba-rs)). IDF-weighted scoring — rare terms get boosted, common terms auto-downweighted. No stopword lists to maintain.\n\n```bash\n# Semantic search\ncurl -X POST http://localhost:3917/recall \\\n  -d '{\"query\": \"how do we handle auth\", \"budget_tokens\": 2000}'\n# Note: min_score defaults to 0.30. Use \"min_score\": 0.0 to get all results.\n\n# Topic drill-down\ncurl -X POST http://localhost:3917/topic \\\n  -d '{\"ids\": [\"kb3\"]}'\n```\n\n## Background Maintenance\n\nFully automatic, activity-driven — no writes means the cycle is skipped:\n\n**Consolidation (every 30 minutes)**\n\n1. **Decay** — reduce importance of unaccessed memories\n2. **Dedup** — merge near-identical memories (cosine > 0.78)\n3. **Triage** — LLM categorizes new Buffer memories\n4. **Gate** — LLM batch-evaluates promotion candidates\n5. **Reconcile** — resolve ambiguous similar pairs (results cached)\n6. **Topic tree rebuild** — re-cluster and name\n\n**Topic Distillation** — when a topic grows too large (10+ memories), overlapping content is condensed into fewer, richer entries.\n\n## Namespace Isolation\n\nSingle instance, multiple projects. Use `X-Namespace` to isolate:\n\n```bash\ncurl -X POST http://localhost:3917/memories \\\n  -H \"X-Namespace: my-project\" \\\n  -d '{\"content\": \"API uses OAuth2 bearer tokens\"}'\n```\n\n## Install\n\n```bash\n# macOS / Linux\ncurl -fsSL https://raw.githubusercontent.com/kael-bit/engram-rs/main/install.sh | bash\n\n# Windows (PowerShell)\nirm https://raw.githubusercontent.com/kael-bit/engram-rs/main/install.ps1 | iex\n```\n\n### Docker\n\n```bash\ndocker run -d --name engram-rs \\\n  -p 3917:3917 \\\n  -v engram-data:/data \\\n  -e ENGRAM_LLM_URL=https://api.openai.com/v1 \\\n  -e ENGRAM_LLM_KEY=sk-... \\\n  ghcr.io/kael-bit/engram-rs:latest\n```\n\n### LLM Configuration\n\nengram-rs works without an LLM — keyword search and rule-based lifecycle still function. Adding an LLM unlocks intelligent features (triage, gate, merge, topic naming):\n\n```bash\nexport ENGRAM_LLM_URL=https://api.openai.com/v1\nexport ENGRAM_LLM_KEY=sk-...\n\n# Any OpenAI-compatible API (Ollama, LM Studio, etc.)\nexport ENGRAM_LLM_URL=http://localhost:11434/v1\n\n# Anthropic native\nexport ENGRAM_LLM_PROVIDER=anthropic\nexport ENGRAM_LLM_KEY=sk-ant-...\n```\n\nTwo-tier model config — strong model for judgment, lightweight for text processing:\n\n```bash\nENGRAM_GATE_MODEL=gpt-4o          # quality decisions\nENGRAM_LLM_MODEL=gpt-4o-mini     # text processing\n```\n\n### For AI Agents\n\nAdd to your agent's system prompt:\n\n```\nSet up engram-rs (persistent memory) by following the guide at:\nhttps://raw.githubusercontent.com/kael-bit/engram-rs/main/docs/SETUP.md\n```\n\n## Integration\n\nWorks with Claude Code, Cursor, Windsurf, OpenClaw, and any MCP-compatible tool.\n\n17 MCP tools ([MCP docs](docs/MCP.md)) | Full HTTP API ([Setup guide](docs/SETUP.md))\n\n```bash\n# MCP (Claude Code)\nnpx engram-rs-mcp\n\n# MCP (Cursor / Windsurf / generic)\n{\"mcpServers\": {\"engram\": {\"command\": \"npx\", \"args\": [\"-y\", \"engram-rs-mcp\"]}}}\n```\n\n### Web Dashboard\n\nBuilt-in web UI at `http://localhost:3917/ui` for browsing memories, viewing the topic tree, and monitoring LLM usage.\n\n## Specs\n\n| | |\n|---|---|\n| Binary | ~10 MB |\n| Memory | ~100 MB RSS in production |\n| Storage | SQLite, no external database |\n| Language | Rust |\n| Platforms | Linux, macOS, Windows (x86_64 + aarch64) |\n| License | MIT |\n\n## License\n\nMIT\n\n<a href=\"https://glama.ai/mcp/servers/@kael-bit/engram-rs\">\n  <img width=\"380\" height=\"200\" src=\"https://glama.ai/mcp/servers/@kael-bit/engram-rs/badge\" />\n</a>\n",
+    "fetchedAt": "2026-08-11T23:39:43.343Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:00.088Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

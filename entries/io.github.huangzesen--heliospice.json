@@ -1,0 +1,58 @@
+{
+  "id": "io.github.huangzesen/heliospice",
+  "title": "HelioSPICE",
+  "description": "Spacecraft ephemeris made easy — auto-managed SPICE kernels for heliophysics",
+  "summary": "Spacecraft ephemeris made easy — auto-managed SPICE kernels for heliophysics",
+  "offersHint": "Spacecraft ephemeris made easy — auto-managed SPICE kernels for heliophysics · Packages: pypi:heliospice",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "heliospice",
+    "version": "0.5.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "heliospice",
+      "version": "0.5.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/huangzesen/heliospice",
+  "repository": {
+    "url": "https://github.com/huangzesen/heliospice",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-10T03:05:03.461178Z",
+  "publishedAt": "2026-03-10T03:05:03.461178Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:28.228Z",
+    "sourceRepoAt": "2026-08-11T23:42:50.928Z",
+    "readmeAt": "2026-08-11T23:42:51.408Z",
+    "toolsAt": "2026-08-12T01:20:28.228Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/huangzesen/heliospice",
+    "checkedAt": "2026-08-11T23:42:50.928Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/huangzesen/heliospice/main/README.md",
+    "markdown": "# xhelio-spice\n\nSpacecraft ephemeris made easy — auto-managed SPICE kernels for heliophysics missions.\n\n**xhelio-spice** wraps [SpiceyPy](https://github.com/AndrewAnnex/SpiceyPy) with automatic kernel download, caching, and loading. Ask for a spacecraft position and xhelio-spice handles the rest: downloading the right NAIF kernels, loading them in the correct order, and returning results as Python dicts or pandas DataFrames.\n\n## Installation\n\n```bash\npip install xhelio-spice\n```\n\nFor MCP server support (Claude Desktop, Claude Code, Cursor, etc.):\n\n```bash\npip install xhelio-spice[mcp]\n```\n\n## Quick Start\n\n```python\nfrom xhelio_spice import get_position, get_trajectory\n\n# Where is Parker Solar Probe right now?\npos = get_position(\"PSP\", observer=\"SUN\", time=\"2024-01-15\", frame=\"ECLIPJ2000\")\nprint(f\"PSP is {pos['r_au']:.3f} AU from the Sun\")\n\n# Get a month of trajectory data as a DataFrame\ndf = get_trajectory(\n    \"PSP\", observer=\"SUN\",\n    time_start=\"2024-01-01\", time_end=\"2024-01-31\",\n    step=\"1h\", frame=\"ECLIPJ2000\",\n)\nprint(df[[\"r_au\"]].describe())\n```\n\nKernels are automatically downloaded from [NAIF](https://naif.jpl.nasa.gov/) on first use and cached in `~/.xhelio_spice/kernels/`.\n\n## Supported Missions\n\n### With SPICE Kernels (auto-downloaded)\n- **PSP** (Parker Solar Probe) — 2018-2030\n- **Solar Orbiter** (SOLO) — 2020-2030\n- **STEREO-A** — 2017-2031\n- **Juno** — 2011-present (updated regularly)\n- **Voyager 1/2** — 1981-2100 / 1989-2100\n- **New Horizons** — 2019-2030\n\n### NAIF IDs Only (no auto-download yet)\n- **ACE**, **Wind**, **DSCOVR**, **MMS** (1-4) — no public SPK kernels exist\n- **Cassini**, **MAVEN** — require multi-segment kernel loading (planned)\n- **Galileo**, **Pioneer 10/11**, **Ulysses**, **MESSENGER**, **STEREO-B**\n\n### Natural Bodies\nSun, Earth, Moon, Mercury, Venus, Mars, Jupiter, Saturn, Uranus, Neptune, Pluto\n\n## API Reference\n\n### Position & Trajectory\n\n```python\nfrom xhelio_spice import get_position, get_trajectory, get_state\n\n# Single position\npos = get_position(\"ACE\", observer=\"EARTH\", time=\"2024-06-01\", frame=\"GSE\")\n\n# Full state (position + velocity)\nstate = get_state(\"PSP\", observer=\"SUN\", time=\"2024-01-15\", frame=\"ECLIPJ2000\")\n\n# Trajectory timeseries (returns pandas DataFrame)\ndf = get_trajectory(\n    \"Cassini\", observer=\"SATURN\",\n    time_start=\"2010-01-01\", time_end=\"2010-12-31\",\n    step=\"6h\", frame=\"ECLIPJ2000\",\n    include_velocity=True,\n)\n```\n\n### Coordinate Transforms\n\n```python\nfrom xhelio_spice import transform_vector, list_available_frames\n\n# J2000 to Ecliptic\nv_ecl = transform_vector([1.0, 0.0, 0.0], \"2024-01-15\", \"J2000\", \"ECLIPJ2000\")\n\n# RTN transform (requires spacecraft)\nv_rtn = transform_vector(\n    [5.0, -3.0, 1.0], \"2024-01-15\",\n    from_frame=\"ECLIPJ2000\", to_frame=\"RTN\",\n    spacecraft=\"PSP\",\n)\n\n# List all frames\nprint(list_available_frames())\n```\n\n### Mission Registry\n\n```python\nfrom xhelio_spice import resolve_mission, list_supported_missions\n\n# Resolve name aliases\nnaif_id, key = resolve_mission(\"Parker Solar Probe\")  # -> (-96, \"PSP\")\n\n# List all spacecraft\nmissions = list_supported_missions()\n```\n\n### Kernel Management\n\n```python\nfrom xhelio_spice import get_kernel_manager\n\nkm = get_kernel_manager()\nkm.ensure_mission_kernels(\"PSP\")  # Download + load\nprint(km.get_cache_info())        # Cache stats\nkm.unload_all()                    # Free memory\n```\n\n## Configuration\n\n| Method | Description |\n|--------|-------------|\n| `XHELIO_SPICE_KERNEL_DIR` env var | Override kernel cache directory |\n| `KernelManager(kernel_dir=...)` | Per-instance override |\n| Default | `~/.xhelio_spice/kernels/` |\n\n## MCP Server\n\nxhelio-spice includes an [MCP](https://modelcontextprotocol.io/) server for LLM tool use:\n\n```bash\n# Run directly\nxhelio-spice-mcp\n\n# Or via Python\npython -m xhelio_spice.server\n```\n\n### Claude Desktop Configuration\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"xhelio-spice\": {\n      \"command\": \"xhelio-spice-mcp\"\n    }\n  }\n}\n```\n\n### Available MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `get_ephemeris` | Position/velocity — single time (inline) or timeseries (CSV) |\n| `compute_distance` | Distance between two bodies |\n| `transform_coordinates` | Coordinate frame transform |\n| `list_spice_missions` | Supported missions |\n| `list_coordinate_frames` | Available frames with descriptions |\n| `manage_kernels` | Kernel cache management |\n\n### MCP smoke test\n\nFor a CI-safe MCP check that does not request kernel downloads, run:\n\n```bash\nuv run --extra mcp python scripts/smoke_mcp_list_tools.py --json\n```\n\nThe smoke starts the stdio server with an isolated temporary kernel cache, runs\nMCP `initialize` + `list_tools`, and verifies the advertised tool names.\n\n## License\n\nMIT\n\n<!-- mcp-name: io.github.huangzesen/xhelio-spice -->\n",
+    "fetchedAt": "2026-08-11T23:42:51.408Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:28.228Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

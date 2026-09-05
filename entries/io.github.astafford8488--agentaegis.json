@@ -1,0 +1,164 @@
+{
+  "id": "io.github.astafford8488/agentaegis",
+  "title": "AgentAegis",
+  "description": "Pay-per-call cybersecurity for AI agents: vuln scans, threat intel, compliance, code security.",
+  "summary": "Pay-per-call cybersecurity for AI agents: vuln scans, threat intel, compliance, code security.",
+  "offersHint": "Pay-per-call cybersecurity for AI agents: vuln scans, threat intel, compliance, code security. · Remote MCP (streamable-http) at https://agentaegis-mcp-production.up.railway.app/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://agentaegis-mcp-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentaegis-mcp-production.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/astafford8488/agentaegis-mcp",
+  "repository": {
+    "url": "https://github.com/astafford8488/agentaegis-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-16T21:02:50.305228Z",
+  "publishedAt": "2026-06-16T21:02:50.305228Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:46.469Z",
+    "sourceRepoAt": "2026-08-11T23:55:57.683Z",
+    "readmeAt": "2026-08-11T23:55:58.298Z",
+    "toolsAt": "2026-08-11T23:55:58.622Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/astafford8488/agentaegis-mcp",
+    "checkedAt": "2026-08-11T23:55:57.683Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/astafford8488/agentaegis-mcp/master/README.md",
+    "markdown": "# AgentAegis MCP Server\n\n[![Glama score](https://glama.ai/mcp/servers/astafford8488/agentaegis-mcp/badges/score.svg)](https://glama.ai/mcp/servers/astafford8488/agentaegis-mcp)\n\nEvery cybersecurity service, callable by any AI agent, billed per use.\n\nAgentAegis is an MCP server that lets AI agents perform cybersecurity operations on demand — from compliance checks to vulnerability scans to code security analysis. It wraps best-in-class open-source scanning engines (nmap, Nuclei, sslyze, Semgrep, trufflehog, trivy) in clean, agent-discoverable tool definitions with structured inputs and outputs.\n\n**Phase 2 ships:** HTTP transport for remote deployment, x402 micropayments, API key auth with monthly limits, Supabase persistence, webhooks, ISO 27001 + HIPAA frameworks, Railway deploy config, and a full test suite.\n\n## Quick Start\n\n### Local (stdio for Claude Desktop)\n\n```bash\ngit clone https://github.com/astafford8488/agentaegis-mcp.git\ncd agentaegis-mcp\npnpm install\ncp .env.example .env  # add API keys\npnpm build\n```\n\nAdd to `claude_desktop_config.json`:\n```json\n{\n  \"mcpServers\": {\n    \"agentaegis\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/agentaegis-mcp/dist/index.js\"],\n      \"env\": {\n        \"NVD_API_KEY\": \"...\",\n        \"ABUSEIPDB_API_KEY\": \"...\",\n        \"OTX_API_KEY\": \"...\",\n        \"ABUSECH_API_KEY\": \"...\",\n        \"HIBP_API_KEY\": \"...\"\n      }\n    }\n  }\n}\n```\n\n### Remote (HTTP, for agent platforms)\n\n```bash\n# Local dev\npnpm dev:http\n\n# Production via Docker\ndocker compose -f docker/docker-compose.yml up -d\n\n# Production via Railway\nrailway up\n```\n\nConnect from any MCP-aware agent:\n```\nPOST https://your-host/mcp\nAuthorization: Bearer aegis_<your-api-key>\n```\n\n## Architecture\n\n```\n┌─────────────────────────────────────────────────────────┐\n│         AI Agent (Claude, custom MCP client)            │\n└────────────────┬───────────────────────┬─────────────────┘\n                 │ stdio                 │ HTTP\n                 │                       │\n┌────────────────▼───────────┐  ┌────────▼─────────────────┐\n│   stdio entry (index.ts)   │  │  HTTP entry (http-server)│\n└────────────────┬───────────┘  └────────┬─────────────────┘\n                 │                       │\n                 │      ┌────────────────┴─────────────┐\n                 │      │  Auth Gate                   │\n                 │      │  - API key (DB-backed)       │\n                 │      │  - x402 micropayment         │\n                 │      └─────────────┬────────────────┘\n                 │                    │\n┌────────────────▼────────────────────▼──────────────────────┐\n│              MCP Server (server.ts)                          │\n│              20 Tool Handlers                                │\n├──────────────────────────┬────────────────────────────────┤\n│  Engine Wrappers         │  External APIs                  │\n│  nmap, Nuclei, sslyze,   │  NVD, AbuseIPDB, AlienVault OTX + abuse.ch,    │\n│  Semgrep, trufflehog,    │  HIBP, Shodan                   │\n│  trivy                   │                                  │\n├──────────────────────────┴────────────────────────────────┤\n│  Sandbox    │ Rate Limit │ Target Validation │ Logging     │\n└────────────────────────────────────────────────────────────┘\n                            │\n                  ┌─────────▼──────────┐\n                  │  Supabase          │\n                  │  - customers       │\n                  │  - api_keys        │\n                  │  - scan_jobs       │\n                  │  - usage_log       │\n                  │  - webhooks        │\n                  └────────────────────┘\n```\n\n## HTTP API (Phase 2)\n\n| Endpoint | Method | Auth | Description |\n|----------|--------|------|-------------|\n| `/health` | GET | None | Health check |\n| `/pricing` | GET | None | Tool catalog with prices |\n| `/v1/customers` | POST | None | Create customer account |\n| `/v1/customers/:id/api-keys` | POST | None | Issue an API key |\n| `/v1/customers/:id/usage` | GET | API key | Usage statistics |\n| `/v1/jobs/:jobId` | GET | API key | Async scan job status |\n| `/mcp` | POST | API key OR x402 | MCP Streamable HTTP transport |\n\n### Payment Flow\n\n**Option 1: API Key** — Customer registers, gets a key, pays via prepaid balance or invoice. Each tool call deducts from the monthly budget.\n\n```bash\ncurl -X POST https://api.agentaegis.org/v1/customers \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"you@company.com\",\"name\":\"Your Name\"}'\n\ncurl -X POST https://api.agentaegis.org/v1/customers/<id>/api-keys \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"name\":\"production\",\"monthly_limit_usd\":100}'\n```\n\n**Option 2: x402 Micropayment** — No signup. Each tool call settles on-chain via USDC. The server returns `402 Payment Required` with payment requirements; the client signs and retries with `X-PAYMENT` header.\n\n## Tool Catalog (28 tools: 23 paid + 5 free)\n\nLive pricing is always at [`/pricing`](https://agentaegis-mcp-production.up.railway.app/pricing).\n\n| Tool | Category | Description | Price |\n|------|----------|-------------|-------|\n| `compliance_framework_check` | Compliance | SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST CSF assessment | $2.00 |\n| `evidence_collect` | Compliance | Evidence collection plans for audit controls | $1.00 |\n| `control_gap_analysis` | Compliance | Prioritized remediation roadmap | $2.00 |\n| `audit_report_generate` | Compliance | Audit-ready compliance reports | $5.00 |\n| `policy_generate` | Compliance | Tailored security policy documents | $2.00 |\n| `vuln_scan_network` | Vuln Mgmt | Network port and vulnerability scan | $3.00 |\n| `vuln_scan_web_app` | Vuln Mgmt | OWASP Top 10 web app scan | $5.00 |\n| `vuln_prioritize` | Vuln Mgmt | Risk-based vulnerability prioritization | $1.00 |\n| `cve_lookup` | Vuln Mgmt | CVE details, CVSS, KEV status | $1.00 |\n| `ssl_tls_audit` | Vuln Mgmt | SSL/TLS configuration audit | $1.00 |\n| `sast_scan` | Code Security | Static security analysis | $5.00 |\n| `secret_scan` | Code Security | Hardcoded secret detection | $2.00 |\n| `dependency_audit` | Code Security | Dependency vulnerability scan | $2.00 |\n| `incident_triage` | Blue Team | Incident classification & response plan | $3.00 |\n| `threat_intel_lookup` | Blue Team | IOC reputation lookup | $2.00 |\n| `dns_security_check` | Blue Team | DNS security audit | $1.00 |\n| `email_security_audit` | Blue Team | Email security configuration audit | $2.00 |\n| `access_review` | Identity | Access privilege audit | $1.00 |\n| `mfa_audit` | Identity | MFA coverage assessment | $1.00 |\n| `credential_check` | Offensive | Breach database lookup | $2.00 |\n| `vet_endpoint` | Trust Layer | Composite PROCEED/CAUTION/BLOCK trust verdict on an endpoint before your agent calls or pays it | $3.00 |\n| `scan_mcp_plugin` | Trust Layer | Supply-chain scan of an MCP server/plugin before your agent installs or trusts it | $5.00 |\n| `scan_skill` | Trust Layer | Prompt-injection and over-broad-grant scan of an agent skill (SKILL.md) | $5.00 |\n\nFree tools (no charge): `help`, `account_balance`, `agent_whoami`, `agent_history`, `agent_scan_get`.\n\n## Compliance Frameworks Supported\n\n- **SOC 2 Type II** — Full Trust Services Criteria (35 controls)\n- **ISO 27001:2022** — All 4 Annex A control groups (93 controls)\n- **HIPAA Security Rule** — Administrative, physical, and technical safeguards (43 controls)\n- **NIST CSF 2.0** — All 6 functions with categories\n- **PCI DSS v4.0** — All 12 requirements with detailed controls (full evaluation logic)\n\n## Development\n\n```bash\npnpm install        # Install dependencies\npnpm dev            # stdio mode (for Claude Desktop)\npnpm dev:http       # HTTP mode (with Streamable HTTP transport)\npnpm build          # Build for production\npnpm test           # Run vitest test suite (46 tests)\n```\n\n## Deployment\n\n### Railway (Recommended)\n\n```bash\nrailway login\nrailway init\nrailway up\n```\n\nRequired env vars (set in Railway dashboard):\n- `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`\n- `X402_PAYEE_ADDRESS` (your wallet)\n- `NVD_API_KEY`, `ABUSEIPDB_API_KEY`, `OTX_API_KEY`, `ABUSECH_API_KEY`, `HIBP_API_KEY`\n\n### Database setup\n\nRun the migration in your Supabase SQL editor:\n```bash\ncat supabase/migrations/001_initial_schema.sql\n```\n\n## Security Policy\n\n- **Target validation**: Only public IPs and registered domains. Private/reserved ranges blocked.\n- **Scan isolation**: Each scan runs in an isolated process with temp directory cleanup.\n- **Code safety**: Repos cloned shallow (depth=1), max 500MB, 5-minute timeout, no execution.\n- **Secret redaction**: Full secret values never returned — first 4 and last 4 characters only.\n- **Rate limiting**: Per API key AND per target. Max 5 concurrent scans, 10/hour per target.\n- **Audit logging**: All tool calls logged to `usage_log` (90-day retention).\n- **API key hashing**: Keys stored as SHA-256 hashes; raw keys never stored.\n\n## Responsible Use\n\nAgentAegis scanning tools must only be used against systems you own or have explicit written authorization to test. By using this service, you agree that:\n\n1. You have authorization from the system owner to perform security testing\n2. You will not use these tools for unauthorized access or malicious purposes\n3. You accept responsibility for any scans initiated through your API key\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:55:58.298Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "compliance_framework_check",
+      "description": "Assess an organization's security posture against a compliance framework (SOC 2, ISO 27001, HIPAA, PCI-DSS, NIST CSF) and report per-control status. Use this FIRST when asked whether the org is audit-ready; control_gap_analysis builds on its output. Costs $2 per call."
+    },
+    {
+      "name": "evidence_collect",
+      "description": "Build an evidence-collection plan for specific compliance controls: what artifact each control needs, where it comes from, and what makes it sufficient. Use when preparing for a real audit, after the gaps are known. Plans the collection; does not gather evidence for you. Costs $1 per call."
+    },
+    {
+      "name": "control_gap_analysis",
+      "description": "Turn unmet compliance controls into a prioritized remediation roadmap with effort estimates. Use after compliance_framework_check to answer 'what do we fix first'. Costs $2 per call."
+    },
+    {
+      "name": "audit_report_generate",
+      "description": "Synthesize findings into an audit-ready compliance report. Use at the END of an engagement, once gaps are closed. If the user only wants to know where they currently stand, run compliance_framework_check instead — it costs less and answers that question directly. Costs $5 per call."
+    },
+    {
+      "name": "policy_generate",
+      "description": "Generate a tailored written security policy (incident response, access control, encryption, vendor management, remote work, and similar). Use when a control gap specifically calls for documented policy. Costs $2 per call."
+    },
+    {
+      "name": "vuln_scan_network",
+      "description": "Discover open ports, running services and known vulnerabilities on an IP or domain (nmap). SENDS REAL TRAFFIC to the target and may trigger intrusion detection — only run against hosts the caller owns or is explicitly authorized to test, and confirm that first. Pass async:true to get a job_id to poll instead of blocking. Costs $3 per call."
+    },
+    {
+      "name": "vuln_scan_web_app",
+      "description": "Scan a web application for OWASP Top 10 issues and known CVEs (Nuclei). SENDS REAL TRAFFIC to the target — authorized targets only, confirm before calling. Pass async:true to get a job_id to poll instead of blocking. Costs $5 per call."
+    },
+    {
+      "name": "vuln_prioritize",
+      "description": "Rank vulnerabilities you already have by exploitability and business impact, and group them into remediation actions. Analyzes findings you supply; it discovers nothing on its own. Costs $1 per call."
+    },
+    {
+      "name": "cve_lookup",
+      "description": "Look up one CVE by identifier: CVSS score and vector, affected products, patch availability and references. Use when a specific CVE ID is already known. Costs $1 per call."
+    },
+    {
+      "name": "ssl_tls_audit",
+      "description": "Audit a domain's TLS configuration (sslyze): certificate validity and expiry, protocol versions, cipher suites, and known TLS weaknesses. Passive — safe against any host. Costs $1 per call."
+    },
+    {
+      "name": "sast_scan",
+      "description": "Static analysis of source code or an https git repo for security flaws (Semgrep): injection, unsafe deserialization, path traversal, crypto misuse. Python, JS/TS, Java, Go, Ruby, PHP, C/C++. For code LOGIC flaws — use secret_scan for hardcoded credentials and dependency_audit for vulnerable packages. Costs $5 per call."
+    },
+    {
+      "name": "secret_scan",
+      "description": "Detect hardcoded credentials, API keys and tokens in source code or an https git repo (trufflehog), verified against the issuing provider where supported. Use when the question is 'did we commit a secret'. Costs $2 per call."
+    },
+    {
+      "name": "dependency_audit",
+      "description": "Audit a dependency manifest or https git repo for known-vulnerable packages (trivy): npm, pip, Go, Ruby, Java, Cargo. The cheapest, highest-signal first step when assessing an unfamiliar repository. Costs $2 per call."
+    },
+    {
+      "name": "incident_triage",
+      "description": "Classify a security incident and produce severity, likely category, containment steps and a response plan. Use when something has already happened. If all you have is a suspicious IP or domain, run threat_intel_lookup first — it is cheaper and may settle the question. Costs $3 per call."
+    },
+    {
+      "name": "threat_intel_lookup",
+      "description": "Reputation and indicator lookup for an IP or domain across AbuseIPDB, AlienVault OTX and abuse.ch. The cheapest way to check whether an indicator is known-bad. Interpret with care: large CDN, cloud and payment infrastructure routinely returns reputation hits, so only a curated active-malware hit is strong evidence on its own. Costs $2 per call."
+    },
+    {
+      "name": "dns_security_check",
+      "description": "Check a domain's DNS security records — SPF, DKIM, DMARC, DNSSEC — and grade the configuration. Passive. Covers the records themselves; for full spoofability posture use email_security_audit. Costs $1 per call."
+    },
+    {
+      "name": "email_security_audit",
+      "description": "Full email-security posture for a domain: whether mail from it can be spoofed, with DMARC/SPF/DKIM alignment and policy strength. A superset of dns_security_check for the email question specifically. Costs $2 per call."
+    },
+    {
+      "name": "access_review",
+      "description": "Review user and role assignments you supply against least-privilege, flagging excessive, stale or orphaned access. Analyzes data the caller provides; it does not connect to an identity provider. Costs $1 per call."
+    },
+    {
+      "name": "mfa_audit",
+      "description": "Assess MFA coverage and factor strength across a user or configuration set you supply, flagging unenrolled accounts and weak factors such as SMS. Analyzes data the caller provides; it does not connect to an identity provider. Costs $1 per call."
+    },
+    {
+      "name": "credential_check",
+      "description": "Check whether an email address or domain appears in known credential-breach corpora (Have I Been Pwned), with the breaches and data classes exposed. Use when assessing account-takeover exposure. Costs $2 per call."
+    },
+    {
+      "name": "vet_endpoint",
+      "description": "Composite trust verdict (PROCEED/CAUTION/BLOCK) for an endpoint an agent is about to call or pay — combines TLS/cert health, DNS hygiene, threat-intel reputation, and domain age into one decision with reasons. Prefer this over running ssl_tls_audit + dns_security_check + threat_intel_lookup separately: it costs less than the sum and returns a decision rather than three reports to reconcile. Costs $3 per call."
+    },
+    {
+      "name": "scan_mcp_plugin",
+      "description": "Scan an MCP server (git repo or code) for supply-chain risk BEFORE trusting it — exfiltration (secrets/env to the network), prompt-injection sinks, dangerous capabilities, npm install hooks, obfuscation, plus Semgrep + secret scanning → a PROCEED/CAUTION/BLOCK verdict with findings. Costs $5 per call."
+    },
+    {
+      "name": "scan_skill",
+      "description": "Scan an agent SKILL (git repo or SKILL.md) for supply-chain risk BEFORE trusting it — prompt-injection / hidden-unicode in the instructions (hard block), over-broad allowed-tools grants, plus exfiltration, dangerous capabilities, secrets and obfuscation in bundled scripts → a PROCEED/CAUTION/BLOCK verdict. Costs $5 per call."
+    },
+    {
+      "name": "account_balance",
+      "description": "Returns the calling API key's prepaid balance, monthly limit, current month usage, and a breakdown of how many of each tool the customer can still afford. Free to call."
+    },
+    {
+      "name": "help",
+      "description": "Returns AgentAegis FAQ — authentication, balance/billing, tool catalog, async jobs, error codes, x402, rate limits, security. Optional topic filter. Free to call."
+    },
+    {
+      "name": "agent_whoami",
+      "description": "Returns your persistent AgentAegis agent identity (agent_id), how you're identified (API key / wallet / anonymous session), and lifetime call count + spend. Free to call."
+    },
+    {
+      "name": "agent_history",
+      "description": "Lists your recent scans (scan_id, tool, target, status, time) so you can retrieve or chain from a prior result. Optional limit/tool/target/since filters. Free to call."
+    },
+    {
+      "name": "agent_scan_get",
+      "description": "Retrieves one of your prior scans by scan_id, including the stored full output, so you can build on earlier results without re-paying. Free to call."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:55:58.622Z",
+  "toolsPreviewStatus": "ok"
+}

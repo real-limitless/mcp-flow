@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Paydirt-AI/paydirt-mcp",
+  "title": "Paydirt",
+  "description": "Agent-native installer and control plane for Paydirt iOS feedback",
+  "summary": "Agent-native installer and control plane for Paydirt iOS feedback",
+  "offersHint": "Agent-native installer and control plane for Paydirt iOS feedback · Packages: npm:paydirt-mcp",
+  "version": "2.1.6",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "paydirt-mcp",
+    "version": "2.1.6",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "paydirt-mcp",
+      "version": "2.1.6",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Paydirt-AI/paydirt-mcp",
+  "repository": {
+    "url": "https://github.com/Paydirt-AI/paydirt-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T21:20:14.594777Z",
+  "publishedAt": "2026-07-31T21:20:14.594777Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:36:26.828Z",
+    "sourceRepoAt": "2026-08-12T00:04:43.657Z",
+    "readmeAt": "2026-08-12T00:04:44.515Z",
+    "toolsAt": "2026-08-12T01:36:26.828Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Paydirt-AI/paydirt-mcp",
+    "checkedAt": "2026-08-12T00:04:43.657Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Paydirt-AI/paydirt-mcp/main/README.md",
+    "markdown": "# Paydirt MCP\n\n[![CI](https://github.com/Paydirt-AI/paydirt-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Paydirt-AI/paydirt-mcp/actions/workflows/ci.yml)\n[![npm](https://img.shields.io/npm/v/paydirt-mcp)](https://www.npmjs.com/package/paydirt-mcp)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\nMCP Registry name: `io.github.Paydirt-AI/paydirt-mcp`\n\nThe agent-native installer and control plane for [Paydirt](https://www.paydirt.ai), an iOS SDK for regular feedback, trial cancellation, and subscription cancellation.\n\nPaydirt MCP lets a coding agent create forms, place them in an iOS app, connect Slack, build and launch the host app, leave a Debug-only test form open for immediate verification, and read raw feedback. Paydirt supports native StoreKit, RevenueCat, Superwall, app-owned billing, and apps without subscriptions.\n\nA generic installation creates regular feedback plus both trial and paid subscription cancellation. The single browser setup handles Google sign-in and Slack OAuth, creates a new `#paydirt-cancellation-feedback` channel, and assigns every installed form before installation begins. If that name is taken, Paydirt creates the next numbered name.\n\n## Install in Codex\n\n```bash\ncodex mcp add paydirt -- npx -y paydirt-mcp@latest\n```\n\nRestart Codex after adding the server. Then ask:\n\n> Install Paydirt in this iOS app for regular feedback, trial cancellation, and subscription cancellation. Detect the existing subscription setup, preserve any existing feedback form and its behavior, connect every Paydirt form to my Slack feedback channel, edit the app, build it, and give me an exact test path.\n\nTo remove the server later:\n\n```bash\ncodex mcp remove paydirt\n```\n\n## Install in Claude Code\n\n```bash\nclaude mcp add paydirt -- npx -y paydirt-mcp@latest\n```\n\nThe public Paydirt Claude plugin marketplace is also included in this repository. After the public repository is available:\n\n```text\n/plugin marketplace add Paydirt-AI/paydirt-mcp\n/plugin install paydirt@paydirt-plugins\n```\n\nThe plugin bundles both the Paydirt installation workflow and the pinned MCP server configuration.\n\nOther MCP hosts can launch the same stdio command:\n\n```json\n{\n  \"mcpServers\": {\n    \"paydirt\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"paydirt-mcp@latest\"]\n    }\n  }\n}\n```\n\nRequires Node.js 18 or newer.\n\n## Authentication\n\nAuthentication is an explicit, headless-safe two-step flow:\n\n1. The agent calls `paydirt_begin_setup`. It immediately receives an `authorization_url`, `session_id`, and exact `finish_arguments`. The MCP process never launches a browser, sleeps, or polls.\n2. Open `authorization_url` in any browser, sign in to Paydirt with Google, and authorize Slack. Paydirt creates the app, forms, and feedback channel automatically.\n3. The agent calls `paydirt_finish_setup` with the returned arguments. A pending call returns immediately; call it again only after authorization is complete.\n\n`paydirt_setup` remains as a compatibility alias: call it without `session_id` to begin and with `session_id` to finish.\n\nCredentials are saved locally at `~/.paydirt/credentials.json` with owner-only permissions. They are not written to an app repository or sent anywhere except `api.paydirt.ai`. For ephemeral environments, set `PAYDIRT_AUTH_TOKEN` instead.\n\n## Natural agent workflows\n\n### Add a form at an in-app action\n\nAsk:\n\n> Add a feedback form titled “Export Feedback” after a successful export and send it to #product-feedback.\n\nThe agent should use `paydirt_add_feedback_form`. It reuses an existing custom form with the same normalized title, preserves the requested placement, resolves Slack when possible, and returns the exact Swift presentation call. A remote form is not considered installed until the agent edits and builds the host app.\n\nSupported triggers are user taps, successful in-app actions, screen appearance, and app-owned custom conditions.\n\n### Install cancellation feedback\n\nThe agent inspects the app before setup and selects the existing subscription source of truth:\n\n- Native StoreKit uses Paydirt's built-in StoreKit integration.\n- RevenueCat uses installer-managed compatibility source and the familiar `Paydirt.enableRevenueCatIntegration(...)` call, avoiding duplicate package dependencies.\n- Native StoreKit covers ordinary App Store subscriptions, including apps where Superwall is only the paywall.\n- App-owned billing emits Paydirt's provider-independent cancellation event.\n- Apps without subscriptions can install manual feedback alone.\n\nThe agent must preserve all existing host-app feedback forms, buttons, screens,\nhandlers, destinations, and side effects. It may only add or change regular\nfeedback when the user explicitly requests that exact placement. If a requested\ncancellation bridge is blocked, the agent reports the narrow provider blocker,\npreserves the existing app behavior, and completes every unaffected requested\nform.\n\nAn older RevenueCat version is not a blocker. The agent keeps the installed\nversion and adapts the installer-managed integration source to the customer-info or\npurchaser-info API already compiling in the app. Newer optional metadata may be\nomitted, or Paydirt can be called from the app's existing confirmed RevenueCat\ncancellation path.\n\n### Deliver to Slack and coding agents\n\nSlack receives one message after a conversation finishes, containing the exact raw questions and answers. An optional AI summary may follow the raw conversation. Coding-agent tools expose responses read-only; Paydirt does not automatically take action on feedback.\n\n## Tools\n\n| Tool | Purpose |\n| --- | --- |\n| `paydirt_begin_setup` | Start non-blocking browser authorization |\n| `paydirt_finish_setup` | Check authorization once and return the installation contract |\n| `paydirt_setup` | Backward-compatible begin/finish alias |\n| `paydirt_add_feedback_form` | Create/reuse a named form and return its host-app placement contract |\n| `paydirt_list_apps`, `paydirt_create_app`, `paydirt_get_app`, `paydirt_update_app` | Manage apps |\n| `paydirt_list_forms`, `paydirt_create_form`, `paydirt_get_form`, `paydirt_update_form`, `paydirt_toggle_form`, `paydirt_delete_form` | Manage forms |\n| `paydirt_get_responses` | Read raw conversations using a stable cursor |\n| `paydirt_get_summary`, `paydirt_ask` | Read optional AI analysis |\n| `paydirt_connect_slack`, `paydirt_slack_status`, `paydirt_list_slack_channels`, `paydirt_set_form_channel` | Connect and configure Slack delivery |\n| `paydirt_health_check` | Verify API connectivity and credentials |\n\n## Development\n\n```bash\nnpm ci\nnpm test\nnpm pack --dry-run\n```\n\nThe repository intentionally contains only the public MCP client. Paydirt's API, dashboard, infrastructure, and operational configuration remain private.\n\nOfficial MCP Registry metadata lives at [`.mcp/server.json`](.mcp/server.json). It describes the current npm stdio package; Paydirt does not claim a remote MCP transport until a public HTTPS endpoint is deployed and verified.\n\nSee [SUPPORT.md](SUPPORT.md) for support, [SECURITY.md](SECURITY.md) before reporting a vulnerability, and [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:04:44.515Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:36:26.828Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

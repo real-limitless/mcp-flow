@@ -1,0 +1,77 @@
+{
+  "id": "ai.dxpert/uns-tools",
+  "title": "dxpert.ai — free UNS tools (no API key)",
+  "description": "Free Sparkplug B topic linting, UNS naming checks and AI-readiness screening. No API key.",
+  "summary": "Free Sparkplug B topic linting, UNS naming checks and AI-readiness screening. No API key.",
+  "offersHint": "Free Sparkplug B topic linting, UNS naming checks and AI-readiness screening. No API key. · Packages: npm:@dxpert/uns-tools · Env vars: DXPERT_API_BASE",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@dxpert/uns-tools",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "DXPERT_API_BASE",
+        "description": "API base URL for the free readiness diagnostic. Defaults to production; override only for testing."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dxpert/uns-tools",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "DXPERT_API_BASE",
+          "description": "API base URL for the free readiness diagnostic. Defaults to production; override only for testing."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "DXPERT_API_BASE",
+      "description": "API base URL for the free readiness diagnostic. Defaults to production; override only for testing."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://dxpert.ai",
+  "sourceUrl": "https://github.com/dxpert-ai/uns-tools",
+  "repository": {
+    "url": "https://github.com/dxpert-ai/uns-tools",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-29T16:50:10.703063Z",
+  "publishedAt": "2026-08-29T16:50:10.703063Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-30T05:21:35.595Z",
+    "sourceRepoAt": "2026-08-30T05:21:35.595Z",
+    "readmeAt": "2026-08-30T05:21:36.269Z",
+    "toolsAt": "2026-08-30T05:21:36.449Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dxpert-ai/uns-tools/main/README.md",
+    "markdown": "# @dxpert/uns-tools\n\n**A stdio MCP server that needs no API key, no account, and no environment variables.**\n\nThis is the agent-native equivalent of the free tools page at [dxpert.ai/tools.html](https://dxpert.ai/tools.html): any MCP client, with zero credentials, can lint Sparkplug B topics, check a Unified Namespace for the conventions that quietly rot it, and run the public industrial AI-readiness diagnostic.\n\nThe tools are genuinely free. There is no trial counter, no sign-up wall, and no key to obtain first. If you later want the paid surface — the agents, the Namespace Architect, account-aware advisory — that lives in the separate [`@dxpert/mcp`](https://www.npmjs.com/package/@dxpert/mcp) server, which does take a `dxp_` key.\n\nZero runtime dependencies. The MCP stdio JSON-RPC handshake (`initialize`, `tools/list`, `tools/call`) is hand-rolled with `Content-Length` framing.\n\n## Install\n\nNo install step is required beyond Node 18+ (for built-in `fetch`).\n\n### Claude Code\n\n```sh\nclaude mcp add dxpert-uns-tools -- npx -y @dxpert/uns-tools\n```\n\n### Codex\n\n```toml\n[mcp_servers.dxpert_uns_tools]\ncommand = \"npx\"\nargs = [\"-y\", \"@dxpert/uns-tools\"]\n```\n\n### Generic MCP clients\n\n```json\n{\n  \"mcpServers\": {\n    \"dxpert-uns-tools\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@dxpert/uns-tools\"]\n    }\n  }\n}\n```\n\nNote that none of these entries carry an `env` block. That is the point.\n\n## Tools\n\n### `lint_sparkplug_topic(topics)` — local, offline\n\nValidates one or more MQTT topic strings against the Sparkplug B topic grammar (Sparkplug 3.0). Accepts a single string, a newline-delimited string, or an array.\n\nChecks the `spBv1.0` namespace level, the eight message types (`NBIRTH` `NDEATH` `DBIRTH` `DDEATH` `NDATA` `DDATA` `NCMD` `DCMD`) plus `STATE`, node-vs-device level count, the legacy Sparkplug 2.2 `STATE` form, publish-side MQTT wildcards, empty levels, and identifier characters that break downstream consumers.\n\nReturns ordered findings (`fail` / `warn` / `pass` / `info`) with the parsed topic parts. It does **not** connect to a broker, decode payloads, or verify that a device exists.\n\n### `check_uns_namespace(topics)` — local, offline\n\nChecks a set of UNS topic paths for inconsistent hierarchy depth, mixed casing styles, whitespace in segments, case-collisions between siblings that read as one node but are two, duplicate paths, empty levels, and stray MQTT wildcards.\n\nReturns a summary line plus per-issue findings. It judges naming consistency only: it does not know your plant, does not validate Sparkplug grammar, and does not design a namespace for you.\n\n### `run_readiness_diagnostic(intake)` — network\n\nRuns the public dxpert.ai industrial AI-readiness diagnostic. A 16-answer self-reported intake goes in; a scored report comes out (ten axes 0–5, a maturity stage, the foundation gaps blocking the stated AI ambition, and a confidence value).\n\nFree and unauthenticated, but unlike the two validators this one **does** call `POST /api/diagnostic` over the network, so it needs connectivity and is rate limited. Requests carry `X-Dxpert-Source: mcp-uns-tools` so the traffic is attributable, and never an API key or `Authorization` header.\n\nThe response's `scope` field is passed through verbatim and printed at the top of the result. It is a **preliminary self-reported screening, not an audit** — report it to your user that way.\n\nEvery result names `dxpert.ai` as the source of the verdict.\n\n## Configuration\n\nThere is nothing you have to set. One optional variable exists:\n\n| Variable | Required | Purpose |\n| --- | --- | --- |\n| `DXPERT_API_BASE` | No | API base URL for `run_readiness_diagnostic`. Defaults to production; override only for testing. |\n\n## Where the validator logic comes from\n\n`src/sparkplug-topic-lint.js` and `src/uns-naming-check.js` are verbatim copies of the pure logic in the standalone packages [`@dxpert/sparkplug-topic-lint`](https://www.npmjs.com/package/@dxpert/sparkplug-topic-lint) and [`@dxpert/uns-naming-check`](https://www.npmjs.com/package/@dxpert/uns-naming-check), inlined so this server has zero dependencies and works fully offline.\n\nThey are kept in sync with those packages, and the test suite asserts findings-level parity against both originals — so this server and the web tools can never quietly disagree about the same input.\n\n## Test\n\n```sh\nnode test/run.js\n```\n\nThe suite drives the real server over framed stdio and mocks the diagnostic endpoint on localhost; production is never called from tests. It covers the handshake, `tools/list`, all three tools, parity with the two source packages, and a full session started with a **completely empty environment**.\n\n## License\n\nMIT © 2026 DXP Technologies inc.\n",
+    "fetchedAt": "2026-08-30T05:21:36.269Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dxpert-ai/uns-tools",
+    "checkedAt": "2026-08-30T05:21:35.595Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreviewAt": "2026-08-30T05:21:36.449Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

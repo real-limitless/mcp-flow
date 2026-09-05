@@ -1,0 +1,89 @@
+{
+  "id": "io.github.musharna/phylokit-mcp",
+  "title": "phylokit-mcp",
+  "description": "Phylogenetic inference via IQ-TREE 2 — never returns a topology without its support",
+  "summary": "Phylogenetic inference via IQ-TREE 2 — never returns a topology without its support",
+  "offersHint": "Phylogenetic inference via IQ-TREE 2 — never returns a topology without its support · Packages: pypi:phylokit-mcp · Env vars: MKL_NUM_THREADS, OMP_NUM_THREADS",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "phylokit-mcp",
+    "version": "0.4.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "OMP_NUM_THREADS",
+        "description": "Pinned so inference is reproducible; overriding it makes IQ-TREE runs non-deterministic."
+      },
+      {
+        "name": "MKL_NUM_THREADS",
+        "description": "Pinned alongside OMP_NUM_THREADS for the same reproducibility reason."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "phylokit-mcp",
+      "version": "0.4.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "OMP_NUM_THREADS",
+          "description": "Pinned so inference is reproducible; overriding it makes IQ-TREE runs non-deterministic."
+        },
+        {
+          "name": "MKL_NUM_THREADS",
+          "description": "Pinned alongside OMP_NUM_THREADS for the same reproducibility reason."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MKL_NUM_THREADS",
+      "description": "Pinned alongside OMP_NUM_THREADS for the same reproducibility reason."
+    },
+    {
+      "name": "OMP_NUM_THREADS",
+      "description": "Pinned so inference is reproducible; overriding it makes IQ-TREE runs non-deterministic."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/musharna/phylokit-mcp",
+  "sourceUrl": "https://github.com/musharna/phylokit-mcp",
+  "repository": {
+    "url": "https://github.com/musharna/phylokit-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T05:43:06.487492Z",
+  "publishedAt": "2026-08-02T05:43:06.487492Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:12:01.457Z",
+    "sourceRepoAt": "2026-08-11T23:33:04.627Z",
+    "readmeAt": "2026-08-11T23:33:05.162Z",
+    "toolsAt": "2026-08-12T01:12:01.457Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/musharna/phylokit-mcp",
+    "checkedAt": "2026-08-11T23:33:04.627Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/musharna/phylokit-mcp/main/README.md",
+    "markdown": "# phylokit-mcp\n\n[![ci](https://github.com/musharna/phylokit-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/musharna/phylokit-mcp/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/phylokit-mcp)](https://pypi.org/project/phylokit-mcp/)\n[![python](https://img.shields.io/pypi/pyversions/phylokit-mcp)](https://pypi.org/project/phylokit-mcp/)\n[![license](https://img.shields.io/pypi/l/phylokit-mcp)](LICENSE)\n[![Glama](https://glama.ai/mcp/servers/musharna/phylokit-mcp/badges/score.svg)](https://glama.ai/mcp/servers/musharna/phylokit-mcp)\n[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21713870.svg)](https://doi.org/10.5281/zenodo.21713870)\n\n<!-- mcp-name: io.github.musharna/phylokit-mcp -->\n\nPhylogenetic inference over MCP, driving IQ-TREE 2 through\n[piqtree](https://github.com/cogent3/piqtree).\n\n**A topology without support is not a result.** `infer_tree` always runs a\nbootstrap and always returns per-clade support. There is no flag to skip it.\n\n5 tools, 62 tests against real IQ-TREE (no mocked engine), 10 mutation checks,\nand a real-process JSON-RPC handshake test.\n\n## Why the rule\n\nA maximum-likelihood tree looks identical whether or not the data support it.\nMeasured here, on alignments simulated from a _known_ 7-taxon tree so the right\nanswer is not in doubt:\n\n| sites | informative sites | recovered the true tree? | lowest clade support |\n| ----: | ----------------: | ------------------------ | -------------------: |\n|   300 |                51 | yes, exactly             |                 1.00 |\n|    60 |                11 | **no — RF 2**            |                 0.57 |\n\nAt 60 sites the tree contains a clade (`C,D,G`) that does not exist and omits\none that does (`E,F,G`). Both runs return a fully resolved Newick string of the\nsame shape; nothing about the topology itself distinguishes them. The support\nvalues do — and the false clade is the _lowest-supported_ one in the tree.\n\nThat is the entire argument for this server. Returning a bare tree returns a\nresult the caller cannot evaluate.\n\n## What it reports that a Newick string cannot\n\n- **Conflicting clades** — groupings the data support at ≥0.70 that are _absent_\n  from the reported tree. A support-annotated Newick string has nowhere to\n  attach these, so the standard format silently drops them.\n- **`fraction_resolved`** — the share of clades clearing 0.70. The headline\n  number, before any individual grouping is repeated as fact.\n- **Model runners-up with ΔAIC** — not just a winner. On the 300-site alignment\n  above, simulated under **JC**, the AIC winner is **F81**, with several models\n  inside the conventional ±2 indistinguishability margin. A winner without its\n  margin is a claim the numbers do not support.\n- **Length versus evidence** — `n_parsimony_informative` alongside `n_sites`.\n  A 10,000-site alignment of near-identical sequences supports nothing.\n\n## Tools\n\n| tool                        | what it does                                                                       |\n| --------------------------- | ---------------------------------------------------------------------------------- |\n| `infer_tree`                | ML tree **plus** bootstrap support, per clade. Never one without the other.        |\n| `select_substitution_model` | Ranks 100+ models with ΔAIC/AICc/BIC, and says when the criteria disagree.         |\n| `compare_trees`             | Robinson–Foulds distance and the clades that differ. Compares splits, not strings. |\n| `simulate_alignment`        | Generates sequences along a tree you specify — the positive control.               |\n| `capabilities`              | Engine version, 215 substitution models, enforced limits.                          |\n\n## Install\n\n```bash\npip install phylokit-mcp\n```\n\npiqtree ships prebuilt wheels, so there is no compiler, no R and no conda step —\nbut it requires **Python 3.12+**, and so does this package.\n\n## Configure your MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"phylokit\": {\n      \"command\": \"uvx\",\n      \"args\": [\"phylokit-mcp\"]\n    }\n  }\n}\n```\n\n`uvx` fetches the released package on demand, so this needs no prior install — but\nit must resolve a **Python 3.12+** interpreter, since that is piqtree's wheel floor.\nIf `uvx` picks an older one, pin it with `\"args\": [\"--python\", \"3.12\", \"phylokit-mcp\"]`.\n\nIf you installed it yourself instead, `\"command\": \"phylokit-mcp\"` works when the\nexecutable is on your `PATH`; give the absolute path to the entry point in the\nenvironment you installed into if it is not.\n\nThe same file ships as [`.mcp.json`](.mcp.json) in this repo, which Claude Code\npicks up automatically when the repo is your working directory.\n\n## Reproducibility, stated precisely\n\nMeasured, not assumed:\n\n- **Across fresh processes: exact.** Three runs of an identical 30-replicate\n  bootstrap returned byte-identical support.\n- **Within one long-lived process: not bit-exact.** Passing the same `rand_seed`\n  does not fully reset IQ-TREE's internal state — building the same tree three\n  times gave call 1 == call 2 but call 3 different.\n\nThe practical size: over six repeated 50-replicate calls, three of four clades\nwere bit-identical and one moved **0.02** — a single replicate flipping, well\ninside the bootstrap's own sampling error (~0.07 at 50 replicates). The topology\nand every conclusion were unchanged. This is reported in every response rather\nthan papered over, because an MCP server is long-lived by design and that is\nexactly the condition which exposes it.\n\nThreads are pinned to 1 before piqtree is imported: likelihood sums accumulate in\nthread-completion order, floating-point addition is not associative, and\nnear-tied topologies can flip on the last bits.\n\n## Limitations\n\n- **Nucleotide and protein alignments.** Pass `sequence_type=\"protein\"` and a\n  protein model (`LG`, `WAG`, …). Codon models are still not exposed.\n  The molecule type is **declared, never sniffed**: an alignment of only A/C/G/T\n  is a valid protein alignment too (Ala/Cys/Gly/Thr), so guessing would fit a\n  nucleotide model to protein data and return a tree, a likelihood and support\n  values that are all wrong and none of which complain.\n- **Bootstrap only** — no aLRT, no approximate Bayes, no UFBoot. Support is the\n  nonparametric bootstrap (Felsenstein 1985), computed here rather than read back\n  from IQ-TREE, because piqtree 0.8.3 runs `bootstrap_replicates` but does not\n  expose the resulting values.\n- **Cost is linear in replicates.** ~130 ms per replicate at 7 taxa / 300 sites,\n  and it grows with taxon count. Capped at 200 taxa and 1000 replicates.\n- **It does not align sequences.** Ragged input is refused, not guessed at.\n- **Unrooted trees.** No rooting, no dating, no ancestral reconstruction.\n\n## Licence\n\n**GPL-2.0-only.** The \"only\" is load-bearing: piqtree declares `GPL-2.0-only`,\nwhich is _incompatible_ with GPL-3.0, so the distributed combination cannot be\nGPL-3. cogent3 is BSD and imposes nothing.\n\nUnofficial. Not affiliated with, endorsed by, or sponsored by the IQ-TREE authors\nor the cogent3 project. **IQ-TREE 2 is academic software and expects to be cited**\n— if results from this server appear in published work, cite IQ-TREE 2 as\ndirected at [iqtree.org](http://www.iqtree.org/), not this wrapper. See\n[NOTICE](NOTICE).\n",
+    "fetchedAt": "2026-08-11T23:33:05.162Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:12:01.457Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

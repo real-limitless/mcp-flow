@@ -1,0 +1,113 @@
+{
+  "id": "online.jinero/jinero",
+  "title": "Jinero",
+  "description": "AI-agent design tools: fonts, font recognition, palettes, color naming, contrast, code, SVG, CSS.",
+  "summary": "AI-agent design tools: fonts, font recognition, palettes, color naming, contrast, code, SVG, CSS.",
+  "offersHint": "AI-agent design tools: fonts, font recognition, palettes, color naming, contrast, code, SVG, CSS. · Remote MCP (streamable-http) at https://jinero.online/mcp",
+  "version": "1.3.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://jinero.online/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jinero.online/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://jinero.online/dev/mcp?ref=mcp",
+  "sourceUrl": "https://github.com/jinero-online/jinero-mcp",
+  "repository": {
+    "url": "https://github.com/jinero-online/jinero-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T14:41:50.541005Z",
+  "publishedAt": "2026-08-10T14:41:50.541005Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:21.828Z",
+    "sourceRepoAt": "2026-08-11T23:09:07.484Z",
+    "readmeAt": "2026-08-11T23:09:07.906Z",
+    "toolsAt": "2026-08-11T23:09:08.020Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jinero-online/jinero-mcp",
+    "checkedAt": "2026-08-11T23:09:07.484Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jinero-online/jinero-mcp/main/README.md",
+    "markdown": "# Jinero MCP Server\n\n**`online.jinero/jinero`** — a hosted, remote [Model Context Protocol](https://modelcontextprotocol.io) server that gives AI agents (Claude, Cursor, Cline, Zed, Gemini CLI…) the design tools of [jinero.online](https://jinero.online/dev/mcp?ref=github): **22 read-only tools** for fonts (search, CSS, files, recognition from an image), color math (WCAG contrast, shades, naming, palette extraction), curated palettes, code minify/convert/detect, SVG optimization and SCSS helpers.\n\n- **Endpoint:** `https://jinero.online/mcp` (Streamable HTTP)\n- **Auth:** none — anonymous & free, rate-limited at 60 req/min per IP\n- **Registry:** [`online.jinero/jinero`](https://registry.modelcontextprotocol.io/v0/servers?search=jinero) in the official MCP registry\n- **Manifest:** [`/.well-known/mcp/server.json`](https://jinero.online/.well-known/mcp/server.json)\n- **Human docs:** [jinero.online/dev/mcp](https://jinero.online/dev/mcp) — full reference with example responses\n\n## Connect\n\n**Claude Code (CLI):**\n\n```bash\nclaude mcp add --transport http jinero https://jinero.online/mcp\n```\n\n**Claude Desktop / Cursor / Cline (config):**\n\n```json\n{\n  \"mcpServers\": {\n    \"jinero\": { \"type\": \"http\", \"url\": \"https://jinero.online/mcp\" }\n  }\n}\n```\n\nOlder stdio-only clients can bridge with `npx mcp-remote https://jinero.online/mcp`.\n\n## Trust & safety\n\nEvery tool declares MCP annotations, verifiable in `tools/list`:\n\n- all 22 tools are **`readOnlyHint: true`** and **`idempotentHint: true`**;\n- submitted code/SVG is parsed and transformed as text — **never executed, never stored**;\n- uploaded images (font recognition, color extraction) are processed in memory and deleted immediately;\n- only three tools fetch a user-supplied URL (`recognize_font`, `extract_colors`, `svg_to_datauri`) — marked `openWorldHint: true`, with SSRF-guarded, size-capped fetches.\n\n## Try it without a client\n\n```bash\n# List all tools\ncurl -s -X POST https://jinero.online/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n```\n\nMore runnable examples in [`examples/`](examples/).\n\n## Tool reference\n\nGenerated from the live `tools/list` of the current server version.\n\n### Fonts\n\n#### `search_fonts`\n\nSearch the free font catalog by name, category, style tags, language coverage, variable/monospace flags and style count. Returns a paginated list of families.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `name` | string | Fuzzy name match. |\n| `category` | string | Comma-separated categories, e.g. 'serif,sans'. |\n| `langs` | string | Comma-separated language codes, e.g. 'latin,cyrillic' — ALL must be supported. |\n| `style` | string | Comma-separated style tags, e.g. 'handwriting,condensed' — ALL must match. One of: handwriting, script, display, slab, rounded, condensed, expanded, stencil, pixel, blackletter, outline, retro. |\n| `variable` | boolean | Only variable fonts. |\n| `monospace` | boolean | Only monospace fonts. |\n| `styles_min` | integer | Minimum number of styles. |\n| `styles_max` | integer | Maximum number of styles. |\n| `order` | string: likes \\| downloads \\| views \\| name \\| created_at | Sort field, default 'likes'. |\n| `sort` | string: asc \\| desc | Sort direction. |\n| `per_page` | integer | Results per page (default 24). |\n| `page` | integer | Page number. |\n\n#### `recognize_font`\n\nIdentify which font is used in an image. Powered by our OWN CNN embedding model, trained on the jinero font catalog — it matches fonts by visual shape/style, so it needs NO OCR and NO text (works for Latin and Cyrillic). Send a tight crop of one line of text as either image_url (public URL) or image_base64 (base64/data-URI, e.g. a local screenshot). The image is processed in memory and deleted immediately — never stored. Returns the most visually similar font families with scores. Fast (~200 ms).\n\n*read-only · idempotent · fetches external URLs*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `image_url` | string | Public URL of an image — a tight crop of one line of text. Provide either this or image_base64. Recognition is by visual shape (no OCR/text needed); Latin & Cyrillic supported. |\n| `image_base64` | string | Base64-encoded image (raw base64 or a data:image/...;base64 URI), max 8 MB decoded — use this to send a local file/screenshot without hosting it. Provide either this or image_url. |\n| `top_k` | integer | Number of font matches to return (3–20, default 8). |\n\n#### `get_font`\n\nGet full metadata for one font family by slug: styles, weights, axes, license, subsets and download/CSS URLs.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `slug` **(required)** | string | Family slug, e.g. 'inter', 'playfair-display'. |\n\n#### `get_font_files`\n\nList every font file (weight/italic/format + direct woff2/ttf URL) for a family — handy for building custom @font-face rules.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `slug` **(required)** | string | Family slug, e.g. 'inter'. |\n\n#### `get_fonts_css`\n\nGenerate ready-to-use @font-face CSS for a family spec (Google-Fonts-compatible), e.g. \"inter:wght@400,700\" or a variable range \"inter:wght@300..900\". Returns CSS text.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `family` **(required)** | string | Family spec, e.g. \"inter:wght@400,700\" or \"inter:wght@300..900\". |\n| `display` | string: swap \\| auto \\| block \\| fallback \\| optional | font-display value (default swap). |\n\n#### `get_font_download_url`\n\nReturn the direct ZIP download URL for a font family (all styles + a ready fonts.css). Does NOT download — hand the URL to the user or fetch it separately.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `slug` **(required)** | string | Family slug, e.g. 'inter'. |\n\n### Colors\n\n#### `check_contrast`\n\nCheck the WCAG contrast ratio between a foreground and background color, with AA/AAA pass/fail for normal and large text.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `fg` **(required)** | string | Foreground color (hex, rgb(), or hsl()). |\n| `bg` **(required)** | string | Background color (hex, rgb(), or hsl()). |\n\n#### `get_color_shades`\n\nGenerate tints and shades for a base color (lighter/darker steps) with hex values.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `hex` **(required)** | string | Base color in hex, rgb(), or hsl(). |\n| `step` | string: 5 \\| 10 \\| 20 \\| 25 | Step percentage (default 10). |\n| `limit` | integer | Cap on tints/shades (default fills to ~100%). |\n\n#### `name_color`\n\nGet the closest human-readable name for one or more colors. Pass a single hex or several comma-separated (e.g. \"#3b82f6,#000,#ff7f50\"); returns each input with its nearest color name, the reference hex, an exact-match flag and the perceptual distance.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `hex` **(required)** | string | A hex color, or several comma-separated (e.g. \"#3b82f6,#000,#ff7f50\"). Up to 100 at once. |\n\n#### `extract_colors`\n\nExtract a dominant-color palette from an image. Send either a public image_url or image_base64 (base64/data-URI, e.g. a local screenshot). The image is processed in memory and never stored. Each color comes back with its hex, rgb, hsl, share of the image, and the closest human color name — a named palette in one call.\n\n*read-only · idempotent · fetches external URLs*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `image_url` | string | Public URL of the image to pull the palette from. Provide either this or image_base64. |\n| `image_base64` | string | Base64-encoded image (raw base64 or a data:image/...;base64 URI), max 10 MB decoded — use this to send a local file/screenshot without hosting it. Provide either this or image_url. |\n| `count` | integer | How many colors to return (2–16, default 8). |\n| `mode` | string | Palette mode: \"balanced\" (default), \"vibrant\", or \"muted\". |\n\n### Palettes\n\n#### `search_palettes`\n\nSearch the color-palette catalog by name, tone, temperature, mood, harmony, exact color count and tags. Returns a paginated list.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `name` | string | Fuzzy name match. |\n| `tone` | string: light \\| dark \\| mixed | Overall tone. |\n| `temperature` | string: warm \\| cool \\| neutral | Color temperature. |\n| `mood` | string | e.g. pastel, muted, earthy, vibrant, monochrome. |\n| `harmony` | string | e.g. analogous, complementary, triadic, monochromatic, split-complementary, tetradic. |\n| `color_count` | integer | Exact number of colors. |\n| `tags` | array | Tag slugs — ALL must match (AND). |\n| `order` | string: newest \\| popular \\| name | Sort order (default newest). |\n| `per_page` | integer | Results per page (default 24). |\n| `page` | integer | Page number. |\n\n#### `get_palette`\n\nGet one color palette by id: its colors (hex), name/derived title, mood, harmony, temperature and tags.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `id` **(required)** | integer | Palette id. |\n\n### Code\n\n#### `minify_code`\n\nMinify or beautify JS, CSS, HTML, SVG, JSON or XML text. Set type=auto to sniff the language. The code is only parsed and re-printed — never executed and never stored.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `code` **(required)** | string | Source code to transform. |\n| `type` **(required)** | string: js \\| css \\| html \\| svg \\| json \\| xml \\| auto | Source language, or 'auto' to sniff. |\n| `mode` | string: minify \\| beautify | Default minify. |\n| `keep_license` | boolean | Preserve /*! ... */ license comments when minifying. |\n\n#### `detect_code`\n\nDetect the language/format of a code snippet. Static analysis only — the snippet is never executed and never stored.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `code` **(required)** | string | Snippet to inspect. Max 200,000 chars. |\n\n#### `convert_code`\n\nConvert code between text formats (e.g. JSON↔YAML, CSS↔SCSS). Pure text transformation: the source is parsed and re-serialized, never executed and never stored. Use list_code_converters for valid from/to ids and per-converter options.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `code` **(required)** | string | Source code to convert. |\n| `from` **(required)** | string | Source format id (see list_code_converters). |\n| `to` **(required)** | string | Target format id. |\n| `options` | object | Per-converter options (see optionsSchema in list_code_converters). |\n\n#### `list_code_converters`\n\nList available code converters with their from/to ids and per-converter option schemas.\n\n*read-only · idempotent*\n\n_No parameters._\n\n### SVG\n\n#### `optimize_svg`\n\nOptimize/clean SVG markup (SVGO). Pure markup transformation — nothing is executed or stored. Returns minified SVG plus before/after sizes.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `svg` **(required)** | string | SVG source. Max 500,000 chars. |\n| `preset` | string: safe \\| balanced \\| aggressive | Optimization preset (default balanced). |\n\n#### `svg_to_datauri`\n\nEncode an SVG (or fetched image) as a CSS-ready data: URI. Provide either raw svg or a url.\n\n*read-only · idempotent · fetches external URLs*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `svg` | string | Raw SVG markup. Mutually exclusive with url. |\n| `url` | string | Public image URL the server will fetch. |\n| `encoding` | string: utf8 \\| base64 | Defaults: utf8 for SVG, base64 for raster. |\n| `quotes` | string: single \\| double | Quote style for the data URI (default double). |\n\n#### `list_svg_presets`\n\nList the available SVG optimization presets and what each one does.\n\n*read-only · idempotent*\n\n_No parameters._\n\n### Dev\n\n#### `list_scss_mixins`\n\nList the SCSS mixin catalog (id, title, short description), optionally filtered by group or search.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `group` | string | e.g. Bootstrap, Project, Pattern, Placeholder. |\n| `search` | string | Fuzzy substring across id/title/short/desc. |\n| `fields` | string: summary \\| full | Detail level (default summary). |\n\n#### `get_scss_mixin`\n\nGet one SCSS mixin by id: full source, parameters and usage example.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `id` **(required)** | string | Mixin id (kebab-case), e.g. 'centerer', 'media-breakpoint-up'. |\n\n#### `generate_clamp`\n\nCalculate a fluid CSS clamp() expression for responsive sizing between two viewport widths. Pure calculation — returns a CSS snippet, writes and stores nothing.\n\n*read-only · idempotent*\n\n| Parameter | Type | Description |\n|---|---|---|\n| `min_fs` **(required)** | number | Minimum size in px. |\n| `max_fs` **(required)** | number | Maximum size in px. |\n| `min_vw` | number | Viewport width at min_fs (default 320). |\n| `max_vw` | number | Viewport width at max_fs (default 1440). |\n| `unit` | string: px \\| rem \\| both | Output unit (default rem). |\n| `root` | number | Root font-size in px for rem conversion (default 16). |\n\n## About\n\nBuilt and operated by [jinero.online](https://jinero.online) — free design tools for fonts, icons, colors and code. The MCP server is a thin wrapper over the same [public REST API](https://jinero.online/dev/api): one contract, identical behavior.\n\nThis repository holds the public documentation and examples for the server. Issues and feature requests for the tools are welcome here.\n",
+    "fetchedAt": "2026-08-11T23:09:07.906Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_fonts",
+      "description": "Search the free font catalog by name, category, style tags, language coverage, variable/monospace flags and style count. Returns a paginated list of families."
+    },
+    {
+      "name": "recognize_font",
+      "description": "Identify which font is used in an image. Powered by our OWN CNN embedding model, trained on the jinero font catalog — it matches fonts by visual shape/style, so it needs NO OCR and NO text (works for Latin and Cyrillic). Send a tight crop of one line of text as either image_url (public URL) or image_base64 (base64/data-URI, e.g. a local screenshot). The image is processed in memory and deleted immediately — never stored. Returns the most visually similar font families with scores. Fast (~200 ms)."
+    },
+    {
+      "name": "get_font",
+      "description": "Get full metadata for one font family by slug: styles, weights, axes, license, subsets and download/CSS URLs."
+    },
+    {
+      "name": "get_font_files",
+      "description": "List every font file (weight/italic/format + direct woff2/ttf URL) for a family — handy for building custom @font-face rules."
+    },
+    {
+      "name": "get_fonts_css",
+      "description": "Generate ready-to-use @font-face CSS for a family spec (Google-Fonts-compatible), e.g. \"inter:wght@400,700\" or a variable range \"inter:wght@300..900\". Returns CSS text."
+    },
+    {
+      "name": "get_font_download_url",
+      "description": "Return the direct ZIP download URL for a font family (all styles + a ready fonts.css). Does NOT download — hand the URL to the user or fetch it separately."
+    },
+    {
+      "name": "check_contrast",
+      "description": "Check the WCAG contrast ratio between a foreground and background color, with AA/AAA pass/fail for normal and large text."
+    },
+    {
+      "name": "get_color_shades",
+      "description": "Generate tints and shades for a base color (lighter/darker steps) with hex values."
+    },
+    {
+      "name": "name_color",
+      "description": "Get the closest human-readable name for one or more colors. Pass a single hex or several comma-separated (e.g. \"#3b82f6,#000,#ff7f50\"); returns each input with its nearest color name, the reference hex, an exact-match flag and the perceptual distance."
+    },
+    {
+      "name": "extract_colors",
+      "description": "Extract a dominant-color palette from an image. Send either a public image_url or image_base64 (base64/data-URI, e.g. a local screenshot). The image is processed in memory and never stored. Each color comes back with its hex, rgb, hsl, share of the image, and the closest human color name — a named palette in one call."
+    },
+    {
+      "name": "search_palettes",
+      "description": "Search the color-palette catalog by name, tone, temperature, mood, harmony, exact color count and tags. Returns a paginated list."
+    },
+    {
+      "name": "get_palette",
+      "description": "Get one color palette by id: its colors (hex), name/derived title, mood, harmony, temperature and tags."
+    },
+    {
+      "name": "minify_code",
+      "description": "Minify or beautify JS, CSS, HTML, SVG, JSON or XML text. Set type=auto to sniff the language. The code is only parsed and re-printed — never executed and never stored."
+    },
+    {
+      "name": "detect_code",
+      "description": "Detect the language/format of a code snippet. Static analysis only — the snippet is never executed and never stored."
+    },
+    {
+      "name": "convert_code",
+      "description": "Convert code between text formats (e.g. JSON↔YAML, CSS↔SCSS). Pure text transformation: the source is parsed and re-serialized, never executed and never stored. Use list_code_converters for valid from/to ids and per-converter options."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:09:08.020Z",
+  "toolsPreviewStatus": "ok"
+}

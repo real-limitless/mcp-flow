@@ -1,0 +1,314 @@
+{
+  "id": "io.github.sweir1/obsidian-brain",
+  "title": "Obsidian Brain",
+  "description": "Obsidian MCP server: semantic search, knowledge graph, and vault editing. No plugin required.",
+  "summary": "Obsidian MCP server: semantic search, knowledge graph, and vault editing. No plugin required.",
+  "offersHint": "Obsidian MCP server: semantic search, knowledge graph, and vault editing. No plugin required. · Packages: npm:obsidian-brain · Env vars: DATA_DIR, EMBEDDING_MODEL, EMBEDDING_PRESET, EMBEDDING_PROVIDER, OBSIDIAN_BRAIN_COMMUNITY_DEBOUNCE_MS, OBSIDIAN_BRAIN_CONFIG_DIR, OBSIDIAN_BRAIN_DEBUG, OBSIDIAN_BRAIN_LOG_FORMAT, OBSIDIAN_BRAIN_MAX_CHUNK_TOKENS, OBSIDIAN_BRAIN_NO_CATCHUP, OBSIDIAN_BRAIN_NO_WATCH, OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL, OBSIDIAN_BRAIN_OLLAMA_BYOM_AUTO_PULL, OBSIDIAN_BRAIN_TOOL_TIMEOUT_MS, OBSIDIAN_BRAIN_WATCH_DEBOUNCE_MS, OLLAMA_BASE_URL, OLLAMA_EMBEDDING_DIM, OLLAMA_NUM_CTX, VAULT_PATH",
+  "version": "1.7.24",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "obsidian-brain",
+    "version": "1.7.24",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "VAULT_PATH",
+        "description": "Absolute path to your Obsidian vault (or any folder of .md files).",
+        "required": true
+      },
+      {
+        "name": "DATA_DIR",
+        "description": "Where to store the SQLite index + embedding cache. Defaults to $XDG_DATA_HOME/obsidian-brain or ~/.local/share/obsidian-brain."
+      },
+      {
+        "name": "EMBEDDING_PRESET",
+        "description": "Preset name: english (default, bge-small-en-v1.5), english-fast, english-quality, multilingual, multilingual-quality, multilingual-ollama. Ignored when EMBEDDING_MODEL is set.",
+        "default": "english"
+      },
+      {
+        "name": "EMBEDDING_MODEL",
+        "description": "Power-user override: any transformers.js checkpoint or Ollama model id. Takes precedence over EMBEDDING_PRESET. Switching auto-reindexes."
+      },
+      {
+        "name": "EMBEDDING_PROVIDER",
+        "description": "Embedding backend. 'transformers' (local, default) or 'ollama' (requires a running Ollama server).",
+        "default": "transformers"
+      },
+      {
+        "name": "OLLAMA_BASE_URL",
+        "description": "Base URL of a local Ollama server. Only used when EMBEDDING_PROVIDER=ollama.",
+        "default": "http://localhost:11434"
+      },
+      {
+        "name": "OLLAMA_EMBEDDING_DIM",
+        "description": "Override the embedding dimensionality when EMBEDDING_PROVIDER=ollama. If unset, the server probes the model on startup."
+      },
+      {
+        "name": "OLLAMA_NUM_CTX",
+        "description": "Override Ollama's num_ctx for embed requests. Leave UNSET to let obsidian-brain auto-detect via `/api/show`'s `context_length` (e.g. nomic-embed-text=2048, bge-m3=8192, qwen3-embedding:0.6b=32 768). Setting this manually imposes a hard cap and may silently truncate longer inputs — see https://github.com/ollama/ollama/issues/14259. Ollama's own default is 2048 which truncates for any model trained on a larger context. See also https://github.com/ollama/ollama/issues/7008. Fallback when both env is unset AND /api/show is unreachable: 8192."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL",
+        "description": "Auto-pull the configured Ollama model when /api/show returns 404 (model not present). Default ON — choosing an Ollama-backed preset is implicit consent to download its model. Streams /api/pull progress to stderr. Set to '0' to disable auto-pull entirely (master kill-switch) and fall back to the actionable error path (`HTTP 404 — try: ollama pull <model>`)."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_OLLAMA_BYOM_AUTO_PULL",
+        "description": "Opt-in to auto-pull for BYOM (custom EMBEDDING_MODEL) Ollama models OUTSIDE Ollama's official `library/` namespace. Default OFF — third-party models (e.g. `user/custom-fork`, `myregistry.com/team/model`) require this env var to be set to `1` before they will auto-pull, to prevent silent downloads of arbitrary user-named artifacts. Preset-known models (via EMBEDDING_PRESET) and bare model ids in the official library (e.g. `qwen3-embedding:0.6b`, `library/llama3:8b`) continue to auto-pull by default per the existing OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL behavior."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_NO_WATCH",
+        "description": "Set to '1' to disable the live chokidar file watcher. Useful on SMB/NFS vaults where FSEvents/inotify don't fire reliably — fall back to running `obsidian-brain index` on a schedule (launchd/systemd)."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_NO_CATCHUP",
+        "description": "Set to '1' to skip the startup catchup reindex pass that picks up edits made while the server was down. The live file watcher still starts (via OBSIDIAN_BRAIN_NO_WATCH=1 to disable that separately), and first-time indexing on an empty DB is unaffected — this knob only governs the post-restart `enqueueBackgroundReindex` walk."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_WATCH_DEBOUNCE_MS",
+        "description": "Per-file reindex debounce for the live watcher, in milliseconds.",
+        "default": "3000"
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_COMMUNITY_DEBOUNCE_MS",
+        "description": "Graph-wide community-detection (Louvain) debounce for the live watcher, in milliseconds. Louvain is the only expensive op — batching it prevents per-edit CPU spikes.",
+        "default": "60000"
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_TOOL_TIMEOUT_MS",
+        "description": "Per-tool-call timeout in milliseconds. Tools exceeding this return an MCP error instead of hanging.",
+        "default": "30000"
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_MAX_CHUNK_TOKENS",
+        "description": "Override the adaptive chunk-size budget (in tokens). When set, this beats the capacity probed from the model's tokenizer or Ollama /api/show. Use for debugging or for models with stale tokenizer configs."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_CONFIG_DIR",
+        "description": "Override the per-user config directory where obsidian-brain stores model overrides (`model-overrides.json`) and the user-fetched seed (`seed-models.json`). Default is `$XDG_CONFIG_HOME/obsidian-brain` on macOS/Linux (or `~/.config/obsidian-brain`) and `%APPDATA%/obsidian-brain` on Windows. Both files survive `npm update obsidian-brain` because they live outside the package."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_DEBUG",
+        "description": "Set to \"1\" to print a verbose synchronous startup trace to stderr — every preflight, createContext, server.connect, and shutdown step is logged with a monotonic timestamp. The LAST line before any silent failure tells you exactly which step the server reached. No-op when unset (no overhead). Use to diagnose silent-crash failure modes."
+      },
+      {
+        "name": "OBSIDIAN_BRAIN_LOG_FORMAT",
+        "description": "Set to 'ndjson' for one-JSON-object-per-line stderr output (timestamp + level + message + structured fields). Default is human-readable plain text (`obsidian-brain: <message>`). Useful for piping logs into aggregators (Datadog, Loki, Vector, journald) that index structured fields."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "obsidian-brain",
+      "version": "1.7.24",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "VAULT_PATH",
+          "description": "Absolute path to your Obsidian vault (or any folder of .md files).",
+          "required": true
+        },
+        {
+          "name": "DATA_DIR",
+          "description": "Where to store the SQLite index + embedding cache. Defaults to $XDG_DATA_HOME/obsidian-brain or ~/.local/share/obsidian-brain."
+        },
+        {
+          "name": "EMBEDDING_PRESET",
+          "description": "Preset name: english (default, bge-small-en-v1.5), english-fast, english-quality, multilingual, multilingual-quality, multilingual-ollama. Ignored when EMBEDDING_MODEL is set.",
+          "default": "english"
+        },
+        {
+          "name": "EMBEDDING_MODEL",
+          "description": "Power-user override: any transformers.js checkpoint or Ollama model id. Takes precedence over EMBEDDING_PRESET. Switching auto-reindexes."
+        },
+        {
+          "name": "EMBEDDING_PROVIDER",
+          "description": "Embedding backend. 'transformers' (local, default) or 'ollama' (requires a running Ollama server).",
+          "default": "transformers"
+        },
+        {
+          "name": "OLLAMA_BASE_URL",
+          "description": "Base URL of a local Ollama server. Only used when EMBEDDING_PROVIDER=ollama.",
+          "default": "http://localhost:11434"
+        },
+        {
+          "name": "OLLAMA_EMBEDDING_DIM",
+          "description": "Override the embedding dimensionality when EMBEDDING_PROVIDER=ollama. If unset, the server probes the model on startup."
+        },
+        {
+          "name": "OLLAMA_NUM_CTX",
+          "description": "Override Ollama's num_ctx for embed requests. Leave UNSET to let obsidian-brain auto-detect via `/api/show`'s `context_length` (e.g. nomic-embed-text=2048, bge-m3=8192, qwen3-embedding:0.6b=32 768). Setting this manually imposes a hard cap and may silently truncate longer inputs — see https://github.com/ollama/ollama/issues/14259. Ollama's own default is 2048 which truncates for any model trained on a larger context. See also https://github.com/ollama/ollama/issues/7008. Fallback when both env is unset AND /api/show is unreachable: 8192."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL",
+          "description": "Auto-pull the configured Ollama model when /api/show returns 404 (model not present). Default ON — choosing an Ollama-backed preset is implicit consent to download its model. Streams /api/pull progress to stderr. Set to '0' to disable auto-pull entirely (master kill-switch) and fall back to the actionable error path (`HTTP 404 — try: ollama pull <model>`)."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_OLLAMA_BYOM_AUTO_PULL",
+          "description": "Opt-in to auto-pull for BYOM (custom EMBEDDING_MODEL) Ollama models OUTSIDE Ollama's official `library/` namespace. Default OFF — third-party models (e.g. `user/custom-fork`, `myregistry.com/team/model`) require this env var to be set to `1` before they will auto-pull, to prevent silent downloads of arbitrary user-named artifacts. Preset-known models (via EMBEDDING_PRESET) and bare model ids in the official library (e.g. `qwen3-embedding:0.6b`, `library/llama3:8b`) continue to auto-pull by default per the existing OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL behavior."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_NO_WATCH",
+          "description": "Set to '1' to disable the live chokidar file watcher. Useful on SMB/NFS vaults where FSEvents/inotify don't fire reliably — fall back to running `obsidian-brain index` on a schedule (launchd/systemd)."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_NO_CATCHUP",
+          "description": "Set to '1' to skip the startup catchup reindex pass that picks up edits made while the server was down. The live file watcher still starts (via OBSIDIAN_BRAIN_NO_WATCH=1 to disable that separately), and first-time indexing on an empty DB is unaffected — this knob only governs the post-restart `enqueueBackgroundReindex` walk."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_WATCH_DEBOUNCE_MS",
+          "description": "Per-file reindex debounce for the live watcher, in milliseconds.",
+          "default": "3000"
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_COMMUNITY_DEBOUNCE_MS",
+          "description": "Graph-wide community-detection (Louvain) debounce for the live watcher, in milliseconds. Louvain is the only expensive op — batching it prevents per-edit CPU spikes.",
+          "default": "60000"
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_TOOL_TIMEOUT_MS",
+          "description": "Per-tool-call timeout in milliseconds. Tools exceeding this return an MCP error instead of hanging.",
+          "default": "30000"
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_MAX_CHUNK_TOKENS",
+          "description": "Override the adaptive chunk-size budget (in tokens). When set, this beats the capacity probed from the model's tokenizer or Ollama /api/show. Use for debugging or for models with stale tokenizer configs."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_CONFIG_DIR",
+          "description": "Override the per-user config directory where obsidian-brain stores model overrides (`model-overrides.json`) and the user-fetched seed (`seed-models.json`). Default is `$XDG_CONFIG_HOME/obsidian-brain` on macOS/Linux (or `~/.config/obsidian-brain`) and `%APPDATA%/obsidian-brain` on Windows. Both files survive `npm update obsidian-brain` because they live outside the package."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_DEBUG",
+          "description": "Set to \"1\" to print a verbose synchronous startup trace to stderr — every preflight, createContext, server.connect, and shutdown step is logged with a monotonic timestamp. The LAST line before any silent failure tells you exactly which step the server reached. No-op when unset (no overhead). Use to diagnose silent-crash failure modes."
+        },
+        {
+          "name": "OBSIDIAN_BRAIN_LOG_FORMAT",
+          "description": "Set to 'ndjson' for one-JSON-object-per-line stderr output (timestamp + level + message + structured fields). Default is human-readable plain text (`obsidian-brain: <message>`). Useful for piping logs into aggregators (Datadog, Loki, Vector, journald) that index structured fields."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "DATA_DIR",
+      "description": "Where to store the SQLite index + embedding cache. Defaults to $XDG_DATA_HOME/obsidian-brain or ~/.local/share/obsidian-brain."
+    },
+    {
+      "name": "EMBEDDING_MODEL",
+      "description": "Power-user override: any transformers.js checkpoint or Ollama model id. Takes precedence over EMBEDDING_PRESET. Switching auto-reindexes."
+    },
+    {
+      "name": "EMBEDDING_PRESET",
+      "description": "Preset name: english (default, bge-small-en-v1.5), english-fast, english-quality, multilingual, multilingual-quality, multilingual-ollama. Ignored when EMBEDDING_MODEL is set.",
+      "default": "english"
+    },
+    {
+      "name": "EMBEDDING_PROVIDER",
+      "description": "Embedding backend. 'transformers' (local, default) or 'ollama' (requires a running Ollama server).",
+      "default": "transformers"
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_COMMUNITY_DEBOUNCE_MS",
+      "description": "Graph-wide community-detection (Louvain) debounce for the live watcher, in milliseconds. Louvain is the only expensive op — batching it prevents per-edit CPU spikes.",
+      "default": "60000"
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_CONFIG_DIR",
+      "description": "Override the per-user config directory where obsidian-brain stores model overrides (`model-overrides.json`) and the user-fetched seed (`seed-models.json`). Default is `$XDG_CONFIG_HOME/obsidian-brain` on macOS/Linux (or `~/.config/obsidian-brain`) and `%APPDATA%/obsidian-brain` on Windows. Both files survive `npm update obsidian-brain` because they live outside the package."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_DEBUG",
+      "description": "Set to \"1\" to print a verbose synchronous startup trace to stderr — every preflight, createContext, server.connect, and shutdown step is logged with a monotonic timestamp. The LAST line before any silent failure tells you exactly which step the server reached. No-op when unset (no overhead). Use to diagnose silent-crash failure modes."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_LOG_FORMAT",
+      "description": "Set to 'ndjson' for one-JSON-object-per-line stderr output (timestamp + level + message + structured fields). Default is human-readable plain text (`obsidian-brain: <message>`). Useful for piping logs into aggregators (Datadog, Loki, Vector, journald) that index structured fields."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_MAX_CHUNK_TOKENS",
+      "description": "Override the adaptive chunk-size budget (in tokens). When set, this beats the capacity probed from the model's tokenizer or Ollama /api/show. Use for debugging or for models with stale tokenizer configs."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_NO_CATCHUP",
+      "description": "Set to '1' to skip the startup catchup reindex pass that picks up edits made while the server was down. The live file watcher still starts (via OBSIDIAN_BRAIN_NO_WATCH=1 to disable that separately), and first-time indexing on an empty DB is unaffected — this knob only governs the post-restart `enqueueBackgroundReindex` walk."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_NO_WATCH",
+      "description": "Set to '1' to disable the live chokidar file watcher. Useful on SMB/NFS vaults where FSEvents/inotify don't fire reliably — fall back to running `obsidian-brain index` on a schedule (launchd/systemd)."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL",
+      "description": "Auto-pull the configured Ollama model when /api/show returns 404 (model not present). Default ON — choosing an Ollama-backed preset is implicit consent to download its model. Streams /api/pull progress to stderr. Set to '0' to disable auto-pull entirely (master kill-switch) and fall back to the actionable error path (`HTTP 404 — try: ollama pull <model>`)."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_OLLAMA_BYOM_AUTO_PULL",
+      "description": "Opt-in to auto-pull for BYOM (custom EMBEDDING_MODEL) Ollama models OUTSIDE Ollama's official `library/` namespace. Default OFF — third-party models (e.g. `user/custom-fork`, `myregistry.com/team/model`) require this env var to be set to `1` before they will auto-pull, to prevent silent downloads of arbitrary user-named artifacts. Preset-known models (via EMBEDDING_PRESET) and bare model ids in the official library (e.g. `qwen3-embedding:0.6b`, `library/llama3:8b`) continue to auto-pull by default per the existing OBSIDIAN_BRAIN_OLLAMA_AUTO_PULL behavior."
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_TOOL_TIMEOUT_MS",
+      "description": "Per-tool-call timeout in milliseconds. Tools exceeding this return an MCP error instead of hanging.",
+      "default": "30000"
+    },
+    {
+      "name": "OBSIDIAN_BRAIN_WATCH_DEBOUNCE_MS",
+      "description": "Per-file reindex debounce for the live watcher, in milliseconds.",
+      "default": "3000"
+    },
+    {
+      "name": "OLLAMA_BASE_URL",
+      "description": "Base URL of a local Ollama server. Only used when EMBEDDING_PROVIDER=ollama.",
+      "default": "http://localhost:11434"
+    },
+    {
+      "name": "OLLAMA_EMBEDDING_DIM",
+      "description": "Override the embedding dimensionality when EMBEDDING_PROVIDER=ollama. If unset, the server probes the model on startup."
+    },
+    {
+      "name": "OLLAMA_NUM_CTX",
+      "description": "Override Ollama's num_ctx for embed requests. Leave UNSET to let obsidian-brain auto-detect via `/api/show`'s `context_length` (e.g. nomic-embed-text=2048, bge-m3=8192, qwen3-embedding:0.6b=32 768). Setting this manually imposes a hard cap and may silently truncate longer inputs — see https://github.com/ollama/ollama/issues/14259. Ollama's own default is 2048 which truncates for any model trained on a larger context. See also https://github.com/ollama/ollama/issues/7008. Fallback when both env is unset AND /api/show is unreachable: 8192."
+    },
+    {
+      "name": "VAULT_PATH",
+      "description": "Absolute path to your Obsidian vault (or any folder of .md files).",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://sweir1.github.io/obsidian-brain/",
+  "sourceUrl": "https://github.com/sweir1/obsidian-brain",
+  "repository": {
+    "url": "https://github.com/sweir1/obsidian-brain",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-16T15:24:45.386473Z",
+  "publishedAt": "2026-05-16T15:24:45.386473Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:46.405Z",
+    "sourceRepoAt": "2026-08-11T23:19:23.630Z",
+    "readmeAt": "2026-08-11T23:19:24.180Z",
+    "toolsAt": "2026-08-12T00:59:46.405Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sweir1/obsidian-brain",
+    "checkedAt": "2026-08-11T23:19:23.630Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sweir1/obsidian-brain/main/README.md",
+    "markdown": "# obsidian-brain\n\n[![npm version](https://img.shields.io/npm/v/obsidian-brain.svg)](https://www.npmjs.com/package/obsidian-brain)\n[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n[![Node ≥ 20](https://img.shields.io/node/v/obsidian-brain.svg)](package.json)\n[![GitHub stars](https://img.shields.io/github/stars/sweir1/obsidian-brain.svg?style=social)](https://github.com/sweir1/obsidian-brain)\n\nA standalone Node MCP server that gives Claude (and any other MCP client) **semantic search + knowledge graph + vault editing** over an Obsidian vault. Runs as one local stdio process — no plugin, no HTTP bridge, no API key, nothing hosted. Your vault content never leaves your machine.\n\n> 📖 **Full docs → [sweir1.github.io/obsidian-brain](https://sweir1.github.io/obsidian-brain/)**\n> **Companion plugin** → [`sweir1/obsidian-brain-plugin`](https://github.com/sweir1/obsidian-brain-plugin) (optional — unlocks `active_note`, `dataview_query`, `base_query`)\n\n**Contents** — [Why](#why-obsidian-brain) · [Quick start](#quick-start) · [What you get](#what-you-get) · [How it works](#how-it-works) · [Companion plugin](#companion-plugin-optional) · [Troubleshooting](#troubleshooting) · [Recent releases](#recent-releases)\n\n## Why obsidian-brain?\n\n- **Works without Obsidian running** — unlike Local REST API-based servers, obsidian-brain reads `.md` files directly from disk. Obsidian can be closed; your vault is just a folder.\n- **No Local REST API plugin required** — nothing to install inside Obsidian for the core experience.\n- **Chunk-level semantic search with RRF hybrid retrieval** — embeddings at markdown-heading granularity, fused with FTS5 BM25 via Reciprocal Rank Fusion. Finds the exact chunk, ranks on meaning.\n- **The only Obsidian MCP server with PageRank + Louvain + graph analytics** — ask for your vault's most influential notes, bridging notes, theme clusters. Nobody else ships this.\n- **Ollama provider for high-quality local embeddings** — switch to `qwen3-embedding:0.6b`, `nomic-embed-text`, `bge-m3`, etc. with one env var.\n- **All in one `npx` install** — no clone, no build, no API key, no hosted endpoint. Vault content never leaves your machine.\n\n## Quick start\n\n### One-line install (macOS + Claude Desktop)\n\n```bash\n/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/sweir1/obsidian-brain/main/scripts/install.sh)\"\n```\n\nInstalls Homebrew + Node 20+ if you don't already have them, adds the `/usr/local/bin` symlinks that Claude Desktop needs, merges obsidian-brain into your `claude_desktop_config.json`, opens the Full Disk Access pane for you to toggle Claude on, and relaunches Claude. You'll be asked for your macOS password once (for Homebrew + the symlinks) and your vault path once. Everything else is automatic. Audit what it does: [`scripts/install.sh`](scripts/install.sh).\n\n### Manual install\n\nRequires Node 20+ and an Obsidian vault (or any folder of `.md` files — Obsidian itself is optional).\n\nWire obsidian-brain into your MCP client. Example for **Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"obsidian-brain\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"obsidian-brain@latest\", \"server\"],\n      \"env\": { \"VAULT_PATH\": \"/absolute/path/to/your/vault\" }\n    }\n  }\n}\n```\n\nQuit Claude Desktop (⌘Q on macOS) and relaunch. That's it.\n\n> [!NOTE]\n> On first boot the server auto-indexes your vault and downloads a ~34 MB embedding model. Tools may take 30–60 s to appear in the client. Subsequent boots are instant.\n\n> [!TIP]\n> **Not a developer?** The [macOS walkthrough](docs/install-mac-nontechnical.md) covers Homebrew, Node, the GUI-app PATH fix, and Full Disk Access step-by-step.\n\n**For every other MCP client** (Claude Code, Cursor, VS Code, Jan, Windsurf, Cline, Zed, LM Studio, JetBrains AI, Opencode, Codex CLI, Gemini CLI, Warp): see [Install in your MCP client](docs/install-clients.md).\n\n→ Full env-var reference: [Configuration](docs/configuration.md)\n→ Model / preset / Ollama details: [Embedding model](docs/embeddings.md)\n→ Migrating from aaronsb's plugin: [Migration guide](docs/migration-aaronsb.md)\n\n## What you get\n\n18 MCP tools grouped by intent:\n\n- **Find & read** — `search`, `list_notes`, `read_note`\n- **Understand the graph** — `find_connections`, `find_path_between`, `detect_themes`, `rank_notes`\n- **Write** — `create_note`, `edit_note`, `apply_edit_preview`, `link_notes`, `move_note`, `delete_note`\n- **Live editor** (requires [companion plugin](docs/plugin.md)) — `active_note`, `dataview_query`, `base_query`\n- **Maintenance** — `reindex`, `index_status`\n\n→ Arguments, examples, and response shapes: [Tool reference](docs/tools.md)\n\n## How it works\n\n```mermaid\nflowchart LR\n    Client[\"<b>MCP Client</b><br/>Claude Desktop · Claude Code<br/>Cursor · Jan · Windsurf · ...\"]\n\n    subgraph OB [\"obsidian-brain (Node process)\"]\n        direction TB\n        SQL[\"<b>SQLite index</b><br/>nodes · edges<br/>FTS5 · vec0 embeddings\"]\n        Vault[\"<b>Vault on disk</b><br/>your .md files\"]\n        Vault -->|\"parse + embed\"| SQL\n        SQL -.->|\"writes\"| Vault\n    end\n\n    Client <-->|\"stdio JSON-RPC\"| OB\n```\n\nRetrieval and writes both go through a SQLite index: reads are microsecond-cheap, writes land on disk immediately and incrementally re-index the affected file. Embeddings are chunk-level (heading-aware recursive chunker preserving code + LaTeX blocks), and `search`'s default `hybrid` mode fuses chunk-level semantic rank with FTS5 BM25 via Reciprocal Rank Fusion.\n\n→ Deeper write-up — why stdio, why SQLite, why local embeddings: [Architecture](docs/architecture.md)\n→ Live watcher behaviour + debounces: [Live updates](docs/watching.md)\n→ Scheduled reindex (macOS launchd / Linux systemd): [Scheduled indexing (macOS)](docs/launchd.md) · [(Linux)](docs/systemd.md)\n\n## Companion plugin (optional)\n\nAn optional Obsidian plugin at [`sweir1/obsidian-brain-plugin`](https://github.com/sweir1/obsidian-brain-plugin) exposes live Obsidian runtime state — active editor, Dataview results, Bases rows — over a localhost HTTP endpoint. When installed and Obsidian is running, `active_note`, `dataview_query`, and `base_query` light up. Install via BRAT with repo ID `sweir1/obsidian-brain-plugin`.\n\nShip plugin and server at the **same major.minor** — server v1.7.x pairs with plugin v1.7.x. Patch-version drift is fine.\n\n→ Security model, capability handshake, Dataview / Bases feature coverage: [Companion plugin](docs/plugin.md)\n\n## Troubleshooting\n\nFour most common:\n\n- **\"Connector has no tools available\"** in Claude Desktop — usually the server crashed at startup. Check `~/Library/Logs/Claude/mcp-server-obsidian-brain.log`. Fix: `npm install -g obsidian-brain@latest`, quit Claude (⌘Q), relaunch.\n- **`ERR_DLOPEN_FAILED` / `NODE_MODULE_VERSION` mismatch** — `better-sqlite3` built against a different Node ABI. Fix: `PATH=/opt/homebrew/bin:$PATH npm rebuild -g better-sqlite3`.\n- **`Vault path not configured`** — `VAULT_PATH` is unset. Set it in the `env` block of your client config or shell.\n- **Old version loading via `npx`** (your client still shows the previous release after a publish) — stale npx cache. Fix: `rm -rf ~/.npm/_npx`, then restart your client. Keeping `@latest` in your config prevents this.\n\n→ Full troubleshooting guide (watcher not firing, stale index, running multiple clients, timeouts, embedding-dim mismatch, log locations): [docs/troubleshooting.md](docs/troubleshooting.md)\n\n## Recent releases\n\n<!-- GENERATED:recent-releases — auto-pulled from docs/CHANGELOG.md by scripts/gen-readme-recent.mjs. Edit CHANGELOG.md, then run `npm run gen-readme-recent`. -->\n- **v1.7.24** (2026-05-16) — embeddings.md BYOM callout + 5 devDep bumps\n- **v1.7.23** (2026-05-16) — BYOM Ollama auto-pull gate + logger sweep + SIGTERM unit test\n- **v1.7.22** (2026-05-15) — structured stderr (NDJSON) + Ollama preparing-state + dependabot security bumps + SIGTERM drain integration test\n- **v1.7.21** (2026-04-27) — install.sh vault-picker fix + auto `ollama pull` + docs/test polish\n- **v1.7.20** (2026-04-27) — Ollama prefix-lookup bug + 13 audit polish items\n<!-- /GENERATED:recent-releases -->\n\n→ Full changelog: [docs/CHANGELOG.md](docs/CHANGELOG.md) · Forward plan: [docs/roadmap.md](docs/roadmap.md) · Build from source: [docs/development.md](docs/development.md)\n\n## Credits\n\nThanks to [`obra/knowledge-graph`](https://github.com/obra/knowledge-graph) and [`aaronsb/obsidian-mcp-plugin`](https://github.com/aaronsb/obsidian-mcp-plugin) for the ideas and code this project draws on. Also [Xenova/transformers.js](https://github.com/xenova/transformers.js) (local embeddings), [graphology](https://graphology.github.io/) (graph analytics), and [sqlite-vec](https://github.com/asg017/sqlite-vec) (vector search in SQLite).\n\n## Related projects\n\n- [`apple-notes-brain`](https://github.com/sweir1/apple-notes-brain) — sibling\n  MCP server for Apple Notes on macOS: read, write, and search with full\n  Markdown round-trip in both directions.\n\n## License\n\n[Apache License 2.0](./LICENSE) — Copyright 2026 sweir1.\n",
+    "fetchedAt": "2026-08-11T23:19:24.180Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:46.405Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

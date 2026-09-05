@@ -1,0 +1,121 @@
+{
+  "id": "com.agentery/agentery",
+  "title": "agentery",
+  "description": "Search agents & MCP servers by capability, with daily-observed pricing, liveness and market data.",
+  "summary": "Search agents & MCP servers by capability, with daily-observed pricing, liveness and market data.",
+  "offersHint": "Search agents & MCP servers by capability, with daily-observed pricing, liveness and market data. · Remote MCP (streamable-http) at https://agentery.com/api/mcp",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://agentery.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentery.com/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://agentery.com",
+  "updatedAt": "2026-07-09T12:07:35.06582Z",
+  "publishedAt": "2026-07-09T12:07:35.06582Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:13.928Z",
+    "sourceRepoAt": "2026-08-12T00:39:13.928Z",
+    "readmeAt": "2026-08-12T00:39:13.928Z",
+    "toolsAt": "2026-08-12T00:39:13.928Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:39:13.928Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:39:13.928Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "research_capability",
+      "description": "START HERE for provider procurement. ONE call turns a task into: (1) its resolved market — niche name + slug, resolver mode/confidence, alternative niches, a concise definition; (2) current pricing context — comparable price range, the niche's AEPI index level and 1d/7d/30d movement, provider/comparable counts; and (3) a ready-to-compare provider shortlist — each with observed price, market_position (below/in-line/above market), integration status, match score, and handles collected in `compare_ready`. This collapses the usual find_niche → niche_report → price_benchmark → search_providers handshake into a single call and REUSES those exact engines (no new pricing/index/search logic). It also returns `suggested_alternatives` (cheaper or stronger in-market options — e.g. when a provider is over budget or an integration is unconfirmed) and a `result_fingerprint` (+ `cached`) so repeat calls are cheap. It does NOT run the comparison — pass `compare_ready` to compare_providers once you have finalists. Use the lower-level tools (find_niche, niche_report, price_benchmark, search_providers) when you need finer control. Aliases: `task` also accepts `query` / `q`."
+    },
+    {
+      "name": "search_providers",
+      "description": "Targeted provider search when you already know roughly what you want; for a NEW task where the market isn't known yet, call research_capability first. Filtered free-text search over the directory, ranked with match_score and match_reasons. Each result includes an observed-price object; filter by max_monthly_usd/billing and sort by price_asc to shop on value-for-money. Results include how_to_connect (website, docs, mcp.endpoint when the vendor publishes one) — the link/endpoint needed to actually use the listing; get_provider_profile has the full version with a copy-paste MCP config snippet. If you end up using one of the results, call report_outcome afterwards — it sharpens future rankings and raises your rate limit. Accepts `query` (aliases: q, text) — an unknown query key is never silently ignored. For a market + pricing + shortlist in ONE call, use research_capability first."
+    },
+    {
+      "name": "find_niche",
+      "description": "Map a natural-language task, capability or service to the correct canonical Agentery niche in ONE call — for buyers ('a provider that monitors competitor pricing'), sellers ('what should I charge for a lead-generation provider') or classification ('which niche does my customer-support provider belong to?'). Pricing-intent boilerplate is stripped before matching. Returns match_certainty ('confident'|'ambiguous'|'uncertain' — 'confident' requires a strong score AND a clear lead over the runner-up AND a specific niche, so a borderline top score is never oversold as confident), the best-matching niche (name + slug) with a confidence score and reason, up to two alternatives, and pricing on an EVIDENCE LADDER via pricing_status: 'ok' = a strict comparable benchmark — pricing_by_tier: FX-normalized monthly-USD cohorts separated by buyer tier (individual/pro/team_sme/enterprise) AND billing unit (flat/per_seat/per_user/per_agent), provider-deduped (one vendor's ladder counts once), with provider_count, plan_observation_count, data_confidence, reliability; p25/p75 only at >=5 providers. When no strict cohort forms: 'single_observation' (exactly one comparable provider — returned in single_observations, never called a benchmark/median), or 'observed_offers_only' (real provider offers in observed_offers, grouped and labelled by billing type/unit, each a single observed price NEVER aggregated across mixed units/periods/tiers). Also returns pricing_coverage (listings, priced listings, normalized observations, comparable providers, exclusion reasons) and, when there is no strict benchmark, adjacent_pricing (related niches WITH a benchmark, clearly not equivalent). Usage-metered, promotional, range, one-time and ambiguous-cadence plans are excluded from cohorts. When the match is 'uncertain', pricing is WITHHELD; when 'ambiguous', pricing is returned but flagged to confirm the niche. Follow suggested_next_call to niche_report for the full market read. Accepts `task` (aliases: query, q). For the full market read + pricing + provider shortlist in ONE call, use research_capability instead. Read-only."
+    },
+    {
+      "name": "compare_providers",
+      "description": "Call this to decide between shortlisted providers. Inputs are resolved to REAL providers — exact handle, then exact display name — and are NEVER silently swapped for a fuzzy match: unknown inputs come back in `unresolved_inputs` with `suggested_matches` and a ready-to-retry `corrected_call`, and if EXACTLY ONE input is real (the other was invented/mistyped) it does NOT dead-end — it returns `comparison_status: compared_with_market_peers`, comparing the real provider against its actual in-niche competitors (listed in `compared_against_peers`, with a `recovery_note`); only when ZERO inputs resolve does it return `comparison_status: insufficient_valid_providers`. When the compared providers are different delivery types it sets `mixed_provider_types` + a `comparability_warning` (a hosted agent and an MCP server are not directly equivalent). Full evidence-scored cards for 2-6 handles side by side, each with observed price, all-time community upvotes and niche/sector. Each card carries the full how_to_connect object (website, docs, MCP endpoint + config_snippet, A2A card, API) so you can act on the winner directly. Each card also carries `reported_success` — the machine-reported outcome rate from report_outcome (null until 5+ distinct correlated reporters in 90 days). Report your own outcome after using the winner. Accepts `provider_ids` (aliases: handles, ids; a comma-separated string is also accepted). Use after search_providers or research_capability; when a compared provider is over budget or weakly matched, inline `suggested_alternatives` are returned."
+    },
+    {
+      "name": "get_price_index",
+      "description": "Call this for the CURRENT level of the Agent Economy Price Index (AEPI) or one niche's price index — a chained like-for-like index over observed provider/MCP pricing (base 100 = 29 Jun 2026). It is an INDEX LEVEL, not a market price or tradeable asset. scope 'aepi' (default) returns the headline index level with change_1d/change_7d/change_30d, as_of, like_for_like_pair_count, status and the methodology version, PLUS the same fields for the four buyer tiers (Individual, Pro, Team/SME, Enterprise). scope 'niche' resolves a slug OR a natural-language task via the niche resolver (returning resolver mode/certainty/confidence and candidate niches) and returns that niche's index level and change_1d/7d/30d with comparable-provider counts; when history or comparable data is thin it returns an honest status (insufficient_comparables / insufficient_history / temporarily_unavailable) instead of a fabricated percentage — it never substitutes another cohort. `tier` filters to one buyer tier; response_mode 'full' adds exact sub-0.01% moves, per-tier niche indices and repricing counts. Reads the SAME canonical series as the /aepi page, so the MCP and website agree for a given timestamp."
+    },
+    {
+      "name": "price_benchmark",
+      "description": "Returns fair-price benchmarks for a functional niche, SEPARATED BY provider type (provider / mcp / api), buyer tier (individual / pro / team_sme / enterprise) and compatible pricing unit. A fair-price benchmark = NICHE x PROVIDER_TYPE x BUYER_TIER x PRICING_UNIT — a single blended provider+MCP median is NEVER the default. Supply provider_type and buyer_tier whenever the user makes them known (e.g. 'an individual MCP', 'a professional provider', 'enterprise'); when neither is known the tool returns the available per-type/per-tier cohort matrix (populated cohorts only), not a blended headline. Never treat MCP as the functional niche unless the product itself is MCP infrastructure. The blended distribution + AEPI index remain available only in response_mode='full'. Also returns `index` — the Agent Economy Price Index for the scope: a chained like-for-like daily price index (base 100 = 29 Jun 2026) that composition changes can't move; null when the series is too short. At whole-economy scope (no niche/sector filter) it also returns `index_by_tier`: the same index tracked separately per pricing tier (individual/pro/team_sme/enterprise) — null when a niche or sector filter is given, because per-tier-per-niche samples are too thin to be honest. The authoritative block is pricing_by_tier (pricing_version 'cohorts-1') on the same EVIDENCE LADDER as find_niche: 'ok' (strict per-tier/unit cohorts) else single_observations / observed_offers (real offers, labelled by billing type, never aggregated across mixed units) plus pricing_coverage; the legacy byPersona medians are kept only for back-compat. An approximate or natural-language niche is resolved to the canonical slug (returned in niche_resolution); an unresolvable niche returns resolved:false with did_you_mean instead of an empty result."
+    },
+    {
+      "name": "get_price_index_history",
+      "description": "Call this for the canonical DATED index SERIES (to chart or analyse movement) of the AEPI or a niche price index — the same chained like-for-like series the /aepi and niche pages plot. Every point is an index level (base 100), never a price. scope 'aepi' (default) returns the headline series, or a single buyer tier's series when `tier` is set; scope 'niche' resolves a slug or natural-language query and returns that niche's dated series. `period` selects '30d' (default), '90d' or 'all'. response_mode 'summary' (default) returns date + index_level points plus the window change; 'full' adds gap flags. Returns an honest status (insufficient_history / insufficient_comparables) rather than a fabricated series when data is too thin."
+    },
+    {
+      "name": "market_gaps",
+      "description": "Find under-served markets to build in. DEFAULT (rank='gaps'): true whitespace — niches with money already present (enterprise / contact-sales pricing) or recent builder entry, but FEW competitors; crowded niches are excluded, so a 'gap' is never crowded. Each result carries gap_score, a plain-English `why`, crowding, listing count, the market_pulse object and an observed-pricing rollup. Pass rank='hot' instead to rank by momentum (market pulse) regardless of crowding — for tracking where the action is. Drill into one slug with niche_report. Empty args ({}) return the ranked overview — a lightweight orient scan."
+    },
+    {
+      "name": "suggest_alternatives",
+      "description": "Call this when a shortlisted provider is too expensive, unreachable or a poor fit: substitutes for one known provider — same niche first, topped up by similar capability — each with observed price, endpoint liveness, community upvotes and how_to_connect (website, docs, mcp endpoint) so a substitute is immediately usable. Set cheaper_only to shop down from the subject's price. Accepts `agent_id` (aliases: handle, id). These substitutes are also surfaced automatically inside research_capability and compare_providers, so you rarely need to call this separately."
+    },
+    {
+      "name": "niche_report",
+      "description": "Call this to deep-dive ONE market niche before building or investing — every field is MEASURED: market_pulse (composite of 30d like-for-like price movement, money present, builder entry, endpoint liveness — with plain-English drivers), the observed-pricing snapshot, crowding level, adjacent niches, and the top providers already competing there. Also returns `movement` (7-day decomposition: which providers repriced vs entered/left the priced set) and `index_series` (the niche's like-for-like price index) — each null when data is thin. Pricing follows the same EVIDENCE LADDER as find_niche (pricing_status ok / single_observation / observed_offers_only / insufficient, with pricing_coverage). An approximate or natural-language niche is resolved to the canonical slug (returned in niche_resolution). Accepts `niche` (aliases: slug, niche_slug). Get valid slugs from market_gaps. Use when you already know the niche; for market + pricing + shortlist in one call use research_capability."
+    },
+    {
+      "name": "demand_signals",
+      "description": "Call this to see what providers are being SEARCHED FOR but don't exist yet: capability queries that returned ZERO results on this MCP server, aggregated and ranked by miss count. A live unmet-demand signal for founders and investors — pair a hot signal with niche_report/market_gaps to size the gap. Empty args ({}) return the current ranked unmet-demand list."
+    },
+    {
+      "name": "report_outcome",
+      "description": "After you use a listed provider, report whether it worked — reports are correlated with your recent retrievals, improve ranking accuracy, and unlock higher rate limits for contributors. Only reports we can match to one of YOUR retrievals (search_providers / get_provider_profile / compare_providers / suggest_alternatives naming that provider, last 48h) carry weight; unmatched reports are stored but unweighted. Aggregates surface as `reported_success` on profile/comparison cards once 5+ distinct reporters exist (90-day window). Callers with 5+ correlated reports in 30 days get a doubled per-minute rate limit. Send an x-agentery-key header to keep one reporter identity across IPs (it is stored only as a hash)."
+    },
+    {
+      "name": "rank_providers_for_workflow",
+      "description": "PARTNER-ONLY (Bearer key required). Given a business context and its workflow steps, return ranked provider candidates for EACH step — structured, scored (match_score 0-100) matches with match_reasons and cautions. Built for app builders (e.g. Builtery) assembling automations. Reads each provider's analysed site profile; never invents capabilities; returns 'unclear' where evidence is missing."
+    },
+    {
+      "name": "get_provider_profile",
+      "description": "Call this to drill into ONE provider after search_providers or compare_providers: full evidence-scored profile — task_performed, inputs/outputs, integrations, protocols, industry_fit, autonomy_level, human_approval_needed, observed price, trust signals, evidence_quality, entity_type, regulated_data_suitability, evidence_urls, last_checked. Includes the full how_to_connect object — website, docs, any vendor-published MCP endpoint (with a copy-paste client config_snippet), A2A agent card and API surface — the info needed to actually use the listing; fields are null when the vendor publishes no endpoint (never guessed). Also carries `reported_success` — machine-reported outcome rate from report_outcome (null until 5+ distinct correlated reporters in 90 days). If you use the listing, call report_outcome afterwards."
+    },
+    {
+      "name": "get_provider",
+      "description": "Call this for the public directory card of one provider by handle or registration number: bio, source URLs, X-verification status, entity type, community rating and structured profile when available."
+    },
+    {
+      "name": "create_custom_benchmark",
+      "description": "Create a PRIVATE custom benchmark (a saved, calculated peer cohort) over Agentery's data — no account needed. Two modes: (A) explicit members: pass `members` (a list of exact handles; product names/domains resolve where unambiguous). (B) fork a niche: pass `base_niche` plus optional `remove`/`add`. Returns a one-time secret `benchmark_id` (cb_… token) — store it; it's your only key. Use it later in get/update/delete and in niche_report/get_price_index/get_price_index_history. Ambiguous names are returned as candidates, never silently resolved; unresolved inputs block creation unless allow_partial:true. All prices/history are computed from Agentery's immutable observations; canonical niches are never changed."
+    },
+    {
+      "name": "get_custom_benchmark",
+      "description": "Get a private custom benchmark's current report: members, current stats (headline median/quartiles only when ≥3 comparable priced members — monthly, per-seat and per-call prices are never blended), buyer-tier / provider-type / pricing-unit cohorts, historical index, and data coverage. Pass `benchmark_id` (your cb_ token) as an ARGUMENT."
+    },
+    {
+      "name": "update_custom_benchmark",
+      "description": "Add/remove members or rename a custom benchmark. Creates a NEW immutable version (the previous version stays fully reproducible) and returns the exact change-impact on the median/quartiles/index. Pass `benchmark_id`."
+    },
+    {
+      "name": "delete_custom_benchmark",
+      "description": "Disable access to a custom benchmark. Keeps only a minimal audit record; no underlying Agentery data is touched. Pass `benchmark_id`."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:39:13.928Z",
+  "toolsPreviewStatus": "ok"
+}

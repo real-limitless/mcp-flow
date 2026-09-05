@@ -1,0 +1,68 @@
+{
+  "id": "ai.creationloop/creationloop",
+  "title": "creationloop",
+  "description": "CreationLoop is your Marketing Agent. Read the overview, offer, and FAQ; apply as a design partner.",
+  "summary": "CreationLoop is your Marketing Agent. Read the overview, offer, and FAQ; apply as a design partner.",
+  "offersHint": "CreationLoop is your Marketing Agent. Read the overview, offer, and FAQ; apply as a design partner. · Remote MCP (streamable-http) at https://creationloop.ai/api/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://creationloop.ai/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://creationloop.ai/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/marino129/creationloop-mcp",
+  "repository": {
+    "url": "https://github.com/marino129/creationloop-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-09T00:13:17.622184Z",
+  "publishedAt": "2026-07-09T00:13:17.622184Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-09-05T05:22:46.388Z",
+    "sourceRepoAt": "2026-09-05T05:22:46.388Z",
+    "readmeAt": "2026-09-05T05:22:47.170Z",
+    "toolsAt": "2026-09-05T05:22:47.354Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/marino129/creationloop-mcp/main/README.md",
+    "markdown": "# CreationLoop MCP Server\n\n**CreationLoop is your Marketing Agent.**\n\n> Verified agent output. The recursive loop that gets better, and proves it.\n\nThis is the public listing for CreationLoop's remote MCP server. The server lets\nany MCP-capable agent read CreationLoop's canonical company information and submit\na design-partner application on a user's behalf. It is a hosted, remote server:\nthere is nothing to install and no key to configure. Point your client at the\nendpoint below and connect.\n\n- **Endpoint:** `https://creationloop.ai/api/mcp`\n- **Transport:** Streamable HTTP (stateless, JSON responses)\n- **Authentication:** none required\n- **Method:** `POST` only (JSON-RPC 2.0)\n\n---\n\n## What the server is\n\nCreationLoop is a Marketing Agent for early-stage founders and small brands. The\nMCP server exposes a small, deterministic surface: three read tools that return\nCreationLoop's canonical public copy verbatim, and one write tool that submits a\ndesign-partner application. No model sits in the response path of the read tools,\nso their output is fixed text, not generated on the fly.\n\nThe server is remote and hosted by CreationLoop. Your client connects over\nStreamable HTTP; there is no local process, no package to install, and no\ncredential to supply.\n\n---\n\n## Transport details\n\nThe server implements the MCP Streamable HTTP transport in **stateless** mode:\n\n- **URL:** `https://creationloop.ai/api/mcp`\n- **Accepted method:** `POST` with a JSON-RPC 2.0 body.\n- **Response mode:** plain JSON (`application/json`). The server runs with JSON\n  responses enabled and no SSE stream, so each request gets a single JSON reply.\n- **Sessions:** none. Every request builds a fresh server and transport pair, so\n  there is no session id to track and no session to resume or delete.\n- **`GET` and `DELETE`:** return HTTP `405` with a JSON-RPC error\n  (`code -32000`, message \"Method not allowed. POST JSON-RPC to this endpoint.\").\n  Because the server is stateless there is no SSE stream to open on `GET` and no\n  session to remove on `DELETE`.\n- **Server identity:** name `creationloop`, version `0.1.0`.\n\n### Rate limits\n\nLimits are per client IP, on a fixed 60 second window:\n\n- **All MCP traffic:** up to 30 requests per minute. Over the limit, the server\n  replies with HTTP `429` and a JSON-RPC error (`code -32000`, message\n  \"Too many requests. Try again shortly.\").\n- **`submit_design_partner_application`:** a tighter 5 submissions per minute.\n  Over the limit, the tool returns a tool result flagged as an error with the\n  text \"Too many requests. Try again shortly.\" (the JSON-RPC call itself\n  succeeds; the error is carried in the tool result).\n\n---\n\n## Tool reference\n\nThe server exposes four tools.\n\n### `get_company_overview`\n\n- **Input:** none. Schema is an object with no properties (`additionalProperties: false`).\n- **Output:** a single text block. What CreationLoop is, how the content loop\n  works, the two run modes, proof, philosophy, and the pricing stance, served\n  verbatim from CreationLoop's canonical site copy.\n\n### `get_design_partner_offer`\n\n- **Input:** none. Schema is an object with no properties (`additionalProperties: false`).\n- **Output:** a single text block describing the design-partner program: what\n  partners get, what CreationLoop asks in return, and how to apply. Served\n  verbatim from the canonical site copy.\n\n### `get_faq`\n\n- **Input:** none. Schema is an object with no properties (`additionalProperties: false`).\n- **Output:** a single text block of frequently asked questions and answers,\n  served verbatim from the canonical site copy.\n\n### `submit_design_partner_application`\n\nSubmits an application to CreationLoop's design-partner program. The founder\nreviews every application and follows up by email.\n\n**Input schema** (strict; unknown fields are rejected):\n\n| Field     | Type   | Required | Constraints            | Server field description (verbatim)                                  |\n|-----------|--------|----------|------------------------|----------------------------------------------------------------------|\n| `email`   | string | yes      | valid email, 3 to 320 chars | \"Applicant email address (required).\"                            |\n| `website` | string | yes      | 1 to 500 chars         | \"The brand's website URL (required).\"                                |\n| `name`    | string | no       | up to 200 chars        | \"Applicant name (optional).\"                                         |\n| `company` | string | no       | up to 200 chars        | \"Company name (optional).\"                                           |\n| `message` | string | no       | up to 2000 chars       | \"What should your CMO know? Context for the email follow-up (optional).\" |\n\n> The field descriptions above are the server's own text, reproduced verbatim\n> so agents match the deployed contract exactly.\n\n**Output:** a text confirmation. On success the message confirms the application\nwas received for the brand's host and states that the founder reviews every\napplication and follows up at the email provided. On invalid input the tool\nreturns an error result naming the validation problem.\n\n**What is stored.** A successful submission records a lead row with:\n\n- the **email**, normalized (trimmed and lowercased);\n- a **source** string of the form `design-partner-mcp:{host}`, where `{host}` is\n  the hostname derived from the `website` value (leading `www.` stripped), with\n  the whole source string capped at 64 characters;\n- the **name**, **company**, and **message** you provide, each trimmed to its\n  content or stored as null when blank or absent;\n- a server-assigned id and a creation timestamp.\n\n**What is not stored.** The raw `website` URL is not persisted; only the derived\nhostname survives, inside the `source` string. The requester's IP address is used\nonly for in-memory rate limiting and is not written to storage.\n\n**Idempotency and email.** Submissions are idempotent on the email address: a\nduplicate email does not create a second row. Welcome and internal notification\nemails are sent only for a genuinely new signup. If persistence fails, the tool\nreturns an error asking the applicant to email the founder directly instead.\n\n---\n\n\n## Private GTM review plugin\n\nThe same hosted MCP endpoint can expose one additional advisory-only tool,\n`review_gtm_sweep`, to an authenticated CreationLoop operator. The tool reviews\na ten-person creationcode prospect packet and returns recommendations. It cannot\napprove, send, connect, comment, or perform any external action.\n\nThe Cursor/GrokBot plugin in this repository declares `GTM_REVIEW_TOKEN` as a\nprotected plugin variable. Cursor stores the value through its plugin\nconfiguration surface and injects it into the HTTP MCP authorization header. Do\nnot place the token in chat, source code, `mcp.json`, a URL, or shell history.\n\nTo install:\n\n1. Paste `https://github.com/marino129/creationloop-mcp` into the plugin search.\n2. Install `creationloop-gtm-review`.\n3. Open the plugin's Configure screen.\n4. Enter `GTM_REVIEW_TOKEN` in the protected variable field.\n5. Attach the plugin to GrokBot and list tools. The authenticated connection\n   exposes only `review_gtm_sweep`; it does not grant the public application\n   submission tool or any execution capability.\n\nThe repository contains only the `${GTM_REVIEW_TOKEN}` placeholder. Secret\nmaterial remains outside Git.\n\n---\n\n## Connect\n\nThe server is a remote Streamable HTTP MCP server with no authentication. Use the\nconfig block for your client.\n\n### Claude Code\n\nAdd the server from the command line:\n\n```sh\nclaude mcp add --transport http creationloop https://creationloop.ai/api/mcp\n```\n\n### Claude Desktop\n\nClaude Desktop connects to remote Streamable HTTP servers through the `mcp-remote`\nbridge. Add this to your `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"creationloop\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-remote\", \"https://creationloop.ai/api/mcp\"]\n    }\n  }\n}\n```\n\nIf your version of Claude Desktop supports custom remote connectors directly, you\ncan instead add the endpoint URL `https://creationloop.ai/api/mcp` as a custom\nconnector with no authentication.\n\n### Cursor\n\nAdd this to your Cursor MCP config (`~/.cursor/mcp.json` for a global entry, or\n`.cursor/mcp.json` in a project):\n\n```json\n{\n  \"mcpServers\": {\n    \"creationloop\": {\n      \"url\": \"https://creationloop.ai/api/mcp\"\n    }\n  }\n}\n```\n\n---\n\n## Verify the connection\n\nOnce connected, ask your client to list tools. You should see\n`get_company_overview`, `get_design_partner_offer`, `get_faq`, and\n`submit_design_partner_application`. A raw check with `curl`:\n\n```sh\ncurl -sS https://creationloop.ai/api/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}'\n```\n\n---\n\n## License\n\nThe contents of this listing repository (documentation and configuration) are\nreleased under the MIT License. See [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-09-05T05:22:47.170Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/marino129/creationloop-mcp",
+    "checkedAt": "2026-09-05T05:22:46.388Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_company_overview",
+      "description": "What CreationLoop is, how an agent run becomes verified, exactly what the ledger proves, the registry, and the design-partner offer. Served verbatim from the site's canonical copy."
+    },
+    {
+      "name": "get_design_partner_offer",
+      "description": "The current offer, which is the design partnership: what the ledger proves and how to apply. Served verbatim from the site's canonical copy."
+    },
+    {
+      "name": "get_faq",
+      "description": "Frequently asked questions about CreationLoop, with answers served verbatim from the site's canonical copy."
+    },
+    {
+      "name": "submit_design_partner_application",
+      "description": "Apply to become a CreationLoop design partner. Records the full application: email, website host, and any name, company, and message provided; our founder reviews every application and follows up by email."
+    }
+  ],
+  "toolsPreviewAt": "2026-09-05T05:22:47.354Z",
+  "toolsPreviewStatus": "ok"
+}

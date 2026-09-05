@@ -1,0 +1,51 @@
+{
+  "id": "ai.slideless/mcp",
+  "title": "Slideless",
+  "description": "List, share, upload, and manage Slideless HTML presentations from any MCP host.",
+  "summary": "List, share, upload, and manage Slideless HTML presentations from any MCP host.",
+  "offersHint": "List, share, upload, and manage Slideless HTML presentations from any MCP host. · Remote MCP (streamable-http) at https://mcp.slideless.ai/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.slideless.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.slideless.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/slideless-ai/mcp",
+  "repository": {
+    "url": "https://github.com/slideless-ai/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-30T10:17:01.200612Z",
+  "publishedAt": "2026-05-30T10:17:01.200612Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:44:56.643Z",
+    "sourceRepoAt": "2026-08-12T00:44:56.643Z",
+    "readmeAt": "2026-08-12T00:44:57.054Z",
+    "toolsAt": "2026-08-12T00:44:57.118Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/slideless-ai/mcp",
+    "checkedAt": "2026-08-12T00:44:56.643Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/slideless-ai/mcp/main/README.md",
+    "markdown": "# slideless-mcp\n\nMCP server for Slideless. Wraps the Slideless HTTP API as Model Context Protocol tools so users can list, share, upload, and manage HTML presentations from any MCP host (Claude Desktop, claude.ai, ChatGPT desktop, Cursor, etc.) without installing the `slideless` CLI.\n\nHosted on **Vercel** (Next.js App Router + [`mcp-handler`](https://www.npmjs.com/package/mcp-handler)) at **`https://mcp.slideless.ai/mcp`**. Listed on the official MCP registry as **`ai.slideless/mcp`**.\n\n## Architecture\n\nStateless Next.js route handler — streamable-HTTP transport, no session store. A per-request `McpServer` is built on each `/mcp` call and the user's `Authorization` header is forwarded verbatim to the Slideless Cloud Functions in `europe-west1`. No database, no secrets to rotate — the user's token never leaves the request.\n\n```\nClaude / ChatGPT  →  mcp.slideless.ai/mcp  (Vercel / Next.js)\n                          │\n                          ▼\n                 europe-west1-slideless-ai.cloudfunctions.net\n```\n\n## Authentication\n\nThe server is an OAuth 2.1 **resource server**. It does not host the auth flow itself — it advertises `app.slideless.ai` as the authorization server and forwards tokens to the Cloud Functions, which validate them. Two header styles are accepted, both forwarded verbatim:\n\n- **OAuth (recommended)** — hosts that speak OAuth (Claude Desktop, claude.ai) discover the flow automatically: a no-auth request to `/mcp` returns `401` with a `WWW-Authenticate` header pointing at `/.well-known/oauth-protected-resource` (RFC 9728), which points at `app.slideless.ai`. The user signs in / signs up and consents in-browser; no key is ever pasted. New API keys are minted invisibly by the authorization server.\n- **Static API key** — hosts that support custom headers (Cursor, Claude Code) can send `Authorization: Bearer cko_…` directly.\n\n### Use as a connector\n\n1. In Claude Desktop / claude.ai / ChatGPT: add a custom connector with URL `https://mcp.slideless.ai/mcp`.\n2. The host discovers OAuth and opens the Slideless sign-in. Authorize, and you're connected.\n3. (Static-key hosts only) Get a `cko_…` key at https://app.slideless.ai → Settings → API Keys, and set it as the `Authorization` header.\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `slideless_whoami` | Identity check — returns org, key name, scopes |\n| `slideless_list_presentations` | List owned + invited presentations |\n| `slideless_get_presentation` | Full info for one presentation (tokens, collaborators) |\n| `slideless_list_versions` | Version history of a presentation |\n| `slideless_get_version` | Manifest of a specific version |\n| `slideless_download_version` | Manifest + inline text-file contents (HTML/CSS/JS up to 256 KB each) |\n| `slideless_upload_html_presentation` | Upload a single-file HTML deck |\n| `slideless_upload_presentation_files` | Upload a multi-file deck (base64 array) |\n| `slideless_add_share_token` | Mint a public viewer URL |\n| `slideless_set_token_version_mode` | Pin or unpin a token to a version |\n| `slideless_unshare_presentation` | Revoke one or all share tokens |\n| `slideless_share_via_email` | Send the share URL by email |\n| `slideless_invite_collaborator` | Grant another user dev access (sends email) |\n| `slideless_uninvite_collaborator` | Revoke a collaborator |\n| `slideless_list_collaborators` | List collaborators on a presentation |\n| `slideless_delete_presentation` | Permanently delete a presentation |\n| `slideless_search_marketplace` | Search the public marketplace for remixable presentations, apps, and plans (no key) |\n| `slideless_get_marketplace_listing` | Full detail for one marketplace listing by slug (no key) |\n| `slideless_remix_listing` | Remix a listing — returns the manifest plus inline contents of every text file (no key) |\n| `slideless_publish_listing` | Publish a pushed presentation to the marketplace (requires `marketplace:publish` scope) |\n| `slideless_star_listing` | Star a marketplace listing on behalf of the connected user |\n| `slideless_unstar_listing` | Remove the connected user's star from a listing |\n\n## Local development\n\n```bash\npnpm install\npnpm dev            # next dev → http://localhost:8787\n```\n\nTest with the MCP Inspector:\n\n```bash\nnpx @modelcontextprotocol/inspector\n# Transport: Streamable HTTP\n# URL: http://localhost:8787/mcp\n# Header: Authorization: Bearer cko_<your-key>\n```\n\nOr with raw curl (initialize handshake):\n\n```bash\ncurl -s http://localhost:8787/mcp -X POST \\\n  -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" \\\n  -H \"Authorization: Bearer cko_<your-key>\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"probe\",\"version\":\"0\"}}}'\n```\n\nType checking: `pnpm typecheck`.\n\n## Deploy\n\nPushed to `main` → Vercel auto-deploys production (project `codika/slideless-mcp`). Manual deploy:\n\n```bash\nvercel deploy --prod --scope codika\n```\n\n**Rate limiting** is enforced at the edge by Vercel WAF rules (managed via the `vercel firewall` CLI), matching `path` starts-with `/mcp`:\n\n- `mcp-per-ip` → 60 req / 10s, keyed by IP\n- `mcp-per-key` → 600 req / 60s, keyed by the `Authorization` header (so each API key / OAuth token gets its own bucket)\n\nBoth return `429` when exceeded, before the function runs. Recreate with:\n\n```bash\nvercel firewall rules add \"mcp-per-ip\" --condition '{\"type\":\"path\",\"op\":\"pre\",\"value\":\"/mcp\"}' \\\n  --action rate_limit --rate-limit-window 10 --rate-limit-requests 60 --rate-limit-keys ip --yes\nvercel firewall rules add \"mcp-per-key\" --condition '{\"type\":\"path\",\"op\":\"pre\",\"value\":\"/mcp\"}' \\\n  --action rate_limit --rate-limit-window 60 --rate-limit-requests 600 --rate-limit-keys header:authorization --yes\nvercel firewall publish --yes\n```\n\n## Source layout\n\n```\napp/\n├── layout.tsx                                  # minimal root layout\n├── page.tsx                                    # landing page (/)\n├── [transport]/route.ts                        # MCP endpoint (/mcp); per-request client + 401 challenge\n└── .well-known/oauth-protected-resource/route.ts  # RFC 9728 metadata → app.slideless.ai\nsrc/\n├── config.ts             # base URL, server identity (SEP-973 branding), instructions\n├── http.ts               # OAuth metadata, CORS, 401 challenge builders\n├── server.ts             # registerAllTools entry point\n├── slidelessClient.ts    # typed fetch wrapper around the Cloud Functions\n├── types.ts              # wire shapes (mirrors slideless-app types/)\n├── errors.ts             # SlidelessApiError + wrapToolErrors\n└── tools/\n    ├── identity.ts       # slideless_whoami\n    ├── presentations.ts  # list / get / versions / download / delete\n    ├── upload.ts         # upload_html / upload_files (3-step orchestration)\n    ├── sharing.ts        # tokens, version mode, unshare, email\n    ├── collaborators.ts  # invite / uninvite / list\n    └── marketplace.ts    # search / get / remix / publish / star / unstar\nserver.json               # MCP registry metadata (ai.slideless/mcp)\n```\n\n## Related repos\n\n- [`slideless-app`](https://github.com/slideless-ai/app) — backend Cloud Functions this server proxies (also hosts the OAuth 2.1 authorization server)\n- [`slideless-cli`](https://github.com/slideless-ai/cli) — npm CLI that uses the same API\n- [`slideless-plugin`](https://github.com/slideless-ai/plugin) — Claude Code plugin (companion authoring + upload skills)\n",
+    "fetchedAt": "2026-08-12T00:44:57.054Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:44:57.118Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"Authentication required. This connector uses OAuth — your MCP host (Claude Desktop, claude.ai, ChatGPT desktop, mcp-inspector) should follow the WWW-Authenticate header to discover the auth flow. If you're using a host that supports static API keys (Claude Code, Cursor), set `Authorization: Bearer cko_…` and reconnect. Get a key at https://app.slideless.ai (Settings → API Keys).\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

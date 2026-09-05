@@ -1,0 +1,51 @@
+{
+  "id": "ai.bitroad/bitroad",
+  "title": "bitroad",
+  "description": "Marketplace for AI agents: buy goods and services under spending caps, with returns and disputes.",
+  "summary": "Marketplace for AI agents: buy goods and services under spending caps, with returns and disputes.",
+  "offersHint": "Marketplace for AI agents: buy goods and services under spending caps, with returns and disputes. · Remote MCP (streamable-http) at https://app.bitroad.ai/api/v1/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://app.bitroad.ai/api/v1/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.bitroad.ai/api/v1/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/bitroadai/bitroad-mcp",
+  "repository": {
+    "url": "https://github.com/bitroadai/bitroad-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-17T19:06:22.088057Z",
+  "publishedAt": "2026-08-17T19:06:22.088057Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-09-05T05:24:22.575Z",
+    "sourceRepoAt": "2026-09-05T05:24:22.575Z",
+    "readmeAt": "2026-09-05T05:24:23.060Z",
+    "toolsAt": "2026-09-05T05:24:23.208Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bitroadai/bitroad-mcp/main/README.md",
+    "markdown": "# Bitroad MCP server\n\nBitroad is a marketplace built for AI agents. Your agent searches a catalogue of\ngoods and services, places orders under spending caps you set, tracks delivery,\nand handles returns and disputes, all through the Model Context Protocol.\n\n**Endpoint:** `https://app.bitroad.ai/api/v1/mcp`\n\nTransport is spec-compliant Streamable HTTP with JSON-RPC 2.0. Auth is OAuth 2.1\nwith dynamic client registration and PKCE, so most clients need nothing more than\nthe URL above.\n\n- Website: https://bitroad.ai\n- Documentation: https://bitroad.ai/docs\n- Sign up: https://buy.bitroad.ai/sign-up\n\n## How it works\n\n1. Create a buyer account at [buy.bitroad.ai](https://buy.bitroad.ai/sign-up).\n2. Add the endpoint to your MCP client and approve the consent screen.\n3. Your agent can now browse and read orders immediately.\n4. To let it spend, add a card and set delegation caps in your dashboard. Until\n   you do, there is no purchase path at all.\n\nSpending is bounded by three caps you control: per transaction, per day, and\ntotal. A purchase above any cap is refused outright, with a reason of\n`per_tx_cap_exceeded`, `daily_cap_exceeded` or `total_cap_exceeded`. Separately,\nyou can set a confirmation threshold: a purchase at or above it is allowed but\nreturns `confirmation_required` with a token, and needs your explicit sign-off\nbefore it proceeds. Agents never see card details; a card can only be added by\nyou through Stripe hosted checkout.\n\n## Connect your client\n\nThere are three shapes. Pick the one that matches your client.\n\n### CLI clients\n\n```bash\n# Claude Code\nclaude mcp add --transport http bitroad https://app.bitroad.ai/api/v1/mcp\n\n# Gemini CLI\ngemini mcp add --transport http bitroad https://app.bitroad.ai/api/v1/mcp\n```\n\nRun the client and trigger the OAuth flow (`/mcp` in Claude Code, automatic in\nGemini CLI), then approve on the Bitroad consent screen.\n\n### Config-file clients\n\nCursor, Claude Desktop, Cline, Windsurf, LibreChat and most other MCP clients\ntake a JSON block:\n\n```json\n{\n  \"mcpServers\": {\n    \"bitroad\": {\n      \"url\": \"https://app.bitroad.ai/api/v1/mcp\"\n    }\n  }\n}\n```\n\nThe client discovers OAuth on first use.\n\n### Connector-UI clients\n\nClaude.ai (Settings, then Connectors), ChatGPT (developer mode custom\nconnectors), and Copilot take the endpoint as a pasted URL:\n\n1. Open the client's connector settings.\n2. Add a connector with URL `https://app.bitroad.ai/api/v1/mcp`.\n3. Approve the Bitroad consent screen when prompted.\n\n### Bearer key instead of OAuth\n\nFor headless clients and your own agent code, mint an agent key at\n`/buyer/instances/new` and send it as a header:\n\n```bash\ncurl https://app.bitroad.ai/api/v1/mcp \\\n  -H \"Authorization: Bearer br_ik_...\" \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n```\n\nKeys are shown once. Revoke them from the same page.\n\n## Tool catalogue\n\nCall `tools/list` for the live catalogue with full JSON Schema. `tools/list`\nreturns the whole catalogue to every caller; your account type is enforced when a\ntool is called, not when it is listed. Buyer and seller are separate account\ntypes and one email can only be one of them, so a buyer calling a `seller_*` tool\nis refused.\n\n**Buyer tools**\n\n| Group | Tools |\n|---|---|\n| Catalogue | `catalog_search_products`, `catalog_get_product`, `catalog_list_categories`, `catalog_describe_category` |\n| Buying | `purchase_create_intent`, `purchase_confirm_intent`, `purchase_cancel_intent` |\n| Orders | `orders_list`, `orders_get` |\n| Returns | `returns_initiate`, `returns_get`, `returns_list`, `returns_get_label` |\n| Disputes | `disputes_file`, `disputes_list`, `disputes_get`, `disputes_add_evidence`, `disputes_withdraw`, `disputes_respond` |\n| Reputation | `sellers_get`, `platforms_get` |\n| Account | `addresses_list`, `addresses_create`, `payment_methods_list`, `payment_methods_create`, `auth_whoami`, `auth_revoke_self` |\n\n**Seller tools**\n\nListings, stock, orders, shipping and tracking, returns, and review responses,\nunder the `seller_*` prefix.\n\n**Services**\n\nA quote-based marketplace for work rather than goods, under the `services_*`\nprefix: request a quote, accept it, and funds are held in escrow until you accept\nthe deliverable.\n\nThe catalogue also carries `envelopes_list` and `envelopes_get`, a preview\nsurface that is switched off on the hosted service. They appear in `tools/list`\nbut return a not-found error when called.\n\nBuying a product is a two-step flow. `purchase_create_intent` reserves stock and\nsnapshots price, VAT and shipping, then `purchase_confirm_intent` charges and\ncreates the order. Intents expire after 15 minutes. All monetary values are\ninteger pence.\n\n## Idempotency\n\nWrite tools accept an optional `_meta.idempotencyKey`. Passing one gives you full\nreplay semantics on retries. If your client cannot set it, the server generates\none so the call still succeeds.\n\n```json\n{\n  \"jsonrpc\": \"2.0\", \"id\": 3, \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"purchase_create_intent\",\n    \"arguments\": { \"product_id\": \"...\", \"quantity\": 1 },\n    \"_meta\": { \"idempotencyKey\": \"intent-abc-123\" }\n  }\n}\n```\n\n## Registry\n\nThis repository holds the [`server.json`](server.json) record published to the\nofficial MCP registry under the `ai.bitroad` namespace.\n\n## Support\n\nOpen an issue here.\n",
+    "fetchedAt": "2026-09-05T05:24:23.060Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bitroadai/bitroad-mcp",
+    "checkedAt": "2026-09-05T05:24:22.575Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreviewAt": "2026-09-05T05:24:23.208Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":{\"type\":\"unauthenticated\",\"code\":\"no_credentials\",\"message\":\"\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

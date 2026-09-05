@@ -1,0 +1,58 @@
+{
+  "id": "io.github.DocMinus/decimer-mcp-server",
+  "title": "DECIMER MCP Server",
+  "description": "MCP server for DECIMER image-to-SMILES chemical structure recognition",
+  "summary": "MCP server for DECIMER image-to-SMILES chemical structure recognition",
+  "offersHint": "MCP server for DECIMER image-to-SMILES chemical structure recognition · Packages: pypi:decimer-mcp-server",
+  "version": "0.1.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "decimer-mcp-server",
+    "version": "0.1.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "decimer-mcp-server",
+      "version": "0.1.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/DocMinus/DecimerMCPServer",
+  "repository": {
+    "url": "https://github.com/DocMinus/DecimerMCPServer",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-13T19:55:47.492435Z",
+  "publishedAt": "2026-04-13T19:55:47.492435Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:13.259Z",
+    "sourceRepoAt": "2026-08-12T00:13:52.185Z",
+    "readmeAt": "2026-08-12T00:13:52.655Z",
+    "toolsAt": "2026-08-12T01:44:13.259Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/DocMinus/DecimerMCPServer",
+    "checkedAt": "2026-08-12T00:13:52.185Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/DocMinus/DecimerMCPServer/main/README.md",
+    "markdown": "# DecimerMCPServer\n\nmcp-name: io.github.DocMinus/decimer-mcp-server\n\nMCP server that exposes DECIMER image-to-SMILES functionality as tool calls.\n\nThis project is a thin adapter over the existing FastAPI service in `DecimerServerAPI`.\nIt does not run DECIMER models directly.\nThe adapter sends JSON requests by default, with automatic fallback to form payloads for compatibility.\n\n## Tools\n\n- `server_health`: Checks whether the DECIMER FastAPI server is reachable.\n- `analyze_chemical_image`: Sends a base64-encoded image to `/image2smiles/` and returns structured output.\n\n## Requirements\n\n- Python 3.10+\n- Running DECIMER API server (default: `http://localhost:8099`)\n\nfind it at either of these two versions:\n- GitHub: https://github.com/DocMinus/DecimerServerAPI\n- Dockerhub: https://hub.docker.com/r/docminus/decimer_api\n\n## Install\n\n```bash\ncd /Users/a/dev/DecimerMCPServer\nuv venv\nuv sync\n```\n\n## Configuration\n\nCopy `.env.example` values into your environment:\n\n- `DECIMER_API_BASE_URL` (default `http://localhost:8099`)\n- `DECIMER_API_TIMEOUT_SECONDS` (default `60`)\n- `DECIMER_MAX_IMAGE_BYTES` (default `10000000`)\n- `DECIMER_MCP_LOG_LEVEL` (default `INFO`)\n\n## Run (stdio transport)\n\n```bash\nuv run decimer-mcp-server\n```\n\nor\n\n```bash\nuv run python -m decimer_mcp_server\n```\n\n## Example MCP client config\n\n```json\n{\n  \"mcpServers\": {\n    \"decimer\": {\n      \"command\": \"uv\",\n      \"args\": [\"run\", \"python\", \"-m\", \"decimer_mcp_server\"],\n      \"env\": {\n        \"DECIMER_API_BASE_URL\": \"http://localhost:8099\"\n      }\n    }\n  }\n}\n```\n\n## Output shape\n\n`analyze_chemical_image` returns:\n\n```json\n{\n  \"ok\": true,\n  \"smiles\": \"CCO\",\n  \"reason\": null,\n  \"api_status_code\": 200,\n  \"api_message\": null,\n  \"classifier_score\": 0.0000012,\n  \"classifier_threshold\": 0.3,\n  \"classifier_decision\": \"structure_like\"\n}\n```\n\nWhen no SMILES is returned by API classifier behavior:\n\n```json\n{\n  \"ok\": true,\n  \"smiles\": null,\n  \"reason\": \"not_chemical_structure\",\n  \"api_status_code\": 200,\n  \"api_message\": \"No SMILES returned by API\",\n  \"classifier_score\": 0.99999,\n  \"classifier_threshold\": 0.3,\n  \"classifier_decision\": \"not_structure_like\"\n}\n```\n\n## Development tests\n\n```bash\nuv sync --extra dev\nuv run pytest\n```\n\nMake targets:\n\n```bash\nmake sync\nmake test\n```\n\n## Smoke test helper\n\nRun one health check + one inference call against your DECIMER API:\n\n```bash\ncd /Users/a/dev/DecimerMCPServer\nDECIMER_API_BASE_URL=http://chitchat:8099 uv run decimer-mcp-smoke-test --image /Users/a/dev/DecimerServerAPI/example_usage/structure.png\n```\n\nIf you keep settings in `.env`, load it with:\n\n```bash\nuv run --env-file .env decimer-mcp-smoke-test --image /Users/a/dev/DecimerServerAPI/example_usage/structure.png\n```\n\nor use make:\n\n```bash\nmake smoke\n```\n\nOverride the image path if needed:\n\n```bash\nmake smoke SMOKE_IMAGE=/absolute/path/to/image.png\n\n## MCP Registry publishing\n\nTags matching `v*` trigger `.github/workflows/publish-mcp.yml`.\n\nWorkflow steps:\n- installs `mcp-publisher`\n- validates `server.json`\n- calls registry publish using secret `MCP_REGISTRY_TOKEN`\n- publishes slug `io.github.DocMinus/decimer-mcp-server` (case sensitive; must match registry grant)\n\nBefore tagging:\n1. Update `pyproject.toml` + `server.json` versions\n2. Ensure `server.json` stays valid (`uv pip install jsonschema && python validate snippet from AGENTS.md`)\n3. Add GitHub repo secret `MCP_REGISTRY_TOKEN` (GitHub PAT with `repo`, `workflow` scopes)\n\nRelease flow:\n```bash\ngit tag v0.1.1\ngit push origin v0.1.1\n```\n\nMonitor Actions tab. If publish fails, rerun using workflow dispatch after fixing issues.\n```\n\n## Contribution\nThis project was built by DocMinus with AI-assisted coding support (OpenCode/Copilot-style tooling), then reviewed and tested by the author.\n\n## AI usage policy\n\n- AI assistance was used for scaffolding, implementation drafts, and documentation edits.\n- Final technical decisions, validation runs, and acceptance were performed by the maintainer.\n- Runtime behavior should be validated with local tests (`make test`) and smoke tests (`make smoke`) before release.\n",
+    "fetchedAt": "2026-08-12T00:13:52.655Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:13.259Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,66 @@
+{
+  "id": "io.github.IsaiahDupree/agentsearch-mcp",
+  "title": "agentsearch-mcp",
+  "description": "LLM-ready web search + instant answers + URL-to-clean-text fetch for agents and RAG.",
+  "summary": "LLM-ready web search + instant answers + URL-to-clean-text fetch for agents and RAG.",
+  "offersHint": "LLM-ready web search + instant answers + URL-to-clean-text fetch for agents and RAG. · Remote MCP (streamable-http) at https://agentsearch-mcp.vercel.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://agentsearch-mcp.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentsearch-mcp.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://agentsearch-mcp.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/agentsearch-mcp",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/agentsearch-mcp",
+    "source": "github",
+    "id": "1318902039"
+  },
+  "updatedAt": "2026-08-01T02:34:04.631589Z",
+  "publishedAt": "2026-08-01T02:34:04.631589Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:29.273Z",
+    "sourceRepoAt": "2026-08-12T00:09:57.924Z",
+    "readmeAt": "2026-08-12T00:09:58.377Z",
+    "toolsAt": "2026-08-12T00:09:58.644Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/agentsearch-mcp",
+    "checkedAt": "2026-08-12T00:09:57.924Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/agentsearch-mcp/master/README.md",
+    "markdown": "# agentsearch-mcp\n\nA remote **MCP (Model Context Protocol)** connector for [AgentSearch API](https://agentsearch-api.vercel.app) — an LLM/MCP-native web toolkit for agents and RAG pipelines: **web search** (provider-abstracted SERP), **keyless instant answers**, and **URL → clean text/markdown** fetch ready for an LLM context window.\n\n**Live:** `https://agentsearch-mcp.vercel.app/mcp` — 3 tools, one per AgentSearch `/v1` endpoint. Since the upstream AgentSearch deployment is metered (RapidAPI/Apify) and gates `/v1/*` behind a RapidAPI proxy-secret guard, this connector authenticates its own outbound calls with that same secret (`AGENTSEARCH_MCP_PROXY_SECRET`, sent as the `X-RapidAPI-Proxy-Secret` header) and applies a soft per-IP rate limit (`AGENTSEARCH_MCP_RATE_LIMIT`, default 30 tool-calls/hour, in-memory) so the free MCP tier stays a discovery channel rather than an unmetered bypass of the paid listing — see `lib/ratelimit.js`.\n\n## What this is, and why it's a separate connector\n\nAgentSearch API is a plain REST API. Any HTTP client can already call it directly. This repo exists because **MCP clients (Claude, ChatGPT, and other MCP-aware agents) don't consume arbitrary REST APIs — they consume MCP tools.** `agentsearch-mcp` is a thin adapter layer that:\n\n- Exposes each AgentSearch endpoint as a discoverable, typed MCP **tool** (name, description, zod input schema, annotations) that an LLM can reason about and call directly, instead of having to be taught the REST surface out-of-band.\n- Speaks the MCP **streamable-HTTP** transport at a single `/mcp` endpoint, so it can be registered as a connector in Claude, ChatGPT, or any other MCP client with one URL.\n- Does nothing else. It has no business logic of its own — every tool call is a pass-through `fetch` to AgentSearch, and the JSON response AgentSearch returns is handed back verbatim as the tool result.\n\n## Free discovery tier over a metered API\n\nThis connector is a **free discovery/growth tier** in front of the metered AgentSearch API. The upstream (`agentsearch-api.vercel.app`) is sold on RapidAPI/Apify; this MCP wrapper authenticates to it with the shared RapidAPI proxy secret and caps usage per-IP so it stays a taste-test rather than an unmetered path around the paid plans. Heavy/production volume should go through [AgentSearch on RapidAPI/Apify](https://agentsearch-api.vercel.app).\n\n## Authentication: None on the MCP side (deliberate)\n\nAgentSearch's data has no per-user dimension — it's public web data (SERP results, DuckDuckGo instant answers, cleaned page text). There is nothing to gate per-caller, so this connector intentionally ships with:\n\n- No OAuth, no login, no bearer tokens for the MCP caller\n- No Supabase / database\n- No demo-vs-real account split — every caller gets the same real, live data\n\n`api/mcp.js` builds a fresh, stateless `McpServer` per request and serves it with zero MCP-caller auth checks. The only outbound auth is the upstream RapidAPI proxy secret described above, which the connector holds server-side.\n\n## Tool list\n\nOne tool per AgentSearch `/v1` endpoint (from `agentsearch-api/openapi.yaml`; `/api/health` is intentionally not wrapped):\n\n| Tool | AgentSearch endpoint | Description |\n|---|---|---|\n| `web_search` | `GET /v1/search` | Web SERP via a provider-abstracted backend (Brave or Serper). Returns normalized results with position/title/url/snippet/domain. |\n| `instant_answer` | `GET /v1/answer` | Keyless DuckDuckGo instant answer — definitions, entities, quick facts. |\n| `fetch_url` | `GET /v1/fetch` | Keyless, SSRF-guarded URL → clean, boilerplate-free text or markdown for RAG. |\n\nAll 3 tools are read-only and annotated `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }` — none of them write anything, and all of them reflect live, externally-changing web data.\n\n## How it wraps agentsearch-api\n\nEach tool handler does a plain `fetch(\\`${AGENTSEARCH_MCP_API_BASE_URL}${path}\\`, ...)` against the real AgentSearch REST API and returns the parsed JSON as MCP tool-result content:\n\n```js\n{ content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }\n```\n\nThe outbound request carries `X-RapidAPI-Proxy-Secret: <AGENTSEARCH_MCP_PROXY_SECRET>` so it passes the upstream guard on `/v1/*`. Upstream HTTP errors (4xx/5xx) are caught and surfaced as a typed MCP error result via an `asError` helper rather than crashing the request.\n\n## Environment variables\n\n| Var | Default | Purpose |\n|---|---|---|\n| `AGENTSEARCH_MCP_API_BASE_URL` | `https://agentsearch-api.vercel.app` | Upstream AgentSearch base URL (override for local/self-hosted testing). |\n| `AGENTSEARCH_MCP_PROXY_SECRET` | _(empty)_ | RapidAPI proxy secret, sent as `X-RapidAPI-Proxy-Secret` to pass the upstream `/v1/*` guard. Without it, guarded routes return 403. |\n| `AGENTSEARCH_MCP_RATE_LIMIT` | `30` | Soft per-IP `tools/call` cap per hour (in-memory, per serverless instance). |\n\n## Project layout\n\n```\napi/mcp.js       MCP endpoint (StreamableHTTPServerTransport, stateless, no MCP-caller auth)\napi/health.js    GET /api/health\nlib/tools.js     All 3 tool definitions (zod schemas + fetch-and-forward handlers, proxy-secret auth)\nlib/ratelimit.js Soft per-IP tools/call rate limiter\nlocal-server.js  Plain-Node http server for local dev / smoke testing (not deployed)\ntest/smoke.mjs   Real end-to-end smoke test (initialize, tools/list, tools/call)\nvercel.json      Routes /mcp -> api/mcp.js, /health -> api/health.js\nserver.json      MCP registry manifest\n```\n\n## Local development\n\n```bash\nnpm install\nnpm run dev          # starts local-server.js on :3900\nnpm run smoke        # runs test/smoke.mjs against the local server\n```\n\nTo exercise a real end-to-end fetch through the upstream guard, set the proxy secret first:\n\n```bash\nexport AGENTSEARCH_MCP_PROXY_SECRET=<the RapidAPI proxy secret>\nnpm run dev &\nnpm run smoke\n```\n",
+    "fetchedAt": "2026-08-12T00:09:58.377Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "web_search",
+      "description": "Search the web via a provider-abstracted backend (Brave or Serper, configured operator-side). Returns normalized results, each with position, title, url, snippet, source, and domain, plus a meta envelope (cache state, provider, took_ms). Returns a provider_required error if no search provider key is configured upstream. Use this for a full web SERP; use instant_answer for quick facts/definitions."
+    },
+    {
+      "name": "instant_answer",
+      "description": "DuckDuckGo Instant Answer API — definitions, entities, and quick facts. Returns a normalized answer with heading, type (abstract/answer/disambiguation), source, sourceUrl, optional image/definition, and relatedTopics, plus a meta envelope. Not a full web SERP; use web_search for that. Works with no API key."
+    },
+    {
+      "name": "fetch_url",
+      "description": "Fetches any public http(s) URL, strips boilerplate (scripts, nav, footer, ads), and returns clean text or markdown ready for an LLM context window. SSRF-guarded — refuses private/loopback/internal hosts. Returns url, title, format, length, content (and finalUrl when redirected, plus up to 50 extracted links when links=true), with a meta envelope. Works with no API key."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:09:58.644Z",
+  "toolsPreviewStatus": "ok"
+}

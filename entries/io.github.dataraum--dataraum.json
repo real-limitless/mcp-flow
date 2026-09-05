@@ -1,0 +1,94 @@
+{
+  "id": "io.github.dataraum/dataraum",
+  "title": "DataRaum",
+  "description": "Pre-computed metadata context engine for AI-driven data analytics",
+  "summary": "Pre-computed metadata context engine for AI-driven data analytics",
+  "offersHint": "Pre-computed metadata context engine for AI-driven data analytics · Packages: pypi:dataraum · Env vars: ANTHROPIC_API_KEY, DATARAUM_HOME",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "dataraum",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "description": "Anthropic API key for LLM-powered semantic analysis",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "DATARAUM_HOME",
+        "description": "Root directory for workspaces, sessions, and exports"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "dataraum",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic API key for LLM-powered semantic analysis",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "DATARAUM_HOME",
+          "description": "Root directory for workspaces, sessions, and exports"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "Anthropic API key for LLM-powered semantic analysis",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "DATARAUM_HOME",
+      "description": "Root directory for workspaces, sessions, and exports"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dataraum/dataraum",
+  "repository": {
+    "url": "https://github.com/dataraum/dataraum",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-17T12:13:13.131705Z",
+  "publishedAt": "2026-04-17T12:13:13.131705Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:25:05.189Z",
+    "sourceRepoAt": "2026-08-11T23:50:22.428Z",
+    "readmeAt": "2026-08-11T23:50:23.117Z",
+    "toolsAt": "2026-08-12T01:25:05.190Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dataraum/dataraum",
+    "checkedAt": "2026-08-11T23:50:22.428Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dataraum/dataraum/main/README.md",
+    "markdown": "# DataRaum\n\n[![License](https://img.shields.io/github/license/dataraum/dataraum)](LICENSE)\n\nThe understanding layer that grounds an organization's operating model in its own data.\n\nA semantic layer tells BI tools what columns are *called*. DataRaum learns what they *mean* — the concepts, relationships, rules, and measures of the organization — and grounds each one in the actual data, with a measured confidence behind it. See the [docs](docs/index.md) for the full picture.\n\n## Monorepo layout\n\n```\npackages/\n├── engine/          # Python — pipeline, detectors, Temporal activity worker\n├── cockpit/         # TypeScript — TanStack Start web UI\n├── dataraum-config/ # YAML data — entropy config, LLM prompts, verticals (bind-mounted, never imported)\n└── infra/           # docker-compose orchestration\n```\n\nEach package has its own README. Start there if you're working in a specific package.\n\n## Status\n\nDataRaum runs as a multi-container platform, isolated per **workspace**:\n\n- **engine** (Python) — a **Temporal activity worker**, no HTTP. Does the durable analysis (`add_source`, `begin_session`, `operating_model`) and writes metadata to the workspace's Postgres schema.\n- **cockpit** (TanStack Start) — the web app you use. Hosts the chat agent, renders the results, and orchestrates the journey by triggering engine workflows via Temporal.\n\nEach workspace runs its own pair of those two containers. In front of them sit the **portal** (the cockpit image in a second role — login, membership routing, workspace provisioning) and **Caddy**, which serves the portal on the parent domain and each workspace on its own subdomain.\n\nThey share one substrate: **Postgres** (metadata + cockpit state + catalogs), an **S3 object store** (the DuckLake data lake + uploads), and **Temporal** (durable orchestration). No HTTP seam between engine and cockpit — the integration surface is Postgres + Temporal. See the [platform architecture](docs/platform/architecture.md).\n\n## Quick start\n\n```bash\n# Set the LLM key\ncp packages/infra/.env.example packages/infra/.env\necho \"ANTHROPIC_API_KEY=sk-ant-...\" >> packages/infra/.env\n\n# Bring up the whole installation (substrate, engine worker + cockpit for the\n# default workspace, portal, and the Caddy ingress)\ndocker compose -f packages/infra/docker-compose.yml up -d --wait\n\n# Engine health = the Temporal worker heartbeat (no HTTP endpoint):\ndocker compose -f packages/infra/docker-compose.yml run --rm --no-deps \\\n  --entrypoint temporal temporal-admin-tools \\\n  worker list --namespace default --address temporal:7233   # → Status: Running\n\n# Sign in at the portal, then open the default workspace from there\nopen http://dataraum.localhost              # dev@dataraum.dev / dataraum-dev\n```\n\nCaddy routes by hostname: the parent domain serves the **portal** (login + your workspaces),\nand each workspace has its own subdomain (`http://ws1.dataraum.localhost`). `localhost:3000`\nis published for debugging only — the session cookie is scoped to the parent domain, so a\nbrowser there is redirected to the portal and a script gets `401`.\n\nThe thing that bites on a first run: **Caddy binds port 80.** If something already holds it\n(macOS ships Apache), `up` fails at container start and the portal never comes up — set\n`CADDY_HTTP_PORT` *and* a matching `DATARAUM_PORTAL_ORIGIN` to move it. (`*.localhost` needs\nno `/etc/hosts` entry.)\n\nCompose defines exactly **one** workspace pair — bootstrap scaffolding, so a fresh install\nhas something to log into and something for the provisioner to clone. Every other workspace\nis created from the portal (**New workspace**) or `bun run workspace:create`; compose does\nnot grow a service per workspace.\n\nFull walkthrough, including troubleshooting: [Running the stack](docs/getting-started/running-the-stack.md).\n\nFor UI iteration, run the cockpit dev server outside docker for hot reload — see `packages/cockpit/README.md`.\n\n### Run a released version (published images)\n\nThe quick start above **builds** the engine and cockpit from source. To run the\npublished release images instead — a deploy host, no build toolchain — layer the release\noverlay and name the version:\n\n```bash\nexport DATARAUM_VERSION=1.2.3          # any tag from a GitHub Release\ndocker compose \\\n  -f packages/infra/docker-compose.yml -f packages/infra/docker-compose.release.yml \\\n  --env-file packages/infra/.env up -d --wait --no-build\n```\n\nThis pulls `ghcr.io/dataraum/{dataraum, dataraum-cockpit, dataraum-cockpit-migrate}` at\nthat tag. See [Deployment](docs/operations/deployment.md) for the images, schema/migration\nhandling, and the per-workspace topology.\n\n## Develop\n\n- **Engine (Python):** `cd packages/engine && uv sync --group dev && uv run pytest --testmon tests/unit -q`. See `packages/engine/README.md` and `packages/engine/CLAUDE.md`.\n- **Cockpit (TypeScript):** `cd packages/cockpit && bun install && bun --bun run dev` (the `--bun` flag is required). See `packages/cockpit/README.md` and `packages/cockpit/CLAUDE.md`.\n- **Pull the engine metadata schema (cockpit):** `cd packages/cockpit && DATARAUM_WORKSPACE_ID=<id> METADATA_DATABASE_URL=<url> bun run db:pull:metadata`. Re-run after the engine adds/changes SQLAlchemy models.\n\n## Documentation\n\nPlatform docs live in `docs/` (workspace root) and are published via Zensical. Start at\n[`docs/index.md`](docs/index.md), or serve the site locally:\n\n```bash\nuv run --project packages/engine zensical serve   # run from the repo root\n```\n\n- [Documentation home](docs/index.md) — what DataRaum does, at a glance\n- [The journey](docs/concepts/the-journey.md) · [pipeline & phases](docs/concepts/pipeline.md) · [learnable surface](docs/concepts/learnable-surface.md) · [measurement & detectors](docs/concepts/measurement.md)\n- [Platform architecture](docs/platform/architecture.md) — under the hood\n- [Decision records](docs/adr/README.md) — the *why* behind the architecture\n\n## License\n\nApache 2.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:50:23.117Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:25:05.190Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

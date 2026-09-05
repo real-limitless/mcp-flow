@@ -1,0 +1,52 @@
+{
+  "id": "com.dialfetch/dialfetch",
+  "title": "dialfetch",
+  "description": "Give your AI agent a phone: place calls, navigate IVRs, wait on hold, get structured answers.",
+  "summary": "Give your AI agent a phone: place calls, navigate IVRs, wait on hold, get structured answers.",
+  "offersHint": "Give your AI agent a phone: place calls, navigate IVRs, wait on hold, get structured answers. · Remote MCP (streamable-http) at https://app.dialfetch.com/api/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://app.dialfetch.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.dialfetch.com/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://app.dialfetch.com/docs/mcp",
+  "sourceUrl": "https://github.com/xneyder/dialfetch-mcp",
+  "repository": {
+    "url": "https://github.com/xneyder/dialfetch-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-19T19:40:05.894136Z",
+  "publishedAt": "2026-07-19T19:40:05.894136Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:35:55.775Z",
+    "sourceRepoAt": "2026-08-12T00:35:55.775Z",
+    "readmeAt": "2026-08-12T00:35:56.430Z",
+    "toolsAt": "2026-08-12T00:35:56.687Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/xneyder/dialfetch-mcp",
+    "checkedAt": "2026-08-12T00:35:55.775Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/xneyder/dialfetch-mcp/main/README.md",
+    "markdown": "# Dialfetch MCP — give your AI agent a phone ☎️\n\nConnect **[Dialfetch](https://app.dialfetch.com)** to Claude, Cursor, VS Code, Windsurf, Cline,\nthe Claude Agent SDK — or any [Model Context Protocol](https://modelcontextprotocol.io) client — and\nyour agent can **place real phone calls**. It navigates IVR phone trees, waits on hold, talks to\nhumans (including after a transfer), and hands back **structured answers, a transcript, and a\nrecording**.\n\nGive it a phone number and a plain-language goal. Goal in, result out.\n\n> \"Call the pharmacy at +1 305-555-0148 and tell me what time it closes today.\"\n> → `{ answers: { closing_time: { value: \"9:00 PM\", quote: \"We close at nine tonight.\" } } }`\n\n- 🔌 **Endpoint:** `https://app.dialfetch.com/api/mcp` (Streamable HTTP + SSE)\n- 🔑 **Auth:** API key (`Authorization: Bearer df_…`) or one-click OAuth for custom connectors\n- 📚 **Full docs:** https://app.dialfetch.com/docs/mcp\n- 🌐 **Industry-agnostic:** retail & pharmacy hours, flight/travel status, order & claim status,\n  license & insurance verification, government & utility lines\n\n## Quick connect\n\n<details open>\n<summary><b>Claude Desktop</b></summary>\n\nAdd to `claude_desktop_config.json` (Settings → Developer → Edit config):\n\n```json\n{\n  \"mcpServers\": {\n    \"dialfetch\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-remote\", \"https://app.dialfetch.com/api/mcp\",\n               \"--header\", \"Authorization: Bearer df_YOUR_KEY\"]\n    }\n  }\n}\n```\n</details>\n\n<details>\n<summary><b>Claude.ai (web) — custom connector</b></summary>\n\nSettings → Connectors → **Add custom connector** → paste `https://app.dialfetch.com/api/mcp` and\nfinish the one-click OAuth sign-in. No API key to paste.\n</details>\n\n<details>\n<summary><b>Cursor</b></summary>\n\n`~/.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"dialfetch\": {\n      \"url\": \"https://app.dialfetch.com/api/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer df_YOUR_KEY\" }\n    }\n  }\n}\n```\n</details>\n\n<details>\n<summary><b>VS Code (Copilot agent mode)</b></summary>\n\n`.vscode/mcp.json`:\n\n```json\n{\n  \"servers\": {\n    \"dialfetch\": {\n      \"type\": \"http\",\n      \"url\": \"https://app.dialfetch.com/api/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer df_YOUR_KEY\" }\n    }\n  }\n}\n```\n</details>\n\nMore configs (Windsurf, Cline, Agent SDK) are in [`configs/`](./configs).\n\n## Tools\n\n| Tool | Inputs | Does |\n|------|--------|------|\n| `place_call` | `phone, goal, extract?, context?, disclose_ai?, from_number_id?, max_duration_minutes?, webhook_url?` | Start a goal-call; returns `{ call_id, status }` (async) |\n| `get_call` | `call_id` | Status, outcome, answers, notes, transcript, recording URL |\n| `wait_for_call` | `call_id, timeout_seconds?` | Block (with progress) until the call is terminal |\n| `cancel_call` | `call_id` | Cancel a queued / in-progress call |\n| `list_calls` | `status?, limit?, cursor?` | Recent calls, newest first |\n| `get_call_recording` | `call_id` | Short-lived presigned audio URL |\n| `list_phone_numbers` | — | Caller-ID numbers you own |\n| `get_pricing` | — | Per-call / per-number pricing |\n| `get_credit_balance` | — | Prepaid credit balance |\n\n**Resource:** `dialfetch://calls/{id}` · **Prompts:** `check_store_hours`, `verify_license`, `get_order_status`\n\n## How calls work\n\nCalls are **asynchronous** (typically 2–10 minutes; longer with holds or transfers):\n\n1. `place_call({ phone, goal, extract })` → `{ call_id, status: \"queued\" }`\n2. Poll `get_call({ call_id })` (or use `wait_for_call`) until `status` is `completed` / `failed` / `canceled`\n3. Read `answers`, `transcript`, `recording_url`\n\n## Recipes\n\n- [Retail / office hours](./recipes/store-hours.md)\n- [License / insurance verification](./recipes/verify-license.md)\n- [Order / claim status](./recipes/order-status.md)\n\n## Safety\n\nCalls disclose they are an AI by default. The agent will not read out or collect sensitive personal\ndata (SSNs, passwords, full card numbers). Goal-screening, credit holds, and rate limits apply to\nevery call and can't be bypassed by a client.\n\n## Links\n\n- Product & sign-up: https://app.dialfetch.com\n- MCP docs: https://app.dialfetch.com/docs/mcp\n- REST API docs: https://app.dialfetch.com/docs\n\n## License\n\nMIT — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:35:56.430Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:35:56.687Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: <html>\r\n<head><title>503 Service Temporarily Unavailable</title></head>\r\n<body>\r\n<center><h1>503 Service Temporarily Unavailable</h1></center>\r\n<hr><center>nginx</center>\r\n</body>\r\n</html>\r\n",
+  "toolsPreviewStatus": "unreachable"
+}

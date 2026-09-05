@@ -1,0 +1,484 @@
+{
+  "id": "io.github.lonniev/cypher-mcp",
+  "title": "cypher-mcp",
+  "description": "Monetized graph answers via named Cypher queries — Tollbooth DPYC operator",
+  "summary": "Monetized graph answers via named Cypher queries — Tollbooth DPYC operator",
+  "offersHint": "Monetized graph answers via named Cypher queries — Tollbooth DPYC operator · Remote MCP (streamable-http) at https://cypher-mcp.fastmcp.app/mcp",
+  "version": "0.8.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://cypher-mcp.fastmcp.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://cypher-mcp.fastmcp.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/lonniev/cypher-mcp",
+  "repository": {
+    "url": "https://github.com/lonniev/cypher-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T00:17:53.364073Z",
+  "publishedAt": "2026-08-10T00:17:53.364073Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:33.248Z",
+    "sourceRepoAt": "2026-08-11T23:37:35.210Z",
+    "readmeAt": "2026-08-11T23:37:35.975Z",
+    "toolsAt": "2026-08-11T23:37:36.059Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonniev/cypher-mcp",
+    "checkedAt": "2026-08-11T23:37:35.210Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonniev/cypher-mcp/main/README.md",
+    "markdown": "# cypher-mcp\n\n**Monetized graph answers over Bitcoin Lightning.** A Tollbooth-DPYC Operator\nthat sells *priced answers* from a graph — operator-authored, parameterized,\nnamed Cypher query templates — not raw database access.\n\nThe OSS Neo4j MCP servers are a free pipe to a database the operator\nseparately expenses (Neo4j invoice) and separately bills for (Stripe stack).\ncypher-mcp collapses infrastructure cost, application billing, and access\ncontrol into one metered MCP surface: the operator stops selling seats and\nstarts selling answers, settled in sats, with no Stripe stack and no Neo4j\ninvoice passed to the customer.\n\nLive at `https://cypher-mcp.fastmcp.app/mcp`.\n\n## How it works\n\nTwo planes, cleanly separated:\n\n- **Settlement / identity plane** — Neon + Nostr + Tollbooth, shared with\n  every other DPYC operator. It never knows a graph exists.\n- **Value-delivery plane** — Bolt → Neo4j, sealed *inside the tool handlers*\n  (`graph.py`), opened and torn down per request (no pool). The backing store\n  is an implementation detail invisible to patrons, so it can be swapped\n  without changing the MCP surface.\n\nThree conceptual layers:\n\n| Layer | Where | What |\n|---|---|---|\n| **L1 — primitive** | code (shipped once) | `execute_query_by_key(key, params)` + catalog CRUD |\n| **L2 — catalog** | Neon `query_catalog` | `key → vetted Cypher template + param schema` (*what's possible*) |\n| **L3 — pricing** | Tollbooth pricing model | *what's sold, named, priced* |\n\n> **Status: live, with named tools.** L1 + L2 are shipped and serving real,\n> billed answers — an operator adopted by an Authority, AuraDB-backed, with\n> refund-on-raise verified end to end. **Named tools are now live (L3 tool\n> synthesis):** an operator can `publish_tool(key)` to project a query as a\n> first-class, typed tool (e.g. `cypher_find_airline_flights(from_city,\n> to_city)`), priced individually in Pricing Studio. Per-key parametric *pricing\n> formulas* remain a later step — see [CHANGELOG.md](CHANGELOG.md).\n\n## Tools\n\n**Patron (priced):**\n\n- `cypher_execute_query_by_key(key, params)` — run a published query. You\n  supply only parameters; the operator owns the query text, and parameters\n  bind as Cypher `$params` (never string-interpolated). You're charged only\n  for a delivered answer — an unknown key, invalid parameters, or a failed\n  query rolls back the debit (refund-on-raise).\n\nPlus the standard DPYC surface from the wheel: `cypher_check_balance`,\n`cypher_check_price`, `cypher_purchase_credits`, Secure Courier, npub proof,\nOracle delegation, account statements, constraint-based dynamic pricing, etc.\n\n**Operator-only (restricted, unpriced) — the authoring plane:**\n\n- `cypher_create_query` / `cypher_update_query` / `cypher_get_query` /\n  `cypher_list_queries` / `cypher_delete_query`\n- `cypher_publish_tool(key)` / `cypher_unpublish_tool(key)` — project a query as\n  a first-class, typed named tool (or retire it). See *Named tools* below.\n\nRaw Cypher never reaches patrons — only named, parameterized templates.\n\n### Authoring in Neo4j's own UI — no second editor to learn\n\nA DB-analyst refines templates in Neo4j Browser, not in a bespoke tool.\n`cypher_get_query(key)` returns the template **plus an `edit_url`** — a deep\nlink into the hosted Neo4j Browser (`browser.neo4j.io`) that pre-targets the\noperator's AuraDB and loads the statement **in edit mode** (`cmd=edit`).\nRefine it with autocomplete, run-to-test, visualization, and `PROFILE`; then\nsave it back with `cypher_update_query`. The template is just a string flowing\nover MCP — no files, no desktop, no exported bundles. The link carries the\nDBMS URI but never the password, and `get_query` is operator-only, so neither\never reaches a patron.\n\n### Named tools — publish a query as its own tool\n\n`cypher_publish_tool(key)` projects a catalog query as a first-class MCP tool\nnamed `cypher_<key>` whose flat, typed parameters come from the query's schema —\ne.g. `cypher_find_airline_flights(from_city, to_city)`. An agent then calls it by\nname with typed params instead of `execute_query_by_key(key, params)`. Internally\nevery named tool funnels through the **same shared executor** (look the stored\nCypher up by key → parameter-bind → run), so there is one code path and the same\nrefund-on-raise guarantee. A published tool registers **unpriced** — it appears in\nPricing Studio like any new tool; set its price there (calls return \"not priced yet\n(TBD)\" until you do). `cypher_unpublish_tool(key)` retires the tool (the query\nitself stays, still runnable by key). Published tools survive restarts\n(re-materialized from the catalog); reconnect to observe tool-list changes.\n\nThe synthesis machinery is a generic `tollbooth-dpyc` primitive\n(`register_dynamic_tool`) — named Cypher queries are one realization; the same\nprimitive can back a synthesized tool with a REST call, SQL, or a stored prompt.\n\n## Onboarding (operator)\n\n1. **Request adoption** from an Authority (the deferred courtship —\n   `request_adoption`) or be registered directly. Either way the Authority\n   provisions an isolated Neon tenant automatically.\n2. Deliver operator secrets via Secure Courier\n   (`cypher_request_credential_channel`, service `cypher-operator`):\n   - `neo4j_uri`, `neo4j_user`, `neo4j_password` — the graph store\n     (e.g. a Neo4j AuraDB instance)\n   - `btcpay_host`, `btcpay_api_key`, `btcpay_store_id` — Lightning\n3. Author your catalog with `cypher_create_query`; patrons then execute by key.\n\n## Develop\n\n```bash\npip install -e \".[dev]\"\npytest -v\npython -m cypher_mcp.server   # needs TOLLBOOTH_NOSTR_OPERATOR_NSEC\n```\n\nDeployed on Prefect Horizon (FastMCP runtime); see `.fastmcp.yaml`. The only\nenv var required to boot is `TOLLBOOTH_NOSTR_OPERATOR_NSEC` — every other\nsecret arrives via Secure Courier.\n\n---\n\n## DPYC Ecosystem\n\n| Repo | Role |\n|------|------|\n| [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) | Python SDK — vault, auth, pricing, payments, Nostr identity |\n| [dpyc-community](https://github.com/lonniev/dpyc-community) | Governance registry, membership, advisories, threat model |\n| [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) | Community concierge — free onboarding help and membership lookup |\n| [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) | Certification backbone — Schnorr-signed purchase order certificates |\n| [tollbooth-sample](https://github.com/lonniev/tollbooth-sample) | Sample Operator — canonical template for new MCP services |\n| [tollbooth-pricing-studio](https://github.com/lonniev/tollbooth-pricing-studio) | iOS app — visual pricing-model editor and operator console |\n| [schwab-mcp](https://github.com/lonniev/schwab-mcp) | Charles Schwab brokerage data (operational example) |\n| [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) | TheBrain personal knowledge graph (operational example) |\n| [excalibur-mcp](https://github.com/lonniev/excalibur-mcp) | X/Twitter posting (operational example) |\n| [taxsort-mcp](https://github.com/lonniev/taxsort-mcp) | Tax classification + Cloudflare Pages UI (operational example) |\n| [tollbooth-oauth2-collector](https://github.com/lonniev/tollbooth-oauth2-collector) | OAuth2 callback handler — shared advocate service |\n| [stablecoin.myshopify.com](https://stablecoin.myshopify.com) | DPYC merch and Austrian economics |\n\n## Prior Art & Attribution\n\nThe methods, algorithms, and implementations contained in this repository may\nrepresent original work by Lonnie VanZandt, first published on June 15, 2026.\nThis public disclosure establishes prior art under U.S. patent law\n(35 U.S.C. 102).\n\nAll use, reproduction, or derivative work must comply with the Apache License\n2.0 included in this repository and must provide proper attribution to the\noriginal author per the [NOTICE](NOTICE) file.\n\n### How to Attribute\n\nIf you use or build upon this work, please include the following in your\ndocumentation or source:\n\n    Based on original work by Lonnie VanZandt and Claude.ai\n    Originally published: June 15, 2026\n    Source: https://github.com/lonniev/cypher-mcp\n    Licensed under Apache License 2.0\n\nVisit the technologist's virtual cafe for Bitcoin advocates and coffee\naficionados at [stablecoin.myshopify.com](https://stablecoin.myshopify.com).\n\n### Patent Notice\n\nThe author reserves all rights to seek patent protection for the novel methods\nand systems described herein. Public disclosure of this work establishes a\npriority date of June 15, 2026. Under the America Invents Act, the author\nretains a one-year grace period from the date of first public disclosure to\nfile patent applications.\n\n**Note to potential filers:** This public repository and its full Git history\nserve as evidence of prior art. Any patent application covering substantially\nsimilar methods filed after the publication date of this repository may be\nsubject to invalidation under 35 U.S.C. 102(a).\n\n## Further Reading\n\n[The Phantom Tollbooth on the Lightning Turnpike](https://stablecoin.myshopify.com/blogs/our-value/the-phantom-tollbooth-on-the-lightning-turnpike)\n— the full story of how we're monetizing the monetization of AI APIs, and\nthen fading to the background.\n\n## Software Factory intent vocabulary (DPYC agents)\n\ncypher-mcp is the graph substrate for the DPYC Software Factory: its agents (Porter =\nService Desk, Journeyman = Engineering) read and write an institutional-memory graph here\n**without ever holding a raw Cypher tool**. They call a fixed vocabulary of\noperator-authored, parameterized templates — currently 43 (25 *write*, 18 *read*) —\npublished as typed `cypher_<key>` tools.\n\n- **Write templates** capture the memory: `record_triage`, `note_rejection`,\n  `route_rejection` (anti-ping-pong: bounce a rejection back to its origin), `record_scope`,\n  `link_root_cause`, `link_pr`, `assert_rationale`, `bind_rationale_to_symbol`,\n  `anchor_symbol` (post-edit grep-scoping anchor), `upsert_capability`, `assert_invariant`,\n  `upsert_patent_element`, `register_service`, and more.\n- **Read templates** are the intention-service *forward map* — the RAG surface that resolves\n  \"which service handles X / why does this capability exist\" in one query instead of a\n  twelve-repo grep: `which_service_handles`, `explain_capability`, `what_realizes_capability`,\n  `capability_patents`, `context_pack` (the flagship grep-scoping bundle), `list_capabilities`,\n  `list_invariants`, `list_patent_elements`, `routing_history`, `recent_activity`,\n  `factory_resolution_stats`, and their provenance readers.\n\n`assert_rationale` hard-codes `provenance:'llm-inferred-unverified'` as a Cypher literal, so\nan agent key can never claim authoritative provenance.\n\n**Start unlimited, limit later.** Seeding just authors + publishes the tools; they then\nappear in **Pricing Studio** unpriced. Price them and any funded patron can call — the two\nagents just purchase api_sats like any patron. When you want to restrict calls to the two,\nadd — in a Pricing Studio session — a `json_expression` allow-list on `patron.npub` per tool\n(Constraint Engine, not a bespoke ACL): listed npub allowed, everyone else denied by default,\nruntime-mutable with no deploy. Containment is also by **balance** — fund the Porter thin and\nthe Journeyman thicker; a drained agent stops writing the graph but still triages on GitHub.\n\n**Seeding (operator, idempotent).** `scripts/seed_factory_vocabulary.py` authors + publishes\nthe vocabulary. `--dry-run` needs no server or nsec and also prints the exact allow-list to\nreplicate in Pricing Studio when you limit access:\n\n```bash\npython scripts/seed_factory_vocabulary.py --dry-run \\\n    --porter-npub npub1ymg... --journeyman-npub npub1m5q...\n```\n\nApply against the live operator (operator nsec used transiently to sign one-shot kind-27235\nproofs — never logged or written to disk). Add `--gate` (with both npubs) to also apply the\nper-npub allow-list programmatically instead of in Pricing Studio:\n\n```bash\npython scripts/seed_factory_vocabulary.py \\\n    --url https://cypher-mcp.fastmcp.app/mcp --operator-npub npub1fuhq0...\n```\n\nThe vocabulary itself lives in `scripts/factory_vocabulary.py` (data, no I/O) and is covered\nby `tests/test_factory_vocabulary.py`. Pipeline wiring (agents signing and calling these\ntools), NIP-05 publication, and funding are downstream of this substrate.\n\n## Trademarks\n\nDPYC&trade;, Tollbooth DPYC&trade;, and Don't Pester Your Customer&trade; are\ntrademarks of Lonnie VanZandt. See\n[TRADEMARKS.md](https://github.com/lonniev/dpyc-community/blob/main/TRADEMARKS.md)\nin the dpyc-community repository for usage guidelines.\n\n## License\n\nApache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.\n\n---\n\n*Because in the end, the tollbooth was never the destination. It was always\njust the beginning of the journey.*\n",
+    "fetchedAt": "2026-08-11T23:37:35.975Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "cypher_check_balance",
+      "description": "Check a patron's credit balance at this operator.\n\nThis is the patron's spending balance — credits purchased via\nLightning for tool calls at this operator. For the operator's\nown balance at the Authority (needed to certify patron purchases),\nuse authority_check_balance instead.\n\nFree — no credits required. Proof of npub ownership is required\nto prevent anyone-with-the-registry from enumerating balances."
+    },
+    {
+      "name": "cypher_purchase_credits",
+      "description": "Buy credits via Bitcoin Lightning.\n\nCreates a Lightning invoice. Pay it with any Lightning wallet,\nthen call check_payment to confirm. Proof of npub ownership is\nrequired so credits land in the correct ledger.\n\nFree — no credits required to call."
+    },
+    {
+      "name": "cypher_check_payment",
+      "description": "Check the payment status of a Lightning invoice.\n\nCall after paying the invoice from purchase_credits.\nFree — no credits required. Proof of npub ownership is required\nto prevent credit-grant front-running by an observer of the\ninvoice ID."
+    },
+    {
+      "name": "cypher_restore_credits",
+      "description": "Credit a patron's ledger from a BTCPay-settled invoice.\n\n**RESTRICTED to the operator** — the operator owns the books and is\nthe only party who can issue a manual credit grant. Patrons who\nbelieve they paid but never got credits must escalate to the\noperator's support, who then invokes this tool on their behalf.\n\nUse cases: cold-start vault races during check_payment, ncred\ndelivery hiccups, patrons closing Top-Off sheets before settle,\nany infrastructure incident that left an invoice settled at BTCPay\nbut uncredited on the operator's ledger.\n\nIdempotent — if the invoice is already credited (in the patron's\n``credited_invoices``), returns success with credits_granted=0."
+    },
+    {
+      "name": "cypher_account_statement",
+      "description": "Generate a patron's account statement at this operator.\n\nReturns the patron's purchase history, active credit tranches,\nper-tool usage breakdown, and recent daily usage logs. This is\nthe patron's spending account — not the operator's Authority\ntax balance.\n\nFree — no credits consumed. Proof of npub ownership is required\nto prevent statement-scraping of arbitrary patrons."
+    },
+    {
+      "name": "cypher_account_statement_infographic",
+      "description": "Generate a visual SVG infographic of your account statement.\n\nReturns the same data as account_statement, rendered as a dark-themed\nSVG graphic with balance hero, metrics cards, health gauge, tranche\ntable, and tool usage breakdown. Costs 1 api_sat per call. Proof is\nverified by ``debit_or_deny`` before any cost is incurred."
+    },
+    {
+      "name": "cypher_report_issue",
+      "description": "File a field report about this service as a GitHub issue on the operator's repo.\n\nFound a tool's metadata or response wrong or confusing? Report it where the tool\nlives. The **author of record is your npub** — no npub / no proof, no issue — and it\nis stamped into the issue so the report is attributed to you, not the operator. Costs\na small fee (a free write to an issue tracker would be abused). The report is PUBLIC\nand goes to the maintainers' normal triage; nothing is verified here.\n\nReturns the filed issue's repo, number, and url. If this operator has not enabled\nfield reports, returns an \"issue reporting not configured\" situation and you are not\ncharged."
+    },
+    {
+      "name": "cypher_service_status",
+      "description": "Check the health and configuration of this service. Free."
+    },
+    {
+      "name": "cypher_get_operator_onboarding_status",
+      "description": "Report this operator's configuration readiness.\n\nShows which operator settings are configured, which are missing,\nand how to deliver each missing value. For patron-level credential\nstatus, use get_patron_onboarding_status instead. Free."
+    },
+    {
+      "name": "cypher_get_patron_onboarding_status",
+      "description": "Report a patron's credential readiness for this operator.\n\nFor set-once services (eXcalibur, TheBrain), shows which patron\nsecrets are configured and which are missing. For dynamic/OAuth2\nservices (Schwab), reports that no patron credentials are needed.\nFree. Proof of npub ownership is required because credential\npresence is sensitive information about the patron's setup."
+    },
+    {
+      "name": "cypher_session_status",
+      "description": "Check operator readiness. Returns the operator lifecycle\nstate and clear guidance on what to do next. Free.\n\nLifecycle states:\n- ready: Operator is warm and fully operational — vault AND pricing\n  model verified. Proceed with tool calls.\n- warming_up: Operator is initializing (cold start). Try a tool call — it will warm up on demand.\n- misconfigured: Persistence rejected a query with a permanent SQL\n  error (permission denied, missing relation). Paid tools will fail\n  until the operator repairs the database — retrying does not help.\n- quota_exceeded: The persistence provider (Neon) answered HTTP 402 —\n  the operator's database has exhausted its compute/storage quota, so\n  the books are locked for billing. Paid tools fail; retrying does NOT\n  help. The operator's Authority must restore capacity (upgrade the\n  plan or wait for the quota reset). Free tools remain available.\n- not_registered: Operator has no Authority relationship yet. Call register_operator first.\n- no_identity: Operator nsec is not configured. Deployment issue."
+    },
+    {
+      "name": "cypher_request_credential_channel",
+      "description": "Open a Secure Courier channel for credential delivery.\n\nThis is the CREDENTIAL-DELIVERY flow — use it to hand over a service\nsecret (API keys, tokens). To merely prove you control an npub (the\nusual answer to a ``proof_required`` error), use ``request_npub_proof``\ninstead. Note: dynamic/OAuth2 services (e.g. Schwab) need NO couriered\nsecret — check ``service_status`` first.\n\nSends a welcome DM with a credential template. The recipient\nmust read the DM in their Nostr client, fill in the fields,\nand reply manually. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user what to do.\nWait for the user to confirm they have replied before calling\n``receive_credentials``. Do NOT poll or retry — each\n``receive_credentials`` call destructively drains the relay\nmailbox."
+    },
+    {
+      "name": "cypher_receive_credentials",
+      "description": "Pick up credentials from the Secure Courier.\n\nCompletes the CREDENTIAL-DELIVERY flow (the ownership-proof\ncounterpart is ``receive_npub_proof``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response you want with\n``(sender_npub, service, dpop_token)`` and the tool drains ONLY the\nrendezvous relay that channel was pinned to. Every popped DM with the\nwrong session phrase is deleted and its sender is NACK'd; the first DM\nwith the matching phrase is accepted (ACK'd) and the scan stops. If\nnone match, the queue is drained and a ``courier_not_found`` result is\nreturned. Do NOT poll, loop, or retry.\n\nIf a credential_card (ncred1...) is provided, it is redeemed directly\nwithout any relay access (dpop_token not required for that path). On\nsuccess, the payment processor client is reinitialized from the new\ncredentials — no server restart needed."
+    },
+    {
+      "name": "cypher_forget_credentials",
+      "description": "Delete vaulted credentials for a specific service and npub.\n\nFor operator credentials, pass the operator's own npub. For patron\ncredentials, pass the patron's npub. Always requires proof of\nnpub ownership — a deletion is as destructive as a write."
+    },
+    {
+      "name": "cypher_update_patron_credential",
+      "description": "Add or update a single patron credential field.\n\nMerges into existing stored credentials without affecting\nother fields. Useful for setting an account identifier\nafter OAuth, changing a default brain, etc. Free. Proof of\nnpub ownership is required — this is a write to the patron's\nsensitive credential vault."
+    },
+    {
+      "name": "cypher_update_operator_credential",
+      "description": "Add or update a single operator secret field.\n\nMerges into the operator's stored credentials without touching the\nothers — the field-level counterpart to re-delivering the whole\nbundle over Secure Courier. Use it to rotate one secret (a reissued\n``btcpay_api_key``, say) without restating the six you did not\nchange, where any field omitted from a courier reply is destroyed.\n\nThe value is never echoed back. RESTRICTED to the operator —\nrequires proof (nsec-signed kind-27235 or a cached dpop_token\nphrase); patron proofs are rejected."
+    },
+    {
+      "name": "cypher_delete_patron_credential",
+      "description": "Remove a single patron credential field.\n\nDeletes one field from stored credentials without affecting\nother fields. Free. Proof of npub ownership is required —\nthis is a write to the patron's sensitive credential vault."
+    },
+    {
+      "name": "cypher_get_patron_credential_fields",
+      "description": "List stored patron credential field names (not values).\n\nReturns the names of fields stored for a patron, plus each\nfield's ``delivered_at`` ISO-8601 timestamp when known (null\nfor secrets vaulted before timestamps were recorded). Values\nare never exposed — use this to verify which fields are\nconfigured and how old each one is. Free. Proof of npub\nownership is required: the list of configured fields is itself\nsensitive (reveals which integrations a patron has set up)."
+    },
+    {
+      "name": "cypher_request_npub_proof",
+      "description": "Request npub ownership proof from a patron via Nostr DM.\n\nThis is the npub-OWNERSHIP-PROOF flow — use it when a call returns\n``proof_required``. It proves the caller controls an npub; it does\nNOT deliver any service secret. To hand an operator its API keys or\nOAuth secrets, use ``request_credential_channel`` instead.\n\nSends a challenge DM that the patron must sign and reply to\nusing their Nostr client. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user to check their\nNostr client and reply to the challenge. Wait for the user to\nconfirm they have replied before calling ``receive_npub_proof``.\nDo NOT poll or retry — each ``receive_npub_proof`` call\ndestructively drains the relay mailbox.\n\n**Returns** a ``dpop_token`` — the demonstrated-proof-of-possession\ntoken that the calling application MUST remember and pass as the\n``dpop_token`` parameter on every subsequent paid tool call. The MCP\ndoes not retain this value across restarts.\n\n**Lifecycle:** The cached proof expires after the patron's\nchosen duration. When it expires, call ``request_npub_proof``\nagain for a fresh challenge, then wait for the user, then\ncall ``receive_npub_proof``.\n\nFree."
+    },
+    {
+      "name": "cypher_receive_npub_proof",
+      "description": "Receive npub ownership confirmation from a patron.\n\nCompletes the npub-OWNERSHIP-PROOF flow (the credential-delivery\ncounterpart is ``receive_credentials``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response with\n``(patron_npub, dpop_token)`` — the ``dpop_token`` being the value\nreturned by ``request_npub_proof``. The tool drains ONLY the pinned\nrendezvous relay that challenge was published on, stopping at the DM\nwhose phrase matches. Mismatched DMs are deleted and NACK'd (without\nrevealing the expected phrase). If called before the user replies,\ntheir message will never be found. Do NOT poll, loop, or retry.\n\nThe signed DM itself proves npub ownership (the patron's nsec\nsigned it). On success, returns the ``dpop_token`` — the same\ntoken. The calling application MUST remember it and pass it as the\n``dpop_token`` parameter on every subsequent paid tool call. The\nproof (a hash of the token) is stored in the vault keyed by that\nhash — the MCP never stores the raw token itself. Free."
+    },
+    {
+      "name": "cypher_check_proof_status",
+      "description": "Check whether a previously-cached dpop_token is still valid.\n\nMirrors ``check_oauth_status`` for the npub-proof flow: a calling\nagent can ask \"will my next paid call accept this dpop_token?\"\nbefore burning credits on a guaranteed failure.\n\nFree, no side effects — does not evict the cache or touch relays."
+    },
+    {
+      "name": "cypher_oracle_how_to_join",
+      "description": "Get DPYC onboarding instructions from the Oracle. Free."
+    },
+    {
+      "name": "cypher_oracle_get_tax_rate",
+      "description": "Get the current DPYC certification tax rate. Free."
+    },
+    {
+      "name": "cypher_oracle_lookup_member",
+      "description": "Look up a DPYC community member by npub. Free."
+    },
+    {
+      "name": "cypher_oracle_about",
+      "description": "Describe the DPYC ecosystem via the Oracle. Free."
+    },
+    {
+      "name": "cypher_oracle_network_advisory",
+      "description": "Get active network advisories from the Oracle. Free."
+    },
+    {
+      "name": "cypher_check_authority_balance",
+      "description": "Check this operator's tax balance at the Authority.\n\nReturns the sats available for certifying patron credit purchases.\nWhen this balance reaches zero, patron top-ups cannot be certified\nand the operator must call purchase_credits on the Authority.\n\nThis is the operator's own funding — not a patron balance. Free."
+    },
+    {
+      "name": "cypher_get_pricing_model",
+      "description": "Get the active pricing model for this operator. Free.\n\nIf no model exists, self-initializes a scaffold with all\nregistered tools at 0 sats.  No economic data from code."
+    },
+    {
+      "name": "cypher_set_pricing_model",
+      "description": "Set the active pricing model. RESTRICTED to operator.\n\nRequires a valid proof (Schnorr-signed kind-27235 event)\nproving the caller holds the operator's nsec."
+    },
+    {
+      "name": "cypher_reset_pricing_model",
+      "description": "Erase all pricing models and restore a viable default.\n\nDeletes every stored model, then self-initializes a fresh one\nfrom the tool registry — all tools at 0 sats with proper UUIDs.\nReturns the new model.\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "cypher_request_adoption",
+      "description": "Ask a chosen Authority to adopt this operator (deferred courtship).\n\nRESTRICTED to the operator — requires proof the caller controls this\noperator's npub. Resolves the Authority's MCP endpoint from the\ncommunity registry, mints an inline ownership proof with this\noperator's nsec, and delivers the request MCP-to-MCP. The Authority\nrecords it as pending; its owner approves on their own time. Poll\n``adoption_status`` for progress; the operator flips to ``ready``\nonce the Authority provisions it."
+    },
+    {
+      "name": "cypher_adoption_status",
+      "description": "Check this operator's adoption-request status at a chosen Authority.\n\nFree. Polls the Authority MCP-to-MCP for the status of this operator's\nrequest (pending / approved / rejected / provisioned)."
+    },
+    {
+      "name": "cypher_restore_neon_schema",
+      "description": "Re-run ``ensure_schema()`` on every NeonVault this operator uses.\n\nDiagnostic / recovery tool for the case where the Neon HTTP SQL API\nis returning persistent 4xx errors and the operator suspects the\nschema isn't there or grants are wrong. Idempotent — uses\n``CREATE TABLE IF NOT EXISTS`` so a successful re-run is harmless.\n\nReturns the per-step result. If any step raises, surfaces the Neon\nerror message inline (0.31.0 reads the SQL error body that earlier\nwheels swallowed behind ``raise_for_status``).\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "cypher_list_canonical_identities",
+      "description": "Return canonical (tool_id, mcp_name, …) for every tool the wheel exposes.\n\nThe authoritative source for any client (Studio, agents, FE)\nthat needs to know how this MCP identifies its tools.\nReconcile uses this output to UUID-join against the stored\npricing model — no name-based UUID derivation, no guessing.\n\nIncludes both ToolIdentity-seeded tools and any UUID recorded by\n``@paid_tool`` that is missing from the registry. The latter appear\nwith ``registered: false`` (and in the top-level ``unregistered``\narray) so Reconcile can flag deploy drift instead of silently\nreporting clean when a live tool was never seeded (#174).\n\nIf the operator renames a function or rebrands a slug, the\nmcp_name in this output changes but tool_id stays. That's the\nwhole point of the canonical-UUID design.\n\nAlso diffs the live FastMCP wire surface against the registry.\nTools exposed on the wire but absent from the registry appear in\n``unregistered`` so Reconcile can flag deploy drift instead of\nsilently under-reporting (issue #175).\n\nFree, no side effects."
+    },
+    {
+      "name": "cypher_get_nostr_profile",
+      "description": "Read an npub's public Nostr profile (NIP-01 kind-0 metadata).\n\nFree, no proof — the data is already public on relays. Returns the\nlatest metadata fields (name, display_name, about, picture, banner,\nnip05, website, lud16) or an empty profile if none is published."
+    },
+    {
+      "name": "cypher_publish_nostr_profile",
+      "description": "Publish a CLIENT-SIGNED kind-0 profile to relays for an npub.\n\nThe wheel never holds a patron nsec. The frontend signs the kind-0\nmetadata event with the patron's session key or a NIP-07 extension and\npasses the signed event (JSON) here; the wheel verifies the signature\nmatches the npub, then relays it to public relays. The signature is the\nauthorization — no proof token, no key custody. Free."
+    },
+    {
+      "name": "cypher_check_price",
+      "description": "Preview the effective cost of a tool call.\n\nShows the base cost and any constraint effects (discounts, free\ntrials, surge pricing). Free — no credits required."
+    },
+    {
+      "name": "cypher_list_constraint_types",
+      "description": "List all available constraint types and their parameter schemas.\n\nReturns the type, category, description, and parameter specs for\nevery constraint that can be used in a pricing pipeline.\nFree — no credits required."
+    },
+    {
+      "name": "cypher_mint_coupon",
+      "description": "Create a new operator-owned discount coupon."
+    },
+    {
+      "name": "cypher_list_coupons",
+      "description": "List every coupon this operator has minted (newest first).\n\nEach row carries the current ``times_redeemed`` counter — the\nStudio renders a progress bar from this against ``total_uses``.\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "cypher_update_coupon",
+      "description": "Patch a coupon's editable fields.\n\nPass only the fields you want to change.  To set a cap to\nunlimited (NULL in the schema), pass ``clear_uses_per_patron=true``\nor ``clear_total_uses=true``.  Renaming the code is allowed —\nexisting patron redemption rows survive (they key on coupon id).\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "cypher_delete_coupon",
+      "description": "Delete a coupon.  Cascades to all patron redemptions.\n\nAny chain step referencing the deleted coupon_id becomes a\nno-op (the constraint returns neutral on unknown ids) — the\nStudio surfaces orphan references as warnings.\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "cypher_redeem_coupon",
+      "description": "Claim a coupon by its name (the code the operator shared).\n\nLooks up the operator's coupon by ``code``, validates the window\nand total cap, and records a per-patron redemption row.\nSubsequent paid tool calls on this MCP auto-apply the discount\nuntil ``uses_per_patron`` is exhausted.\n\nFree — no credits required.  Requires proof of ``npub``.\nIdempotent: redeeming the same code twice returns the existing\nredemption."
+    },
+    {
+      "name": "cypher_list_my_coupons",
+      "description": "List the coupons this patron has redeemed on this operator.\n\nReturns both active and exhausted redemptions with a per-row\n``status`` (``active`` / ``window_closed`` / ``patron_limit`` /\n``total_limit``).  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "cypher_forget_coupon",
+      "description": "Remove a coupon from this patron's redemption list.\n\nCosmetic only — the coupon itself still exists at the operator,\nand the patron can re-redeem the same code later while the\nwindow allows.  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "cypher_notarize_ledger",
+      "description": "Build a Merkle tree of all patron balances and submit the root\nto Bitcoin via OpenTimestamps.\n\nOperator-only background task. Bitcoin confirmation takes 1-6 hours.\nFree — no credits required."
+    },
+    {
+      "name": "cypher_get_notarization_proof",
+      "description": "Generate a Merkle inclusion proof that a patron's balance was\nincluded in a Bitcoin-notarized snapshot."
+    },
+    {
+      "name": "cypher_list_notarizations",
+      "description": "List recent Bitcoin notarization records."
+    },
+    {
+      "name": "cypher_execute_query_by_key",
+      "description": "Execute a published, parameterized Cypher query by its key.\n\nYou supply the key of an operator-published query plus its parameters.\nThe operator owns the query text; you never see or write raw Cypher. If\nthe operator has published a query as a named tool (e.g.\n``cypher_find_airline_flights``), you can call that directly instead.\n\nBilling note: you are charged only for a delivered answer. If the key\nis unknown, the parameters are invalid, or the query fails, the call\nraises and your debit is rolled back (no charge for value not delivered)."
+    },
+    {
+      "name": "cypher_public_factory_stats",
+      "description": "Aggregate-only factory stats for the unauthenticated landing pages.\n\nFree — no credits, no npub proof. Returns counts only (capabilities,\ninvariants, issues, services, symbols), the resolved_via mix\n(graph | scoped-grep | wide-grep), and a last-activity timestamp.\nNever returns issue titles, symbol paths, or npubs.\n\nHard-cached in-process (~5 min) so a sleeping AuraDB free tier is not\nwoken on every page view. Safe for cold Bolt: failures return an empty\navailable=false payload rather than raising."
+    },
+    {
+      "name": "cypher_create_query",
+      "description": "Operator-only: publish a new named Cypher query template.\n\nThe template must reference each declared parameter as $name (binding,\nnot interpolation). param_schema maps param name -> {\"type\": ...,\n\"required\": true|false}; types: string, int, float, bool, list."
+    },
+    {
+      "name": "cypher_update_query",
+      "description": "Operator-only: update an existing named Cypher query template.\n\nSame shape as create_query, but the key must already exist."
+    },
+    {
+      "name": "cypher_get_query",
+      "description": "Operator-only: fetch one catalog entry (template + schema + metadata).\n\nIncludes ``edit_url`` — a one-click deep link into the hosted Neo4j Browser\nthat pre-targets this operator's AuraDB and loads the template in EDIT mode,\nso the analyst refines it in Neo4j's own UI and saves it back with\n``update_query``. Omitted if the operator's Neo4j credentials aren't\ndelivered yet (best-effort; the raw template is always present to paste)."
+    },
+    {
+      "name": "cypher_list_queries",
+      "description": "Operator-only: list this operator's published query keys."
+    },
+    {
+      "name": "cypher_delete_query",
+      "description": "Operator-only: delete a catalog entry by key."
+    },
+    {
+      "name": "cypher_publish_tool",
+      "description": "Operator-only: expose a catalog query as a named, typed MCP tool.\n\nProjects the published query as a first-class tool named ``cypher_<key>``\nwhose flat, typed parameters come from the query's param schema (e.g.\n``cypher_find_airline_flights(from_city, to_city)``). The tool is registered\nimmediately but starts **unpriced** — it appears in Pricing Studio like any\nnew tool; set its price there. Until priced, calls return \"not priced yet\n(TBD)\". Patrons then call it by name with typed params instead of\n``execute_query_by_key``.\n\nThe key must be a valid tool identifier (^[a-z][a-z0-9_]*$). Reconnect to\nsee the new tool in the tool list."
+    },
+    {
+      "name": "cypher_unpublish_tool",
+      "description": "Operator-only: retire a previously published named tool.\n\nThe catalog query itself is kept (still runnable via\n``execute_query_by_key``); only its projected named tool is removed.\nReconnect to see it disappear from the tool list."
+    },
+    {
+      "name": "cypher_anchor_symbol",
+      "description": "Record where a symbol lives so future triage scopes its grep."
+    },
+    {
+      "name": "cypher_assert_invariant",
+      "description": "Record an enforceable code invariant."
+    },
+    {
+      "name": "cypher_assert_rationale",
+      "description": "Record the Journeyman's rationale for a fix (unverified provenance)."
+    },
+    {
+      "name": "cypher_audit_what_changed_since",
+      "description": "Answer what changed on a capability since a given time."
+    },
+    {
+      "name": "cypher_audit_what_contradicts",
+      "description": "Answer what contradicts a capability's assertions or guarding invariants."
+    },
+    {
+      "name": "cypher_audit_what_derived_from",
+      "description": "Answer what sources a capability was derived from."
+    },
+    {
+      "name": "cypher_audit_what_guards",
+      "description": "Answer which invariants guard a capability."
+    },
+    {
+      "name": "cypher_audit_who_authorized",
+      "description": "Answer who authorized a capability's authoritative why."
+    },
+    {
+      "name": "cypher_audit_why_exists",
+      "description": "Answer why a capability exists with PROV-attributed assertions and gaps."
+    },
+    {
+      "name": "cypher_authorize_capability_why",
+      "description": "Author the authoritative why for a capability."
+    },
+    {
+      "name": "cypher_bind_capability_to_symbol",
+      "description": "Attach a capability to one of the symbols that implement it."
+    },
+    {
+      "name": "cypher_bind_rationale_to_symbol",
+      "description": "Attach the Journeyman's rationale to a specific code symbol."
+    },
+    {
+      "name": "cypher_capability_patents",
+      "description": "Show a capability's patent grounding."
+    },
+    {
+      "name": "cypher_claim_issue",
+      "description": "Mark an issue as actively being worked at the start of an agent's turn."
+    },
+    {
+      "name": "cypher_context_pack",
+      "description": "Return the code-orienteering scope for an intent keyword."
+    },
+    {
+      "name": "cypher_explain_capability",
+      "description": "Explain why a capability exists and where it lives."
+    },
+    {
+      "name": "cypher_explain_patent_element",
+      "description": "Show what a patent reference numeral describes."
+    },
+    {
+      "name": "cypher_factory_resolution_stats",
+      "description": "Report how issues were located, to measure grep-scope shrinkage."
+    },
+    {
+      "name": "cypher_find_airline_flights",
+      "description": "Find airline routes between two cities (named-tool smoke test)."
+    },
+    {
+      "name": "cypher_guard_invariant_symbol",
+      "description": "Register a symbol an invariant guards."
+    },
+    {
+      "name": "cypher_index_symbol",
+      "description": "Index a code symbol as belonging to a service."
+    },
+    {
+      "name": "cypher_invariant_provenance",
+      "description": "Explain an invariant and what it guards."
+    },
+    {
+      "name": "cypher_issue_provenance",
+      "description": "Fetch an issue's GitHub URLs and provenance chain for browser click-through."
+    },
+    {
+      "name": "cypher_link_capability_consumer",
+      "description": "Record that a service consumes a capability."
+    },
+    {
+      "name": "cypher_link_capability_to_patent",
+      "description": "Ground a capability in a patent reference numeral."
+    },
+    {
+      "name": "cypher_link_invariant_to_patent",
+      "description": "Ground an invariant in a patent reference numeral."
+    },
+    {
+      "name": "cypher_link_issue_to_capability",
+      "description": "Attach an issue to the capability it is about."
+    },
+    {
+      "name": "cypher_link_pr",
+      "description": "Attach the fix PR's GitHub URL to its issue."
+    },
+    {
+      "name": "cypher_link_root_cause",
+      "description": "Point an issue at the code symbol that caused it."
+    },
+    {
+      "name": "cypher_list_capabilities",
+      "description": "List every capability for semantic intent-matching."
+    },
+    {
+      "name": "cypher_list_invariants",
+      "description": "List every enforceable invariant."
+    },
+    {
+      "name": "cypher_list_issues",
+      "description": "List every triaged issue for the Issues register."
+    },
+    {
+      "name": "cypher_list_patent_elements",
+      "description": "List every filed patent reference numeral."
+    },
+    {
+      "name": "cypher_mark_funding_state",
+      "description": "Reflect an LLM-credit outage (or its clearance) in the intention graph."
+    },
+    {
+      "name": "cypher_mark_invariant_contradiction",
+      "description": "Mark two invariants as contradictory."
+    },
+    {
+      "name": "cypher_note_rejection",
+      "description": "Record why the Porter rejected an issue."
+    },
+    {
+      "name": "cypher_recent_activity",
+      "description": "List every domain object changed within a date window, across all node types."
+    },
+    {
+      "name": "cypher_record_scope",
+      "description": "Record the actionable spec and the code-location method for an issue."
+    },
+    {
+      "name": "cypher_record_triage",
+      "description": "Record the Porter's triage of a GitHub issue."
+    },
+    {
+      "name": "cypher_register_service",
+      "description": "Register a repo as a Service node in the factory graph."
+    },
+    {
+      "name": "cypher_retire_funding_block",
+      "description": "Retire a stale funding block to a historical record when its item closes."
+    },
+    {
+      "name": "cypher_route_rejection",
+      "description": "Route a target's rejection reason back to the origin issue."
+    },
+    {
+      "name": "cypher_routing_history",
+      "description": "Show which repos have declined an issue and why."
+    },
+    {
+      "name": "cypher_service_provenance",
+      "description": "Pivot to a service — its capabilities, symbols, and issues."
+    },
+    {
+      "name": "cypher_suggest_capability_why",
+      "description": "Offer the Journeyman's read on why a capability exists."
+    },
+    {
+      "name": "cypher_symbol_provenance",
+      "description": "Pivot to a code symbol — its service, capabilities, issues, decisions, invariants."
+    },
+    {
+      "name": "cypher_symbols_in_service",
+      "description": "List a service's indexed symbols."
+    },
+    {
+      "name": "cypher_upsert_capability",
+      "description": "Record a cross-cutting service Capability and one of its owners."
+    },
+    {
+      "name": "cypher_upsert_patent_element",
+      "description": "Record a patent reference numeral as a node."
+    },
+    {
+      "name": "cypher_what_realizes_capability",
+      "description": "Find the symbols that implement a capability."
+    },
+    {
+      "name": "cypher_which_service_handles",
+      "description": "Find which service handles a given intent."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:36.059Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,53 @@
+{
+  "id": "io.github.IsaiahDupree/calendar-bridge",
+  "title": "calendar-bridge",
+  "description": "Connects ChatGPT to your Apple Calendar via a local Mac agent + Vercel relay",
+  "summary": "Connects ChatGPT to your Apple Calendar via a local Mac agent + Vercel relay",
+  "offersHint": "Connects ChatGPT to your Apple Calendar via a local Mac agent + Vercel relay · Remote MCP (streamable-http) at https://calendarbridge.vercel.app/mcp",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://calendarbridge.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://calendarbridge.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://calendarbridge.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/calendar-bridge",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/calendar-bridge",
+    "source": "github",
+    "id": "1306121217"
+  },
+  "updatedAt": "2026-08-01T01:45:45.836093Z",
+  "publishedAt": "2026-08-01T01:45:45.836093Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:26.169Z",
+    "sourceRepoAt": "2026-08-12T00:10:00.238Z",
+    "readmeAt": "2026-08-12T00:10:00.780Z",
+    "toolsAt": "2026-08-12T01:40:26.169Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/calendar-bridge",
+    "checkedAt": "2026-08-12T00:10:00.238Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/calendar-bridge/main/README.md",
+    "markdown": "<div align=\"center\">\n\n# 📅 CalendarBridge\n\n**Your Apple Calendar, in ChatGPT — on your own Mac.**\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-f5b942.svg)](./LICENSE)\n[![npm](https://img.shields.io/npm/v/calendar-agent.svg?color=4ade80&label=calendar-agent)](https://www.npmjs.com/package/calendar-agent)\n\n</div>\n\nCalendarBridge is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) connector that lets ChatGPT work with your **Apple Calendar**. It never uploads your events to a third party — every action runs on **your own Mac** through a tiny local agent. The cloud piece is only a stateless relay that shuttles requests between ChatGPT and your Mac.\n\n```\n  ChatGPT  ──OAuth──►  CalendarBridge relay  ──job queue──►  calendar-agent  ──►  Calendar.app\n (connector)          (Vercel, stateless)      (your Mac, polls & executes)     (on your Mac)\n```\n\nYour Mac is the only place your events are ever read or written. The relay stores only short-lived job payloads and your account record; it never sees an event unless a job is in flight, and jobs expire in seconds.\n\n---\n\n## For users — 3 steps\n\n**1. Create your account** at **[calendarbridge.vercel.app](https://calendarbridge.vercel.app)** and generate a pairing code.\n\n**2. Install the Mac agent** (needs [Node 18+](https://nodejs.org)):\n\n```bash\nnpx calendar-agent pair <YOUR-CODE>   # link this Mac to your account\nnpx calendar-agent install            # keep it running on every restart\n```\n\nThe first time it touches Calendar, macOS asks **\"Terminal wants to control Calendar\"** — click **OK** (one time).\n\n**3. Connect ChatGPT:** Settings → **Plugins** → turn on **Developer mode** (Security & login) → **Create** a custom plugin → paste the MCP Server URL **`https://calendarbridge.vercel.app/mcp`** → Authentication **OAuth** → sign in & **Allow**.\n\nThat's it. In a new chat: *\"Search my Apple Calendar for the dentist appointment\"* or *\"Add a Team Standup to my Work calendar tomorrow at 9am.\"*\n\n> Your Mac must be awake with the agent running. `npx calendar-agent install` makes it start automatically at login and restart if it ever crashes.\n\n### Managing the agent\n\n```bash\nnpx calendar-agent status      # is it paired & reachable?\nnpx calendar-agent logs        # recent activity\nnpx calendar-agent uninstall   # stop auto-start\n```\n\n---\n\n## What ChatGPT can do\n\n| Tool | Action |\n|------|--------|\n| `list_calendars` | List all your calendars (Work, Personal, Family, …) |\n| `list_events` | List upcoming events in a date window (default next 7 days), optionally one calendar |\n| `search_events` | Find events whose title contains a keyword |\n| `get_event` | Read one event by id |\n| `create_event` | Create an event (title, start, end, optional location, notes, calendar, all-day) |\n| `update_event` | Edit an event's fields (overwrites the fields you pass — read it first) |\n\n---\n\n## Self-hosting\n\nYou can run your own relay so nothing depends on the hosted instance.\n\n**Prereqs:** a [Vercel](https://vercel.com) account and a [Supabase](https://supabase.com) project (free tiers are fine).\n\n1. **Storage** — in your Supabase project's SQL editor, run [`supabase/schema.sql`](./supabase/schema.sql). It creates a tiny Redis-shaped KV + queue surface (`nb_*` functions) with RLS on.\n2. **Deploy** the `server/` directory to Vercel.\n3. **Set env vars** (see [`server/.env.example`](./server/.env.example)):\n   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — your project + service-role key\n   - `JWT_SECRET` — `openssl rand -hex 32`\n4. **Verify:** `curl https://YOUR-APP.vercel.app/api/health` → `redisConfigured`, `redisOk`, `jwtSecretSet` all `true`.\n5. Point the agent at it: `npx calendar-agent pair <CODE> --server https://YOUR-APP.vercel.app`.\n\n---\n\n## How it works\n\n- **Auth** — OAuth 2.1 with PKCE and Dynamic Client Registration (RFC 7591). ChatGPT registers itself, the user signs in on the CalendarBridge consent page, and ChatGPT gets a scoped MCP access token. JWTs are HMAC-signed; three kinds (`session`, `agent`, `mcp`) with distinct privileges. Optional email verification via Resend (`RESEND_API_KEY`); off unless configured, and enforcement is opt-in (`REQUIRE_EMAIL_VERIFICATION`).\n- **Relay** — MCP tool call → job pushed to `jobs:<user>` (TTL ≤ the caller's wait window, so an abandoned job can't run late) → the Mac agent (holding a hanging long-poll) is handed the job within ~200ms, executes it, pushes the result → the MCP handler returns it. The long-poll means jobs are delivered on arrival rather than on a fixed interval, so relay overhead is ~300ms instead of ~1s. The agent is considered \"online\" only while it's actively connected.\n- **Agent** — a dependency-free Node CLI. Tools run via JXA (`osascript -l JavaScript`) against Calendar.app; arguments are passed as JSON over argv (never shell-interpolated). A macOS LaunchAgent keeps it alive across logins and crashes.\n\n## Repository layout\n\n```\nserver/    Vercel functions: OAuth + MCP endpoint + relay        (deploy this)\nagent/     calendar-agent — the npm-published Mac CLI                 (users npx this)\nkit/       Browser automations: register the dev-mode connector AND\n           fill the OpenAI directory submission (see kit/README.md)\nsupabase/  schema.sql for self-hosting the storage\ntest/      end-to-end OAuth + MCP integration test\n```\n\n## Development\n\n```bash\n# server\ncd server && cp .env.example .env.local   # fill in, then: vercel dev\n# end-to-end test against a live deployment (reads ../.env.local)\nnode test/e2e-oauth.mjs\n# agent unit tests\nnode --test agent/test-agent-unit.mjs\n```\n\n## Security & privacy\n\n- Events are read/written **only on your Mac**. The relay never persists event content — job payloads live in Redis-shaped storage with a short TTL and are deleted on delivery.\n- The agent token is stored at `~/.calendarbridge-agent.json` (mode `600`).\n- No secrets are committed; see [`.gitignore`](./.gitignore) and the `.env.example` files.\n- Write tools are marked destructive so ChatGPT asks before changing an event.\n\n## License\n\n[MIT](./LICENSE) © Isaiah Dupree\n",
+    "fetchedAt": "2026-08-12T00:10:00.780Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:26.169Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\"}",
+  "toolsPreviewStatus": "auth_required"
+}

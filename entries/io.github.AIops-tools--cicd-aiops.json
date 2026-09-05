@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/cicd-aiops",
+  "title": "CICD AIops",
+  "description": "Governed self-managed GitLab + Gitea CI/CD ops: pipelines, runners, artifacts, RCA. 28 tools.",
+  "summary": "Governed self-managed GitLab + Gitea CI/CD ops: pipelines, runners, artifacts, RCA. 28 tools.",
+  "offersHint": "Governed self-managed GitLab + Gitea CI/CD ops: pipelines, runners, artifacts, RCA. 28 tools. · Packages: pypi:cicd-aiops",
+  "version": "0.9.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "cicd-aiops",
+    "version": "0.9.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "cicd-aiops",
+      "version": "0.9.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/CICD-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/CICD-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:49:49.606489Z",
+  "publishedAt": "2026-08-10T06:49:49.606489Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:47.966Z",
+    "sourceRepoAt": "2026-08-12T00:18:06.452Z",
+    "readmeAt": "2026-08-12T00:18:07.246Z",
+    "toolsAt": "2026-08-12T01:47:47.966Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/CICD-AIops",
+    "checkedAt": "2026-08-12T00:18:06.452Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/CICD-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/cicd-aiops -->\n\n# CICD AIops\n\n**Governed AI-ops for self-managed GitLab and self-hosted Gitea.**\n\n`cicd-aiops` is for the team running its *own* CI/CD forge — a GitLab instance\nor a Gitea server on your hardware, in your lab, behind your VPN — who want an\nAI agent that can answer \"why did the pipeline fail?\", \"which runner is\nwedged?\", \"where did 40 GB of artifact storage go?\" and \"what work went\nstale?\" and then act (retry, cancel, pause, delete, protect) **only** through\nan audited, budgeted, risk-tiered, undo-recorded governance harness. It is not\na SaaS integration: it speaks the GitLab REST API v4 and the Gitea API v1\ndirectly against your server, with credentials encrypted at rest.\n\n> **Verification status**: modelled from each project's public API docs and\n> exercised against mocked HTTP responses; there is no recorded end-to-end run\n> against a live server yet. `cicd-aiops doctor` is the fastest live check —\n> see [`docs/VERIFICATION.md`](docs/VERIFICATION.md).\n\n> **Routing**: Do NOT use this for Kubernetes deploy state — use k8s-aiops.\n> This tool ends at the CI/CD server's API (pipelines, runners, artifacts,\n> repo hygiene).\n\n## What this tool does, and does not, decide\n\nIt delivers CI/CD operations — reads and writes — accurately and efficiently, and\nrecords every one of them. It does **not** decide whether a write is allowed to\nhappen. That is the agent's judgement, or the permission of the token you connect\nit with: give it a GitLab/Gitea access token without write scope and the writes\nfail at the server — the place that actually owns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in `~/.cicd-aiops/audit.db`,\nand destructive writes still capture their before-state and record an inverse\nwhere one exists.\n\n> Each tool declares a `risk_level`, kept in agreement with its `[READ]`/`[WRITE]`\n> documentation tag by a test, and carried into the audit row as a descriptive\n> tier — so a reviewer can see at a glance that a row was a high-risk delete. It\n> is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/cicd-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Quick start\n\n```bash\nuv tool install cicd-aiops        # or: pip install cicd-aiops\n\ncicd-aiops init        # wizard: base URL + token (encrypted) + TLS verify\ncicd-aiops doctor      # connectivity + token-scope probe per target\ncicd-aiops overview    # version, identity, projects, runners at a glance\n```\n\nThen the interesting parts:\n\n```bash\ncicd-aiops rca pipelines dev/api        # classify recent failed pipelines\ncicd-aiops rca runners                  # offline/stale runners, tag saturation\ncicd-aiops rca storage                  # artifact/repo bloat, reclaimable bytes\ncicd-aiops rca stale dev/api            # stale MRs/branches, protection gaps\n\ncicd-aiops pipelines retry dev/api 42 --dry-run\ncicd-aiops artifacts delete dev/api --older-than-days 30 --dry-run\n```\n\nEvery write has `--dry-run` and a double confirmation, and executes through\nthe same governed path the MCP tools use — so CLI writes are audited too.\n\n## Support scope\n\n| Surface | GitLab (REST v4, self-managed) | Gitea (API v1, self-hosted) |\n|---|---|---|\n| Server version + token identity | ✅ | ✅ |\n| Projects + storage statistics | ✅ (`statistics=true`) | ✅ (repo `size`) |\n| Pipelines / runs, jobs, trace tails | ✅ | ✅ (Actions runs/jobs/logs) |\n| Runner fleet (list/detail) | ✅ | ❌ teaching error (no API v1 equivalent) |\n| Merge/pull requests, branches, protection, releases | ✅ | ✅ |\n| Artifact inventory | ✅ (via jobs) | ✅ (Actions artifacts) |\n| `retry_pipeline` / `cancel_pipeline` | ✅ | ❌ teaching error |\n| `pause_runner` / `resume_runner` | ✅ | ❌ teaching error |\n| `delete_artifacts` | ✅ | ❌ teaching error |\n| `update_branch_protection` | ✅ | ✅ |\n\nWhere a platform lacks a surface, the platform registry raises a *teaching\nerror* naming the resources that **are** available — the agent learns instead\nof hitting a mystery 404. GitLab.com / Gitea Cloud SaaS accounts are out of\nscope by design: this tool targets self-managed instances.\n\n## Flagship analyses (the reason this tool exists)\n\n1. **`pipeline_failure_rca`** — pulls recent failed pipelines with failed-job\n   trace tails and classifies each failure: *test-failure /\n   dependency-network / runner-timeout / oom / script-error*, with the matched\n   evidence, a cause, and an action per pipeline.\n2. **`runner_health_rca`** — offline/stale/paused runners (contact-age\n   threshold), jobs queued past a threshold, and per-tag saturation (queued\n   jobs vs online runners).\n3. **`artifact_storage_bloat_analysis`** — projects ranked by repo + artifact\n   bytes, expired-but-kept artifacts, and a reclaimable-bytes estimate that\n   feeds straight into `delete_artifacts --dry-run`.\n4. **`stale_work_audit`** — merge/pull requests idle past N days, branches\n   with no commits for N days, and protection gaps (unprotected default\n   branch, force-push allowed).\n\nAll four are transparent heuristics: thresholds are named parameters and every\nflag carries its numbers.\n\n## Governance (built in, always on)\n\nEvery MCP tool and every CLI write runs through the vendored harness in\n`cicd_aiops/governance/`. It records; it does not authorize (see above).\n\n- **Audit** — every call (params, result, status, duration, risk tier, and any\n  operator-supplied approver/rationale) is logged to `~/.cicd-aiops/audit.db`\n  (relocatable via `CICD_AIOPS_HOME`). The CLI writes the same row the MCP path\n  does — there is no unaudited entry point.\n- **Runaway guard** — a safety backstop, not an authorization gate: the same\n  call hammered in a tight loop trips a circuit breaker so a stuck agent can't\n  burn unbounded calls/time. Disable with `CICD_RUNAWAY_MAX=0`; optional hard\n  ceilings via `CICD_MAX_TOOL_CALLS` / `CICD_MAX_TOOL_SECONDS`.\n- **Undo** — reversible writes record a replayable inverse in\n  `~/.cicd-aiops/undo.db`, built from the *fetched* before-state:\n  `pause_runner` ⇄ `resume_runner`, and `update_branch_protection` replays the\n  prior settings. Irreversible writes (`retry_pipeline`, `cancel_pipeline`,\n  `delete_artifacts`) record `priorState` (status / bytes+count) instead.\n- **Risk tier** — a descriptive label on the audit row derived from\n  `risk_level` (reads `low`; mutating writes `medium`; `delete_artifacts`\n  `high`); it gates nothing.\n- **Dry-run everywhere** — every write takes `dry_run=True` (MCP) /\n  `--dry-run` (CLI) and previews without calling the server.\n- **Sanitize** — all server-returned text is folded through an\n  injection-safe normaliser (bounded strings, capped depth) before an agent\n  sees it; all path parameters are percent-encoded so an identifier can never\n  rewrite a URL.\n\n### Secrets\n\nTokens live in `~/.cicd-aiops/secrets.enc` — Fernet-encrypted, key derived\nfrom a master password via scrypt. Never plaintext on disk. Set\n`CICD_AIOPS_MASTER_PASSWORD` for non-interactive/MCP use, and manage with\n`cicd-aiops secret set|list|remove|migrate`. TLS verification defaults ON\n(the init wizard asks before turning it off for lab certs).\n\n## MCP server\n\n26 governed tools (20 reads incl. the four flagship analyses, 6 writes).\n\n```json\n{\n  \"mcpServers\": {\n    \"cicd-aiops\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"cicd-aiops\", \"cicd-aiops-mcp\"],\n      \"env\": {\n        \"CICD_AIOPS_MASTER_PASSWORD\": \"your-master-password\"\n      }\n    }\n  }\n}\n```\n\n> **Env-block caveat**: MCP clients launch the server with a *minimal*\n> environment — your shell profile is not sourced. Anything the server needs\n> (`CICD_AIOPS_MASTER_PASSWORD`, `CICD_AIOPS_HOME`, and any optional\n> `CICD_AUDIT_APPROVED_BY` audit annotation) must be set in the `env` block\n> above, not in `~/.zshrc`.\n\nAlternatively: `cicd-aiops mcp` (same server, CLI entry point).\n\n## Configuration\n\n`~/.cicd-aiops/config.yaml` (the wizard writes this):\n\n```yaml\ntargets:\n  - name: gl1\n    platform: gitlab            # or: gitea\n    base_url: https://git.example.com\n    verify_ssl: true            # default ON; set false only for lab certs\n```\n\nThe token for each target is stored encrypted under the target's name.\nRelocate all state (config, audit, undo, secrets) with `CICD_AIOPS_HOME`.\n\n## Development\n\n```bash\nuv sync\nuv run pytest -q\nuv run ruff check .\n```\n\n## 缺功能？\n\n缺功能提 issue/PR 欢迎留言 — if a GitLab/Gitea surface you need is missing\n(runner administration on newer Gitea, per-job retry, scheduled pipelines,\ngroup-level rollups…), open an issue or PR at\nhttps://github.com/AIops-tools/CICD-AIops. The platform registry is designed\nso a new resource is one path-map entry, not a refactor.\n\n## License\n\nMIT. GitLab is a trademark of GitLab Inc.; Gitea is a trademark of its\nproject owners. This project is independent and not affiliated with either.\n",
+    "fetchedAt": "2026-08-12T00:18:07.246Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:47.966Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

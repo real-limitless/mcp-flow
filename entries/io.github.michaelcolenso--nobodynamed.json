@@ -1,0 +1,100 @@
+{
+  "id": "io.github.michaelcolenso/nobodynamed",
+  "title": "NobodyNamed",
+  "description": "US baby name popularity data from SSA records (1880-2025): search, trends, geography, culture.",
+  "summary": "US baby name popularity data from SSA records (1880-2025): search, trends, geography, culture.",
+  "offersHint": "US baby name popularity data from SSA records (1880-2025): search, trends, geography, culture. · Remote MCP (streamable-http) at https://nobodynamed.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://nobodynamed.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://nobodynamed.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/michaelcolenso/babynames",
+  "repository": {
+    "url": "https://github.com/michaelcolenso/babynames",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T03:06:23.008923Z",
+  "publishedAt": "2026-08-09T03:06:23.008923Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:02.393Z",
+    "sourceRepoAt": "2026-08-11T23:34:05.539Z",
+    "readmeAt": "2026-08-11T23:34:06.255Z",
+    "toolsAt": "2026-08-11T23:34:06.450Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/michaelcolenso/babynames",
+    "checkedAt": "2026-08-11T23:34:05.539Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/michaelcolenso/babynames/master/README.md",
+    "markdown": "# nobodynamed\n\nIs your name going extinct? nobodynamed shows the popularity, trajectory, and vital status of any American name since 1880, based on [Social Security Administration](https://www.ssa.gov/oact/babynames/) data.\n\n## Stack\n\n| Layer | Service |\n|---|---|\n| Frontend + API | Cloudflare Pages + Pages Functions |\n| Database | Cloudflare D1 (SQLite) |\n| Annual data refresh | Cloudflare Worker (Cron Trigger + Queues) |\n| Archive storage | Cloudflare R2 |\n\n## Repository layout\n\n```\napps/\n  web/             Cloudflare Pages: static HTML/CSS/JS + Functions\n    public/        Served as static assets\n    functions/     Pages Functions (API routes + SSR /name/:name)\n  ingest-worker/   Cron-triggered Worker: SSA download → D1\n\npackages/\n  shared/          Types, classification logic, HTML renderer — shared by all packages\n\nmigrations/        D1 SQL migrations (applied via wrangler d1 migrations apply)\n\nscripts/\n  seed-from-shards.ts   One-shot initial D1 seeding from legacy JSON shards\n  verify-parity.ts      Pre-cutover parity checks vs legacy data\n\nviz/               Legacy static site (GitHub Pages) — kept until DNS cutover\n```\n\n## First-time setup\n\n### 1. Provision Cloudflare resources\n\n```bash\n# D1 database\nwrangler d1 create name-vitals\n# Copy the database_id into both wrangler.toml files:\n#   apps/web/wrangler.toml\n#   apps/ingest-worker/wrangler.toml\n\n# Queue (fan-out ingest)\nwrangler queues create name-ingest\nwrangler queues create name-ingest-dlq\n\n# R2 bucket (SSA zip cache)\nwrangler r2 bucket create name-vitals-ingest\n```\n\n### 2. Apply schema\n\n```bash\nwrangler d1 migrations apply name-vitals --remote\n```\n\n### 3. Seed initial data\n\nReads the existing `viz/name-vitals/data/` JSON shards to populate D1 without pulling from the SSA:\n\n```bash\nnpm run seed\n# Apply each generated SQL file:\nls migrations/seed/*.sql | sort | xargs -I{} wrangler d1 execute name-vitals --file={} --remote\n```\n\n### 4. Deploy\n\n```bash\nnpm run deploy:web       # deploy Cloudflare Pages\nnpm run deploy:ingest    # deploy the cron Worker\n```\n\n### 5. Verify parity\n\n```bash\ntsx scripts/verify-parity.ts --base=https://<preview>.pages.dev\n```\n\n## Local development\n\n```bash\n# Pages + Functions with local D1\nnpm run dev:web\n\n# Trigger the ingest cron locally\nnpm run dev:ingest          # starts wrangler dev\n# then: curl http://localhost:8787/run\n```\n\n## Data refresh\n\nThe ingest Worker runs weekly (ETag-gated; exits immediately if the SSA zip is unchanged). The SSA publishes new data once a year, typically in May. Manual trigger:\n\n```bash\nwrangler dev --test-scheduled   # local\n# or POST to the /run endpoint of the deployed Worker\n```\n\n## GitHub Actions secrets\n\nRequired for the CI/CD workflows in `.github/workflows/`:\n\n| Secret | Value |\n|---|---|\n| `CLOUDFLARE_API_TOKEN` | Token with Workers, Pages, and D1 write permissions |\n| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |\n\n## DNS cutover from GitHub Pages\n\nAfter verifying parity on the Pages preview URL:\n\n1. Add a custom domain to the Pages project in the Cloudflare dashboard.\n2. Flip the DNS CNAME from the GitHub Pages address to the Cloudflare Pages CNAME.\n3. Add 301 redirects in the old GitHub Pages `index.html` from `/babynames/viz/name-vitals/*` to the new host.\n4. After ≥1 week of monitoring, delete `viz/`, `dicts/`, `extra/`, and any remaining legacy files.\n\n## License\n\nSource data is CC0 (Social Security Administration). Code is MIT.\n\n##Setup\n\nThis is a Node.js script, so you should consider [downloading Node](http://nodejs.org/) before attempting to run it.\n\nTo download the repo, simply clone it:\n\n\tgit clone https://github.com/TimeMagazine/babynames.git\n\tcd babynames\n\nThen install the dependencies:\n\n\tnpm install\n\n##Data \n\nFirst, you need to get the raw data from the [Social Security Administration](http://www.ssa.gov/OACT/babynames/). This script will download and unzip it for you with the following command:\n\n\t./index.js download \n\n###Total babies born each year\n\nThere is also a file called `extra/totals.json` with data on the total number of babies born (or at least, those issued a SSN) each year, [per the SSA](http://www.ssa.gov/oact/babynames/numberUSbirths.html). This is useful because the totals are higher than the sum of each name in the name files, which don't include names that occur fewer than five times.\n\nIf you want to re-download the data--maybe it's a new year or you suspect there has been a revision--just run `./scripts/total_births.js`, which will scrape the page on the SSA website and overwrite the file in the repo.\n\n###Baby names\n\nThe Social Security Administration organizes the baby name data, somewhat inconveniently, as year-by-year text files named `yob[year].txt`. The above command extracts those files to a local directory named `data/` and then deletes the zip file it downloaded. If you want to keep that zip file for some reason, just pass `--cache` to the command.\n\nOnce that's done, you can aggregate the data to a per-name basis and store it in a variety of formats:\n\n\t./index.js store --format=json\n\nFirst, the script reads every file and stores the data on a per-name basis in memory. For each name, it records both the absolute number of babies with that name in a given year and the percentage of all babies of the same gender with that name. The denominator in that calculation is the gender-specific total number of babies [as reported on SSA.gov](http://www.ssa.gov/oact/babynames/numberUSbirths.html), NOT the calculated sum of all baby name frequencies (which will be lower than the actual number of children born in the United States, given that the data only counts names that appear at least five times). The years are stored as keys in an object for fast retrieval:\n\n\t{\n\t  \"_id\": \"Lothar-M\",\n\t  \"name\": \"Lothar\",\n\t  \"gender\": \"M\",\n\t  \"values\": {\n\t    \"1927\": 7,\n\t    \"1928\": 6,\n\t    \"1929\": 10,\n\t    \"1931\": 6,\n\t    \"1932\": 8,\n\t    \"1935\": 8,\n\t    \"1956\": 7,\n\t    \"1959\": 5,\n\t    \"1964\": 6,\n\t    \"1968\": 5\n\t  },\n\t  \"percents\": {\n\t    \"1927\": 0.0000062135232896167586,\n\t    \"1928\": 0.000005418551494752584,\n\t    \"1929\": 0.000009301278646775573,\n\t    \"1931\": 0.000005775539435383265,\n\t    \"1932\": 0.000007664935030094451,\n\t    \"1935\": 0.00000768623999707923,\n\t    \"1956\": 0.0000033120134297413128,\n\t    \"1959\": 0.0000023436460007087187,\n\t    \"1964\": 0.000003010349581862443,\n\t    \"1968\": 0.0000028754074452349896\n\t  }\n\t}\n\n###Formats\n\nYour choices are:\n\n+ `json`: Each name is stored as an individual JSON file in the `/flat/individual/` directory.\n+ `jsonp`: Each name is stored as an individual JSON-P file in the `/flat/individual/` directory. It is wrapped in a callback function named `ticallback` by default, which you can override with `opts.callback`.\n+ `csvs`: Each name is stored as an individual CSV file in the `/flat/individual/` directory.\n+ `csv`: All names are packaged into one CSV file and stored in `/flat/names.csv/`. This file will be able 30MB if you don't include limiting specifications (below). This preprocessed file is included in this repo.\n+ `mongodb`: All names are inserted into a MongoDB instance. You are responsible for running a Mongo server at `localhost:27017` or updating the source to point to your  instance. *Note:* Because this is optional, the [mongodb](https://www.npmjs.org/package/mongodb) Node module is not listed as a dependency, you you'll need to install it yourself.\n\n##Reducing the size\nAs of 2013, there are 102,691 names that show up in at least one year at least five times. Many users will not be interested in this volume of data. There are several ways to reduce the scope with command line options.\n\n###Limit the years\n\n+ `start`: Don't retrieve years before this year. Ex: `--start=1950`. Default is `1880`, the first year of the data.\n+ `end`: Don't retrieve years after this year. Ex: `--end=2000`. Default is the present year.\n\n###Exclude uncommon names \n+ `min`: Don't include names that don't show up at least this many time in at least one year. Ex: `--min=25`. Default is `0`.\n+ `cutoff`: Don't include names that don't show up in at least this many individual years. Ex: `--cutoff=50`. Default is `0`.\n\n##Analysis\n\nThe script comes with several options for basic analysis:\n\n+ `normalize`: Add a third property to each name that is the normalized value for the percentage figures, such that the peak percentage year is 1.\n+ `peaks`: Find the peak value and year for both raw values and percents\n+ `maxima`: Identify all the local maxima -- points where every value 5 years before and after is lower. Only counts maxima that are at least 25 percent of peak value.\n+ `pronunications`: See if the name is listed in the [CMU Pronouncing Dictionary](http://www.speech.cs.cmu.edu/cgi-bin/cmudict). Require that you `npm install cmudict` manually.\n+ `dense`: If a name does not appear in a year in the range specified between `start` and `end`, list that year in the data as `0`. Otherwise it is not included at all (a \"sparse\" format).\n\n##Types\n\nFor csv outputs, you can get the data back as either raw numbers of new babies each year with a given name (`--type=values`, which is the default) or as a percent (`--type=values`). JSON formats return both percents and values. \n\n##Phonemes\nYou can also pass a special type, `--type=phonemes`, to get back a JSON document of phoneme percents for each year for all names. By default, the script examines the first phoneme in each name. You can use `--N==TK` to aggregate around the TKth phonemes in the name. Use a negative value to start from the end.\n\n##Extras\nWe've now got British baby names going back to 1996, accessed on Oct. 5, 2016 from the U.K. [Office for National Statistics](http://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/adhocs/006073babynames1996to2015). The total number of live births was downloaded [here](http://www.ons.gov.uk/peoplepopulationandcommunity/birthsdeathsandmarriages/livebirths/datasets/birthsummarytables) from the same source.\n\n##License\n\nThis script is provided free and open-source by Time under the MIT license. If you use it, you are politely encouraged to acknowledge Time and link to this page.\n\nThe dictionary file [dict/2of12.txt](dict/2of12.txt) is from the [12 Dicts project](http://wordlist.aspell.net/12dicts-readme/), which is in the public domain.\n",
+    "fetchedAt": "2026-08-11T23:34:06.255Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_names",
+      "description": "Autocomplete search for US baby names. Returns up to 10 suggestions matching the given prefix."
+    },
+    {
+      "name": "get_name_data",
+      "description": "Returns full yearly birth count timeseries (1880–2025) for a given name for both sexes, including trend classification (rising/stable/declining/endangered/extinct), peak year, and peak count."
+    },
+    {
+      "name": "get_names_by_status",
+      "description": "Returns a curated list of names filtered by trend status."
+    },
+    {
+      "name": "get_year_names",
+      "description": "Returns the top baby names for a given birth year (1880–2025)."
+    },
+    {
+      "name": "get_site_metadata",
+      "description": "Returns top-10 names per year, total birth counts per year, and the full year range covered by the dataset."
+    },
+    {
+      "name": "compare_names",
+      "description": "Side-by-side comparison of 2-3 names: full yearly series for each so trends can be plotted or contrasted directly."
+    },
+    {
+      "name": "get_name_twin",
+      "description": "Finds the names whose popularity trajectory over time is most similar to the given name (cosine similarity on the yearly series), i.e. names that rose and fell together."
+    },
+    {
+      "name": "get_decade_names",
+      "description": "Returns the top baby names aggregated across an entire calendar decade."
+    },
+    {
+      "name": "get_year_movers",
+      "description": "Year-over-year rank changes for the top 100 names of each sex vs. the prior year: biggest gainers, biggest losers, and new entrants."
+    },
+    {
+      "name": "get_name_enrichment",
+      "description": "Returns a precomputed profile for a name: estimated living population and median age, its popularity wave shape, cultural catalysts (events/media tied to spikes), historical demographic profiles by era (top occupations, region, urban vs. rural), and regional anomalies (states where it over-indexes)."
+    },
+    {
+      "name": "get_name_diaspora",
+      "description": "Returns the geographic spread of a name over time: where it originated, when it peaked nationally, which states adopted it and when, and how many states never adopted it."
+    },
+    {
+      "name": "get_name_debuts",
+      "description": "Returns every name that appeared in SSA records for the first time in the given year — genuine linguistic novelties, celebrity imports, invented spellings, or names newly crossing the 5-birth reporting threshold."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:34:06.450Z",
+  "toolsPreviewStatus": "ok"
+}

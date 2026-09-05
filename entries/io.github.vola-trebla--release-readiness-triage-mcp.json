@@ -1,0 +1,58 @@
+{
+  "id": "io.github.vola-trebla/release-readiness-triage-mcp",
+  "title": "release-readiness-triage-mcp",
+  "description": "Aggregates CI failures, cross-references flakiness history, and outputs GO/NO_GO release verdicts.",
+  "summary": "Aggregates CI failures, cross-references flakiness history, and outputs GO/NO_GO release verdicts.",
+  "offersHint": "Aggregates CI failures, cross-references flakiness history, and outputs GO/NO_GO release verdicts. · Packages: npm:release-readiness-triage-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "release-readiness-triage-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "release-readiness-triage-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vola-trebla/release-readiness-triage-mcp",
+  "repository": {
+    "url": "https://github.com/vola-trebla/release-readiness-triage-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T03:55:38.299495Z",
+  "publishedAt": "2026-05-20T03:55:38.299495Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:34.083Z",
+    "sourceRepoAt": "2026-08-11T23:15:37.035Z",
+    "readmeAt": "2026-08-11T23:15:37.478Z",
+    "toolsAt": "2026-08-12T00:56:34.083Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vola-trebla/release-readiness-triage-mcp",
+    "checkedAt": "2026-08-11T23:15:37.035Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vola-trebla/release-readiness-triage-mcp/main/README.md",
+    "markdown": "# 🚦 release-readiness-triage-mcp\n\n[![npm](https://img.shields.io/npm/v/release-readiness-triage-mcp)](https://www.npmjs.com/package/release-readiness-triage-mcp)\n[![CI](https://github.com/vola-trebla/release-readiness-triage-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vola-trebla/release-readiness-triage-mcp/actions)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n**Stop reading CI logs. Start getting verdicts.**\n\nMCP server that aggregates test failures, cross-references flakiness history, and outputs a **GO / CONDITIONAL_GO / NO_GO / INVESTIGATE** release decision — so your AI agent can triage a broken CI run in seconds instead of asking you to read 3000 lines of logs.\n\n---\n\n## 🤔 The problem\n\nIn any real codebase, CI always has _something_ failing. The hard question isn't \"are there failures?\" — it's **\"are these failures real regressions, or just the usual noise?\"**\n\nAnswering that requires correlating three signals at once:\n\n- 🔍 **Error signatures** — is this the same failure repeated 12 times, or 12 different problems?\n- 📊 **Flakiness history** — is this test known to be unreliable?\n- 🔗 **Code changes** — is the failing test actually related to what changed?\n\nAn AI agent can't do this without structured tools. Raw CI logs are thousands of lines. Flakiness databases are external. Code→test mapping requires AST analysis. Without this MCP, the agent just guesses.\n\n---\n\n## 🛠️ Tools\n\n### `aggregate_suite_failures`\n\nGroups failures by normalized error signature, deduplicates repeated errors, categorizes as `assertion / timeout / network / crash`. Pass `customInfraPatterns` for cloud-specific errors.\n\n### `cross_reference_flakiness`\n\nScores each failure against your flakiness history: `KNOWN FLAKY`, `MILDLY FLAKY`, or `NO HISTORY`.\n\n### `correlate_code_changes`\n\nMatches changed files against failing tests. Works standalone or with pre-computed affected test lists from [ast-impact-mapper-mcp](https://www.npmjs.com/package/ast-impact-mapper-mcp).\n\n### `generate_release_recommendation`\n\nThe final step. Outputs a risk-weighted verdict with confidence score and full breakdown. Supports `format: \"markdown\"` for GitHub PR comments and Slack.\n\n**Verdict levels:**\n\n- `NO_GO` — regression in a critical domain (`payment`, `auth`, `billing`, `checkout`, `security`)\n- `CONDITIONAL_GO` — regression in a low/medium-risk domain (`analytics`, `docs`, `admin`); review before releasing\n- `GO` — all failures are known flaky or infrastructure noise\n- `INVESTIGATE` — too many unknowns to decide\n\n**Output includes:**\n\n- `aggregate_risk_score` — 0.0–1.0, probability union across all regression risk contributions\n- `failing_tests_analysis[]` — per-regression breakdown with `domain`, `severity` (HIGH/MEDIUM/LOW), `risk_contribution`, `blast_radius`\n\n### `detect_temporal_failure_patterns`\n\nAnalyzes historical failures with timestamps to identify chronometric artifacts — failures that only appear at the same UTC hour, weekday, day of month, or during DST transitions. When a pattern is found, the failure is a time artifact, not a code regression.\n\n**Output includes:**\n\n- `temporal_pattern_detected` — boolean\n- `clusters[]` — per-test: `pattern_type` (`hourly | daily | monthly | timezone_shift`), `cluster_times`, `confidence_score`\n\n### `analyze_rollback_readiness`\n\nScans a repository for versioned migration files (Flyway `V*.sql`, Prisma `migration.sql`, Liquibase XML/YAML) and classifies each operation as additive (rollback safe) or destructive (forward-fix only).\n\n**Detected destructive operations:** `DROP TABLE`, `DROP COLUMN`, `ALTER COLUMN TYPE`, `MODIFY COLUMN`, `TRUNCATE`\n\n**Output includes:**\n\n- `rollback_eligible` — boolean\n- `blocking_migrations[]` — each with `file`, `line`, `operation`, `reason`\n- `deployment_strategy` — `standard | forward_fix_only`\n\n---\n\n## 🧪 What it looks like in practice\n\n5 failures in CI. What's real, what's noise?\n\n```\nfailures:\n  - Auth Suite > login with expired token   → \"Expected status 200, got 401\"\n  - API Suite > health check                → \"connect ECONNREFUSED 127.0.0.1:3000\"\n  - Button Suite > renders button correctly → \"Expected null, got <button>Submit</button>\"\n  - Search Suite > debounce timing          → \"Expected 42, received 43\"\n  - Storage Suite > upload avatar           → \"GCP quota exceeded for this project\"\n\nchangedFiles: [\"src/components/Button.tsx\"]\naffectedTests: [\"renders button correctly\"]\ncustomInfraPatterns: [\"GCP quota exceeded\"]\nformat: \"markdown\"\n```\n\nOutput:\n\n```markdown\n## 🔴 Release Recommendation: NO_GO (75% confidence)\n\n> 1 confirmed regression(s) in critical domain(s) [payment]. Do not release.\n\n**Aggregate risk score:** 1.0\n\n| Category            | Count |\n| ------------------- | ----- |\n| Total failures      | 5     |\n| 🔴 Real regressions | 1     |\n| 🟡 Known flaky      | 2     |\n| ⚪ Infra blips      | 2     |\n| ❓ Unknown          | 0     |\n\n### Risk Breakdown\n\n| Test                                   | Domain | Severity | Risk | Blast Radius |\n| -------------------------------------- | ------ | -------- | ---- | ------------ |\n| Button Suite::renders button correctly | core   | MEDIUM   | 0.5  | 1            |\n\n### Blockers (must fix before release)\n\n**Button Suite > renders button correctly**\n\n- Test is directly affected by code changes in this commit\n- `Expected null, got <button>Submit</button>`\n\n### Safe to ignore\n\n- ~~Auth Suite > login with expired token~~ — Historically flaky: 73% failure rate in history\n- ~~API Suite > health check~~ — Error pattern matches infrastructure issues (network)\n- ~~Search Suite > debounce timing~~ — Mildly flaky: 22% historical failure rate\n- ~~Storage Suite > upload avatar~~ — Error pattern matches infrastructure issues (network)\n```\n\nOne tool call. One verdict. Go fix `Button.tsx`.\n\n---\n\n## ⚡ Setup\n\n```json\n{\n  \"mcpServers\": {\n    \"release-readiness-triage\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"release-readiness-triage-mcp\"]\n    }\n  }\n}\n```\n\n---\n\n## 🚀 Usage\n\n> \"Here are the failures from our CI run, our flakiness database, and the files changed in this PR. Is it safe to release?\"\n\nThe agent calls `generate_release_recommendation` and returns a verdict with a full breakdown — ready to paste into a PR comment or Slack.\n\nWorks standalone, or as a meta-orchestrator on top of:\n\n- [flakiness-knowledge-graph-mcp](https://www.npmjs.com/package/flakiness-knowledge-graph-mcp) — for flakiness history\n- [ast-impact-mapper-mcp](https://www.npmjs.com/package/ast-impact-mapper-mcp) — for code→test correlation\n- [playwright-trace-decoder-mcp](https://www.npmjs.com/package/playwright-trace-decoder-mcp) — for trace-level failure analysis\n\n---\n\n## 📦 Links\n\n- **npm:** [npmjs.com/package/release-readiness-triage-mcp](https://www.npmjs.com/package/release-readiness-triage-mcp)\n- **GitHub:** [github.com/vola-trebla/release-readiness-triage-mcp](https://github.com/vola-trebla/release-readiness-triage-mcp)\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:15:37.478Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:34.083Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

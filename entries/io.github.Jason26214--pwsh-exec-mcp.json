@@ -1,0 +1,76 @@
+{
+  "id": "io.github.Jason26214/pwsh-exec-mcp",
+  "title": "pwsh-exec-mcp",
+  "description": "A minimal, transparent PowerShell 7 MCP for Windows — one tool: raw exit code, stdout, stderr.",
+  "summary": "A minimal, transparent PowerShell 7 MCP for Windows — one tool: raw exit code, stdout, stderr.",
+  "offersHint": "A minimal, transparent PowerShell 7 MCP for Windows — one tool: raw exit code, stdout, stderr. · Packages: pypi:pwsh-exec · Env vars: PWSH_EXEC_DEFAULT_DIR",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "pwsh-exec",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "PWSH_EXEC_DEFAULT_DIR",
+        "description": "Default working directory for commands (defaults to %TEMP%/pwsh-exec)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "pwsh-exec",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "PWSH_EXEC_DEFAULT_DIR",
+          "description": "Default working directory for commands (defaults to %TEMP%/pwsh-exec)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "PWSH_EXEC_DEFAULT_DIR",
+      "description": "Default working directory for commands (defaults to %TEMP%/pwsh-exec)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Jason26214/pwsh-exec-mcp",
+  "repository": {
+    "url": "https://github.com/Jason26214/pwsh-exec-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-13T11:00:54.916744Z",
+  "publishedAt": "2026-06-13T11:00:54.916744Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:19.472Z",
+    "sourceRepoAt": "2026-08-12T00:09:38.775Z",
+    "readmeAt": "2026-08-12T00:09:39.365Z",
+    "toolsAt": "2026-08-12T01:40:19.472Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Jason26214/pwsh-exec-mcp",
+    "checkedAt": "2026-08-12T00:09:38.775Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Jason26214/pwsh-exec-mcp/main/README.md",
+    "markdown": "# pwsh-exec\n\n![version](https://img.shields.io/badge/version-1.0.0-blue)\n![license](https://img.shields.io/badge/license-MIT-green)\n![python](https://img.shields.io/badge/python-3.11%2B-blue)\n![platform](https://img.shields.io/badge/platform-Windows-blue)\n![PowerShell](https://img.shields.io/badge/PowerShell-7-5391FE)\n\n> A minimal, transparent PowerShell 7 MCP for Windows — one tool: run a command, get raw exit code / stdout / stderr back.\n\n**pwsh-exec** is a minimal, transparent PowerShell 7 MCP server for Windows. It exposes a single tool, `run_command`, that runs a command in a fresh `pwsh` process and returns the raw `exit_code`, `stdout`, and `stderr` — nothing parsed, filtered, or reformatted.\n\n- **One tool, three inputs** — `command`, `timeout` (seconds), optional `working_directory`.\n- **Transparent** — exit code + stdout + stderr returned verbatim, errors and all.\n- **Stateless** — every call is a new process; no session state persists.\n- **Bounded** — 1–300 s timeout per call; on timeout the whole process tree is killed.\n- **Windows-hardened** — UTF-8 output on any locale, PATH read fresh from the registry, no stdin hangs.\n- **Not for** — persistent shells, admin-elevated tasks, or long-running / background jobs.\n\nIt gives any AI agent on Windows a real terminal: you send a command, you get back exactly what the terminal produced.\n\n## Status — stable & complete\n\nFeature-complete and stable. One tool, a frozen **v1.0.0** API, **38 passing tests**, in daily use driving real agent work since **April 2026** with no known bugs. Reproducible bugs get fixed; the scope stays intentionally small — it does one thing.\n\n## Requirements\n\n- **Windows**\n- **PowerShell 7** (`pwsh`) on `PATH` — this is the modern cross-platform PowerShell, **not** the built-in Windows PowerShell 5.1 (`powershell.exe`). Install it via `winget install Microsoft.PowerShell` or from the [official install guide](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-windows).\n- **[uv](https://docs.astral.sh/uv/)** — provides the `uvx` runner used below.\n\n## Install\n\nNo clone required — `uvx` fetches and runs it on demand. Register it with your MCP client (stdio transport):\n\n### Any MCP client\n\nUse this as the server's launch command:\n\n```bash\nuvx pwsh-exec\n```\n\n### Claude Desktop\n\nEdit `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"pwsh-exec\": {\n      \"command\": \"cmd\",\n      \"args\": [\"/c\", \"uvx\", \"pwsh-exec\"]\n    }\n  }\n}\n```\n\n> The `cmd /c` wrapper is recommended on Claude Desktop: as an Electron app it has no console of its own, and launching a console program directly can leave child processes (pwsh → git and other external `.exe`s) without a working console — flickering windows, lost stdout, PATH lookups failing. `cmd.exe` acquires the hidden console first and every child inherits it. This is the same pattern Desktop Commander and other Windows MCP servers use.\n\n## The tool: `run_command`\n\n| Parameter | Type | Required | Description |\n| --- | --- | --- | --- |\n| `command` | string | yes | The PowerShell command or script to run. |\n| `timeout` | integer | yes | Timeout in **seconds** (not milliseconds). 1–300. |\n| `working_directory` | string | no | Absolute path. Defaults to the resolved working directory (see [Configuration](#configuration)). |\n\nThe output is plain text: the exit code first, then labelled `stdout` and `stderr` sections (empty ones still show, so the two streams are never ambiguous), then a diagnostic footer with a timestamp and elapsed time.\n\nFor example, calling `run_command` with `command: \"git status\"` returns the raw git output, untouched:\n\n```\nexit_code: 0\n\nstdout:\nOn branch main\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   app.py\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n\nstderr:\n(empty)\n\n[2026-06-13 08:43:11 | 625ms]\n```\n\nNothing is summarised or filtered. A non-zero exit code, a syntax error written to stderr, an empty result — all of it comes back as the terminal produced it. Output longer than 500 lines per stream is trimmed to the first and last 250 lines so it never floods the context window.\n\n## Why it's robust on Windows\n\nRunning a shell on Windows from a host process is full of small traps. pwsh-exec handles them so the agent doesn't have to:\n\n- **UTF-8 on any locale** — output encoding is forced to UTF-8 end to end, so text isn't mangled even on non-English Windows. It was hardened on zh-CN / GBK systems, where these encoding bugs bite hardest; the fix is universal.\n- **Always-fresh PATH** — User-scope environment variables are read from the registry on every call, so CLIs you installed *after* the host started are still found (and `REG_EXPAND_SZ` values like `%USERPROFILE%\\...` are expanded correctly).\n- **Clean process-tree kills** — on timeout the whole tree is terminated (`pwsh` plus any children it spawned, e.g. `node`, `python`), leaving no orphans.\n- **No stdin hangs** — stdin is detached, so tools that probe it (git and other MSYS2 programs) don't deadlock.\n- **Sane truncation** — very long output is head+tail trimmed instead of blowing up the model's context.\n\n## What it's not for\n\nThe small scope is the design. pwsh-exec deliberately does **not** do:\n\n- **Persistent sessions** — each call is stateless; `cd` and variables don't carry over. Pass `working_directory`, or combine dependent steps into one command.\n- **Admin-elevated tasks** — it runs as the host user, with no elevation.\n- **Long-running / background jobs** — the hard cap is 300 s and calls are synchronous. Installers, large builds, dev servers, and watchers are out of scope.\n\n## Configuration\n\n`working_directory` defaults to a resolved directory, chosen in this order (highest priority first):\n\n1. The `working_directory` argument passed on the call.\n2. The `PWSH_EXEC_DEFAULT_DIR` environment variable, if set.\n3. The built-in fallback: `%TEMP%\\pwsh-exec`.\n\nTo change the default, set `PWSH_EXEC_DEFAULT_DIR` in your MCP client's config:\n\n```json\n{\n  \"mcpServers\": {\n    \"pwsh-exec\": {\n      \"command\": \"cmd\",\n      \"args\": [\"/c\", \"uvx\", \"pwsh-exec\"],\n      \"env\": { \"PWSH_EXEC_DEFAULT_DIR\": \"D:\\\\scratch\" }\n    }\n  }\n}\n```\n\nAn unset or blank value falls back to the built-in default. The default lives under `%TEMP%` (its own subfolder, so you can wipe it wholesale) rather than scattering files into the shared temp directory.\n\n## License\n\n[MIT](LICENSE) © 2026 Jason26214\n\n<!-- mcp-name: io.github.Jason26214/pwsh-exec-mcp -->\n\n",
+    "fetchedAt": "2026-08-12T00:09:39.365Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:19.472Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

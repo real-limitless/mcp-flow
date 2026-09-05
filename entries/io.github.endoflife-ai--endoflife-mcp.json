@@ -1,0 +1,87 @@
+{
+  "id": "io.github.endoflife-ai/endoflife-mcp",
+  "title": "endoflife.ai — Software Lifecycle Intelligence",
+  "description": "EOL dates and risk scores for 480+ software products. Check versions, score risk, audit stacks.",
+  "summary": "EOL dates and risk scores for 480+ software products. Check versions, score risk, audit stacks.",
+  "offersHint": "EOL dates and risk scores for 480+ software products. Check versions, score risk, audit stacks. · Remote MCP (streamable-http) at https://mcp.endoflife.ai · Optional headers: X-API-Key",
+  "version": "1.0.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.endoflife.ai",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.endoflife.ai",
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "description": "Optional endoflife.ai Pro API key for higher limits. Works without one.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://endoflife.ai/mcp",
+  "sourceUrl": "https://github.com/endoflife-ai/endoflife-mcp",
+  "repository": {
+    "url": "https://github.com/endoflife-ai/endoflife-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T20:49:05.928935Z",
+  "publishedAt": "2026-07-29T20:49:05.928935Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "X-API-Key",
+      "description": "Optional endoflife.ai Pro API key for higher limits. Works without one.",
+      "secret": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:06.721Z",
+    "sourceRepoAt": "2026-08-11T23:46:58.830Z",
+    "readmeAt": "2026-08-11T23:46:59.422Z",
+    "toolsAt": "2026-08-11T23:46:59.509Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/endoflife-ai/endoflife-mcp",
+    "checkedAt": "2026-08-11T23:46:58.830Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/endoflife-ai/endoflife-mcp/main/README.md",
+    "markdown": "# endoflife.ai — MCP Server\n\n[![Node.js EOL status](https://img.shields.io/endpoint?url=https%3A%2F%2Fendoflife.ai%2Fbadge%2Fnodejs.json)](https://endoflife.ai/nodejs) [![EOL data: endoflife.ai](https://img.shields.io/badge/EOL%20data-endoflife.ai-16a34a)](https://endoflife.ai)\n\nExposes endoflife.ai's lifecycle intelligence to AI agents over the **Model Context\nProtocol** (MCP, Streamable HTTP transport). It's a thin, dependency-free Cloudflare\nWorker that wraps the existing `api.endoflife.ai/v1` endpoints — no data duplicated.\n\n## Tools\n\n| Tool | What it does | Wraps |\n|---|---|---|\n| `check_eol` | Is product X version Y end-of-life? | `GET /v1/status/:slug/:version` |\n| `get_risk_score` | EOL Risk Score™ (0–100) + factor breakdown | `GET /v1/score/:slug[/:version]` |\n| `scan_stack` | Score a whole stack at once | `POST /v1/batch` |\n| `list_products` | Search the 488 tracked products → resolve slugs | `GET /v1/products` |\n| `get_product_lifecycle` | Full version history + dates for one product | `GET /v1/product/:slug` |\n\n## Deploy\n\nPrereq: `npm install -g wrangler` and `wrangler login` (once).\n\n```bash\ncd mcp-server\nnpm install\n# Test immediately on the workers.dev URL:\nwrangler deploy          # prints https://endoflife-mcp.<your-subdomain>.workers.dev\n# Production (custom domain):\nwrangler deploy --env production\n```\n\n### Custom domain (mcp.endoflife.ai)\n\nThe `route` in `wrangler.toml` needs `mcp.endoflife.ai` to resolve through Cloudflare:\n\n1. Cloudflare dashboard → **endoflife.ai** zone → **DNS** → **Add record**.\n2. Type **AAAA**, Name **mcp**, IPv6 **100::**, **Proxied** (orange cloud). *(This is the standard Cloudflare placeholder for a Worker route — the Worker intercepts before the address is ever used.)*\n3. Re-run `wrangler deploy --env production`.\n\nUntil DNS is set, use the `workers.dev` URL everywhere below.\n\n## Connect from an MCP client\n\n**Claude Desktop / Cursor** (`claude_desktop_config.json` → `mcpServers`):\n\n```json\n{\n  \"mcpServers\": {\n    \"endoflife\": { \"command\": \"npx\", \"args\": [\"mcp-remote\", \"https://mcp.endoflife.ai\"] }\n  }\n}\n```\n\nClients with native remote-MCP support can use the URL directly:\n\n```json\n{ \"mcpServers\": { \"endoflife\": { \"url\": \"https://mcp.endoflife.ai\" } } }\n```\n\n## Test without a client\n\n```bash\n# tools/list\ncurl -s https://mcp.endoflife.ai -X POST -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}' | jq\n\n# call a tool\ncurl -s https://mcp.endoflife.ai -X POST -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_risk_score\",\"arguments\":{\"product\":\"openssl\"}}}' | jq\n\n# discovery card\ncurl -s https://mcp.endoflife.ai/.well-known/mcp/server-card.json | jq\n```\n\n## Auth & tiers\n\nFree tier works with no key. Forward an `X-API-Key` header (your existing Pro keys)\nto unlock Pro limits — the Worker passes it straight through to `api.endoflife.ai`.\n\n## Notes / Phase 2\n\n- **Per-client rate limits:** Phase 1 relies on the upstream API's limits. If MCP\n  traffic grows, add a KV rate-limiter here keyed on `CF-Connecting-IP` (reuse the\n  `API_RATE_LIMIT` namespace) before the upstream call.\n- **Registry listings:** submit to the public MCP registries once live (see the\n  launch checklist).\n- **Discovery card** is also served from the main site at\n  `https://endoflife.ai/.well-known/mcp/server-card.json` so agents that probe the\n  apex domain find it.\n",
+    "fetchedAt": "2026-08-11T23:46:59.422Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_eol",
+      "description": "Check whether a specific version of a software product is end-of-life (EOL). Returns lifecycle status, the EOL date, days remaining or days past EOL, and the latest release. Use this for \"is X version Y still supported?\" questions."
+    },
+    {
+      "name": "get_risk_score",
+      "description": "Get the proprietary EOL Risk Score™ (0–100) for a product version, with the four-factor breakdown (EOL recency, attack surface, CISA KEV exposure, extended support). Omit \"version\" to score the product's highest-risk (most recently end-of-lifed) release. Use this to quantify how dangerous it is to keep running something."
+    },
+    {
+      "name": "scan_stack",
+      "description": "Audit a whole stack at once. Provide a list of products (optionally with versions) — e.g. parsed from a package.json, Dockerfile, or SBOM — and get an EOL Risk Score for each, so you can see what is unsupported and dangerous in one call. Free tier: up to 5 items; Pro: up to 50."
+    },
+    {
+      "name": "list_products",
+      "description": "List or search the products endoflife.ai tracks (480+). Pass an optional \"query\" substring to find the canonical slug for a product before calling the other tools (e.g. \"postgres\" → \"postgresql\"). Returns matching product slugs."
+    },
+    {
+      "name": "get_product_lifecycle",
+      "description": "Get the full version history for one product: every tracked version/cycle with its release date, EOL date, support status, and EOL Risk Score™. Use for \"give me the whole EOL schedule for X\"."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:59.509Z",
+  "toolsPreviewStatus": "ok"
+}

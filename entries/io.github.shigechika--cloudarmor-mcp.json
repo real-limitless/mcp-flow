@@ -1,0 +1,58 @@
+{
+  "id": "io.github.shigechika/cloudarmor-mcp",
+  "title": "Cloud Armor WAF Patrol MCP",
+  "description": "MCP server for Google Cloud Armor WAF log patrol: deny summaries and false-positive checks",
+  "summary": "MCP server for Google Cloud Armor WAF log patrol: deny summaries and false-positive checks",
+  "offersHint": "MCP server for Google Cloud Armor WAF log patrol: deny summaries and false-positive checks · Packages: pypi:cloudarmor-mcp",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "cloudarmor-mcp",
+    "version": "0.3.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "cloudarmor-mcp",
+      "version": "0.3.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/shigechika/cloudarmor-mcp",
+  "repository": {
+    "url": "https://github.com/shigechika/cloudarmor-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T08:09:25.611567Z",
+  "publishedAt": "2026-08-11T08:09:25.611567Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:34.914Z",
+    "sourceRepoAt": "2026-08-11T23:21:11.486Z",
+    "readmeAt": "2026-08-11T23:21:12.064Z",
+    "toolsAt": "2026-08-12T01:01:34.914Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/shigechika/cloudarmor-mcp",
+    "checkedAt": "2026-08-11T23:21:11.486Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/shigechika/cloudarmor-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.shigechika/cloudarmor-mcp -->\n\n# cloudarmor-mcp\n\nEnglish | [日本語](README.ja.md)\n\nMCP server for [Google Cloud Armor](https://cloud.google.com/armor) WAF log patrol — deny summaries per rule, home-region false-positive checks, and preview (dry-run) rule review, straight from Cloud Logging.\n\nBuilt for a daily \"is the WAF healthy?\" patrol: one `daily_brief` call answers *what did we block, did we block anyone we shouldn't have, and are the preview rules ready to promote*.\n\nDocumentation: <https://shigechika.github.io/cloudarmor-mcp/>\n\n## Tools\n\n| Tool | Purpose |\n|---|---|\n| `daily_brief` | One-call morning summary: enforced DENYs by rule priority, home-region false-positive lens, preview DENYs |\n| `enforce_denies` | Enforced DENY counts per rule priority |\n| `home_region_denies` | Enforced DENYs whose source IP geolocates to your home region — anything not marked known-normal is a false-positive candidate |\n| `preview_denies` | Preview (dry-run) DENY counts — a quiet preview rule is a promotion candidate |\n| `health_check` | Version, config presence, and a minimal Cloud Logging probe |\n\nAll tools are read-only. Counts are hard-capped (default 2000 entries per query) and a capped result is reported as `>= N (capped)`, never as an exact total.\n\n## Setup\n\n### 1. Least-privilege service account\n\nCreate a service account with **`roles/logging.viewer` only** and download a key. Unlike human accounts, service accounts are not subject to organization re-authentication policies, so an unattended patrol never silently expires.\n\n```bash\ngcloud iam service-accounts create waf-log-viewer --project=YOUR_PROJECT\ngcloud projects add-iam-policy-binding YOUR_PROJECT \\\n  --member=serviceAccount:waf-log-viewer@YOUR_PROJECT.iam.gserviceaccount.com \\\n  --role=roles/logging.viewer\ngcloud iam service-accounts keys create key.json \\\n  --iam-account=waf-log-viewer@YOUR_PROJECT.iam.gserviceaccount.com\n```\n\n### 2. Install\n\n```bash\npip install cloudarmor-mcp\n# or\nuv tool install cloudarmor-mcp\n```\n\n### 3. Environment variables\n\n| Variable | Required | Meaning |\n|---|---|---|\n| `CLOUDARMOR_PROJECT` | yes | GCP project ID that receives the load-balancer logs |\n| `GOOGLE_APPLICATION_CREDENTIALS` | yes | Path to the service-account key file |\n| `CLOUDARMOR_BACKEND_SERVICES` | no | Comma-separated backend service names to filter (default: all) |\n| `CLOUDARMOR_HOME_REGION` | no | ISO region code treated as home traffic, e.g. `JP`. Enables the false-positive lens |\n| `CLOUDARMOR_RULES_INI` | no | Path to a rules INI (labels + known-normal priorities, see below) |\n| `CLOUDARMOR_MAX_ENTRIES` | no | Max entries fetched per query (default 2000) |\n\n### 4. Optional rules INI\n\nKeep your rule numbering out of prompts and give the reports human-readable labels:\n\n```ini\n[rules]\n101 = block non-home deep-path crawlers\n500 = AutoDiscover probe block\n1002 = OWASP LFI protection\n\n[home]\n; home-region DENYs on these priorities are expected, not false positives\nknown_normal_priorities = 500, 600\n```\n\n### 5. Claude Code\n\n```bash\nclaude mcp add cloudarmor -- cloudarmor-mcp\n```\n\nwith the environment variables above in the server's env.\n\n## CLI\n\n```bash\ncloudarmor-mcp --version   # print version\ncloudarmor-mcp --check     # config + API probe (exit 0 when healthy)\ncloudarmor-mcp --brief     # print daily_brief to stdout (cron / smoke tests)\n```\n\n## Reading the report\n\n- **Enforced DENY by rule** — your normal blocking volume. Sudden shifts in the mix are worth a look.\n- **Home-region DENY** — requests from your own country/region that were blocked. Legitimate users and legitimate crawlers being denied show up here; scanner traffic that happens to originate locally will too, so the `known_normal_priorities` list keeps expected rules (e.g. an AutoDiscover block) out of the suspicious list.\n- **Preview DENY** — rules in dry-run. A preview rule that stays free of home-region hits over time is a candidate for promotion to enforce.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:21:12.064Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:34.914Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

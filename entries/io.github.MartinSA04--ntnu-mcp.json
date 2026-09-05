@@ -1,0 +1,101 @@
+{
+  "id": "io.github.MartinSA04/ntnu-mcp",
+  "title": "NTNU Courses (unofficial)",
+  "description": "Unofficial NTNU course data: search, timetables, grades, course info, and exam logistics.",
+  "summary": "Unofficial NTNU course data: search, timetables, grades, course info, and exam logistics.",
+  "offersHint": "Unofficial NTNU course data: search, timetables, grades, course info, and exam logistics. · Remote MCP (streamable-http) at https://ntnu-mcp.martinsundal.no/mcp",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ntnu-mcp.martinsundal.no/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ntnu-mcp.martinsundal.no/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://github.com/MartinSA04/ntnu-mcp",
+  "sourceUrl": "https://github.com/MartinSA04/ntnu-mcp",
+  "repository": {
+    "url": "https://github.com/MartinSA04/ntnu-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T11:33:35.961026Z",
+  "publishedAt": "2026-07-28T11:33:35.961026Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:38:21.750Z",
+    "sourceRepoAt": "2026-08-12T00:07:10.039Z",
+    "readmeAt": "2026-08-12T00:07:10.676Z",
+    "toolsAt": "2026-08-12T00:07:10.894Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MartinSA04/ntnu-mcp",
+    "checkedAt": "2026-08-12T00:07:10.039Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MartinSA04/ntnu-mcp/main/README.md",
+    "markdown": "# ntnu-mcp\n\nA remote [MCP](https://modelcontextprotocol.io) server that exposes NTNU\n(Norwegian University of Science and Technology) course data to LLM assistants; course catalog search, teaching schedules, weekly timetables, grade\nstatistics, course descriptions, exam logistics, and study programs with\ntheir official study plans, plus comparison tools for students choosing\nbetween courses.\nRuns as a Cloudflare Worker; no installation required on the client side.\n\n## Tools\n\nTwelve tools, all read-only:\n\n- **`search_courses`** — free-text search of NTNU's course catalog for a given year; returns codes, names, campus, and exam dates.\n- **`get_course_schedule`** — every dated teaching activity (lectures, labs) for a course in a year, with Oslo-local times and rooms.\n- **`get_weekly_timetable`** — the recurring weekly timetable grid for a course: weekday, times, ISO-week ranges, and rooms.\n- **`get_grade_distribution`** — historical grade distribution for a course, per year and semester, with counts and percentages.\n- **`get_course_versions`** — the DBH-versioned course codes (e.g. `TDT4100-1`) behind a bare course code, useful when grade lookups come back empty.\n- **`get_semesters`** — NTNU's terms with ids like `26h`/`26v`, teaching weeks, exam-period dates, and which term is current.\n- **`get_course_info`** — everything about a course except exam logistics: credits, level, campus, prerequisites, mandatory activities, content/learning outcomes, credit reductions, the study programs the teaching is planned for, contacts, and alert notices. English by default, `language: \"nb\"` for Norwegian.\n- **`get_exam_info`** — exam logistics for up to 10 courses in one call: every occasion (ordinary/re-sit) with date, start time, duration, permitted-aids code (\"hjelpemiddelkode\") with its meaning, exam system, and assigned rooms.\n- **`search_study_programs`** — search NTNU's ~400 study programs by text, level, and city; returns program codes for `get_study_plan`.\n- **`get_study_plan`** — the official plan for a program and cohort intake year: courses (codes, credits, mandatory/elective) per semester, with specialization choice points — the bridge from \"I study X\" to concrete course codes.\n- **`compare_courses`** — side-by-side comparison of several courses: name, campus, exam dates, weekly teaching hours, and latest grade distribution.\n- **`check_timetable_conflicts`** — pairwise check for weekly-schedule clashes and exam-date collisions across a set of courses, before registering for them.\n\n## Connecting\n\nPaste the server's MCP URL into Claude's or ChatGPT's custom connector\nsettings:\n\n```\nhttps://ntnu-mcp.martinsundal.no/mcp\n```\n\nThe server requires no authentication, since it only serves public,\nread-only NTNU course data.\n\nThe server is also listed in the\n[official MCP registry](https://registry.modelcontextprotocol.io) as\n`io.github.MartinSA04/ntnu-mcp` (see [server.json](server.json)); clients\nthat browse the registry can discover it there. It is an unofficial\ncommunity server, not affiliated with NTNU. Registry updates are\ntag-driven: `npm version <patch|minor|major> && git push --follow-tags` —\nthe `version` script keeps `server.json` in sync, and the\n[release workflow](.github/workflows/release.yml) runs the check suite,\ndeploys the Worker, re-publishes the registry entry (GitHub OIDC), and\ncreates the GitHub Release.\n\n## Architecture\n\nAll NTNU upstream knowledge — endpoints, retry policy, parsing of the\nLiferay catalog, DBH grade statistics, and TP semester data — lives in the\n[`ntnu-api`](https://github.com/MartinSA04/ntnu-api) TypeScript client\nlibrary, which this repo depends on as an npm package. **Upstream fixes and\nnew data sources land in `ntnu-api`, not here.** This repo's only job is to\ncall that typed client and shape its output for LLM consumption: English\nnames with Norwegian fallback, Oslo-local timestamps, grade rows collapsed\ninto per-term distribution tables, and guidance notes on empty results. This\nlayering is set out in `ntnu-api`'s\n[TypeScript migration spec](https://github.com/MartinSA04/ntnu-api/blob/main/docs/ts-migration-spec.md).\n\nTo keep load on NTNU's servers minimal, every upstream call is cached in two\ntiers (per-isolate memory in front of a shared Workers KV namespace), so each\nresource is fetched roughly once per TTL globally: catalog searches,\ntimetables, and schedules for 1 hour; grade statistics and the semester list\nfor 24 hours. KV failures degrade to memory-only caching, never to tool\nerrors. In tests the cache runs memory-only.\n\n## Local development\n\nRequires Node 22 (pinned via [mise](https://mise.jdx.dev/)).\n\n```sh\nmise install     # installs the pinned Node version\nnpm install\n```\n\nCommon tasks, available both as mise tasks and npm scripts:\n\n```sh\nmise run dev          # npm run dev       — wrangler dev, local worker with hot reload\nmise run test          # npm test          — vitest, over captured fixtures (no live network)\nmise run typecheck     # npm run typecheck — tsc --noEmit\nmise run lint          # npm run lint      — biome check\nmise run fmt           # npm run fmt       — biome check --write\nmise run check         # lint + typecheck + test\n```\n\nTests run under plain Node (not the Workers pool) with vitest, driving the\ntool functions directly against fetch fixtures captured verbatim from\n`ntnu-api`'s test suite — no calls to real NTNU services are made in CI or\nlocally.\n\n## Deploy\n\nPushes to `main` deploy automatically (the repo is connected to Cloudflare\nWorkers Builds). For a manual deploy from a checkout:\n\n```sh\nnpm run deploy   # wrangler deploy\n```\n\nRuns on Cloudflare's free plan: the MCP session state is backed by a Durable\nObject using SQLite storage, which is available on the free tier (no Workers\nPaid subscription required unless per-request CPU limits are hit at scale).\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:07:10.676Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_courses",
+      "description": "Search NTNU's course catalog for a given year (server-side free-text search over course names and codes; Norwegian terms often match best, e.g. 'maskinlæring' rather than 'machine learning'). Call this first when you don't know the exact course code. Returns course codes, Norwegian names, campus, and exam dates."
+    },
+    {
+      "name": "get_course_schedule",
+      "description": "Every dated teaching activity (lectures, labs) for a course in a year, with Oslo-local times and rooms. Long output for large courses — prefer get_weekly_timetable for a compact recurring-week overview."
+    },
+    {
+      "name": "get_weekly_timetable",
+      "description": "The recurring weekly timetable grid for a course in a year: weekday, times, ISO-week ranges, rooms, and a classified 'kind' per slot (lecture / exercise / lab / seminar / unknown). The compact way to answer 'when are the lectures for X' — filter on kind == 'lecture', since NTNU's own activity titles are free-form Norwegian text."
+    },
+    {
+      "name": "get_grade_distribution",
+      "description": "Historical grade distribution for an NTNU course (per year and semester, with counts and percentages; grades A-F, or pass/fail codes). Accepts bare codes like 'TDT4100'. Omit years to get all recorded years. Small counts may be privacy-masked. Data comes from Norway's official DBH statistics."
+    },
+    {
+      "name": "get_course_versions",
+      "description": "The DBH-versioned course codes (like 'TDT4100-1') that exist for a bare NTNU course code. Useful when grade lookups come back empty."
+    },
+    {
+      "name": "get_semesters",
+      "description": "NTNU's terms (semesters) with ids like '26h' (autumn 2026) / '26v' (spring), teaching weeks, exam-period dates, and which term is current."
+    },
+    {
+      "name": "get_course_info",
+      "description": "Everything about an NTNU course except exam logistics: credits, level, campus, language of instruction, prerequisites, mandatory activities, course content / learning outcomes, credit reductions ('studiepoengreduksjon'), which study programs the teaching is planned for, contacts, and any alert notices (e.g. 'no longer taught'). English text by default; pass language 'nb' for Norwegian. Omit year for the current study year. For exam dates, times, aid codes, and rooms use get_exam_info."
+    },
+    {
+      "name": "get_exam_info",
+      "description": "Exam logistics for one or more NTNU courses in a single call: every exam occasion (ordinary / re-sit) with date, start time, duration, permitted-aids code ('hjelpemiddelkode') with its meaning, exam system, and assigned rooms. The way to answer 'when and where are my exams and what can I bring' for a whole semester at once. Rooms are only published days before the exam; unpublished fields are null. Omit year for the current study year."
+    },
+    {
+      "name": "search_study_programs",
+      "description": "Search NTNU's study-program catalog (~400 programs) by free text (name, code, keywords), study level (e.g. 'bachelor', 'master', 'ph.d'), and/or city (Trondheim, Gjøvik, Ålesund). Returns program codes like 'MTDT' — the input for get_study_plan. Call this first when you only know a program's name."
+    },
+    {
+      "name": "get_study_plan",
+      "description": "The official study plan for an NTNU program and cohort intake year: which courses (codes, credits, mandatory/elective) belong to each semester, and the specialization choice points with their course groups. The bridge from 'I study X' to concrete course codes — feed them to get_weekly_timetable, check_timetable_conflicts, or get_exam_info. cohort_year is the year the student STARTED (defaults to the current cohort); students in their Nth year started N-1 years ago."
+    },
+    {
+      "name": "compare_courses",
+      "description": "Side-by-side comparison of NTNU courses for a given year — campus, exam dates, weekly teaching hours, and latest grade distribution — to help choose between courses. Accepts bare course codes."
+    },
+    {
+      "name": "check_timetable_conflicts",
+      "description": "Checks a set of NTNU courses for the same year for clashing lecture/lab times and colliding exam dates — a clash check to run before registering for courses. Accepts bare course codes. Each side of a conflict carries its activity 'kind': a lecture-vs-lecture clash is unavoidable, while one involving an exercise or lab often has alternative groups. Exam dates come from the catalog, which does not mark deferred (utsatt/kont) sittings."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:07:10.894Z",
+  "toolsPreviewStatus": "ok"
+}

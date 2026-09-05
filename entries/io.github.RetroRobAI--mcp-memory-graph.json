@@ -1,0 +1,58 @@
+{
+  "id": "io.github.RetroRobAI/mcp-memory-graph",
+  "title": "MCP Memory Graph",
+  "description": "Authority-weighted memory graph for AI agents with conflict detection and semantic search.",
+  "summary": "Authority-weighted memory graph for AI agents with conflict detection and semantic search.",
+  "offersHint": "Authority-weighted memory graph for AI agents with conflict detection and semantic search. · Packages: pypi:mcp-memory-graph",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-memory-graph",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-memory-graph",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/RetroRobAI/mcp-memory-graph",
+  "repository": {
+    "url": "https://github.com/RetroRobAI/mcp-memory-graph",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-04T00:34:30.081746Z",
+  "publishedAt": "2026-05-04T00:34:30.081746Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:35:42.376Z",
+    "sourceRepoAt": "2026-08-12T00:03:55.148Z",
+    "readmeAt": "2026-08-12T00:03:55.645Z",
+    "toolsAt": "2026-08-12T01:35:42.376Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/RetroRobAI/mcp-memory-graph",
+    "checkedAt": "2026-08-12T00:03:55.148Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/RetroRobAI/mcp-memory-graph/main/README.md",
+    "markdown": "# mcp-memory-graph\n\n<!-- mcp-name: io.github.RetroRobAI/mcp-memory-graph -->\n\nA context-aware memory MCP server for Claude Code and any MCP-compatible AI agent.\n\nGoes beyond basic vector search by adding **authority weighting**, **conflict detection**, and **typed relationship edges** between memories — so your agent always retrieves the right answer when sources disagree.\n\nInspired by the context engine architecture described in [Unblocked's \"How a Context Engine Actually Works\"](https://getunblocked.com/blog/how-a-context-engine-actually-works-and-why-you-need-to-care-now/).\n\n---\n\n## Why this exists\n\nStandard memory MCP servers store and retrieve memories by semantic similarity. That works until you have conflicting memories — an old instruction saying one thing and a new one saying another. Without authority weighting, the agent retrieves whichever is semantically closer to the query, not whichever is more trustworthy.\n\n**mcp-memory-graph** solves this with three mechanisms:\n\n| Problem | Solution |\n|---|---|\n| All memories treated equally | Priority tiers: `high` / `medium` / `low` → authority scores 1.0 / 0.6 / 0.3 |\n| Stale memories persist silently | Supersession tracking: old memories marked `status=superseded` with typed edges |\n| Duplicates accumulate over time | Conflict detection before every store; auto-resolve by authority |\n\n---\n\n## Installation\n\n```bash\npip install mcp-memory-graph\n```\n\nOr run directly:\n```bash\ngit clone https://github.com/RetroRobAI/mcp-memory-graph\ncd mcp-memory-graph\npip install -r requirements.txt\npython server.py\n```\n\n---\n\n## Claude Code setup\n\nAdd to `~/.claude.json` under `mcpServers`:\n\n```json\n\"mcp-memory-graph\": {\n  \"type\": \"stdio\",\n  \"command\": \"mcp-memory-graph\",\n  \"env\": {\n    \"MEMORY_GRAPH_DB_PATH\": \"/path/to/memories.db\"\n  }\n}\n```\n\nOr with the raw script:\n\n```json\n\"mcp-memory-graph\": {\n  \"type\": \"stdio\",\n  \"command\": \"python\",\n  \"args\": [\"/path/to/mcp-memory-graph/server.py\"],\n  \"env\": {\n    \"MEMORY_GRAPH_DB_PATH\": \"/path/to/memories.db\"\n  }\n}\n```\n\n---\n\n## Migrating from an existing memory service\n\nIf you have an existing memory service (mcp-memory-service, Mem0, or a markdown-based memory system), you can import your memories into mcp-memory-graph using the included migration script.\n\n**Migration is manual and opt-in** — it never runs automatically. Nothing is written until you explicitly confirm.\n\n### Run the migration script\n\n```bash\npython -m mcp_memory_graph.migrate\n```\n\nThe script will:\n1. Auto-detect any existing `mcp-memory-service` SQLite database\n2. Ask if you have a markdown memory directory to import\n3. Show you how many memories it found\n4. Present three choices:\n   - **[1] Migrate** — import everything into mcp-memory-graph\n   - **[2] Run in parallel** — start mcp-memory-graph fresh, keep your old service running\n   - **[3] Skip** — do nothing\n5. Ask for a final confirmation before writing anything\n\nYour existing memory service is never modified — the script only reads from it.\n\n---\n\n## Configuration\n\nAll settings via environment variables:\n\n| Variable | Default | Description |\n|---|---|---|\n| `MEMORY_GRAPH_DB_PATH` | `~/.mcp-memory-graph/memories.db` | SQLite database path |\n| `MEMORY_GRAPH_MODEL` | `all-MiniLM-L6-v2` | sentence-transformers model |\n| `MEMORY_GRAPH_DIM` | `384` | Embedding dimensions |\n| `MEMORY_GRAPH_CONFLICT_THRESHOLD` | `0.85` | Cosine similarity above which memories are flagged as conflicting |\n| `MEMORY_GRAPH_DEFAULT_RESULTS` | `10` | Default retrieval limit |\n\n---\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `store_memory` | Store with conflict detection and optional auto-resolve |\n| `retrieve_memories` | Semantic search ranked by similarity × authority |\n| `check_conflicts` | Preview conflicts before storing |\n| `update_memory` | Update content/priority with supersession tracking |\n| `delete_memory` | Soft delete (preserves history) |\n| `add_memory_edge` | Manually add typed relationship |\n| `get_related_memories` | Traverse relationship graph for a memory |\n| `list_memories` | List with filters (status, type, priority) |\n\n---\n\n## Priority system\n\n```python\npriority=\"high\"    # authority_score=1.0  — explicit instructions, confirmed preferences\npriority=\"medium\"  # authority_score=0.6  — inferred preferences, reference data\npriority=\"low\"     # authority_score=0.3  — session summaries, historical context\n```\n\nRetrieval ranking: `weighted_score = 1 - (distance / (authority_score + 0.001) / 10)`\n\nA high-authority memory will rank above a semantically closer low-authority one when their similarity scores are within ~3x of each other.\n\n---\n\n## Edge types\n\n- `supersedes` — this memory replaces another\n- `relates_to` — connected but not conflicting\n- `contradicts` — explicitly conflicting, unresolved\n- `referenced_by` — another memory cites this one\n\n---\n\n## Stack\n\n- [sqlite-vec](https://github.com/asg017/sqlite-vec) — vector similarity search\n- [sentence-transformers](https://www.sbert.net/) — local embeddings, no API key needed\n- [FastMCP](https://github.com/jlowin/fastmcp) — MCP server framework\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:03:55.645Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:35:42.376Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

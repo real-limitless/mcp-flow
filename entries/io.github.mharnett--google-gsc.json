@@ -1,0 +1,79 @@
+{
+  "id": "io.github.mharnett/google-gsc",
+  "title": "google-gsc",
+  "description": "Google Search Console MCP: search analytics, URL inspection, site management.",
+  "summary": "Google Search Console MCP: search analytics, URL inspection, site management.",
+  "offersHint": "Google Search Console MCP: search analytics, URL inspection, site management. · Packages: npm:mcp-google-gsc · Env vars: GOOGLE_APPLICATION_CREDENTIALS",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-google-gsc",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GOOGLE_APPLICATION_CREDENTIALS",
+        "description": "Path to service account JSON credentials file",
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-google-gsc",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to service account JSON credentials file",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "description": "Path to service account JSON credentials file",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mharnett/mcp-search-console",
+  "repository": {
+    "url": "https://github.com/mharnett/mcp-search-console",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-08T23:39:47.048172Z",
+  "publishedAt": "2026-04-08T23:39:47.048172Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:13.849Z",
+    "sourceRepoAt": "2026-08-11T23:34:07.248Z",
+    "readmeAt": "2026-08-11T23:34:07.971Z",
+    "toolsAt": "2026-08-12T01:13:13.849Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mharnett/mcp-search-console",
+    "checkedAt": "2026-08-11T23:34:07.248Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mharnett/mcp-search-console/main/README.md",
+    "markdown": "# mcp-google-gsc\n\nMCP server for Google Search Console -- search analytics, URL inspection, and site management via Claude.\n\n## Features\n\n- **Search Analytics** -- Query clicks, impressions, CTR, and position with flexible dimension filters (query, page, device, country, date)\n- **URL Inspection** -- Check indexing status, mobile usability, and rich results for any URL\n- **Site Listing** -- List all verified Search Console properties accessible to your authenticated account (OAuth user or service account)\n- **Multi-Client Support** -- Manage multiple GSC properties with per-directory config mapping\n\n## Installation\n\n### From npm\n\n```bash\nnpm install mcp-google-gsc\n```\n\n### From source\n\n```bash\ngit clone https://github.com/mharnett/mcp-search-console.git\ncd mcp-google-gsc\nnpm install\nnpm run build\n```\n\n## Configuration\n\n**Security:** Never share your `.mcp.json` file or commit it to git -- it may contain API credentials. Add `.mcp.json` to your `.gitignore`.\n\nmcp-gsc supports **two authentication modes**. Pick whichever fits your setup. Neither requires any file living at a hardcoded machine-local path -- credentials come from environment variables (or a `config.json` you create).\n\n**Which mode to use:**\n- **Service Account (Mode B) -- recommended for unattended / server / headless use.** A service account has no interactive login to expire or re-consent, so it is the right fit for always-on deployments. The one setup requirement is that the service account's email must be **granted access on each Search Console property** you want to query (see Mode B).\n- **User OAuth (Mode A) -- for personal / interactive use**, where you want to authorize with your own Google login.\n\n**Precedence when both are configured:** if a service-account keyfile is explicitly set (`GOOGLE_APPLICATION_CREDENTIALS`, or `credentials_file` in `config.json`), it **wins** over any OAuth refresh token or stored OAuth credentials. If neither is configured, the server fails loudly at startup with an onboarding message rather than silently guessing -- there is no machine-local default and no silent runtime failover between modes.\n\n### Mode A: User OAuth (bring your own Google account)\n\nUse this if you want to authorize with your own Google login (the account that has Search Console access). Best for personal / interactive use.\n\n1. In the Google Cloud Console, create an **OAuth 2.0 Client ID** of type **Desktop app** and enable the **Search Console API**. (For a Desktop-app client, Google accepts any `http://localhost` loopback redirect -- you do not need to pre-register a port.)\n2. Export your client credentials:\n   ```bash\n   export GOOGLE_GSC_CLIENT_ID=...apps.googleusercontent.com\n   export GOOGLE_GSC_CLIENT_SECRET=...\n   ```\n3. Mint a refresh token (opens your browser, uses PKCE + `access_type=offline`):\n   ```bash\n   node get-refresh-token.cjs\n   ```\n   > Do **not** redirect this command's stdout to a shared log -- it prints the refresh token to stdout by design.\n4. Copy the printed line into your environment:\n   ```bash\n   export GOOGLE_GSC_REFRESH_TOKEN=...\n   ```\n\nThe server reads `GOOGLE_GSC_CLIENT_ID`, `GOOGLE_GSC_CLIENT_SECRET`, and `GOOGLE_GSC_REFRESH_TOKEN` from the environment at runtime.\n\nAlternatively, run the guided helper `npx mcp-gsc-auth`, which performs the same PKCE OAuth flow, lets you pick a default Search Console property, and writes the result to a per-user credentials file.\n\n### Mode B: Service Account (recommended for unattended / server use)\n\nUse this for server / headless / always-on contexts -- it is the recommended path when no human is present to complete or refresh an interactive login.\n\n1. Create a Google Cloud **service account** with Search Console API access and download its JSON key file.\n2. **Grant the service account's email access on each Search Console property** you want to query (add it as a user in Search Console). Without this grant on the property, the service account can authenticate but will see no sites.\n3. Point the server at the key file **via an environment variable** (no hardcoded path):\n   ```bash\n   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json\n   ```\n\n### OAuth scope\n\nBoth modes request a single, **read-only** scope: `https://www.googleapis.com/auth/webmasters.readonly`. All four tools are reads -- nothing writes -- so the server never asks for read/write access.\n\nThe scope is defined once in `config.json` under `oauth.scope` (see `config.example.json`). The OAuth helper and the runtime read the same value, so they never drift. If `config.json` is absent (e.g. a fresh install), the committed read-only default is used.\n\n### Multi-client config (optional)\n\nTo map working directories to Search Console properties, create a `config.json` in the project root (see `config.example.json`):\n\n```json\n{\n  \"oauth\": {\n    \"scope\": \"https://www.googleapis.com/auth/webmasters.readonly\"\n  },\n  \"clients\": {\n    \"my-project\": {\n      \"name\": \"My Project\",\n      \"folder\": \"/path/to/project\",\n      \"site_url\": \"https://example.com/\"\n    }\n  }\n}\n```\n\n## Usage\n\nAdd to your Claude Code `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"gsc\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/mcp-gsc/dist/index.js\"]\n    }\n  }\n}\n```\n\nOr if installed globally:\n\n```json\n{\n  \"mcpServers\": {\n    \"gsc\": {\n      \"command\": \"npx\",\n      \"args\": [\"mcp-google-gsc\"]\n    }\n  }\n}\n```\n\n**Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows).\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `gsc_get_client_context` | Detect the GSC property from your working directory based on config mapping |\n| `gsc_list_sites` | List all verified Search Console properties accessible to the authenticated account |\n| `gsc_search_analytics` | Query search performance data (clicks, impressions, CTR, position) with dimension and filter support |\n| `gsc_inspection` | Inspect a URL for indexing status, mobile usability, and rich results |\n\n### gsc_search_analytics\n\nSupports dimensions: `query`, `page`, `device`, `country`, `date`. Filter by any dimension with operators like `equals`, `contains`, `notContains`. Date range defaults to the last 28 days.\n\n### gsc_inspection\n\nReturns index coverage, crawl status, mobile usability verdict, and rich result details for a specific URL within a property.\n\n## Architecture\n\n- **Resilience** -- Uses cockatiel for retry with exponential backoff and circuit breaker patterns on all Google API calls\n- **Logging** -- Structured logging via pino with configurable log levels\n- **Response Handling** -- Responses truncated at 200KB to stay within MCP transport limits\n\n## License\n\nMIT -- see [LICENSE](LICENSE).\n\n---\n\nBuilt by Mark Harnett / [drak-marketing](https://github.com/drak-marketing)\n",
+    "fetchedAt": "2026-08-11T23:34:07.971Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:13.849Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

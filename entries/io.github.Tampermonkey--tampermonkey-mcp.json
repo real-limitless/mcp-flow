@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Tampermonkey/tampermonkey-mcp",
+  "title": "tampermonkey-mcp",
+  "description": "MCP server to manage your Tampermonkey scripts",
+  "summary": "MCP server to manage your Tampermonkey scripts",
+  "offersHint": "MCP server to manage your Tampermonkey scripts · Packages: npm:tampermonkey-mcp",
+  "version": "0.0.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "tampermonkey-mcp",
+    "version": "0.0.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "tampermonkey-mcp",
+      "version": "0.0.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Tampermonkey/tampermonkey-mcp",
+  "repository": {
+    "url": "https://github.com/Tampermonkey/tampermonkey-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-13T14:54:37.901523Z",
+  "publishedAt": "2026-05-13T14:54:37.901523Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:19.275Z",
+    "sourceRepoAt": "2026-08-12T00:01:48.336Z",
+    "readmeAt": "2026-08-12T00:01:48.798Z",
+    "toolsAt": "2026-08-12T01:34:19.275Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Tampermonkey/tampermonkey-mcp",
+    "checkedAt": "2026-08-12T00:01:48.336Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Tampermonkey/tampermonkey-mcp/main/README.md",
+    "markdown": "# How to use\n\nFirst install the following browser extensions:\n* [Tampermonkey](https://www.tampermonkey.net/)\n* Tampermonkey Editors for [Firefox](https://addons.mozilla.org/de/firefox/addon/tampermonkey-editors/) or [Chrome](https://chrome.google.com/webstore/detail/lieodnapokbjkkdkhdljlllmgkmdokcm)\n\nThen install `tampermonkey-mcp` globally:\n```bash\nnpm install -g tampermonkey-mcp@latest\n```\n\nFinally configure your AI assistant to use the `tampermonkey` tool:\n```bash\n{\n  \"mcpServers\": {\n    \"tampermonkey\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"tampermonkey-mcp@latest\"\n      ]\n    }\n  }\n}\n```\nYour assistant will call `tampermonkey_get_connection_code` and return a connection code that you can enter in the Tampermonkey Editors extension.\n\n# Claude Code configuration example\n```\nnpm install -g claude\n\n// either use your local checkout\nnpm run watch\nclaude mcp add --transport http --scope project tampermonkey http://localhost:4001/mcp\n\n// or the npm package\nnpm install -g tampermonkey-mcp@latest\nclaude mcp add --transport stdio --scope project tampermonkey -- npx -y tampermonkey-mcp\n\n// more browser control needed?\n// Open chrome://inspect/#remote-debugging\n// [x] Allow remote debugging for this browser instance\n// or\nchromium --user-data-dir=/tmp/chrome-devtools-mcp-test-profile --remote-debugging-port=9222\n\nnpm install -g chrome-devtools-mcp@latest\n// install Tampermonkey and Tampermonkey Editors\nclaude mcp add --transport stdio --scope project chrome-devtools-mcp -- npx -y chrome-devtools-mcp@latest --slim --no-usage-statistics --auto-connect --browser-url http://127.0.0.1:9222\n```\n\n# Build\n\n```bash\nnpm install\nnpm run all\n```\n\n# Tampermonkey MCP Server Architecture\n\n## Overview\n\nThis project implements an MCP (Model Context Protocol) server that allows AI assistants to read and modify Tampermonkey userscripts via the Tampermonkey Editors browser extension.\n\n## Architecture Components\n\n```\n┌─────────────────────────────────────────────────────────────────────────────┐\n│                              AI Assistant                                   │\n└─────────────────────────────────────────────────────────────────────────────┘\n                                   │\n                                   │ MCP Protocol (stdio transport)\n                                   ▼\n┌─────────────────────────────────────────────────────────────────────────────┐\n│                         tampermonkey_mcp (MCP Server)                       │\n│                                                                             │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  server.ts                    │  Main entry point                     │  │\n│  │                               │  - HTTP or stdio transport            │  │\n│  │                               │  - MCP middleware                     │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n│                                  │                                          │\n│                                  ▼                                          │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  tampermonkey.ts              │  MCP Tool Definitions                 │  │\n│  │                               │  - tampermonkey_get_connection_code   │  │\n│  │                               │  - tampermonkey_list                  │  │\n│  │                               │  - tampermonkey_get                   │  │\n│  │                               │  - tampermonkey_patch                 │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n│                                  │                                          │\n│                                  ▼                                          │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  tampermonkey-ws-client.ts    │  WebSocket Server                     │  │\n│  │                               │  - Connection code generation         │  │\n│  │                               │  - Authentication handshake           │  │\n│  │                               │  - Message relay to extension         │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n└─────────────────────────────────────────────────────────────────────────────┘\n                                   │\n                                   │ WebSocket (local, port derived from code)\n                                   ▼\n┌─────────────────────────────────────────────────────────────────────────────┐\n│                   Tampermonkey Editors Extension                            │\n│                                                                             │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  Service Worker               │  Receives connection code,            │  │\n│  │                               │  establishes WebSocket connection     │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n│                                  │                                          │\n│                                  │ Chrome Extension Messaging               │\n│                                  ▼                                          │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  Content Script               │  Bridges extension ↔ Tampermonkey     │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n│                                  │                                          │\n│                                  ▼                                          │\n│  ┌───────────────────────────────────────────────────────────────────────┐  │\n│  │  Tampermonkey                 │  Userscript storage & execution       │  │\n│  └───────────────────────────────────────────────────────────────────────┘  │\n└─────────────────────────────────────────────────────────────────────────────┘\n```\n\n## Connection Flow\n\n1. **MCP Server starts** - Creates WebSocket server on a random available port\n2. **Connection code generated** - Format: `<base32(port - 1024)><auth_token><echo_token>`\n3. **User calls `tampermonkey_get_connection_code`** - Gets the connection code\n4. **User enters code in Tampermonkey Editors** - Extension parses code to get port and auth\n5. **Extension connects to MCP server** - WebSocket handshake with authentication\n6. **MCP tools become available** - list, get, patch can now be called\n\n## Authentication Protocol\n\n```\nExtension                              MCP Server\n    │                                      │\n    │───── auth (token) ──────────────────>│\n    │                                      │\n    │<──── auth (echo_token) ──────────────│\n    │                                      │\n    │───── auth (echo_token) ─────────────>│\n    │                                      │\n    │<──── authOK ─────────────────────────│\n    │                                      │\n    │<───── pings (every 15s) ─────────────│  (keep-alive)\n    │───── pongs ─────────────────────────>│\n    │                                      │\n    │<───── commands (list/get/patch) ─────│\n    │───── responses ─────────────────────>│\n```\n\n## MCP Tools\n\n### `tampermonkey_get_connection_code`\n* **Purpose**: Initialize connection by getting the WebSocket connection code.\n* **Required**: Must be called first to start the WebSocket server.\n* **Output**: Connection code to enter in Tampermonkey Editors.\n\n### `tampermonkey_list`\n* **Purpose**: List all available userscripts.\n* **Input**: Optional filter by name pattern or include URL pattern.\n* **Output**: Array of userscript metadata (name, namespace, path, requires).\n\n### `tampermonkey_get`\n* **Purpose**: Get content of a specific userscript.\n* **Input**: `path` (from list), optional `ifNotModifiedSince` timestamp.\n* **Output**: Script content, lastModified timestamp, or error.\n\n### `tampermonkey_patch`\n* **Purpose**: Update userscript content.\n* **Input**: `path`, `value` (new content), optional `lastModified` for optimistic locking.\n* **Output**: Success confirmation or error.\n\n### `tampermonkey_put`\n* **Purpose**: Create a new userscript with the given name and namespace.\n* **Input**: `value` (new script), optional `lastModified`.\n* **Output**: Success confirmation, path of created script, or error.\n* **Requires**: Tampermonkey Editors 1.0.6+ and Tampermonkey 5.6+\n\n### `tampermonkey_delete`\n* **Purpose**: Delete an existing userscript.\n* **Input**: `path` (from list).\n* **Output**: Success confirmation or error.\n* **Requires**: Tampermonkey Editors 1.0.6+ and Tampermonkey 5.6+\n\n\n# Basic testing\n## MCP Server capabilities\n\n```bash\ncurl -X POST http://localhost:4001/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 1,\n    \"method\": \"initialize\",\n    \"params\": {\n      \"protocolVersion\": \"2024-11-05\",\n      \"clientInfo\": {\n        \"name\": \"curl-client\",\n        \"version\": \"1.0.0\"\n      },\n      \"capabilities\": {}\n    }\n  }'\n```\n\n## test stdio\n\n```bash\necho '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"clientInfo\":{\"name\":\"test-client\",\"version\":\"1.0.0\"},\"capabilities\":{}}}' | npx -y tampermonkey-mcp\necho '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}' | npx -y tampermonkey-mcp\necho '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"tampermonkey_list\",\"arguments\":{\"pattern\":\"\"}}}' | npx -y tampermonkey-mcp\n```",
+    "fetchedAt": "2026-08-12T00:01:48.798Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:19.275Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

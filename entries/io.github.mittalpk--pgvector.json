@@ -1,0 +1,94 @@
+{
+  "id": "io.github.mittalpk/pgvector",
+  "title": "pgvector",
+  "description": "Similarity search, hybrid search, and index management for pgvector-backed PostgreSQL tables",
+  "summary": "Similarity search, hybrid search, and index management for pgvector-backed PostgreSQL tables",
+  "offersHint": "Similarity search, hybrid search, and index management for pgvector-backed PostgreSQL tables · Packages: pypi:mcp-server-pgvector · Env vars: DATABASE_URL, MCP_PGVECTOR_READ_ONLY",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-server-pgvector",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "DATABASE_URL",
+        "description": "PostgreSQL connection string, e.g. postgresql://user:password@host:5432/dbname",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "MCP_PGVECTOR_READ_ONLY",
+        "description": "Set to 'true' to disable upsert_embedding and create_vector_index"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-server-pgvector",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "DATABASE_URL",
+          "description": "PostgreSQL connection string, e.g. postgresql://user:password@host:5432/dbname",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "MCP_PGVECTOR_READ_ONLY",
+          "description": "Set to 'true' to disable upsert_embedding and create_vector_index"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "DATABASE_URL",
+      "description": "PostgreSQL connection string, e.g. postgresql://user:password@host:5432/dbname",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "MCP_PGVECTOR_READ_ONLY",
+      "description": "Set to 'true' to disable upsert_embedding and create_vector_index"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mittalpk/mcp-server-pgvector",
+  "repository": {
+    "url": "https://github.com/mittalpk/mcp-server-pgvector",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-21T18:50:14.457767Z",
+  "publishedAt": "2026-07-21T18:50:14.457767Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:12:45.883Z",
+    "sourceRepoAt": "2026-08-11T23:33:39.287Z",
+    "readmeAt": "2026-08-11T23:33:39.717Z",
+    "toolsAt": "2026-08-12T01:12:45.884Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mittalpk/mcp-server-pgvector",
+    "checkedAt": "2026-08-11T23:33:39.287Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mittalpk/mcp-server-pgvector/main/README.md",
+    "markdown": "# mcp-server-pgvector\n\n[![CI](https://github.com/mittalpk/mcp-server-pgvector/actions/workflows/ci.yml/badge.svg)](https://github.com/mittalpk/mcp-server-pgvector/actions/workflows/ci.yml)\n\n<!-- mcp-name: io.github.mittalpk/pgvector -->\n\nAn [MCP](https://modelcontextprotocol.io/) server that gives LLM agents first-class access to\n[pgvector](https://github.com/pgvector/pgvector)-backed embedding tables in PostgreSQL: similarity\nsearch, hybrid (vector + full-text) search, upserts, and HNSW/IVFFlat index management.\n\nGeneric Postgres MCP servers expose raw SQL or schema introspection; this one speaks pgvector\nspecifically — nearest-neighbor search, distance metrics, and ANN index tuning are first-class\ntools, not something the model has to hand-write SQL for.\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `list_vector_tables` | Discover every `vector` column in the database, with its dimensionality |\n| `describe_vector_table` | Columns, indexes, and approximate row count for a table |\n| `similarity_search` | k-NN search over a vector column (cosine / L2 / inner product), with structured metadata filters |\n| `hybrid_search` | Weighted blend of vector similarity and Postgres full-text search (`ts_rank_cd`) |\n| `upsert_embedding` | Insert or update a row's embedding + metadata |\n| `create_vector_index` | Create an HNSW or IVFFlat index with tunable parameters |\n| `explain_similarity_query` | `EXPLAIN ANALYZE` a similarity query to confirm the ANN index is used |\n\n## Safety\n\n- Every table/column name is validated against `information_schema` / `pg_catalog` before being\n  interpolated into SQL — an LLM can only ever reference identifiers that already exist. Values are\n  always bound parameters.\n- Metadata filters are a closed `{column, op, value}` allowlist, not a raw SQL fragment.\n- Set `MCP_PGVECTOR_READ_ONLY=true` to disable `upsert_embedding` and `create_vector_index`,\n  leaving only read/search tools available — useful when pointing the server at a production\n  database.\n- Every query runs with a per-command timeout (`MCP_PGVECTOR_COMMAND_TIMEOUT_SECONDS`, default\n  30s) so one expensive query can't occupy a pool connection — and stall every other caller —\n  indefinitely. Set it to `0` to disable.\n\n## Installation\n\n```bash\nuvx mcp-server-pgvector\n```\n\nOr with pip:\n\n```bash\npip install mcp-server-pgvector\npython -m mcp_server_pgvector\n```\n\n## Configuration\n\nThe server reads its connection string from `DATABASE_URL` (or `PGVECTOR_DATABASE_URL`):\n\n```json\n{\n  \"mcpServers\": {\n    \"pgvector\": {\n      \"command\": \"uvx\",\n      \"args\": [\"mcp-server-pgvector\"],\n      \"env\": {\n        \"DATABASE_URL\": \"postgresql://user:password@localhost:5432/mydb\",\n        \"MCP_PGVECTOR_READ_ONLY\": \"false\",\n        \"MCP_PGVECTOR_COMMAND_TIMEOUT_SECONDS\": \"30\"\n      }\n    }\n  }\n}\n```\n\n## Production readiness\n\n**Covered:**\n- Identifier-safe SQL (every table/column checked against `pg_catalog` before use) and a closed\n  filter-operator allowlist — no path from tool arguments to raw SQL.\n- Per-query timeout, so one runaway query can't monopolize the (small, 5-connection) pool.\n- 60+ tests, including dimension-mismatch and injection-attempt regressions, run in CI on every\n  push/PR against a real pgvector container across Python 3.10–3.13. A separate CI job builds the\n  package and runs `twine check` on the result.\n- Connection failures surface as plain `ConnectionRefusedError`/`asyncpg` exceptions — verified\n  these don't leak the DSN's credentials into error text.\n\n**Known limitations, honestly:**\n- No per-tool authorization — access control is whatever the Postgres role in `DATABASE_URL` can\n  do. If you need different agents to have different permissions, give them different\n  connection strings backed by different Postgres roles, not different server instances of this\n  same DSN.\n- `hybrid_search`'s full-text side is hardcoded to Postgres's `'english'` text search\n  configuration; there's no parameter to change it yet.\n- No structured logging — failures are exceptions surfaced through the MCP error channel, not\n  written to a log you can tail. Fine for a single-user desktop MCP client, a real gap if you're\n  running this as a shared service.\n- The connection pool is fixed at 1–5 connections and isn't configurable via environment variable\n  yet.\n\n## Development\n\n```bash\nuv sync --dev\n\n# Bring up an isolated pgvector instance for local testing\ndocker compose -f docker-compose.dev.yml up -d\n\nexport DATABASE_URL=postgresql://postgres:postgres@localhost:5434/postgres\nuv run pytest\n\nuv run ruff check .\nuv run pyright\n```\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md). See [CHANGELOG.md](CHANGELOG.md) for release history.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:33:39.717Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:12:45.884Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

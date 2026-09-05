@@ -1,0 +1,95 @@
+{
+  "id": "sh.gaffer/mcp",
+  "title": "Gaffer",
+  "description": "Test analytics for AI agents: test history, flaky tests, failure clusters, coverage.",
+  "summary": "Test analytics for AI agents: test history, flaky tests, failure clusters, coverage.",
+  "offersHint": "Test analytics for AI agents: test history, flaky tests, failure clusters, coverage. · Packages: npm:@gaffer-sh/mcp · Env vars: GAFFER_API_KEY, GAFFER_API_URL",
+  "version": "0.9.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@gaffer-sh/mcp",
+    "version": "0.9.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GAFFER_API_KEY",
+        "description": "API key from Account Settings > API Keys. gaf_ user key or gfr_ project token.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "GAFFER_API_URL",
+        "description": "Override the Gaffer API base URL. Defaults to https://app.gaffer.sh"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@gaffer-sh/mcp",
+      "version": "0.9.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GAFFER_API_KEY",
+          "description": "API key from Account Settings > API Keys. gaf_ user key or gfr_ project token.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "GAFFER_API_URL",
+          "description": "Override the Gaffer API base URL. Defaults to https://app.gaffer.sh"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GAFFER_API_KEY",
+      "description": "API key from Account Settings > API Keys. gaf_ user key or gfr_ project token.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "GAFFER_API_URL",
+      "description": "Override the Gaffer API base URL. Defaults to https://app.gaffer.sh"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://gaffer.sh/docs/mcp/",
+  "sourceUrl": "https://github.com/gaffer-sh/mcp",
+  "repository": {
+    "url": "https://github.com/gaffer-sh/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T13:01:23.835673Z",
+  "publishedAt": "2026-08-11T13:01:23.835673Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:50:00.919Z",
+    "sourceRepoAt": "2026-08-11T23:07:08.387Z",
+    "readmeAt": "2026-08-11T23:07:08.762Z",
+    "toolsAt": "2026-08-12T00:50:00.920Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gaffer-sh/mcp",
+    "checkedAt": "2026-08-11T23:07:08.387Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gaffer-sh/mcp/main/README.md",
+    "markdown": "# @gaffer-sh/mcp\n\nMCP (Model Context Protocol) server for [Gaffer](https://gaffer.sh) - give your AI assistant memory of your tests.\n\n## What is this?\n\nThis MCP server connects AI coding assistants like Claude Code and Cursor to your Gaffer test history and coverage data. It runs in code mode: three MCP tools over a namespace of 17 functions — 16 read-only analytics functions plus `upload_test_results`. It allows AI to:\n\n- Check your project's test health (pass rate, flaky tests, trends)\n- Look up the history of specific tests to understand stability\n- Get context about test failures when debugging\n- Analyze code coverage and identify untested areas\n- Browse all your projects (with user API Keys)\n- Access test report files (HTML reports, coverage, etc.)\n\n## Prerequisites\n\n1. A [Gaffer](https://gaffer.sh) account with test results uploaded\n2. An API Key from Account Settings > API Keys\n\n## Setup\n\n### Claude Code (CLI)\n\nThe easiest way to add the Gaffer MCP server is via the Claude Code CLI:\n\n```bash\nclaude mcp add gaffer -e GAFFER_API_KEY=gaf_your_api_key_here -- npx -y @gaffer-sh/mcp\n```\n\n### Claude Code (Manual)\n\nAlternatively, add to your Claude Code settings (`~/.claude.json` or project `.claude/settings.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"gaffer\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@gaffer-sh/mcp\"],\n      \"env\": {\n        \"GAFFER_API_KEY\": \"gaf_your_api_key_here\"\n      }\n    }\n  }\n}\n```\n\n### Cursor\n\nAdd to `.cursor/mcp.json` in your project:\n\n```json\n{\n  \"mcpServers\": {\n    \"gaffer\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@gaffer-sh/mcp\"],\n      \"env\": {\n        \"GAFFER_API_KEY\": \"gaf_your_api_key_here\"\n      }\n    }\n  }\n}\n```\n\n## How this server works\n\nThis server uses **code mode**. Instead of exposing one MCP tool per API call, it exposes three tools plus a `codemode` namespace you call from JavaScript. Fewer tool definitions occupy the context window, and a single execution can chain several calls.\n\n| MCP tool | What it does |\n|------|-------------|\n| `execute_code` | Run JavaScript against `codemode.<function>()`. Max 20 API calls, 30s timeout. |\n| `search_tools` | Find available functions by keyword. An empty query lists all of them. |\n| `list_projects` | List projects. Registered only when the token is a user API Key (`gaf_`). |\n\n```javascript\nconst health = await codemode.get_project_health({ projectId: \"proj_abc\" });\nif (health.flakyTestCount > 0) {\n  const flaky = await codemode.get_flaky_tests({ projectId: \"proj_abc\" });\n  return { health, flaky };\n}\nreturn { health };\n```\n\n## Functions available via `execute_code`\n\n| Function | Category | Description |\n|------|------|-------------|\n| `get_project_health` | health | Health score, pass rate, flaky count, trend |\n| `get_test_history` | testing | Pass/fail history for a specific test |\n| `get_flaky_tests` | testing | Tests with high flip rates (pass↔fail) |\n| `list_test_runs` | testing | Recent test runs, filterable by commit/branch/status |\n| `get_test_run_details` | testing | Parsed individual results for one run |\n| `get_failure_clusters` | testing | Failed tests grouped by root cause |\n| `get_slowest_tests` | testing | Slowest tests by P95 duration |\n| `compare_test_metrics` | testing | Compare test performance between commits or runs |\n| `search_failures` | testing | Search failures by error or test-name pattern, or list all recent failures |\n| `get_coverage_summary` | coverage | Overall coverage metrics and trend |\n| `get_coverage_for_file` | coverage | Coverage for specific files or paths |\n| `get_untested_files` | coverage | Files below a coverage threshold |\n| `find_uncovered_failure_areas` | coverage | Files with low coverage AND test failures |\n| `get_report` | reports | Report file URLs for a test run |\n| `get_report_browser_url` | reports | Signed browser-navigable report URL (30 min) |\n| `get_upload_status` | uploads | Whether CI results are uploaded and processed |\n| `upload_test_results` | uploads | Upload test results (**write**) — rate-limited and audit-logged |\n\nEvery function except `upload_test_results` is read-only.\n\n## Function Reference\n\n### `list_projects`\n\nList all projects you have access to.\n\n- **Input:** `organizationId` (optional), `limit` (optional, default: 50)\n- **Returns:** List of projects with IDs, names, and organization info\n- **Example:** \"What projects do I have in Gaffer?\"\n\n### `get_project_health`\n\nGet the health metrics for a project.\n\n- **Input:** `projectId` (required), `days` (optional, default: 30)\n- **Returns:** Health score (0-100), pass rate, test run count, flaky test count, trend\n- **Example:** \"What's the health of my test suite?\"\n\n### `get_test_history`\n\nGet the pass/fail history for a specific test.\n\n- **Input:** `projectId` (required), `testName` or `filePath` (one required), `limit` (optional)\n- **Returns:** History of runs with status, duration, branch, commit, errors\n- **Example:** \"Is the login test flaky? Check its history\"\n\n### `get_flaky_tests`\n\nGet the list of flaky tests in a project.\n\n- **Input:** `projectId` (required), `threshold` (optional, default: 0.1), `days` (optional), `limit` (optional)\n- **Returns:** List of flaky tests with flip rates, transition counts, run counts\n- **Example:** \"Which tests are flaky in my project?\"\n\n### `list_test_runs`\n\nList recent test runs with optional filtering.\n\n- **Input:** `projectId` (required), `commitSha` (optional), `branch` (optional), `status` (optional), `limit` (optional)\n- **Returns:** List of test runs with pass/fail/skip counts, commit and branch info\n- **Example:** \"What tests failed in the last commit?\"\n\n### `get_test_run_details`\n\nGet parsed test results for a specific test run.\n\n- **Input:** `testRunId` (required), `projectId` (required), `status` (optional filter), `limit` (optional)\n- **Returns:** Individual test results with name, status, duration, file path, errors\n- **Example:** \"Show me all failed tests from this test run\"\n\n### `get_report`\n\nGet URLs for report files uploaded with a test run.\n\n- **Input:** `testRunId` (required)\n- **Returns:** List of files with filename, size, content type, download URL\n- **Example:** \"Get the Playwright report for the latest test run\"\n\n### `get_report_browser_url`\n\nGet a browser-navigable URL for viewing a test report.\n\n- **Input:** `projectId` (required), `testRunId` (required), `filename` (optional)\n- **Returns:** Signed URL valid for 30 minutes\n- **Example:** \"Give me a link to view the test report\"\n\n### `get_slowest_tests`\n\nGet the slowest tests in a project, sorted by P95 duration.\n\n- **Input:** `projectId` (required), `days` (optional), `limit` (optional), `framework` (optional), `branch` (optional)\n- **Returns:** List of tests with average and P95 duration, run count\n- **Example:** \"Which tests are slowing down my CI pipeline?\"\n\n### `compare_test_metrics`\n\nCompare test metrics between two commits or test runs.\n\n- **Input:** `projectId` (required), `testName` (required), `beforeCommit`/`afterCommit` OR `beforeRunId`/`afterRunId`\n- **Returns:** Before/after metrics with duration change and percentage\n- **Example:** \"Did my fix make this test faster?\"\n\n### `get_coverage_summary`\n\nGet the coverage metrics summary for a project.\n\n- **Input:** `projectId` (required), `days` (optional, default: 30)\n- **Returns:** Line/branch/function coverage percentages, trend, report count, lowest coverage files\n- **Example:** \"What's our test coverage?\"\n\n### `get_coverage_for_file`\n\nGet coverage metrics for specific files or paths.\n\n- **Input:** `projectId` (required), `filePath` (required - exact or partial match)\n- **Returns:** List of matching files with line/branch/function coverage\n- **Example:** \"What's the coverage for our API routes?\"\n\n### `get_untested_files`\n\nGet files with little or no test coverage.\n\n- **Input:** `projectId` (required), `maxCoverage` (optional, default: 10%), `limit` (optional)\n- **Returns:** List of files below threshold sorted by coverage (lowest first)\n- **Example:** \"Which files have no tests?\"\n\n### `find_uncovered_failure_areas`\n\nFind code areas with both low coverage AND test failures (high risk).\n\n- **Input:** `projectId` (required), `days` (optional), `coverageThreshold` (optional, default: 80%)\n- **Returns:** Risk areas ranked by score, with file path, coverage %, failure count\n- **Example:** \"Where should we focus our testing efforts?\"\n\n### `get_failure_clusters`\n\nGroup failed tests by root cause using error message similarity.\n\n- **Input:** `projectId` (required), `testRunId` (required)\n- **Returns:** Clusters of failed tests grouped by similar error messages, with representative error and test count\n- **Example:** \"Are these 15 failures from the same bug?\"\n\n### `search_failures`\n\nSearch past failures by error message, stack trace, or test name — or list every failure in the window.\n\n- **Input:** `query` (optional — omit to return all failures), `projectId` (required for `gaf_` keys), `searchIn` (optional: `errors`/`names`/`all`, default `all`), `days` (optional, default: 30), `branch` (optional), `limit` (optional, default: 20)\n- **Returns:** Matching failures with test name, error message, run and commit context, plus `truncated` when scan caps cut the list short\n- **Example:** \"Have we seen this connection-refused error before?\" / \"What failed in the last 7 days?\"\n\n### `get_upload_status`\n\nCheck if CI results have been uploaded and processed.\n\n- **Input:** `projectId` (required), `sessionId` (optional), `commitSha` (optional), `branch` (optional)\n- **Returns:** Upload session(s) with processing status, linked test runs and coverage reports\n- **Example:** \"Are my test results ready for commit abc123?\"\n\n### `upload_test_results`\n\nUpload structured test results. This is the only function that writes.\n\nUse it when you have results in hand — parsed from CI output or a runner's JSON\nreport — and no Gaffer CLI is available to upload them.\n\n- **Input:** `projectId` (required for `gaf_` keys), `framework` (required), `tests` (required), `branch`, `commitSha`, `ciProvider`, `startedAt`, `finishedAt`, `coverage`\n- **Returns:** `uploadSessionId`, the generated `runId`, and the derived pass/fail/skip summary\n- **Example:** \"Upload these 42 parsed pytest results so we can track them\"\n\n`runId`, the run timestamps and the summary are derived from `tests` — pass\n`startedAt`/`finishedAt` only if you know the real wall-clock window.\n\nTwo constraints worth knowing:\n\n- **Not idempotent.** Each call creates a new run, so a retry after an uncertain\n  failure produces a duplicate. Check `get_upload_status` instead of retrying.\n- **Rate-limited per project**, and every call is written to the project's audit\n  log with the id of the credential that made it.\n\nProcessing is asynchronous: results take a few seconds to become visible to the\nread functions.\n\n## Agentic CI Workflows\n\nThese workflows show how an AI agent diagnoses CI failures, waits for results, and finds coverage gaps. Each step is a `codemode` function, so a whole chain runs inside one `execute_code` call rather than one round-trip per step.\n\n### Workflow: Diagnose CI Failures\n\n```\nlist_test_runs(projectId, status=\"failed\")\n  → get_test_run_details(projectId, testRunId, status=\"failed\")\n  → get_failure_clusters(projectId, testRunId)\n  → get_test_history(projectId, testName=\"...\")\n  → compare_test_metrics(projectId, testName, beforeCommit, afterCommit)\n```\n\n1. Find the failed test run\n2. Get individual failure details with stack traces\n3. Group failures by root cause — often 15 failures are 2-3 bugs\n4. Check if each failure is new (regression) or recurring\n5. Verify fixes by comparing before/after\n\n### Workflow: Wait for Results\n\n```\nget_upload_status(projectId, commitSha=\"abc123\")\n  → poll until processingStatus=\"completed\"\n  → get_test_run_details(projectId, testRunId)\n```\n\n1. Check if results for a commit have been uploaded\n2. Wait for processing to complete\n3. Use linked test run IDs to get results\n\n### Workflow: Find Coverage Gaps\n\n```\nfind_uncovered_failure_areas(projectId)\n  → get_untested_files(projectId)\n  → get_coverage_for_file(projectId, filePath=\"src/critical/\")\n```\n\n1. Find files with both low coverage and test failures (highest risk)\n2. Find files with no coverage at all\n3. Drill into specific directories for targeted analysis\n\n### Function Quick Reference\n\n| Agent Question | Function |\n|---|---|\n| \"What failed?\" | `get_test_run_details` |\n| \"Same root cause?\" | `get_failure_clusters` |\n| \"Seen this error before?\" | `search_failures` |\n| \"Is it flaky?\" | `get_flaky_tests` |\n| \"Is this new?\" | `get_test_history` |\n| \"Did my fix work?\" | `compare_test_metrics` |\n| \"Are results ready?\" | `get_upload_status` |\n| \"What's untested?\" | `find_uncovered_failure_areas` |\n| \"What's slow?\" | `get_slowest_tests` |\n\n## Prioritizing Coverage Improvements\n\nWhen using coverage tools to improve your test suite, combine coverage data with codebase exploration for best results:\n\n### 1. Understand Code Utilization\n\nBefore targeting files purely by coverage percentage, explore which code is actually critical:\n\n- **Find entry points:** Look for route definitions, event handlers, exported functions - these reveal what code actually executes in production\n- **Find heavily-imported files:** Files imported by many others are high-value targets\n- **Identify critical business logic:** Look for files handling auth, payments, data mutations, or core domain logic\n\n### 2. Prioritize by Impact\n\nLow coverage alone doesn't indicate priority. Consider:\n\n- **High utilization + low coverage = highest priority** - Code that runs frequently but lacks tests\n- **Large files with 0% coverage** - More uncovered lines means bigger impact on overall coverage\n- **Files with both failures and low coverage** - Use `find_uncovered_failure_areas` for this\n\n### 3. Use Path-Based Queries\n\nThe `get_untested_files` tool may return many frontend components. For backend or specific areas:\n\n```\n# Query specific paths with get_coverage_for_file\nget_coverage_for_file(filePath=\"server/services\")\nget_coverage_for_file(filePath=\"src/api\")\nget_coverage_for_file(filePath=\"lib/core\")\n```\n\n### 4. Iterative Improvement\n\n1. Get baseline with `get_coverage_summary`\n2. Identify targets with `get_coverage_for_file` on critical paths\n3. Write tests for highest-impact files\n4. Re-check coverage after CI uploads new results\n5. Repeat\n\n## Authentication\n\n### User API Keys (Recommended)\n\nUser API Keys (`gaf_` prefix) provide read-only access to all projects across your organizations. Get your API Key from: **Account Settings > API Keys**\n\n### Project Tokens\n\nProject Tokens (`gfr_` prefix) are designed for uploading test results and only provide access to a single project. When you use one, omit `projectId` — it resolves automatically. User API Keys are preferred for the MCP server because they enable `list_projects` and read across projects.\n\n## Environment Variables\n\n| Variable | Required | Description |\n|----------|----------|-------------|\n| `GAFFER_API_KEY` | Yes | Your Gaffer API Key (starts with `gaf_`) |\n| `GAFFER_API_URL` | No | API base URL (default: `https://app.gaffer.sh`) |\n\n## Local Development\n\n```bash\npnpm install\npnpm build\n```\n\nTest locally with Claude Code (use absolute path to built file):\n\n```json\n{\n  \"mcpServers\": {\n    \"gaffer\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/dist/index.js\"],\n      \"env\": {\n        \"GAFFER_API_KEY\": \"gaf_...\"\n      }\n    }\n  }\n}\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:07:08.762Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:50:00.920Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

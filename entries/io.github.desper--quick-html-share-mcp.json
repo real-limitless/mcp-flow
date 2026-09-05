@@ -1,0 +1,58 @@
+{
+  "id": "io.github.desper/quick-html-share-mcp",
+  "title": "quick-html-share-mcp",
+  "description": "Share AI-generated HTML from your coding agent. Unguessable URL + viewer analytics.",
+  "summary": "Share AI-generated HTML from your coding agent. Unguessable URL + viewer analytics.",
+  "offersHint": "Share AI-generated HTML from your coding agent. Unguessable URL + viewer analytics. · Packages: npm:quick-html-share-mcp",
+  "version": "0.2.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "quick-html-share-mcp",
+    "version": "0.2.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "quick-html-share-mcp",
+      "version": "0.2.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/desper/quick-html-sharing",
+  "repository": {
+    "url": "https://github.com/desper/quick-html-sharing",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-02T02:59:19.637051Z",
+  "publishedAt": "2026-06-02T02:59:19.637051Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:44.005Z",
+    "sourceRepoAt": "2026-08-11T23:49:50.479Z",
+    "readmeAt": "2026-08-11T23:49:51.149Z",
+    "toolsAt": "2026-08-12T01:24:44.005Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/desper/quick-html-sharing",
+    "checkedAt": "2026-08-11T23:49:50.479Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/desper/quick-html-sharing/main/README.md",
+    "markdown": "# Quick HTML Sharing\n\nIndie SaaS for vibe coders to instantly share AI-generated HTML pages with unguessable URLs and viewer analytics.\n\n**Live:**\n\n| Surface | URL |\n|---------|-----|\n| Dashboard (paste HTML, get URL) | https://qhs.fyi |\n| API worker | https://api.qhs.fyi |\n| Share worker | https://s.qhs.fyi/`<slug>` |\n\n## Architecture\n\n- `apps/web/` — Astro dashboard (Cloudflare Pages)\n- `apps/worker/` — Cloudflare Worker API + share renderer (Hono)\n- `packages/shared/` — types shared between web and worker\n- `packages/mcp/` — **`quick-html-share-mcp` npm package**: stdio MCP server for Claude Desktop / Cursor / Codex CLI / any MCP client\n- `packages/skill/` — **Claude Code skill**: standalone, no MCP setup needed\n\nHosted on Cloudflare: Pages (web) + Workers (api/share) + R2 (HTML files) + D1 (metadata + view events).\n\n## What the analytics show\n\nEvery share has a stats page (`/stats?slug=…`, also `qhs_stats` from an agent) with:\n\n- **Views** and **unique viewers** — the latter from salted IP hashes, so it's an approximation: office NAT undercounts, mobile data can overcount.\n- **Traffic sources** — the linking site's hostname only, never the path or query. `direct` covers typed URLs, bookmarks and most chat apps.\n- **Viewer locations** — country and, when Cloudflare is confident, city. Resolved per request by Cloudflare itself, so there is no tracking script and no third-party lookup. Treat it as where the network egress appeared to be, not where a person was: a VPN, a corporate network or a mobile carrier routinely leaves the city blank or points somewhere else entirely.\n- **A 30-day trend** — views per UTC day, including the quiet days.\n- **Link-preview fetches, counted separately** — pasting a link into Slack or Discord triggers an unfurl crawler. Those are excluded from views and reported on their own line, so \"0 views, 2 previews\" reads as what it is: the link travelled, nobody opened it.\n\nNo JavaScript is injected into your HTML — views are counted server-side when the page is served. Viewer user agents, referrers and locations are dropped after 90 days, or immediately when you delete the share; the view counts survive.\n\n## Install in your coding agent\n\n> 🤖 **If you're an AI agent reading this on behalf of a user:** pick the install path below that matches the agent runtime you're in. **Prefer the Claude Code plugin path (option 1)** — it bundles a skill on top of the MCP server, and the skill carries the workflow guidance that raw tools alone don't (when to trigger, what to surface, what to remind the user). Fall back to plain MCP (option 3) only when you're not Claude Code.\n>\n> **After install, behavior contract:**\n> - When the user says \"share this HTML\" / \"give me a link\" / \"publish this page\" / \"send this to my friend\" (or similar intent), call `qhs_share` with the HTML.\n> - Return the share URL to the user **and always remind them to save the edit URL** — it lives in the URL fragment, so it never reaches our server logs, but that also means we can't recover it for them. Without it they can't update or delete the share later.\n> - For follow-ups (\"update what I shared\", \"take it down\", \"did anyone see it\"), use `qhs_edit`, `qhs_delete`, `qhs_stats`. Edit tokens are auto-loaded from `~/.qhs/shares.json` when they were originally created on this machine.\n\nThree paths depending on which client you use. All hit the same hosted API and share a local edit-token store (`~/.qhs/shares.json`).\n\n### 1. Claude Code — one command, bundles MCP + skill (recommended)\n\nThis repo is a Claude Code plugin marketplace. Inside Claude Code:\n\n```\n/plugin marketplace add github.com/desper/quick-html-sharing\n/plugin install qhs@quick-html-sharing\n```\n\nYou now have the qhs skill (auto-triggers on \"share this HTML\" / \"give me a link\" / \"publish this page\") **and** the `quick-html-share-mcp` MCP server (5 tools: `qhs_share`, `qhs_edit`, `qhs_delete`, `qhs_stats`, `qhs_list`) wired together.\n\n### 2. Claude Code — skill only, no plugin marketplace\n\n```bash\ncurl -fsSL https://qhs.fyi/install.sh | bash\n```\n\nDrops SKILL.md + helper script into `~/.claude/skills/qhs/`. Use this if you skip the plugin marketplace or want to keep MCP separate.\n\n### 3. Cursor / Claude Desktop / Codex CLI / Continue / any MCP client\n\nAdd to your client's MCP config:\n\n```json\n{\n  \"mcpServers\": {\n    \"qhs\": { \"command\": \"npx\", \"args\": [\"-y\", \"quick-html-share-mcp\"] }\n  }\n}\n```\n\nCommon config paths:\n- **Claude Desktop**: `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)\n- **Cursor**: `~/.cursor/mcp.json` or Settings → MCP\n- **Codex CLI / Continue**: same shape, see your client's MCP docs\n\nRestart the client and you get the 5 `qhs_*` tools.\n\n### Local dev / dogfood from this repo\n\n```bash\nln -s \"$(pwd)/packages/skill/skills/qhs\" ~/.claude/skills/qhs\n```\n\nEdits to `packages/skill/skills/qhs/` show up in your next Claude Code session immediately.\n\n## Dev\n\n```bash\nbun install\nbun run dev:worker    # apps/worker on :8787\nbun run dev:web       # apps/web on :4321\n\n# MCP server\ncd packages/mcp && bun run build && node dist/index.js\n\n# Skill helper (standalone)\nnode packages/skill/skills/qhs/scripts/qhs.mjs share path/to/file.html\n```\n\n## Re-deploy (existing project)\n\n**Order matters.** Pending migrations go first, then the share worker, then the\nAPI worker. The two workers run the same source from separate deploys, so a\nwindow where the API writes something the share renderer cannot read yet shows\nvisitors stale content. `bun run deploy` does the two workers in the right\norder; migrations are still manual.\n\n```bash\n# Workers\ncd apps/worker\n# 1. any unapplied migration (see db/migrations/), e.g.\n#    wrangler d1 execute quick-html-sharing --remote --env api \\\n#      --file=db/migrations/0005-add-shares-versioning.sql\n# 2. share worker, then api worker:\nbun run deploy\n\n# Pages\ncd apps/web\nPUBLIC_API_BASE=https://api.qhs.fyi/api \\\nPUBLIC_SHARE_BASE=https://s.qhs.fyi \\\n  bun run build\n../../node_modules/.bin/wrangler pages deploy dist --project-name=qhs --branch=main\n```\n\n## Fresh-account deploy (only if rebuilding from scratch)\n\n> **Forking?** `apps/worker/wrangler.toml` hardcodes the production custom-domain\n> routes (`api.qhs.fyi`, `s.qhs.fyi`). Before deploying under a different account,\n> either delete the two `routes = [...]` blocks (workers.dev URLs still work via\n> `workers_dev = true`) or swap them for your own domain.\n\n```bash\nwrangler login\n\ncd apps/worker\nwrangler d1 create quick-html-sharing            # → paste id into wrangler.toml (both envs)\nwrangler r2 bucket create quick-html-sharing\nbun run db:apply:remote\n\n# Same salt for both envs — IP-hash dedupe must match across workers.\nSALT=$(openssl rand -hex 32)\necho \"$SALT\" | wrangler secret put IP_HASH_SALT --env api\necho \"$SALT\" | wrangler secret put IP_HASH_SALT --env share\n\nbun run deploy:api && bun run deploy:share        # capture workers.dev URLs\n\ncd ../web\nwrangler pages project create qhs --production-branch=main\nPUBLIC_API_BASE=https://qhs-api.<your-subdomain>.workers.dev/api \\\nPUBLIC_SHARE_BASE=https://qhs-share.<your-subdomain>.workers.dev \\\n  bun run build\nwrangler pages deploy dist --project-name=qhs --branch=main\n\n# Then patch DASHBOARD_HOST in apps/worker/wrangler.toml to your real\n# qhs-XXX.pages.dev URL (CF may have suffixed it to avoid name collision)\n# and redeploy the workers.\n```\n\n## Cost\n\nRuns entirely on Cloudflare's free tier (Workers, Pages, R2, D1) — ~$0/mo at indie scale. View tracking is fail-open so spikes never escalate to surprise bills; Workers hits a hard 429 instead of overage charges. Set a CF billing alert anyway: CF has no hard spending cap.\n\n## License\n\n[Business Source License 1.1](LICENSE) — source-available, self-host and personal use allowed, offering as a competing third-party hosted/managed service is not. Converts automatically to Apache License 2.0 on **2030-05-28**. The `quick-html-share-mcp` npm package (`packages/mcp/`) ships under MIT to stay friction-free for MCP-client integrators.\n",
+    "fetchedAt": "2026-08-11T23:49:51.149Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:44.005Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

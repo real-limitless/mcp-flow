@@ -1,0 +1,58 @@
+{
+  "id": "io.github.teunlao/vidin",
+  "title": "vidin",
+  "description": "Turn a screen recording into agent-readable annotated keyframes. MCP server + CLI on ffmpeg.",
+  "summary": "Turn a screen recording into agent-readable annotated keyframes. MCP server + CLI on ffmpeg.",
+  "offersHint": "Turn a screen recording into agent-readable annotated keyframes. MCP server + CLI on ffmpeg. · Packages: npm:@teunlao/vidin",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@teunlao/vidin",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@teunlao/vidin",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/teunlao/vidin",
+  "repository": {
+    "url": "https://github.com/teunlao/vidin",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T18:58:20.460329Z",
+  "publishedAt": "2026-07-31T18:58:20.460329Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:27.586Z",
+    "sourceRepoAt": "2026-08-11T23:18:46.809Z",
+    "readmeAt": "2026-08-11T23:18:47.415Z",
+    "toolsAt": "2026-08-12T00:59:27.586Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/teunlao/vidin",
+    "checkedAt": "2026-08-11T23:18:46.809Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/teunlao/vidin/main/README.md",
+    "markdown": "# vidin\n\n**Turn a video into something a coding agent can actually read.**\n\nClaude Code, Codex and friends accept images, not video. So when a bug report\narrives as a screen recording, the video is dead weight — someone has to watch\nit and retype what happened. vidin watches it instead: it converts the\nrecording into a small set of annotated keyframes plus a written timeline, and\nserves them to agents over MCP.\n\n![A 20-second recording condensed to six annotated frames](docs/demo-sheet.webp)\n\n*A 20-second recording in, six frames out: the refund panel, the 500 dialog,\nthe retry toast, the recovery — each boxed and timestamped. (The clip is\nvidin's synthetic test fixture.)*\n\n- **Event-driven, not one-frame-per-second.** A frame is kept when the screen\n  changes and then comes to rest. Three minutes of someone reading costs almost\n  nothing; every real UI event is captured.\n- **Fast.** A 3-minute 1080p recording takes ~4 seconds on an M-series Mac.\n  An hour-long one costs time, not RAM.\n- **One command to run.** `npx @teunlao/vidin` — all it asks of the machine\n  is `ffmpeg`; no sharp, no headless browser, no native image library.\n- **Shaped for agent context.** The MCP tools return a written report and one\n  contact sheet first; full-detail frames only for the moments that turn out to\n  matter.\n- **Timestamps you can scrub to.** An agent can say \"the error appears at\n  00:41.2\" and you jump straight there in the original file.\n\n## Quickstart\n\n```sh\nbrew install ffmpeg        # + yt-dlp, only if you'll pass URLs\n```\n\nHook it into Claude Code:\n\n```sh\nclaude mcp add vidin -- npx -y @teunlao/vidin mcp\n```\n\nOr in `.mcp.json` / `~/.codex/config.toml` equivalents:\n\n```json\n{\n  \"mcpServers\": {\n    \"vidin\": { \"command\": \"npx\", \"args\": [\"-y\", \"@teunlao/vidin\", \"mcp\"] }\n  }\n}\n```\n\nOr straight from the shell:\n\n```sh\nnpx @teunlao/vidin ~/Desktop/bug.mov       # → ./.vidin/bug/\nnpm i -g @teunlao/vidin                    # or put `vidin` on PATH for good\nvidin https://example.com/screencast.mp4   # downloaded with yt-dlp\nvidin zoom bug.mov --from 00:41 --to 00:45 --fps 6\nvidin probe bug.mov\n```\n\n## What comes out\n\n```\nout/\n  REPORT.md        the entry point: timeline table, what changed where, what to open\n  manifest.json    the same, machine readable\n  sheets/          the whole video as labelled 3x3 grids (~1.3k tokens each)\n  frames/          full-detail annotated frames\n```\n\n![An annotated frame: red dashed box around the error dialog, timestamp bar](docs/demo-frame.webp)\n\nEach frame carries a **red dashed box** around the regions that changed since\nthe previous kept frame, and a **bottom bar** with the frame number, the\ntimestamp in the original video, the gap since the previous frame, why the\nframe was kept, and how much of the screen changed.\n\n## The MCP tools\n\nFour tools, shaped so an agent spends context in the right order:\n\n| tool | what it does |\n|------|--------------|\n| `analyze_video` | video → frames on disk; returns the report text **and one contact sheet image** |\n| `get_frames` | full-detail frames by number or time range, capped so a call can't flood the context |\n| `zoom_clip` | re-extract a narrow window at a higher frame rate — for the moment two frames don't explain |\n| `probe_video` | duration / resolution / fps / audio, cheap |\n\nThe intended loop: analyse → look at the sheet → read the timeline → open two\nor three frames → zoom in if the moment between them is still unclear. Opening\neverything up front would burn the context before knowing which second matters.\n\n## Profiles and tuning\n\n| profile | for |\n|---------|-----|\n| `bug-report` | default — someone recorded a screen, narrated a bug, stopped |\n| `dense` | short clips where every twitch matters (24 fps analysis, up to 80 frames) |\n| `walkthrough` | long recordings; fewer frames, wider anchors |\n| `cheap` | smallest footprint, for when the context really is tight (12 frames at 1092px) |\n\nTuning without leaving the profile: `--max-frames`, `--sensitivity` (percent of\nthe screen that counts as an event, lower = more frames), `--fps`, `--width`,\n`--quality`, `--no-annotate`, `--no-sheets`.\n\n## Why pick frames instead of slicing them\n\nOne screenshot per second turns three minutes into 180 frames of which ~90% are\nidentical, because the person was reading, thinking or moving the mouse. Those\nduplicates don't cost much — they *bury* the handful of frames where something\nactually happened, and an agent has to look at all of them to find out which.\nFrame selection is a signal-to-noise problem wearing a cost problem's clothes.\n\nvidin is event driven instead. It walks the video at 12 fps in downscaled RGB\nand keeps a frame only when something actually happened:\n\n- **Change is measured against the last *kept* frame**, not the previous\n  sample, so slow drift accumulates instead of hiding under the threshold.\n- **Frames land after the change, not inside it.** When motion starts, nothing\n  is emitted yet — the selector waits for the screen to come to rest and keeps\n  the settled frame. You get the state *after* the click, not the animation\n  blur.\n- **Colour counts as change.** Comparison is per channel, not on brightness. A\n  field turning red or a green toast over a grey panel barely moves the luma\n  and is exactly what a bug report is about.\n- **A moving mouse costs nothing**, by arithmetic rather than special-casing:\n  at analysis resolution a pointer is an order of magnitude below the event\n  threshold. There was once a subsystem for recognising it; measured on real\n  recordings it changed no decision anywhere, so it is gone.\n- **Guard rails.** A minimum gap, anchor frames across long still stretches,\n  periodic samples while a long animation runs, and a hard budget (40 frames by\n  default) that drops the least informative frames first while keeping the ends\n  of the timeline.\n\nTwo invariants hold whatever path a frame took:\n\n- **Nothing is dropped silently.** The comparison baseline only ever advances\n  by keeping a frame. There is no path that folds a changed screen into the\n  baseline without emitting it — that would make the change unrecoverable,\n  since every later comparison would measure zero against a state you never\n  see.\n- **Annotations describe the neighbour you can actually see.** After the frame\n  budget prunes the middle of the timeline, every survivor's change percentage\n  and boxes are recomputed against the frame that now precedes it.\n\n## How it works\n\n```\nffmpeg ─raw RGB @12fps, 400px─ selector ──timestamps+regions── ffmpeg ──annotated WebP\n         one decode pass,         event state machine            drawbox/drawtext\n         streamed                 in plain TypeScript            per frame\n```\n\nDecoding streams two frames at a time; the selector additionally keeps the\ndownscaled buffers of the frames it has kept so it can recompute their deltas\nafter pruning. That is bounded by the frame budget, not by video length: ~32 MB\nat the defaults. All drawing is done by ffmpeg filters, which is why there is\nno image library in `package.json`.\n\n## Development\n\nDevelopment runs on [Bun](https://bun.sh); the runtime code itself sticks to\n`node:` APIs, which is what lets the published package run anywhere `npx` does.\n\n```sh\ngit clone https://github.com/teunlao/vidin && cd vidin && bun install\nbun test\n```\n\nThe fixture is a synthetic screen recording with a scripted timeline — a panel,\nan error dialog, a toast, a recovery, and two stretches of pointer-only motion.\nThe suite asserts that each staged event yields exactly one settled frame and\nthat pointer motion alone yields none. `test/regressions.test.ts` builds its\nown clips and pins every failure a review has found, so a fixed bug stays\nfixed.\n\n## Not there yet\n\n- **Audio transcript.** Narration is the highest-signal part of a bug report.\n  Planned: local Whisper (`whisper.cpp` or `mlx-whisper`) → a `transcript.md`\n  aligned to the frame timeline.\n- **OCR** over kept frames, so an agent can grep an error message without\n  spending vision tokens at all.\n- **Pointer position and clicks are not reported — deliberately.** A drawn\n  crosshair was checked against a real recording and was right about half the\n  time: a growing DevTools request list moves down the screen exactly like a\n  pointer does. A wrong marker asserts \"the user was pointing here\" on a coin\n  flip, and the pointer is plainly visible in the frame anyway.\n- **Horizontal scroll** is not detected; vertical is.\n- **Small elements need a nudge.** The default event threshold is 0.4% of the\n  screen, so a progress bar or a badge below that is not an event on its own.\n  `--sensitivity 0.2` or `--profile dense` catches them, at the cost of more\n  frames.\n",
+    "fetchedAt": "2026-08-11T23:18:47.415Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:27.586Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

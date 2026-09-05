@@ -1,0 +1,58 @@
+{
+  "id": "io.github.askadvaith/mcp-state-sidecar",
+  "title": "mcp-state-sidecar",
+  "description": "MCP State Sidecar: durable state persistence for multi-agent AI workflows",
+  "summary": "MCP State Sidecar: durable state persistence for multi-agent AI workflows",
+  "offersHint": "MCP State Sidecar: durable state persistence for multi-agent AI workflows · Packages: pypi:mcp-state-sidecar",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-state-sidecar",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-state-sidecar",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/askadvaith/MCP-State-Sidecar",
+  "repository": {
+    "url": "https://github.com/askadvaith/MCP-State-Sidecar",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-12T16:50:54.059225Z",
+  "publishedAt": "2026-06-12T16:50:54.059225Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:51.758Z",
+    "sourceRepoAt": "2026-08-11T23:56:09.737Z",
+    "readmeAt": "2026-08-11T23:56:10.189Z",
+    "toolsAt": "2026-08-12T01:29:51.758Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/askadvaith/MCP-State-Sidecar",
+    "checkedAt": "2026-08-11T23:56:09.737Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/askadvaith/MCP-State-Sidecar/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.askadvaith/mcp-state-sidecar -->\n# MCP State Sidecar Server\n\n[![PyPI version](https://img.shields.io/pypi/v/mcp-state-sidecar.svg)](https://pypi.org/project/mcp-state-sidecar/)\n[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/mcp-state-sidecar.svg)](https://pypi.org/project/mcp-state-sidecar/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n[![MCP Registry](https://img.shields.io/badge/MCP-Registry-orange.svg)](https://registry.modelcontextprotocol.io)\n\nAn MCP-native state sidecar that externalises workflow state for distributed agent deployments. \n\nQuite a simple idea really; instead of storing state inside agents (which breaks when processes crash, scale horizontally, or span multiple frameworks), agents write to and read from this sidecar over the **Model Context Protocol (MCP)**. The sidecar is itself an MCP server; agents call its tools exactly the same way they call any other tool!\n\nThe server itself is built with distributed environments in mind, and natively handles concurrency, crash resilience and atomic claims in addition to being a common interface for state management between agents.\n\n## Features\n\n- **Durable Key-Value Store**: CRUD operations with optional TTL (Time-To-Live).\n- **Workflow Lifecycle Registry**: Centralised coordination (create, claim, checkpoint, and resume) for distributed multi-agent workers without out-of-band communication.\n- **TTL Leases & Locks**: Concurrency control to prevent race conditions and split-brain scenarios.\n- **Audit Logging & Session Snapshotting**: Audit state transitions and persist session contexts.\n- **Multiple Backends**: SQLite (with WAL mode & serialisation) and high-concurrency Redis currently supported.\n\n---\n\n## Installation\n\nInstall the package via `pip` or your favorite Python package manager:\n\n```bash\npip install mcp-state-sidecar\n```\n\nIf you want to use the Redis backend:\n\n```bash\npip install mcp-state-sidecar[redis]\n```\n\n### Building from Source\n\nTo build and install the package from source:\n\n1. Clone the repository:\n   ```bash\n   git clone https://github.com/askadvaith/MCP-State-Sidecar.git\n   cd MCP-State-Sidecar\n   ```\n2. Install build dependencies:\n   ```bash\n   pip install --upgrade build\n   ```\n3. Build the wheel and source distribution:\n   ```bash\n   python -m build\n   ```\n4. Install the package locally:\n   ```bash\n   pip install dist/mcp_state_sidecar-*.whl\n   ```\n   Or install the package in editable mode for active development:\n   ```bash\n   pip install -e .\n   ```\n\n---\n\n## Quick Start\n\n### Running the Server\n\nIn a multi-agent distributed environment, you would typically run the state sidecar as an HTTP SSE service so multiple remote agents and clients can connect to it concurrently.\n\n#### HTTP SSE Mode (Primary for Distributed Environments)\nStart the SSE server to listen on a network port:\n\n```bash\nmcp-state-sidecar-http\n```\nBy default, the server binds to `0.0.0.0` and listens on port `8000`. The MCP endpoint is available at `http://localhost:8000/mcp`.\n\n#### Stdio Mode (For Subprocess / Local Agent Execution)\nLaunch the server via standard input/output:\n\n```bash\nmcp-state-sidecar\n```\n\n---\n\n## Configuration\n\nThe server is configured entirely using environment variables:\n\n| Environment Variable | Default | Description |\n|---|---|---|\n| `STATE_BACKEND` | `sqlite` | Storage backend: `sqlite` or `redis` |\n| `DB_PATH` | `state_sidecar.db` | Path to the SQLite database file |\n| `REDIS_URL` | `redis://localhost:6379` | Redis connection URL |\n| `SIDECAR_HOST` | `0.0.0.0` | IP host to bind the HTTP SSE server |\n| `SIDECAR_PORT` | `8000` | Port for the HTTP SSE server |\n\n---\n\n## Tool Reference\n\n### Group 1 — Key-Value Store\n- `state_set(key, value, ttl_seconds?, agent_id?)`: Upsert a JSON-serialisable value with optional TTL.\n- `state_get(key)`: Retrieve a value (returns `found=False` if missing or expired).\n- `state_delete(key)`: Delete a key.\n- `state_list(prefix?)`: List all live keys, optionally filtered by prefix.\n\n### Group 2 — Workflow Lifecycle\n- `workflow_create(name, tags?)`: Register a workflow; returns a unique `run_id`.\n- `workflow_discover(tags?, status?)`: Find workflows filtered by tags or status.\n- `workflow_claim(run_id, agent_id)`: Atomically claim a `created` workflow.\n- `workflow_checkpoint(run_id, step, output)`: Persist step output and advance the step counter.\n- `workflow_resume(run_id)`: Get full resume context including last step and all step outputs.\n- `workflow_status(run_id)`: Get lightweight status (status, last step, and timestamps).\n- `workflow_list()`: List all registered workflows.\n\n### Group 3 — Lease & Concurrency Control\n- `lease_acquire(resource_id, holder_id, ttl_seconds)`: Attempt to acquire an exclusive lock.\n- `lease_release(resource_id, holder_id)`: Voluntarily release a held lease.\n- `lease_renew(resource_id, holder_id, ttl_seconds)`: Extend lease duration without releasing.\n\n### Group 4 — Sessions & History\n- `session_save(session_id, context)`: Save a snapshot of workflow context.\n- `session_restore(session_id)`: Retrieve saved context after crash or handoff.\n- `history_log(key?, n?)`: Retrieve the last N state-transition records with timestamps and writer IDs.\n\n### Group 5 — Observability\n- `sidecar_health()`: Liveness, backend type, uptime, and database metrics.\n- `sidecar_reset()`: Irreversibly wipe all data.\n\n---\n\n## License\n\nThis project is licensed under the MIT License. See `LICENSE` for details.\n",
+    "fetchedAt": "2026-08-11T23:56:10.189Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:51.758Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,164 @@
+{
+  "id": "io.github.hypeprinter007-stack/anchor-x402",
+  "title": "anchor-x402",
+  "description": "x402-paid agent tools: 18 over HTTP, 14 over stdio. USDC per call, no API key.",
+  "summary": "x402-paid agent tools: 18 over HTTP, 14 over stdio. USDC per call, no API key.",
+  "offersHint": "x402-paid agent tools: 18 over HTTP, 14 over stdio. USDC per call, no API key. · Remote MCP (streamable-http) at https://api.anchor-x402.com/mcp · Packages: npm:anchor-x402-mcp · Env vars: ANCHOR_WALLET_PRIVATE_KEY",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.anchor-x402.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.anchor-x402.com/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "anchor-x402-mcp",
+    "version": "0.2.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ANCHOR_WALLET_PRIVATE_KEY",
+        "description": "EVM private key (0x-prefixed hex). The wallet pays for x402 calls in USDC on Base mainnet. Fund with USDC before use.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "anchor-x402-mcp",
+      "version": "0.2.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ANCHOR_WALLET_PRIVATE_KEY",
+          "description": "EVM private key (0x-prefixed hex). The wallet pays for x402 calls in USDC on Base mainnet. Fund with USDC before use.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANCHOR_WALLET_PRIVATE_KEY",
+      "description": "EVM private key (0x-prefixed hex). The wallet pays for x402 calls in USDC on Base mainnet. Fund with USDC before use.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://anchor-x402.com",
+  "sourceUrl": "https://github.com/hypeprinter007-stack/anchor-x402-mcp",
+  "repository": {
+    "url": "https://github.com/hypeprinter007-stack/anchor-x402-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T18:51:23.376876Z",
+  "publishedAt": "2026-08-04T18:51:23.376876Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:22.707Z",
+    "sourceRepoAt": "2026-08-11T23:42:56.736Z",
+    "readmeAt": "2026-08-11T23:42:57.568Z",
+    "toolsAt": "2026-08-11T23:42:57.686Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/hypeprinter007-stack/anchor-x402-mcp",
+    "checkedAt": "2026-08-11T23:42:56.736Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/hypeprinter007-stack/anchor-x402-mcp/main/README.md",
+    "markdown": "# anchor-x402-mcp\n\n> MCP server exposing 14 [anchor-x402](https://anchor-x402.com) services as tools any Claude Desktop / Cursor / Codex / Continue agent can call. Pay-per-use USDC via x402 on Base mainnet — no API keys, no subscriptions.\n\n## Two transports — pick by who holds the wallet key\n\n**This package (stdio)** needs a funded EVM private key in the local process (`ANCHOR_WALLET_PRIVATE_KEY`) and pays for each call on your behalf. Convenient, but you are handing a hot key to a process.\n\n**Streamable HTTP** — `POST https://api.anchor-x402.com/mcp` — needs no install and no key handover. It exposes all **18** services (four more than this package: `roll_random`, `investigate_wallet`, `ledger_summary`, `ledger_report`), and you pay per call with a `PAYMENT-SIGNATURE` header, so your key never leaves your side.\n\n```json\n{\n  \"mcpServers\": {\n    \"anchor-x402\": { \"url\": \"https://api.anchor-x402.com/mcp\" }\n  }\n}\n```\n\nClients that speak remote MCP natively take the `url` form above. For one that only launches stdio processes, bridge it:\n\n```json\n{\n  \"mcpServers\": {\n    \"anchor-x402\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-remote\", \"https://api.anchor-x402.com/mcp\"]\n    }\n  }\n}\n```\n\nProtocol revisions supported: `2026-07-28`, `2025-11-25`, `2025-06-18`, `2025-03-26` — both the stateless era and the `initialize` handshake era, on one endpoint. `server/discover` and `tools/list` are free; `tools/call` is paid.\n\nPayment is the ordinary x402 dance, surfaced inside MCP rather than around it: an unpaid `tools/call` returns a **result** (not a JSON-RPC error) with `isError: true` and the challenge in `structuredContent.accepts`, plus the canonical `payment-required` header. Sign one of the options and retry the identical call with `PAYMENT-SIGNATURE`. The challenge comes back as a result on purpose — an agent can read it and pay, whereas a JSON-RPC error would be swallowed by the client before the model ever saw it.\n\nServer card: [`/.well-known/mcp/server-card.json`](https://anchor-x402.com/.well-known/mcp/server-card.json). A worked client, including the adapter that bridges a stock x402 fetch wrapper to the MCP result shape, is in [`examples/agent/mcp-paid-call.mjs`](https://github.com/hypeprinter007-stack/anchor-x402/blob/main/examples/agent/mcp-paid-call.mjs).\n\nThe rest of this README covers the stdio package.\n\n## What an agent gets\n\nFourteen tools, $0.001–$0.05 per call.\n\n**Commodity primitives** (9, $0.001–$0.02):\n\n| Tool | Price | What it does |\n|---|---|---|\n| `anchor_hash` | $0.005 | Anchor any 32-byte hash to Base + Solana mainnet in parallel; returns both tx URLs |\n| `screen_wallet` | $0.02 | Wallet risk pre-flight — OFAC sanctions + address-reputation (drainer/phishing/mixer) → allow/review/block |\n| `attest_decision` | $0.010 | Attest a decision — sign it yourself or let the treasury sign — then dual-chain anchor; free re-verify at /v1/attest/verify |\n| `decode_tx` | $0.001 | Structured decode of any mainnet tx (Base / Ethereum / Solana) |\n| `resolve_name` | $0.001 | Cross-chain name resolution (ENS, Bonfida SNS) |\n| `token_price` | $0.001 | USD spot price for any token by symbol or chain+contract |\n| `decode_calldata` | $0.001 | 4byte selector + ABI param decode for raw EVM calldata |\n| `parse_datetime` | $0.001 | Freeform datetime string → structured ISO 8601 |\n| `intel_wallet` | $0.005 | Bundled wallet intelligence: balances + activity + identity + sanctions in one call |\n\n**Universal LLM endpoints** (5, $0.01–$0.05) — added in v0.2:\n\n| Tool | Price | What it does |\n|---|---|---|\n| `roast` | $0.05 | Witty 3-5 paragraph roast of any target — wallet, tweet, code, idea, anything |\n| `oracle` | $0.05 | Yes/no oracle. Returns YES/NO/MAYBE + reason + dual-chain anchored `(question \\| answer \\| timestamp)` hash. Cryptographic receipt of when you asked. |\n| `tldr` | $0.01 | Summarize a URL (fetches up to 500KB) or pasted text into 3-5 concise bullets |\n| `aura` | $0.01 | Returns color, tier (S/A/B/C/D/F), score 0-9999, and a punchy 2-3 sentence aura read |\n| `grade` | $0.01 | Academic letter grade (A+ to F) with red-pen marginalia and one-paragraph summary |\n\nThe investigator (`/v1/investigate`, $1.77 async) and the hosted chatbot at [chat.anchor-x402.com](https://chat.anchor-x402.com) are not included in the MCP — they're accessed directly via the HTTP API and the browser respectively.\n\nThe MCP server pays for itself — your wallet gets debited automatically for each call. No prepay, no API key, no account.\n\n## Install\n\n### Claude Desktop\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"anchor-x402\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"anchor-x402-mcp\"],\n      \"env\": {\n        \"ANCHOR_WALLET_PRIVATE_KEY\": \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude Desktop. Ask: *\"Anchor the hash `7646dda1564bde0ef3f3971f4c002962df64246da4aa1d8c47247e7632494710` on mainnet\"* — it'll call `anchor_hash` and pay $0.005 USDC from your wallet.\n\n### Claude Code\n\nAdd to your project's `.mcp.json`:\n\n```json\n{\n  \"anchor-x402\": {\n    \"command\": \"npx\",\n    \"args\": [\"-y\", \"anchor-x402-mcp\"],\n    \"env\": {\n      \"ANCHOR_WALLET_PRIVATE_KEY\": \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"\n    }\n  }\n}\n```\n\n### Codex CLI (OpenAI)\n\nEdit `~/.codex/config.toml`:\n\n```toml\n[mcp_servers.anchor-x402]\ncommand = \"npx\"\nargs = [\"-y\", \"anchor-x402-mcp\"]\n\n[mcp_servers.anchor-x402.env]\nANCHOR_WALLET_PRIVATE_KEY = \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"\n```\n\nRestart `codex`. Type `/mcp` to confirm anchor-x402 shows in the loaded servers list.\n\n### ChatGPT Desktop\n\nSettings → **Integrations** → **MCP servers** → **Add server**. Paste:\n\n```json\n{\n  \"command\": \"npx\",\n  \"args\": [\"-y\", \"anchor-x402-mcp\"],\n  \"env\": {\n    \"ANCHOR_WALLET_PRIVATE_KEY\": \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"\n  }\n}\n```\n\nSave, restart, the 14 tools appear in any chat with tool-use enabled.\n\n### Cursor\n\nEdit `~/.cursor/mcp.json` (global) or `<project>/.cursor/mcp.json` (project-scoped):\n\n```json\n{\n  \"mcpServers\": {\n    \"anchor-x402\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"anchor-x402-mcp\"],\n      \"env\": {\n        \"ANCHOR_WALLET_PRIVATE_KEY\": \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"\n      }\n    }\n  }\n}\n```\n\n### OpenAI Agents SDK (programmatic)\n\n```python\nfrom openai_agents import Agent, MCPServerStdio\n\nmcp = MCPServerStdio(\n    command=\"npx\",\n    args=[\"-y\", \"anchor-x402-mcp\"],\n    env={\"ANCHOR_WALLET_PRIVATE_KEY\": \"0xYOUR_BASE_WALLET_PRIVATE_KEY\"},\n)\nagent = Agent(name=\"researcher\", model=\"gpt-4o\", mcp_servers=[mcp])\n```\n\nSame package, same env, programmatic instead of config-driven.\n\n### Continue / Smithery / generic MCP client\n\nSame shape — `command: npx`, `args: [-y, anchor-x402-mcp]`, env carries your wallet key. The MCP SDK handles transport.\n\nOr install via [Smithery](https://smithery.ai) one-liner:\n```\nnpx -y @smithery/cli install anchor-x402-mcp --client claude\n```\n(replace `--client claude` with `cursor`, `codex`, `windsurf`, etc.)\n\n### Run standalone\n\n```bash\nANCHOR_WALLET_PRIVATE_KEY=0xYOUR_KEY npx anchor-x402-mcp\n```\n\nSpeaks MCP over stdio. Pipe into any MCP-compatible client.\n\n## Funding your wallet\n\nThe wallet you set as `ANCHOR_WALLET_PRIVATE_KEY` needs **USDC on Base mainnet**. Any amount works — even $1 buys 100 anchor calls or 1000 commodity-tier calls. Send USDC to your wallet's Base address:\n\n- USDC contract on Base: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`\n- Bridge from Ethereum mainnet via [bridge.base.org](https://bridge.base.org)\n- Buy directly on Coinbase and withdraw to Base\n\nThe MCP server signs payments via [x402](https://github.com/coinbase/x402) — Coinbase's open HTTP-native micropayments protocol. Each request:\n\n1. Hits an `anchor-x402` endpoint\n2. Gets a 402 with payment requirements\n3. Server signs a USDC transfer authorization with your private key\n4. Retries the request with the signed payment — the API settles via Coinbase's facilitator\n\nYou see the response, your wallet's USDC balance ticks down by the call price. Sub-second, no ledger, no account.\n\n## Environment variables\n\n| Variable | Required? | Purpose |\n|---|---|---|\n| `ANCHOR_WALLET_PRIVATE_KEY` | Yes for paid calls | EVM private key. The wallet pays for x402 calls. |\n| `ANCHOR_API_URL` | No | Override the API base URL. Default: `https://api.anchor-x402.com`. Useful for development against a self-hosted fork. |\n\nIf `ANCHOR_WALLET_PRIVATE_KEY` is unset, paid tool calls return a friendly 402 message explaining how to set it. `/health` and `/openapi.json` (not exposed as tools, but reachable via direct `curl`) work without payment.\n\n## Security notes\n\n- The private key lives in your MCP client's config file. **Treat it like a hot wallet** — only fund what you're willing to spend autonomously.\n- Recommended: generate a fresh wallet specifically for agent use. Top up periodically; don't reuse a wallet that holds significant funds.\n- The MCP server only signs USDC payment authorizations to anchor-x402's known treasury addresses (visible in the 402 response). It cannot drain your wallet to arbitrary addresses.\n- Source code is fully open at [github.com/hypeprinter007-stack/anchor-x402-mcp](https://github.com/hypeprinter007-stack/anchor-x402-mcp). Audit before installing.\n\n## Verifying anchor receipts\n\nEvery `anchor_hash` and `attest_decision` call returns Base + Solana tx URLs. These are independently verifiable on the public block explorers — agents can confirm an anchor exists without re-paying:\n\n- Base: `https://basescan.org/tx/<base.tx>` — Input Data field contains the merkle root\n- Solana: `https://solscan.io/tx/<solana.tx>` — Memo program data contains the same hex\n\nThe on-chain bytes are the receipt; the API response is just a convenience wrapper around them. See [the on-chain verifiability primer](https://anchor-x402.com/trust/on-chain-verifiability) for the full verification recipe.\n\n## Troubleshooting\n\n**\"Payment required (402). Set ANCHOR_WALLET_PRIVATE_KEY...\"**\nYou haven't configured a wallet. Add the env var to your MCP config and restart Claude Desktop.\n\n**\"Payment failed (402). The wallet may be out of USDC...\"**\nYour wallet ran out. Send USDC on Base to the wallet address shown in the server's startup log (it logs `payer=0x…` to stderr).\n\n**\"anchor-x402 request failed: ...\"**\nNetwork or DNS issue. Check `https://api.anchor-x402.com/health` returns 200; if not, see the [status page](https://anchor-x402.betteruptime.com).\n\n## Links\n\n- **Live API:** https://api.anchor-x402.com\n- **MCP over HTTP:** https://api.anchor-x402.com/mcp — all 18 tools, no key handover\n- **MCP server card:** https://anchor-x402.com/.well-known/mcp/server-card.json\n- **Site / trust portal:** https://anchor-x402.com\n- **Status:** https://anchor-x402.betteruptime.com\n- **Server source:** https://github.com/hypeprinter007-stack/anchor-x402\n- **MCP server source (this repo):** https://github.com/hypeprinter007-stack/anchor-x402-mcp\n- **x402 protocol:** https://github.com/coinbase/x402\n- **MCP spec:** https://modelcontextprotocol.io\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:42:57.568Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "anchor_hash",
+      "description": "Anchor a 32-byte hash to Base + Solana mainnet in parallel. Returns both tx URLs as cryptographic proof of when the hash existed. $0.005 USDC."
+    },
+    {
+      "name": "attest_decision",
+      "description": "Attest a decision over (input_hash, output_hash, decision): sign it yourself, or omit the signature and the treasury signs for you — then dual-chain anchor. Returns the signer, on-chain proof URLs, and a free re-verify URL. $0.010 USDC."
+    },
+    {
+      "name": "aura_read",
+      "description": "Read the aura of anything — color, tier (S/A/B/C/D/F), score 0-9999, description. $0.01 USDC."
+    },
+    {
+      "name": "decode_calldata",
+      "description": "Decode raw EVM calldata into function name + typed parameters via openchain.xyz + eth_abi. EVM-only. $0.001 USDC."
+    },
+    {
+      "name": "decode_tx",
+      "description": "Structured decode of any mainnet transaction by hash. Supports Base, Ethereum, Solana. Mined txs cached. $0.001 USDC."
+    },
+    {
+      "name": "grade_target",
+      "description": "Academic letter grade with red-pen marginalia for anything. $0.01 USDC."
+    },
+    {
+      "name": "intel_wallet",
+      "description": "Unified wallet intelligence bundle. ONE call: balances on Base + Ethereum + Solana, USDC, tx counts, ENS/SNS reverse, sanctions verdict. 8-10 parallel sources. $0.005 USDC."
+    },
+    {
+      "name": "investigate_wallet",
+      "description": "Agent-driven wallet due diligence — multi-step investigation, signed markdown report + JSON sidecar, dual-chain anchored. Async — returns job_id; poll /v1/investigate/status/{job_id} for the deliverable. ETA 5-10 min. $1.77 USDC."
+    },
+    {
+      "name": "ledger_report",
+      "description": "Signed + dual-chain-anchored x402 expense report (markdown + CSV, async job). $0.35 USDC."
+    },
+    {
+      "name": "ledger_summary",
+      "description": "x402 spend accounting for any Base wallet — totals + per-service breakdown reconstructed from chain data. $0.01 USDC."
+    },
+    {
+      "name": "oracle_verdict",
+      "description": "Yes/no oracle with dual-chain anchored verdict (Base + Solana). $0.05 USDC."
+    },
+    {
+      "name": "parse_datetime",
+      "description": "Parse freeform datetime strings into ISO 8601 + components + relative time + confidence. $0.001 USDC."
+    },
+    {
+      "name": "resolve_name",
+      "description": "Cross-chain name resolution: ENS (.eth) and Bonfida SNS (.sol). Returns resolved address(es). 1h cache. $0.001 USDC."
+    },
+    {
+      "name": "roast_target",
+      "description": "Witty roast of any target — wallet, tweet, idea, code, anything. $0.05 USDC."
+    },
+    {
+      "name": "roll_random",
+      "description": "Verifiable RNG — cryptographically-random integer(s) signed by the treasury key. Drop-in VRF for game studios. $0.001 USDC."
+    },
+    {
+      "name": "screen_wallet",
+      "description": "Wallet risk pre-flight for agent payments: OFAC SDN sanctions plus address-reputation (drainer, phishing, mixer, laundering) resolved to an allow/review/block recommendation with per-signal detail. $0.02 USDC."
+    },
+    {
+      "name": "tldr_text",
+      "description": "Summarize a URL or pasted text into 3-5 concise bullets. $0.01 USDC."
+    },
+    {
+      "name": "token_price",
+      "description": "USD spot price for any major token. By symbol or chain+contract. CoinGecko-backed, 60s cache. $0.001 USDC."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:42:57.686Z",
+  "toolsPreviewStatus": "ok"
+}

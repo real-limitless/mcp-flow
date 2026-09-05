@@ -1,0 +1,69 @@
+{
+  "id": "io.github.wzltmp/mcp-automations",
+  "title": "MCP Automations",
+  "description": "Summarize URLs, repurpose content, daily news digests, find competitors. Cost telemetry built in.",
+  "summary": "Summarize URLs, repurpose content, daily news digests, find competitors. Cost telemetry built in.",
+  "offersHint": "Summarize URLs, repurpose content, daily news digests, find competitors. Cost telemetry built in. · Remote MCP (streamable-http) at https://mcp-automations.fly.dev/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp-automations.fly.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp-automations.fly.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://github.com/wzltmp/mcp-automations",
+  "sourceUrl": "https://github.com/wzltmp/mcp-automations",
+  "repository": {
+    "url": "https://github.com/wzltmp/mcp-automations",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-28T02:21:03.655715Z",
+  "publishedAt": "2026-05-28T02:21:03.655715Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:45.043Z",
+    "sourceRepoAt": "2026-08-11T23:14:30.718Z",
+    "readmeAt": "2026-08-11T23:14:31.185Z",
+    "toolsAt": "2026-08-11T23:14:31.330Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/wzltmp/mcp-automations",
+    "checkedAt": "2026-08-11T23:14:30.718Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/wzltmp/mcp-automations/master/README.md",
+    "markdown": "# MCP Automations\n\nA production-grade Model Context Protocol server in Python — four LLM-callable tools, two transports, deployed two different ways.\n\n| | URL |\n|---|---|\n| **Source** | https://github.com/wzltmp/mcp-automations |\n| **Playground (browser demo)** | https://mcp-automations-5vgea2ynuyrvbzkcxm6yoh.streamlit.app/ |\n| **MCP HTTP server** | https://mcp-automations.fly.dev/mcp |\n\n```bash\n# 30-second proof the server is up:\ncurl -X POST https://mcp-automations.fly.dev/mcp \\\n  -H 'Content-Type: application/json' \\\n  -H 'Accept: application/json, text/event-stream' \\\n  -d '{\"jsonrpc\":\"2.0\",\"method\":\"initialize\",\"id\":1,\n       \"params\":{\"protocolVersion\":\"2024-11-05\",\n                 \"capabilities\":{},\n                 \"clientInfo\":{\"name\":\"curl\",\"version\":\"1\"}}}'\n```\n\n## What this is\n\nMost \"AI engineer\" portfolio projects are *applications* (a RAG chatbot, an agent that does research). This project is the **layer underneath** — the typed tools an LLM can call and the transport plumbing that exposes them. MCP is the emerging standard for LLM tool use (~97M monthly SDK downloads as of early 2026); building one — not just consuming one — is the rare skill.\n\nFor a deeper look at the design decisions — why two transports, how cost telemetry works, the exception hierarchy, what I'd do differently — see [WRITEUP.md](WRITEUP.md).\n\n## Tools\n\n| Tool | Model | What it does |\n|---|---|---|\n| `summarize_url(url, n_bullets)` | Haiku 4.5 | Fetch a page, extract clean text with trafilatura, return an N-bullet summary |\n| `repurpose_content(text, format)` | Sonnet 4.6 | Turn long-form text into a twitter thread, linkedin post, or newsletter |\n| `daily_digest(topic, n_results)` | Haiku 4.5 | Tavily news search + ~200-word digest with citations |\n| `find_competitors(domain, n)` | Sonnet 4.6 | Identify N plausible competitors for a company by domain |\n\nPlus one **MCP resource** (`automations://catalog`) and one **MCP prompt** (`daily_brief`) — using all three MCP primitives, not just tools.\n\nEvery tool returns a typed Pydantic model with **per-call token usage and dollar cost** attached. Cheap tasks route to Haiku 4.5 ($1/M in, $5/M out), writing-heavy tasks to Sonnet 4.6 ($3/M in, $15/M out).\n\n## Connect Claude Desktop to this server\n\nAdd one of these to `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) or `%APPDATA%/Claude/claude_desktop_config.json` (Windows), then restart Claude Desktop.\n\n**Option A — local stdio** (no network, runs the server as a subprocess):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"mcp-automations\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"mcp_server.server\"],\n      \"cwd\": \"/absolute/path/to/mcp-automations\",\n      \"env\": {\n        \"ANTHROPIC_API_KEY\": \"sk-ant-...\",\n        \"TAVILY_API_KEY\": \"tvly-...\"\n      }\n    }\n  }\n}\n```\n\n**Option B — remote HTTP** (talks to the live Fly server, no local setup):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"mcp-automations\": {\n      \"url\": \"https://mcp-automations.fly.dev/mcp\",\n      \"transport\": \"http\"\n    }\n  }\n}\n```\n\nThen ask Claude something like *\"summarize https://www.paulgraham.com/greatwork.html in 3 bullets\"* — it'll call `summarize_url` automatically.\n\n## Run locally\n\n```bash\npip install -r requirements.txt\n\n# Stdio (for Claude Desktop):\npython -m mcp_server.server\n\n# HTTP server (defaults to 0.0.0.0:8765):\nMCP_TRANSPORT=http python -m mcp_server.server\n\n# Streamlit playground:\nstreamlit run playground/app.py\n```\n\nRequires Python 3.13. Needs `ANTHROPIC_API_KEY` and `TAVILY_API_KEY` in `.env` (see `.env.example`).\n\n## Architecture\n\n```\n┌────────────────┐     stdio      ┌──────────────────────┐\n│ Claude Desktop ├───────────────►│                      │\n└────────────────┘                │                      │\n                                  │   mcp_server/        │\n┌────────────────┐    HTTP/JSON   │   server.py          │\n│ Remote client  ├───────────────►│   (FastMCP)          │\n└────────────────┘   (Fly.io)     │                      │\n                                  │   4 tools            │\n┌────────────────┐  direct call   │   1 resource         │\n│ Streamlit UI   ├───────────────►│   1 prompt           │\n└────────────────┘                └──────────┬───────────┘\n                                             │\n                                  ┌──────────┴───────────┐\n                                  │ Anthropic + Tavily   │\n                                  │ (lazy clients)       │\n                                  └──────────────────────┘\n```\n\nThe same Python callables back all three entry points. The transport is just a wrapper.\n\n## What's in this repo\n\n```\nmcp-automations/\n├── mcp_server/\n│   ├── server.py        # FastMCP server: 4 tools + 1 resource + 1 prompt\n│   ├── models.py        # Pydantic I/O schemas (incl. per-call Cost telemetry)\n│   └── exceptions.py    # MCPToolError + UpstreamAPIError / EmptyLLMResponseError / ExtractionError\n├── playground/\n│   └── app.py           # Streamlit UI with per-session call + spend caps\n├── tests/               # offline unit tests (httpx/anthropic/tavily all mocked)\n├── Dockerfile           # python:3.13-slim, MCP_TRANSPORT=http for Fly\n├── fly.toml             # shared-cpu-1x, 256mb, auto-stop when idle\n└── .github/workflows/   # ruff + strict mypy + pytest on every push\n```\n\n## Production touches worth noting\n\n- **Cost telemetry on every tool response** (`models.Cost`) — token counts and USD attached so a client doesn't have to re-derive it.\n- **Cost-aware model routing** — cheap tasks → Haiku, writing tasks → Sonnet.\n- **Domain-specific exception hierarchy** — `UpstreamAPIError`, `EmptyLLMResponseError`, `ExtractionError` each route differently in logs and the Streamlit UI.\n- **Two transports, one codebase** — `MCP_TRANSPORT=stdio|http` env switch; HTTP host/port from env so the same image runs on Fly.\n- **Per-session abuse caps in the playground** — 20 calls / $0.50 max per session; backed by a $2/mo hard cap on the Anthropic console.\n- **Strict mypy + ruff + pytest in CI** on every push (`.github/workflows/ci.yml`).\n\n## Why MCP\n\nMCP is transport-agnostic, so one server serves both a local Claude Desktop user (stdio subprocess) and a hosted multi-tenant deployment (HTTPS). It also exposes three primitives that most demos skip:\n\n- **Tools** — functions the model decides to call (4 of them here)\n- **Resources** — read-only data the client can fetch by URI (`automations://catalog` returns the tool list as JSON)\n- **Prompts** — server-side templates the user explicitly invokes (`daily_brief` chains `daily_digest` + `repurpose_content`)\n\nUsing all three is a signal of reading the spec, not just a quickstart.\n\n## Status\n\n✅ Code on GitHub, CI green\n✅ Public playground on Streamlit Cloud\n✅ Public MCP HTTP server on Fly.io\n✅ Cost protection (per-session caps + monthly Anthropic cap)\n✅ Real test coverage (23 offline unit tests)\n✅ [Listed on the Official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=mcp-automations) as `io.github.wzltmp/mcp-automations`\n✅ [Long-form writeup](WRITEUP.md) of design decisions\n✅ Consumed by another agent, not just demoed — [langgraph-research-agent](https://github.com/wzltmp/langgraph-research-agent)'s `read_node` calls this server's `summarize_url` tool over HTTP (with local fallback if the call fails)\n🚧 Demo gif + screenshots (planned)\n🚧 n8n self-host via docker-compose (planned)\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:14:31.185Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "summarize_url",
+      "description": "Fetch a URL, extract clean article text, and return an N-bullet summary."
+    },
+    {
+      "name": "repurpose_content",
+      "description": "Repurpose long-form text into ``twitter_thread``, ``linkedin_post``, or ``newsletter``."
+    },
+    {
+      "name": "daily_digest",
+      "description": "Search the web for recent news on ``topic`` and return a digest with citations."
+    },
+    {
+      "name": "find_competitors",
+      "description": "Identify ``n`` plausible competitors for a company at ``domain`` (e.g., 'stripe.com')."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:14:31.330Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,217 @@
+{
+  "id": "io.github.MCPServings/paper-mcp",
+  "title": "paper-mcp",
+  "description": "Search arXiv/Semantic Scholar/OpenAlex + medical evidence (PubMed/Europe PMC) + LaTeX/PDF tools.",
+  "summary": "Search arXiv/Semantic Scholar/OpenAlex + medical evidence (PubMed/Europe PMC) + LaTeX/PDF tools.",
+  "offersHint": "Search arXiv/Semantic Scholar/OpenAlex + medical evidence (PubMed/Europe PMC) + LaTeX/PDF tools. · Remote MCP (streamable-http) at https://latex-tools.online/mcp",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://latex-tools.online/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://latex-tools.online/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://latex-tools.online/mcp",
+  "sourceUrl": "https://github.com/MCPServings/paper-mcp",
+  "repository": {
+    "url": "https://github.com/MCPServings/paper-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-17T03:02:25.486523Z",
+  "publishedAt": "2026-06-17T03:02:25.486523Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:07.069Z",
+    "sourceRepoAt": "2026-08-12T00:07:50.086Z",
+    "readmeAt": "2026-08-12T00:07:50.606Z",
+    "toolsAt": "2026-08-12T00:07:50.741Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MCPServings/paper-mcp",
+    "checkedAt": "2026-08-12T00:07:50.086Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MCPServings/paper-mcp/main/README.md",
+    "markdown": "# paper-mcp\n\n<!-- mcp-name: io.github.MCPServings/paper-mcp -->\n\nRemotely-callable **MCP server for academic paper search, full-text retrieval & image→LaTeX**, served at `https://latex-tools.online/mcp`.\n\nThree corpora behind one normalized interface:\n- **`arxiv`** (default) — search, metadata, and **full-text** (HTML / markdown / LaTeX source)\n- **`semanticscholar`** (alias `s2`) — the full S2 API surface: citation graph, authors, recommendations, full-text snippets, bulk datasets\n- **`openalex`** (alias `oa`) — 316M all-field works: citation graph, authors with h-index, institutions, topics, influence metrics\n\nPlus a **unified `search_all`** that fuses all three corpora, **image→LaTeX** OCR, and **LaTeX lint + PDF→text** tooling.\n\n---\n\n## Tools (41)\n\n### Generic / source-agnostic (8)\n| Tool | Purpose |\n|---|---|\n| **`search_all(query, max_results=10, sources='arxiv,semanticscholar,openalex')`** | **Unified search.** Fans out to all three corpora concurrently, de-duplicates the same work (by DOI/title) and re-ranks with Reciprocal Rank Fusion. Each hit carries `sources` (who found it) + an `ids` map for follow-up calls. Prefer this for broad lookups. |\n| `search_papers(query, source='arxiv', max_results=10, sort_by='relevance')` | Single-corpus search. arXiv `query` accepts plain text or field syntax (`ti:` `au:` `cat:cs.CL` `abs:` + AND/OR). |\n| `get_paper(paper_id, source='arxiv')` | One paper's full record. S2 id accepts S2 id / `DOI:` / `ARXIV:` / `CorpusId:`. |\n| `search_by_author(author, source='arxiv')` | Papers by author, newest first. |\n| `list_recent(category, source='arxiv')` | Latest in a category (arXiv code or S2 field of study). |\n| `list_categories(source='arxiv')` | Common category codes. |\n| **`read_paper(paper_id, format='markdown')`** | **FULL text (arXiv).** `markdown` = body with formulas as `$LaTeX$`; `html` = raw LaTeXML page; `latex` = original manuscript `.tex` source. |\n| `list_paper_sources()` | Available corpora. |\n\n`read_paper` fetch chain: `arxiv.org/html/{id}` → `ar5iv` fallback (markdown/html), or `arxiv.org/e-print/{id}` tarball main `.tex` (latex). Formulas are recovered from the LaTeXML `alttext` invariant.\n\n### Medical / evidence-graded (1)\n| Tool | Purpose |\n|---|---|\n| **`search_medical(query, study_types='rct,meta-analysis,systematic-review', year_from=0, max_results=10, fetch_fulltext=True)`** | **Clinical literature search.** Queries PubMed, filters by research type via Publication-Type tags and re-ranks by the **evidence pyramid** (meta-analysis / systematic review > RCT > cohort > ...), so real trials surface above high-cited reviews/guidelines that pure-citation ranking floats up. Open-access full text is attached from Europe PMC by PMID. If the type filter yields nothing it auto-relaxes (flagged `filter_relaxed`). `query` is English keyword/boolean text — do NL/multilingual query understanding upstream. Backed by NCBI E-utilities + Europe PMC (both free, no key required). |\n\n### Image → LaTeX (3)\nTurn a formula or table image back into LaTeX (e.g. a figure cropped from a paper) without needing your own vision model. Backed by the co-located recognize service (PaddleOCR-VL / DeepSeek-OCR / texify).\n| Tool | Purpose |\n|---|---|\n| `recognize_formula(image_url=... or image_base64=..., model='deepseek-ocr')` | Formula image → LaTeX. `image_url` is downloaded server-side (with SSRF guards). Returns `{latex, model, elapsed_ms}`. |\n| `recognize_table(image_url=... or image_base64=..., model='deepseek-ocr')` | Table image → LaTeX `tabular`. |\n| `list_ocr_models()` | Available OCR models (`deepseek-ocr`, `paddleocr-vl`, `texify`). |\n\n### LaTeX tooling (3)\nCompanions to the LaTeX/PDF web tools at `latex-tools.online` — same backends, exposed over MCP.\n| Tool | Purpose |\n|---|---|\n| `lint_latex(code)` | Check a LaTeX snippet for errors and return an auto-fixed version. Returns `{errors, fixed_code, summary_en, summary_zh, elapsed_ms}`. |\n| `extract_pdf(pdf_url=... or pdf_base64=..., formula=True, table=True)` | PDF → clean Markdown/LaTeX text via MinerU (useful for papers with no open-access full text). `pdf_url` is downloaded server-side (SSRF-guarded). Content-addressed + cached: a recently-seen or small PDF returns `content` in one call; a fresh PDF (MinerU is GPU-heavy, minutes) returns `status='running'` + a `task_id`. |\n| `extract_pdf_result(task_id)` | Fetch an `extract_pdf` job by `task_id`. Returns `content` once `status='done'`; while `'running'`, `content` is null — call again shortly. |\n\n### OpenAlex (8)\n- **Works:** `get_openalex_work` · `get_openalex_citations` · `get_openalex_references` · `search_openalex_works` (filters: year range, open-access, min-citations, institution)\n- **Authors/Institutions:** `search_openalex_authors` · `search_openalex_institutions`\n- **Analytics:** `get_openalex_trends` · `list_openalex_topics`\n\n### Semantic Scholar (18)\n- **Graph:** `get_paper_citations` · `get_paper_references` · `get_paper_authors`\n- **Lookup:** `match_paper_title` · `autocomplete_papers`\n- **Bulk:** `search_papers_bulk` (≤1000, sortable, token paging) · `get_papers_batch`\n- **Authors:** `search_authors` · `get_author` · `get_author_papers` · `get_authors_batch`\n- **Full-text:** `search_snippets` (search inside paper body)\n- **Recommend:** `recommend_papers_for_paper` · `recommend_papers_from_examples`\n- **Datasets:** `list_dataset_releases` · `get_dataset_release` · `get_dataset_download_links` · `get_dataset_diffs`\n\n---\n\n## Layout\n```\npaper_mcp/\n  server.py            FastMCP server (tool registrations + instructions)\n  models.py            normalized Paper model\n  aggregate.py         cross-source fusion (dedup + Reciprocal Rank Fusion)\n  sources/\n    base.py            source registry (get_source / list_sources)\n    arxiv.py           arXiv Atom API + read_paper (HTML/markdown/latex)\n    semanticscholar.py Semantic Scholar full API surface\n    openalex.py        OpenAlex REST API (works/authors/institutions/topics)\n    recognize.py       image→LaTeX client over the co-located recognize service\n    latextools.py      lint + PDF-extract clients over the latex-tools services\npyproject.toml\n```\n\n## Run locally\n```bash\ncd paper-mcp\npython -m venv .venv && . .venv/bin/activate\npip install -e .\nPAPER_MCP_PORT=9400 python -m paper_mcp.server\n# MCP endpoint at http://127.0.0.1:9400/mcp (JSON-RPC; a plain GET returns 406)\n```\n\n### Env\n| Var | Default | Notes |\n|---|---|---|\n| `PAPER_MCP_HOST` | `127.0.0.1` | |\n| `PAPER_MCP_PORT` | `9400` | |\n| `PAPER_MCP_PATH` | `/mcp` | |\n| `SEMANTIC_SCHOLAR_API_KEY` | — | optional; raises S2 rate limit. Set via `/etc/paper-mcp.env` in prod. |\n| `MCP_MAX_PER_HOUR` | `300` | Direct-client JSON-RPC POST budget per IP. |\n| `MCP_WORKER_MAX_PER_HOUR` | `300` | Trusted reverse-proxy Worker budget per HMAC-derived connection key. Raw keys are not retained. |\n| `MCP_WORKER_SHARED_MAX_PER_HOUR` | `2400` | Shared ceiling across all trusted Worker connections. |\n| `MCP_RATE_COOLDOWN_SEC` | `300` | Minimum fast-rejection cooldown after a bucket reaches its limit. |\n\n---\n\n## Deployment (latex-tools.online)\n- Runs as `paper-mcp.service` on **`tencent-us`** (`43.130.32.180`), WorkingDirectory `/opt/paper-mcp`, loopback port 9400.\n- nginx reverse-proxies `https://latex-tools.online/mcp` → `127.0.0.1:9400/mcp`.\n- Worker-aware buckets activate only when a trusted reverse proxy overwrites `X-MCP-Worker` after validating the upstream platform. Never pass through a client-supplied value.\n- uvicorn access logging is disabled because legacy MCP clients may put connection keys and profiles in the endpoint URL. The reverse proxy must also log `$uri`, not `$request`, for the MCP route.\n- Secrets in `/etc/paper-mcp.env` (`SEMANTIC_SCHOLAR_API_KEY`).\n- Runtime systemd/nginx/env files are managed by the `tencent-us` operations backup, not by this source repository; never commit `/etc/paper-mcp.env`.\n\n### Update flow\nThis repo is the source of truth. The server runs an **independent copy** under `/opt/paper-mcp` (not auto-synced):\n```bash\n# edit here → push → deploy the complete canonical Python package\nrsync -a --delete paper_mcp/ tencent-us:/opt/paper-mcp/paper_mcp/\nssh tencent-us 'systemctl restart paper-mcp'\nssh tencent-us 'curl -s -o /dev/null -w \"%{http_code}\\n\" http://127.0.0.1:9400/mcp'  # 406 = healthy (needs JSON-RPC handshake)\n```\n\nProduction parity verified on 2026-07-23: `main@07f6bbe8622aa063f56ee222a40d19c5d4264048` matches all 12 deployed Python source files byte-for-byte. The older copy embedded in `latex-tools-deploy/paper-mcp/` is not a deployment source.\n\n## Notes\n- arXiv calls are politely rate-limited + retried (`_USER_AGENT`, backoff).\n- `read_paper` covers ~80%+ of papers via official HTML; older scan-only papers may have no full text.\n- Moved here from the `docs` repo on 2026-06-07; that copy is gone.\n\n---\n\n## License\n\nMIT © MCPServings. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:07:50.606Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_papers",
+      "description": "Search academic papers. Returns normalized hits with a short abstract preview; call get_paper for the full record."
+    },
+    {
+      "name": "search_all",
+      "description": "Aggregated search across arXiv, Semantic Scholar and OpenAlex at once. Fans out concurrently, de-duplicates the same work across corpora (by DOI or title) and re-ranks with Reciprocal Rank Fusion, so papers found by several sources rank highest. Each hit lists which `sources` found it and an `ids` map ({source: id}) you can pass to get_paper / read_paper / the citation tools. Prefer this over search_papers for a broad lookup."
+    },
+    {
+      "name": "search_medical",
+      "description": "Evidence-graded MEDICAL literature search (PubMed + Europe PMC). Unlike search_all (generic, ranks high-cited reviews/guidelines above trials), this filters by research type via PubMed Publication-Type tags and re-ranks by the evidence pyramid (meta-analysis / systematic review > RCT > cohort > ...), so the actual clinical trials surface first. Open-access full text is pulled from Europe PMC by PMID. `query` should be English keyword/boolean text (PubMed maps it); do natural-language/multilingual understanding upstream. Returns hits with pmid/doi/study_type/evidence_level/citations/abstract and, when open-access, fulltext."
+    },
+    {
+      "name": "get_paper",
+      "description": "Fetch one paper by id, with full abstract and PDF link."
+    },
+    {
+      "name": "search_by_author",
+      "description": "Find papers by a specific author, newest first."
+    },
+    {
+      "name": "list_recent",
+      "description": "List the latest papers in a subject category, newest first."
+    },
+    {
+      "name": "list_categories",
+      "description": "List common subject category codes for filtering/recent."
+    },
+    {
+      "name": "read_paper",
+      "description": "Read a paper's full text. format='markdown' (default, body with formulas as $LaTeX$), 'html' (raw LaTeXML HTML), or 'latex' (the original LaTeX manuscript from the e-print source). arXiv only; id like 2401.01234."
+    },
+    {
+      "name": "list_paper_sources",
+      "description": "List available paper corpora."
+    },
+    {
+      "name": "recognize_formula",
+      "description": "Recognize a math formula from an image and return LaTeX. Provide image_url (downloaded server-side) OR image_base64. model: deepseek-ocr (default), paddleocr-vl, or texify. Returns {latex, model, elapsed_ms}."
+    },
+    {
+      "name": "recognize_table",
+      "description": "Recognize a table from an image and return LaTeX tabular code. Provide image_url OR image_base64. model: deepseek-ocr (default), paddleocr-vl, or texify. Returns {latex, model, elapsed_ms}."
+    },
+    {
+      "name": "list_ocr_models",
+      "description": "List the OCR models available for recognize_formula / recognize_table."
+    },
+    {
+      "name": "lint_latex",
+      "description": "Lint a LaTeX snippet: report errors and return an auto-fixed version. Input `code` (the LaTeX source). Returns {errors, fixed_code, summary_en, summary_zh, elapsed_ms}."
+    },
+    {
+      "name": "extract_pdf",
+      "description": "Extract a PDF to clean Markdown/LaTeX text via MinerU (great for papers behind no open-access full text — give the user's PDF and get readable text back). Provide pdf_url (downloaded server-side, SSRF-guarded) OR pdf_base64. formula/table toggle math/table reconstruction. Returns {task_id, status, cached, content, chars}: a recently-seen (cached) or small PDF comes back with `content` in one call; a fresh PDF (MinerU is GPU-heavy, minutes) returns status='running' + a task_id — then call extract_pdf_result(task_id) to fetch the text."
+    },
+    {
+      "name": "extract_pdf_result",
+      "description": "Fetch the result of an extract_pdf job by task_id. Returns {task_id, status, content, chars}: `content` is the extracted text once status='done'; while still 'running' content is null — call again shortly. Results expire server-side, so fetch reasonably soon."
+    },
+    {
+      "name": "get_paper_citations",
+      "description": "Semantic Scholar: papers that CITE this one (forward citation graph). id accepts S2 id / DOI: / ARXIV: / CorpusId:."
+    },
+    {
+      "name": "get_paper_references",
+      "description": "Semantic Scholar: papers this one REFERENCES (its bibliography). id accepts S2 id / DOI: / ARXIV: / CorpusId:."
+    },
+    {
+      "name": "get_paper_authors",
+      "description": "Semantic Scholar: the authors of a paper (with h-index, paper/citation counts)."
+    },
+    {
+      "name": "match_paper_title",
+      "description": "Semantic Scholar: find the single paper whose title best matches the given text (exact-match lookup)."
+    },
+    {
+      "name": "autocomplete_papers",
+      "description": "Semantic Scholar: autocomplete paper titles for a partial query (fast type-ahead)."
+    },
+    {
+      "name": "search_papers_bulk",
+      "description": "Semantic Scholar: bulk paper search (up to 1000 hits, sortable e.g. 'citationCount:desc' or 'publicationDate:desc', with a continuation token). Filters: fields_of_study, year (e.g. '2020-2024'), venue, publication_types, open_access_pdf."
+    },
+    {
+      "name": "get_papers_batch",
+      "description": "Semantic Scholar: fetch many papers at once by id (S2/DOI:/ARXIV:/CorpusId:), up to ~500 per call."
+    },
+    {
+      "name": "search_authors",
+      "description": "Semantic Scholar: search for authors by name; returns profiles with h-index and paper/citation counts."
+    },
+    {
+      "name": "get_author",
+      "description": "Semantic Scholar: a single author's profile by id."
+    },
+    {
+      "name": "get_author_papers",
+      "description": "Semantic Scholar: all papers by a given author id, newest first."
+    },
+    {
+      "name": "get_authors_batch",
+      "description": "Semantic Scholar: fetch many authors at once by id."
+    },
+    {
+      "name": "search_snippets",
+      "description": "Semantic Scholar: search INSIDE paper full text and return matching text snippets (not just titles/abstracts)."
+    },
+    {
+      "name": "recommend_papers_for_paper",
+      "description": "Semantic Scholar: recommend papers similar to one paper. pool='recent' (last open corpus) or 'all-cs' (all of CS). If the 'recent' pool yields nothing (common for older papers), it automatically retries the 'all-cs' pool."
+    },
+    {
+      "name": "recommend_papers_from_examples",
+      "description": "Semantic Scholar: recommend papers from positive (and optional negative) example paper ids."
+    },
+    {
+      "name": "list_dataset_releases",
+      "description": "Semantic Scholar Datasets: list all available release ids (dated snapshots of the full corpus)."
+    },
+    {
+      "name": "get_dataset_release",
+      "description": "Semantic Scholar Datasets: which datasets a release contains (papers, abstracts, citations, embeddings, s2orc, tldrs…). release_id defaults to 'latest'."
+    },
+    {
+      "name": "get_dataset_download_links",
+      "description": "Semantic Scholar Datasets: get download links (presigned URLs) for one dataset in a release. Needs the API key."
+    },
+    {
+      "name": "get_dataset_diffs",
+      "description": "Semantic Scholar Datasets: incremental diff (added/updated/deleted) for a dataset between two releases. Needs the key."
+    },
+    {
+      "name": "get_openalex_work",
+      "description": "OpenAlex: fetch one work's full record (316M-work, all-field corpus). id accepts OpenAlex Wxxxx, a DOI, or an arXiv id."
+    },
+    {
+      "name": "get_openalex_citations",
+      "description": "OpenAlex: papers that CITE this work (forward citation graph), most-cited first."
+    },
+    {
+      "name": "get_openalex_references",
+      "description": "OpenAlex: the works this one REFERENCES (its bibliography)."
+    },
+    {
+      "name": "search_openalex_authors",
+      "description": "OpenAlex: search authors; returns profiles with h-index, i10-index, works/citation counts and institutions."
+    },
+    {
+      "name": "search_openalex_institutions",
+      "description": "OpenAlex: search institutions (universities, labs) with ROR id, country, works/citation counts."
+    },
+    {
+      "name": "search_openalex_works",
+      "description": "OpenAlex: advanced filtered work search. Filters: from_year, to_year, is_oa (open access only), min_citations, institution_id. sort_by: relevance|newest|cited."
+    },
+    {
+      "name": "get_openalex_trends",
+      "description": "OpenAlex: publication-trend analytics for a query — counts grouped by year (default), or by 'institutions.id', 'authorships.author.id', 'open_access.is_oa', 'type', 'language'. Returns aggregate counts only (cheap, no rows)."
+    },
+    {
+      "name": "list_openalex_topics",
+      "description": "OpenAlex: search the topic taxonomy (~4500 topics) to find the right subject term for filtering or recent-work queries."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:07:50.741Z",
+  "toolsPreviewStatus": "ok"
+}

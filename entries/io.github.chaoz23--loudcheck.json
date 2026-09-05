@@ -1,0 +1,59 @@
+{
+  "id": "io.github.chaoz23/loudcheck",
+  "title": "loudcheck",
+  "description": "Loudness compliance verdicts (EBU R128, ATSC A/85): pass/fail with exact ffmpeg remediation.",
+  "summary": "Loudness compliance verdicts (EBU R128, ATSC A/85): pass/fail with exact ffmpeg remediation.",
+  "offersHint": "Loudness compliance verdicts (EBU R128, ATSC A/85): pass/fail with exact ffmpeg remediation. · Packages: pypi:loudcheck",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "loudcheck",
+    "version": "0.3.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "loudcheck",
+      "version": "0.3.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/chaoz23/loudcheck",
+  "sourceUrl": "https://github.com/chaoz23/loudcheck",
+  "repository": {
+    "url": "https://github.com/chaoz23/loudcheck",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-03T17:08:26.994763Z",
+  "publishedAt": "2026-07-03T17:08:26.994763Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:28.795Z",
+    "sourceRepoAt": "2026-08-11T23:53:12.453Z",
+    "readmeAt": "2026-08-11T23:53:13.102Z",
+    "toolsAt": "2026-08-12T01:27:28.795Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chaoz23/loudcheck",
+    "checkedAt": "2026-08-11T23:53:12.453Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chaoz23/loudcheck/main/README.md",
+    "markdown": "# loudcheck\n\nA **loudness compliance verdict**, not raw meter output. `loudcheck` measures\na media file with ffmpeg and answers the question that actually matters —\n*does this file pass the spec?* — against formal published standards:\n\n**Agents start here → [SKILL.md](SKILL.md)** — when to call this, worked examples, MUST/MUST NOTs. Family contract: [FAMILY.md](https://github.com/chaoz23/srdcheck/blob/main/FAMILY.md).\n\n- **EBU R 128** (European broadcast: −23.0 LUFS ±0.5 LU, max −1 dBTP)\n- **ATSC A/85** (US television: −24 LKFS ±2 dB, true peak below −2 dBTP)\n- **BS.1770** (measure-only: BS.1770 defines no compliance target, so this\n  mode returns verdict `measured` with the numbers and no judgment)\n\n```\n$ loudcheck master.wav --standard EBU_R128\nFAIL — EBU R 128\n  ✗ integrated -19.4 LUFS (target -23.0 ±0.5, delta +3.6)\n  ✓ true peak -16.3 dBTP (max -1.0)\n  · LRA 0.0 LU (informational)\n  → apply -3.6 LU gain to reach -23.0 LUFS (e.g. ffmpeg -af volume=-3.6dB, or loudnorm I=-23)\n```\n\nShips as a CLI and an MCP tool over one engine, so agents and humans get the\nidentical verdict.\n\n![loudcheck demo: FAIL with exact fix, apply it, PASS, exit code carries the verdict](demo.gif)\n\n## Why this exists\n\nAn agent (or an engineer) can run ffmpeg's `ebur128` filter and get numbers.\nWhat it can't get from a shell is the *verdict* — that requires knowing the\nstandard's target, tolerance, and gating, and interpreting integrated\nloudness vs. LRA vs. true peak against them. Loudness is one of the most\ncommon causes of delivery rejection, and the gap is not measurement — it's\nthe standards-aware answer. That's the whole tool.\n\n## Install\n\nRequires Python 3.10+ and ffmpeg 5.0+ on `PATH`.\n\n```bash\nuvx loudcheck file.wav          # zero-install run (requires ffmpeg >= 5.0 on PATH)\npip install loudcheck           # CLI\npip install \"loudcheck[mcp]\"    # + MCP server\n```\n\nFrom a clone: `pip install -e \".[mcp,dev]\"`.\n\n## CLI\n\n```bash\nloudcheck file.wav                          # EBU R128 by default\nloudcheck file.mp4 --standard ATSC_A85      # first audio stream of a video\nloudcheck file.wav --json                   # full structured verdict\nloudcheck file.wav --standard BS_1770       # measurement only, no gates\nloudcheck file.mov --all-streams            # verdict every audio track\nloudcheck file.mov --stream 1               # a specific audio track\nloudcheck file.wav --detailed               # + max momentary / short-term\nloudcheck masters/ --standard EBU_R128      # batch a directory -> table\nloudcheck a.wav b.wav c.wav                 # batch multiple files\nloudcheck --schema                          # print the tool definition\n```\n\nBatch mode prints one line per file (plus remediation for fails) and a\nsummary; `--json` in batch emits an array. Exit code is `1` if *any* file\nfails.\n\n## For agents\n\n- **Exit codes carry the verdict:** `0` = pass, `1` = fail (non-compliant),\n  `2` = error (missing file, no audio stream, no ffmpeg). Gate a delivery on\n  the exit code alone.\n- **`--json` is the full contract:** overall `verdict`, per-metric\n  `measured/target/tolerance/delta/pass` with the spec citation attached to\n  every gated metric, `failures` in plain English, and `remediation` with the\n  **exact correction** — a fail 2.3 LU over target tells you to apply\n  −2.3 LU gain and hands you the ffmpeg incantation. This tool never applies\n  the fix (measurement and verdict only); the agent one-shots it with\n  `loudnorm` using the delta provided.\n- **MCP:** register `loudcheck-mcp` (stdio; or `loudcheck --mcp`, or\n  `python -m loudcheck.mcp_server`). Zero-install:\n  `uvx --from 'loudcheck[mcp]' loudcheck --mcp`. Tools:\n  `check_loudness(path, standard)` → same JSON as the CLI, and\n  `list_standards()` → the catalog with citations. Verified against\n  `mcp==1.28.1`.\n- **`tool.json`** at the repo root describes the surface machine-readably —\n  or fetch it live from any install with `loudcheck --schema` (the file ships\n  inside the package; a test keeps the two copies in sync).\n- **ffmpeg version is part of the contract:** every verdict includes\n  `measurement_context.ffmpeg_version`. Minimum supported: 5.0. Developed and\n  verified against 8.1.\n\n## The scope guardrail (read before contributing)\n\n**Only formal, stable standards live in this repo; per-platform delivery\ntemplates (Netflix, DPP, Apple TV+, Amazon, broadcaster specs) never do.**\nPlatform specs change unilaterally and cover far more than loudness — the\nmoment they enter, this stops being a near-zero-maintenance community tool\nand becomes a yearly-maintenance product. If a PR adds a target that a\nplatform can change on its own, it belongs in a separate template layer\nbuilt *on top of* this primitive, not here.\n\nContributions of additional *formal* standards (e.g. a plain ITU-R BS.1770\nmode) are welcome: a standard is pure data in\n[`loudcheck/standards.py`](loudcheck/standards.py) — targets, tolerances, and\ncitations. No code changes required.\n\n## How it measures\n\nOne ffmpeg pass with `loudnorm=print_format=json` (analysis mode) yields\nintegrated loudness, loudness range, true peak (oversampled dBTP per\nBS.1770), and the gating threshold. The test suite cross-checks loudnorm's\nreading against ffmpeg's independent `ebur128` implementation — the two must\nagree within 1 LU for CI to pass, so an ffmpeg release that changes filter\nbehavior is caught by the suite, not by users.\n\n## Verification corpus\n\n`pytest` generates calibrated test tones on the fly (no binaries in the\nrepo): per BS.1770's calibration statement, a mono 997 Hz sine at 0 dBFS\nreads −3.01 LKFS, so tones are generated at exact known loudness — compliant,\ntoo loud, too quiet, and true-peak-hot — and every verdict must match its\nknown expectation.\n\n## Out of scope, permanently\n\nLoudness *correction* (use ffmpeg `loudnorm` with the delta this tool gives\nyou) · full-file QC (codec/colour/cadence) · real-time monitoring · GUIs ·\nplatform delivery templates (see guardrail).\n\n## License\n\nMIT\n\n<!-- mcp-name: io.github.chaoz23/loudcheck -->\n",
+    "fetchedAt": "2026-08-11T23:53:13.102Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:28.795Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

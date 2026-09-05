@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Lucky44k/dense-knowledge-mcp",
+  "title": "Dense Knowledge",
+  "description": "Local-first MCP memory server for persistent LLM knowledge with BM25 retrieval.",
+  "summary": "Local-first MCP memory server for persistent LLM knowledge with BM25 retrieval.",
+  "offersHint": "Local-first MCP memory server for persistent LLM knowledge with BM25 retrieval. · Packages: pypi:dense-knowledge-mcp",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "dense-knowledge-mcp",
+    "version": "1.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "dense-knowledge-mcp",
+      "version": "1.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Lucky44k/dense-knowledge-mcp",
+  "repository": {
+    "url": "https://github.com/Lucky44k/dense-knowledge-mcp",
+    "source": "github",
+    "id": "1316509848"
+  },
+  "updatedAt": "2026-07-29T23:33:21.39412Z",
+  "publishedAt": "2026-07-29T23:33:21.39412Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:13.434Z",
+    "sourceRepoAt": "2026-08-12T00:07:54.153Z",
+    "readmeAt": "2026-08-12T00:07:54.878Z",
+    "toolsAt": "2026-08-12T01:39:13.434Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Lucky44k/dense-knowledge-mcp",
+    "checkedAt": "2026-08-12T00:07:54.153Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Lucky44k/dense-knowledge-mcp/main/README.md",
+    "markdown": "# Dense Knowledge\n\n<!-- mcp-name: io.github.Lucky44k/dense-knowledge-mcp -->\n\n[![PyPI](https://img.shields.io/pypi/v/dense-knowledge-mcp)](https://pypi.org/project/dense-knowledge-mcp/)\n[![Python](https://img.shields.io/pypi/pyversions/dense-knowledge-mcp)](https://pypi.org/project/dense-knowledge-mcp/)\n[![CI](https://github.com/Lucky44k/dense-knowledge-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Lucky44k/dense-knowledge-mcp/actions/workflows/ci.yml)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n\n**A local-first MCP memory server for persistent LLM knowledge.**\n\nDense Knowledge lets an AI assistant keep structured research between sessions\nwithout a database, embedding model, or hosted account. It stores portable\n`.mmp` files, searches their compact indexes with BM25, and loads full entries\nonly when they are relevant.\n\n```text\nquestion -> compact index/search -> selected knowledge blocks -> answer\n             inexpensive             detailed context\n```\n\nIt works with LM Studio, Claude Desktop, Cursor, VS Code, and other clients that\nsupport local stdio [Model Context Protocol](https://modelcontextprotocol.io/)\nservers.\n\n## Why Dense Knowledge?\n\n- **Selective context:** index first, body blocks only on demand.\n- **Local and portable:** plain ASCII-in-UTF-8 files that can be copied,\n  inspected, diffed, and backed up.\n- **No vector infrastructure:** deterministic BM25 search with abbreviation\n  and synonym expansion.\n- **Append-only history:** updates supersede older entries instead of erasing\n  them.\n- **Explicit provenance:** established and contested claims carry source IDs;\n  unsourced inferences are marked as hypotheses.\n- **Safer retrieval:** stored text is wrapped as untrusted data and screened\n  for common prompt-injection contamination.\n\nThe bundled [context benchmark](benchmarks/) uses 40 entries. In its synthetic\nfixture, searching and reading the two best blocks uses **94.3% less estimated\ncontext** than loading the complete package. The benchmark is reproducible and\nclearly documents its tokenizer-neutral counting method.\n\n## Quick start\n\nInstall [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then\nplace this server definition in your MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"dense-knowledge\": {\n      \"command\": \"uvx\",\n      \"args\": [\"dense-knowledge-mcp\"]\n    }\n  }\n}\n```\n\n`uvx` downloads the published package when needed. Dense Knowledge uses the\nplatform's default data directory unless `--root` is supplied:\n\n```json\n{\n  \"mcpServers\": {\n    \"dense-knowledge\": {\n      \"command\": \"uvx\",\n      \"args\": [\n        \"dense-knowledge-mcp\",\n        \"--root\",\n        \"/absolute/path/to/memory\"\n      ]\n    }\n  }\n}\n```\n\nConfiguration differs slightly between clients. Ready-to-copy instructions are\navailable for:\n\n- [LM Studio](docs/clients.md#lm-studio)\n- [Claude Desktop](docs/clients.md#claude-desktop)\n- [Cursor](docs/clients.md#cursor)\n- [Visual Studio Code](docs/clients.md#visual-studio-code)\n\nTo install the command-line tools permanently:\n\n```bash\nuv tool install dense-knowledge-mcp\nmmp setup\nmmp doctor\n```\n\n`mmp setup` creates the memory directory and can safely merge the server into\nan LM Studio `mcp.json`. Existing servers are preserved. Replacing an existing\nDense Knowledge entry requires `--force` and creates a backup first.\n\n## See it work\n\nThe CLI exposes the same storage operations as the MCP server:\n\n```bash\nmmp create quantum_physics.mmp \"quantum physics\"\nmmp write quantum_physics.mmp --rev 0 --from examples/research_entries.json\nmmp search quantum_physics.mmp \"experimental tests of local realism\"\nmmp read quantum_physics.mmp e1\n```\n\nTypical search output contains candidates, not full bodies:\n\n```text\n<mmp_data file=\"quantum_physics.mmp\" trust=\"untrusted\">\nquantum_physics.mmp|e1|F|2.5427|Bell inequality separates local realism from quantum predictions\n</mmp_data>\n```\n\nThe client chooses relevant IDs and calls `mmp_read` only for those blocks.\nThis preserves the distinction between cheap orientation and detailed context.\n\n## MCP tools\n\nThe server exposes nine tools:\n\n| Tool | Purpose |\n|---|---|\n| `mmp_list` | List available knowledge packages |\n| `mmp_create` | Create an empty MMP package |\n| `mmp_open` | Read metadata, sources, legend, and index |\n| `mmp_search` | Return ranked candidates without body text |\n| `mmp_read` | Load selected body blocks within an optional budget |\n| `mmp_write` | Append structured entries |\n| `mmp_update` | Supersede an entry while preserving history |\n| `mmp_deprecate` | Mark an entry as obsolete with a reason |\n| `mmp_validate` | Check structure, language, provenance, and references |\n\nSearch uses BM25 over tags and summaries after legend expansion, with a body\nfallback when the index has no match. Deprecated entries remain readable but\nare omitted from normal search results.\n\n## Storage\n\nThe default knowledge directory follows the operating system:\n\n- Linux: `~/.local/share/mmp/memory`\n- macOS: `~/Library/Application Support/mmp/memory`\n- Windows: `%LOCALAPPDATA%\\mmp\\memory`\n\nThe user configuration is stored separately:\n\n- Linux: `~/.config/mmp/config.toml`\n- macOS: `~/Library/Application Support/mmp/config.toml`\n- Windows: `%APPDATA%\\mmp\\config.toml`\n\n`MMP_ROOT` or the global `mmp --root` option overrides the configured directory.\nKeep personal packages out of source control; the repository's `memory/`\ndirectory is ignored.\n\n## Writing knowledge\n\nModels send structured objects to `mmp_write`; they never need to generate raw\nMMP syntax. A minimal entry looks like:\n\n```json\n{\n  \"summary\": \"Possible caching strategy needs workload validation\",\n  \"tags\": [\"caching\", \"validation\"],\n  \"status\": \"H\",\n  \"srcs\": [],\n  \"content\": \"rel: versioned keys -> simpler invalidation\\nq: workload impact -> needs measurement\"\n}\n```\n\nImportant validation rules:\n\n- summaries contain 3–15 English words;\n- tags are a JSON array, never one comma-separated string;\n- entries with status `F` or `C` require sources;\n- unsourced entries use status `H` and cannot contain `fact:` or `num:` lines;\n- contested entries use status `C` and include at least one `ctr:` line;\n- block content is ASCII English and uses the eight defined line prefixes.\n\nSee [`examples/research_entries.json`](examples/research_entries.json) for\nsourced and contested entries that can be written directly.\n\nAll writes use optimistic revision numbers and atomic file replacement. A stale\nrevision is reported to the caller, but a safe append is not discarded.\n\n## Safety model\n\nMMP content is reference data, never instruction. Read responses use an\nexplicit untrusted envelope:\n\n```text\n<mmp_data file=\"...\" trust=\"untrusted\">\n...\n</mmp_data>\n```\n\nThe server rejects common instruction-like patterns during writes, does not\nautomatically follow `ref:` links, and tells the client not to obey instructions\nfound in stored material. These defenses reduce prompt-injection risk; they do\nnot turn untrusted research into trusted instructions.\n\nLocal MCP servers execute with your user permissions. Review the package and\nchoose a dedicated memory directory before storing sensitive information.\n\n## Project status\n\nDense Knowledge implements the flat MMP/1.0 format, including BM25 retrieval,\ncatalog generation, duplicate screening, budgets, append-only superseding, and\nvalidation. Hierarchical indexes for very large packages are planned but are\nnot written yet.\n\nReleases follow [Semantic Versioning](https://semver.org/). Changes are\ndocumented in [CHANGELOG.md](CHANGELOG.md).\n\n## Development\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npython -m pip install -e \".[dev]\"\nruff check src tests benchmarks\npytest\npython -m build\n```\n\nContributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the\nworkflow and [SECURITY.md](SECURITY.md) for private vulnerability reports.\n\nLicensed under the [MIT License](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:07:54.878Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:13.434Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

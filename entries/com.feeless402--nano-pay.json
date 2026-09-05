@@ -1,0 +1,59 @@
+{
+  "id": "com.feeless402/nano-pay",
+  "title": "nano-pay",
+  "description": "Pay for x402-priced APIs with feeless, sub-second Nano (XNO) micropayments from a local wallet.",
+  "summary": "Pay for x402-priced APIs with feeless, sub-second Nano (XNO) micropayments from a local wallet.",
+  "offersHint": "Pay for x402-priced APIs with feeless, sub-second Nano (XNO) micropayments from a local wallet. · Packages: pypi:feeless402",
+  "version": "0.2.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "feeless402",
+    "version": "0.2.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "feeless402",
+      "version": "0.2.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://feeless402.com",
+  "sourceUrl": "https://github.com/Feeless402/feeless402",
+  "repository": {
+    "url": "https://github.com/Feeless402/feeless402",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T12:46:03.11888Z",
+  "publishedAt": "2026-08-09T12:46:03.11888Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:34:37.801Z",
+    "sourceRepoAt": "2026-08-12T00:34:37.801Z",
+    "readmeAt": "2026-08-12T00:34:38.210Z",
+    "toolsAt": "2026-08-12T00:34:38.798Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Feeless402/feeless402",
+    "checkedAt": "2026-08-12T00:34:37.801Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Feeless402/feeless402/master/README.md",
+    "markdown": "# nano-pay · Feeless402\n\n<!-- mcp-name: com.feeless402/nano-pay -->\n\nSelf-custodied Nano (XNO) wallet + x402 payment client **and** merchant\nserver, built for AI agents. Client spends; `nano-pay serve` earns — paid\nendpoints, on-ledger verification/settlement (no facilitator), a starter\nfaucet, and the `railHint` x402 extension that teaches visiting agents how\nto onboard (see SPEC-railhint.md). Site: site/index.html + site/llms.txt.\n\n**The pitch, in one number:** the same $5 buys 5,000 API calls paid as\nper-call USDC-on-Base x402 payments (merchants floor prices at 0.001 USDC),\nor hundreds of thousands of calls paid in Nano at true metered prices\n($0.0000096/call observed live at nano-gpt.com, confirmed on-ledger).\nTop up once, micropay forever.\n\n## Install\n\n```bash\npip install feeless402    # needs Python 3.10+; pulls nanopy + requests\n# (from a checkout: pip install -e .)\nnano-pay init             # creates ~/.nano-pay/wallet.json (chmod 600)\n```\n\n## Agent flow\n\n```bash\nnano-pay topup 5                    # quote: $5 USDC-BASE → ~12.3 XNO (NanSwap)\nnano-pay topup 5 --execute          # create order (set NANSWAP_API_KEY)\n#   → send USDC to the returned deposit address; XNO arrives in 30-60s\nnano-pay receive                    # pocket incoming XNO\nnano-pay quote https://nano-gpt.com/api/v1/chat/completions \\\n    --json '{\"model\":\"gpt-5-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'\nnano-pay pay   https://nano-gpt.com/api/v1/chat/completions \\\n    --json '{\"model\":\"gpt-5-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}'\n```\n\n`pay` handles the whole x402 handshake: request → parse the 402 quote\n(both the x402nano/`PAYMENT-REQUIRED` v2 dialect and the NanoGPT/`accepts`\nv1 dialect) → price-cap check → sign a send state block locally → retry\nwith `PAYMENT-SIGNATURE` + `X-PAYMENT` headers. The server settles the\nblock via its facilitator; nothing is broadcast unless the server accepts.\n\n## Design notes\n\n- **Self-custody:** seed never leaves `~/.nano-pay/wallet.json` (0600).\n- **No node required:** public RPC failover (rpc.nano.to, somenano,\n  rainstorm.city, nanoslo); all signing and PoW happen locally (nanopy\n  C extension). RPC `work_generate` is tried first, local PoW is the\n  fallback (~25s). The CLI pre-caches work for your *next* block after it\n  has printed the result of the current one, so steady-state payments are\n  instant. Library callers opt in: `send()`, `receive_all()` and\n  `request_with_payment()` take `prework=` and default to **off**, because\n  pre-caching blocks for minutes and must never sit on a request path.\n- **Safety rails:** per-payment price cap (`--max-xno`, default 0.05);\n  `quote` command inspects any endpoint's price without paying;\n  balance is always re-synced from the network, never trusted locally.\n- **Top-ups without custody:** `topup` quotes/creates swaps directly with\n  NanSwap's API (1,400+ input assets, ~$0.02 minimum). This tool never\n  holds or routes funds.\n\n## Fork-hazard note (x402 payments)\n\nAn x402 payment signs a block the *server* broadcasts. If the server\nerrors after receiving the block, it may still settle it late. The wallet\nre-syncs its frontier from the network before every operation, so a late\nsettlement is picked up naturally; a competing block signed in the\nmeantime simply makes one of the two invalid (funds are never at risk,\nbut don't fire concurrent payments from one wallet).\n\n## Status\n\nBeta (v0.2.3). Proven on mainnet with real funds: live paid calls to\nNanoGPT ($0.0000096/call, confirmed on-ledger), full merchant loop\n(verify → settle → confirm, no facilitator), PoW-gated faucet claims,\nand a complete stranger-agent lifecycle (fresh wallet → PoW claim →\npaid API call → confirmed) in under 3 minutes. 13-test suite covers the\npayment path offline. Not audited — keep only working capital in it.\n\n## Security notes (read before holding real funds)\n\n- **Self-custody**: the seed lives only in `~/.nano-pay/*.json` (0600).\n  No tool or log path ever prints it. Back it up offline.\n- **Working capital only**: this is beta wallet software. Keep a few\n  dollars in it, not your savings.\n- **Spend caps**: `pay` refuses quotes above `--max-xno` (default 0.05).\n  MCP `x402_pay` enforces the same cap parameter.\n- **railHint is advisory**: hints from remote servers are untrusted\n  input. This client never executes remote bootstrap strings; it only\n  acts on structured offers that pass its own checks, and `accepts`\n  always binds, never the hint.\n- **Merchant fork guard**: servers cache accepted frontiers and reject\n  duplicate-frontier blocks; payer balance/frontier/signature are\n  verified against the live ledger before settlement.\n- Not audited. MIT — no warranty.\n",
+    "fetchedAt": "2026-08-12T00:34:38.210Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:34:38.798Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,115 @@
+{
+  "id": "io.github.Franksterino/citeguard",
+  "title": "citeguard",
+  "description": "Verify citations in AI text: fetches each cited source, returns verdicts with evidence quotes.",
+  "summary": "Verify citations in AI text: fetches each cited source, returns verdicts with evidence quotes.",
+  "offersHint": "Verify citations in AI text: fetches each cited source, returns verdicts with evidence quotes. · Remote MCP (streamable-http) at https://citeguard.boundy.workers.dev/mcp · Packages: npm:citeguard · Env vars: CITEGUARD_JUDGE_KEY, CITEGUARD_JUDGE_PRESET",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://citeguard.boundy.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://citeguard.boundy.workers.dev/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "citeguard",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CITEGUARD_JUDGE_PRESET",
+        "description": "LLM judge preset: qwen | openai | anthropic"
+      },
+      {
+        "name": "CITEGUARD_JUDGE_KEY",
+        "description": "API key for the judge LLM (required for verify_claims/check_document; check_links works without it)",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "citeguard",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CITEGUARD_JUDGE_PRESET",
+          "description": "LLM judge preset: qwen | openai | anthropic"
+        },
+        {
+          "name": "CITEGUARD_JUDGE_KEY",
+          "description": "API key for the judge LLM (required for verify_claims/check_document; check_links works without it)",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CITEGUARD_JUDGE_KEY",
+      "description": "API key for the judge LLM (required for verify_claims/check_document; check_links works without it)",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "CITEGUARD_JUDGE_PRESET",
+      "description": "LLM judge preset: qwen | openai | anthropic"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Franksterino/citeguard",
+  "repository": {
+    "url": "https://github.com/Franksterino/citeguard",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T18:46:42.156499Z",
+  "publishedAt": "2026-07-06T18:46:42.156499Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:41:34.660Z",
+    "sourceRepoAt": "2026-08-12T00:11:16.579Z",
+    "readmeAt": "2026-08-12T00:11:17.101Z",
+    "toolsAt": "2026-08-12T00:11:17.407Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Franksterino/citeguard",
+    "checkedAt": "2026-08-12T00:11:16.579Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Franksterino/citeguard/main/README.md",
+    "markdown": "# CiteGuard\n\n**Per-claim citation verification for AI-generated text.** CiteGuard fetches every cited source and tells you whether it actually supports the claim — with a quoted evidence span, so you can verify the verdict yourself in seconds.\n\nBuilt for the age of [vibe citing](https://gptzero.me/news/investigations-kpmg/): AI-drafted reports full of citations that resolve to real URLs but don't say what the text claims they say.\n\n## What it does\n\nGive CiteGuard a document (markdown or plain text) or explicit claim+URL pairs. For each claim it:\n\n1. **Fetches the cited source** — with timeout handling, redirect tracking, a 5 MB cap, and an automatic [archive.org](https://archive.org) fallback for dead links.\n2. **Checks source liveness** — dead URLs, DOI redirects, and \"soft 404s\" (redirects that land on a homepage) are flagged explicitly.\n3. **Extracts the real content** — boilerplate-stripped article text via Readability; PDFs supported.\n4. **Judges entailment** — an LLM reads *only the fetched source text* (never its own world knowledge) and returns one of six verdicts.\n\n| Verdict | Meaning |\n|---|---|\n| `supported` | Source clearly states or directly entails the claim |\n| `partially_supported` | Part of the claim is there, but a material element differs or is absent |\n| `contradicted` | Source states the opposite |\n| `unsupported` | Source is real but does not contain the claim |\n| `uncertain` | Source text too fragmentary/ambiguous to decide |\n| `could_not_fetch` | Source unreachable and no archive snapshot — never guessed |\n\nEvery verdict ships with a **verbatim evidence quote**, a confidence score, and full source status. Document audits also return a **citation integrity score (0–100)**.\n\nCiteGuard never overclaims: if it can't fetch a source, it says so instead of judging blind, and borderline cases land in `uncertain` — the goal is to make human verification 10× faster, not to replace it.\n\n## Quick start (MCP)\n\nAdd to Claude Code / Claude Desktop / any MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"citeguard\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"citeguard-mcp\"],\n      \"env\": {\n        \"CITEGUARD_JUDGE_PRESET\": \"qwen\",\n        \"CITEGUARD_JUDGE_KEY\": \"sk-...\"\n      }\n    }\n  }\n}\n```\n\nTools exposed: `verify_claims`, `check_document`, `check_links` (liveness-only, needs no LLM key).\n\n## Quick start (CLI)\n\n```bash\nnpm install -g citeguard\n\nciteguard extract report.md   # show extracted claim/source pairs (no network)\nciteguard links report.md     # dead-link check (no LLM needed)\nciteguard check report.md     # full audit (needs judge configured)\n```\n\n## Judge configuration\n\nCiteGuard is model-agnostic — anything with an OpenAI-compatible chat endpoint works:\n\n```bash\n# Preset providers\nexport CITEGUARD_JUDGE_PRESET=qwen        # or: openai, anthropic\nexport CITEGUARD_JUDGE_KEY=sk-...\n\n# Or any OpenAI-compatible endpoint\nexport CITEGUARD_JUDGE_URL=https://your-endpoint/v1\nexport CITEGUARD_JUDGE_MODEL=your-model\nexport CITEGUARD_JUDGE_KEY=sk-...\n```\n\n## Hosted API\n\nA free hosted endpoint (50 requests/day/IP) runs on Cloudflare Workers:\n\n```bash\ncurl -X POST https://citeguard.YOUR-SUBDOMAIN.workers.dev/api/verify \\\n  -H \"content-type: application/json\" \\\n  -d '{\"claims\":[{\"text\":\"The Eiffel Tower is 330 m tall.\",\"source\":\"https://en.wikipedia.org/wiki/Eiffel_Tower\"}]}'\n```\n\nRemote MCP endpoint: `POST /mcp` (streamable HTTP, stateless).\n\n## What CiteGuard is not\n\n- **Not an AI-text detector.** It doesn't care who wrote the text — it checks whether cited sources support claims.\n- **Not a truth oracle.** A `supported` verdict means *the cited source says this*, not *this is true*. Garbage source in, garbage support out.\n- **Not a search engine.** It verifies the citations you have; it doesn't find better ones (yet).\n\n## Extraction formats\n\nMarkdown inline links, reference-style links, footnotes, bare DOIs (resolved via doi.org), bare URLs. APA-style parsing and PDF *input* documents are on the roadmap.\n\n## Development\n\n```bash\ngit clone https://github.com/Franksterino/citeguard\ncd citeguard\nnpm install\nnpm run typecheck\nnpx tsx src/cli.ts extract test/fixtures/sample.md\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:11:17.101Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "verify_claims",
+      "description": "Verify claim+source pairs: fetches each cited URL and returns a per-claim verdict (supported / partially_supported / contradicted / unsupported / uncertain / could_not_fetch) with a quoted evidence span from the source."
+    },
+    {
+      "name": "check_document",
+      "description": "Audit every citation in a markdown/plain-text document: extracts claim+source pairs (markdown links, footnotes, DOIs, bare URLs), verifies each against the fetched source, and returns a report with a citation integrity score (0-100)."
+    },
+    {
+      "name": "check_links",
+      "description": "Liveness-only check (no LLM): extracts all cited URLs and reports dead links, homepage redirects, and archive.org availability."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:11:17.407Z",
+  "toolsPreviewStatus": "ok"
+}

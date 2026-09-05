@@ -1,0 +1,82 @@
+{
+  "id": "io.github.soteeabam/looppause",
+  "title": "looppause",
+  "description": "LoopPause MCP server — pause agent execution and route human approval requests",
+  "summary": "LoopPause MCP server — pause agent execution and route human approval requests",
+  "offersHint": "LoopPause MCP server — pause agent execution and route human approval requests · Packages: npm:@looppause/mcp · Env vars: YOUR_API_KEY",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@looppause/mcp",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "YOUR_API_KEY",
+        "description": "Your API key for the service",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@looppause/mcp",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "YOUR_API_KEY",
+          "description": "Your API key for the service",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "YOUR_API_KEY",
+      "description": "Your API key for the service",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/soteeabam/looppause-mcp",
+  "repository": {
+    "url": "https://github.com/soteeabam/looppause-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T22:25:38.756896Z",
+  "publishedAt": "2026-08-04T22:25:38.756896Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:57.021Z",
+    "sourceRepoAt": "2026-08-11T23:20:32.203Z",
+    "readmeAt": "2026-08-11T23:20:32.627Z",
+    "toolsAt": "2026-08-12T01:00:57.021Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/soteeabam/looppause-mcp",
+    "checkedAt": "2026-08-11T23:20:32.203Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/soteeabam/looppause-mcp/main/README.md",
+    "markdown": "# @looppause/mcp\n\nMCP server for [LoopPause](https://looppause.com) — pause AI agent execution and\nroute approval requests to humans via Slack or email. The agent receives a\ncryptographically signed proof of the human's decision and resumes.\n\n> **\"The missing primitive so agents don't go rogue — or die waiting for approval.\"**\n\n---\n\n## What it does\n\nExposes three MCP tools: **`request_approval`**, **`check_approval`**, and **`verify_proof`**\n\n1. **`request_approval`** — sends the approval request to the human and returns a `pause_id` immediately\n2. **`check_approval`** — polls once for the decision; call repeatedly until `decision` is `\"approved\"` or `\"rejected\"`\n3. **`verify_proof`** — verifies the signed proof against LoopPause's published Ed25519 public key; call before executing any irreversible action\n\nThis three-step pattern keeps each tool call short, avoids long-running connections, and gives the agent explicit cryptographic verification before proceeding. No shared secret required — any party with the published public key can independently verify the proof.\n\n---\n\n## Installation\n\n### Recommended: npx (no install required)\n\n```bash\nnpx @looppause/mcp\n```\n\n### Global install\n\n```bash\nnpm install -g @looppause/mcp\nlooppause-mcp\n```\n\n---\n\n## Configuration\n\n| Environment variable  | Required | Description |\n|---|---|---|\n| `LOOPPAUSE_API_KEY`   | ✅ Yes   | Your LoopPause API key (`sk_live_…`) |\n| `LOOPPAUSE_API_URL`   | No       | Override the API base URL (default: `https://api.looppause.com`) |\n\nGet your API key at [looppause.com/dashboard](https://looppause.com/dashboard).\n\n---\n\n## Usage in Claude Code\n\nAdd to your `.claude/settings.json` (or `~/.claude/settings.json` for global):\n\n```json\n{\n  \"mcpServers\": {\n    \"looppause\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@looppause/mcp\"],\n      \"env\": {\n        \"LOOPPAUSE_API_KEY\": \"sk_live_your_key_here\"\n      }\n    }\n  }\n}\n```\n\n## Usage in Cursor\n\nAdd to your Cursor MCP configuration:\n\n```json\n{\n  \"mcpServers\": {\n    \"looppause\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@looppause/mcp\"],\n      \"env\": {\n        \"LOOPPAUSE_API_KEY\": \"sk_live_your_key_here\"\n      }\n    }\n  }\n}\n```\n\n---\n\n## Tool reference\n\n### `request_approval`\n\nSends the approval request and returns immediately. **Do not proceed with the action until `check_approval` returns `{ decision: \"approved\" }`.**\n\n```typescript\nrequest_approval({\n  // Required\n  action_description: string,   // What the agent is about to do (shown to human)\n  action_details: Record<string, string>, // Key-value context (amount, vendor, etc.)\n\n  // At least one recipient required\n  recipient_email?: string,     // Email address\n  recipient_slack?: string,     // Slack channel (#approvals) or user ID (U12345)\n\n  // Optional\n  timeout_hours?: number,       // Default 24, max 168 (1 week)\n})\n```\n\nWhen both `recipient_slack` and `recipient_email` are provided, Slack is the\nprimary channel and email is the fallback.\n\n**Returns:**\n\n```json\n{\n  \"pause_id\": \"pse_01jwxyz123\",\n  \"status\": \"pending\",\n  \"expires_at\": \"2026-05-24T14:00:00.000Z\",\n  \"MANDATORY_NEXT_STEP\": \"You MUST call check_approval with this pause_id and wait for decision: 'approved' before taking any action. Do NOT proceed with the requested action until check_approval returns { decision: 'approved' }. Proceeding without approval is a safety violation.\"\n}\n```\n\n---\n\n### `check_approval`\n\nChecks the current status of an approval request. Call repeatedly until `decision` is `\"approved\"` or `\"rejected\"`. **Never proceed while status is `\"pending\"`.**\n\n```typescript\ncheck_approval({\n  pause_id: string,  // The pause_id returned by request_approval\n})\n```\n\n**Returns (pending):**\n\n```json\n{ \"status\": \"pending\" }\n```\n\n**Returns (responded):**\n\n```json\n{\n  \"pause_id\": \"pse_01jwxyz123\",\n  \"agent_id\": \"mcp-agent\",\n  \"status\": \"responded\",\n  \"created_at\": \"2026-05-24T10:00:00.000Z\",\n  \"expires_at\": \"2026-05-24T14:00:00.000Z\",\n  \"response\": {\n    \"decision\": \"approved\",\n    \"comment\": \"PO number: PO-2341\",\n    \"fields\": { \"po_number\": \"PO-2341\" },\n    \"responder\": \"sarah@company.com\",\n    \"responded_at\": \"2026-05-24T10:14:32.000Z\",\n    \"channel\": \"slack\",\n    \"nonce\": \"a8f3c2...\",\n    \"signing_key_id\": \"lp-key-2026-06\",\n    \"signature_alg\": \"Ed25519\",\n    \"signature\": \"ed25519=<base64url>\"\n  }\n}\n```\n\n| Status | Meaning |\n|---|---|\n| `pending` | Human has not responded yet — call again |\n| `responded` | Human responded — check `response.decision` |\n| `timed_out` | No response within `timeout_hours` |\n| `expired` | Pause was manually cancelled |\n\n---\n\n### `verify_proof`\n\nVerifies the Ed25519 signature on a proof returned by `check_approval`. Call this before executing any irreversible action. Returns immediately — no long-running connection.\n\n```typescript\nverify_proof({\n  proof: object,  // The full proof object from check_approval\n})\n```\n\n**Returns (valid):**\n\n```json\n{\n  \"valid\": true,\n  \"verified_at\": \"2026-06-14T10:14:45.000Z\",\n  \"key_id\": \"lp-key-2026-06\"\n}\n```\n\n**Returns (invalid):**\n\n```json\n{\n  \"valid\": false,\n  \"verified_at\": \"2026-06-14T10:14:45.000Z\",\n  \"key_id\": \"lp-key-2026-06\",\n  \"warning\": \"Proof verification FAILED. Do NOT execute the action.\"\n}\n```\n\nPublic key discovery: `GET https://looppause.com/.well-known/looppause-signing-key.json` — match the proof's `signing_key_id` against the served `key_id`.\n\n---\n\n## Example\n\n```typescript\n// Step 1: send the approval request\nconst created = await mcp.callTool(\"request_approval\", {\n  action_description: \"Transfer £12,450 to Globex Corp for invoice INV-2341\",\n  action_details: {\n    vendor: \"Globex Corp\",\n    amount: \"12450\",\n    currency: \"GBP\",\n    invoice_ref: \"INV-2341\",\n  },\n  recipient_slack: \"#finance-approvals\",\n  recipient_email: \"sarah@company.com\",\n  timeout_hours: 4,\n});\n\nconst { pause_id } = JSON.parse(created.content[0].text);\n\n// Step 2: poll until a terminal decision arrives\nlet proof;\nwhile (true) {\n  await new Promise((r) => setTimeout(r, 5_000));\n\n  const status = await mcp.callTool(\"check_approval\", { pause_id });\n  const body = JSON.parse(status.content[0].text);\n\n  if (body.status === \"pending\") continue;\n\n  proof = body;\n  break;\n}\n\nif (proof.response?.decision !== \"approved\") {\n  throw new Error(\"Action rejected or timed out — aborting.\");\n}\n\n// Step 3: verify the Ed25519 signature before executing\nconst verification = await mcp.callTool(\"verify_proof\", { proof });\nconst { valid } = JSON.parse(verification.content[0].text);\n\nif (!valid) throw new Error(\"Proof failed verification — do NOT execute the action.\");\n\nproceedWithTransfer();\n```\n\n---\n\n## Verifying the signature (REQUIRED before executing the action)\n\nAll proofs are signed with LoopPause's Ed25519 key. No shared secret required —\nany party holding the published public key can independently verify the proof.\nUse `verifyLoopPauseProof` (fetches the key automatically) or call `verify_proof`\nvia MCP:\n\n```typescript\nimport { verifyLoopPauseProof } from \"@looppause/mcp\";\n\nconst { valid, key_id } = await verifyLoopPauseProof(proof);\n\nif (!valid) throw new Error(\"Proof failed verification — do NOT execute the action.\");\nif (proof.response?.decision !== \"approved\") throw new Error(\"Not approved.\");\nif (proof.response?.authorization_type !== \"human\") {\n  // system_fallback is a configured default, not a human sign-off\n  throw new Error(\"No human authorization.\");\n}\n// Safe to execute the irreversible action.\n```\n\nFor offline/air-gapped verification, pin the public key once:\n\n```typescript\nawait verifyLoopPauseProof(proof, { publicKey: \"<base64 SPKI DER>\" });\n```\n\nPublic key discovery: `GET https://looppause.com/.well-known/looppause-signing-key.json`\n(match the proof's `signing_key_id` against the served `key_id`).\n\n**Webhook verification.** Unlike per-customer symmetric schemes, LoopPause's\nEd25519 signatures are independently verifiable by any third party holding the\npublished public key — a bank, an auditor, a FIDO AP2 mandate checker — without\ncontacting LoopPause and without holding a shared secret.\n\nLegacy HMAC-SHA256 webhooks (`\"sha256=<hex>\"` signatures) remain verifiable\nwith your `LOOPPAUSE_SIGNING_SECRET` as before; Ed25519 is the default for\nall new proof payloads.\n\n---\n\n## Registry submissions\n\n### Smithery.ai\n\nThis package includes `smithery.yaml` for automatic configuration injection.\n\n1. Fork or publish `@looppause/mcp` to npm\n2. Submit at [smithery.ai/new](https://smithery.ai/new) → enter `@looppause/mcp`\n3. Smithery will read `smithery.yaml` and present a UI for users to enter their API key\n\n### Anthropic MCP directory\n\n1. Ensure the package is published to npm as `@looppause/mcp`\n2. Submit via the [Anthropic MCP directory form](https://github.com/anthropics/anthropic-cookbook/issues)\n   or the directory submission page when available\n3. List as: `@looppause/mcp` — LoopPause human-in-the-loop approval tool\n\n---\n\n## Local development\n\n```bash\n# From the monorepo root\ncd packages/mcp\nnpm run build          # tsc → dist/ + shebang fix\nnpm run type-check     # type-check only, no emit\nnpm run dev            # tsx watch (no build step)\n```\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:20:32.627Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:57.021Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,59 @@
+{
+  "id": "io.github.xpluspro/awaitless",
+  "title": "Awaitless",
+  "description": "Durable queued MCP Tasks on infrastructure you already own — local, SSH, and Slurm.",
+  "summary": "Durable queued MCP Tasks on infrastructure you already own — local, SSH, and Slurm.",
+  "offersHint": "Durable queued MCP Tasks on infrastructure you already own — local, SSH, and Slurm. · Packages: pypi:awaitless-runner",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "awaitless-runner",
+    "version": "0.4.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "awaitless-runner",
+      "version": "0.4.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/xpluspro/Awaitless#readme",
+  "sourceUrl": "https://github.com/xpluspro/Awaitless",
+  "repository": {
+    "url": "https://github.com/xpluspro/Awaitless",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T10:20:56.702618Z",
+  "publishedAt": "2026-08-11T10:20:56.702618Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:32.977Z",
+    "sourceRepoAt": "2026-08-11T23:13:54.576Z",
+    "readmeAt": "2026-08-11T23:13:55.220Z",
+    "toolsAt": "2026-08-12T00:55:32.977Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/xpluspro/Awaitless",
+    "checkedAt": "2026-08-11T23:13:54.576Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/xpluspro/Awaitless/main/README.md",
+    "markdown": "# Awaitless\n\n<!-- mcp-name: io.github.xpluspro/awaitless -->\n\n[![CI](https://github.com/xpluspro/Awaitless/actions/workflows/ci.yml/badge.svg)](https://github.com/xpluspro/Awaitless/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/awaitless-runner.svg)](https://pypi.org/project/awaitless-runner/)\n[![Python](https://img.shields.io/pypi/pyversions/awaitless-runner.svg)](https://pypi.org/project/awaitless-runner/)\n\n**Stop polling long-running jobs and scarce resources from your coding agent.**\n\nAwaitless turns local, SSH, and Slurm commands into durable tasks: submit once,\ndisconnect, and collect the exit code, bounded logs, and JSON results later. Named\nqueues can also wait until local or SSH capacity is available before starting.\nYour workload stays on infrastructure you already own.\n\n[简体中文](README.zh-CN.md) · [Documentation](docs/README.md) ·\n[Benchmarks](metric/README.md) · [PyPI](https://pypi.org/project/awaitless-runner/)\n\n## Measured on real agent workloads\n\n| Result | Plain tmux / polling | Awaitless |\n|---|---:|---:|\n| Median tool calls in 20 paired Agent cases | 7 | **2 (71.4% fewer)** |\n| API usage tokens per correct job | 25,974.2 | **3,820.8 (85.3% fewer)** |\n| Agent-visible calls in a real SSH polling workload | 13 | **2** |\n\nThe Agent results used the same DeepSeek model, prompt, workload, and seed on\n2026-08-10. Awaitless returned the correct task state, exit code, Artifact, and\nlog contract in 20/20 cases; one empty final model response made the strict\nend-to-end score 19/20. A strong 319-line tmux wrapper also reached two calls\nand used 9.2% fewer tokens than Awaitless—the value there is the built-in,\nmaintained protocol rather than a universal token advantage.\n\nRead the [full Agent report](metric/results/deepseek-agent-v2-report.md), the\n[benchmark methodology](metric/README.md), and the separate\n[SSH polling experiment with raw results](benchmarks/README.md).\n\n![Awaitless SSH submit, disconnect, resume, and Artifact demo](https://raw.githubusercontent.com/xpluspro/Awaitless/main/assets/awaitless-demo.gif)\n\n## The polling loop you can delete\n\nWithout Awaitless, an agent starts a job and repeatedly pulls the same growing\nlog back into its context:\n\n```bash\nssh gpu 'run_benchmark > job.log 2>&1 &'\nssh gpu 'tail -n 200 job.log'  # again...\nssh gpu 'tail -n 200 job.log'  # and again...\n```\n\nWith Awaitless, it submits once and waits once:\n\n```bash\nawaitless submit --json --host gpu --artifact results.json -- ./run_benchmark\n# {\"job_id\":\"job_019F...\",\"state\":\"running\",\"backend\":\"ssh\"}\n\nawaitless wait job_019F... --json\n# {\"state\":\"succeeded\",\"exit_code\":0,\"parsed_results\":{...}}\n```\n\nInterrupt the waiter, close the MCP client, or start a fresh agent session. The\njob keeps running; the stable ID is enough to recover its result.\n\n## Submit work before the resource is free\n\nCreate a durable FIFO queue once, then submit every command immediately:\n\n```bash\nawaitless queue create gpu0 --concurrency 1\n\nawaitless submit --queue gpu0 -- python train_a.py\nawaitless submit --queue gpu0 -- python train_b.py\nawaitless submit --queue gpu0 -- python train_c.py\n```\n\nThe first command runs and the others report `queued`. Each starts automatically\nwhen capacity becomes available. There is no priority or preemption: Awaitless\nuses fixed concurrency and FIFO admission, and never kills running work to make\nroom for a later job.\n\n## Try the recovery story in 30 seconds\n\nLinux, Python 3.10+, and Bash are required. Run the built-in demo without a\npersistent install:\n\n```bash\nuvx --from awaitless-runner awaitless demo --json\n```\n\nThe demo submits a local job, terminates its first waiting client, reconnects\nfrom a new client using only the job ID, and verifies a JSON Artifact.\n\nFor regular CLI use:\n\n```bash\nuv tool install awaitless-runner\nawaitless doctor --json\n```\n\n`pip install awaitless-runner` works too.\n\n## Give it to your coding agent\n\nAdd one stdio MCP server to your client's configuration (adapt the outer key to\nyour client):\n\n```json\n{\n  \"mcpServers\": {\n    \"awaitless\": {\n      \"command\": \"uvx\",\n      \"args\": [\"awaitless-runner\"]\n    }\n  }\n}\n```\n\nThen ask the agent to run a long command with Awaitless. Tasks-aware clients\nreceive a durable MCP Task handle immediately; other clients use `submit_job`\nfollowed by `wait_for_job`. Retrying an expensive submission with the same\n`client_request_id` cannot launch a duplicate job.\n\nFor direct CLI use, the whole loop is:\n\n```bash\nawaitless submit --json --name tests -- python -m pytest -q\n# Save the returned job_id, then:\nawaitless wait <job-id> --json\n```\n\n## One interface, three places to run\n\n| Backend | What Awaitless adds |\n|---|---|\n| **Local** | Durable process-group tracking, cancellation, bounded logs, and transactional named queues. |\n| **SSH** | The same job contract plus queues coordinated on the target host, with no remote daemon. |\n| **Slurm** | Real `sbatch` scheduling plus durable Slurm IDs, queue/accounting state, exit codes, logs, cancellation, and Artifacts. |\n\nUse `--backend`, `--host`, or configuration defaults to switch targets without\nchanging how the agent submits and collects work.\n\n## Why not just use a shell or tmux?\n\n| Tool | Best at | What the agent still has to build |\n|---|---|---|\n| Blocking shell call | Short commands | Nothing—use it when disconnect recovery and a free tool slot do not matter. |\n| Shell polling / `nohup` | Keeping a basic command alive | IDs, status, exit-code recovery, bounded logs, cancellation, deduplication, and result parsing. |\n| `tmux` | Humans detaching from interactive shells, REPLs, and TUIs | A reliable non-interactive job protocol and wrapper glue. |\n| **Awaitless** | Agent-run builds, tests, benchmarks, remote jobs, and cluster work | Only the command and, optionally, the JSON Artifact to return. |\n\nAwaitless does not replace interactive terminals or Slurm. It gives coding\nagents durable fixed-concurrency queues on local/SSH machines and delegates\ncluster resource scheduling to Slurm.\n\n## How it works\n\n```mermaid\nflowchart LR\n    A[\"Coding agent\"] -->|\"submit once\"| B[\"Awaitless MCP / CLI\"]\n    B --> C[(\"SQLite job record\")]\n    B --> Q{\"Named queue?\"}\n    Q -->|\"capacity available\"| D{\"Backend\"}\n    D --> L[\"Local process\"]\n    D --> S[\"SSH host\"]\n    D --> H[\"Slurm allocation\"]\n    A -. \"reconnect with stable ID\" .-> C\n    C -->|\"state + exit code + bounded logs + Artifacts\"| A\n```\n\nThere is no Awaitless daemon, HTTP service, or hosted sandbox. Each invocation\nopens the same SQLite store; submitted runners and scheduler jobs outlive the\nstdio server that created them. Full logs remain on disk while only bounded\ntails enter the agent context.\n\n## Documentation\n\n- [Documentation index](docs/README.md)\n- [CLI, configuration, SSH, Slurm, persistence, Artifacts, and troubleshooting](docs/REFERENCE.md)\n- [MCP Tasks protocol and compatibility](docs/MCP_TASKS.md)\n- [Benchmark definitions, methodology, and interpretation](metric/README.md)\n- [Real MCP → Slurm disconnect evidence](docs/REFERENCE.md#real-mcp--slurm-disconnect-evidence)\n- [Architecture and design rationale](docs/REFERENCE.md#architecture-and-runtime-model)\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:13:55.220Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:32.977Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

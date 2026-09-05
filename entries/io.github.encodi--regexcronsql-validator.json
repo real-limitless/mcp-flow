@@ -1,0 +1,64 @@
+{
+  "id": "io.github.encodi/regexcronsql-validator",
+  "title": "regexcronsql-validator",
+  "description": "Valida regex, cron y SQL contra ejecucion real. Pago por llamada via x402/USDC.",
+  "summary": "Valida regex, cron y SQL contra ejecucion real. Pago por llamada via x402/USDC.",
+  "offersHint": "Valida regex, cron y SQL contra ejecucion real. Pago por llamada via x402/USDC. · Remote MCP (streamable-http) at https://regexcronsql-validator.encodari.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://regexcronsql-validator.encodari.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://regexcronsql-validator.encodari.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/encodi/regexcronsql-validator",
+  "repository": {
+    "url": "https://github.com/encodi/regexcronsql-validator",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T16:47:50.702363Z",
+  "publishedAt": "2026-08-10T16:47:50.702363Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:06.208Z",
+    "sourceRepoAt": "2026-08-11T23:46:58.825Z",
+    "readmeAt": "2026-08-11T23:46:59.372Z",
+    "toolsAt": "2026-08-11T23:46:59.464Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/encodi/regexcronsql-validator",
+    "checkedAt": "2026-08-11T23:46:58.825Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/encodi/regexcronsql-validator/main/README.md",
+    "markdown": "# regexcronsql-validator\n\nServidor MCP remoto (Cloudflare Workers, template `remote-mcp-authless`) con dos tools que validan contra **ejecución real**, no contra lo que un LLM cree que hacen:\n\n- **`validar_regex`** — corre el patrón con `RegExp` nativo de JS contra una lista de strings.\n- **`validar_cron`** — calcula las próximas ejecuciones reales de una expresión cron con [`cron-parser`](https://www.npmjs.com/package/cron-parser).\n- **`validar_sql`** — ejecuta una consulta SQL (dialecto Postgres) contra tablas de prueba en memoria con [`pg-mem`](https://www.npmjs.com/package/pg-mem) y devuelve las filas reales resultantes.\n\nSin base de datos, sin estado persistente: cada llamada crea un `McpServer` nuevo (ver `createServer()` en `src/index.ts`) y es autocontenida — para `validar_sql` esto también aplica a las tablas de prueba: se crean desde cero en cada llamada (`pg-mem` en memoria) y se descartan al terminar.\n\n## Cobro (x402)\n\nLas tres tools cobran por llamada vía [x402](https://x402.org) — pago en USDC real sobre **Base mainnet**, sin API key, contra el facilitator público `x402.org/facilitator`. El pago viaja dentro del propio JSON-RPC de MCP (`_meta`), no como header HTTP; ver `src/payments.ts`.\n\n| Tool | Precio |\n|---|---|\n| `validar_regex` | $0.02 USDC |\n| `validar_cron` | $0.02 USDC |\n| `validar_sql` | $0.04 USDC |\n\nUn `tools/call` sin pago devuelve `isError: true` con los `accepts` (red, monto, `payTo`) que el cliente necesita para pagar y reintentar — no una excepción sin explicar. Un cliente MCP x402-aware con wallet propia (ej. `createX402MCPClient` de `@x402/mcp`) firma el pago y lo adjunta automáticamente; probarlo end-to-end requiere una wallet con fondos reales en Base mainnet y su clave privada, algo que este repo no maneja ni pide.\n\n## Estructura\n\n```\nsrc/\n  index.ts        # registra las tools en el McpServer y expone el handler HTTP MCP\n  tools/\n    regex.ts      # lógica pura de validar_regex (testeable sin Workers)\n    regex.test.ts\n    cron.ts       # lógica pura de validar_cron (testeable sin Workers)\n    cron.test.ts\n    sql.ts        # lógica pura de validar_sql (testeable sin Workers)\n    sql.test.ts\nscripts/\n  dev-node.ts     # servidor de dev que corre el handler en Node puro, sin wrangler\n```\n\n## Correrlo local\n\n⚠️ **Nota sobre `wrangler dev`**: el runtime real de Cloudflare Workers (`workerd`) requiere **macOS 13.5+**. Si tu Mac tiene una versión más vieja, `wrangler dev` (y `npm run dev`) van a fallar con `Unsupported macOS version`. Para ese caso este proyecto trae un shim en Node puro que corre exactamente el mismo `fetch()` handler sin necesitar `workerd`.\n\n### 1. Instalar dependencias\n\n```bash\nnpm install\n```\n\n### 2. Correr los tests unitarios\n\n```bash\nnpm test\n```\n\n### 3a. Si tu wrangler dev funciona (macOS 13.5+, Linux, Windows)\n\n```bash\nnpm run dev\n```\n\nLevanta en `http://localhost:8787/mcp`.\n\n### 3b. Si `wrangler dev` falla por versión de macOS\n\n```bash\nnpm run dev:node\n```\n\nLevanta el mismo handler en `http://localhost:8787/mcp` pero corriendo en Node directo (usa `tsx`, con watch mode). Ver el comentario en `scripts/dev-node.ts` para el detalle de por qué esto es seguro (el handler no usa bindings de Cloudflare como KV o Durable Objects).\n\n### 4. Probar con curl\n\nEl transporte es MCP \"Streamable HTTP\": todo entra por POST a `/mcp` como JSON-RPC.\n\n```bash\n# 1) initialize (obligatorio primero en la mayoría de los clientes)\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl-test\",\"version\":\"0.0.1\"}}}'\n\n# 2) tools/list — ver el JSON Schema real que expone cada tool\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}'\n\n# 3) tools/call — validar_regex\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"validar_regex\",\"arguments\":{\"pattern\":\"^[0-9]{3}-[0-9]{4}$\",\"test_strings\":[\"555-1234\",\"abc-1234\"]}}}'\n\n# 4) tools/call — validar_cron\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"validar_cron\",\"arguments\":{\"cron_expression\":\"0 9 * * 1-5\",\"from_date\":\"2026-08-07T00:00:00Z\",\"count\":5}}}'\n\n# 5) tools/call — validar_sql\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"validar_sql\",\"arguments\":{\"query\":\"SELECT nombre, monto FROM ventas WHERE monto > 100 ORDER BY monto DESC\",\"tables\":[{\"name\":\"ventas\",\"rows\":[{\"id\":1,\"nombre\":\"Ana\",\"monto\":150.5},{\"id\":2,\"nombre\":\"Luis\",\"monto\":42}]}]}}}'\n```\n\nLas respuestas vienen como Server-Sent Events (una línea `event: message` + `data: {...}`); el `data:` es la respuesta JSON-RPC de siempre.\n\n### 5. Probar con MCP Inspector (más cómodo que curl)\n\n```bash\nnpx @modelcontextprotocol/inspector\n```\n\nAbre una UI en el navegador. Ahí:\n\n1. Transport type: `Streamable HTTP`.\n2. URL: `http://localhost:8787/mcp`.\n3. Connect → pestaña **Tools** → `List Tools` → deberías ver `validar_regex`, `validar_cron` y `validar_sql` con sus schemas.\n4. Elegí una tool, completá los inputs y `Run Tool` para ver el resultado real.\n\n## Deploy y listados\n\nDesplegado en `https://regexcronsql-validator.encodari.workers.dev/mcp` (Cloudflare Workers). Publicado en el [registry oficial de MCP](https://registry.modelcontextprotocol.io), [Smithery](https://smithery.ai/servers/encodari/regexcronsql-validator), [mcp.so](https://mcp.so) y con PR abierto a [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers).\n\nLa mayoría de los cambios de código son solo `npm run deploy` — no hace falta re-publicar en los listados salvo que cambie el precio, la descripción, o la URL del servidor. Ver [`ROADMAP.md`](./ROADMAP.md) para el detalle y el plan de mejoras a futuro.\n\n### Cómo ver si se está usando\n\n- **Pagos reales:** balance de USDC de la wallet de cobro en [BaseScan](https://basescan.org/address/0xF3aF5902240Ea7fb277748Ad5DA7Eb7582E5601e) — cada pago liquidado por x402 aparece ahí.\n- **Tráfico (pagado o no):** dashboard de Cloudflare → Workers & Pages → `regexcronsql-validator` → Metrics.\n- **Smithery:** tiene su propia página de stats por servidor.\n\n## Qué NO hace (todavía)\n\n- Cobra en Base mainnet con dinero real. Para volver a testnet (Base Sepolia, `eip155:84532`) durante desarrollo, cambiá `NETWORK` en `src/payments.ts`.\n- No tiene base de datos ni estado persistente entre llamadas (más allá de la config de cobro, cacheada en memoria por isolate — ver `src/payments.ts`).\n",
+    "fetchedAt": "2026-08-11T23:46:59.372Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "validar_regex",
+      "description": "Ejecuta un patrón de expresión regular (motor nativo de JavaScript) contra una lista de strings de prueba y devuelve, para cada uno, si hizo match, el match completo y los grupos capturados. Usa RegExp real, no una suposición del modelo sobre qué haría el patrón. Cuesta $0.02 USDC (Base) por llamada."
+    },
+    {
+      "name": "validar_cron",
+      "description": "Calcula las próximas ejecuciones reales de una expresión cron usando cron-parser (no una suposición del modelo sobre cuándo dispararía). Interpreta los campos en UTC para que el resultado no dependa de la zona horaria del servidor que corre la tool. Cuesta $0.02 USDC (Base) por llamada."
+    },
+    {
+      "name": "validar_sql",
+      "description": "Ejecuta una consulta SQL (dialecto Postgres, motor pg-mem en memoria) contra tablas de prueba opcionales y devuelve las filas reales resultantes. Usa un motor SQL real, no una suposición del modelo sobre qué devolvería la query. Sin base de datos persistente: las tablas se crean desde cero en cada llamada y se descartan al terminar. Cuesta $0.04 USDC (Base) por llamada."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:59.464Z",
+  "toolsPreviewStatus": "ok"
+}

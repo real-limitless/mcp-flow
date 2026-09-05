@@ -1,0 +1,78 @@
+{
+  "id": "io.github.IsaiahDupree/realtystack-mcp",
+  "title": "realtystack-mcp",
+  "description": "U.S. real-estate data: property records, AVM value + rent estimates, sale/rental listings.",
+  "summary": "U.S. real-estate data: property records, AVM value + rent estimates, sale/rental listings.",
+  "offersHint": "U.S. real-estate data: property records, AVM value + rent estimates, sale/rental listings. · Remote MCP (streamable-http) at https://realtystack-mcp.vercel.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://realtystack-mcp.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://realtystack-mcp.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://realtystack-mcp.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/realtystack-mcp",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/realtystack-mcp",
+    "source": "github",
+    "id": "1318902089"
+  },
+  "updatedAt": "2026-08-01T02:34:07.169821Z",
+  "publishedAt": "2026-08-01T02:34:07.169821Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:26.171Z",
+    "sourceRepoAt": "2026-08-12T00:09:58.039Z",
+    "readmeAt": "2026-08-12T00:09:58.533Z",
+    "toolsAt": "2026-08-12T00:09:58.761Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/realtystack-mcp",
+    "checkedAt": "2026-08-12T00:09:58.039Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/realtystack-mcp/master/README.md",
+    "markdown": "# realtystack-mcp\n\nA remote **MCP (Model Context Protocol)** connector for the **RealtyStack API** — U.S. real-estate data built on [RentCast](https://developers.rentcast.io/reference): property records search + single-record lookup, AVM sale-value and long-term-rent estimates with comparables, and active sale/rental listings, all in one flat `/v1` JSON contract.\n\n**Upstream:** `https://realestate-api-kappa.vercel.app` (RealtyStack REST API) — 6 tools, one per `/v1` endpoint. Since the upstream deployment is metered (RapidAPI/Apify, and itself layered over RentCast's metered quota), this connector authenticates its own outbound calls with a server-side RapidAPI proxy secret (`REALTYSTACK_MCP_PROXY_SECRET`, sent as the `X-RapidAPI-Proxy-Secret` header) and applies a soft per-IP rate limit (`REALTYSTACK_MCP_RATE_LIMIT`, default 30 tool-calls/hour, in-memory) so this free MCP tier stays a discovery channel rather than an unmetered bypass of the paid listing — see `lib/ratelimit.js`.\n\n## What this is, and why it's a separate connector\n\nRealtyStack is a plain REST API. Any HTTP client can already call it directly. This repo exists because **MCP clients (Claude, ChatGPT, and other MCP-aware agents) don't consume arbitrary REST APIs — they consume MCP tools.** `realtystack-mcp` is a thin adapter layer that:\n\n- Exposes each RealtyStack `/v1` endpoint as a discoverable, typed MCP **tool** (name, description, zod input schema, annotations) that an LLM can reason about and call directly, instead of having to be taught the REST surface out-of-band.\n- Speaks the MCP **streamable-HTTP** transport at a single `/mcp` endpoint, so it can be registered as a connector in Claude, ChatGPT, or any other MCP client with one URL.\n- Does nothing else. It has no business logic of its own — every tool call is a pass-through `fetch` to RealtyStack, and the JSON response RealtyStack returns is handed back verbatim as the tool result.\n\n## Authentication: none on the MCP caller side (deliberate)\n\nRealtyStack's data has **no per-user dimension** — it's objective real-estate data (property records, valuation estimates, listings). There is nothing to gate per-caller, so this connector intentionally ships with:\n\n- No OAuth, no login, no bearer tokens from the MCP client\n- No Supabase / database\n- No demo-vs-real account split — every caller gets the same real, live data\n\n`api/mcp.js` builds a fresh, stateless `McpServer` per request and serves it with zero MCP-caller auth checks.\n\n### Upstream auth (outbound)\n\nThe *upstream* RealtyStack deployment gates every `/v1/*` route behind a RapidAPI proxy secret (see `realestate-api/src/guard.js`). This connector reaches real data by sending that same secret as the `X-RapidAPI-Proxy-Secret` header on its outbound `fetch` calls, read from the `REALTYSTACK_MCP_PROXY_SECRET` env var. Verified behavior: sending `X-RapidAPI-Proxy-Secret` passes the guard and returns real data; sending nothing returns `403 \"This API is served through RapidAPI.\"`. This is an upstream monetization detail — it does not add any auth to *this* connector, which still has zero MCP-caller auth by design.\n\n## Tool list\n\nOne tool per RealtyStack `/v1` endpoint (from `realestate-api/openapi.yaml`; `/api/health` is intentionally not wrapped):\n\n| Tool | RealtyStack endpoint | Description |\n|---|---|---|\n| `search_properties` | `GET /v1/properties` | Search property records by address, city/state/zip, or lat/long radius, with structural filters. |\n| `get_property` | `GET /v1/properties/{id}` | Full detail for one property record by its RentCast id. |\n| `avm_value` | `GET /v1/avm/value` | AVM sale-value estimate (point + range) with scored comparable sales. |\n| `avm_rent` | `GET /v1/avm/rent` | AVM long-term-rent estimate (point + range) with scored comparable rentals. |\n| `search_sale_listings` | `GET /v1/listings/sale` | Active (or inactive) for-sale listings with MLS + agent/office contact. |\n| `search_rental_listings` | `GET /v1/listings/rental` | Active (or inactive) long-term rental listings. |\n\nAll 6 tools are read-only GETs, annotated `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }` — none of them write anything, and all of them reflect live, externally-changing real-estate data.\n\n## How it wraps realestate-api\n\nEach tool handler does a plain `fetch(\\`${REALTYSTACK_MCP_API_BASE_URL}${path}\\`, ...)` against the real RealtyStack REST API (adding the `X-RapidAPI-Proxy-Secret` header when configured) and returns the parsed JSON as MCP tool-result content:\n\n```js\n{ content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }\n```\n\nUpstream HTTP errors (4xx/5xx) are caught and surfaced as a typed MCP error result via an `asError` helper rather than crashing the request.\n\n### Environment variables\n\n| Var | Purpose | Default |\n|---|---|---|\n| `REALTYSTACK_MCP_API_BASE_URL` | Upstream RealtyStack base URL | `https://realestate-api-kappa.vercel.app` |\n| `REALTYSTACK_MCP_PROXY_SECRET` | Sent as `X-RapidAPI-Proxy-Secret` to pass the upstream guard | *(unset — 403 from guarded upstream)* |\n| `REALTYSTACK_MCP_RATE_LIMIT` | Soft per-IP tools/call cap per hour | `30` |\n\n## Project layout\n\n```\napi/mcp.js       MCP endpoint (StreamableHTTPServerTransport, stateless, no caller auth)\napi/health.js    GET /api/health\nlib/tools.js     All 6 tool definitions (zod schemas + fetch-and-forward handlers)\nlib/ratelimit.js Soft in-memory per-IP tools/call cap\nlocal-server.js  Plain-Node http server for local dev / smoke testing (not deployed)\ntest/smoke.mjs   Real end-to-end smoke test (initialize, tools/list, tools/call)\nvercel.json      Routes /mcp -> api/mcp.js, /health -> api/health.js\nserver.json      MCP registry metadata\n```\n\n## Local development\n\n```bash\nnpm install\nnpm run dev          # starts local-server.js on http://localhost:3900\n```\n\nEndpoints locally: `POST http://localhost:3900/mcp`, `GET http://localhost:3900/health`.\n\nTo hit real upstream data locally, set the proxy secret:\n\n```bash\nREALTYSTACK_MCP_PROXY_SECRET=<secret> npm run dev\n```\n\n## Smoke test\n\n```bash\nnpm run dev &                 # terminal 1\nnpm run smoke                 # terminal 2\n```\n\n`test/smoke.mjs` drives the running server over real HTTP/JSON-RPC and verifies:\n\n1. `GET /health` returns `{ ok: true, ... }`\n2. `initialize` succeeds and reports `serverInfo.name === \"realtystack\"`\n3. `tools/list` returns all 6 tools with their zod-derived JSON schemas\n4. `tools/call` for `search_properties` exercises the tool end-to-end (when `REALTYSTACK_MCP_PROXY_SECRET` is set it asserts a real upstream result; without it, the tool-calling mechanics are still proven and the upstream's honest 403 guard response is accepted)\n\n## Deploy\n\nNot deployed by this build (verify first). Once verified:\n\n```bash\ncd /Users/isaiahdupree/Software/realtystack-mcp\nnpx vercel --yes --prod\n```\n\nAfter deploy, the MCP connector URL to register in Claude/ChatGPT/any MCP client is:\n\n```\nhttps://<deployment-domain>/mcp\n```\n",
+    "fetchedAt": "2026-08-12T00:09:58.533Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_properties",
+      "description": "Search normalized U.S. property records (owner, structural attributes, tax assessments, tax + sale history) by location. Pin a location one of three ways: a full address, a city+state(+zipCode), or a latitude+longitude point with a radius (miles). All other parameters narrow the result set. Records are cached 24h upstream, so meta.cached may be true on repeat queries."
+    },
+    {
+      "name": "get_property",
+      "description": "Full detail for a single property record, keyed by its RentCast id (the same id returned on every search_properties, avm_value, avm_rent, and listings record). Returns 404 if no property matches the id. Cached 24h upstream."
+    },
+    {
+      "name": "avm_value",
+      "description": "Run RentCast's automated valuation model for a subject property and return a point price estimate, a priceRangeLow/priceRangeHigh band, the resolved subjectProperty, and comparables[] — recent comparable sales each scored with a distance (miles) and correlation (0-1 similarity). Pin the subject with either address or latitude+longitude; when subject attributes are unknown, supply propertyType/bedrooms/bathrooms/squareFootage (or leave lookupSubjectAttributes true to have RentCast fill them). Cached 6h upstream."
+    },
+    {
+      "name": "avm_rent",
+      "description": "Run RentCast's automated model for long-term (12-month lease) rent and return a point rent estimate, a rentRangeLow/rentRangeHigh band, the resolved subjectProperty, and comparables[] — recent comparable rentals each scored with distance and correlation. Same subject-pinning rules as avm_value (address or latitude+longitude, plus optional subject attributes). Cached 6h upstream."
+    },
+    {
+      "name": "search_sale_listings",
+      "description": "Return a page of for-sale listings (list price, status, days on market, MLS name/number, listing agent + office contact, and price/status history) for a location. Same location-pinning rules as search_properties (address, city+state(+zipCode), or latitude+longitude+radius). Each record is tagged listingKind:\"sale\". Listings move faster than records, so these are cached only 30 minutes upstream."
+    },
+    {
+      "name": "search_rental_listings",
+      "description": "Return a page of long-term (12-month lease) rental listings — same record shape as search_sale_listings (monthly price is the asking rent), but each record is tagged listingKind:\"rental-long-term\". Same location-pinning rules and 30-minute upstream cache as the sale-listings endpoint."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:09:58.761Z",
+  "toolsPreviewStatus": "ok"
+}

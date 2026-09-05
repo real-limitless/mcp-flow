@@ -1,0 +1,76 @@
+{
+  "id": "io.github.llmops-pro/l402-search-mcp",
+  "title": "l402-search-mcp",
+  "description": "No-KYC web search for AI agents, paid per query in Lightning sats (L402). Holds no keys.",
+  "summary": "No-KYC web search for AI agents, paid per query in Lightning sats (L402). Holds no keys.",
+  "offersHint": "No-KYC web search for AI agents, paid per query in Lightning sats (L402). Holds no keys. · Packages: npm:l402-search-mcp · Env vars: SEARCH_SERVICE_URL",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "l402-search-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SEARCH_SERVICE_URL",
+        "description": "L402 search endpoint to consume (default: https://llmops-search.fly.dev)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "l402-search-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SEARCH_SERVICE_URL",
+          "description": "L402 search endpoint to consume (default: https://llmops-search.fly.dev)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SEARCH_SERVICE_URL",
+      "description": "L402 search endpoint to consume (default: https://llmops-search.fly.dev)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/llmops-pro/l402-search-mcp",
+  "repository": {
+    "url": "https://github.com/llmops-pro/l402-search-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-13T06:41:56.301121Z",
+  "publishedAt": "2026-06-13T06:41:56.301121Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:42.938Z",
+    "sourceRepoAt": "2026-08-11T23:37:43.993Z",
+    "readmeAt": "2026-08-11T23:37:44.544Z",
+    "toolsAt": "2026-08-12T01:16:42.938Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/llmops-pro/l402-search-mcp",
+    "checkedAt": "2026-08-11T23:37:43.993Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/llmops-pro/l402-search-mcp/main/README.md",
+    "markdown": "# l402-search-mcp\n\n**No-KYC web search for AI agents — paid per query in Lightning sats, via MCP.**\n\nThis is an MCP *client-side* server for [L402](https://docs.lightning.engineering/the-lightning-network/l402)-paywalled search endpoints. It gives any MCP-capable agent (Claude Desktop, Claude Code, Cursor, [nostr-merchant](https://github.com/llmops-pro/nostr-merchant), …) a `search` tool that costs sats instead of an API key:\n\n1. `search(query)` → returns a bolt11 **Lightning invoice** + `payment_hash`\n2. The agent pays the invoice **with its own wallet** — e.g. [`nwc-mcp`](https://github.com/llmops-pro/nwc-mcp)'s `nwc_pay_invoice`, under the agent's own budget caps\n3. `search(query, payment_preimage)` → JSON results\n\nNo account. No API key. No KYC. Each payment buys exactly one search.\n\nBy default it points at **https://llmops-search.fly.dev** (50 sats/search, run by us), but `SEARCH_SERVICE_URL` works with any endpoint speaking the same L402 dialect.\n\n## The trust model (read this)\n\n**This server holds NO keys.** Not a wallet connection, not an nsec, nothing. Payment happens in the *agent's* wallet, where the agent's own budget caps, allowlists, and audit logs apply. l402-search-mcp only:\n\n- relays the L402 challenge (invoice) to the agent,\n- remembers which macaroon belongs to which `payment_hash` (so the agent only handles the preimage its wallet already returned),\n- makes the authorized retry.\n\nWorst-case compromise of this process leaks pending search queries — never money.\n\n## Install\n\n```bash\nnpx -y l402-search-mcp\n```\n\nClaude Code (project scope):\n\n```bash\nclaude mcp add l402-search -s project -- npx -y l402-search-mcp\n```\n\nClaude Desktop (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"l402-search\": { \"command\": \"npx\", \"args\": [\"-y\", \"l402-search-mcp\"] }\n  }\n}\n```\n\nPair it with a wallet server (e.g. `nwc-mcp`) so the agent can actually pay.\n\n## Tools\n\n| Tool | Price | What it does |\n|------|-------|--------------|\n| `search` | sats (set by the endpoint; 50 on the default) | First call returns the invoice; the call with `payment_preimage` returns results. |\n| `search_service_info` | free | Endpoint reachability, pending challenges, flow explainer. |\n\n## Configuration\n\nEverything is optional — the defaults work. Set in the environment or a `.env` next to the install (never read from cwd):\n\n```bash\nSEARCH_SERVICE_URL=https://llmops-search.fly.dev  # any L402 search endpoint\nCHALLENGE_TTL_SECONDS=900                          # match the endpoint's macaroon TTL\nAUDIT_LOG_PATH=./l402-search-mcp-audit.log         # NDJSON, append-only\nHTTP_TIMEOUT_MS=15000\n```\n\n## The flow, end to end\n\n```\nagent                    l402-search-mcp              endpoint              agent's wallet\n  │  search(\"foo\")            │                          │                       │\n  │ ────────────────────────► │  GET /search?q=foo       │                       │\n  │                           │ ───────────────────────► │                       │\n  │                           │  402 {macaroon, invoice} │                       │\n  │  {invoice, payment_hash}  │ ◄─────────────────────── │                       │\n  │ ◄──────────────────────── │  (macaroon cached)       │                       │\n  │  nwc_pay_invoice(invoice) │                          │                       │\n  │ ──────────────────────────┼──────────────────────────┼─────────────────────► │\n  │  {preimage}               │                          │                       │\n  │ ◄─────────────────────────┼──────────────────────────┼────────────────────── │\n  │  search(\"foo\", preimage)  │                          │                       │\n  │ ────────────────────────► │  GET + Authorization:    │                       │\n  │                           │  L402 macaroon:preimage  │                       │\n  │                           │ ───────────────────────► │                       │\n  │  {results}                │  200 {results}           │                       │\n  │ ◄──────────────────────── │ ◄─────────────────────── │                       │\n```\n\nThe macaroon never round-trips through the LLM — the agent only sees the invoice and hands back the preimage its wallet returned. `sha256(preimage) = payment_hash` recovers the rest.\n\n## Audit log\n\nNDJSON, one line per event: `startup`, `challenge_received`, `results_received`, `unknown_preimage`, `endpoint_error`. Same shape as the other servers in the kit.\n\n## Part of the LLMOps.Pro agent-payments kit\n\n`nwc-mcp` (wallet) · `nostr-ops-mcp` (NOSTR identity/publishing) · `marketplace-mcp` (storefront) · `albyhub-admin-mcp` (node admin) · `paywall-mcp` (sell YOUR tools for sats) · **`l402-search-mcp`** (buy search with sats)\n\nMIT. Built by [LLMOps.Pro](https://njump.me/npub1hdg932jvwc3jdvkqywgqv0ue4nn60exrf92asy8mtazt3hjg7d2s2yw0nw) · ⚡ sovereigncitizens@getalby.com\n",
+    "fetchedAt": "2026-08-11T23:37:44.544Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:42.938Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

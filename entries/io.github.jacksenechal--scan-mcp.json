@@ -1,0 +1,59 @@
+{
+  "id": "io.github.jacksenechal/scan-mcp",
+  "title": "scan-mcp",
+  "description": "MCP server for scanner discovery and batch capture via SANE",
+  "summary": "MCP server for scanner discovery and batch capture via SANE",
+  "offersHint": "MCP server for scanner discovery and batch capture via SANE · Packages: npm:scan-mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "scan-mcp",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "scan-mcp",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/jacksenechal/scan-mcp",
+  "sourceUrl": "https://github.com/jacksenechal/scan-mcp",
+  "repository": {
+    "url": "https://github.com/jacksenechal/scan-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-22T01:07:03.795737Z",
+  "publishedAt": "2026-07-22T01:07:03.795737Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:27.985Z",
+    "sourceRepoAt": "2026-08-11T23:41:54.491Z",
+    "readmeAt": "2026-08-11T23:41:55.094Z",
+    "toolsAt": "2026-08-12T01:19:27.985Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jacksenechal/scan-mcp",
+    "checkedAt": "2026-08-11T23:41:54.491Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jacksenechal/scan-mcp/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"docs/assets/icon.png\" alt=\"scan-mcp logo\" width=\"96\">\n</p>\n\n<h1 align=\"center\">scan-mcp</h1>\n\n\n[![CI](https://github.com/jacksenechal/scan-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jacksenechal/scan-mcp/actions/workflows/ci.yml)\n[![npm version](https://img.shields.io/npm/v/scan-mcp.svg)](https://www.npmjs.com/package/scan-mcp)\n![node-current](https://img.shields.io/node/v/scan-mcp)\n[![npm downloads](https://img.shields.io/npm/dm/scan-mcp.svg)](https://www.npmjs.com/package/scan-mcp)\n\n\nMinimal MCP server for scanner capture (ADF/duplex/page-size), batching, and multipage assembly.\n\n## Features\n\n- Small, typed MCP server exposing tools for device discovery and scan jobs\n- JSON Schema–validated inputs with deterministic, typed outputs\n- Smart device selection (prefers ADF/duplex, avoids camera backends), robust defaults\n- Local-first transports: stdio by default to keep everything on-device, optional HTTP for your own network deployments\n\nNote: This package targets Node 22 and Linux SANE backends (`scanimage`).\n\n## Quick Start (local stdio, default)\n\nAdd a server entry to your MCP client configuration:\n\n```\n{\n  \"mcpServers\": {\n    \"scan\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"scan-mcp\"\n      ],\n      \"env\": {\n        \"INBOX_DIR\": \"~/Documents/scanned_documents/inbox\"\n      }\n    }\n  }\n}\n```\n\n- This invocation runs over stdio for a privacy-first, single-machine setup.\n- Call `start_scan_job` without a `device_id` to auto-select a scanner and begin scanning.\n- Artifacts are written under `INBOX_DIR` per job: `job-*/page_*.tiff`, `doc_*.tiff`, `manifest.json`, `events.jsonl`. When `crop_carrier_sheets` is set and a carrier sheet is detected, a `page_*.cropped.tiff` derivative is also written per affected page.\n\n## Streamable HTTP transport\n\nPrefer to attach the scanner to another machine on your network? `scan-mcp` also supports the\nstreamable HTTP transport:\n\n```bash\nscan-mcp --http\n```\n\n- Default port is `3001`; set `MCP_HTTP_PORT` to override (for example `MCP_HTTP_PORT=3333 scan-mcp --http`).\n- Binds all interfaces (`::`) by default; set `MCP_HTTP_HOST` to restrict (for example `MCP_HTTP_HOST=127.0.0.1` when a reverse proxy fronts the server).\n- HTTP responses use server-sent events (SSE) for streaming tool output; clients such as Claude Desktop and Windsurf support\n  this transport.\n- There is currently no authentication; this is intended for internal LAN networking\n\n## Install\n\n- Run with npx: `npx scan-mcp` (recommended)\n  - The CLI runs a quick preflight check for Node 22+ and required scanner/image tools and prints installation hints if anything is missing.\n  - See recommended server config above\n- Use `npx scan-mcp --http` to launch the streamable HTTP transport when running on another machine.\n- CLI help: `scan-mcp --help`\n- From source (for development):\n  - `npm install`\n  - `npm run build`\n- For Cline setup, and other automated agentic installation, see [llms-install.md](llms-install.md)\n\n## System Requirements\n\n- Linux with SANE utilities: `scanimage` (and optionally `scanadf`)\n- TIFF tools: `tiffcp` (preferred) or ImageMagick `convert`\n\n## Environment Variables\n\n- `SCAN_MOCK` (default: `false`): mock SANE calls and generate fake TIFFs for testing.\n- `INBOX_DIR` (default: `scanned_documents/inbox`): base directory for job runs and artifacts.\n- `SCANIMAGE_BIN` / `SCANADF_BIN` (defaults: `scanimage` / `scanadf`): override binary paths.\n- `TIFFCP_BIN` / `IM_CONVERT_BIN` (defaults: `tiffcp` / `convert`): multipage assembly tools.\n- `SCAN_EXCLUDE_BACKENDS` (CSV): backends to exclude (e.g., `v4l`).\n- `SCAN_PREFER_BACKENDS` (CSV): preferred backends (e.g., `epjitsu,epson2`).\n- `PERSIST_LAST_USED_DEVICE` (default: `true`): persist and lightly prefer last used device.\n- `MCP_HTTP_PORT` (default: `3001`): TCP port for the HTTP transport.\n\n## API\n\n### Tools\n\n- **list_devices**\n  - Discover connected scanners with backend details.\n  - Inputs: none.\n\n- **get_device_options**\n  - Get SANE options for a specific device.\n  - Inputs:\n    - `device_id` (string): Target device identifier.\n\n- **start_scan_job**\n  - Begin a scanning job; omitting `device_id` triggers auto-selection and default options.\n  - Inputs (all optional unless noted):\n    - `device_id` (string)\n    - `resolution_dpi` (integer, 50–1200)\n    - `color_mode` (`Color` | `Gray` | `Lineart`): color_mode defaults to Lineart (document-first);\n      at >= 600dpi it defaults to Color, since high-dpi capture usually means artwork/photos where\n      1-bit destroys information. Pass color_mode explicitly to override either default; high dpi\n      is the only signal used.\n    - `source` (`Flatbed` | `ADF` | `ADF Duplex`)\n    - `duplex` (boolean)\n    - `page_size` (`Letter` | `A4` | `Legal` | `Custom`)\n    - `custom_size_mm` { `width`, `height` }\n    - `doc_break_policy` { `type`, `blank_threshold`, `page_count`, `timer_ms`, `barcode_values` }\n    - `output_format` (string, default `tiff`)\n    - `tmp_dir` (string)\n    - `crop_carrier_sheets` (boolean, default `false`): detect carrier-sheet leading-edge band and write cropped page derivatives; raw pages are kept\n\n- **get_job_status**\n  - Inspect job state and artifact counts.\n  - Inputs:\n    - `job_id` (string)\n\n- **cancel_job**\n  - Request job cancellation; best effort during scan loops.\n  - Inputs:\n    - `job_id` (string)\n\n- **list_jobs**\n  - List recent jobs from the inbox directory.\n  - Inputs (optional):\n    - `limit` (integer, max 100)\n    - `state` (`running` | `completed` | `cancelled` | `error` | `unknown`)\n\n- **get_manifest**\n  - Fetch a job's `manifest.json`.\n  - Inputs:\n    - `job_id` (string)\n\n- **get_events**\n  - Retrieve a job's `events.jsonl` log.\n  - Inputs:\n    - `job_id` (string)\n\nSee JSON Schemas in `schemas/` for input shapes. Tests assert against these contracts.\n\n## How Selection and Defaults Work\n\nDefaults aim for 300dpi, reasonable color mode, and ADF/duplex when available. Full details on scoring and fallbacks live in docs:\n\n- Selection and defaults: `docs/SELECTION.md`\n\n## Project Layout\n\n- `src/mcp.ts` — MCP server entry and tool registration\n- `src/services/*` — hardware interface and job orchestration\n- `schemas/` — JSON Schemas used for validation and tests\n- `docs/` — architecture, conventions, and deep dives\n\n## Development\n\n- `npm run dev` (stdio MCP server), `npm run dev:http` (HTTP transport)\n- `make verify` runs lint, typecheck, and tests\n- Conventions: `docs/CONVENTIONS.md` and architecture in `docs/BLUEPRINT.md`\n\n## Roadmap\n\nTracking ideas and future improvements are documented in `docs/ROADMAP.md`.\n",
+    "fetchedAt": "2026-08-11T23:41:55.094Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:27.985Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,257 @@
+{
+  "id": "io.github.seekdaseek/agentfeed",
+  "title": "AgentFeed",
+  "description": "AgentFeed: 47 tools — our own liquidation tape + tokenized-equity peg data, paid in USDC.",
+  "summary": "AgentFeed: 47 tools — our own liquidation tape + tokenized-equity peg data, paid in USDC.",
+  "offersHint": "AgentFeed: 47 tools — our own liquidation tape + tokenized-equity peg data, paid in USDC. · Remote MCP (streamable-http) at https://x402.ochinimus.app/mcp",
+  "version": "2.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://x402.ochinimus.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://x402.ochinimus.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://x402.ochinimus.app",
+  "sourceUrl": "https://github.com/seekdaseek/agentfeed",
+  "repository": {
+    "url": "https://github.com/seekdaseek/agentfeed",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T01:17:32.153562Z",
+  "publishedAt": "2026-07-29T01:17:32.153562Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:13.523Z",
+    "sourceRepoAt": "2026-08-11T23:21:59.486Z",
+    "readmeAt": "2026-08-11T23:21:59.991Z",
+    "toolsAt": "2026-08-11T23:22:00.143Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/seekdaseek/agentfeed",
+    "checkedAt": "2026-08-11T23:21:59.486Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/seekdaseek/agentfeed/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.seekdaseek/agentfeed -->\n# AgentFeed\n\n**Crypto liquidations, cascade detection, positioning and market data for AI agents. Pay per call in USDC. No API keys, no accounts, no subscriptions.**\n\nAgentFeed sells live trading data through the [x402 payment protocol](https://solana.com/x402) on Solana and Base. An agent hits an endpoint, gets a `402 Payment Required` with the price, pays a fraction of a cent in USDC from its own wallet, and receives the data — in about two seconds, gas sponsored by the facilitator.\n\nTwo rails, same data:\n\n| Rail | Endpoint | For |\n|------|----------|-----|\n| **MCP** (Streamable HTTP) | `https://x402.ochinimus.app/mcp` | Claude, Cursor, MCP-native frameworks |\n| **HTTP** (x402) | `https://x402.ochinimus.app/api/*` | Anything that speaks HTTP |\n\n---\n\n## What makes this different: the liquidation tape\n\nWe run our own liquidation collector across **Bybit, OKX and Binance** — every USDT-margined\nperpetual on all three, roughly **780 symbols**, recorded continuously since 2026-07-08.\n\n**This data cannot be bought.** Not from us, not from anyone:\n\n- **Binance deleted their liquidation archive.** `liquidationSnapshot` no longer exists on\n  `data.binance.vision` — the directory is an empty shell. Verified 2026-07-12.\n- **Bybit has never published historical liquidation data.**\n- **OKX offers a 7-day rolling REST window and nothing more.**\n\nThere is no public historical liquidation dataset for any major venue, at any price. The only\nway to hold this data is to have been recording it.\n\n### And here is exactly where our data is weak\n\nBeing straight about this matters more than the marketing:\n\n| Venue | Feed | Complete? |\n|---|---|---|\n| **Bybit** | `allLiquidation` | ✅ **Yes.** Every liquidation, 500ms cadence. The only complete, unthrottled public liquidation stream among the major perp venues. |\n| **Binance** | `!forceOrder@arr` | ❌ **No.** Snapshot only — max one order per symbol per 1000ms, per Binance's own docs. `allForceOrders` REST is unmaintained. |\n| **OKX** | `liquidation-orders` | ❌ **No.** Max one update per second per contract. |\n| **Hyperliquid** | — | ⛔ **Not included.** Hyperliquid exposes *no public liquidation stream*. `WsTrade` carries no liquidation marker; the data lives only in user-scoped streams. Capturing it requires running a node. |\n\n**Binance and OKX rows are a structural undercount, and the undercount is worst during\ncascades — exactly when the data matters most.** This is true of every liquidation dataset on\nthe market, including the well-known ones. Most don't say so.\n\n**Bybit rows are the highest-integrity part of the dataset.** Weight accordingly.\n\n### The `side` field, which most datasets get wrong\n\nThree exchanges, three conventions. We normalize all of them:\n\n- **Bybit** `S` is already the *position* side (`Buy` = a long was liquidated). Passed through.\n- **Binance** `S` is the *order* side — a `SELL` order is what closes a long. **Flipped.**\n- **OKX** exposes `posSide` explicitly. Mapped.\n\n**In our output: `Buy` = a LONG was liquidated. `Sell` = a SHORT was liquidated.** Invert this\nand every long/short ratio you compute is backwards for some venues.\n\nNotional uses `filled_qty × avg_fill_price` — what actually executed — not `limit_price × requested_size`.\n\n---\n\n## Tools\n\n| Tool | Price | Description |\n| --- | --- | --- |\n| get_sol_price | $0.001 | SOL spot price via Pyth |\n| get_btc_price | $0.001 | BTC spot price via Pyth |\n| get_funding_rate | $0.002 | SOL+BTC perp funding rates |\n| get_market_snapshot | $0.003 | Full market snapshot in one call |\n| get_wallet_holdings | $0.008 | Solana wallet holdings via Helius DAS |\n| get_token_metadata | $0.005 | SPL token metadata via Helius DAS |\n| get_recent_liquidations | $0.003 | Recent liquidations across 780+ USDT perps |\n| get_cascade_alert | $0.01 | Live liquidation cascade detector for the 5 majors |\n| get_cascade_scan | $0.05 | Full-universe cascade scan across 780+ USDT perps |\n| get_liquidation_leaders | $0.02 | Top symbols by liquidation USD right now |\n| get_liquidation_stats | $0.004 | 1h/24h liquidation totals, long/short split |\n| get_positioning | $0.004 | SOL+BTC long/short ratio + open interest |\n| get_trade_context | $0.01 | Full market state in one call |\n| get_token_risk | $0.01 | SPL token rug-risk signals |\n| get_sharp_move | $0.02 | Sharp-money detector for World Cup betting markets |\n| get_liq_history | $0.05 | Historical liquidation tape, time-bucketed |\n| get_liq_heatmap | $0.05 | Liquidation heatmap by price level from our tape |\n| get_cascade_history | $0.03 | Past liquidation cascades from our tape |\n| get_squeeze_score | $0.10 | FLAGSHIP: 0-100 short-squeeze / long-flush signal |\n| get_venue_liq_share | $0.02 | Which venue is flushing whom |\n| get_funding_cross | $0.01 | Funding for any USDT perp across Bybit + OKX + Hyperliquid |\n| get_funding_extremes | $0.02 | Most crowded funding trades across 780+ perps |\n| get_open_interest | $0.01 | Open interest for any USDT perp with 1h/24h change |\n| get_oi_spike_scan | $0.02 | Abnormal open-interest jumps across 780+ perps |\n| get_long_short | $0.01 | Long/short account ratio for any USDT perp |\n| get_basis | $0.01 | Perp-vs-spot basis for any USDT pair |\n| get_volatility | $0.01 | Realized volatility for any USDT perp |\n| get_funding_history | $0.005 | Funding-rate history for any USDT perp |\n| get_top_movers | $0.01 | 24h top gainers and losers across 780+ perps |\n| get_orderbook_imbalance | $0.01 | Bid/ask resting-liquidity imbalance |\n| get_orderbook_walls | $0.01 | Largest resting orders each side of the book |\n| get_whale_trades | $0.02 | Large prints from the live trade tape |\n| get_spread_arb | $0.02 | Best bid/ask across Bybit, OKX and Hyperliquid |\n| get_token_holders | $0.02 | Top holders of any SPL token with concentration |\n| get_wallet_activity | $0.02 | Recent transactions of any Solana wallet, parsed |\n| get_priority_fees | $0.005 | Solana priority-fee estimate, all levels |\n| get_jito_tips | $0.005 | Jito bundle tip floor percentiles |\n| get_sol_network | $0.005 | Solana network health: TPS, slot, epoch |\n| get_tvl | $0.005 | TVL for any DeFi protocol or top-15 chains |\n| get_stablecoin_flows | $0.01 | Total stablecoin supply with 7d/30d deltas |\n| get_dex_quote | $0.005 | Live Jupiter swap quote for any SPL pair |\n| get_peg_deviation | $0.02 | Tokenized-equity peg deviation vs the underlying last trade |\n| get_peg_sessions | $0.03 | Peg deviation by session: open, premarket, afterhours, overnight, weekend |\n| get_peg_universe | $0.05 | Tracked tokenized equities ranked by off-hours peg risk |\n\n## 47 tools & pricing\n\n**44 paid tools + 3 free tasters.** Every call is metered individually in USDC over x402 — no bundles, no minimums. Calling all 44 paid tools once costs **$0.74** — the entire market read for 74 cents.\n\nThe flagship is [`get_squeeze_score`](#the-moat--our-own-liquidation-tape) — a 0-100 short-squeeze / long-flush composite built from funding, crowding, OI build and the liq-skew of our exclusive tape. One number, one dime, answers \"is this trade crowded and about to hurt someone.\"\n\n### The moat — our own liquidation tape\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_squeeze_score` | $0.1 | `/api/squeeze-score` | FLAGSHIP: short-squeeze / long-flush score 0-100 for any USDT perp |\n| `get_liq_history` | $0.05 | `/api/liq-history` | HISTORICAL liquidation tape, time-bucketed: total/long/short USD, prints, biggest print per bucket |\n| `get_liq_heatmap` | $0.05 | `/api/liq-heatmap` | Liquidation heatmap by PRICE LEVEL from our own tape: where leverage actually got flushed in the last N hours — USD, prints, long/short s… |\n| `get_cascade_history` | $0.03 | `/api/cascade-history` | PAST liquidation cascades reconstructed from our tape: clustered same-side flush events with start/end, prints, USD total, peak print |\n| `get_venue_liq_share` | $0.02 | `/api/venue-liq-share` | Which venue is flushing whom: per-exchange liquidation share (Bybit/OKX/Binance) with long/short split and biggest print, any symbol or w… |\n\n### The second moat — our own tokenized-equity peg tape\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_peg_universe` | $0.05 | `/api/peg-universe` | Every tokenized US equity we track, ranked by off-hours peg risk: p95 and max deviation bps, market-open as control, median liquidity |\n| `get_peg_sessions` | $0.03 | `/api/peg-sessions` | Peg deviation by trading session — open, premarket, afterhours, overnight, weekend — worst off-hours window flagged |\n| `get_peg_deviation` | $0.02 | `/api/peg-deviation` | Peg deviation for one tokenized equity: on-chain DEX price vs the underlying last real trade, in bps |\n\nSampled every 5 minutes since 19 July 2026. Deviation is measured against the underlying's last real trade — outside US market hours that is the last print before the close, not a live quote. Dead pools are excluded rather than reported as perfect pegs.\n\n### Live liquidations & cascades\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_recent_liquidations` | $0.003 | `/api/liquidations` | Recent liquidations across 780+ USDT perps (Bybit complete tape + OKX + Binance) |\n| `get_cascade_alert` | $0.01 | `/api/cascade` | Liquidation cascade detector for the 5 majors (SOL/BTC/ETH/XRP/DOGE) across Bybit+OKX+Binance |\n| `get_cascade_scan` | $0.05 | `/api/cascade-scan` | FULL-UNIVERSE cascade scan: 780+ USDT perps across Bybit+OKX+Binance |\n| `get_liquidation_leaders` | $0.02 | `/api/liquidation-leaders` | What is blowing up right now: top symbols by liquidation USD across 780+ USDT perps, with long/short split, biggest print and venue count |\n| `get_liquidation_stats` | $0.004 | `/api/liquidation-stats` | 1h/24h liquidation totals for the 5 majors (SOL/BTC/ETH/XRP/DOGE), long/short split, biggest print, per-exchange breakdown |\n\n### Derivatives\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_funding_cross` | $0.01 | `/api/funding-cross` | Funding for ANY USDT perp across Bybit + OKX + Hyperliquid in one call, with cross-venue spread and crowding read |\n| `get_funding_extremes` | $0.02 | `/api/funding-extremes` | Most crowded trades across 780+ USDT perps: top most-positive and most-negative funding with annualized %, 24h price move and OI |\n| `get_open_interest` | $0.01 | `/api/open-interest` | Open interest for ANY USDT perp: Bybit OI in base + USD with 1h/24h change, plus OKX OI |\n| `get_oi_spike_scan` | $0.02 | `/api/oi-spike-scan` | Abnormal open-interest jumps across 780+ USDT perps vs a 30min+ baseline — where new leverage is piling in, with funding and price context |\n| `get_long_short` | $0.01 | `/api/long-short` | Long/short account ratio for ANY USDT perp with 1h and 24h trend (retail crowding gauge) |\n| `get_basis` | $0.01 | `/api/basis` | Perp-vs-spot basis for any USDT pair: premium/discount %, contango/backwardation read, funding context |\n| `get_volatility` | $0.01 | `/api/volatility` | Realized volatility for any USDT perp: 7d and 30d annualized from daily closes, plus today's range |\n| `get_funding_history` | $0.005 | `/api/funding-history` | Funding-rate history for any USDT perp (up to 200 intervals): average, annualized, share of positive intervals — what the carry has actua… |\n| `get_top_movers` | $0.01 | `/api/top-movers` | 24h top gainers and losers across 780+ USDT perps with a liquidity floor, funding attached |\n\n### Microstructure\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_orderbook_imbalance` | $0.01 | `/api/orderbook-imbalance` | Bid/ask resting-liquidity imbalance within ±N bps of mid for any USDT perp: USD each side, ratio, skew read |\n| `get_orderbook_walls` | $0.01 | `/api/orderbook-walls` | Largest resting orders each side of the book for any USDT perp, with USD size and distance from mid |\n| `get_whale_trades` | $0.02 | `/api/whale-trades` | Large prints from the live trade tape for any USDT perp: trades over a USD threshold, buy/sell totals, net flow, dominant side |\n| `get_spread_arb` | $0.02 | `/api/spread-arb` | Best bid/ask for a USDT perp across Bybit, OKX and Hyperliquid, with the best cross-venue edge in bps (pre-fee) |\n\n### Market & positioning\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_sol_price` | $0.001 | `/api/sol-price` | SOL spot price via Pyth |\n| `get_btc_price` | $0.001 | `/api/btc-price` | BTC spot price via Pyth |\n| `get_funding_rate` | $0.002 | `/api/funding-rate` | SOL+BTC perp funding rates |\n| `get_market_snapshot` | $0.003 | `/api/market-snapshot` | Full market snapshot in one call |\n| `get_positioning` | $0.004 | `/api/positioning` | SOL+BTC long/short account ratio + open interest with 1h/24h OI change |\n| `get_trade_context` | $0.01 | `/api/trade-context` | Full market state in one call: prices, funding, fear/greed, positioning, liquidations |\n\n### Solana on-chain\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_wallet_holdings` | $0.008 | `/api/wallet-holdings/:wallet` | Solana wallet holdings via Helius DAS |\n| `get_token_metadata` | $0.005 | `/api/token-metadata/:mint` | SPL token metadata via Helius DAS |\n| `get_token_risk` | $0.01 | `/api/token-risk/:mint` | Token rug-risk signals: mint/freeze authority status, top-holder concentration, risk flags |\n| `get_token_holders` | $0.02 | `/api/token-holders/:mint` | Top holders of any SPL token with per-account share and top1/top5/top10 concentration |\n| `get_wallet_activity` | $0.02 | `/api/wallet-activity/:wallet` | Recent transactions of any Solana wallet, parsed human-readable: type, protocol, description, fee, failures (Helius enhanced) |\n| `get_priority_fees` | $0.005 | `/api/priority-fees` | Solana priority-fee estimate right now, all levels (min to unsafeMax) in micro-lamports/CU, with a recommended tip |\n| `get_jito_tips` | $0.005 | `/api/jito-tips` | Jito bundle tip floor percentiles (p25-p99, SOL) — what landed bundles are actually paying, with a landing recommendation |\n| `get_sol_network` | $0.005 | `/api/sol-network` | Solana network health: recent average TPS, current slot, epoch and epoch progress |\n\n### DeFi / macro\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_tvl` | $0.005 | `/api/tvl` | TVL for any DeFi protocol (with 1d/7d change) or top-15 chains ranking |\n| `get_stablecoin_flows` | $0.01 | `/api/stablecoin-flows` | Total stablecoin supply with 7d/30d deltas and top stables — the macro risk-on/risk-off dial for crypto |\n| `get_dex_quote` | $0.005 | `/api/dex-quote` | Live Jupiter swap quote for any SPL pair: output amount, price impact, route |\n\n### Sports sharp money\n\n| Tool | Price | Route | What you get |\n|---|---|---|---|\n| `get_sharp_move` | $0.02 | `/api/sharp-move` | Sharp-money detector for World Cup betting markets: abnormal pre-match moves in de-margined consensus win probability (TxODDS StablePrice… |\n\n### Free tasters\n\n| Tool | Route |\n|---|---|\n| `get_fear_greed` | `/api/fear-greed` |\n| `get_last_liquidation` | `/api/last-liquidation` (15-min delayed) |\n| `pricing` | MCP tool — lists everything with live prices |\n\n## Use it from an elizaOS agent\n\n```bash\nnpm i @seekdaseek/plugin-agentfeed   # v0.4.0 — all 47 tools as actions\n```\n\nSet `AGENTFEED_PRIVATE_KEY` to a funded Solana wallet and the agent pays per call automatically. Default spend cap $0.50/call (`AGENTFEED_MAX_SPEND_PER_CALL` to change).\n\n## Try it free right now\n\n```bash\ncurl https://x402.ochinimus.app/api/fear-greed\ncurl https://x402.ochinimus.app/api/last-liquidation\ncurl https://x402.ochinimus.app/                    # full pricing index\ncurl https://x402.ochinimus.app/api/cascade-scan    # returns 402 + payment terms\n```\n\nx402 clients pay and retry automatically.\n\n## MCP quickstart\n\nPoint any MCP client at `https://x402.ochinimus.app/mcp` (Streamable HTTP, POST). Paid tools\nreturn payment terms; an x402-capable client settles and retries.\n\n```js\nimport { createx402MCPClient } from \"@x402/mcp\";\n```\n\nAlso available as an [elizaOS plugin](https://www.npmjs.com/package/@seekdaseek/plugin-agentfeed).\n\n---\n\n## Free dataset\n\nA multi-venue liquidation dataset — normalized, growing daily, free — ships with a full\nquality statement covering coverage dates, known gaps, exchange throttles, and field\ndefinitions: **[ochinimuse.gumroad.com/l/liqdata](https://ochinimuse.gumroad.com/l/liqdata)**\n\nRead `DATASET_QUALITY.md` before you use it. It tells you exactly where the data is wrong.\n\n---\n\n## Links\n\n[MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=agentfeed) ·\n[Smithery](https://smithery.ai/server/ochinimus/agentfeed) ·\n[x402 manifest](https://x402.ochinimus.app/.well-known/x402.json) ·\n[ochinimus](https://ochinimus.app)\n",
+    "fetchedAt": "2026-08-11T23:21:59.991Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_sol_price",
+      "description": "Live SOL/USD spot price with confidence interval (Pyth oracle). Costs $0.001 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_btc_price",
+      "description": "Live BTC/USD spot price with confidence interval (Pyth oracle). Costs $0.001 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_funding_rate",
+      "description": "Current SOL and BTC perp funding rates, mark prices, open interest (Hyperliquid). Costs $0.002 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_fear_greed",
+      "description": "Crypto Fear & Greed index (0-100) with classification. Free."
+    },
+    {
+      "name": "get_market_snapshot",
+      "description": "SOL+BTC prices, funding rates, and Fear & Greed in one call. Costs $0.003 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_wallet_holdings",
+      "description": "Solana wallet holdings: native SOL, SPL tokens with USD values, NFT count (Helius DAS). Costs $0.008 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_token_metadata",
+      "description": "SPL token metadata: name, symbol, decimals, supply, price (Helius DAS). Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_recent_liquidations",
+      "description": "Recent perp liquidations across Bybit (complete unthrottled tape), OKX and Binance: timestamp, long/short, size, price, USD value. Any USDT perp (~600 symbols), not just majors. Costs $0.003 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_cascade_alert",
+      "description": "Liquidation cascade detector for the 5 majors (SOL, BTC, ETH, XRP, DOGE): returns cascades active NOW - clustered same-side liquidations with symbol, side, USD total, prints, duration, severity (minor/major/extreme). Empty cascades array = no cascade in window. For all ~600 USDT perps across 3 exchanges, use get_cascade_scan. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_cascade_scan",
+      "description": "FULL-UNIVERSE cascade scan: detects liquidation cascades across ~600 USDT perps on Bybit, OKX and Binance simultaneously - not just majors. Bybit is the only complete unthrottled liquidation tape in crypto and no exchange publishes history of it, so this coverage is not available anywhere else. Returns symbol, side, USD total, prints, duration, severity. Costs $0.05 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_cascade_forecast_free",
+      "description": "FREE taster: the full-quality liquidation forecast for SOL, no delay and nothing withheld. Use it to check the calibration before paying for coverage of the other ~345 symbols. Free."
+    },
+    {
+      "name": "get_forecast_question",
+      "description": "FREE: the exact question the forecast answers, machine readable, plus how to settle it yourself from the public exchange feed and the full list of covered symbols. Read this before building on the forecast. Free."
+    },
+    {
+      "name": "get_forecast_record",
+      "description": "FREE: the live track record of this miner. Every forecast was written down BEFORE its 15-minute window opened and settled afterwards from the exchange public feed, and the raw rows are returned alongside the score so you can recompute it yourself rather than take it on trust. Returns settled count, base rate, Brier skill against climatology, coverage, calibration error and a reliability curve. A backtest is a claim about the past that its author also chose how to compute; this is not that. Free."
+    },
+    {
+      "name": "get_liquidation_leaders",
+      "description": "What is blowing up RIGHT NOW: top symbols ranked by liquidation USD across ~600 USDT perps on Bybit, OKX and Binance. Per symbol: total liquidated, long vs short split, biggest single print, venue count, dominant side. The fastest read on where leverage is being flushed. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_sharp_move",
+      "description": "SHARP MONEY DETECTOR for World Cup betting markets. Finds abnormal PRE-MATCH moves in the de-margined consensus win probability (TxODDS StablePrice, cryptographically anchored on Solana). Because no match is in play, there is nothing to react to - a win probability that jumps before kickoff is money arriving, not a reaction to a goal or a red card. Default threshold 2.81 percentage points per 5 minutes is the p99.9 of 8,464,803 real odds ticks harvested across 137 matches; the median 5-minute move is 0.08pp, so a firing is roughly 35x normal. Returns match, competition, minutes to kickoff, the probability path, move size, direction (odds shortening or drifting) and severity (notable/sharp/extreme). Use before placing or pricing a World Cup bet, or to detect informed money entering a market. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_liquidation_stats",
+      "description": "Liquidation aggregates for the 5 majors (SOL, BTC, ETH, XRP, DOGE): 1h and 24h totals, longs vs shorts USD split, biggest print, broken out per exchange. Costs $0.004 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_last_liquidation",
+      "description": "FREE taster: last liquidation for SOL, BTC, ETH, XRP and DOGE (15-min delayed). Real-time via get_recent_liquidations. Free."
+    },
+    {
+      "name": "get_positioning",
+      "description": "SOL+BTC positioning: long/short account ratio (retail crowding) + open interest with 1h/24h change (Bybit). Costs $0.004 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_trade_context",
+      "description": "Full market state in one call: SOL+BTC prices, funding, Fear & Greed, long/short positioning, open interest, and liquidation stats. The complete pre-trade picture. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_token_risk",
+      "description": "SPL token rug-risk signals: mint/freeze authority status (revoked = safer), top-1/top-10 holder concentration, and risk flags. Not a honeypot/LP-lock checker. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_cascade_forecast",
+      "description": "FORWARD-LOOKING liquidation forecast, not a description of what already happened. Returns the probability that a symbol will liquidate more in the NEXT 15 minutes than its own 90th-percentile 15-minute window. Calibrated on a 28-day tape of 1.4M Bybit liquidations across 799 symbols, which cannot be reconstructed by anyone starting today because no exchange publishes liquidation history. Every answer carries the exact question, the threshold in USD, the window it read, the number of historical occurrences behind the number, and instructions for settling it yourself from the public feed. When a state has too little history the tool DECLINES rather than guessing, and says why. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_liq_history",
+      "description": "HISTORICAL liquidation tape, time-bucketed: total/long/short USD, prints, biggest print per bucket. Any USDT perp or the whole ~600-perp universe, up to 7 days back. Bybit is the only complete liq tape in crypto and no exchange publishes history of it — this data exists nowhere else. Costs $0.05 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_liq_heatmap",
+      "description": "Liquidation heatmap by PRICE LEVEL from our own tape: where leverage actually got flushed in the last N hours — USD, prints, long/short split per price zone, hottest zone flagged. Real prints, not entry-price estimates. Costs $0.05 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_cascade_history",
+      "description": "PAST liquidation cascades reconstructed from our tape: clustered same-side flush events with start/end, prints, USD total, peak print. get_cascade_alert tells you NOW; this tells you what already happened, up to 72h back. Costs $0.03 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_squeeze_score",
+      "description": "FLAGSHIP: short-squeeze / long-flush score 0-100 for any USDT perp. Composite of funding, long/short crowding, 24h OI build, and liq-skew from our exclusive tape. One number that answers \"is this trade crowded and about to hurt someone\". Costs $0.1 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_venue_liq_share",
+      "description": "Which venue is flushing whom: per-exchange liquidation share (Bybit/OKX/Binance) with long/short split and biggest print, any symbol or whole universe. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_funding_cross",
+      "description": "Funding for ANY USDT perp across Bybit + OKX + Hyperliquid in one call, with cross-venue spread and crowding read. (get_funding_rate covers SOL+BTC only.) Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_funding_extremes",
+      "description": "Most crowded trades across ~600 USDT perps: top most-positive and most-negative funding with annualized %, 24h price move and OI. Crowded shorts = squeeze candidates. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_open_interest",
+      "description": "Open interest for ANY USDT perp: Bybit OI in base + USD with 1h/24h change, plus OKX OI. (get_positioning covers SOL+BTC only.) Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_oi_spike_scan",
+      "description": "Abnormal open-interest jumps across ~600 USDT perps vs a 30min+ baseline — where new leverage is piling in, with funding and price context. Squeeze/flush precursor screener. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_long_short",
+      "description": "Long/short account ratio for ANY USDT perp with 1h and 24h trend (retail crowding gauge). Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_basis",
+      "description": "Perp-vs-spot basis for any USDT pair: premium/discount %, contango/backwardation read, funding context. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_volatility",
+      "description": "Realized volatility for any USDT perp: 7d and 30d annualized from daily closes, plus today's range. Position-sizing input. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_funding_history",
+      "description": "Funding-rate history for any USDT perp (up to 200 intervals): average, annualized, share of positive intervals — what the carry has actually been. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_top_movers",
+      "description": "24h top gainers and losers across ~600 USDT perps with a liquidity floor, funding attached. The \"what moved\" screener. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_orderbook_imbalance",
+      "description": "Bid/ask resting-liquidity imbalance within ±N bps of mid for any USDT perp: USD each side, ratio, skew read. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_orderbook_walls",
+      "description": "Largest resting orders each side of the book for any USDT perp, with USD size and distance from mid. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_whale_trades",
+      "description": "Large prints from the live trade tape for any USDT perp: trades over a USD threshold, buy/sell totals, net flow, dominant side. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_spread_arb",
+      "description": "Best bid/ask for a USDT perp across Bybit, OKX and Hyperliquid, with the best cross-venue edge in bps (pre-fee). Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_token_holders",
+      "description": "Top holders of any SPL token with per-account share and top1/top5/top10 concentration. Deeper cut than get_token_risk's summary. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_wallet_activity",
+      "description": "Recent transactions of any Solana wallet, parsed human-readable: type, protocol, description, fee, failures (Helius enhanced). Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_priority_fees",
+      "description": "Solana priority-fee estimate right now, all levels (min to unsafeMax) in micro-lamports/CU, with a recommended tip. For bots that need txs to land. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_jito_tips",
+      "description": "Jito bundle tip floor percentiles (p25-p99, SOL) — what landed bundles are actually paying, with a landing recommendation. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_sol_network",
+      "description": "Solana network health: recent average TPS, current slot, epoch and epoch progress. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_tvl",
+      "description": "TVL for any DeFi protocol (with 1d/7d change) or top-15 chains ranking. DefiLlama-backed. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_stablecoin_flows",
+      "description": "Total stablecoin supply with 7d/30d deltas and top stables — the macro risk-on/risk-off dial for crypto. Costs $0.01 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_dex_quote",
+      "description": "Live Jupiter swap quote for any SPL pair: output amount, price impact, route. The real executable price on Solana, not an index price. Costs $0.005 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_peg_deviation",
+      "description": "Peg deviation for a tokenized US equity on Solana: on-chain DEX price vs the underlying last real trade, in bps, with 24h stats split into market-open and off-hours. Sampled every 5 minutes by our own collector; this tape exists nowhere else. Costs $0.02 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_peg_sessions",
+      "description": "Peg deviation broken out by trading session (open, premarket, afterhours, overnight, weekend): mean, p95, max bps and median liquidity per session, with the worst off-hours window flagged. Market-open acts as the control. Costs $0.03 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "get_peg_universe",
+      "description": "Every tokenized US equity we track, ranked by off-hours peg risk: p95 and max deviation bps, market-open deviation as control, median liquidity. Dead pools are excluded rather than reported as perfect pegs. Costs $0.05 USDC per call (x402, Solana mainnet)."
+    },
+    {
+      "name": "pricing",
+      "description": "Free: list all agentfeed tools with USDC prices."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:22:00.143Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,71 @@
+{
+  "id": "io.identark/gateway",
+  "title": "IdentArk Gateway",
+  "description": "Zero-secret MCP gateway for AI agents: risk-scored, audited calls with human-in-the-loop approval.",
+  "summary": "Zero-secret MCP gateway for AI agents: risk-scored, audited calls with human-in-the-loop approval.",
+  "offersHint": "Zero-secret MCP gateway for AI agents: risk-scored, audited calls with human-in-the-loop approval. · Remote MCP (streamable-http) at https://api.identark.io/v1/mcp/rpc · Requires headers: Authorization",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.identark.io/v1/mcp/rpc",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.identark.io/v1/mcp/rpc",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <IdentArk API key, starts with iak_>",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://identark.io",
+  "sourceUrl": "https://github.com/identArk/identark",
+  "repository": {
+    "url": "https://github.com/identArk/identark",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-17T10:25:54.324533Z",
+  "publishedAt": "2026-07-17T10:25:54.324533Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <IdentArk API key, starts with iak_>",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:33.627Z",
+    "sourceRepoAt": "2026-08-11T23:13:02.210Z",
+    "readmeAt": "2026-08-11T23:13:02.811Z",
+    "toolsAt": "2026-08-12T00:54:33.628Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/identArk/identark",
+    "checkedAt": "2026-08-11T23:13:02.210Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/identArk/identark/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/identArk/identark/main/assets/logo.jpg\" alt=\"IdentArk\" width=\"360\">\n</p>\n\n# identark\n\n**The AgentGateway Protocol — secure, scalable AI agent execution infrastructure.**\n\n[![CI](https://github.com/identark/identark/actions/workflows/ci.yml/badge.svg)](https://github.com/identark/identark/actions)\n[![PyPI](https://img.shields.io/pypi/v/identark)](https://pypi.org/project/identark/)\n[![Python](https://img.shields.io/pypi/pyversions/identark)](https://pypi.org/project/identark/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)\n\n---\n\n## The problem\n\nWhen an AI agent can execute code, call APIs, or access files, it runs in a process. That process has an environment. That environment typically contains everything that can cause serious damage: LLM API keys, database credentials, AWS tokens.\n\nThe naive solution — run your agent on the same backend as your REST API — creates two problems at once:\n\n1. **Security**: The agent can access every secret on the machine.\n2. **Reliability**: A memory-hungry agent degrades your API. Redeploying your API kills all running agents.\n\n`identark` solves both.\n\n---\n\n## How it works\n\nThe SDK implements the **AgentGateway Protocol** — a clean interface between your agent logic and the outside world. Two implementations ship out of the box:\n\n| Gateway | When to use | Credentials | History |\n|---|---|---|---|\n| `DirectGateway` | Local development, CI evals | Your API key | In-memory |\n| `ControlPlaneGateway` | Production on IdentArk | **Zero** — none in the agent | Control plane DB |\n\nYour agent code is **identical** in both environments. The switch is two lines.\n\n---\n\n## Quick start\n\n```bash\npip install identark[openai]\n```\n\n```python\nimport asyncio\nfrom openai import AsyncOpenAI\nfrom identark import DirectGateway, Message, Role\n\nasync def main():\n    gateway = DirectGateway(\n        llm_client=AsyncOpenAI(),   # Your API key — not in the agent loop\n        model=\"gpt-4o\",\n    )\n\n    response = await gateway.invoke_llm(\n        new_messages=[Message(role=Role.USER, content=\"Hello, IdentArk!\")]\n    )\n\n    print(response.message.content)\n    print(f\"Cost: ${response.cost_usd:.6f}\")\n\nasyncio.run(main())\n```\n\n### Moving to production\n\nChange **two lines**. Your agent logic is untouched.\n\n```python\n# Before (local)\nfrom identark import DirectGateway\ngateway = DirectGateway(llm_client=AsyncOpenAI(), model=\"gpt-4o\")\n\n# After (production — agent holds zero secrets)\nfrom identark import ControlPlaneGateway\ngateway = ControlPlaneGateway()  # auto-detects env vars inside a IdentArk sandbox\n```\n\n---\n\n## Installation\n\n```bash\n# Core SDK only\npip install identark\n\n# With OpenAI support\npip install identark[openai]\n\n# With Anthropic support\npip install identark[anthropic]\n\n# With Google Gemini support\npip install identark[gemini]\n\n# With Mistral AI support (EU provider)\npip install identark[mistral]\n\n# All cloud providers\npip install identark[all]\n```\n\n**Requirements:** Python 3.10+\n\n---\n\n## Data Sovereignty\n\nIdentArk is designed from the ground up to work with **any LLM provider**, including those that\nkeep your data inside the UK or EU. The AgentGateway Protocol decouples your agent logic from the\ninference provider — switching providers requires changing **one line**.\n\n### Run fully local with Ollama (zero data egress)\n\n```python\nfrom openai import AsyncOpenAI\nfrom identark import DirectGateway\n\ngateway = DirectGateway(\n    llm_client=AsyncOpenAI(\n        base_url=\"http://localhost:11434/v1\",\n        api_key=\"ollama\",\n    ),\n    model=\"llama3.2\",\n    provider=\"local\",   # forces $0 cost tracking; inference stays on your machine\n)\n```\n\nInstall Ollama: `brew install ollama && ollama pull llama3.2 && ollama serve`\n\n### Use Mistral AI (EU data residency)\n\n```python\nfrom openai import AsyncOpenAI\nfrom identark import DirectGateway\n\ngateway = DirectGateway(\n    llm_client=AsyncOpenAI(\n        base_url=\"https://api.mistral.ai/v1\",\n        api_key=\"your-mistral-api-key\",\n    ),\n    model=\"mistral-small-latest\",   # auto-detected as \"mistral\" provider\n)\n```\n\nMistral AI is a French company. All inference runs in EU data centres, subject to EU data\nprotection law (GDPR). Use this when UK/EU data governance requirements prohibit sending\ninference traffic to US-based cloud providers.\n\nSee `examples/` for complete runnable scripts.\n\n---\n\n## The AgentGateway Protocol\n\nAny class implementing these four async methods is a valid gateway:\n\n```python\nclass AgentGateway(Protocol):\n    async def invoke_llm(self, new_messages, tools=None, tool_choice=\"auto\") -> LLMResponse: ...\n    async def persist_messages(self, messages) -> None: ...\n    async def request_file_url(self, file_path, method=\"PUT\") -> PresignedURL: ...\n    async def get_session_cost(self) -> float: ...\n```\n\nWrite your agent against the protocol. The implementation — local or production — is a runtime detail.\n\n---\n\n## Features\n\n- **Zero-secret agents** — `ControlPlaneGateway` holds no API keys, database credentials, or cloud tokens\n- **Stateless by design** — conversation history owned by the gateway, not the agent; kill and restart without data loss\n- **Framework-agnostic** — works with LangChain, LlamaIndex, raw API calls, or any custom agent framework\n- **Built-in cost tracking** — every `invoke_llm` call returns `cost_usd`; `get_session_cost()` returns the running total\n- **OpenAI + Anthropic** — both providers supported in `DirectGateway` out of the box\n- **MockGateway for testing** — no LLM calls in your test suite; full call recording for assertions\n- **Full type annotations** — `py.typed` marker; works with mypy strict mode\n\n---\n\n## Testing your agents\n\n```python\nfrom identark.testing import MockGateway\nfrom identark.models import LLMResponse, Message, Role\n\nasync def test_my_agent():\n    mock = MockGateway()\n    mock.queue_response(LLMResponse(\n        message=Message(role=Role.ASSISTANT, content=\"The answer is 42.\"),\n        cost_usd=0.001,\n        model=\"mock\",\n        finish_reason=\"stop\",\n    ))\n\n    result = await my_agent(gateway=mock)\n\n    assert mock.invoke_llm_call_count == 1\n    assert mock.total_messages_sent == 1\n```\n\n---\n\n## Supported providers\n\n| Provider | Data residency | DirectGateway | GeminiGateway | ControlPlaneGateway |\n|---|---|---|---|---|\n| OpenAI (gpt-4o, gpt-4o-mini, …) | US | ✓ | — | ✓ (via control plane) |\n| Anthropic (claude-3-5-sonnet, …) | US | ✓ | — | ✓ (via control plane) |\n| Google Gemini (gemini-1.5-pro, gemini-1.5-flash, …) | US | ✓* | ✓ | Roadmap |\n| Mistral AI (mistral-large, mistral-small, …) | EU 🇪🇺 | ✓ | — | Roadmap |\n| Ollama (llama3.2, mistral, codellama, …) | Local 🏠 | ✓ | — | N/A |\n| Any OpenAI-compatible endpoint | Varies | ✓ | — | Roadmap |\n\n*Gemini via OpenAI-compatible endpoint. Use `GeminiGateway` for native SDK features.\n\n---\n\n## Error handling\n\n```python\nfrom identark.exceptions import CostCapExceededError, RateLimitError, IdentArkError\n\ntry:\n    response = await gateway.invoke_llm(new_messages=[...])\nexcept CostCapExceededError as e:\n    print(f\"Cost cap of ${e.cap_usd} reached. Spent: ${e.consumed_usd}\")\nexcept RateLimitError as e:\n    await asyncio.sleep(e.retry_after_seconds)\nexcept IdentArkError as e:\n    # Catch-all for any SDK error\n    raise\n```\n\nFull exception hierarchy: `IdentArkError > GatewayError > ControlPlaneError > AuthenticationError | CostCapExceededError | SessionNotFoundError`\n\n---\n\n## Architecture\n\n```\n┌─────────────────────────────────────┐\n│            Your Agent Code          │\n│   (depends only on AgentGateway)    │\n└──────────────┬──────────────────────┘\n               │\n    ┌──────────▼──────────┐\n    │    AgentGateway      │  ← Protocol (interface)\n    │      Protocol        │\n    └──────┬────────┬──────┘\n           │        │\n  ┌────────▼─┐  ┌───▼──────────────┐\n  │  Direct  │  │  ControlPlane    │\n  │ Gateway  │  │    Gateway       │\n  │          │  │                  │\n  │ Local /  │  │   Production     │\n  │  Evals   │  │  (zero secrets)  │\n  └──────────┘  └────────┬─────────┘\n                         │ HTTP\n                ┌────────▼─────────┐\n                │  IdentArk        │\n                │  Control Plane   │\n                │  (holds creds)   │\n                └──────────────────┘\n```\n\n---\n\n## Community\n\n- **Discussions**: [GitHub Discussions](https://github.com/identark/identark/discussions) — ask questions, share ideas\n- **Issues**: [GitHub Issues](https://github.com/identark/identark/issues) — bug reports and feature requests\n- **Live Demo**: [identark.vercel.app/demo](https://identark.vercel.app/demo) — try IdentArk in your browser\n\n---\n\n## Contributing\n\nContributions are welcome. Please open an issue before submitting significant changes.\n\n```bash\ngit clone https://github.com/identark/identark.git\ncd identark\npip install -e \".[dev]\"\npre-commit install\npytest tests/unit/\n```\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for full guidelines.\n\n---\n\n## Roadmap\n\n- [x] LangChain adapter (`IdentArkChatModel`)\n- [x] LlamaIndex adapter (`IdentArkLLM`)\n- [x] Streaming support (`invoke_llm_stream`)\n- [x] CrewAI integration\n- [x] LangGraph integration (`IdentArkNode`, `IdentArkStreamNode`)\n- [ ] Pluggable inference backends (distributed compute)\n- [ ] `identark-cli` for one-command control plane deployment\n\n---\n\n## License\n\nThe IdentArk SDK is licensed under the **MIT License** — free for any use, including commercial and closed-source projects. See [LICENSE](LICENSE).\n\nThe IdentArk **control plane** (hosted service) is proprietary. The SDK works with any `AgentGateway` backend, including fully self-hosted ones.\n\n---\n\n*Built on the control plane pattern described in [How We Built Secure, Scalable Agent Sandbox Infrastructure](https://github.com/identark/identark).*\n",
+    "fetchedAt": "2026-08-11T23:13:02.811Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:54:33.628Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"detail\":\"Not authenticated\"}",
+  "toolsPreviewStatus": "auth_required"
+}

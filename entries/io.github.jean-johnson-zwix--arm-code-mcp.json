@@ -1,0 +1,76 @@
+{
+  "id": "io.github.jean-johnson-zwix/arm-code-mcp",
+  "title": "arm-code-mcp",
+  "description": "MCP server for Arm64 Linux performance: parse perf output, suggest NEON intrinsics, audit deps.",
+  "summary": "MCP server for Arm64 Linux performance: parse perf output, suggest NEON intrinsics, audit deps.",
+  "offersHint": "MCP server for Arm64 Linux performance: parse perf output, suggest NEON intrinsics, audit deps. · Packages: pypi:arm-code-mcp · Env vars: ARM_CODE_MCP_LOG_LEVEL",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "arm-code-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ARM_CODE_MCP_LOG_LEVEL",
+        "description": "Log verbosity (DEBUG, INFO, WARNING). Default: INFO."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "arm-code-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ARM_CODE_MCP_LOG_LEVEL",
+          "description": "Log verbosity (DEBUG, INFO, WARNING). Default: INFO."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ARM_CODE_MCP_LOG_LEVEL",
+      "description": "Log verbosity (DEBUG, INFO, WARNING). Default: INFO."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jean-johnson-zwix/arm-code-mcp",
+  "repository": {
+    "url": "https://github.com/jean-johnson-zwix/arm-code-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-02T04:43:25.540745Z",
+  "publishedAt": "2026-05-02T04:43:25.540745Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:05.805Z",
+    "sourceRepoAt": "2026-08-11T23:41:19.558Z",
+    "readmeAt": "2026-08-11T23:41:20.468Z",
+    "toolsAt": "2026-08-12T01:19:05.806Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jean-johnson-zwix/arm-code-mcp",
+    "checkedAt": "2026-08-11T23:41:19.558Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jean-johnson-zwix/arm-code-mcp/main/README.md",
+    "markdown": "# arm-code-mcp\n\nAn MCP server that helps AI assistants optimize Linux workloads on Arm64.\nIt parses `perf report` output, recommends NEON SIMD intrinsics for hot loops,\nand audits Python dependency manifests for arm64 wheel availability —\nall offline, all structured, all callable from Claude Code, GitHub Copilot, and Codex.\n\n---\n\n## What's inside\n\n- **`analyze_perf_output`** — parse `perf report --stdio` into a ranked list of hot symbols\n- **`suggest_neon_intrinsic`** — semantic + keyword search over 110 curated NEON intrinsics\n- **`check_arm64_deps`** — flag packages in `requirements.txt`, `pyproject.toml`, or `Dockerfile` that lack arm64 wheels or require special handling\n\n---\n\n## Prerequisites\n\n- Docker\n- An MCP-compatible AI assistant (Claude Code, GitHub Copilot, Codex)\n\n---\n\n## Quick start\n\n```bash\ndocker pull jeannjohnson/arm-code-mcp:latest\n```\n\nAdd to your MCP client config (e.g. `~/.claude/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"arm-code-mcp\": {\n      \"command\": \"docker\",\n      \"args\": [\"run\", \"--rm\", \"-i\", \"jeannjohnson/arm-code-mcp:latest\"]\n    }\n  }\n}\n```\n\nRestart your client. All three tools are now available.\n\n---\n\n## Tools\n\n### `analyze_perf_output`\n\nParse raw `perf report --stdio` output and return the top hot symbols, ranked by overhead.\n\n```python\nanalyze_perf_output(\n    perf_report_text: str,          # raw stdout of `perf report --stdio`\n    top_n: int = 10,                # max symbols to return\n    min_overhead_pct: float = 0.5,  # ignore symbols below this %\n) -> dict\n```\n\nExample response:\n\n```json\n{\n  \"summary\": {\n    \"total_samples\": 5432100,\n    \"total_events\": null,\n    \"command\": \"myapp\"\n  },\n  \"hot_symbols\": [\n    {\"overhead_pct\": 24.17, \"samples\": 1245, \"command\": \"myapp\",\n     \"module\": \"myapp\", \"symbol\": \"process_buffer\"},\n    {\"overhead_pct\": 12.34, \"samples\": 636, \"command\": \"myapp\",\n     \"module\": \"libc-2.31.so\", \"symbol\": \"__memcpy_avx_unaligned_erms\"}\n  ],\n  \"warnings\": []\n}\n```\n\n---\n\n### `suggest_neon_intrinsic`\n\nRecommend NEON intrinsics for a hot loop using hybrid semantic + exact-name retrieval\nover a curated knowledge base of 110 intrinsics.\n\n```python\nsuggest_neon_intrinsic(\n    operation_description: str,    # e.g. \"32-bit float multiply-accumulate\"\n    target_arch: str = \"armv8-a\",  # \"armv8-a\" | \"armv8.2-a\" | \"armv9-a\"\n    top_k: int = 5,\n) -> dict\n```\n\nExample response:\n\n```json\n{\n  \"matches\": [\n    {\n      \"intrinsic\": \"vmlaq_f32\",\n      \"signature\": \"float32x4_t vmlaq_f32(float32x4_t a, float32x4_t b, float32x4_t c)\",\n      \"header\": \"<arm_neon.h>\",\n      \"min_arch\": \"armv8-a\",\n      \"description\": \"Multiply-accumulate: a + (b * c), lane-wise, 4x f32.\",\n      \"score\": 0.9142\n    }\n  ],\n  \"notes\": \"Filtered to armv8-a. KB contains 110 entries (103 compatible).\"\n}\n```\n\n---\n\n### `check_arm64_deps`\n\nScan a dependency manifest and flag packages with known arm64 compatibility issues.\nFully offline — no network calls, fast, deterministic.\n\n```python\ncheck_arm64_deps(\n    file_content: str,                    # raw text of the manifest\n    file_type: str = \"requirements.txt\",  # \"requirements.txt\" | \"pyproject.toml\" | \"Dockerfile\"\n) -> dict\n```\n\nExample response:\n\n```json\n{\n  \"checked\": [\"numpy\", \"tensorflow\", \"cupy-cuda12x\", \"faiss-cpu\", \"requests\"],\n  \"issues\": [\n    {\"package\": \"cupy-cuda12x\", \"severity\": \"error\",\n     \"message\": \"GPU-only package with no arm64 wheel. Use cupy with ROCm or a CPU fallback.\"},\n    {\"package\": \"tensorflow\", \"severity\": \"warning\",\n     \"message\": \"Official TensorFlow PyPI wheels are x86-only before 2.10; use tensorflow-aarch64 or build from source.\"},\n    {\"package\": \"faiss-cpu\", \"severity\": \"warning\",\n     \"message\": \"No official arm64 wheel on PyPI; build from source or use the conda-forge package.\"},\n    {\"package\": \"numpy\", \"severity\": \"info\",\n     \"message\": \"arm64 wheels available from PyPI since 1.21.0. Ensure version >= 1.21.0.\"}\n  ],\n  \"summary\": \"Checked 5 package(s): 1 error(s), 2 warning(s), 1 info(s).\"\n}\n```\n\nSeverity levels:\n\n| Level | Meaning |\n|---|---|\n| `error` | No arm64 wheel exists (e.g. GPU-only packages) |\n| `warning` | Wheel exists but requires a workaround or alternative source |\n| `info` | Wheel available; version constraint or system-lib note applies |\n\n---\n\n## Configuration\n\nAll env vars are optional. The server works with no configuration.\n\n| Variable | Default | Description |\n|---|---|---|\n| `ARM_CODE_MCP_LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG`, `INFO`, `WARNING` |\n| `ARM_CODE_MCP_KB_PATH` | bundled JSONL | Override path to `neon_intrinsics.jsonl` |\n| `ARM_CODE_MCP_CACHE_DIR` | `~/.cache/arm-code-mcp` | Embedding cache directory |\n\nPass env vars to the container:\n\n```bash\ndocker run --rm -i \\\n  -e ARM_CODE_MCP_LOG_LEVEL=DEBUG \\\n  jeannjohnson/arm-code-mcp:latest\n```\n\n---\n\n## Evaluation\n\n`suggest_neon_intrinsic` is evaluated against 15 hand-curated (query, expected intrinsic) pairs\nusing the real `all-MiniLM-L6-v2` embedding model. Current baseline:\n\n| Metric | Score |\n|---|---|\n| hit@1 | 0.667 |\n| hit@3 | 0.933 |\n| hit@5 | 1.000 |\n| MRR   | 0.817 |\n\nThe regression guard exits non-zero if hit@3 drops below 0.70.\n\nRun the eval harness locally:\n\n```bash\nuv sync\nmake eval\n```\n\nSee [`eval/README.md`](eval/README.md) for methodology and known limitations.\n\n---\n\n## Development\n\n```bash\ngit clone https://github.com/jean-johnson-zwix/arm-code-mcp\ncd arm-code-mcp\nuv sync\nmake test    # 78 tests\nmake lint    # ruff check + format\nmake eval    # real model, 15 gold queries\n```\n\nMakefile targets:\n\n| Target | Description |\n|---|---|\n| `make setup` | `uv sync` + pre-commit install |\n| `make test` | Run the full test suite |\n| `make lint` | ruff check + ruff format --check |\n| `make eval` | Run the NEON retrieval eval harness |\n| `make docker-build` | Build `arm-code-mcp:dev` locally |\n| `make docker-run` | Run the local dev image over stdio |\n\nMulti-arch images (`linux/amd64` + `linux/arm64`) are built and pushed automatically\nby `.github/workflows/release.yml` on `v*.*.*` tags.\n\n---\n\n## Knowledge base maintenance\n\nThe NEON intrinsics knowledge base lives in `src/arm_code_mcp/kb/data/neon_intrinsics.jsonl`\n(110 entries). To add intrinsics or refresh after a model upgrade, see [`docs/kb-refresh.md`](docs/kb-refresh.md).\n\n---\n\n## Roadmap\n\n**Tools**\n- `parse_flamegraph` — extract hot paths from Linux perf flamegraph SVG\n- `suggest_sve2_intrinsic` — extend retrieval to SVE2 intrinsics (Neoverse V2, Cortex-X4)\n\n**Eval**\n- Multi-query paraphrase expansion for each gold pair\n- Reranking pass over semantic candidates\n- Larger gold set (50+ queries) for lower metric variance\n\n---\n\n## Demo\n\nComing soon.\n\n---\n\n## Contributing\n\nStars, forks, and issues are welcome. Open a PR or file an issue on\n[GitHub](https://github.com/jean-johnson-zwix/arm-code-mcp).\n\nGood first issues:\n- Add more NEON intrinsic entries to `kb/data/neon_intrinsics.jsonl`\n- Add gold eval queries for SVE2 intrinsics\n- Add `parse_flamegraph` tool for Linux perf flamegraph SVG files\n\n---\n\n## License\n\nApache 2.0 — same as [`arm/mcp`](https://github.com/arm/mcp).\n",
+    "fetchedAt": "2026-08-11T23:41:20.468Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:05.806Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

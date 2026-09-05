@@ -1,0 +1,59 @@
+{
+  "id": "io.github.MukundaKatta/agentsnap",
+  "title": "agentsnap",
+  "description": "Snapshot tests for AI tool-call traces: diff, validate, and catch silent regressions.",
+  "summary": "Snapshot tests for AI tool-call traces: diff, validate, and catch silent regressions.",
+  "offersHint": "Snapshot tests for AI tool-call traces: diff, validate, and catch silent regressions. · Packages: npm:@mukundakatta/agentsnap-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@mukundakatta/agentsnap-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@mukundakatta/agentsnap-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/MukundaKatta/agentsnap-mcp",
+  "sourceUrl": "https://github.com/MukundaKatta/agentsnap-mcp",
+  "repository": {
+    "url": "https://github.com/MukundaKatta/agentsnap-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-27T04:12:27.468466Z",
+  "publishedAt": "2026-04-27T04:12:27.468466Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:37.578Z",
+    "sourceRepoAt": "2026-08-12T00:06:14.669Z",
+    "readmeAt": "2026-08-12T00:06:15.123Z",
+    "toolsAt": "2026-08-12T01:37:37.578Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MukundaKatta/agentsnap-mcp",
+    "checkedAt": "2026-08-12T00:06:14.669Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MukundaKatta/agentsnap-mcp/main/README.md",
+    "markdown": "# agentsnap-mcp\n\n[![npm](https://img.shields.io/npm/v/@mukundakatta/agentsnap-mcp.svg)](https://www.npmjs.com/package/@mukundakatta/agentsnap-mcp)\n[![tests](https://img.shields.io/badge/tests-9%20passing-brightgreen.svg)](#)\n[![mcp](https://img.shields.io/badge/protocol-MCP-blue.svg)](https://modelcontextprotocol.io)\n\nAn [MCP](https://modelcontextprotocol.io) server that gives AI assistants the\nability to inspect, normalize, diff, and validate agent tool-call traces.\n\nBuilt on top of [`@mukundakatta/agentsnap`](https://github.com/MukundaKatta/agentsnap).\nWorks with Claude Desktop, Cursor, Cline, Windsurf, Zed, and any other MCP client.\n\n## Tools exposed\n\n### `normalize_trace`\n\nCoerce a raw tool-call trace into the canonical agentsnap Trace shape and\ncompute a deterministic SHA-256 fingerprint hash. Use this to compare runs\ncheaply or feed downstream diff tools.\n\n```json\n{\n  \"trace\": [\n    { \"name\": \"search\", \"args\": { \"q\": \"cats\" } },\n    { \"name\": \"fetch\",  \"args\": \"https://example.com\" }\n  ],\n  \"input\": \"find cats\",\n  \"model\": \"claude-opus-4-7\"\n}\n```\n\n→\n\n```json\n{\n  \"normalized\": {\n    \"version\": 1,\n    \"model\": \"claude-opus-4-7\",\n    \"input\": \"find cats\",\n    \"output\": null,\n    \"tools\": [\n      { \"name\": \"search\", \"args\": { \"q\": \"cats\" } },\n      { \"name\": \"fetch\",  \"args\": \"https://example.com\" }\n    ],\n    \"error\": null,\n    \"fingerprint\": { \"node\": \"v22.0.0\", \"agentsnap\": \"0.1.0\" }\n  },\n  \"hash\": \"sha256:...\"\n}\n```\n\n### `diff_traces`\n\nDiff a baseline trace against a current run. Returns a uniform\nadditions / removals / changes vocabulary plus the agentsnap status code\n(`PASSED`, `OUTPUT_DRIFT`, `TOOLS_REORDERED`, `TOOLS_CHANGED`, `REGRESSION`).\nUse `ignore_paths` to silence noisy fields before classification.\n\n```json\n{\n  \"baseline\": { \"version\": 1, \"tools\": [{ \"name\": \"search\", \"args\": { \"q\": \"cats\" }, \"result_hash\": \"sha256:aaa\" }], \"error\": null, \"fingerprint\": {...} },\n  \"current\":  { \"version\": 1, \"tools\": [{ \"name\": \"search\", \"args\": { \"q\": \"cats\" }, \"result_hash\": \"sha256:bbb\" }], \"error\": null, \"fingerprint\": {...} },\n  \"ignore_paths\": [\"tools[].result_hash\"]\n}\n```\n\n→ `{ \"same\": true, \"status\": \"PASSED\", \"additions\": [], \"removals\": [], \"changes\": [] }`\n\n### `validate_snapshot`\n\nSanity-check a snapshot against the agentsnap Trace schema. Verifies required\nfields, tool-entry shape, and surfaces actionable issues. Returns\n`valid=true` on success or a list of human-readable problems.\n\n## Install\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"agentsnap\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@mukundakatta/agentsnap-mcp\"]\n    }\n  }\n}\n```\n\n### Cursor / Cline / Windsurf / Zed\n\nSame shape, in the appropriate `mcp.json` for your client. Most clients\nauto-discover via `npx -y @mukundakatta/agentsnap-mcp`.\n\n### Local install\n\n```bash\nnpm install -g @mukundakatta/agentsnap-mcp\nmcp-agentsnap        # listens on stdio\n```\n\n## Why this matters\n\nAgents that call tools drift silently. A tool argument changes shape, a\nnondeterministic result flips a downstream branch, an extra tool sneaks in\nbetween releases — none of it shows up in unit tests. agentsnap captures the\ntrace; this MCP server lets your assistant inspect and reason about traces\ndirectly: normalize one, diff two, or validate a saved snapshot, all from\nthe model's tool-use surface.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:06:15.123Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:37:37.578Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

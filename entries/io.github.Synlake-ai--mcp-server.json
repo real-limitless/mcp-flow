@@ -1,0 +1,71 @@
+{
+  "id": "io.github.Synlake-ai/mcp-server",
+  "title": "Synlake — Cloud Infrastructure for AI Agents",
+  "description": "Compare, estimate, and deploy cloud infrastructure across AWS, GCP, and Azure for AI agents.",
+  "summary": "Compare, estimate, and deploy cloud infrastructure across AWS, GCP, and Azure for AI agents.",
+  "offersHint": "Compare, estimate, and deploy cloud infrastructure across AWS, GCP, and Azure for AI agents. · Remote MCP (streamable-http) at https://api.synlake.ai/mcp · Requires headers: Authorization",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.synlake.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.synlake.ai/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token with your Synlake API key (sk_synlake_...)",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://synlake.ai",
+  "sourceUrl": "https://github.com/Synlake-ai/Synlake",
+  "repository": {
+    "url": "https://github.com/Synlake-ai/Synlake",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-06T14:14:32.26795Z",
+  "publishedAt": "2026-05-06T14:14:32.26795Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token with your Synlake API key (sk_synlake_...)",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:17.626Z",
+    "sourceRepoAt": "2026-08-12T00:01:45.804Z",
+    "readmeAt": "2026-08-12T00:01:46.355Z",
+    "toolsAt": "2026-08-12T01:34:17.627Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Synlake-ai/Synlake",
+    "checkedAt": "2026-08-12T00:01:45.804Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Synlake-ai/Synlake/main/README.md",
+    "markdown": "# Synlake MCP Server\n\n[![npm](https://img.shields.io/npm/v/@synlake-ai/mcp-server)](https://www.npmjs.com/package/@synlake-ai/mcp-server)\n[![MCP Registry](https://img.shields.io/badge/MCP-ai.synlake%2Fsynlake-7c3aed)](https://registry.modelcontextprotocol.io)\n[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)\n\n**The MCP connector for Synlake** — B2AI infrastructure for autonomous agents. Synlake normalizes AWS, GCP, and Azure into one schema, generates ready-to-run execution kits (Terraform HCL + CLI), and prices them before deploy — so an AI agent can discover, evaluate, and provision cloud infrastructure with zero human intervention.\n\nThis repository is the open-source MCP server (a thin stdio ↔ HTTP proxy). The infrastructure intelligence — cross-cloud normalization, the cost engine, and execution-kit generation — runs as a hosted service at `api.synlake.ai`.\n\n🌐 [synlake.ai](https://synlake.ai) · 📖 [Docs](https://synlake.ai/docs) · 🔌 MCP: `ai.synlake/synlake`\n\n---\n\n## An agent deploys infrastructure — no human in the loop\n\nA coding agent needs a Kubernetes node pool. It doesn't open a cloud console, compare pricing pages, or hand-write Terraform. It asks Synlake, and gets back a deployable answer:\n\n```\nAgent → Synlake:  \"compute, 4 vCPUs, 16 GB RAM, us-east-1, budget $100/mo\"\n\nSynlake → Agent:  best:  gcp · e2-standard-4 · $97.82/mo   (19.5% cheaper than the priciest)\n                  also:  aws t3.xlarge $121.47 · azure Standard_B4ms $121.18\n                  kit:   { terraform: \"resource \\\"google_compute_instance\\\"…\",\n                           cli: \"gcloud compute instances create…\" }\n                  ✓ validated: no public ingress, encryption on, within budget\n```\n\nThe agent reviews the kit, applies the Terraform, and moves on. Every response is dense, deterministic JSON — built for machine consumption, not dashboards. Synlake tools are **read-only**: they recommend, price, and validate. A human (or the agent's own policy) runs the execution kit.\n\n## Architecture\n\n```mermaid\nflowchart LR\n    A[AI Agent] -- MCP / REST --> B[Synlake API]\n    B --> C[Normalizer]\n    C --> D1[AWS adapter]\n    C --> D2[Azure adapter]\n    C --> D3[GCP adapter]\n    C --> E[Ranking engine<br/>cost + constraints]\n    E --> F[Execution-kit generator<br/>Terraform + CLI]\n    F --> G[Guardrails & validation<br/>budget · region · security]\n    G --> H[Audit log]\n    H --> A\n```\n\nAn agent sends an intent. Synlake normalizes options across clouds, ranks them by cost and constraints, generates a deploy-ready execution kit, runs guardrail checks, logs the call, and returns one machine-ready payload. This repo ships the open-source MCP connector (the `AI Agent ↔ Synlake API` edge); the boxes to the right of `Synlake API` run as the hosted service.\n\n## Quickstart\n\n### Hosted (recommended) — MCP over Streamable HTTP\n\nPoint any MCP client at the hosted server — three lines, nothing to install:\n\n```json\n{\n  \"mcpServers\": {\n    \"synlake\": {\n      \"url\": \"https://api.synlake.ai/api/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer sk_synlake_YOUR_KEY\" }\n    }\n  }\n}\n```\n\n### Local stdio wrapper (this package)\n\nFor clients that speak stdio (e.g. Claude Desktop), run the npm wrapper — it proxies to the same hosted server:\n\n```json\n{\n  \"mcpServers\": {\n    \"synlake\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@synlake-ai/mcp-server\"],\n      \"env\": { \"SYNLAKE_API_KEY\": \"sk_synlake_YOUR_KEY\" }\n    }\n  }\n}\n```\n\nGet a free API key at **[synlake.ai](https://synlake.ai)** (100 calls/month, no card required). The `estimate` endpoint is even callable **without** a key — zero friction to try.\n\n## Tools\n\n| Tool | REST endpoint | Description |\n|------|---------------|-------------|\n| `synlake_query` | `POST /v1/infrastructure/query` | Full recommendation + execution kit (Terraform + CLI) |\n| `synlake_estimate` | `POST /v1/infrastructure/estimate` | Cross-cloud cost comparison — **no API key required** |\n| `synlake_validate` | `POST /v1/execution/validate` | Dry-run an execution kit (security + budget checks) |\n| `synlake_providers` | `GET /v1/providers` | List supported providers and services |\n| `synlake_usage` | `GET /v1/agent/usage` | Your usage, costs, and spending cap |\n\nFull reference (OpenAPI 3.1, rendered): **[synlake.ai/docs](https://synlake.ai/docs)**. Local copy: [`docs/openapi.yaml`](docs/openapi.yaml). Machine-readable summary for agents: [synlake.ai/llms.txt](https://synlake.ai/llms.txt).\n\n## Why Synlake\n\n| Approach            | Multi-cloud | Agent-ready JSON | Execution kit | Cost guardrails | Audit trail |\n| ------------------- | ----------- | ---------------- | ------------- | --------------- | ----------- |\n| DIY Terraform       | Manual      | No               | You write it  | No              | No          |\n| Pulumi / Crossplane | Yes         | No               | Partial       | No              | Partial     |\n| Cloud provider SDKs | Single      | Partial          | No            | No              | Partial     |\n| Agent frameworks    | Via tools   | Partial          | No            | No              | No          |\n| **Synlake**         | **3 clouds**| **100%**         | **Full kit**  | **Built-in**    | **Every call** |\n\n## Use it from a Claude Managed Agent\n\nWire Synlake as an `mcp_toolset` — the agent gets all five tools natively, your key stays in an Anthropic vault:\n\n```json\n{\n  \"type\": \"mcp_toolset\",\n  \"name\": \"synlake\",\n  \"server\": {\n    \"url\": \"https://api.synlake.ai/api/mcp\",\n    \"authorization_token\": { \"vault_secret\": \"synlake_api_key\" }\n  }\n}\n```\n\nSee the [MCP quickstart](docs/mcp-quickstart.md) for the Managed Agents API, `ant` CLI, and Agent SDK flows.\n\n## Build from source\n\n```bash\nnpm install\nnpm run build       # tsc → dist/ (pure proxy)\nSYNLAKE_API_KEY=sk_synlake_... node dist/bin.js\n```\n\n`SYNLAKE_API_URL` overrides the remote endpoint (default `https://api.synlake.ai/api/mcp`).\n\n## Pricing\n\nPay per call. No subscriptions, no commitments. **Free tier:** 100 calls/month, no card required.\n\n| Call type | Price |\n|-----------|-------|\n| Estimate | $0.01 _(free, no key, IP rate-limited)_ |\n| Query (basic) | $0.05 |\n| Query (full + Terraform) | $0.10 |\n| Validate | $0.05 |\n\n## Links\n\n- **Website:** [synlake.ai](https://synlake.ai)\n- **Docs:** [synlake.ai/docs](https://synlake.ai/docs)\n- **Source:** [github.com/synlake-ai/synlake](https://github.com/synlake-ai/synlake)\n- **npm:** [@synlake-ai/mcp-server](https://www.npmjs.com/package/@synlake-ai/mcp-server)\n- **MCP Registry:** `ai.synlake/synlake` — [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io)\n- **Privacy:** [synlake.ai/legal/privacy.html](https://synlake.ai/legal/privacy.html) — only what's needed to process queries. No conversation data, no profiling, no data sales.\n\n## License\n\nThe MCP connector in this repository is **MIT licensed** (see [LICENSE](LICENSE)). The Synlake service (`api.synlake.ai`) — the cost engine, cross-cloud normalization, and execution-kit generation — is **proprietary**.\n\n> El conector MCP de este repo es MIT. El servicio Synlake (api.synlake.ai) es propietario.\n\n© Synlake, LLC — admin@synlake.ai\n",
+    "fetchedAt": "2026-08-12T00:01:46.355Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:17.627Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32001,\"message\":\"Missing Authorization Bearer token\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

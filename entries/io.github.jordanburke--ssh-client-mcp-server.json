@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jordanburke/ssh-client-mcp-server",
+  "title": "ssh-client-mcp-server",
+  "description": "MCP server for executing shell commands on remote hosts via SSH.",
+  "summary": "MCP server for executing shell commands on remote hosts via SSH.",
+  "offersHint": "MCP server for executing shell commands on remote hosts via SSH. · Packages: npm:ssh-client-mcp-server",
+  "version": "1.5.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "ssh-client-mcp-server",
+    "version": "1.5.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "ssh-client-mcp-server",
+      "version": "1.5.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jordanburke/ssh-client-mcp-server",
+  "repository": {
+    "url": "https://github.com/jordanburke/ssh-client-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T12:26:38.335975Z",
+  "publishedAt": "2026-06-09T12:26:38.335975Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:20.929Z",
+    "sourceRepoAt": "2026-08-11T23:40:23.628Z",
+    "readmeAt": "2026-08-11T23:40:24.067Z",
+    "toolsAt": "2026-08-12T01:18:20.929Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jordanburke/ssh-client-mcp-server",
+    "checkedAt": "2026-08-11T23:40:23.628Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jordanburke/ssh-client-mcp-server/main/README.md",
+    "markdown": "# SSH Client MCP Server\n\n[![License](https://img.shields.io/github/license/jordanburke/ssh-client-mcp-server)](./LICENSE)\n[![NPM Version](https://img.shields.io/npm/v/ssh-client-mcp-server)](https://www.npmjs.com/package/ssh-client-mcp-server)\n[![CI](https://github.com/jordanburke/ssh-client-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/jordanburke/ssh-client-mcp-server/actions/workflows/ci.yml)\n\n**SSH Client MCP Server** is a local Model Context Protocol (MCP) server that lets LLMs and other MCP clients execute shell commands on remote hosts over SSH. It runs from Linux, macOS, or Windows and targets any reachable SSH server (Linux, macOS, Windows with OpenSSH, etc.).\n\nBuilt on [`somamcp`](https://github.com/sapientsai/SomaMCP) — a functional MCP framework over FastMCP with telemetry, introspection, and backend abstraction.\n\n## Contents\n\n- [Quick Start](#quick-start)\n- [Features](#features)\n- [Tools](#tools)\n- [Installation](#installation)\n- [Configuration](#configuration)\n- [Client Setup](#client-setup)\n- [Testing](#testing)\n- [Development](#development)\n- [Disclaimer](#disclaimer)\n\n## Monorepo\n\nThis repository is a pnpm monorepo with three packages:\n\n| Package | npm name | Role |\n| ------- | -------- | ---- |\n| `packages/core` | `@ssh-mcp/core` (private) | Shared SSH pool, tmux command builders, and auth resolution. Bundled into the other packages; not published separately. |\n| `packages/connector` | `ssh-client-mcp-server` | Single-host MCP server (the original package). `exec` + `tmux_*` tools for one configured SSH host. |\n| `packages/orchestrator` | `ssh-fleet-mcp-server` | Multi-host fleet MCP server. Host-routed `exec` + `tmux_*` tools driven by a TOML fleet config. |\n\nRun the full validation suite across all packages:\n\n```bash\npnpm -r validate\n```\n\n## Quick Start\n\n1. Configure your MCP client (Claude Desktop, Cursor, Cline, etc.) to launch this server via `npx` — see [Client Setup](#client-setup).\n2. Ask your LLM to run shell commands on the target host.\n\nNo global install required — `npx` fetches and runs the latest published version.\n\n## Features\n\n- **Single `exec` tool** — runs a shell command on the remote host, returns stdout. stderr surfaces as a structured error.\n- **Four auth modes** — password, key file, key from environment variable (e.g. injected by [envpkt](https://github.com/jordanburke/envpkt), Vault, Doppler), or `SSH_AUTH_SOCK` (system ssh-agent, 1Password, Bitwarden Desktop, KeePassXC).\n- **Smart path expansion** — `--key` supports `~`, `$VAR`, `${VAR}`, and relative paths via [`functype-os`](https://github.com/jordanburke/functype-os). Unresolved variables fail fast with a typed error.\n- **OS-user fallback** — `--user` defaults to the current OS username when omitted.\n- **Fail-fast auth** — the SSH key is loaded and validated at server startup, not on the first `exec` call.\n- **Introspection out-of-the-box** — `soma_health`, `soma_capabilities`, `soma_connections` auto-registered by somamcp.\n- **Cross-platform** — runs on Linux, macOS, Windows (anywhere Node 22+ runs).\n\n## Tools\n\n| Tool                | Description                                                         |\n| ------------------- | ------------------------------------------------------------------- |\n| `exec`              | Execute a shell command on the remote SSH server and return stdout. |\n| `soma_health`       | Server uptime, status, active session count.                        |\n| `soma_capabilities` | Enumerate registered tools, resources, and prompts.                 |\n| `soma_connections`  | Gateway connection status (unused here).                            |\n\n### Persistent sessions (tmux)\n\nFor driving long-running interactive processes (e.g. a remote coding agent) across calls, the server exposes tmux-backed tools. tmux must be installed on the remote host.\n\n- `tmux_list` — list live tmux sessions.\n- `tmux_send({ session?, input, submit? })` — type `input` into `session` (created if absent); presses Enter unless `submit: false`.\n- `tmux_read({ session?, lines? })` — return the recent pane transcript (`lines` default 200, max 2000).\n- `tmux_keys({ session?, keys })` — send control/special keys, e.g. `{ keys: [\"C-c\"] }`.\n\n`session` defaults to `--tmux-session` (default `agent`). Tip: run agents in a line-oriented mode (not a full-screen TUI) so `tmux_read` returns a clean transcript.\n\n## Installation\n\n### Run via `npx` (recommended)\n\nNo install step — your MCP client launches it on demand. See [Client Setup](#client-setup).\n\n### Global install\n\n```bash\nnpm install -g ssh-client-mcp-server\n# then:\nssh-client-mcp-server --host=1.2.3.4 --user=root --password=pass\n```\n\n### From source (for contributors)\n\n```bash\ngit clone https://github.com/jordanburke/ssh-client-mcp-server.git\ncd ssh-client-mcp-server\npnpm install\npnpm build\n```\n\n## Configuration\n\nThe server reads SSH connection info from CLI flags:\n\n| Flag         | Required | Default     | Description                                                                                       |\n| ------------ | -------- | ----------- | ------------------------------------------------------------------------------------------------- |\n| `--host`     | yes      | —           | Hostname or IP of the remote SSH server.                                                          |\n| `--user`     | no       | OS username | SSH username. Falls back to the local OS user (`whoami`) when omitted.                            |\n| `--port`     | no       | `22`        | SSH port.                                                                                         |\n| `--password` | no\\*     | —           | SSH password.                                                                                     |\n| `--key`      | no\\*     | —           | Path to a private SSH key. Supports `~`, `$VAR`, `${VAR}`, and relative paths.                    |\n| `--key-env`  | no\\*     | —           | Name of an env var holding the private key PEM (e.g. injected by envpkt, Vault, Doppler).         |\n| `--agent`    | no\\*     | —           | Set to `true` to use `SSH_AUTH_SOCK` (system ssh-agent, 1Password, Bitwarden Desktop, KeePassXC). |\n\n\\*Auth precedence is `--password` → `--key` → `--key-env` → `--agent`. If none are set the server starts but ssh2 will fail to authenticate on first `exec`.\n\n### Pulling keys from a password manager (Bitwarden / 1Password / KeePassXC)\n\nEach of these can expose your SSH keys via `SSH_AUTH_SOCK`. Unlock the vault, confirm the agent is enabled, then run with `--agent=true` — the server never sees the private key.\n\n```bash\n# verify the agent is reachable\nssh-add -l\n\n# launch the MCP server through it\nssh-client-mcp-server --host=1.2.3.4 --user=root --agent=true\n```\n\nFor Bitwarden Desktop ≥ 2024.12: enable **Settings → SSH agent**, then on macOS confirm `launchctl getenv SSH_AUTH_SOCK` points at Bitwarden's socket.\n\n### Pulling keys from envpkt (or any tool that injects env vars)\n\nStore the PEM as a sealed value in `envpkt.toml`, then launch via `envpkt exec`:\n\n```bash\nenvpkt exec -- ssh-client-mcp-server --host=1.2.3.4 --user=root --key-env=MY_SSH_KEY\n```\n\nSame pattern works for HashiCorp Vault, Doppler, Infisical, AWS Secrets Manager, or any wrapper that lands the key in `process.env`.\n\n## Client Setup\n\n### Claude Desktop (`claude_desktop_config.json`)\n\n```json\n{\n  \"mcpServers\": {\n    \"ssh-client-mcp-server\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ssh-client-mcp-server\", \"--host=1.2.3.4\", \"--user=root\", \"--key=~/.ssh/id_ed25519\"]\n    }\n  }\n}\n```\n\n### Password auth\n\nReplace the `--key` arg with `--password=hunter2`. Avoid checking this into version control.\n\n### Using the current OS user\n\nOmit `--user` entirely — the server defaults to your local username.\n\n### Other MCP clients\n\nAny client that speaks the stdio MCP transport works. Same `command` / `args` shape.\n\n## Testing\n\n### Against a published build\n\n```bash\nnpx @modelcontextprotocol/inspector npx ssh-client-mcp-server --host=1.2.3.4 --user=root --key=~/.ssh/id_ed25519\n```\n\n### Against a local build (after `pnpm build`)\n\n```bash\npnpm inspect\n```\n\nThis builds and launches the [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) pointed at `dist/index.js`.\n\n## Development\n\nAll tooling is delegated to [`ts-builds`](https://github.com/jordanburke/ts-builds):\n\n```bash\npnpm validate      # format → lint → typecheck → test → build\npnpm test          # vitest run\npnpm test:watch    # vitest watch mode\npnpm build         # production build to dist/\npnpm dev           # tsdown watch mode to lib/\npnpm inspect       # build + launch MCP Inspector\n```\n\nPure helpers (`parseArgv`, `validateConfig`, `resolveAuth`, `effectiveUser`) live in `src/config.ts` and are covered by `test/config.spec.ts` (18 cases, including tempfile-backed key reads and env-var expansion).\n\n## Disclaimer\n\nProvided under the [MIT License](./LICENSE). Use at your own risk. Not affiliated with or endorsed by any SSH vendor or MCP provider. Be careful granting LLMs shell access — audit commands, restrict target-account privileges, and consider a jump box.\n\n## Contributing\n\nIssues and PRs welcome at [jordanburke/ssh-client-mcp-server](https://github.com/jordanburke/ssh-client-mcp-server). Please run `pnpm validate` before submitting.\n",
+    "fetchedAt": "2026-08-11T23:40:24.067Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:20.929Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

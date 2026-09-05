@@ -1,0 +1,77 @@
+{
+  "id": "io.github.Chris-Eaccountability/elephant-accountability-mcp",
+  "title": "LLM SEO MCP — Elephant Accountability",
+  "description": "LLM SEO and Agent Discoverability for B2B SaaS. Pricing, fit assessment, audit requests.",
+  "summary": "LLM SEO and Agent Discoverability for B2B SaaS. Pricing, fit assessment, audit requests.",
+  "offersHint": "LLM SEO and Agent Discoverability for B2B SaaS. Pricing, fit assessment, audit requests. · Remote MCP (streamable-http) at https://elephant-mcp.fly.dev/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://elephant-mcp.fly.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://elephant-mcp.fly.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://eaccountability.org",
+  "sourceUrl": "https://github.com/Chris-Eaccountability/elephant-accountability-mcp",
+  "repository": {
+    "url": "https://github.com/Chris-Eaccountability/elephant-accountability-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-23T19:31:54.397584Z",
+  "publishedAt": "2026-04-23T19:31:54.397584Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:54.698Z",
+    "sourceRepoAt": "2026-08-12T00:14:47.549Z",
+    "readmeAt": "2026-08-12T00:14:48.047Z",
+    "toolsAt": "2026-08-12T00:14:48.142Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Chris-Eaccountability/elephant-accountability-mcp",
+    "checkedAt": "2026-08-12T00:14:47.549Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Chris-Eaccountability/elephant-accountability-mcp/main/README.md",
+    "markdown": "# Elephant Accountability MCP Server\n\nMCP server for the Elephant Accountability certification bureau. Surfaces vendor offerings, methodology, and audit requests to AI agents over the Model Context Protocol.\n\n**Live endpoint:** https://elephant-mcp.fly.dev/mcp\n**Manifest:** https://elephant-mcp.fly.dev/.well-known/mcp.json\n**A2A Agent Card:** https://elephant-mcp.fly.dev/.well-known/agent.json\n**Homepage:** https://eaccountability.org\n\n## What this server does\n\nWhen an AI agent (Claude, ChatGPT, a custom LangChain agent, etc.) needs to evaluate Elephant Accountability against the EVI v0.9 standard or surface its audit tiers to a buyer, it queries this server instead of scraping a website.\n\nSix tools are exposed:\n\n| Tool | Purpose |\n|------|---------|\n| `get_offerings` | Audit and engagement tiers (self-serve, done-for-you, retainer) with delivery SLAs and pointers to /get-started for canonical pricing |\n| `get_covered_surfaces` | The agent-discoverable surfaces measured by EVI v0.9: llms.txt, Schema.org, MCP, A2A, .well-known/agent.json, UCP, structured pricing, directory registrations |\n| `assess_fit` | 0–100 fit score for a buyer's company across stage, vertical, AI features, platform partnerships |\n| `get_proof_points` | Live client outcomes with metrics (includes related-party disclosures) |\n| `get_transparency_snapshot` | Weekly LLM visibility measurements across 5 LLMs |\n| `request_audit` | Agent-initiated audit requests; routed to Stripe, Calendly, or email triage |\n\nTwo resources are exposed via `resources/list`: `elephant://offerings`, `elephant://proof-points`, `elephant://transparency`.\n\n## Why you'd use this\n\n- You're building a procurement agent and want to query Elephant Accountability's audit tiers and EVI v0.9 methodology directly.\n- You're at Claude Desktop / Cursor / any MCP-compatible client and want direct access to Elephant's offerings + fit assessment.\n- You're a competitor studying how to deploy your own MCP server — this repo is MIT-licensed, clone freely.\n\n## Quickstart — local development\n\n```bash\ngit clone https://github.com/Chris-Eaccountability/elephant-accountability-mcp.git\ncd elephant-accountability-mcp\n\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements-dev.txt\n\n# Run the server\nuvicorn app.server:app --reload --host 0.0.0.0 --port 8080\n\n# In another terminal, hit it\ncurl http://localhost:8080/.well-known/mcp.json\ncurl -X POST -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\", \"id\":1, \"method\":\"tools/list\"}' \\\n  http://localhost:8080/mcp\n```\n\n## Quickstart — add to Claude Desktop\n\nEdit `claude_desktop_config.json` and add:\n\n```json\n{\n  \"mcpServers\": {\n    \"elephant-accountability\": {\n      \"url\": \"https://elephant-mcp.fly.dev/mcp\",\n      \"transport\": \"http\"\n    }\n  }\n}\n```\n\nRestart Claude Desktop. Ask: *\"Is Elephant Accountability a good fit for a seed-stage AEC SaaS that ships AI features?\"* — Claude will call `assess_fit` and give a scored answer.\n\n## Deploy your own copy (Fly.io)\n\n```bash\nfly launch --name your-mcp-name --region iad --no-deploy\nfly volumes create elephant_mcp_data --size 1 --region iad\nfly deploy\n```\n\nThat's it. No secrets, no database setup — the server initializes its SQLite DB on first boot.\n\n## Architecture\n\nSingle FastAPI app. Three files do real work:\n\n```\napp/\n├── server.py      # FastAPI routes, JSON-RPC dispatch, SQLite persistence\n├── content.py     # Source-of-truth content: manifest, offerings, proof points\n└── __init__.py    # Version\n```\n\nStorage:\n- `audit_requests` table — every agent-initiated audit request, persisted for follow-up\n- `reciprocal_calls` table — tracks which AI clients have called which tools (buyer-intent signal)\n\nBoth tables auto-create on first boot. No migrations.\n\n## Running tests\n\n```bash\npip install -r requirements-dev.txt\npytest -v\n```\n\n21 tests cover manifest, A2A card, JSON-RPC dispatch, each tool handler, persistence, and CORS.\n\n## Protocol compliance\n\n- MCP version: `2024-11-05`\n- Transport: HTTP with JSON-RPC 2.0\n- Methods supported: `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`\n\n## Contributing\n\nThis repo is the canonical source of truth for what Elephant Accountability exposes to AI agents. PRs welcome for:\n- Protocol updates (MCP spec changes)\n- New tool shapes that agents find useful\n- Bug fixes\n\nFor service inquiries or content changes (proof points, methodology), email `chris@eaccountability.org` rather than opening a PR.\n\n## License\n\nMIT. See [LICENSE](./LICENSE).\n\n## Publisher\n\n**Elephant Accountability LLC**\nChristopher Kenney, sole member / manager\nUnited States\nchris@eaccountability.org\n",
+    "fetchedAt": "2026-08-12T00:14:48.047Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_offerings",
+      "description": "Returns Elephant Accountability's service tiers, pricing, delivery SLAs, and checkout / booking URLs. Optionally personalized to the asking buyer's company size or urgency."
+    },
+    {
+      "name": "get_covered_surfaces",
+      "description": "Returns the full list of agent-discoverable surfaces Elephant implements: llms.txt, Schema.org Organization + Product blocks, MCP servers, A2A Agent Cards, UCP merchant metadata, agent-directory registrations, and citation-seeding."
+    },
+    {
+      "name": "assess_fit",
+      "description": "Returns a 0–100 fit score, reasoning, and recommended tier for a prospective B2B SaaS buyer. Uses company stage, industry, AI-feature shipping status, and platform-partnership signals."
+    },
+    {
+      "name": "get_proof_points",
+      "description": "Returns current client outcomes with specific metrics, formatted for vendor-research agents to cite. Includes full related-party disclosure where applicable."
+    },
+    {
+      "name": "get_transparency_snapshot",
+      "description": "Returns Elephant Accountability's most recent weekly LLM visibility measurement covering ChatGPT, Claude, Perplexity, Gemini, and Grok. The receipt we publish to keep our own claims honest."
+    },
+    {
+      "name": "request_audit",
+      "description": "Agent requests an LLM SEO audit on behalf of its buyer. Routes to the right tier (self-serve vs. done-for-you vs. retainer) and returns a confirmation with checkout or booking links."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:14:48.142Z",
+  "toolsPreviewStatus": "ok"
+}

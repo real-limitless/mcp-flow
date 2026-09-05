@@ -1,0 +1,58 @@
+{
+  "id": "io.github.kira-autonoma/context-proxy",
+  "title": "context-proxy",
+  "description": "MCP proxy that lazy-loads tool schemas to cut context token overhead by 6-7x",
+  "summary": "MCP proxy that lazy-loads tool schemas to cut context token overhead by 6-7x",
+  "offersHint": "MCP proxy that lazy-loads tool schemas to cut context token overhead by 6-7x · Packages: npm:mcp-lazy-proxy",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-lazy-proxy",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-lazy-proxy",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kira-autonoma/mcp-context-proxy",
+  "repository": {
+    "url": "https://github.com/kira-autonoma/mcp-context-proxy",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-18T01:46:49.878712Z",
+  "publishedAt": "2026-03-18T01:46:49.878712Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:31.728Z",
+    "sourceRepoAt": "2026-08-11T23:39:06.774Z",
+    "readmeAt": "2026-08-11T23:39:07.306Z",
+    "toolsAt": "2026-08-12T01:17:31.728Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kira-autonoma/mcp-context-proxy",
+    "checkedAt": "2026-08-11T23:39:06.774Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kira-autonoma/mcp-context-proxy/main/README.md",
+    "markdown": "# mcp-lazy-proxy\n\n**Reduce MCP tool schema token overhead by 6-7x** — via lazy-loading and schema caching.\n\n> **Verified, not claimed.** Every session writes a proof log to `~/.mcp-proxy-metrics.jsonl`.\n> Run `mcp-lazy-proxy --report` to see your actual savings, not marketing estimates.\n\n> ⚠️ **Security notice**: The only official package is [`mcp-lazy-proxy`](https://www.npmjs.com/package/mcp-lazy-proxy) by `kiraautonoma` on npm. Third-party forks or repackaging under other scopes are not endorsed and may contain malicious code. MCP servers have broad system access — always install from the canonical source.\n\n## The Problem\n\nIf you use multiple MCP servers, your tool definitions consume thousands of tokens of context window on every API call — before you've even asked a question.\n\nWith 10 servers × 10 tools × ~344 tokens/schema = **34,000 tokens overhead per call**.\nAt $3/MTok (Claude Sonnet): **$0.10 wasted per call**, or **$261/month** at 100 calls/day.\n\n## The Solution\n\nThis proxy sits between your MCP client and upstream MCP servers. Instead of sending full tool schemas upfront, it:\n\n1. **Returns compressed stubs** — just tool names and one-line descriptions (~54 tokens each)\n2. **Lazy-loads full schemas** — only when a tool is actually invoked\n3. **Caches schemas to disk** — subsequent calls hit cache, not the upstream server\n4. **Deduplicates** — identical schemas across servers are stored once\n\n## Benchmark (real data)\n\n| Servers | Tools | Eager Tokens | Lazy Tokens | Reduction | Monthly Savings* |\n|---------|-------|-------------|------------|-----------|-----------------|\n| 1 | 10 | 3,555 | 550 | **6.5x** | $27 |\n| 3 | 30 | 11,140 | 1,620 | **6.9x** | $86 |\n| 5 | 60 | 20,607 | 3,224 | **6.4x** | $156 |\n| 10 | 100 | 34,360 | 5,350 | **6.4x** | $261 |\n| 10 | 200 | 71,583 | 10,790 | **6.6x** | $547 |\n| 15 | 225 | 81,460 | 12,115 | **6.7x** | $624 |\n| 20 | 200 | 71,997 | 10,760 | **6.7x** | $551 |\n\n*\\*At $3/MTok input pricing, 100 API calls/day*\n\n## Quick Start\n\n```bash\nnpm install -g mcp-lazy-proxy\n```\n\n### Wrap a single MCP server\n\n```bash\nmcp-lazy-proxy --server \"fs:stdio:npx:-y:@modelcontextprotocol/server-filesystem:/home\"\n```\n\n### Wrap multiple servers via config\n\n```json\n{\n  \"servers\": [\n    {\n      \"id\": \"filesystem\",\n      \"name\": \"Filesystem MCP\",\n      \"transport\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/home\"]\n    },\n    {\n      \"id\": \"github\",\n      \"name\": \"GitHub MCP\",\n      \"transport\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-github\"]\n    }\n  ],\n  \"mode\": \"lazy\"\n}\n```\n\n```bash\nmcp-lazy-proxy --config proxy.json\n```\n\n### Use with Claude Desktop\n\n```json\n{\n  \"mcpServers\": {\n    \"proxy\": {\n      \"command\": \"mcp-lazy-proxy\",\n      \"args\": [\"--config\", \"/path/to/proxy.json\"]\n    }\n  }\n}\n```\n\n## Modes\n\n| Mode | Description | Token Savings |\n|------|-------------|---------------|\n| `lazy` | Load schemas on first tool use (default) | ~85% |\n| `stub-only` | Never send full schemas (maximum savings) | ~85% |\n| `eager` | Load all schemas upfront (no savings, debug only) | 0% |\n\n## E2E Test Results\n\nTested against the official `@modelcontextprotocol/server-filesystem` (14 tools):\n\n```\n✅ Initialize response: mcp-context-proxy\n✅ Got 14 tools — 14/14 have lazy-load stubs\n✅ Tool call (read_file) succeeded — file content correct\n✅ Tool call (list_directory) succeeded\nToken comparison: ~2800 eager vs ~832 lazy stubs (3.4x on this small server)\n```\n\nWith 10+ servers the ratio increases to **6-7x** as schema complexity grows.\n\n## API (programmatic use)\n\n```typescript\nimport { MCPContextProxy } from 'mcp-lazy-proxy';\n\nconst proxy = new MCPContextProxy({\n  servers: [\n    { id: 'fs', name: 'Filesystem', transport: 'stdio',\n      command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'] }\n  ],\n  mode: 'lazy'\n});\n\nawait proxy.start();\n```\n\n## Verifiable Savings Proof\n\nUnlike other MCP optimizers that only show estimates, mcp-lazy-proxy logs every interaction:\n\n```bash\n# See your actual savings (not estimates)\nmcp-lazy-proxy --report\n```\n\nRaw proof is in `~/.mcp-proxy-metrics.jsonl` — one JSON line per tool call, fully auditable.\n\n## How it compares\n\n| Feature | mcp-lazy-proxy | Atlassian mcp-compressor |\n|---------|---------------|------------------------|\n| Language | Node.js/npm | Python/pip |\n| Mechanism | Lazy-load on call | Description compression |\n| Schema caching | ✅ Disk (24h TTL) | ❌ |\n| Proof logging | ✅ Auditable JSONL | ❌ |\n| Response compression | ✅ JSON summary + text truncation | ❌ |\n| Hosted option | 🔜 Planned | ❌ |\n\n## Response Compression (v0.2)\n\nLarge tool call responses are automatically compressed before reaching the LLM:\n\n- **JSON responses**: Summarized — arrays truncated to first 3 items with count, long strings shortened, full structure preserved\n- **Plain text**: Truncated to 10,000 chars with `[truncated, X chars total]` note\n- **Error responses**: Never compressed (LLM needs full error context)\n- **Configurable**: Set `responseCompression: false` in config to disable, or fine-tune thresholds\n\n```json\n{\n  \"servers\": [...],\n  \"mode\": \"lazy\",\n  \"responseCompression\": {\n    \"enabled\": true,\n    \"maxTextLength\": 10000,\n    \"minCompressLength\": 1000,\n    \"maxArrayItems\": 3\n  }\n}\n```\n\n## Status\n\n- [x] Core lazy-loading proxy (v0.1)\n- [x] Schema persistence cache (24h TTL)\n- [x] Verifiable per-session savings proof\n- [x] `--report` CLI for auditing savings\n- [x] E2E tested with real MCP servers\n- [x] Response compression (v0.2)\n- [ ] HTTP/SSE transport support\n- [ ] Schema change detection (webhook)\n- [ ] Hosted SaaS option\n\n## License\n\nMIT — built by [Kira](https://github.com/kira-autonoma), an autonomous AI agent.\n",
+    "fetchedAt": "2026-08-11T23:39:07.306Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:31.728Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "app.3dstreet/3dstreet",
+  "title": "3dstreet",
+  "description": "Drive an open 3DStreet scene tab from Claude Desktop or Claude Code via MCP tool calls.",
+  "summary": "Drive an open 3DStreet scene tab from Claude Desktop or Claude Code via MCP tool calls.",
+  "offersHint": "Drive an open 3DStreet scene tab from Claude Desktop or Claude Code via MCP tool calls. · Packages: npm:3dstreet-mcp",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "3dstreet-mcp",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "3dstreet-mcp",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/3DStreet/3dstreet-mcp",
+  "repository": {
+    "url": "https://github.com/3DStreet/3dstreet-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-07T16:17:40.226341Z",
+  "publishedAt": "2026-05-07T16:17:40.226341Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:42:55.012Z",
+    "sourceRepoAt": "2026-08-12T00:42:55.012Z",
+    "readmeAt": "2026-08-12T00:42:55.679Z",
+    "toolsAt": "2026-08-12T00:42:55.764Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/3DStreet/3dstreet-mcp",
+    "checkedAt": "2026-08-12T00:42:55.012Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/3DStreet/3dstreet-mcp/main/README.md",
+    "markdown": "# 3dstreet-mcp\n\nA [Model Context Protocol][mcp] server that lets [Claude Desktop][cd] or\n[Claude Code][cc] drive a [3DStreet][3ds] scene running in your browser.\n\nListed on the [MCP Registry][registry] as `app.3dstreet/3dstreet`.\n\nStatus: **alpha** — protocol may change. Tracks\n[3DStreet#1582][issue] (design) and\n[3DStreet#1600][pr] (browser side). Scene creation works in any\n3dstreet.app tab; saving and geospatial features require a free\n3DStreet account.\n\n## How it works\n\n```\nClaude Desktop  ── stdio MCP ──▶  3dstreet-mcp  ── ws://127.0.0.1:51735 ──▶  3DStreet tab\nor Claude Code                    (this package)                              (your browser)\n```\n\nThe relay speaks MCP over stdio and bridges every `tools/list` and\n`tools/call` to a 3DStreet tab over a localhost WebSocket. The tab does\nthe actual work — it's already signed in, has the catalog loaded, owns\nthe cloud-save flow. The relay is a dumb pipe.\n\nNo auth tokens cross the WebSocket. The relay's port binds to `127.0.0.1`\nonly and rejects WebSocket upgrades from origins outside the 3DStreet\nallowlist (`https://3dstreet.app`, `https://dev-3dstreet.web.app`,\n`http://localhost:3333`, `http://127.0.0.1:3333`).\n\n## Setup\n\n### Claude Desktop\n\nEdit `~/Library/Application Support/Claude/claude_desktop_config.json`\n(macOS) or `%APPDATA%/Claude/claude_desktop_config.json` (Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"3dstreet\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"3dstreet-mcp\"]\n    }\n  }\n}\n```\n\nRestart Claude Desktop.\n\n### Claude Code\n\n```bash\nclaude mcp add 3dstreet -- npx -y 3dstreet-mcp\n```\n\n### Pair the browser tab\n\nOn startup the relay prints an auto-pair URL to its log, like:\n\n```\nopen this URL to pair a 3DStreet tab: https://3dstreet.app/#mcp\n```\n\nOpen that URL in a signed-in browser and the editor will detect the\n`#mcp` fragment, open the **AI Assistant** pane, and pair with the\nrelay automatically — no console commands needed. (If you ran the\nrelay on a non-default port the URL will look like\n`https://3dstreet.app/#mcp=PORT`.)\n\nIf you'd rather pair manually: open <https://3dstreet.app>, click\n**AI Assistant** in the right panel, type `/mcp`, and click\n**Reconnect**.\n\nYou can now ask Claude things like:\n\n- \"What's in my current scene?\"\n- \"Add a bike lane on the left side of the street.\"\n- \"Change the environment preset to night.\"\n\nToggle **Read-only** in the status bar to block scene mutations\n(useful when you just want Claude to explain a scene).\n\n## CLI\n\n```\n3dstreet-mcp [options]\n\nOptions:\n  -p, --port <number>    WebSocket port (default 51735)\n  -o, --origin <url>     Origin used in the printed auto-pair URL and\n                         the MCP `instructions` hint (default\n                         https://3dstreet.app — set to\n                         http://localhost:3333 when running 3DStreet\n                         from a local dev server)\n  -h, --help             Show this help\n  -v, --version          Print version and exit\n```\n\nIf you need a different port (e.g. running two Claude clients against\ntwo different tabs), pass `--port` and open the auto-pair URL the\nrelay prints — `https://3dstreet.app/#mcp=PORT` — which both selects\nthe port and triggers auto-pair.\n\nFor local 3DStreet development, point `--origin` at your dev server so\nthe printed URL and the LLM's `instructions` hint both resolve to the\nright tab:\n\n```bash\nnode src/cli.js --origin http://localhost:3333\n# → open this URL to pair a 3DStreet tab: http://localhost:3333/#mcp\n```\n\n## Telling the LLM how to pair\n\nThe relay returns an `instructions` string on every `initialize` (an\noptional MCP field clients may fold into the LLM's system prompt). It\nexplains that scene tools are forwarded to a paired tab, names the\nauto-pair URL, and tells the model to surface that URL to the user\nwhen no tab is connected — so the LLM proactively guides users\nthrough pairing instead of waiting for an opaque tool-call timeout.\n\nWhen no tab has *ever* paired this relay session, `tools/call` also\nfast-fails with the auto-pair URL in the error message, rather than\nqueuing for 30 seconds. Once a tab has paired, brief disconnects\nrevert to the queued retry behaviour so reconnecting peers can drain\nin-flight calls.\n\n## Tools exposed\n\nThe tool list is fetched from the connected browser tab on pair, so it\nalways matches whatever the editor's command registry exposes. As of\n[#1600][pr] that includes:\n\n- **Reads:** `getScene`, `getEntity`, `getSelectedEntity`,\n  `getManagedStreet`, `listMixins`, `getSessionInfo`\n- **Selection / camera:** `selectEntity`, `focusCamera`\n- **Mutations:** `entityCreate`, `entityUpdate`, `entityRemove`,\n  `entityClone`, `entityReparent`, `componentAdd`, `componentRemove`,\n  `segmentAdd`, `segmentUpdate`, `segmentRemove`, `replaceManagedStreet`,\n  …and the rest of the registry\n- **History:** `undo`, `redo`\n\nRun `tools/list` from your MCP client to see the current set.\n\n## Wire protocol (for contributors)\n\nStdio side: line-delimited JSON-RPC 2.0, MCP `2024-11-05`.\n\nWebSocket side: same JSON-RPC envelope, with the relay handling\n`initialize` / `ping` / notifications locally and forwarding only\n`tools/list` and `tools/call` to the peer. The peer assigns its own ids\non incoming frames; replies match by id.\n\nThe single-peer policy: first browser tab to connect holds the slot.\nSecond connection gets WebSocket close code `4001` with reason\n`paired-elsewhere`.\n\n## Development\n\n```bash\ngit clone https://github.com/3DStreet/3dstreet-mcp.git\ncd 3dstreet-mcp\nnpm install\nnpm test\n```\n\nSmoke-test against a real 3DStreet build:\n\n```bash\n# Terminal 1 — the relay, REPL-free, just stdio\nnode src/cli.js\n\n# Terminal 2 — exercise it with the MCP inspector\nnpx @modelcontextprotocol/inspector node src/cli.js\n```\n\n## License\n\nAGPL-3.0-or-later, matching 3DStreet itself.\n\n[mcp]: https://modelcontextprotocol.io\n[cd]: https://claude.ai/download\n[cc]: https://docs.claude.com/en/docs/claude-code\n[3ds]: https://3dstreet.app\n[issue]: https://github.com/3DStreet/3dstreet/issues/1582\n[pr]: https://github.com/3DStreet/3dstreet/pull/1600\n[registry]: https://registry.modelcontextprotocol.io/v0.1/servers?search=app.3dstreet/3dstreet\n",
+    "fetchedAt": "2026-08-12T00:42:55.679Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:42:55.764Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

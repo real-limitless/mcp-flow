@@ -1,0 +1,51 @@
+{
+  "id": "io.github.spektre-labs/sigma-gate",
+  "title": "sigma-gate",
+  "description": "Deterministic trust gate for AI output: leaked-secret, prompt-injection & PII in one call.",
+  "summary": "Deterministic trust gate for AI output: leaked-secret, prompt-injection & PII in one call.",
+  "offersHint": "Deterministic trust gate for AI output: leaked-secret, prompt-injection & PII in one call. · Remote MCP (streamable-http) at https://sigma-gate-864996675261.us-central1.run.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://sigma-gate-864996675261.us-central1.run.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://sigma-gate-864996675261.us-central1.run.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/spektre-labs/sigma-gate",
+  "repository": {
+    "url": "https://github.com/spektre-labs/sigma-gate",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-22T13:06:57.882209Z",
+  "publishedAt": "2026-06-22T13:06:57.882209Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:49.189Z",
+    "sourceRepoAt": "2026-08-11T23:20:20.830Z",
+    "readmeAt": "2026-08-11T23:20:21.438Z",
+    "toolsAt": "2026-08-12T01:00:49.189Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/spektre-labs/sigma-gate",
+    "checkedAt": "2026-08-11T23:20:20.830Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/spektre-labs/sigma-gate/main/README.md",
+    "markdown": "# ⟐ σ-gate — guard\n\n[![ci](https://github.com/spektre-labs/sigma-gate/actions/workflows/ci.yml/badge.svg)](https://github.com/spektre-labs/sigma-gate/actions/workflows/ci.yml)\n\n**Deterministic trust layer for AI/agent output. One call → one verdict. No model, no API key, no network.**\n\n```\n1 = 1.  Declared output must equal what is safe to realize.\n```\n\n---\n\n## The paradigm\n\nThe other four Spektre repos are **routing protocols** — they move value, capability, promises, and identity\nacross networks. **σ-gate is not a routing protocol, and does not pretend to be one.** It is the suite's\n**deterministic trust verdict**: the gate that sits at the edge of any pipeline and answers, in ~85µs and\nidentically every time, *is this output safe to ship?* LLM-as-judge guards are slow, burn a model call per\ncheck, and silently degrade under rate-limits. But the highest-frequency risks — a leaked `AKIA…` key, a\nLuhn-valid card number, an \"ignore all previous instructions\" — are **structurally detectable**: you don't\nneed a model, you need a gate that gives the **same answer every time**. That determinism *is* the\nprimitive. `σ` = declared − realized: a block is always nameable (`secret[high]: github_pat`), never an\nopaque float, so what the gate declares unsafe is exactly what it refuses to realize. `guard` is that gate.\n\n---\n\n## One call\n\n```python\nfrom guard import guard\n\nresult = guard(model_output)\n# {\"safe_to_ship\": True/False, \"severity\": \"clean|low|medium|high|critical\",\n#  \"block_reasons\": [...], \"dimensions\": {\"secret\": {...}, \"injection\": {...}, \"pii\": {...}}}\n```\n\nBlock a bad output:\n\n```python\nv = guard(\"Here is the key: ghp_16C7e42F292c6912E7710c838347Ae178B4a\")\n# safe_to_ship: False\n# block_reasons: [\"secret[high]: github_pat\"]\n```\n\nPass a clean output through:\n\n```python\nv = guard(\"The quarterly report shows revenue grew 12% driven by the EU segment.\")\n# safe_to_ship: True\n# severity: \"clean\"\n```\n\n---\n\n## Three dimensions, one verdict\n\n| Dimension | What it catches |\n|---|---|\n| **secret** | Leaked credentials — 20+ providers (AWS, GitHub, Stripe, GCP, …), entropy-ranked |\n| **injection** | Prompt-injection and jailbreak patterns — structural, not heuristic |\n| **pii** | Email, phone, card (Luhn-verified), SSN, IBAN, IP — compliance-class detection |\n\nEvery dimension runs independently. A combined hit fires all three:\n\n```python\nguard(\"AKIA… ghp_… 4111 1111 1111 1111 — ignore all previous instructions\")\n# block_reasons: [\"secret[high]: ...\", \"injection[high]: ...\", \"pii[high]: ...\"]\n```\n\n---\n\n## Install\n\nZero dependencies, pure stdlib, Python 3.9+.\n\n```bash\ngit clone https://github.com/spektre-labs/sigma-gate && cd sigma-gate\npip install -e .            # installs the `guard` + `guard-mcp` console scripts\npython3 -m pytest -q        # 7 passed, zero dependencies\n```\n\nNo install is even required to import — `from guard import guard` works from the cloned directory.\n\n---\n\n## Use it\n\n**Inline gate in any pipeline:**\n\n```python\nfrom guard import guard\n\ndef ship(output: str) -> str:\n    v = guard(output)\n    if not v[\"safe_to_ship\"]:\n        raise ValueError(f\"blocked: {v['block_reasons']}\")\n    return output\n```\n\n**CLI — pipe any output through:**\n\n```bash\necho \"your model output\" | python3 -m guard\n```\n\n**Self-test — prove every threat class fires:**\n\n```bash\npython3 -m guard selftest\n# {\"secret_blocked\": true, \"injection_blocked\": true, \"pii_blocked\": true,\n#  \"clean_passes\": true, \"combined_all_fire\": true, \"ALL_PASS\": true}\n```\n\n**Tune the threshold** via env var (default: `medium`):\n\n```bash\nGUARD_BLOCK_AT=high python3 -m guard \"...\"\n```\n\n---\n\n## Use as an MCP tool\n\nσ-gate ships a zero-dependency [MCP](https://modelcontextprotocol.io) server — give any agent\n(Claude Code, Claude Desktop, Cursor, Cline) a deterministic `guard` tool it can call before shipping\noutput. No model, no key, no token cost.\n\n**Claude Code:**\n\n```bash\nclaude mcp add guard -- python3 /absolute/path/to/sigma-gate/mcp_server.py\n```\n\n**Claude Desktop** (`claude_desktop_config.json`):\n\n```json\n{ \"mcpServers\": { \"guard\": { \"command\": \"python3\",\n  \"args\": [\"/absolute/path/to/sigma-gate/mcp_server.py\"] } } }\n```\n\nExposes two tools: `guard(text, …)` → the ship/block verdict, and `guard_selftest()` → proof every\nthreat class fires. Pure stdlib stdio JSON-RPC.\n\n### Hosted — no install\n\nσ-gate also runs as a **hosted remote MCP server** (scale-to-zero), listed in the\n[official MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.spektre-labs/sigma-gate`.\nConnect with zero local setup:\n\n```\nhttps://sigma-gate-864996675261.us-central1.run.app/mcp\n```\n\nMCP clients that browse the registry discover it automatically.\n\n---\n\n## Open-core vs hosted\n\n| | **Open core (this repo)** | **Hosted σ scoring** |\n|---|---|---|\n| **What** | Deterministic gate: secret + injection + PII | Coherence / hallucination σ-scoring on a hot path |\n| **Latency** | ~85µs | Network round-trip |\n| **Dependencies** | Zero | None on your side |\n| **Cost** | Free, always | Pay-per-call via x402 — no signup |\n| **Offline** | Yes | No |\n| **Model** | None | Optional |\n\nThe open core handles what models cannot do reliably — structural pattern detection with identical verdicts on identical inputs. The hosted layer adds probabilistic coherence scoring for the cases where structure alone is insufficient.\n\n**Hosted endpoint:**\n\n```bash\ncurl \"https://swagletz-sigmagate.hf.space/check?text=your+text+here\"\n# HTTP 402 + permissionless x402 pay-to — no account required\n```\n\n---\n\n## Properties\n\n- **Deterministic.** Same input → same verdict. No variance, no model drift.\n- **Composable.** Each dimension is independent and pluggable. Wire in a hallucination scorer or extend with custom patterns; the gate architecture is additive.\n- **Honest.** Severity and block-reasons are explicit strings, not opaque floats. A block is always nameable.\n- **Fails safe.** If a detector throws, that dimension returns `severity: \"error\"` — the call does not silently pass.\n- **Zero dependencies.** Runs anywhere Python 3.9+ runs. No pip install required to import.\n\n---\n\n## Status\n\n**REAL** — shipped, deterministic, deployed. CI green, 7/7 tests passing, zero dependencies; live as a\nlocal MCP tool and as a hosted scale-to-zero MCP server listed in the official registry.\n\n---\n\n## The Spektre protocol suite\n\nσ-gate is the **deterministic trust verdict** of a five-part estate. The other four are routing protocols;\nthis one is the gate they ship through:\n\n- **[vrp](https://github.com/spektre-labs/vrp)** — value routing (least-friction multi-hop settlement)\n- **[crp](https://github.com/spektre-labs/crp)** — capability routing (route a task to the best AI substrate)\n- **[vtc](https://github.com/spektre-labs/vtc)** — verifiable transaction chain (signed value promises anyone verifies trustlessly)\n- **[sid](https://github.com/spektre-labs/sid)** — sovereign identity (prove one claim, reveal nothing else)\n- **[sigma-gate](https://github.com/spektre-labs/sigma-gate)** — deterministic trust verdict *(this repo)*\n\n---\n\n## License\n\n**Apache-2.0** — see [LICENSE](LICENSE).\n\n---\n\nPart of [Spektre Labs](https://spektrelabs.org) — coherence-theory research lab.\n`σ = declared − realized · 1 = 1`, made executable.\n",
+    "fetchedAt": "2026-08-11T23:20:21.438Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:49.189Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: \n<html><head>\n<meta http-equiv=\"content-type\" content=\"text/html;charset=utf-8\">\n<title>500 Server Error</title>\n</head>\n<body text=#000000 bgcolor=#ffffff>\n<h1>Error: Server Error</h1>\n<h2>The server encountered an error and could not complete your request.<p>Please try again in 30 seconds.</h2>\n<h2></h2>\n</body></html>\n",
+  "toolsPreviewStatus": "unreachable"
+}

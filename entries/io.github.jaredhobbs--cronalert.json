@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jaredhobbs/cronalert",
+  "title": "cronalert",
+  "description": "Manage CronAlert uptime monitors, check results, and incidents from any MCP client.",
+  "summary": "Manage CronAlert uptime monitors, check results, and incidents from any MCP client.",
+  "offersHint": "Manage CronAlert uptime monitors, check results, and incidents from any MCP client. · Packages: npm:cronalert-mcp",
+  "version": "1.0.6",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "cronalert-mcp",
+    "version": "1.0.6",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "cronalert-mcp",
+      "version": "1.0.6",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jaredhobbs/cronalert-mcp",
+  "repository": {
+    "url": "https://github.com/jaredhobbs/cronalert-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-10T21:00:58.116753Z",
+  "publishedAt": "2026-03-10T21:00:58.116753Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:22.947Z",
+    "sourceRepoAt": "2026-08-11T23:41:36.151Z",
+    "readmeAt": "2026-08-11T23:41:36.580Z",
+    "toolsAt": "2026-08-12T01:19:22.947Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jaredhobbs/cronalert-mcp",
+    "checkedAt": "2026-08-11T23:41:36.151Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jaredhobbs/cronalert-mcp/main/README.md",
+    "markdown": "# cronalert-mcp\n\nMCP server for [CronAlert](https://cronalert.com) uptime monitoring. Manage your monitors, check results, and incidents from Claude, Cursor, Windsurf, or any MCP-compatible AI client.\n\n## Quick Start\n\n### 1. Get your API key\n\nSign up at [cronalert.com](https://cronalert.com) and create an API key in [Settings > API Keys](https://cronalert.com/app/settings/api-keys).\n\nWhen creating the key, choose a **scope**:\n\n- **Read-only** — the agent can list and read monitors, check results, and incidents but **cannot** create, update, or delete anything. Recommended for most agent setups.\n- **Read & write** — full access, including destructive tools. Optionally enable **\"require confirmation\"** so deletes need a server-issued confirmation token (see [Security & permissions](#security--permissions)).\n\n### 2. Add to your MCP client\n\n**Claude Desktop** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cronalert\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"cronalert-mcp\"],\n      \"env\": {\n        \"CRONALERT_API_KEY\": \"ca_your_api_key_here\"\n      }\n    }\n  }\n}\n```\n\n**Claude Code** — run:\n\n```bash\nclaude mcp add cronalert -e CRONALERT_API_KEY=ca_your_key -- npx -y cronalert-mcp\n```\n\n**Cursor** — add to `.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"cronalert\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"cronalert-mcp\"],\n      \"env\": {\n        \"CRONALERT_API_KEY\": \"ca_your_api_key_here\"\n      }\n    }\n  }\n}\n```\n\n**Remote server (no install needed)** — connect any MCP client to:\n\n```\nhttps://cronalert.com/mcp\n```\n\nAuthenticate with `Authorization: Bearer ca_your_key` header. Supports Streamable HTTP transport.\n\n### 3. Start using it\n\nAsk your AI assistant to manage your monitors (see examples below).\n\n## Available Tools\n\n| Tool | Description | Type |\n|------|-------------|------|\n| `list_monitors` | List all monitors with status and response times | Read |\n| `create_monitor` | Create a new HTTP monitor | Write |\n| `get_monitor` | Get details for a specific monitor | Read |\n| `update_monitor` | Update settings, pause/resume | Write |\n| `delete_monitor` | Permanently delete a monitor | Write |\n| `get_check_results` | Check history with uptime % and response times | Read |\n| `get_monitor_incidents` | Incidents for a specific monitor | Read |\n| `list_incidents` | All active incidents across monitors | Read |\n| `list_status_pages` | Your public status pages | Read |\n\n## Security & permissions\n\nApprovals in MCP clients are client-side: write tools carry `destructiveHint: true`, so Claude Code / Desktop / Cursor prompt before running them. CronAlert adds two **server-side** boundaries so the client prompt isn't the only gate:\n\n- **Read-only API keys.** A read-only key is rejected on every write endpoint (create/update/delete/import) with a 403 — enforced by the server, regardless of the client. Hand agents a read-only key and destructive tools simply cannot succeed. This is the strongest boundary and the recommended default.\n- **Confirmation tokens for deletes.** If a read-write key has **\"require confirmation\"** enabled, `delete_monitor` first returns a preview plus a short-lived, resource-bound `confirmToken` instead of deleting. The agent must call `delete_monitor` again with that token in the `confirm` argument. This prevents a single stray or prompt-injected call from destroying data and gives the server an auditable, explicit second step.\n\nThe API key is scoped to a single team, so the blast radius of any key is that team's resources.\n\n## Examples\n\n### Example 1: Create a monitor and check its status\n\n**User prompt:** \"Create a monitor for https://api.example.com/health that checks every minute, then show me its details.\"\n\n**What happens:**\n1. The AI calls `create_monitor` with `name: \"API Health\"`, `url: \"https://api.example.com/health\"`, `checkInterval: 60`\n2. CronAlert creates the monitor and returns its ID\n3. The AI calls `get_monitor` with the new ID to show the details\n\n**Expected output:**\n```json\n{\n  \"id\": \"abc123\",\n  \"name\": \"API Health\",\n  \"url\": \"https://api.example.com/health\",\n  \"method\": \"GET\",\n  \"checkInterval\": 60,\n  \"lastStatus\": \"unknown\",\n  \"createdAt\": \"2026-03-08T12:00:00Z\"\n}\n```\n\n### Example 2: Check uptime and respond to incidents\n\n**User prompt:** \"Are any of my monitors down? If so, show me the error details.\"\n\n**What happens:**\n1. The AI calls `list_incidents` to check for active incidents\n2. If incidents exist, it calls `get_monitor` for each affected monitor\n3. It calls `get_check_results` to get the recent error details\n\n**Expected output (no incidents):**\n```json\n{\n  \"data\": [],\n  \"message\": \"No active incidents\"\n}\n```\n\n**Expected output (with incident):**\n```json\n{\n  \"data\": [\n    {\n      \"id\": \"inc_xyz\",\n      \"monitorId\": \"abc123\",\n      \"cause\": \"Expected status 200, got 503\",\n      \"startedAt\": \"2026-03-08T11:45:00Z\"\n    }\n  ]\n}\n```\n\n### Example 3: List monitors and pause one for maintenance\n\n**User prompt:** \"List all my monitors, then pause the staging one.\"\n\n**What happens:**\n1. The AI calls `list_monitors` to get all monitors\n2. It identifies the staging monitor by name\n3. It calls `update_monitor` with `id: \"staging_id\"` and `paused: true`\n\n**Expected output:**\n```json\n{\n  \"id\": \"staging_id\",\n  \"name\": \"Staging Server\",\n  \"isPaused\": true,\n  \"lastStatus\": \"up\"\n}\n```\n\n## Requirements\n\n- Node.js 18+\n- A [CronAlert](https://cronalert.com) account (free tier works)\n- An API key from [Settings > API Keys](https://cronalert.com/app/settings/api-keys)\n\n## Privacy Policy\n\nThis MCP server connects to the CronAlert API (`cronalert.com/api/v1/`) using your API key. It transmits:\n\n- **Monitor configuration** (names, URLs, check intervals) when creating or updating monitors\n- **API key** for authentication on every request\n\nData is processed by CronAlert's servers on Cloudflare's infrastructure. No data is stored locally by the MCP server itself. See our full [Privacy Policy](https://cronalert.com/privacy) for details on data collection, retention, and your rights.\n\n## Support\n\n- Website: [cronalert.com](https://cronalert.com)\n- Email: support@cronalert.com\n- Issues: [GitHub Issues](https://github.com/jaredhobbs/cronalert-mcp/issues)\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:41:36.580Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:22.947Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

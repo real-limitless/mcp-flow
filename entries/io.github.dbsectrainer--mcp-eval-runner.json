@@ -1,0 +1,82 @@
+{
+  "id": "io.github.dbsectrainer/mcp-eval-runner",
+  "title": "mcp-eval-runner",
+  "description": "A standardized testing harness for MCP servers and agent workflows",
+  "summary": "A standardized testing harness for MCP servers and agent workflows",
+  "offersHint": "A standardized testing harness for MCP servers and agent workflows · Packages: npm:mcp-eval-runner · Env vars: YOUR_API_KEY",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-eval-runner",
+    "version": "1.0.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "YOUR_API_KEY",
+        "description": "Your API key for the service",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-eval-runner",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "YOUR_API_KEY",
+          "description": "Your API key for the service",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "YOUR_API_KEY",
+      "description": "Your API key for the service",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dbsectrainer/mcp-eval-runner",
+  "repository": {
+    "url": "https://github.com/dbsectrainer/mcp-eval-runner",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-23T20:09:43.05203Z",
+  "publishedAt": "2026-03-23T20:09:43.05203Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:51.640Z",
+    "sourceRepoAt": "2026-08-11T23:50:00.457Z",
+    "readmeAt": "2026-08-11T23:50:01.142Z",
+    "toolsAt": "2026-08-12T01:24:51.640Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dbsectrainer/mcp-eval-runner",
+    "checkedAt": "2026-08-11T23:50:00.457Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dbsectrainer/mcp-eval-runner/main/README.md",
+    "markdown": "# MCP Eval Runner\n\nnpm `mcp-eval-runner` package\n\nA standardized testing harness for MCP servers and agent workflows. Define test cases as YAML fixtures (steps → expected tool calls → expected outputs), run regression suites directly from your MCP client, and get pass/fail results with diffs — without leaving Claude Code or Cursor.\n\n[Tool reference](#tools) | [Configuration](#configuration) | [Fixture format](#fixture-format) | [Contributing](#contributing) | [Troubleshooting](#troubleshooting) | [Design principles](#design-principles)\n\n## Key features\n\n- **YAML fixtures**: Test cases are plain files in version control — diffable, reviewable, and shareable.\n- **Two execution modes**: Live mode spawns a real MCP server and calls tools via stdio; simulation mode runs assertions against `expected_output` without a server.\n- **Composable assertions**: Combine `output_contains`, `output_not_contains`, `output_equals`, `output_matches`, `schema_match`, `tool_called`, and `latency_under` per step.\n- **Step output piping**: Reference a previous step's output in downstream inputs via `{{steps.<step_id>.output}}`.\n- **Regression reports**: Compare the current run to any past run and surface what changed.\n- **Watch mode**: Automatically reruns the affected fixture when files change.\n- **CI-ready**: Includes a GitHub Action for running evals on every config change.\n\n## Requirements\n\n- Node.js v22.5.0 or newer.\n- npm.\n\n## Getting started\n\nAdd the following config to your MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"eval-runner\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-eval-runner@latest\"]\n    }\n  }\n}\n```\n\nBy default, eval fixtures are loaded from `./evals/` in the current working directory. To use a different path:\n\n```json\n{\n  \"mcpServers\": {\n    \"eval-runner\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-eval-runner@latest\", \"--fixtures=~/my-project/evals\"]\n    }\n  }\n}\n```\n\n### MCP Client configuration\n\nAmp · Claude Code · Cline · Cursor · VS Code · Windsurf · Zed\n\n## Your first prompt\n\nCreate a file at `evals/smoke.yaml`. Use **live mode** (recommended) by including a `server` block:\n\n```yaml\nname: smoke\ndescription: \"Verify eval runner itself is working\"\nserver:\n  command: node\n  args: [\"dist/index.js\"]\nsteps:\n  - id: list_check\n    description: \"List available test cases\"\n    tool: list_cases\n    input: {}\n    expect:\n      output_contains: \"smoke\"\n```\n\nThen enter the following in your MCP client:\n\n```\nRun the eval suite.\n```\n\nYour client should return a pass/fail result for the smoke test.\n\n## Fixture format\n\nFixtures are YAML (or JSON) files placed in the fixtures directory. Each file defines one test case.\n\n### Top-level fields\n\n| Field         | Required | Description                                                                               |\n| ------------- | -------- | ----------------------------------------------------------------------------------------- |\n| `name`        | Yes      | Unique name for the test case                                                             |\n| `description` | No       | Human-readable description                                                                |\n| `server`      | No       | Server config — if present, runs in **live mode**; if absent, runs in **simulation mode** |\n| `steps`       | Yes      | Array of steps to execute                                                                 |\n\n### `server` block (live mode)\n\n```yaml\nserver:\n  command: node # executable to spawn\n  args: [\"dist/index.js\"] # arguments\n  env: # optional environment variables\n    MY_VAR: \"value\"\n```\n\nWhen `server` is present the eval runner spawns the server as a child process, connects via MCP stdio transport, and calls each step's tool against the live server.\n\n### `steps` array\n\nEach step has the following fields:\n\n| Field             | Required | Description                                                   |\n| ----------------- | -------- | ------------------------------------------------------------- |\n| `id`              | Yes      | Unique identifier within the fixture (used for output piping) |\n| `tool`            | Yes      | MCP tool name to call                                         |\n| `description`     | No       | Human-readable step description                               |\n| `input`           | No       | Key-value map of arguments passed to the tool (default: `{}`) |\n| `expected_output` | No       | Literal string used as output in simulation mode              |\n| `expect`          | No       | Assertions evaluated against the step output                  |\n\n### Execution modes\n\n**Live mode** — fixture has a `server` block:\n\n- The server is spawned and each step calls the named tool via MCP stdio.\n- Assertions run against the real tool response.\n- Errors from the server cause the step (and by default the case) to fail immediately.\n\n**Simulation mode** — no `server` block:\n\n- No server is started.\n- Each step's output is taken from `expected_output` (or empty string if absent).\n- Assertions run against that static output.\n- Useful for authoring and CI dry-runs, but `output_contains` assertions will always fail if `expected_output` is not set.\n\n### Assertion types\n\nAll assertions go inside a step's `expect` block:\n\n```yaml\nexpect:\n  output_contains: \"substring\" # output includes this text\n  output_not_contains: \"error\" # output must NOT include this text\n  output_equals: \"exact string\" # output exactly matches\n  output_matches: \"regex pattern\" # output matches a regular expression\n  tool_called: \"tool_name\" # verifies which tool was called\n  latency_under: 500 # latency in ms must be below this threshold\n  schema_match: # output (parsed as JSON) matches JSON Schema\n    type: object\n    required: [id]\n    properties:\n      id:\n        type: number\n```\n\nMultiple assertions in one `expect` block are all evaluated; the step fails if any assertion fails.\n\n### Step output piping\n\nReference the output of a previous step in a downstream step's `input` using `{{steps.<step_id>.output}}`:\n\n```yaml\nsteps:\n  - id: search_step\n    tool: search\n    input:\n      query: \"mcp eval runner\"\n    expected_output: \"result: mcp-eval-runner v1.0\"\n    expect:\n      output_contains: \"mcp-eval-runner\"\n\n  - id: summarize_step\n    tool: summarize\n    input:\n      text: \"{{steps.search_step.output}}\"\n    expected_output: \"Summary: mcp-eval-runner v1.0\"\n    expect:\n      output_contains: \"Summary\"\n```\n\nPiping works in both live mode and simulation mode.\n\n### Note on `create_test_case`\n\nFixtures created with the `create_test_case` tool do not include a `server` block. They always run in simulation mode. To use live mode, add a `server` block manually to the generated YAML file.\n\n## Tools\n\n### Running\n\n- `run_suite` — execute all fixtures in the fixtures directory; returns a pass/fail summary\n- `run_case` — run a single named fixture by name\n- `list_cases` — enumerate available fixtures with step counts and descriptions\n\n### Authoring\n\n- `create_test_case` — create a new YAML fixture file (simulation mode; no `server` block)\n- `scaffold_fixture` — generate a boilerplate fixture with placeholder steps and pre-filled assertion comments\n\n### Reporting\n\n- `regression_report` — compare the current fixture state to the last run; surfaces regressions and fixes\n- `compare_results` — diff two specific runs by run ID\n- `generate_html_report` — generate a single-file HTML report for a completed run\n\n### Operations\n\n- `evaluate_deployment_gate` — CI gate; fails if recent pass rate drops below a configurable threshold\n- `discover_fixtures` — discover fixture files across one or more directories (respects `FIXTURE_LIBRARY_DIRS`)\n\n## Configuration\n\n### `--fixtures` / `--fixtures-dir`\n\nDirectory to load YAML/JSON eval fixture files from.\n\nType: `string`\nDefault: `./evals`\n\n### `--db` / `--db-path`\n\nPath to the SQLite database file used to store run history.\n\nType: `string`\nDefault: `~/.mcp/evals.db`\n\n### `--timeout`\n\nMaximum time in milliseconds to wait for a single step before marking it as failed.\n\nType: `number`\nDefault: `30000`\n\n### `--watch`\n\nWatch the fixtures directory and rerun the affected fixture automatically when files change.\n\nType: `boolean`\nDefault: `false`\n\n### `--format`\n\nOutput format for eval results.\n\nType: `string`\nChoices: `console`, `json`, `html`\nDefault: `console`\n\n### `--concurrency`\n\nNumber of test cases to run in parallel.\n\nType: `number`\nDefault: `1`\n\n### `--http-port`\n\nStart an HTTP server on this port instead of stdio transport.\n\nType: `number`\nDefault: disabled (uses stdio)\n\nPass flags via the `args` property in your JSON config:\n\n```json\n{\n  \"mcpServers\": {\n    \"eval-runner\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-eval-runner@latest\", \"--watch\", \"--timeout=60000\"]\n    }\n  }\n}\n```\n\n## Design principles\n\n- **No mocking**: Live mode evals run against real servers. Correctness is non-negotiable.\n- **Fixtures are text**: YAML/JSON in version control; no proprietary formats or databases.\n- **Dogfood-first**: The eval runner's own smoke fixture tests the eval runner itself.\n\n## Verification\n\nBefore publishing a new version, verify the server with MCP Inspector to confirm all tools are exposed correctly and the protocol handshake succeeds.\n\n**Interactive UI** (opens browser):\n\n```bash\nnpm run build && npm run inspect\n```\n\n**CLI mode** (scripted / CI-friendly):\n\n```bash\n# List all tools\nnpx @modelcontextprotocol/inspector --cli node dist/index.js --method tools/list\n\n# List resources and prompts\nnpx @modelcontextprotocol/inspector --cli node dist/index.js --method resources/list\nnpx @modelcontextprotocol/inspector --cli node dist/index.js --method prompts/list\n\n# Call a tool (example — replace with a relevant read-only tool for this plugin)\nnpx @modelcontextprotocol/inspector --cli node dist/index.js \\\n  --method tools/call --tool-name list_cases\n\n# Call a tool with arguments\nnpx @modelcontextprotocol/inspector --cli node dist/index.js \\\n  --method tools/call --tool-name run_case --tool-arg name=smoke\n```\n\nRun before publishing to catch regressions in tool registration and runtime startup.\n\n## Contributing\n\nNew assertion types go in `src/assertions.ts` — implement the `Assertion` interface and add a test. Integration tests live under `tests/` as unit tests and under `evals/` as eval fixtures.\n\n```bash\nnpm install && npm test\n```\n\n## MCP Registry & Marketplace\n\nThis plugin is available on:\n\n- [MCP Registry](https://registry.modelcontextprotocol.io)\n- [MCP Market](https://mcpmarket.com)\n\nSearch for `mcp-eval-runner`.\n",
+    "fetchedAt": "2026-08-11T23:50:01.142Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:51.640Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,81 @@
+{
+  "id": "io.github.cobusvdwest/juicy-designs-quote",
+  "title": "Juicy Designs Quote",
+  "description": "Free digital marketing quote and strategy requests from Juicy Designs SA. No price returned.",
+  "summary": "Free digital marketing quote and strategy requests from Juicy Designs SA. No price returned.",
+  "offersHint": "Free digital marketing quote and strategy requests from Juicy Designs SA. No price returned. · Remote MCP (streamable-http) at https://juicy-designs-quote.black-voice-76e6.workers.dev/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://juicy-designs-quote.black-voice-76e6.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://juicy-designs-quote.black-voice-76e6.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.juicydesigns.co.za/developers/mcp/",
+  "sourceUrl": "https://github.com/cobusvdwest/juicy-designs-quote",
+  "repository": {
+    "url": "https://github.com/cobusvdwest/juicy-designs-quote",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-23T10:44:17.012249Z",
+  "publishedAt": "2026-06-23T10:44:17.012249Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:49.389Z",
+    "sourceRepoAt": "2026-08-11T23:52:23.279Z",
+    "readmeAt": "2026-08-11T23:52:23.673Z",
+    "toolsAt": "2026-08-11T23:52:24.167Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/cobusvdwest/juicy-designs-quote",
+    "checkedAt": "2026-08-11T23:52:23.279Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/cobusvdwest/juicy-designs-quote/master/README.md",
+    "markdown": "# Juicy Designs — Quote MCP Server + REST API (Cloudflare Worker)\n\nRequest and read-only capabilities for AI agents, exposed two ways:\n\n| Transport | Path | For |\n|---|---|---|\n| MCP (Streamable HTTP) | `POST /mcp` | ChatGPT / Claude / agent connectors |\n| REST request | `POST /quote`, `POST /strategy-session` | Agentic browsers / OpenAPI clients |\n| REST read | `GET /service-catalog` `/service-areas` `/case-studies` `/client-reviews` `/faqs` | Read reference data |\n| Discovery | `GET /`, `GET /openapi.json` | Health + machine-readable spec |\n\n### Tools\n\n| Tool | Type | Purpose |\n|---|---|---|\n| `get_quote` | request | Submit a free, no-obligation quote request. Consent-gated. |\n| `book_strategy_session` | request | Request a free strategy session. Consent-gated. |\n| `get_service_catalog` | read | Services + reference \"from\" floors (reference only). |\n| `get_service_areas` | read | Where Juicy Designs works. |\n| `get_case_studies` | read | Track record and portfolio pointer. |\n| `get_client_reviews` | read | Aggregate Google rating and review source. |\n| `get_faqs` | read | Common questions and answers. |\n\nBoth request tools share the same server-side validation and the same `forwardLead()`\nsink, which posts the lead to the **existing Juicy Designs Apps Script form handler**\nas `form_type=quote` — leads land exactly where the website form's leads land\n(email + the \"Leads\" Google Sheet). Read tools return curated static data only; no PII,\nno external calls.\n\n### Guarantees\n- **Never returns or implies a price.** Published \"from\" figures are entry-point\n  references only, never a quote or estimate. Confirms receipt + the four-working-hour SLA only.\n- **Rejects `consent_to_contact !== true`** on every request tool (POPIA).\n- **All input validated server-side** — the model's extraction is never trusted.\n- Read tools are side-effect-free and contain no per-user calculation.\n- Enum inputs map to the labels the Apps Script email/sheet expects.\n\n## Deploy\n\n```bash\ncd mcp-quote-worker\nnpm install\n\n# 1) Lead sink (the existing Apps Script /exec URL)\nnpx wrangler secret put LEAD_ENDPOINT\n#   paste: https://script.google.com/macros/s/AKfycb.../exec\n\n# 2) (optional) per-IP rate limit — Apps Script already throttles 5/10min\n# npx wrangler kv namespace create RATELIMIT   # then paste id into wrangler.toml + uncomment\n\nnpx wrangler deploy\n```\n\nDeploy prints the Worker URL, e.g. `https://juicy-designs-quote.<subdomain>.workers.dev`.\nPut that origin into `openapi.yaml` (`servers.url`) and wherever you advertise the endpoint.\n\n## Local test\n\n```bash\nnpx wrangler dev          # serves on http://localhost:8787\n\n# REST\ncurl -s localhost:8787/quote -H 'content-type: application/json' -d '{\n  \"name\":\"Sipho Dlamini\",\"email\":\"sipho@example.co.za\",\"service\":\"seo\",\n  \"project_summary\":\"E-commerce store, want to rank for running shoes in SA.\",\n  \"budget_range\":\"25k_75k\",\"timeline\":\"1_3_months\",\"consent_to_contact\":true\n}'\n\n# MCP: list tools\ncurl -s localhost:8787/mcp -H 'content-type: application/json' -d \\\n  '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n\n# MCP: call get_quote\ncurl -s localhost:8787/mcp -H 'content-type: application/json' -d \\\n  '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"get_quote\",\"arguments\":{\"name\":\"Sipho\",\"email\":\"s@x.co.za\",\"service\":\"seo\",\"project_summary\":\"Need SEO for a new store in Pretoria.\",\"consent_to_contact\":true}}}'\n```\nA request without `consent_to_contact:true` must come back as an error — that is the POPIA gate working.\n\n## Connect as a connector\n\n**Claude (Settings → Connectors → Add custom connector):** URL = `https://<worker>/mcp`.\n**ChatGPT (Settings → Connectors / Developer mode):** add an MCP server with the same `/mcp` URL.\nThe connector lists one tool, `get_quote`. The agent should read the fields back and confirm\nconsent with the user before calling. No authentication is required (the tool only creates a lead).\n\n## Connector discovery (so agents can find it)\n\nAfter deploy, advertise the endpoints from the site:\n1. A short docs page (e.g. `/connect/` or a section on `/quote/`) listing the MCP + OpenAPI URLs.\n2. Append to **`llms.txt`** (root of juicydesigns.co.za):\n\n```\n## For AI agents\n- MCP server (request a quote): https://<worker>/mcp\n- OpenAPI 3.1 spec: https://<worker>/openapi.json\n```\n\n(Left out of llms.txt until you have the real Worker URL — paste it in post-deploy so there is no dead link.)\n\n## Map of inputs → Apps Script fields\n\n| MCP/REST input | sent as | shown in email/sheet |\n|---|---|---|\n| `service` (enum) | `services` (label) | Services |\n| `budget_range` (enum) | `budget` (label) | Budget |\n| `project_summary` (+ timeline + source) | `message` | Message |\n| `name` / `email` / `phone` / `company` | same | as-is |\n| `form_type` | `quote` | routes to the quote email/template |\n\nSwap the body of `forwardLead()` in `src/index.ts` to send leads elsewhere (CRM, webhook, Resend).\n",
+    "fetchedAt": "2026-08-11T23:52:23.673Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_quote",
+      "description": "Request a free, no-obligation quote from Juicy Designs (a Pretoria digital marketing and design agency). Before calling, read the collected fields back to the user and get explicit confirmation, including consent to be contacted. Does not return a price: Juicy Designs replies with a custom proposal within four working hours. Set consent_to_contact only when the user has actually agreed."
+    },
+    {
+      "name": "book_strategy_session",
+      "description": "Request a free, no-obligation strategy session with Juicy Designs. Confirm the user's details and consent before calling. Does not return a price or book a confirmed time; the team replies to arrange a session within four working hours."
+    },
+    {
+      "name": "get_service_catalog",
+      "description": "List Juicy Designs services with a one-line summary and a reference 'from' floor where one exists. Figures are entry-point 'from' references only, not quotes or estimates. Pricing is scope-dependent and confirmed by a person in a written proposal within four working hours. Never present any figure as a final price."
+    },
+    {
+      "name": "get_service_areas",
+      "description": "Where Juicy Designs works: head office, in-person areas, and remote coverage across South Africa."
+    },
+    {
+      "name": "get_case_studies",
+      "description": "Juicy Designs track record and portfolio pointer. Agency-wide figures, not a guarantee of individual results."
+    },
+    {
+      "name": "get_client_reviews",
+      "description": "Juicy Designs aggregate Google rating and where to read individual reviews. No reviews are generated here."
+    },
+    {
+      "name": "get_faqs",
+      "description": "Common questions and answers about quotes, pricing policy, contracts and how Juicy Designs works."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:52:24.167Z",
+  "toolsPreviewStatus": "ok"
+}

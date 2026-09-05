@@ -1,0 +1,58 @@
+{
+  "id": "io.github.dashi96/chromium-bridge",
+  "title": "chromium-bridge",
+  "description": "MCP bridge between Chromium browsers (Arc, Vivaldi, Brave) and Claude Code: browser automation",
+  "summary": "MCP bridge between Chromium browsers (Arc, Vivaldi, Brave) and Claude Code: browser automation",
+  "offersHint": "MCP bridge between Chromium browsers (Arc, Vivaldi, Brave) and Claude Code: browser automation · Packages: npm:chromium-bridge",
+  "version": "0.5.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "chromium-bridge",
+    "version": "0.5.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "chromium-bridge",
+      "version": "0.5.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dashi96/chromium-bridge",
+  "repository": {
+    "url": "https://github.com/dashi96/chromium-bridge",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-19T11:30:42.589488Z",
+  "publishedAt": "2026-07-19T11:30:42.589488Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:25:09.133Z",
+    "sourceRepoAt": "2026-08-11T23:50:22.434Z",
+    "readmeAt": "2026-08-11T23:50:22.912Z",
+    "toolsAt": "2026-08-12T01:25:09.133Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dashi96/chromium-bridge",
+    "checkedAt": "2026-08-11T23:50:22.434Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dashi96/chromium-bridge/main/README.md",
+    "markdown": "# <img src=\"extension/icons/icon128.png\" width=\"32\" alt=\"\" align=\"top\"> Chromium Bridge\n\n[Русская версия](README.ru.md)\n\nA bridge between your Chromium-based browser and Claude Code. The official\n\"Claude in Chrome\" extension connects in some Chromium browsers (Arc, Vivaldi,\nand others) but automation hangs: its tools are built on the tab groups API,\nwhich is missing or broken there. This bridge uses only plain\n`chrome.tabs` / `chrome.scripting` / `chrome.debugger`, so it works in any\nChromium browser that can load an extension.\n\n## Demo\n\nClaude driving the browser through the bridge — opening Wikipedia, typing a\nsearch, and landing on the article:\n\n![Chromium Bridge demo: Claude controlling a Chromium browser](docs/demo.gif)\n\n## Architecture\n\n```\nClaude Code ⇄ (stdio MCP) ⇄ server/index.mjs ⇄ (WebSocket, 127.0.0.1:8929) ⇄ extension in the browser\n                                   ⇅ (WebSocket /chat)\n                            chat panel (popup on the extension icon)\n```\n\n- `extension/` — an MV3 extension: the service worker keeps a WebSocket to the\n  local server and executes its commands (tabs, navigation, page text,\n  screenshots, clicks, form filling). Clicking the icon opens the chat panel\n  (`chat.html`) — a popup anchored to the extension icon.\n- `server/` — an MCP server (stdio) that exposes the `browser_*` tools to\n  Claude Code and proxies them to the extension. It accepts WS connections\n  only from a `chrome-extension://…` Origin — regular web pages cannot connect.\n  It also serves the `/chat` channel: panel messages run through the\n  Claude Agent SDK (authenticated via the Claude Code login) with the same\n  `browser_*` tools; built-in tools (Bash, Read, etc.) are disabled.\n\n## Chat panel\n\nAn equivalent of the \"Claude in Chrome\" side panel: a popup that opens when you\nclick the extension icon (no `chrome.sidePanel` — it is not supported\neverywhere). The chat can see the browser: list tabs, read pages, take\nscreenshots, and click.\n\n![Chat panel demo: Claude opens a Wikipedia article and answers from it](docs/chat-demo.gif)\n\nThe panel UI is in English by default and switches to Russian automatically\nwhen the browser UI language is Russian. A language selector (Auto / English /\nРусский) in the bottom bar overrides auto-detection; the on-page badge follows\nthe same choice.\n\n- The popup closes when it loses focus (clicking the page) — that is browser\n  behavior. The conversation context is not lost: the panel remembers the\n  session_id and the server resumes the conversation via the Agent SDK\n  `resume`. A turn that is in flight when the popup closes is interrupted.\n- It only works while the server is running (usually an active Claude Code\n  session with the `chromium-bridge` MCP); otherwise the panel shows\n  \"Server unavailable\".\n- Model picker in the panel header: \"Default\" takes the model from\n  `~/.claude/settings.json` (whatever was set via `/model`; SDK sessions do not\n  read Claude Code settings themselves, the server passes the model\n  explicitly), the other entries are hard overrides. Switching applies on the\n  fly (`setModel`) and is remembered. Startup override:\n  `CHROMIUM_BRIDGE_CHAT_MODEL=sonnet` in the server environment.\n  Port: `CHROMIUM_BRIDGE_PORT` (8929 by default) — server side only; the\n  extension always connects to 8929, so changing the port also means editing\n  `WS_URL` in `extension/sw.js` and `extension/chat.js`.\n- Chat history: the 🕓 button in the header lists past conversations (stored\n  in the panel's localStorage, the last 30).\n- After each turn there is a usage line: turn tokens (↑ input incl. cache /\n  ↓ output) and the accumulated session cost in $ (on a subscription this is\n  an estimate, not a separate bill).\n- Screenshots the agent takes along the way are shown right in the chat feed\n  (click to expand). They are not saved to history (localStorage is finite).\n- You can paste images from the clipboard (Cmd+V in the input, up to 5 per\n  message) — the model sees them; only a marker remains in history.\n- \"Ask before acting\" mode (checkbox above the input): reading (tabs, text,\n  screenshots, console, network) proceeds without questions, while mutating\n  actions — clicks/typing/navigation/JS/forms/closing tabs/file uploads —\n  wait for an Allow / Deny card. The agent sees a denial and continues the\n  conversation. Toggling applies immediately, without recreating the session\n  (via the Agent SDK's canUseTool).\n\n## On-page indication\n\nWhen Claude acts on a tab (from the panel or from Claude Code):\n\n- an orange glow burns around the page edges with a \"✳ Claude is working…\"\n  badge, fading 2.5s after the last action;\n- a virtual cursor (an orange arrow) glides to the action point and pulses a\n  ring on click; it disappears after 3.5s of inactivity.\n\nBoth are hidden on screenshots so they don't end up in the frame and confuse\nthe model when working with coordinates. On pages where scripts cannot be\ninjected (`chrome://` and the like) the indication is silently skipped.\n\n## Installation\n\n1. **Extension**: clone this repository, open `chrome://extensions` (in the\n   right space/profile!), enable \"Developer mode\", click \"Load unpacked\", and\n   pick the `extension/` folder.\n2. **MCP server** — either way:\n   - via npm: `claude mcp add -s user chromium-bridge -- npx chromium-bridge`\n   - from the clone: `cd server && npm install`, then\n     `claude mcp add -s user chromium-bridge -- node \"$(pwd)/index.mjs\"`.\n\n   It loads at session start — restart your Claude Code session after\n   installing the extension.\n\n   For other MCP clients, add this to your config:\n\n   ```json\n   {\n     \"mcpServers\": {\n       \"chromium-bridge\": {\n         \"command\": \"npx\",\n         \"args\": [\"chromium-bridge\"]\n       }\n     }\n   }\n   ```\n3. Check: the `browser_status` tool should return `{\"connected\": true}`.\n\n## Tools\n\n_As of v0.5._\n\n| Tool | What it does |\n|---|---|\n| `browser_status` | Check the connection to the extension |\n| `browser_tabs_list` | List tabs (id, title, URL) |\n| `browser_tab_create` / `browser_tab_close` | Open / close a tab |\n| `browser_navigate` | Navigate to a URL; `back`/`forward` for history |\n| `browser_page_text` | Page title, URL, and visible text |\n| `browser_computer` | Mouse/keyboard/screenshots via CDP: clicks by coordinates or ref, drag, hover, type, key combos, scroll, zoomed region screenshot, wait |\n| `browser_read_page` | Accessibility tree with ref ids (filter=interactive) |\n| `browser_find` | Find elements by text/role, returns refs |\n| `browser_form_input` | Set input/textarea/select/checkbox/contenteditable value by selector or ref |\n| `browser_click` | DOM click by CSS selector (plain .click()) |\n| `browser_upload_file` | Put files into an `<input type=\"file\">` |\n| `browser_javascript` | Run JS on the page (await supported) |\n| `browser_console_messages` | Tab console (with a regex filter) |\n| `browser_network_requests` | Tab network requests (with a regex filter) |\n| `browser_resize_window` | Window size |\n| `browser_gif_start` / `browser_gif_stop` | Record a GIF of the tab → file; on long recordings the frame rate halves automatically, so the whole scenario fits |\n\nEverything except basic tab operations works through `chrome.debugger` (CDP):\nscreenshots don't require activating the tab, clicks are real mouse events,\nand console/network are collected from the first CDP touch of the tab.\n\n## Limitations\n\n- The extension lives in one browser profile — install it in the one you want\n  to automate.\n- While the server is running, its periodic ping keeps the extension's service\n  worker awake. If the worker is asleep anyway (e.g. the server has just\n  started), a keepalive alarm wakes it within ~30 seconds, and the server waits\n  up to 12 seconds for reconnection before erroring.\n- Trust model: the WS server listens on 127.0.0.1 and rejects connections\n  whose Origin is not `chrome-extension://…`, which keeps web pages out. It\n  does not distinguish between extensions, and a non-browser local process can\n  fake the Origin header — anything running as your user is trusted, like with\n  most local dev tools. Don't run the bridge on a shared machine.\n- On the first CDP action the browser shows a \"Chromium Bridge started\n  debugging this browser\" bar — that's normal, the debugger is the control\n  mechanism. Closing the bar detaches the debugger (the next action\n  re-attaches it).\n- Console/network are not recorded retroactively — only after the tab is\n  first touched.\n- Port 8929 is owned by one session: a second parallel Claude Code session\n  cannot start its own WS server (the extension stays with the first one).\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:50:22.912Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:25:09.133Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,57 @@
+{
+  "id": "io.github.commandoperator/cmdop-care",
+  "title": "CMDOP Machine Care",
+  "description": "Read-only health and storage diagnostics for an enrolled CMDOP machine fleet.",
+  "summary": "Read-only health and storage diagnostics for an enrolled CMDOP machine fleet.",
+  "offersHint": "Read-only health and storage diagnostics for an enrolled CMDOP machine fleet. · Packages: oci:ghcr.io/commandoperator/cmdop-care:v0.1.2",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/commandoperator/cmdop-care:v0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/commandoperator/cmdop-care:v0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://cmdop.com",
+  "sourceUrl": "https://github.com/commandoperator/cmdop-care-mcp",
+  "repository": {
+    "url": "https://github.com/commandoperator/cmdop-care-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-19T11:04:28.166509Z",
+  "publishedAt": "2026-07-19T11:04:28.166509Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:18.832Z",
+    "sourceRepoAt": "2026-08-11T23:51:53.509Z",
+    "readmeAt": "2026-08-11T23:51:54.081Z",
+    "toolsAt": "2026-08-12T01:26:18.832Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/commandoperator/cmdop-care-mcp",
+    "checkedAt": "2026-08-11T23:51:53.509Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/commandoperator/cmdop-care-mcp/main/README.md",
+    "markdown": "# cmdop-care\n\n<p align=\"center\">\n  <img src=\"assets/cmdop-care-read-only-diagnostics.png\" alt=\"Read-only machine-care diagnostics: a central inspection relay connected to three machine nodes\" width=\"900\">\n</p>\n\nA small, read-only [Model Context Protocol](https://modelcontextprotocol.io)\n(MCP) stdio server exposing **4 read-only tools** over an already-enrolled\n[cmdop](https://cmdop.com) machine fleet: roster visibility, machine health,\none bounded live diagnostic, and cmdop-owned storage usage.\n\n**Published:** [`io.github.commandoperator/cmdop-care`](https://registry.modelcontextprotocol.io/?q=io.github.commandoperator%2Fcmdop-care)\n· **Current version:** `v0.1.2` · **License:** Apache-2.0\n\nIf you already use cmdop on a machine, this is the conservative MCP entry\npoint: connect an MCP-aware assistant to read fleet health without exposing a\nshell, arbitrary file reads, or open-ended machine delegation. The host must\nalready be enrolled; credentials stay in the host operating system keyring.\nFor broader machine operations, use the main cmdop MCP server instead.\n\nThis is **not** the full cmdop MCP surface. It intentionally omits\n`ask_machine`, `run_command`, `read_file`, and `list_dir` — every tool that\nexecutes a command, reads an arbitrary file, or delegates an open-ended task\nto another machine. If you need those, use the main `cmdop` CLI's own MCP\nserver (`cmdop mcp stdio`), which is a separate, broader, product-integration\nsurface with its own review requirements. `cmdop-care` exists specifically to\noffer a narrower, safer, publishable subset for the official MCP Registry.\n\n## Requirement: an already-enrolled `cmdop` CLI on the host\n\n**`cmdop-care` requires the host machine to already be enrolled via the main\ncmdop CLI.** It does not implement enrollment itself, and it does not accept a\nrelay token via an environment variable or a mounted secret as a primary\ncredential path. On startup it reads:\n\n- the relay OAuth/enrollment Bearer token the `cmdop` CLI already stored in\n  the OS keyring (macOS Keychain / Linux Secret Service / Windows Credential\n  Manager) when you ran `cmdop join <join-key>`;\n- any per-machine connection PIN the `cmdop` CLI has already cached in the\n  same keyring (e.g. from a prior `cmdop connect`), for `care_diagnose` only.\n\nIf no token is found, every tool responds with a clear \"not enrolled\" message\ninstead of failing silently or hanging.\n\nThis \"host-keyring passthrough\" model was a deliberate design decision (see\n`security-architecture-2026-07-18.md` in this artifact's source repository)\nto avoid introducing a second, weaker credential-handling path for the\nproduct — this binary is not a fully standalone identity; it rides the same\nenrollment as the CLI already installed on the host.\n\n## The 4 tools\n\n### `list_machines`\n\nLists the machines in the enrolled fleet.\n\n- **Input:** none.\n- **Output:** an array of `{host, online, os}`. **No machine ID/UUID is ever\n  returned** — this is a deliberate redaction decision (the internal relay\n  identifier is dropped before serialization, not merely omitted from\n  rendering).\n\n### `care_status`\n\nReads the durable Machine Care projection (facts, findings, coverage,\nfreshness) for one enrolled machine.\n\n- **Input:** `machine` (string, required) — exact display name from\n  `list_machines`.\n- **Output:** aggregate facts/findings with closed-vocabulary codes, coverage\n  flags, and reason codes. No raw paths, commands, environment variables, or\n  machine identity.\n- Read-only; works even while the target machine is offline (it reads a\n  relay-stored projection, not a live round-trip).\n\n### `care_diagnose`\n\nRuns one bounded, typed process/startup diagnostic on a **live** enrolled\nmachine — useful for \"why is this machine slow?\"\n\n- **Input:** `machine` (string, required).\n- **Output:** a bounded snapshot of process and startup-item facts.\n\n**Two disclosures, read before using this tool:**\n\n1. **PIN forwarding.** If the target machine requires a connection PIN, it is\n   forwarded **automatically** from this host's local OS-keyring PIN cache.\n   You cannot and do not need to pass a PIN as a tool argument. If the\n   machine requires a PIN and none is cached on this host, the call **fails\n   closed** with a permission error — it never proceeds without one.\n2. **Process data reaches your LLM provider.** The response includes **raw\n   OS process IDs (PIDs) and process names** from the target machine. That\n   means whatever MCP client and LLM you are using — Claude Code, Codex, or\n   any other MCP-speaking assistant — will see the names of processes\n   running on that machine. This is a deliberate, reviewed part of the\n   diagnostic contract (it is bounded: at most 20 process entries, no\n   command lines, no arguments, no environment variables, no file paths),\n   but you should know it before enabling this tool on a machine whose\n   process list you don't want an external LLM provider to see.\n\nIt never executes a shell command, accepts no PID or command argument, and\nperforms no mutation.\n\n### `care_storage_inventory`\n\nReads the latest validated cmdop-owned storage inventory for one enrolled\nmachine.\n\n- **Input:** `machine` (string, required).\n- **Output:** aggregate byte totals per closed-vocabulary storage source\n  (e.g. `cmdop_logs`, `devcache_go_build`). Accepts no path argument and\n  deletes nothing.\n\n## What every tool call does *not* do\n\n- No tool accepts a shell command, a file path, or a raw PID as an argument.\n- The only free-form input across all 4 tools is the `machine` string, used\n  purely as an opaque lookup key resolved server-side against your own\n  fleet — never interpolated into a path, command, or query.\n- Every call is wrapped in a 15-second timeout independent of the relay's own\n  transport defaults, and a small per-tool rate limit, so a stuck or abused\n  backend cannot hang the process or become a high-volume exfiltration\n  channel.\n\n## Build and run\n\n```bash\ngo build -o cmdop-care .\n./cmdop-care\n```\n\nOr via Docker (after resolving and pinning the base image digest — see the\n`<PIN-BEFORE-BUILD>` comment in `Dockerfile`):\n\n```bash\ndocker build -t cmdop-care:0.1.2 .\ndocker run --rm -i cmdop-care:0.1.2\n```\n\nThe server speaks MCP over stdio only — there is no listening port. Point\nyour MCP client (Claude Code, Codex, or any other MCP-speaking assistant) at\nthe built binary or image the way you would any other stdio MCP server.\n\nFor AI-client setup notes, including a minimal MCP JSON configuration and first\nprompt, see [`llms-install.md`](llms-install.md).\n\nFor marketplace submissions that require a square logo image, use the canonical\n400×400 PNG in [`assets/cmdop-care-400.png`](assets/cmdop-care-400.png).\n\n## Releasing a new version\n\nMaintainers: see [`RELEASE.md`](RELEASE.md) — the short version is `make\npublish`, always run manually, never triggered by any CI or by `cmdop_go`'s\nown release.\n\n## Relay address\n\nBy default `cmdop-care` dials the local embedded cmdop relay on loopback\n(`127.0.0.1:63142`). Set `CMDOP_CARE_RELAY_ADDR` to override the dial target\nfor advanced self-hosted setups. This is a transport address only — never a\ncredential.\n\n## Compatibility\n\n| `cmdop-care` version | Compatible cmdop relay wire contract |\n|---|---|\n| `v0.1.2` | `AiAgentService.GetMachineCare` / `RunMachineCareDiagnostic` / roster-list shape as of 2026-07-18 |\n\n## Contributing to this repository\n\nThis repository enables a tracked pre-commit hook that rejects staged\nenvironment files, private keys, and probable API tokens. After cloning, run:\n\n```bash\ngit config core.hooksPath .githooks\n```\n\n## Security\n\nThis artifact went through an explicit threat-model and code-audit review\nbefore implementation (see the Cmdop organization's internal\n`security-architecture-2026-07-18.md` and `code-audit-2026-07-18.md`, referenced\nfrom this repository's delivery track). Report a security issue privately to\n**security@cmdop.com** — see [SECURITY.md](SECURITY.md) for what to include and\nwhat to expect.\n\n## License\n\nApache-2.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:51:54.081Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:26:18.832Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}
