@@ -53,14 +53,21 @@ Every IDE holding vendor API keys is not a control plane. MCP sprawl with no rev
 Requirements: **Node.js ≥ 22**.
 
 ```bash
+git clone -b DEVELOPMENT https://github.com/real-limitless/mcp-flow.git
+cd mcp-flow
 cp .env.example .env
+docker compose up -d --build
+npx mcp-flow doctor
+```
+
+Gateway on **8787**. Host Node is for contributors:
+
+```bash
 # set MCP_FLOW_MASTER_KEY and MCP_FLOW_ADMIN_TOKEN
 openssl rand -base64 32   # master key
 openssl rand -hex 32      # admin token
-
 npm install
 npm run build
-
 export $(grep -v '^#' .env | xargs)
 npx mcp-flow serve --port 8787
 ```
@@ -169,7 +176,7 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 
 | | |
 | --- | --- |
-| **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only — map a domain in Dokploy/Traefik) |
+| **MCP (agents)** | `http://127.0.0.1:8787/mcp` (host **8787**) |
 | **Admin UI** | `http://127.0.0.1:8787/admin/` |
 | **Health** | `http://127.0.0.1:8787/health` |
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
