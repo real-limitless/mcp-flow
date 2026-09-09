@@ -1,0 +1,68 @@
+{
+  "id": "io.github.lonniev/tollbooth-oauth2-collector",
+  "title": "tollbooth-oauth2-collector",
+  "description": "Unauthenticated OAuth2 callback collector for Tollbooth MCP services",
+  "summary": "Unauthenticated OAuth2 callback collector for Tollbooth MCP services",
+  "offersHint": "Unauthenticated OAuth2 callback collector for Tollbooth MCP services · Remote MCP (streamable-http) at https://tollbooth-oauth2-collector.fastmcp.app/mcp",
+  "version": "0.2.5",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://tollbooth-oauth2-collector.fastmcp.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://tollbooth-oauth2-collector.fastmcp.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/lonniev/tollbooth-oauth2-collector",
+  "repository": {
+    "url": "https://github.com/lonniev/tollbooth-oauth2-collector",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T18:14:32.356216Z",
+  "publishedAt": "2026-08-10T18:14:32.356216Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:33.419Z",
+    "sourceRepoAt": "2026-08-11T23:37:30.327Z",
+    "readmeAt": "2026-08-11T23:37:30.921Z",
+    "toolsAt": "2026-08-11T23:37:31.199Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonniev/tollbooth-oauth2-collector",
+    "checkedAt": "2026-08-11T23:37:30.327Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonniev/tollbooth-oauth2-collector/main/README.md",
+    "markdown": "# Tollbooth OAuth2 Collector\n\n[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://python.org)\n\nAn unauthenticated \"dumb mailbox\" FastMCP server that holds OAuth2 authorization codes for retrieval by the originating MCP server. A companion serverless function (Val Town) receives the browser redirect from the OAuth provider and hands the code to this collector's `store_code` MCP tool. This two-part design works around Horizon proxying only POST traffic on the `/mcp/` path — browser GET redirects from OAuth providers cannot reach `@mcp.custom_route` endpoints, so a serverless callback bridges the gap.\n\n## How It Works\n\n```\n┌───────────────┐   1. redirect_uri → serverless    ┌──────────────────────┐\n│ OAuth Provider│ ─────────────────────────────────→│ Serverless callback  │\n│ (e.g. Schwab) │   GET ?code=AUTH_CODE&state=TOKEN  │ (Val Town)           │\n└───────────────┘                                    └──────────────────────┘\n                                                               │\n                                        2. POST store_code     │\n                                           (JSON-RPC /mcp/)     ▼\n                                                     ┌──────────────────────┐\n                                                     │ OAuth2 Collector     │\n                                                     │ store_code tool      │\n                                                     │ → encrypts + Postgres│\n                                                     └──────────────────────┘\n                                                               │\n                                                               │ 3. code stored\n                                                               ▼\n┌──────────────┐   4. retrieve_code(state=TOKEN)     ┌──────────────────────┐\n│ MCP Server   │ ─────────────────────────────────→  │ OAuth2 Collector     │\n│ (e.g.        │        (JSON-RPC /mcp/)             │ retrieve_code tool   │\n│  schwab-mcp) │ ←───────────────────────────────── │ → returns code once  │\n└──────────────┘   {\"found\": true, \"code\": ...}      │ → deletes from DB    │\n                                                     └──────────────────────┘\n```\n\n1. **MCP server** starts an OAuth flow, setting `redirect_uri` to the serverless callback function's URL\n2. **User** authorizes in the browser; the OAuth provider redirects to the serverless callback with `?code=...&state=...`\n3. **Serverless callback** (Val Town) POSTs the code to the collector's `store_code` MCP tool over `/mcp/`\n4. **Collector** encrypts the code (AES-256-GCM keyed on SHA-256 of the state) and stores it in Postgres (600s TTL)\n5. **MCP server** calls the `retrieve_code(state=...)` MCP tool to pick up the code (one-time read, auto-deleted)\n6. **MCP server** decrypts and exchanges the code for a token using its own credentials\n\nThe collector also exposes `collector_status` (pending-code count and TTL) and `service_status` (deployed build, incl. git sha) as free MCP tools. The serverless callback source lives in [`val/oauth_callback.js`](val/oauth_callback.js).\n\n## Deployment\n\nDeploy to Horizon:\n\n```bash\nfastmcp deploy server.py\n```\n\nSet the `NEON_DATABASE_URL` environment variable in Horizon to point to your Neon Postgres instance.\n\n## DPYC Advocate Identity\n\nThis collector is registered as an **Advocate** in the [DPYC Social Contract](https://github.com/lonniev/dpyc-community). Consuming MCP servers discover its URL automatically via the DPYC registry:\n\n```python\nfrom tollbooth.registry import resolve_service_by_name\n\nsvc = await resolve_service_by_name(\"tollbooth-oauth2-collector\")\ncollector_url = svc[\"url\"]  # e.g., \"https://tollbooth-oauth2-collector.fastmcp.app\"\n```\n\nNo `OAUTH_COLLECTOR_URL` env var needed — peer discovery is handled by the registry.\n\nRegister the **serverless callback function's** URL (not the collector's) in your OAuth provider's developer portal. It is registered separately in the DPYC registry under the name `tollbooth-oauth2-callback`:\n```python\ncallback = await resolve_service_by_name(\"tollbooth-oauth2-callback\")\nredirect_uri = callback[\"url\"]  # e.g., \"https://tollbooth-dpyc-oauth.val.run\"\n```\n\n## Security Model\n\n- **Auth codes are useless alone** — exchanging a code requires `client_id` + `client_secret`, held only by the consuming MCP server\n- **Encrypted at rest** — codes are stored AES-256-GCM-encrypted (keyed on SHA-256 of the state) via the SDK's `encrypt_collector_code`; the consuming MCP server decrypts with the same state\n- **HMAC-signed state tokens** — the originating MCP server generates tamper-proof state tokens\n- **One-time read** — codes are deleted immediately after retrieval (prevents replay)\n- **Short TTL** — expired codes are automatically cleaned up (600s)\n- **No secrets stored** — the collector never sees client credentials or tokens\n\n## Related Repositories\n\n| Repository | Description |\n|---|---|\n| [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) | Python SDK for Tollbooth monetization |\n| [dpyc-community](https://github.com/lonniev/dpyc-community) | DPYC Social Contract registry and governance |\n| [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) | Free community concierge — membership, governance, onboarding |\n| [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) | Certification Authority MCP service |\n| [tollbooth-sample](https://github.com/lonniev/tollbooth-sample) | Reference Operator implementation / template |\n| [tollbooth-pricing-studio](https://github.com/lonniev/tollbooth-pricing-studio) | iOS pricing editor for Operators |\n| [cypher-mcp](https://github.com/lonniev/cypher-mcp) | Monetized graph answers — named Cypher over Neo4j/AuraDB |\n| [schwab-mcp](https://github.com/lonniev/schwab-mcp) | Schwab brokerage MCP server |\n| [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) | Personal Brain knowledge-graph MCP server |\n| [excalibur-mcp](https://github.com/lonniev/excalibur-mcp) | X (Twitter) posting MCP server |\n| [taxsort-mcp](https://github.com/lonniev/taxsort-mcp) | Tax sorting and classification MCP server |\n| [optionality-mcp](https://github.com/lonniev/optionality-mcp) | Options analytics MCP server |\n| [tollbooth-oauth2-collector](https://github.com/lonniev/tollbooth-oauth2-collector) | OAuth2 callback collector (Advocate) |\n| [tollbooth-shortlinks](https://github.com/lonniev/tollbooth-shortlinks) | URL shortener utility Operator |\n\n## License\n\nCopyright 2026 Lonnie VanZandt. Licensed under the [Apache License, Version 2.0](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:37:30.921Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "store_code",
+      "description": "Store an encrypted OAuth2 authorization code.\n\nCalled by the serverless callback function after the browser redirect.\nThe code is encrypted with SHA-256(state) before storage.\n\nArgs:\n    code: The authorization code from the OAuth provider.\n    state: The state token (patron npub) from the authorization request.\n\nReturns:\n    Dict with ``success`` key and a message."
+    },
+    {
+      "name": "retrieve_code",
+      "description": "Retrieve a stored authorization code (one-time read, auto-deleted).\n\nCalled by the originating MCP server to pick up the code after the user\nhas authorized in the browser. Returns the encrypted code which the\ncaller decrypts using the same state token.\n\nArgs:\n    state: The state token (patron npub) used during authorization.\n\nReturns:\n    Dict with ``code`` (encrypted) on success, or ``error`` if not found."
+    },
+    {
+      "name": "collector_status",
+      "description": "Health check — shows the number of pending authorization codes and TTL."
+    },
+    {
+      "name": "service_status",
+      "description": "Report the running build so a redeploy can be verified. Free.\n\nDelegates to the SDK's canonical ``build_service_status`` — the single\nsource of the service_status payload shape — so this collector reports the\nsame envelope as every other DPYC service. The load-bearing field is\n``build_info.fastmcp_cloud_git_commit_sha``: the commit Horizon actually\ndeployed. The post-merge deploy-verify probe reads it to confirm the live\nservice redeployed the merged sha; with no ``service_status`` tool to probe,\nthat sha reads as ``<none>`` and an otherwise-healthy deploy is flagged as\n\"did not land\".\n\nThe vault/courier/operator fields are ``False``/empty by construction —\nthis is an unauthenticated community utility with no operator runtime."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:31.199Z",
+  "toolsPreviewStatus": "ok"
+}

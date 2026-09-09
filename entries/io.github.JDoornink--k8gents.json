@@ -1,0 +1,104 @@
+{
+  "id": "io.github.JDoornink/k8gents",
+  "title": "K8gentS — Kubernetes RCA MCP Server",
+  "description": "Kubernetes RCA agent that sandboxes its own AI with OPA Gatekeeper. MCP-ready for any client.",
+  "summary": "Kubernetes RCA agent that sandboxes its own AI with OPA Gatekeeper. MCP-ready for any client.",
+  "offersHint": "Kubernetes RCA agent that sandboxes its own AI with OPA Gatekeeper. MCP-ready for any client. · Packages: oci:docker.io/jdoornink/k8gents:0.1.1 · Env vars: AI_API_KEY, AI_MODEL, KUBECONFIG",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/jdoornink/k8gents:0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AI_API_KEY",
+        "description": "Google Gemini API key for LLM-powered root cause analysis",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "AI_MODEL",
+        "description": "Gemini model to use (default: gemini-2.5-pro)"
+      },
+      {
+        "name": "KUBECONFIG",
+        "description": "Path to kubeconfig file. Omit to use in-cluster config or ~/.kube/config automatically."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/jdoornink/k8gents:0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AI_API_KEY",
+          "description": "Google Gemini API key for LLM-powered root cause analysis",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "AI_MODEL",
+          "description": "Gemini model to use (default: gemini-2.5-pro)"
+        },
+        {
+          "name": "KUBECONFIG",
+          "description": "Path to kubeconfig file. Omit to use in-cluster config or ~/.kube/config automatically."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AI_API_KEY",
+      "description": "Google Gemini API key for LLM-powered root cause analysis",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "AI_MODEL",
+      "description": "Gemini model to use (default: gemini-2.5-pro)"
+    },
+    {
+      "name": "KUBECONFIG",
+      "description": "Path to kubeconfig file. Omit to use in-cluster config or ~/.kube/config automatically."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/JDoornink/K8gentS",
+  "repository": {
+    "url": "https://github.com/JDoornink/K8gentS",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-26T02:26:31.773174Z",
+  "publishedAt": "2026-04-26T02:26:31.773174Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:28.942Z",
+    "sourceRepoAt": "2026-08-12T00:09:53.066Z",
+    "readmeAt": "2026-08-12T00:09:53.540Z",
+    "toolsAt": "2026-08-12T01:40:28.943Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/JDoornink/K8gentS",
+    "checkedAt": "2026-08-12T00:09:53.066Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/JDoornink/K8gentS/main/README.md",
+    "markdown": "# K8gentS ☸️🤖\n\n**A Human-in-the-Loop RCA Agent for Kubernetes — LLM Diagnosis, OPA-Bounded Remediation**\n\n[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.JDoornink%2Fk8gents-blue)](https://registry.modelcontextprotocol.io)\n\n---\n\n## 📖 Overview\n\n**K8gentS** is a Kubernetes diagnostic agent built around a single premise: an LLM is well-suited to *reason* about cluster failures, but unfit to *act* on them unsupervised. It continuously watches the cluster event stream, runs `Warning`-class events through a Gemini-powered **root cause analysis (RCA)** pipeline, and surfaces the top hypotheses with resolution steps to Slack. Every remediation is **human-in-the-loop (HITL)** — a reviewer approves or rejects via interactive buttons before anything mutates. Approved fixes execute inside an ephemeral Job whose blast radius is bounded by an **OPA Gatekeeper** admission policy at the API server, independent of RBAC. The reasoning is non-deterministic by design; the controls around it are not.\n\nThe goal: reduce MTTR on diagnosable failures without handing an LLM a `kubectl apply`.\n\n---\n\n## 🧠 The Hard Problem\n\nBuilding the Kubernetes side of this is straightforward. The real challenge is making a diagnostic layer trustworthy when the engine behind it is fundamentally non-deterministic.\n\nTraditional observability is built on guarantees. Alerts fire on known thresholds. Dashboards show reproducible numbers. Logs return consistent answers to the same query. SRE success depends on that predictability — it's what makes incident response repeatable and on-call sustainable.\n\nAn LLM-driven diagnostic layer breaks that contract. The same pod failure can produce three different plausible explanations across three different runs. Each may be coherent. Each may even be correct under different assumptions. But \"plausible\" is not the same as \"right,\" and for infrastructure, the gap between them is where outages live.\n\nSome of the specific problems I've been working through while building K8gentS:\n\n**1. Confidence scoring with an unbounded output space.**\nThe agent returns top-3 root causes with confidence metrics, but confidence in what, exactly? The model is not selecting from a fixed set of known failure modes — it's generating free-form hypotheses. A calibrated confidence score needs a reference distribution, and the distribution here is whatever the model happened to produce this run.\n\n**2. When to trust reasoning vs. fall back to deterministic checks. - THE ART**\nSome failures (CrashLoopBackOff, OOMKilled) have well-traveled diagnostic paths and a deterministic check will be right every time. Others benefit from the model's ability to interpolate across signals. Drawing that line — and doing it at runtime — is non-trivial and where the art really lies.\n\n**3. Evaluating an agent that's supposed to find failures you didn't anticipate.**\nThe standard ML evaluation approach assumes you know what \"correct\" looks like. For a diagnostic agent, part of the value is catching novel failure modes — by definition, failures you couldn't pre-enumerate. So how do you decide what is wrong and what is right?\n\n**4. The \"Tool in the Cluster\" problem.**\nHow do you monitor the monitor? Currently the service is set to run as a service in the cluster, but what if the service itself causes resource exhaustion, or is experiencing failures itself? How can you identify if the service itself is the cause of your issue?\n\n**5. Determining the right model for this problem.**\nWith so many other types of Machine Learning models out there, is a non-deterministic large language model really the right choice or is another model better suited for infrastructure type problems?\n\nThese are the questions I'm actively working on. If you've solved any of them — or have a sharper framing than I've got — I'd like to hear it.\n\n---\n\n## ✨ Core Responsibilities\n\n1. **Continuous Monitoring:** Watches the cluster for error events, crashed pods, `CrashLoopBackOff` states, `OOMKilled` events, and other failure conditions such as `Connectivity/DNS`, `Database Deadlock`, or `Secret/Config Missing`.\n2. **Automated Root Cause Analysis (RCA):** Upon detecting an anomaly, it securely fetches relevant context (recent logs, pod descriptions, event history), sanitizes it of secrets/PII, and sends this context to an LLM-based reasoning engine.\n3. **Notification & Confidence Scoring:** Notifies your designated Slack communication channel via Socket Mode with:\n   * A descriptive summary of the error.\n   * The top 3 possible root causes, each with an associated confidence metric.\n   * Step-by-step resolution instructions.\n4. **Interactive Remediation (Opt-in):** Prompts the user directly in Slack with interactive buttons: *\"Approve Fix\"* or *\"I'll do it manually\"*.\n   * **Default Posture - Read Only:** The agent is strictly **READ-ONLY**, making it exceptionally secure by default.\n\n---\n\n## 🛠️ Architecture & Security\n\nThe agent is designed so that each layer independently limits blast radius — not as redundancy for its own sake, but because no single control is sufficient when the reasoning engine is non-deterministic.\n\n| Layer | Mechanism | What it prevents |\n|---|---|---|\n| **Pod security** | `runAsNonRoot`, read-only filesystem, all Linux capabilities dropped | Container escape, privilege escalation |\n| **RBAC** | Agent pod is strictly read-only; write verbs live only on `k8gent-executor-sa` | Agent compromise → cluster mutation |\n| **Ephemeral executor** | Short-lived Jobs via `k8gent-executor-sa`; `ttlSecondsAfterFinished=120` | Persistent foothold after remediation |\n| **OPA Gatekeeper** | Rego policy enforced at the API server admission layer | Executor escaping its scope, even if RBAC is misconfigured |\n| **Log sanitization** | Regex sweeper strips IPs, JWTs, API keys, emails before LLM call | Secrets exfiltration via LLM prompt |\n| **Rate limiting** | Hourly circuit breakers and event debouncing | Noise-driven API budget exhaustion |\n| **Ingress-free comms** | Slack Socket Mode; no exposed endpoints or Ingress rules | Inbound attack surface |\n\nThe OPA Gatekeeper policy (defined in `deploy/helm/k8gents/templates/opa-gatekeeper/`) explicitly blocks the executor service account from modifying `serviceAccountName`, enabling `hostNetwork` or `hostPID`, operating inside `kube-system`, or mutating any resource kind other than pods and deployments — enforced directly at the Kubernetes API admission layer, independent of RBAC.\n\n---\n\n## 🚀 Deployment\n\nK8gentS ships as a Helm chart. OPA Gatekeeper is a declared chart dependency — the security sandbox installs automatically alongside the agent.\n\n### Prerequisites\n\n* Kubernetes v1.20+, Helm 3\n* `kubectl` authenticated to the target cluster\n* A Google Gemini API key (`AI_API_KEY`)\n* A Slack app with Socket Mode enabled (generates `SLACK_BOT_TOKEN` starting `xoxb-` and `SLACK_APP_TOKEN` starting `xapp-`)\n* Slack channel ID (`SLACK_CHANNEL_ID`) and a comma-separated list of approver Slack user IDs (`ALLOWED_APPROVERS`)\n\n### 1. Configure Slack\n\n1. Create a Slack App at `api.slack.com`.\n2. Enable **Socket Mode** → generates an App-Level Token (`xapp-...`).\n3. Enable **Interactive Components**.\n4. Add `chat:write` and `chat:write.public` OAuth scopes → generates a Bot Token (`xoxb-...`).\n5. Invite the bot to your alert channel and copy the Channel ID from channel settings.\n\n### 2. Build and Push the Agent Image\n\n```bash\ndocker build -t your-registry/k8gent:latest .\ndocker push your-registry/k8gent:latest\n```\n\nUpdate `image.repository` in `deploy/helm/k8gents/values.yaml` to match your registry path.\n\n### 3. Install via Helm\n\n```bash\n# Fetch chart dependencies (downloads OPA Gatekeeper)\nhelm dependency update deploy/helm/k8gents\n\n# Install — secrets are injected at deploy time, never stored in source\nhelm install k8gents deploy/helm/k8gents \\\n  --namespace k8gent-system \\\n  --create-namespace \\\n  --set secrets.aiApiKey=\"YOUR_GEMINI_KEY\" \\\n  --set secrets.slackBotToken=\"xoxb-...\" \\\n  --set secrets.slackAppToken=\"xapp-...\" \\\n  --set secrets.slackChannelId=\"C12345678\" \\\n  --set secrets.allowedApprovers=\"U123456,U789012\"\n```\n\nTo disable the OPA sandbox (if your cluster already runs Gatekeeper with its own policies):\n```bash\n--set sandbox.enabled=false --set gatekeeper.enabled=false\n```\n\n### 4. Verify Installation\n\n```bash\nkubectl logs -l app=k8gents -n k8gent-system -f\n```\n\nYou should see the watcher connect to the cluster API and the Slack Socket Mode connection initialize.\n\n---\n\n## ⚙️ Configuration\n\nKey environment variables (set via `--set agent.*` in Helm, or directly if running locally):\n\n| Variable | Default | Description |\n|---|---|---|\n| `WATCH_NAMESPACES` | `all` | Comma-separated namespaces to watch, or `all` for cluster-wide |\n| `AI_MODEL` | `gemini-2.5-pro` | Any model name supported by the Google GenAI SDK |\n| `LOG_LEVEL` | `INFO` | Python logging level |\n| `REMEDIATION_MODE` | `api` | `api` (Kubernetes client, safe in-cluster) or `subprocess` (kubectl, local dev only) |\n\nChanging `AI_MODEL` requires no code changes — the agent routes all LLM calls through the configured model name dynamically.\n\n---\n\n## 🔮 What's Next\n\nWhat's implemented and working:\n* Watch → diagnose → Slack notification with confidence scoring\n* Human-gated remediation via Slack interactive buttons\n* Ephemeral Job executor with OPA Gatekeeper admission sandbox\n* MCP server for on-demand diagnostics from AI clients — [published on the MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.JDoornink/k8gents`\n* Helm chart with Gatekeeper as a hard dependency\n\nWhat's genuinely unsolved:\n* **Confidence calibration** — the current scoring reflects the model's self-reported certainty, which doesn't reliably correlate with empirical accuracy.\n* **Deterministic routing** — canonically diagnosable failures (CrashLoopBackOff, OOMKilled) shouldn't route through the LLM at all. Building a reliable runtime classifier for \"known answer\" vs. \"needs reasoning\" is the next structural change.\n* **Evaluation** — regression testing an agent designed to catch novel failures requires a framework that doesn't yet fully exist for this problem domain. Synthetic failure injection (chaos engineering) is the most promising direction, but coverage is inherently limited.\n* **Post-remediation verification** — after executing a fix, monitor the target namespace for 60s and post a follow-up Slack thread confirming recovery or flagging that the crash state persists.\n",
+    "fetchedAt": "2026-08-12T00:09:53.540Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:28.943Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

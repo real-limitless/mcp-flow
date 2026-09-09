@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-openclaw-bridge",
+  "title": "Hive Openclaw Bridge",
+  "description": "Reference integration with @kinthaiofficial OpenClaw 3-layer payment governance",
+  "summary": "Reference integration with @kinthaiofficial OpenClaw 3-layer payment governance",
+  "offersHint": "Reference integration with @kinthaiofficial OpenClaw 3-layer payment governance · Remote MCP (streamable-http) at https://hive-mcp-gateway.onrender.com/openclaw-bridge/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-gateway.onrender.com/openclaw-bridge/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-gateway.onrender.com/openclaw-bridge/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://thehiveryiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-openclaw-bridge",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-openclaw-bridge",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-04T01:33:06.911809Z",
+  "publishedAt": "2026-05-04T01:33:06.911809Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:38.190Z",
+    "sourceRepoAt": "2026-08-11T23:20:06.905Z",
+    "readmeAt": "2026-08-11T23:20:07.411Z",
+    "toolsAt": "2026-08-12T01:00:38.190Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-openclaw-bridge",
+    "checkedAt": "2026-08-11T23:20:06.905Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-openclaw-bridge/main/README.md",
+    "markdown": "# hive-mcp-openclaw-bridge\n\n[![srotzin/hive-mcp-openclaw-bridge MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-openclaw-bridge/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-openclaw-bridge)\n\n> Reference integration with [@kinthaiofficial](https://blog.kinthai.ai)'s **OpenClaw** 3-layer payment governance framework.\n> MCP server that wraps Hive Gamification's 8 BOGO doors behind a 4-level hierarchical budget — atomic reserve, upstream POST, settle/release.\n> Real rails. No mock settlement.\n\nBrand: Hive Civilization gold `#C08D23` (Pantone 1245 C).\nLicense: MIT.\n\n---\n\n## Why this exists\n\nOpenClaw's three-layer model splits payment governance into three concerns:\n\n| Layer | Concern | Where it lives |\n|---|---|---|\n| **Layer 1** | Internal hierarchical budget — atomic reserve / settle | this server |\n| **Layer 2** | Inter-agent millicent ledger settled at epoch boundaries | OpenClaw |\n| **Layer 3** | External x402 settlement on real rails | Hive Gamification |\n\nThis bridge demonstrates the Layer 1 ↔ Layer 3 seam. Every paid call to a Hive door (computational-debt, protocol-consensus-tax, pheromone-priority, zk-compliance-shield, capability-leasing, guild-synergy, audit-trail-premium, bounty-routing) is gated by an **atomic reservation** against every level in the caller's scope path:\n\n```\nNamespace → User → Agent → Task\n```\n\nThe most-restrictive level governs. If any level is short of headroom, the upstream HTTP request is never made and no x402 settlement is signed.\n\nThe same `BudgetHook` interface is exposed from [@hivemorph/qvac-client v0.2](https://www.npmjs.com/package/@hivemorph/qvac-client) — drop your own implementation in to wire this hierarchy into a different runtime.\n\n## Background reading\n\n- [Agent wallet economic models for autonomous agents](https://blog.kinthai.ai/agent-wallet-economic-models-autonomous-agents) — kinthai\n- [221 agents: multi-agent coordination lessons](https://blog.kinthai.ai/221-agents-multi-agent-coordination-lessons) — kinthai\n- [agents.kinthai.ai](https://agents.kinthai.ai) — running on OpenClaw\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `budget_status` | Inspect caps, spend, reservations, headroom across all 4 levels |\n| `budget_set_cap` | Override a per-key cap at one level |\n| `budget_check` | Read-only pre-flight against a proposed amount + scope |\n| `doors_list` | List all 8 BOGO doors with endpoint, price, asset, term |\n| `door_economics` | Fetch live `/economics` for one door |\n| `bogo_claim` | Claim first-use-free via `/v1/bogo/claim` |\n| `door_subscribe` | **Canonical gated path** — atomic reserve → upstream POST → settle/release |\n\n## Doors\n\n| Door | Endpoint | Price | Term |\n|---|---|---|---|\n| computational-debt | `/v1/debt/subscribe` | 0.50 USDC | 30d |\n| protocol-consensus-tax | `/v1/pct/subscribe` | 0.25 USDC | 1 read |\n| pheromone-priority | `/v1/pheromone/subscribe` | 5.00 USDC | 30d |\n| zk-compliance-shield | `/v1/compliance/subscribe` | 1.00 USDC | 30d |\n| capability-leasing | `/v1/lease/start` | 0.15 USDC | 1h |\n| guild-synergy | `/v1/guild_synergy/subscribe` | 10.00 USDC | 30d |\n| audit-trail-premium | `/v1/audit_premium/subscribe` | 3.00 USDC | 30d |\n| bounty-routing | `/v1/bounty_routing/route` | 0.50 USDC | 1 routing |\n\nBackend: `https://hive-gamification.onrender.com`. All endpoints are live and verified.\n\n## Lifecycle of a paid call\n\n```\nclient → tools/call door_subscribe { door_id, did, scope }\n       → atomicReserve(scope, price, asset)\n           ├─ each level checked: namespace, user, agent, task\n           ├─ headroom = cap − spent − reserved\n           └─ short on any level? reject before signing\n       → POST hive-gamification.onrender.com<endpoint>\n       → 2xx? settle(reservationId)\n         non-2xx or throw? release(reservationId)\n       → return { ok, reservationId, binding_level, upstream }\n```\n\n## Quickstart\n\n```bash\ngit clone https://github.com/srotzin/hive-mcp-openclaw-bridge\ncd hive-mcp-openclaw-bridge\nnpm install\nnpm start\n```\n\nThen from any MCP client:\n\n```json\nPOST http://localhost:3000/mcp\n{ \"jsonrpc\": \"2.0\", \"id\": 1, \"method\": \"tools/list\" }\n```\n\n## Configuration\n\n| Env | Default | Meaning |\n|---|---|---|\n| `PORT` | `3000` | listen port |\n| `HIVE_BASE` | `https://hive-gamification.onrender.com` | upstream base URL |\n| `HIVE_TIMEOUT_MS` | `15000` | upstream fetch timeout |\n| `NAMESPACE_CAP` | `50` | default namespace-level cap (USDC) |\n| `USER_CAP` | `10` | default user-level cap |\n| `AGENT_CAP` | `2` | default agent-level cap |\n| `TASK_CAP` | `0.50` | default task-level cap |\n\nPer-key caps override defaults via `budget_set_cap`.\n\n## Related\n\n- [@hivemorph/qvac-client v0.2](https://www.npmjs.com/package/@hivemorph/qvac-client) — TypeScript SDK exposing the same `BudgetHook` interface against any x402-enabled endpoint.\n- [Hive Gamification agent card](https://hive-gamification.onrender.com/.well-known/agent-card.json) — A2A 0.1 advertisement of the 8 doors.\n\n## License\n\nMIT — see `LICENSE`.\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:07.411Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:38.190Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"not_found\",\"path\":\"/openclaw-bridge/mcp\",\"service\":\"hive-mcp-gateway\",\"recruitment\":{\"version\":\"0.1.0\",\"status\":404,\"title\":\"Endpoint not found\",\"summary\":\"This path is not part of the current service surface.\",\"next_step\":\"Consult the MCP config below for the canonical endpoint catalog.\",\"links\":{\"register\":\"https://hivegate.onrender.com/onboard\",\"readiness_assessment\":\"https://hive-mcp-audit-readiness.onrender.com/assess\",\"mcp_config\":\"https://hive-mcp-gateway.onrender.com/.well-known/mcp.json\",\"agent_catalog\":\"https://hive-mcp-gateway.onrender.com/.well-known/agents.json\",\"fleet_status\":\"https://hive-mcp-gateway.onrender.com/health\"},\"brand\":{\"accent\":\"#C08D23\",\"voice\":\"Bloomberg Terminal / Stripe Docs\",\"attribution\":\"Hive Civilization\"}}}",
+  "toolsPreviewStatus": "unreachable"
+}

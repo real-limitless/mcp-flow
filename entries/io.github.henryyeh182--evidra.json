@@ -1,0 +1,57 @@
+{
+  "id": "io.github.henryyeh182/evidra",
+  "title": "Pacevera",
+  "description": "Turns the training evidence you already have into a decision about today's session.",
+  "summary": "Turns the training evidence you already have into a decision about today's session.",
+  "offersHint": "Turns the training evidence you already have into a decision about today's session. · Packages: binary:https://github.com/henryyeh182/evidra/releases/download/v0.5.0/pacevera.mcpb",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/henryyeh182/evidra/releases/download/v0.5.0/pacevera.mcpb",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/henryyeh182/evidra/releases/download/v0.5.0/pacevera.mcpb",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://pacevera.com",
+  "sourceUrl": "https://github.com/henryyeh182/evidra",
+  "repository": {
+    "url": "https://github.com/henryyeh182/evidra",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T12:41:33.018298Z",
+  "publishedAt": "2026-08-11T12:41:33.018298Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:43.703Z",
+    "sourceRepoAt": "2026-08-11T23:43:33.143Z",
+    "readmeAt": "2026-08-11T23:43:33.760Z",
+    "toolsAt": "2026-08-12T01:20:43.703Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/henryyeh182/evidra",
+    "checkedAt": "2026-08-11T23:43:33.143Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/henryyeh182/evidra/main/README.md",
+    "markdown": "# Pacevera Fitness Decision Engine\n\nPacevera is a deterministic fitness decision engine exposed through the Model Context Protocol (MCP). It receives normalized training and health evidence supplied by the calling AI host, evaluates recovery and training constraints, and returns a structured decision.\n\nThe primary operation is to evaluate an existing scheduled session. A decision describes the change from the scheduled session to the resulting session:\n\n```text\nscheduled session (from) -> resulting session (to)\n```\n\nEach decision includes the relevant evidence, applied rules, confidence, signal coverage, and limitations.\n\n## Scope\n\nPacevera provides the following capabilities:\n\n- Deterministic calculation of recovery state, readiness, muscle-group fatigue, and training load.\n- Session decisions with the types `keep`, `adjust`, `substitute`, `defer`, and `advance`.\n- Constraint handling for injuries, equipment, available time, and exercise substitutions.\n- Training-plan generation and caller-owned plan adjustment through preview and commit operations.\n- Structured decision provenance through rule identifiers, measured values, source information, and version metadata.\n- Normalization support for Apple Health, Google Health Takeout, Garmin, Strava, Oura, and WHOOP data shapes.\n\nPacevera does not connect to these providers on behalf of the user. The calling host must obtain and normalize provider exports or API responses before passing them to an MCP tool.\n\n## Architecture\n\n```text\nAI host\n  └─ Collects the user's question and evidence\n       └─ MCP server / desktop extension\n            ├─ Evidence normalization\n            ├─ Fitness-state calculation\n            ├─ Training-load calculation\n            ├─ Deterministic rule evaluation\n            ├─ Decision and plan operations\n            └─ Structured result: Decision / Action / Reason\n```\n\nThe AI host is responsible for interpreting the user's request, collecting evidence, selecting tools, and presenting the result. Pacevera performs the calculations and rule evaluation; it does not call a model to generate a decision. Given the same code, rule set, and input, the result is deterministic.\n\n## Decision and recommendation\n\n| Type | Description |\n|---|---|\n| Recommendation | A training suggestion generated without a required prior session or plan. |\n| Decision | A traceable change applied to an existing scheduled session or plan. |\n\n`decide_session` requires `scheduledSession` to establish the prior state. If no scheduled session is provided, the tool returns `no_scheduled_session` rather than creating a session. Use `generate_plan` when a plan is required.\n\nDecision output follows five layers:\n\n```text\nEvidence -> Fitness State -> Decision -> Action -> Reason\n```\n\nDecision intent and resulting action are separate fields. The same intent may produce different actions depending on the user's equipment, available time, injuries, and scheduled session.\n\n## MCP tools\n\n### Decision and planning tools\n\n| Tool | Description |\n|---|---|\n| `assess_fitness_state` | Returns recovery, readiness, muscle-group fatigue, and training-load state. |\n| `decide_session` | Evaluates a scheduled session and returns the resulting session. |\n| `decide_exercise_substitution` | Selects a replacement movement subject to injury and equipment constraints. |\n| `generate_plan` | Generates a periodized training plan. |\n| `preview_adjust_plan` | Returns a deterministic patch and diff for a caller-owned plan. |\n| `commit_adjust_plan` | Validates the plan version and applies a caller-owned patch. |\n\n### Supporting and read tools\n\n| Tool | Description |\n|---|---|\n| `get_evidence_coverage` | Reports available and missing evidence signals. |\n| `explain_decision` | Returns the process-local rule and source trace for a previous decision. |\n| `submit_outcome` | Accepts an observed outcome for a prior case; storage is bounded and local to the configured environment. |\n| `search_exercises` / `get_exercise` | Queries the exercise catalog and graph relationships. |\n| `search_workouts` / `get_workout` | Queries structured workout content. |\n| `get_user_profile` | Returns caller-supplied user constraints and training settings. |\n| `get_training_history` / `get_training_context` | Returns training history and related context. |\n\n## Evidence and output\n\nEvidence is supplied by the calling host. It may include recovery measurements, vendor-computed assessments, completed workouts, scheduled sessions, goals, and constraints.\n\nImportant input rules:\n\n- Only measured or explicitly provided values should be sent. Missing signals are reported in `signalCoverage` and may lower `confidence`.\n- A workout without a training-load value is not treated as zero load and is excluded from muscle-group fatigue calculations.\n- RPE may be retained as evidence but is not a term in training-load or muscle-fatigue calculations.\n- Vendor-computed values such as readiness, recovery, and Body Battery are used as reported and are not recomputed by Pacevera.\n\nA typical `decide_session` response has this shape:\n\n```json\n{\n  \"decision\": { \"type\": \"adjust\", \"intent\": \"reduce_today_intensity\" },\n  \"action\": {\n    \"from\": { \"focus\": \"Tempo Run\", \"durationMinutes\": 50, \"intensity\": \"high\" },\n    \"to\": { \"focus\": \"Moderate run\", \"durationMinutes\": 50, \"intensity\": \"moderate\" },\n    \"changed\": [\"focus\", \"intensity\"]\n  },\n  \"confidence\": \"high\",\n  \"signalCoverage\": {\n    \"recovery\": { \"usable\": [\"readiness\"], \"missing\": [\"sleep\"] },\n    \"training\": { \"usable\": [\"trainingLoad\"], \"missing\": [] }\n  },\n  \"decisionBasis\": {\n    \"governingRule\": {\n      \"ruleId\": \"EVD-R-002\",\n      \"measured\": { \"quantity\": \"readiness_score\", \"value\": 48 }\n    }\n  }\n}\n```\n\nPacevera does not fill missing values with defaults. `signalCoverage.recovery` describes current recovery-signal availability; `signalCoverage.training` describes whether recent workouts include the training-load data required for fatigue calculations.\n\n## Deployment status\n\n| Deployment mode | Status | Boundary |\n|---|---|---|\n| Local desktop extension | Available | Runs through stdio on the user's computer. The Pacevera process does not fetch provider data, persist Evidence, or make model calls. |\n| User-controlled private deployment | Planned | Intended to run in a device, private network, or VPC controlled by the user or organization. |\n| Hosted remote deployment | Not available | The repository contains resource-server readiness code, but production deployment, authorization infrastructure, and hosted privacy controls are not complete. |\n\nThe desktop extension has no runtime dependencies beyond the Node.js standard library. It does not use analytics, telemetry, crash reporting, provider accounts, or provider OAuth tokens.\n\n## Privacy\n\nThe desktop extension processes the minimum health-related Evidence supplied by the caller for the requested fitness decision. It does not retain, sell, use for model training, or use Evidence for unrelated purposes.\n\nThe extension does not make outbound network requests or persist Evidence. The AI host, operating system, imported files, and any host conversation history are outside the extension's control and are governed by their respective policies.\n\nSee [PRIVACY.md](PRIVACY.md) for the complete policy and deployment scope.\n\nPacevera is not a medical device and does not provide medical advice. It is intended for general fitness and training purposes only.\n\n## Installation\n\nPacevera is distributed as a Claude Desktop extension (`.mcpb`).\n\n1. Download `pacevera.mcpb` from [Releases](../../releases).\n2. Optionally verify the SHA-256 checksum published in the release notes:\n\n   ```bash\n   shasum -a 256 pacevera.mcpb\n   ```\n\n3. In Claude Desktop, open **Settings -> Extensions** and install the file.\n4. Restart Claude Desktop after installing or upgrading the extension.\n\nThe extension requires Node.js 20 or newer.\n\nClaude Desktop and other local MCP hosts are supported through the desktop extension. Mobile and hosted remote use cases require a remote deployment, which is not currently available for public use.\n\n## Release status\n\nThe current public release is `v0.5.0`, using Decision Engine `1.6.0` and `base_rules@1.1.0`. It includes ten public tools, bounded local continuity, personalized single-workout generation, decision traces, and package validation／dry-run／rollback. The Oura and WHOOP readers were implemented from their published API specifications and have not yet been validated against real responses; Apple Health, Garmin, Google Health, and Strava readers were developed from real export files.\n\n## Support\n\n- Bug reports and technical questions: [GitHub Issues](../../issues)\n- Privacy requests: **evidramcp@icloud.com**\n\n## License\n\nPacevera is proprietary software. See [LICENSE](LICENSE) for the applicable terms.\n",
+    "fetchedAt": "2026-08-11T23:43:33.760Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:43.703Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

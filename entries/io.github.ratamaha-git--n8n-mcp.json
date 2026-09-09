@@ -1,0 +1,58 @@
+{
+  "id": "io.github.ratamaha-git/n8n-mcp",
+  "title": "n8n-mcp",
+  "description": "MCP server for n8n: generate, lint, explain failed executions, drive live n8n via REST.",
+  "summary": "MCP server for n8n: generate, lint, explain failed executions, drive live n8n via REST.",
+  "offersHint": "MCP server for n8n: generate, lint, explain failed executions, drive live n8n via REST. · Packages: npm:@automatelab/n8n-mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@automatelab/n8n-mcp",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@automatelab/n8n-mcp",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ratamaha-git/n8n-mcp",
+  "repository": {
+    "url": "https://github.com/ratamaha-git/n8n-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-10T14:45:34.229283Z",
+  "publishedAt": "2026-05-10T14:45:34.229283Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:31.684Z",
+    "sourceRepoAt": "2026-08-11T23:24:47.547Z",
+    "readmeAt": "2026-08-11T23:24:48.226Z",
+    "toolsAt": "2026-08-12T01:04:31.684Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ratamaha-git/n8n-mcp",
+    "checkedAt": "2026-08-11T23:24:47.547Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ratamaha-git/n8n-mcp/main/README.md",
+    "markdown": "# n8n-mcp\n\nAn [MCP](https://modelcontextprotocol.io) server for [n8n](https://n8n.io) that gives Claude, Cursor, and other AI agents tools for generating workflows, linting, diagnosing failed executions, and driving live n8n instances.\n\n[![npm](https://img.shields.io/npm/v/@automatelab/n8n-mcp.svg)](https://www.npmjs.com/package/@automatelab/n8n-mcp)\n[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)\n[![CI](https://github.com/AutomateLab-tech/n8n-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/AutomateLab-tech/n8n-mcp/actions/workflows/ci.yml)\n\n## Why we built this\n\nWe use n8n daily inside AutomateLab and kept hitting the same LLM failures: workflow JSON that imports but fails at runtime, AI Agent clusters wired with the wrong connection types, executions that silently drop items with no clue where to look. Dumping the whole n8n catalog into context doesn't fix it - the failure modes are too subtle (typeVersion mismatches, IF v1 schema, credentials that don't survive import).\n\nSo we built a small, focused server: **encode the failure modes the lint can catch, the cluster topology the generator must respect, and the diagnosis the agent can't do alone.** For a walkthrough of the nine tools with example output, see the [launch post on automatelab.tech](https://automatelab.tech/n8n-mcp-server/).\n\n## Why it's different\n\nOther n8n MCP servers (notably [czlonkowski/n8n-mcp](https://github.com/czlonkowski/n8n-mcp)) compete on breadth - 20+ tools and an indexed corpus of every n8n node. They own that niche.\n\nThis server is the **debugging-and-first-run-correctness MCP for n8n**:\n\n- **`execution_explain`** is the wedge. Paste the execution JSON; get back per-node findings: which nodes returned 0 items, which had unresolved `={{ ... }}` expressions, error messages with concrete hints. No other MCP server does this well, and it hits the n8n community's #1 debugging pain point (silent data loss between nodes).\n- **`workflow_generate`** is opinionated about AI Agent topology - emits proper LangChain clusters with `ai_languageModel` / `ai_memory` / `ai_tool` connections (sub-nodes connect *upward* to the agent, not via `main`). Imports cleanly on n8n 1.x.\n- **`workflow_lint`** catches the silent failures: deprecated node types (Function → Code, spreadsheetFile → convertToFile), AI Agent missing language model, IF v1 schema, Webhook missing webhookId, broken connections across all connection types (not just `main`).\n- **5 REST tools** (gated on `N8N_API_URL` + `N8N_API_KEY`) let you list, fetch, create, activate workflows and pull executions - so the lint and explain tools can run against your live workflows, not just JSON pasted in chat.\n\nPlus: a paired [Agent Skill](./SKILL.md) that teaches the model when to use which tool and where to load deeper context (split into `references/` so it doesn't bloat the prompt).\n\n## Tools\n\nTool names follow dot-notation and form a navigable tree: `node.*`, `workflow.*`, `execution.*`. Every tool declares an `outputSchema` (so callers can type-check responses) and MCP `annotations` (read-only / destructive / idempotent / open-world hints).\n\n**Stateless** (work without a live n8n instance):\n\n| Tool | Purpose |\n|---|---|\n| `workflow_generate` | Plain-English description → workflow JSON. Detects AI-agent intent. |\n| `node_scaffold` | Description → single `INodeType` TypeScript file for a custom n8n package. |\n| `workflow_lint` | Workflow JSON → list of errors and warnings (20+ rules). |\n| `workflow_diff` | Two workflows → semantic diff (nodes added/removed/modified, connections, settings). |\n| `execution_explain` | Failed execution JSON → per-node diagnosis with hints. |\n| `execution_replay` | Workflow + node → self-contained replay workflow that exercises just that node. |\n| `execution_timeline` | Execution JSON → per-node timeline table (start, duration, items in/out, errors). |\n\n**Live-instance** (require `N8N_API_URL` + `N8N_API_KEY` env vars):\n\n| Tool | Purpose |\n|---|---|\n| `workflow_list` | Paginate workflows; filter by active/tags/name. |\n| `workflow_get` | Fetch a workflow by id. |\n| `workflow_create` | POST a workflow. Strips read-only fields. |\n| `workflow_activate` | Flip active on/off. |\n| `execution_list` | Browse executions; pass `includeData: true` for the full body. |\n\n> **v0.5.0 changes.** Three new tools: `workflow_diff`, `execution_replay`, `execution_timeline`. Lint expanded with 10 new rules (rate-limit, credential drift, expression staleness, code sandbox, webhook test path, manualTrigger-in-active, DST schedule risk, disabled-but-wired, empty Set, HTTP method/body mismatch). New runtime policy env vars: `N8N_MCP_READ_ONLY`, `N8N_MCP_DISABLED_TOOLS`, `N8N_MCP_ALLOWED_WORKFLOW_IDS`, `N8N_MCP_ALLOWED_TAGS`. DXT bundle + Dockerfile + Render/Railway/Fly deploy configs.\n\n> **v0.4.0 breaking change.** Tools were renamed from `n8n_*` (snake_case) to dot-notation. Update any prompts, agent skills, or scripts that referenced the old names.\n\n## Runtime policy (v0.5+)\n\nConstrain the server without forking. Set these env vars before launching:\n\n| Env var | Effect |\n|---|---|\n| `N8N_MCP_READ_ONLY=1` | Disables `workflow_create`, `workflow_activate`, `node_scaffold`. |\n| `N8N_MCP_DISABLED_TOOLS=workflow_create,workflow_activate` | Skip those tool registrations entirely. |\n| `N8N_MCP_ALLOWED_WORKFLOW_IDS=abc,def` | REST tools refuse to touch any workflow outside the list. |\n| `N8N_MCP_ALLOWED_TAGS=prod,staging` | `workflow_list` filters to workflows carrying at least one tag. |\n\nUseful when handing the MCP to a junior agent or wiring it behind a customer-facing assistant.\n\n## Deploy\n\n- **Claude Desktop one-click**: build the `.dxt` bundle from `dxt/manifest.json` (see `dxt/README.md`).\n- **Docker**: `docker build -t n8n-mcp . && docker run --rm -i -e N8N_API_URL=... -e N8N_API_KEY=... n8n-mcp`.\n- **Render**: drop in [`render.yaml`](./render.yaml) and click \"New from Blueprint\".\n- **Railway**: [`railway.toml`](./railway.toml) — `railway up` in the repo root.\n- **Fly.io**: [`fly.toml`](./fly.toml) — `fly launch --copy-config`.\n\n## Install\n\nRequires Node 20 or later.\n\n### As a CLI tool\n\n```bash\nnpm install -g @automatelab/n8n-mcp\n```\n\n### As a GitHub Action\n\nUse the n8n MCP GitHub Action to lint workflows, diagnose executions, and generate workflow JSON in your CI/CD pipeline:\n\n```yaml\n- uses: ratamaha-git/n8n-mcp@v1\n  with:\n    command: 'lint'\n    workflow-json: ${{ env.WORKFLOW_JSON }}\n```\n\nSee [ACTION.md](./ACTION.md) and [GITHUB-ACTION-SETUP.md](./GITHUB-ACTION-SETUP.md) for examples and publication details.\n\n## Configure your MCP host\n\n**Cursor** (`~/.cursor/mcp.json`) or **Claude Desktop** (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"n8n\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@automatelab/n8n-mcp\"],\n      \"env\": {\n        \"N8N_API_URL\": \"https://your-n8n.example.com\",\n        \"N8N_API_KEY\": \"n8n_...\"\n      }\n    }\n  }\n}\n```\n\nThe `env` block is optional - the 4 stateless tools work without it. Get an API key from n8n: **Settings → API → Create API key**.\n\nRestart your MCP host. The 12 dot-notation tools (`workflow.*`, `node.*`, `execution.*`) appear in the MCP panel.\n\n## Tool examples\n\n### `workflow_generate`\n\n> Use workflow_generate to build: Stripe webhook → Slack message + new row in Google Sheets.\n\nReturns workflow JSON ready for n8n's \"Import from File\" dialog.\n\n### `execution_explain`\n\n> Here's a failed execution from n8n. Why is the Slack node not firing?\n> [paste JSON]\n\nReturns:\n```\nWARNING [Filter] Returned 0 items. Downstream nodes will not execute.\n  hint: Common causes: (1) IF/Switch routed to the other branch — check `parameters.conditions`. (2) Filter/Set node dropped everything — inspect its output explicitly.\n\nINFO [Last node executed was \"Filter\". If the workflow stopped here unexpectedly, check its output items below.]\n```\n\n### `workflow_lint`\n\n> Lint this workflow JSON.\n> [paste JSON]\n\nReturns:\n```\nERROR [AI Agent] AI Agent has no `ai_languageModel` sub-node connected. Attach a chat model (e.g. lmChatOpenAi).\nWARNING [Webhook] Webhook node has no `webhookId`. n8n auto-generates one on import, so the production URL will change.\nWARNING [LegacyFunction] Node type \"n8n-nodes-base.function\" is deprecated. Use \"n8n-nodes-base.code\".\n```\n\nOr `no issues found`.\n\n## Examples\n\nThe `examples/` directory ships with two ready-to-import workflows:\n\n- `workflow-stripe-to-slack.json` - Stripe webhook fans out to Slack and Google Sheets.\n- `workflow-rss-to-discord.json` - RSS feed trigger posts new items to a Discord channel.\n\nImport either via n8n's **Import from File** dialog.\n\n## Development\n\n```bash\ngit clone https://github.com/ratamaha-git/n8n-mcp\ncd n8n-mcp\nnpm install\nnpm run build\nnpm run smoke\n```\n\n`npm run smoke` boots the server with a `--smoke` flag that lists registered tools and exits without binding stdio. Useful for CI or first-run sanity checks.\n\n## License\n\nMIT. See [LICENSE](./LICENSE).\n\n---\n\nDeveloped by [AutomateLab](https://automatelab.tech).\n",
+    "fetchedAt": "2026-08-11T23:24:48.226Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:31.684Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

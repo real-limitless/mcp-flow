@@ -1,0 +1,58 @@
+{
+  "id": "io.github.tsvillain/deprecation-mcp",
+  "title": "deprecation-mcp",
+  "description": "MCP server for cross-vendor API/SDK deprecation and breaking-change tracking",
+  "summary": "MCP server for cross-vendor API/SDK deprecation and breaking-change tracking",
+  "offersHint": "MCP server for cross-vendor API/SDK deprecation and breaking-change tracking · Packages: npm:deprecation-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "deprecation-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "deprecation-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/tsvillain/deprecation-mcp",
+  "repository": {
+    "url": "https://github.com/tsvillain/deprecation-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T13:02:10.363551Z",
+  "publishedAt": "2026-08-08T13:02:10.363551Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:16.180Z",
+    "sourceRepoAt": "2026-08-11T23:17:38.212Z",
+    "readmeAt": "2026-08-11T23:17:38.787Z",
+    "toolsAt": "2026-08-12T00:58:16.181Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/tsvillain/deprecation-mcp",
+    "checkedAt": "2026-08-11T23:17:38.212Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/tsvillain/deprecation-mcp/main/README.md",
+    "markdown": "# deprecation-mcp\n\nA free, open [MCP](https://modelcontextprotocol.io) server for checking whether\na vendor API or SDK is active, deprecated, or sunset — so an agent doing\nupgrade/maintenance work can check before it breaks, instead of after.\n\nAPI/SDK deprecations are scattered across changelog pages, RSS feeds (if\nyou're lucky), and `Sunset`/`Deprecation` HTTP headers (if the vendor bothers\nimplementing [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)). This server\nputs a curated, hand-verified answer behind one tool call.\n\nNo payment gating, no metering, no billing code of any kind — this is a plain\nopen MCP server.\n\n## What it exposes\n\nOne tool, `check_deprecation`:\n\n```\ncheck_deprecation(provider: string, target: string) -> {\n  status: \"active\" | \"deprecated\" | \"sunset\" | \"unknown\",\n  deprecated_on: string | null,\n  sunset_on: string | null,\n  replacement: string | null,\n  migration_url: string | null,\n  source_url: string,\n  last_verified_at: string\n}\n```\n\n`status: \"unknown\"` (with a blank `source_url`) is returned for any\nprovider/target not in the curated dataset below — it means \"not tracked\",\nnot \"confirmed active.\"\n\n## Curated dataset\n\nTen provider APIs/SDKs, each checked against the vendor's own published page\n(`source_url`) on the date in `last_verified_at`. Data lives in\n[`data/deprecations.json`](data/deprecations.json).\n\n| provider | target | status |\n|---|---|---|\n| `aws` | `aws-sdk-js-v2` | sunset |\n| `stripe` | `sources-api` | deprecated |\n| `twilio` | `programmable-chat` | sunset |\n| `github` | `dependency-graph-sbom-sync` | deprecated |\n| `openai` | `assistants-api` | deprecated |\n| `slack` | `classic-apps` | deprecated |\n| `sendgrid` | `v2-mail-send` | deprecated |\n| `shopify` | `rest-admin-api` | deprecated |\n| `auth0` | `rules-and-hooks` | deprecated |\n| `paypal` | `nvp-soap-api` | deprecated |\n\nLookups are case-insensitive and also match each record's `aliases` (e.g.\n`aws`/`aws-sdk` resolves to `aws-sdk-js-v2`).\n\n## Run it\n\n```bash\nnpm install\nnpm run build\nnpm start        # starts the stdio MCP server\n```\n\n## Add to an MCP client\n\nClaude Code (`.mcp.json` in your project, or `claude mcp add`):\n\n```json\n{\n  \"mcpServers\": {\n    \"deprecation\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/deprecation-mcp/dist/index.js\"]\n    }\n  }\n}\n```\n\nAny other stdio-based MCP client config follows the same shape: run\n`node dist/index.js` as the server command.\n\n## Worked example\n\nOnce connected, an agent calls:\n\n```json\n{\n  \"name\": \"check_deprecation\",\n  \"arguments\": { \"provider\": \"aws\", \"target\": \"aws-sdk-js-v2\" }\n}\n```\n\nand gets back:\n\n```json\n{\n  \"status\": \"sunset\",\n  \"deprecated_on\": \"2024-09-08\",\n  \"sunset_on\": \"2025-09-08\",\n  \"replacement\": \"AWS SDK for JavaScript v3\",\n  \"migration_url\": \"https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/migrating-to-v3.html\",\n  \"source_url\": \"https://aws.amazon.com/blogs/developer/announcing-end-of-support-for-aws-sdk-for-javascript-v2/\",\n  \"last_verified_at\": \"2026-08-08\"\n}\n```\n\n## Tests\n\n```bash\nnpm test   # builds, then runs node:test against the lookup logic\n```\n\n## Updating the dataset\n\nEdit `data/deprecations.json` directly — no build step or scraper needed, it's\nread at server startup. Each record needs a real `source_url` you actually\nchecked and an accurate `last_verified_at`. When you re-verify a record,\nrecompute its `content_hash` too (see below).\n\n## Drift detection\n\nHand-checking ten `source_url`s every so often doesn't scale, and stale data\nis worse than no data. A weekly GitHub Action\n([`.github/workflows/check-drift.yml`](.github/workflows/check-drift.yml))\nfetches each record's `source_url`, hashes the response body (sha256), and\ncompares it to the `content_hash` stored on the record at\n`last_verified_at`. If the hash changed, the page changed since it was last\nverified — the record is flagged, not auto-updated. **The automation never\nwrites to `data/deprecations.json`**; a changed page only means \"a human or\nagent needs to re-verify this record by hand,\" never an inferred new status.\nWrong auto-inferred status is worse than no automation.\n\nWhen drift or a fetch failure is detected, the workflow opens (or updates) a\nsingle GitHub issue labeled `drift-check` summarizing which records need\nattention; it closes that issue automatically once a later run comes back\nclean.\n\nRun it locally:\n\n```bash\nnpm run build\nnpm run check-drift\n```\n\nExits `0` if every record's hash still matches, `1` otherwise.\n\nAll ten `source_url`s were fetched with a plain GET (no headless browser, no\nbot-protection workaround) when their `content_hash` baselines were seeded,\nand all ten succeeded. If a vendor later adds bot protection or a redirect\nthat breaks the plain-GET fetch, that record will show up as\n`fetch_failed` in the weekly report rather than being silently skipped.\n\n**Known limitation:** the AWS blog post, Stripe docs page, and PayPal docs\npage (`aws/aws-sdk-js-v2`, `stripe/sources-api`, `paypal/nvp-soap-api`) embed\nper-request dynamic content — a nonce, timestamp, or session token that\nchanges on every fetch even when the substantive page content hasn't. Their\nbody hash is therefore not fully stable across requests, and the weekly\ncheck may occasionally flag one of these three as \"drifted\" even with no\nreal change. This is disclosed rather than worked around (e.g. by stripping\nknown-volatile substrings): a false-positive \"please go look at this page\"\nis an acceptable cost for a tool whose entire design principle is to never\nguess at a status. A human/agent re-verifying such a flagged record should\nexpect it may be a false alarm.\n",
+    "fetchedAt": "2026-08-11T23:17:38.787Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:16.181Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Yveshby27/brick-bacnet-mcp",
+  "title": "brick-bacnet-mcp",
+  "description": "Read-only BACnet/IP MCP gateway with Brick + Haystack semantic tagging at ingest",
+  "summary": "Read-only BACnet/IP MCP gateway with Brick + Haystack semantic tagging at ingest",
+  "offersHint": "Read-only BACnet/IP MCP gateway with Brick + Haystack semantic tagging at ingest · Packages: pypi:brick-bacnet-mcp",
+  "version": "0.1.0a2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "brick-bacnet-mcp",
+    "version": "0.1.0a2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "brick-bacnet-mcp",
+      "version": "0.1.0a2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://habchy.dev/research/bacnet-msi-semantic-gap",
+  "sourceUrl": "https://github.com/Yveshby27/brick-bacnet-mcp",
+  "repository": {
+    "url": "https://github.com/Yveshby27/brick-bacnet-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-11T14:59:43.95411Z",
+  "publishedAt": "2026-06-11T14:59:43.95411Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:32:28.840Z",
+    "sourceRepoAt": "2026-08-11T23:59:22.040Z",
+    "readmeAt": "2026-08-11T23:59:22.577Z",
+    "toolsAt": "2026-08-12T01:32:28.840Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Yveshby27/brick-bacnet-mcp",
+    "checkedAt": "2026-08-11T23:59:22.040Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Yveshby27/brick-bacnet-mcp/main/README.md",
+    "markdown": "# brick-bacnet-mcp\n\n<!-- mcp-name: io.github.Yveshby27/brick-bacnet-mcp -->\n\nA read-only BACnet/IP gateway that exposes building automation point databases to LLM agents via MCP, with Brick + Project Haystack semantic tagging at ingest time.\n\n## Why this exists\n\nThe research note this implementation came out of is at https://habchy.dev/research/bacnet-msi-semantic-gap. A version of the same article is also published at AutomatedBuildings.com (link will be added when the AB.com edition goes live).\n\nShort version: vendor agentic platforms (JCI OpenBlue, Honeywell Forge, Siemens Building X, Tridium Niagara 5) keep their semantic AI layer inside their own controls portfolios. Independent MSIs running mixed-vendor 5-50 building portfolios have BACnet point databases but no clean way to expose them in semantic-tagged form to external LLM agents. This gateway is one answer to that gap.\n\n[ezhuk/bacnet-mcp](https://github.com/ezhuk/bacnet-mcp) does read and write at the BACnet protocol layer with no semantic normalization. This project sits beside it: it adds the Brick + Haystack tagging step at ingest and restricts the v0.1 surface to read-only for a tighter compliance footprint.\n\n## What it does (v0.1)\n\n- Discovers BACnet/IP devices on the local broadcast domain (Who-Is, I-Am)\n- Enumerates objects per device (AI, AO, AV, BI, BO, BV, MSI, MSO, MSV, Schedule, Calendar)\n- Reads present-value, units, and description per object\n- Tags each object with a Brick class and a Haystack tag set using rule-based mapping (rules are extensible via YAML)\n- Exposes the tagged topology to any MCP host via four tools: `list_devices`, `list_objects`, `get_object_value`, `get_tagged_topology`\n\n## What it isn't (v0.1)\n\n- Not a write path. WriteProperty is intentionally out of v0.1 for the compliance-surface reasons noted in the research article.\n- Not a Niagara station integration. Fox protocol / Niagara module wrapping is a separate design.\n- Not an FDD or analytics platform. The tagged topology is meant to be consumed by downstream FDD or LLM-agent workflows. This gateway is the ingest layer only.\n- Not a UI. Output is MCP only. Pair it with Claude Desktop, Cursor, or any other MCP host.\n- Not BACnet/SC. v0.1 is BACnet/IP only. Secure Connect is a v0.2 consideration.\n- Not 223P full schema parity. v0.1 uses the simplified Brick + Haystack mapping. Full 223P entity model is a v0.2 candidate.\n- Not multi-site federated. v0.1 handles one broadcast domain at a time.\n- Not authenticated. v0.1 runs in a trusted local network environment.\n\n## Install\n\n```bash\npip install brick-bacnet-mcp\n```\n\nOr from source:\n\n```bash\ngit clone https://github.com/Yveshby27/brick-bacnet-mcp\ncd brick-bacnet-mcp\npip install -e .\n```\n\nPython 3.11 or later required.\n\n## Quick start\n\nCreate a config file `config.yaml`:\n\n```yaml\nbacnet:\n  local_device_instance: 555001\n  broadcast_address: 192.168.1.255\n  polling_interval_seconds: 30\nrules:\n  brick: src/brick_bacnet_mcp/rules/brick_rules.yaml\n  haystack: src/brick_bacnet_mcp/rules/haystack_rules.yaml\nmcp:\n  transport: stdio  # or \"http\" for a hosted MCP host\n  http_port: 8080   # only if transport == http\nlog_level: INFO\n```\n\nRun the MCP server:\n\n```bash\nbrick-bacnet-mcp --config config.yaml\n```\n\nOr wire it into Claude Desktop:\n\n```json\n{\n  \"mcpServers\": {\n    \"brick-bacnet\": {\n      \"command\": \"brick-bacnet-mcp\",\n      \"args\": [\"--config\", \"/path/to/config.yaml\"]\n    }\n  }\n}\n```\n\n## Example interaction\n\nWith the server running and the simulator active (or a real BACnet/IP network reachable), an MCP-capable LLM can run:\n\n> User: List all the air-handling units across the building.\n>\n> Agent (via MCP tool): calls `get_tagged_topology(filter=\"brick:AHU\")`\n>\n> Agent response: Found 3 AHUs. AHU-1 has 5 child points (discharge_air_temp, return_air_temp, supply_fan_status, mixed_air_damper_position, outside_air_temp). AHU-2 ... AHU-3 ...\n\nSee [examples/](examples/) for full runnable scripts.\n\n## Checking coverage on your building\n\nThe starter rule library targets common US-style object-name conventions (OAT, DAT, ZNT, CHWS, AHU-1, etc.). Real-world mixed-vendor portfolios use wildly different naming. Before assuming the tool is broken or working, run:\n\n```bash\nbrick-bacnet-mcp --coverage-report --config config.yaml\n```\n\nThis does one discover + enumerate + tag cycle against your network and prints:\n\n- Total objects discovered\n- Brick / Haystack match percentages\n- Top 20 most-common object names that no rule matched (use `--top-unmatched N` for a different count)\n- Top 10 hottest rules\n\nUse the unmatched list to extend the YAML rule files for your naming convention. A first-run match rate of 30-50% is normal for a portfolio that hasn't been calibrated yet; 70%+ is what you'd want before relying on the tagged topology for LLM queries.\n\n## How tagging works\n\nThe tagger applies YAML-defined rules to map BACnet object names and units to Brick classes and Haystack tag sets. The default rule set covers about 50 common HVAC, lighting, and metering object-name patterns. Users override or extend by editing `src/brick_bacnet_mcp/rules/brick_rules.yaml` and `haystack_rules.yaml` locally.\n\nExample rule (Brick):\n\n```yaml\n- pattern: '(?i)^(oat|outside_air_temp|outsideair)$'\n  units: ['degF', 'degC', '°F', '°C']\n  brick_class: 'Outside_Air_Temperature_Sensor'\n```\n\nSee [docs/RULES.md](docs/RULES.md) for the rule grammar and override conventions.\n\n## Architecture\n\nSee [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Short version:\n\n- `discovery.py` runs Who-Is broadcast, captures I-Am responses, caches device metadata\n- `reader.py` enumerates the object list per device and polls present-value at the configured interval\n- `tagger.py` applies Brick + Haystack rules to each enumerated object\n- `topology.py` assembles the tagged objects into a queryable graph\n- `server.py` exposes four MCP tools over stdio or streamable HTTP\n\n## Roadmap\n\nv0.1 is a research instrument. The roadmap below is what the research article flagged as worth doing next IF v0.1 gets enough sustained-use signal to justify extending. None of it is committed pre-signal.\n\n- v0.2: COV subscription support, BACnet/SC, 223P full schema parity, SkySpark / FIN Haystack-store passthrough\n- v0.3+: Optional write path behind explicit opt-in, multi-site federation, authentication layer for non-local deployment\n\n## Acknowledgments\n\n- [ezhuk/bacnet-mcp](https://github.com/ezhuk/bacnet-mcp) for the prior-art MCP + BACnet integration that this project builds beside\n- [bacpypes3](https://github.com/JoelBender/bacpypes3) for the BACnet protocol library\n- [Project Haystack](https://project-haystack.org/) for the Haystack tagging vocabulary and community\n- [Brick consortium](https://brickschema.org/) for the Brick schema\n- The named MSI voices whose published positioning this research builds on: Brian Turner (Adaptive Buildings), Marc Petock (Lynxspring), Tom Shircliff and Rob Murchison (Intelligent Buildings LLC), Jim Meacham (Altura Associates), Therese Sullivan (BuildingContext), Alper Üzmezler (BASSG)\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome for rule library extensions, documentation, examples, and test coverage. Larger changes (write path, non-BACnet protocol support, UI, FDD logic) are out of v0.1 scope. Open an issue first to discuss before submitting a PR.\n",
+    "fetchedAt": "2026-08-11T23:59:22.577Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:32:28.840Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

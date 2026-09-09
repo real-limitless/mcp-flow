@@ -1,0 +1,76 @@
+{
+  "id": "io.github.constripacity/claude-replay",
+  "title": "claude-replay",
+  "description": "Session checkpoint & recovery for Claude Code: resume, search, tag, and export recorded sessions.",
+  "summary": "Session checkpoint & recovery for Claude Code: resume, search, tag, and export recorded sessions.",
+  "offersHint": "Session checkpoint & recovery for Claude Code: resume, search, tag, and export recorded sessions. · Packages: pypi:claude-replay · Env vars: CLAUDE_REPLAY_DB",
+  "version": "0.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "claude-replay",
+    "version": "0.4.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CLAUDE_REPLAY_DB",
+        "description": "SQLite database path (default: ~/.claude-replay/sessions.db). Point HTTP and stdio instances at the same path to share recorded sessions."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "claude-replay",
+      "version": "0.4.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CLAUDE_REPLAY_DB",
+          "description": "SQLite database path (default: ~/.claude-replay/sessions.db). Point HTTP and stdio instances at the same path to share recorded sessions."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CLAUDE_REPLAY_DB",
+      "description": "SQLite database path (default: ~/.claude-replay/sessions.db). Point HTTP and stdio instances at the same path to share recorded sessions."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/constripacity/Claude-Replay",
+  "repository": {
+    "url": "https://github.com/constripacity/Claude-Replay",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T23:28:36.14637Z",
+  "publishedAt": "2026-08-07T23:28:36.14637Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:08.742Z",
+    "sourceRepoAt": "2026-08-11T23:51:45.810Z",
+    "readmeAt": "2026-08-11T23:51:46.234Z",
+    "toolsAt": "2026-08-12T01:26:08.742Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/constripacity/Claude-Replay",
+    "checkedAt": "2026-08-11T23:51:45.810Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/constripacity/Claude-Replay/main/README.md",
+    "markdown": "# Claude Replay\n\n<!-- mcp-name: io.github.constripacity/claude-replay -->\n\n**The observability layer for Claude Code sessions — search, analytics, and visualization across every project.**\n\n[![PyPI](https://img.shields.io/pypi/v/claude-replay?cacheSeconds=3600)](https://pypi.org/project/claude-replay/)\n[![CI](https://github.com/constripacity/Claude-Replay/actions/workflows/ci.yml/badge.svg)](https://github.com/constripacity/Claude-Replay/actions/workflows/ci.yml)\n![Python](https://img.shields.io/badge/python-3.10%2B-blue)\n![License](https://img.shields.io/badge/license-MIT-green)\n![MCP](https://img.shields.io/badge/MCP-compatible-orange)\n\n---\n\nClaude Code's `--resume`/`--continue` and `/rewind` recover *the session you're in*. Claude Replay does the part they don't: it hooks passively into every session, records what happened to a local SQLite store, and makes **every past session — across every project — searchable, comparable, measurable, and exportable**. Full-text search, per-session insight metrics, death-cause classification (*why* a session ended), session diffing, a web dashboard, and a terminal UI — none of which Claude Code has natively.\n\n```\nClaude Code session\n        |\n   hooks (PreToolUse · PostToolUse · Stop)\n        |\n        v\n   ~/.claude-replay/sessions.db   ← events + checkpoints\n        |\n   +----+--------------------+\n   |          |              |\n MCP tools  Dashboard      TUI\n (resume)   :8766          (browse)\n```\n\nPassive hooks write. MCP tools, the web dashboard, and the terminal UI read. Nothing leaves your machine.\n\n---\n\n## How this complements native Claude Code\n\nClaude Replay is **additive** — it layers on top of the built-ins, it doesn't replace them.\n\n| You want to… | Use |\n|---|---|\n| Resume / continue the current session | **Native** `claude --continue`, `--resume` |\n| Undo file + conversation changes in a session | **Native** `/rewind` |\n| Search every past session by content, tool, or outcome | **Replay** `search` |\n| See *why* a session ended + per-session metrics | **Replay** `status` / `replay_insights` |\n| Compare two runs side by side | **Replay** `diff` |\n| Visualize a session timeline / browse all projects | **Replay** dashboard + TUI |\n| Export a session as HTML / JSON / Markdown | **Replay** `export --format` |\n\nThink of native resume/rewind as *recovery*, and Replay as *observability* over your whole history.\n\n---\n\n## Architecture\n\nPassive hooks write to SQLite. MCP tools read from SQLite. Dashboard + TUI visualize SQLite. That's the whole system.\n\n| Layer | File | Role |\n|-------|------|------|\n| Store | `claude_replay/store.py` | All DB access — sessions, events, checkpoints |\n| Hooks | `claude_replay/hooks.py` | Record tool calls + auto-checkpoint, dispatched by `claude-replay hook <type>` |\n| Recovery | `claude_replay/resume.py` | Generate a resume brief from a session |\n| Export | `claude_replay/export.py` | Render a session as a self-contained HTML trace |\n| Server | `claude_replay/server.py` | Starlette app — MCP SSE + JSON API + static dashboard |\n| TUI | `claude_replay/tui.py` + `tui_client.py` | Textual session browser over the JSON API |\n| CLI | `claude_replay/cli.py` | Every subcommand |\n\n> **Port 8766**  deliberately one above Claude Bridge's 8765, so the two siblings can run side by side without colliding.\n\n---\n\n## Quickstart\n\n### 1. Install\n\n```bash\npip install claude-replay\n```\n\nOr from a clone if you'd like to hack on it:\n\n```bash\ngit clone https://github.com/constripacity/Claude-Replay.git\ncd Claude-Replay\npip install -e .[dev]              # editable install with test/lint deps\npip install -e .[tui]             # add the terminal UI deps (textual, httpx)\n```\n\n> If `pip install -e` fails on your environment (a known hatchling editable-install quirk on some setups), install the deps directly instead:\n> `pip install mcp starlette uvicorn anyio textual httpx`.\n\n### 2. Install the hooks\n\nThis wires Replay into Claude Code by merging three hooks into `~/.claude/settings.json`. It's idempotent and leaves any other tools' hooks untouched.\n\n```bash\nclaude-replay install\n```\n\n```\n✓ Installed Claude Replay hooks into ~/.claude/settings.json\n  PreToolUse  → claude-replay hook pre-tool\n  PostToolUse → claude-replay hook post-tool\n  Stop        → claude-replay hook stop\n```\n\nFrom now on, every Claude Code session is recorded automatically. Remove the hooks any time with `claude-replay uninstall` (it removes only Replay's hooks).\n\nConfirm it's actually wired up — the one check that matters:\n\n```bash\nclaude-replay doctor\n```\n\n```\nClaude Replay — doctor\n\n  ✓ Hooks installed: PreToolUse / PostToolUse / Stop are in settings.json\n  ✓ Hook command on PATH: claude-replay → …/claude-replay\n  ✓ Database: ~/.claude-replay/sessions.db\n  ✓ Sessions recorded: 3 sessions; most recent 5m ago\n\nAll good — Replay is installed and recording. ✓\n```\n\nIf `doctor` warns that `claude-replay` isn't on PATH, the hooks can't run and nothing is recorded — put your install directory on PATH and re-run it.\n\n### 3. Start the server (dashboard + MCP tools)\n\n```bash\nclaude-replay serve                 # defaults: 127.0.0.1:8766\nclaude-replay serve --port 9000     # custom port\nclaude-replay serve --host 0.0.0.0  # bind all interfaces\n```\n\n```\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n  Claude Replay — Session checkpoint & recovery server\n  Version: 0.4.1\n  DB: ~/.claude-replay/sessions.db\n  http://localhost:8766/             ← Dashboard\n  http://localhost:8766/sse          ← MCP config\n  http://localhost:8766/api/state    ← JSON state\n  http://localhost:8766/status       ← Health check\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n```\n\n### 4. (Optional) Register the MCP tools with Claude Code\n\nSo a running Claude Code session can call `replay_resume`, `replay_checkpoint`, etc. directly. Two ways:\n\n**SSE** (alongside the dashboard — needs `claude-replay serve` running):\n\n```bash\nclaude mcp add --transport sse -s user claude-replay http://localhost:8766/sse\n```\n\n**stdio** (no server process — the client launches Replay on demand):\n\n```bash\nclaude mcp add -s user claude-replay -- claude-replay mcp\n# or, without installing: uvx claude-replay mcp\n```\n\nVerify with `claude mcp list`  `claude-replay` should show `✓ Connected`. Inside an already-running session, type `/mcp` to re-handshake.\n\n---\n\n## When a session dies\n\n```bash\n# What's the state of the last session?\nclaude-replay status\n\n# Print a paste-ready resume brief (most recent session, or pass an id)\nclaude-replay resume\nclaude-replay resume <session-id>\n\n# Browse every recorded session in the terminal\nclaude-replay tui                   # needs `claude-replay serve` running\n\n# Export a session as a self-contained HTML trace\nclaude-replay export                # → ~/.claude-replay/exports/<id>.html\n```\n\nPaste the `resume` output into a fresh Claude Code session and it picks up where the dead one left off  objective, what was done, what's next, and which files were touched.\n\n---\n\n## MCP Tools\n\nEvery connected Claude Code session gets these ten tools:\n\n| Tool | Description |\n|------|-------------|\n| `replay_status` | Current session summary  objective, status, how it ended, event/checkpoint counts, last activity |\n| `replay_checkpoint` | Force a checkpoint of the current session now, with an optional note |\n| `replay_resume` | Generate a structured resume brief for a session (default: most recent) |\n| `replay_sessions` | List recent sessions with status, model, duration, checkpoint count |\n| `replay_insights` | Per-session metrics: how it ended, duration, tool calls, error rate, files touched, top tools |\n| `replay_stats` | Cross-session analytics: tool calls, error rate, why sessions end, tool mix, per-project rollups |\n| `replay_search` | Full-text search across sessions with filters (tool, cause, date, project), ranked by match count |\n| `replay_diff` | Compare two sessions: metric deltas + which files each touched |\n| `replay_tag` | Name a session and add/remove tags for later retrieval |\n| `replay_export` | Render a session as a self-contained trace (html / json / md) and return the path |\n\n---\n\n## CLI Reference\n\n| Command | What it does |\n|---------|--------------|\n| `claude-replay install` | Merge Replay's hooks into `~/.claude/settings.json` (idempotent) |\n| `claude-replay uninstall` | Remove only Replay's hooks |\n| `claude-replay status` | Current/last session at a glance, with insight metrics |\n| `claude-replay sessions [--limit N]` | List recent sessions (with names + tags) |\n| `claude-replay search <query> [--tool T] [--cause C] [--since 7d] [--project P]` | Full-text search with filters (omit query to browse by filter) |\n| `claude-replay diff <session-a> <session-b>` | Compare two sessions side by side |\n| `claude-replay resume [session_id]` | Print a resume brief (default: most recent) |\n| `claude-replay export [session_id] [--output DIR] [--format html\\|json\\|md]` | Render a trace |\n| `claude-replay tag [session_id] [--name N] [--add a,b] [--remove c] [--clear]` | Name or tag a session |\n| `claude-replay prune [--older-than 30d] [--yes]` | Delete sessions with no recent activity (destructive) |\n| `claude-replay serve [--host H] [--port P]` | Start the MCP + dashboard server (port 8766) |\n| `claude-replay mcp` | Serve the MCP tools over stdio (for `uvx claude-replay mcp` / MCP clients) |\n| `claude-replay tui [--url URL]` | Launch the terminal session browser |\n| `claude-replay reset [--yes]` | Delete **all** recorded sessions (destructive) |\n| `claude-replay hook <pre-tool\\|post-tool\\|stop>` | Internal — invoked by Claude Code's hooks |\n\n---\n\n## Dashboard & TUI\n\n**Web dashboard** (`claude-replay serve`, then open `http://localhost:8766/`)  a vanilla-JS view that polls every 2 s: session list (with how-it-ended badge + tags), a live search box, per-session timeline, and one-click \"Copy Resume Brief\" / \"Export HTML\". No CDN, no build step.\n\n**Terminal UI** (`claude-replay tui`)  a Textual browser in the same dark theme. A session sidebar, a live event feed, and a detail inspector showing how the session ended, its tags, the latest checkpoint, and files touched. Keys:\n\n```\n↑↓ navigate   Tab switch panel   Space pause\nr  resume (copies the brief to your clipboard)\ne  export HTML trace\n?  help        q quit\n```\n\nThe TUI talks to the server over HTTP  start `claude-replay serve` first (defaults to `http://127.0.0.1:8766`; point elsewhere with `--url`).\n\n---\n\n## Configuration\n\n| Env var | Default | Purpose |\n|---------|---------|---------|\n| `CLAUDE_REPLAY_DB` | `~/.claude-replay/sessions.db` | SQLite store location |\n| `CLAUDE_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` | — | Session identity (Claude Code sets this in the hook payload); falls back to these env vars, then to a hash of the project dir |\n| `CLAUDE_REPLAY_CORS_ORIGIN` | localhost only | Comma-separated extra CORS origins for the server |\n| `CLAUDE_REPLAY_NO_DASHBOARD` | — | Set to disable the static dashboard mount (MCP/JSON only) |\n\nThe hook path is offline-first by design: it makes **no network calls** and completes in well under 50 ms  just the one SQLite write. Large tool payloads are truncated at 8 KB per event so the DB stays lean.\n\n---\n\n## Development\n\n```bash\npip install -e .[dev]               # or install deps directly (see install note)\npython -m pytest                    # full suite\nruff check .\n```\n\nTests use an isolated `tmp_path` SQLite database (the `fresh_db` fixture) — they never touch your real `~/.claude-replay/sessions.db`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the scope and the coding rules.\n\n---\n\n## License\n\nMIT  see [LICENSE](LICENSE).\n\nSibling to [Claude Bridge](https://github.com/constripacity/Claude-Bridge). Built under the Constripacity banner.\n",
+    "fetchedAt": "2026-08-11T23:51:46.234Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:26:08.742Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

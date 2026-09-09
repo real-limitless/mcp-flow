@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AINative-Studio/ainative-postgres-mcp",
+  "title": "ainative-postgres-mcp",
+  "description": "Zero-config Postgres MCP with auto-provisioning — drop-in for server-postgres.",
+  "summary": "Zero-config Postgres MCP with auto-provisioning — drop-in for server-postgres.",
+  "offersHint": "Zero-config Postgres MCP with auto-provisioning — drop-in for server-postgres. · Packages: npm:ainative-postgres-mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "ainative-postgres-mcp",
+    "version": "1.0.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "ainative-postgres-mcp",
+      "version": "1.0.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AINative-Studio/ainative-postgres-mcp",
+  "repository": {
+    "url": "https://github.com/AINative-Studio/ainative-postgres-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-01T02:25:03.580343Z",
+  "publishedAt": "2026-08-01T02:25:03.580343Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:56.562Z",
+    "sourceRepoAt": "2026-08-12T00:18:08.063Z",
+    "readmeAt": "2026-08-12T00:18:08.462Z",
+    "toolsAt": "2026-08-12T01:47:56.563Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AINative-Studio/ainative-postgres-mcp",
+    "checkedAt": "2026-08-12T00:18:08.063Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AINative-Studio/ainative-postgres-mcp/main/README.md",
+    "markdown": "# ainative-postgres-mcp\n\nZero-config PostgreSQL MCP server with auto-provisioning. Drop-in replacement for `@modelcontextprotocol/server-postgres` — no `DATABASE_URL` needed.\n\nThe official `@modelcontextprotocol/server-postgres` requires you to bring your own Postgres database and pass a connection string. This fork **auto-provisions a managed PostgreSQL instance** with pgvector on first run. Agents get a database instantly with zero configuration.\n\n## Quick Start\n\n```bash\nnpx ainative-postgres-mcp\n```\n\nThat's it. On first run:\n1. A free managed PostgreSQL instance is provisioned\n2. pgvector extension is enabled automatically\n3. Connection details are saved to `~/.ainative/postgres-config.json`, `.env`, and `.mcp.json`\n4. A claim URL is printed so you can take ownership of the database\n\n## MCP Configuration\n\n### Claude Code / Claude Desktop\n\nAdd to your `claude_desktop_config.json` or `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"postgres\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ainative-postgres-mcp\"]\n    }\n  }\n}\n```\n\n### With existing database\n\n```json\n{\n  \"mcpServers\": {\n    \"postgres\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ainative-postgres-mcp\"],\n      \"env\": {\n        \"DATABASE_URL\": \"postgresql://user:pass@host:5432/mydb\"\n      }\n    }\n  }\n}\n```\n\n### Cursor\n\nAdd to `.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"postgres\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ainative-postgres-mcp\"]\n    }\n  }\n}\n```\n\n### Windsurf\n\nAdd to `~/.windsurf/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"postgres\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ainative-postgres-mcp\"]\n    }\n  }\n}\n```\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `query` | Execute read-only SQL queries (runs in READ ONLY transaction) |\n| `list_tables` | List all tables with schema, name, and type |\n| `describe_table` | Get full table schema: columns, types, constraints, indexes |\n| `create_table` | Create a new table with SQL DDL |\n| `insert` | Insert rows into a table (returns inserted rows) |\n\n### Comparison with official server-postgres\n\n| Feature | `@modelcontextprotocol/server-postgres` | `ainative-postgres-mcp` |\n|---------|----------------------------------------|------------------------|\n| Read queries | Yes | Yes |\n| Write queries | No | Yes (`create_table`, `insert`) |\n| Schema inspection | Via resources | Via `describe_table` tool |\n| Table listing | No | Yes (`list_tables`) |\n| Auto-provisioning | No | Yes |\n| pgvector | Manual setup | Auto-enabled |\n| Zero config | No (requires DATABASE_URL) | Yes |\n| Free tier | N/A | Yes |\n\n## How Auto-Provisioning Works\n\n```\nStart\n  |\n  v\nDATABASE_URL set? ----yes----> Connect directly\n  |\n  no\n  v\n~/.ainative/postgres-config.json exists? ----yes----> Load and connect\n  |\n  no\n  v\n.mcp.json has DATABASE_URL? ----yes----> Load and connect\n  |\n  no\n  v\nPOST /api/v1/public/instant-db   (get API key)\n  |\n  v\nPOST /api/v1/zerodb/postgres/provision   (get Postgres)\n  |\n  v\nSave to ~/.ainative/postgres-config.json + .env + .mcp.json\n  |\n  v\nConnect and enable pgvector\n```\n\n## pgvector Support\n\npgvector is automatically enabled on provisioned instances. You can use vector columns in your tables:\n\n```sql\nCREATE TABLE documents (\n  id SERIAL PRIMARY KEY,\n  content TEXT,\n  embedding vector(1536)\n);\n```\n\nAnd run similarity searches:\n\n```sql\nSELECT content, embedding <=> '[0.1, 0.2, ...]'::vector AS distance\nFROM documents\nORDER BY distance\nLIMIT 10;\n```\n\n## Environment Variables\n\n| Variable | Description | Required |\n|----------|-------------|----------|\n| `DATABASE_URL` | PostgreSQL connection string | No (auto-provisioned if missing) |\n| `ZERODB_API_KEY` | ZeroDB API key (for provisioning) | No (auto-created) |\n| `ZERODB_PROJECT_ID` | ZeroDB project ID | No (auto-created) |\n| `ZERODB_API_URL` | ZeroDB API base URL | No (defaults to `https://api.ainative.studio`) |\n\n## Free Tier\n\nAuto-provisioned instances include:\n- Managed PostgreSQL with pgvector\n- Shared compute (suitable for development and light production)\n- Automatic backups\n- SSL encryption\n\nSign up at [ainative.studio](https://ainative.studio) to claim your instance and unlock higher limits.\n\n## License\n\nMIT\n\n---\n\n## Powered by ZeroDB + AINative\n\nThis package is part of the [AINative](https://ainative.studio) ecosystem — the AI-native developer platform.\n\n### Why ZeroDB?\n\n| Feature | ZeroDB | Others |\n|---------|--------|--------|\n| Vector search | Built-in, free embeddings | Separate service (Pinecone, Qdrant) |\n| Agent memory | Cognitive memory with decay + reflection | DIY or Mem0 ($$$) |\n| File storage | S3-compatible, included | Separate S3 bucket |\n| NoSQL tables | Instant, schema-free | MongoDB Atlas, DynamoDB |\n| PostgreSQL | Managed, pgvector pre-installed | Neon, Supabase ($$$) |\n| Serverless functions | DB-event triggered | Firebase/Supabase Edge |\n| Pricing | Free tier, no credit card | Pay-per-query from day 1 |\n\n### Get Started Free\n\n```bash\nnpx zerodb-cli init    # Auto-configures your IDE\n```\n\nOr sign up at **[ainative.studio](https://ainative.studio)** — free tier, no credit card required.\n\n[View all ZeroDB packages →](https://docs.ainative.studio)\n\n---\n\n## Zero-Config Auto-Provisioning\n\n**No account needed to start.** On first run, this package automatically:\n\n1. Provisions a **free ZeroDB instance** (~800ms)\n2. Saves credentials locally (`.env`, `.mcp.json`)\n3. Prints a **claim link** in your terminal\n\n### The 72-Hour Window\n\nYour auto-provisioned instance is **free for 72 hours**. To keep your data permanently, visit the **claim URL** printed in your terminal.\n\n### For AI Agents\n\nIf a coding agent (Claude Code, Cursor, Windsurf) installs this package:\n- Auto-provisions without human intervention\n- The **claim URL** appears in agent output — visit it to take ownership\n- `.claude/CLAUDE.md` instructs agents to surface the claim link to you\n- Check `.env` or `~/.ainative/config.json` for your project ID if you miss it\n",
+    "fetchedAt": "2026-08-12T00:18:08.462Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:56.563Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

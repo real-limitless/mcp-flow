@@ -1,0 +1,77 @@
+{
+  "id": "dev.gnosem/gnosem",
+  "title": "Gnosem",
+  "description": "Cross-vendor AI memory over MCP. One semantic store, readable and writeable from every MCP client.",
+  "summary": "Cross-vendor AI memory over MCP. One semantic store, readable and writeable from every MCP client.",
+  "offersHint": "Cross-vendor AI memory over MCP. One semantic store, readable and writeable from every MCP client. · Remote MCP (streamable-http) at https://gnosem.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://gnosem.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://gnosem.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://gnosem.dev",
+  "sourceUrl": "https://github.com/gnosem/gnosem",
+  "repository": {
+    "url": "https://github.com/gnosem/gnosem",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T01:13:01.36249Z",
+  "publishedAt": "2026-07-30T01:13:01.36249Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:46.905Z",
+    "sourceRepoAt": "2026-08-12T00:22:42.049Z",
+    "readmeAt": "2026-08-12T00:22:42.679Z",
+    "toolsAt": "2026-08-12T00:22:42.756Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gnosem/gnosem",
+    "checkedAt": "2026-08-12T00:22:42.049Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gnosem/gnosem/main/README.md",
+    "markdown": "<p align=\"center\">\n  <picture>\n    <source media=\"(prefers-color-scheme: dark)\" srcset=\"https://raw.githubusercontent.com/gnosem/gnosem/main/brand/gnosem-lockup-inverse.svg\">\n    <img alt=\"Gnosem\" src=\"https://raw.githubusercontent.com/gnosem/gnosem/main/brand/gnosem-lockup.svg\" width=\"360\">\n  </picture>\n</p>\n\n<p align=\"center\">\n  <strong>Cross-vendor AI memory over MCP.</strong><br>\n  One memory store. Every model. Claude, ChatGPT, Gemini, Kimi, Cursor, Windsurf — anything that speaks MCP.\n</p>\n\n<p align=\"center\">\n  <a href=\"https://gnosem.dev\">gnosem.dev</a>\n  ·\n  <a href=\"https://gnosem.dev/upgrade\">pricing</a>\n  ·\n  <a href=\"https://gnosem.dev/llms.txt\">llms.txt</a>\n</p>\n\n---\n\n## What it is\n\nGnosem is a hosted [Model Context Protocol](https://modelcontextprotocol.io) server that gives each user one persistent memory store — readable and writeable from every MCP-capable AI client. Vendor-agnostic by design: a fact saved from Claude is visible in ChatGPT, Cursor, Windsurf, Zed, Kimi, and any other MCP client (or plain HTTP tool call) using the same API key.\n\nThe problem it solves: every AI vendor has its own proprietary memory. OpenAI's ChatGPT memory doesn't work in Claude. Anthropic's projects don't cross into GPT. Multi-model users retell context in every session. Gnosem is the neutral layer between vendors.\n\n## Tools exposed\n\n- `memory_write` — save a fact, preference, decision, or note. `content`, `tags?`, `written_by?` (provenance), `session_id?`, `no_optimize?`\n- `memory_search` — semantic search across your memories. `query`, `k?`, `raw?`\n- `memory_list` — list recent memories in reverse-chronological order. `limit?`, `cursor?`, `raw?`\n- `memory_forget` — soft-delete a memory by id\n- `memory_supersede` — replace a stale memory with a corrected one\n\n## AI-optimized storage\n\nLong memories (>400 chars) are automatically compressed on write to a structured-facts form (Workers AI, llama-3.1-8b-instruct-fast) with a strict prompt: `TOPIC=..., PROJECT=..., DECISION=..., STACK=..., PROBLEM=...`. The reading LLM ingests the compact form by default — fewer tokens, same meaning. The raw prose is preserved and returned as `content_raw`; pass `raw:true` to invert. Pass `no_optimize:true` on write to skip compression entirely.\n\nCompression is guarded — if the model output isn't actually shorter, gnosem falls back to storing raw only. Fail-open: any AI error still saves the memory.\n\n## Quickstart\n\n```bash\nnpx gnosem-install\n```\n\nAuto-detects and configures every MCP-capable client on your machine (Claude Desktop, Claude Code, Cursor, Windsurf, Zed). Prompts for your API key and merges the `gnosem` entry alongside your existing servers. Restart the affected clients — the five memory tools appear immediately.\n\nGet an API key at [gnosem.dev](https://gnosem.dev), or via the API:\n```bash\ncurl -sX POST https://gnosem.dev/signup \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"email\":\"you@example.com\"}'\n```\nThe key is displayed once. Save it.\n\n### Manual config (any MCP client)\n\n```json\n{\n  \"mcpServers\": {\n    \"gnosem\": {\n      \"url\": \"https://gnosem.dev/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer gn_your_api_key\" }\n    }\n  }\n}\n```\n\n## Quickstart — any HTTP client\n\n```bash\n# Write\ncurl -sX POST https://gnosem.dev/mcp \\\n  -H \"Authorization: Bearer gn_your_key\" -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_write\",\"arguments\":{\"content\":\"I prefer Postgres for greenfield work.\",\"written_by\":\"claude-code\",\"tags\":[\"preference\"]}}}'\n\n# Search\ncurl -sX POST https://gnosem.dev/mcp \\\n  -H \"Authorization: Bearer gn_your_key\" -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"memory_search\",\"arguments\":{\"query\":\"database preference\",\"k\":5}}}'\n```\n\n## Pricing\n\n| Plan | Price | Memories | API keys | Storage |\n|---|---|---|---|---|\n| Free | $0 | 200 | 1 | shared |\n| Pro | $9/mo or $90/yr | Unlimited | Unlimited | 1 GB |\n\nUpgrade at [gnosem.dev/upgrade](https://gnosem.dev/upgrade).\n\n## Data model\n\nEach memory row: `id` (uuid), `content` (raw, ≤8000 chars), `content_optimized` (structured facts, nullable), `tags` (json array), `written_by` (provenance — which model wrote it), `session_id` (opaque grouping), `created_at`, plus a semantic embedding ([BGE-base-en-v1.5](https://huggingface.co/BAAI/bge-base-en-v1.5), 768-dim) stored in Vectorize.\n\nEvery memory tracks provenance so you can see which model contributed which fact. Memories are per-user isolated at both the D1 metadata layer (`user_id` filter on every query) and the Vectorize layer (metadata index on `user_id`).\n\nCorrection chains via `memory_supersede`: the old row is marked superseded (excluded from reads) and the new row references it. Soft-delete via `memory_forget` (excluded from reads and removed from the vector index).\n\n## Infrastructure\n\n- **[Cloudflare Workers](https://workers.cloudflare.com/)** — edge-hosted MCP server, no cold starts\n- **[D1](https://developers.cloudflare.com/d1/)** — metadata + auth\n- **[Vectorize](https://developers.cloudflare.com/vectorize/)** — 768-dim embedding storage + cosine ANN search, per-user metadata filter\n- **[Workers AI](https://developers.cloudflare.com/workers-ai/)** — embedding generation (`@cf/baai/bge-base-en-v1.5`) and content optimization (`@cf/meta/llama-3.1-8b-instruct-fast`)\n- **[Stripe](https://stripe.com)** — subscription billing\n\nLatency: sub-100ms for read, ~200-800ms for write (dominated by embedding + optimization inference).\n\n## AI discovery\n\nThe service is designed to be discoverable and citeable by LLMs:\n\n- [`/llms.txt`](https://gnosem.dev/llms.txt) — LLM-optimized site summary per [llmstxt.org](https://llmstxt.org)\n- [`/robots.txt`](https://gnosem.dev/robots.txt) — explicitly welcomes GPTBot, ClaudeBot, PerplexityBot, Google-Extended, and every major AI crawler\n- [`/sitemap.xml`](https://gnosem.dev/sitemap.xml) — standard sitemap\n- Schema.org JSON-LD (`SoftwareApplication` + `FAQPage`) embedded in the landing page\n\n## Self-hosting\n\nThe Worker source in this repo can be deployed to your own Cloudflare account. You'll need:\n\n1. A Cloudflare account with Workers, D1, Vectorize, and Workers AI enabled\n2. `npx wrangler d1 create <name>` — creates the D1 database. Update `wrangler.jsonc` with the returned id\n3. `npx wrangler vectorize create <name> --dimensions=768 --metric=cosine` — creates the index\n4. `npx wrangler vectorize create-metadata-index <name> --property-name=user_id --type=string` — required for per-user isolation\n5. `npx wrangler d1 execute <name> --remote --file=schema.sql` then apply `migrations/*.sql` in order\n6. `npx wrangler secret put STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` (only needed if you want billing)\n7. `npx wrangler deploy`\n\nThe hosted service ([gnosem.dev](https://gnosem.dev)) is the recommended way to use Gnosem — one API key, no infra to run, memories stay reachable when you switch machines.\n\n## About\n\nGnosem is a product of [CUETV LLC](https://cuetv.us), a Missouri holding company operating a family of new-media and infrastructure products.\n\n## License\n\n[MIT](./LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:22:42.679Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "memory_write",
+      "description": "Save a fact, preference, decision, or note to the user's cross-model memory. Any MCP client can read this back later. Include written_by (e.g. 'claude-code', 'gpt-5', 'kimi-k2') for provenance and session_id to group related writes. Long content (>400 chars) is automatically compressed on write to a structured-facts form optimized for LLM reading — the raw text is preserved. Pass no_optimize:true to skip. Writes are deduped by default: (1) SHA-256 of trim(content) short-circuits byte-identical writes with { id, exact_duplicate:true } for free (no embed call); (2) failing that, semantic dedup returns { id, deduped:true, matched_score } when cosine ≥ 0.85. Pass force:true to bypass both, or use memory_supersede to explicitly correct a prior memory."
+    },
+    {
+      "name": "memory_search",
+      "description": "Search the user's memories. Default mode is 'hybrid': blends semantic (cosine over Vectorize) and keyword (BM25 over SQLite FTS5) hits via Reciprocal Rank Fusion (k=60). Semantic catches paraphrases; keyword catches exact-string hits (IDs, dates, code snippets). Pass mode:'semantic' or mode:'keyword' to run just one. Content defaults to the LLM-optimized (compressed) form when available (raw:true to invert). Excludes forgotten + superseded. Optional filters narrow after retrieval: tags (AND), written_by, session_id, and/or since/until (ms epoch)."
+    },
+    {
+      "name": "memory_list",
+      "description": "List the user's most recent memories in reverse chronological order. Use for browsing or catching up on what the user's other model sessions have written recently. Same content/content_raw shape as memory_search. Optional filters (tags, written_by, session_id, since, until) narrow the listing at the SQL level."
+    },
+    {
+      "name": "memory_forget",
+      "description": "Soft-delete a memory by id. The row is retained for audit but excluded from search/list and removed from the vector index."
+    },
+    {
+      "name": "memory_supersede",
+      "description": "Replace a stale memory with a corrected one. The old row is marked superseded and excluded from future reads; the new row becomes the current version. Use for corrections; use memory_forget for pure deletions."
+    },
+    {
+      "name": "memory_write_bulk",
+      "description": "Write up to 50 memories in a single call. Each entry runs the same path as memory_write (semantic dedup by default; pass force:true per-entry to skip). Embeddings + optimizations run in parallel; D1 inserts are batched. Returns { results: [...] } with one entry per input in the same order — each is { id, created_at, optimized? } on success, { id, created_at, deduped, matched_score } on dedup, or { error } on failure. Free-tier limits apply to the sum: if adding N would exceed 200, the first (200 - existing) succeed and the rest return an error."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:22:42.756Z",
+  "toolsPreviewStatus": "ok"
+}

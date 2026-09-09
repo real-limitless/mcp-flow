@@ -1,0 +1,78 @@
+{
+  "id": "io.github.bmlt-enabled/bmlt-server-mcp",
+  "title": "BMLT Meetings",
+  "description": "Search Narcotics Anonymous meetings worldwide via the BMLT directory.",
+  "summary": "Search Narcotics Anonymous meetings worldwide via the BMLT directory.",
+  "offersHint": "Search Narcotics Anonymous meetings worldwide via the BMLT directory. · Remote MCP (streamable-http) at https://mcp.bmlt.app/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.bmlt.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.bmlt.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mcp.bmlt.app/",
+  "sourceUrl": "https://github.com/bmlt-enabled/bmlt-server-mcp",
+  "repository": {
+    "url": "https://github.com/bmlt-enabled/bmlt-server-mcp",
+    "source": "github",
+    "id": "1241002667"
+  },
+  "updatedAt": "2026-05-18T03:36:16.774604Z",
+  "publishedAt": "2026-05-18T03:36:16.774604Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:52.984Z",
+    "sourceRepoAt": "2026-08-11T23:54:30.744Z",
+    "readmeAt": "2026-08-11T23:54:31.259Z",
+    "toolsAt": "2026-08-11T23:54:31.432Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bmlt-enabled/bmlt-server-mcp",
+    "checkedAt": "2026-08-11T23:54:30.744Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bmlt-enabled/bmlt-server-mcp/main/README.md",
+    "markdown": "# bmlt-server-mcp\n\nA **streamable HTTP** [Model Context Protocol](https://modelcontextprotocol.io) server that exposes [BMLT](https://bmlt.app) (Basic Meeting List Toolbox — the Narcotics Anonymous meeting directory) as a set of read-only tools that AI assistants can call directly.\n\nBMLT hosts approximately 85% of Narcotics Anonymous meetings worldwide; the default backend is the [BMLT aggregator](https://aggregator.bmltenabled.org/main_server/), which federates every public BMLT root server ([server list](https://raw.githubusercontent.com/bmlt-enabled/aggregator/refs/heads/main/serverList.json)) into a single search surface — effectively the authoritative AI-accessible source for finding NA meetings.\n\nMCP is an open protocol, so any compatible client works: **Claude** (Code, Desktop, web), **ChatGPT** (Connectors and the Responses API), **Google Gemini**, **Cursor**, **Windsurf**, **Zed**, **Cline**, **Continue**, and others.\n\nUnlike the [npm `bmlt-mcp-server`](https://www.npmjs.com/package/bmlt-mcp-server) (stdio-only, runs as a local subprocess), this server speaks MCP over HTTP and is meant to be **hosted once** and consumed remotely.\n\nBuilt on **Laravel + PHP 8.2+** using the official [`laravel/mcp`](https://github.com/laravel/mcp) package.\n\nA live deployment runs at <https://mcp.bmlt.app/> (landing page) with a tools reference at <https://mcp.bmlt.app/reference>.\n\n---\n\n## Tools\n\nAll tools are read-only and idempotent. All tools accept an optional `root_server_url` argument; if omitted, the configured `BMLT_ROOT_SERVER_URL` is used.\n\n| Tool | What it does |\n| --- | --- |\n| `search_meetings` | Search meetings by address (geocoded server-side) or lat/lng + radius, filtered by weekday, time, format, venue type (in-person / virtual / hybrid), service body, and free text. Returns a curated summary by default (`data_format=full` for the raw BMLT response). |\n| `get_meeting` | Fetch a single meeting by its BMLT `id_bigint`. |\n| `list_formats` | List meeting format codes (Open, Closed, Speaker, Beginners, language tags, …) so callers can map names → IDs for `search_meetings`. |\n| `list_service_bodies` | List zones / regions / areas / groups so callers can map names → IDs for `search_meetings`. |\n| `get_server_info` | Capabilities, version, languages, and default coordinates for the configured root server. |\n| `list_root_servers` | Public BMLT root servers known to the aggregator. Useful when the caller wants to switch roots. |\n\n---\n\n## Quick start\n\n### Docker (recommended)\n\n```bash\ncp .env.example .env\ndocker compose up --build\n```\n\nThe MCP endpoint is then live at `http://localhost:8080/mcp` over the [Streamable HTTP transport](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports#streamable-http).\n\n### Local PHP\n\n```bash\ncomposer install\ncp .env.example .env\nphp artisan key:generate\nphp artisan serve     # http://localhost:8000/mcp\n```\n\n### Verify with the MCP Inspector\n\n```bash\nphp artisan mcp:inspector\n```\n\nThen connect to `http://localhost:8000/mcp` (or `:8080` for Docker) and list tools.\n\n---\n\n## Configuration\n\nAll configuration lives in `.env` (see `.env.example`). The interesting bits:\n\n| Variable | Purpose |\n| --- | --- |\n| `BMLT_ROOT_SERVER_URL` | **Required.** Default BMLT root server, including `/main_server` path. |\n| `BMLT_ALLOWED_ROOTS` | Comma-separated allowlist for the optional `root_server_url` tool argument. The default root is always implicitly allowed. |\n| `BMLT_ALLOW_ANY_ROOT` | `true` allows any URL via `root_server_url` — **not recommended** in production (enables SSRF-style queries). Off by default. |\n| `BMLT_AGGREGATOR_URL` | Aggregator queried by `list_root_servers`. Defaults to the public aggregator. |\n| `GEOCODER` | `nominatim` (default), `google`, or `null`. `null` rejects address inputs and requires lat/lng. |\n| `NOMINATIM_USER_AGENT` | Identifies your deployment to OSM — required by Nominatim's ToS. Always set this in production. |\n| `GOOGLE_GEOCODER_API_KEY` | Required when `GEOCODER=google`. |\n\n### Why an allowlist?\n\nThe optional `root_server_url` tool argument lets a single deployment serve any BMLT root, but accepting arbitrary URLs would let callers turn the server into an SSRF probe against your network. The default is a strict allowlist (the configured default root, plus anything you add to `BMLT_ALLOWED_ROOTS`). Set `BMLT_ALLOW_ANY_ROOT=true` only when the server is isolated from anything sensitive.\n\n---\n\n## Connecting AI clients\n\nThe endpoint of a deployed instance is `https://your-host.example.com/mcp`. Replace it below with your own host (or use `https://mcp.bmlt.app/mcp` to try the public instance).\n\n### Claude Code (CLI)\n\n```bash\nclaude mcp add --transport http bmlt https://your-host.example.com/mcp\n```\n\n### Claude Desktop — Custom Connector (newer builds)\n\nSettings → Connectors → **Add custom connector** → paste the URL.\n\n### Claude Desktop — Config file (any version, needs Node.js)\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"bmlt\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-remote\", \"https://your-host.example.com/mcp\"]\n    }\n  }\n}\n```\n\n### ChatGPT / OpenAI Responses API\n\n```json\n{\n  \"tools\": [\n    {\n      \"type\": \"mcp\",\n      \"server_label\": \"bmlt\",\n      \"server_url\": \"https://your-host.example.com/mcp\"\n    }\n  ]\n}\n```\n\nIn ChatGPT itself (Pro/Business/Enterprise): Settings → Connectors → Add, using the same URL.\n\n### Cursor / Windsurf / Zed / Cline / Continue\n\nAll of these read an `mcpServers` block. For Cursor, edit `~/.cursor/mcp.json` (or the project-local `.cursor/mcp.json`); other clients use a similar config file.\n\n```json\n{\n  \"mcpServers\": {\n    \"bmlt\": {\n      \"url\": \"https://your-host.example.com/mcp\"\n    }\n  }\n}\n```\n\nFor per-tool parameter documentation and BMLT-API mappings, see the live [reference page](https://mcp.bmlt.app/reference). For day-to-day commands on a deployed instance (log tailing, usage summaries, cache clears, upgrades), see [docs/operations.md](docs/operations.md).\n\n---\n\n## Adding authentication\n\nThe default config has no auth — anyone who can reach `/mcp` can call the tools. To gate it:\n\n```php\n// routes/ai.php\nuse Laravel\\Mcp\\Facades\\Mcp;\n\nMcp::oauthRoutes();                          // OAuth 2.1 (Laravel Passport)\nMcp::web('/mcp', BmltServer::class)\n    ->middleware('auth:api');\n```\n\nOr add a simple bearer-token check via custom middleware. See the [Laravel MCP docs](https://laravel.com/docs/mcp) for the full options.\n\n---\n\n## Architecture\n\n```\napp/\n├── Mcp/\n│   ├── Servers/BmltServer.php           # Registers the 6 tools\n│   └── Tools/\n│       ├── SearchMeetingsTool.php\n│       ├── GetMeetingTool.php\n│       ├── ListFormatsTool.php\n│       ├── ListServiceBodiesTool.php\n│       ├── GetServerInfoTool.php\n│       ├── ListRootServersTool.php\n│       └── Concerns/ResolvesBmltClient.php\n├── Services/\n│   ├── Bmlt/\n│   │   ├── BmltClient.php               # Wraps client_interface/json\n│   │   ├── BmltClientFactory.php        # Allowlist enforcement\n│   │   └── BmltException.php\n│   └── Geocoding/\n│       ├── Geocoder.php                 # Interface\n│       ├── GeocoderManager.php          # Driver resolver\n│       ├── NominatimGeocoder.php        # OSM (rate-limited, cached)\n│       ├── GoogleGeocoder.php           # Google Geocoding API\n│       ├── NullGeocoder.php             # Disabled\n│       ├── GeocodingResult.php\n│       └── GeocodingException.php\n└── Providers/BmltServiceProvider.php\n\nconfig/bmlt.php                          # All knobs\nroutes/ai.php                            # Mcp::web('/mcp', BmltServer::class)\n```\n\nThe HTTP API wrapped by `BmltClient` is formally specified by the\n[BMLT Semantic OpenAPI document](https://aggregator.bmltenabled.org/main_server/api/v1/openapi-semantic.json)\n(OpenAPI 3.1) — refer to it for every parameter, response shape, and field definition\nthat BMLT itself supports, even if this MCP server doesn't yet expose it as a tool argument.\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:54:31.259Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_meetings",
+      "description": "Search Narcotics Anonymous meetings on a BMLT root server. Filter by location (address or lat/lng + radius), weekday, time of day, format, venue type (in-person / virtual / hybrid), and service body. Returns a trimmed summary by default; pass data_format='full' for the raw BMLT response."
+    },
+    {
+      "name": "get_meeting",
+      "description": "Fetch the full record for a single meeting by its BMLT id_bigint."
+    },
+    {
+      "name": "list_formats",
+      "description": "List available meeting formats (Open, Closed, Speaker, Beginners, language tags, etc.) so the caller can map human-friendly format names to BMLT format IDs."
+    },
+    {
+      "name": "list_service_bodies",
+      "description": "List BMLT service bodies (zones, regions, areas, groups). Useful for translating \"Northern California Region\" to a service body ID for use with search_meetings."
+    },
+    {
+      "name": "get_server_info",
+      "description": "Return capabilities, version, languages, and default coordinates for a BMLT root server."
+    },
+    {
+      "name": "list_root_servers",
+      "description": "List public BMLT root servers known to the BMLT aggregator. Use the returned root_server_url values with other tools to query a specific server."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:54:31.432Z",
+  "toolsPreviewStatus": "ok"
+}

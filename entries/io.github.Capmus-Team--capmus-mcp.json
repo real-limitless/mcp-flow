@@ -1,0 +1,76 @@
+{
+  "id": "io.github.Capmus-Team/capmus-mcp",
+  "title": "capmus-mcp",
+  "description": "Search listings, message posters, and create draft posts on Capmus, the university marketplace",
+  "summary": "Search listings, message posters, and create draft posts on Capmus, the university marketplace",
+  "offersHint": "Search listings, message posters, and create draft posts on Capmus, the university marketplace · Remote MCP (streamable-http) at https://mcp.capmus.com/mcp",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.capmus.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.capmus.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Capmus-Team/supost-mcp",
+  "repository": {
+    "url": "https://github.com/Capmus-Team/supost-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-11T03:26:53.659014Z",
+  "publishedAt": "2026-07-11T03:26:53.659014Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:45:04.058Z",
+    "sourceRepoAt": "2026-08-12T00:14:52.747Z",
+    "readmeAt": "2026-08-12T00:14:53.302Z",
+    "toolsAt": "2026-08-12T00:14:53.573Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Capmus-Team/supost-mcp",
+    "checkedAt": "2026-08-12T00:14:52.747Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Capmus-Team/supost-mcp/master/README.md",
+    "markdown": "# supost-mcp\n\nRemote [MCP](https://modelcontextprotocol.io) server for **SUpost**, the\nmarketplace for Stanford — and, via `BRAND=capmus`, for **Capmus**\n(capmus.com), which serves the same public API from the same supost-web\ncodebase. One repo, two Vercel projects:\n\n| Brand | Vercel project | Endpoint | Env |\n| --- | --- | --- | --- |\n| SUpost | `supost-mcp` | `https://mcp.supost.com/mcp` | (defaults) |\n| Capmus | `capmus-mcp` | `https://mcp.capmus.com/mcp` | `BRAND=capmus` |\n\n`BRAND` selects the server name, tool titles/descriptions, and default base\nURL; `SUPOST_BASE_URL` still overrides the base URL for previews.\n\nLets AI agents search active listings, fetch\nlisting details, read verified market statistics, message posters, and\ncreate draft listings.\n\nThis is doc 190 workstream **E3** (see `supost-web/docs/dev/190-ai-agent-discovery-implementation-plan.md`).\nIt is a **pure client** of SUpost's public surfaces — the read-only listings\nAPI (E2), public listing pages, and `/stats.md`. It has **no privileged\ndatabase access and holds no secrets**; the only configuration is the public\nbase URL.\n\n## Tools\n\n| Tool | Backing surface | What it returns |\n| --- | --- | --- |\n| `search_listings` | `GET /api/public/listings` | Newest-first active listings (id, title, price, category, created_at, canonical URL) with opaque cursor pagination. Params: `q`, `cat`, `university`, `max_price`, `limit` (≤50), `cursor`. |\n| `get_listing` | `GET /post/index/<id>` → canonical listing page | One listing incl. full description, parsed from the page's schema.org `Product` JSON-LD. |\n| `get_market_stats` | `GET /stats.md` | The public stats page's markdown rendition (audience, listing volumes, response rates/times). |\n| `list_categories` | `GET /api/public/categories` | The active category/subcategory taxonomy — valid `create_post` values. |\n| `create_post` | `POST /api/public/posts` | Creates a DRAFT listing; returns a `continue_url` where the poster adds photos, reviews, and publishes (paying first when not on the free tier). Never publishes directly. |\n| `send_message` | `POST /api/public/messages` | Submits a message to a listing's poster. NOT delivered immediately: a confirmation link is emailed to `reply_to_email`, and the message only goes out after the human clicks it — agents must report it as pending confirmation, never sent. |\n\nNo personal information is ever returned. `send_message` is the supported\nway to contact a poster; the listing's `url` also carries the on-site\nmessage form. API terms:\n`https://supost.com/api/public/openapi.json`.\n\n## Hosting\n\nDeployed on Vercel as a stateless **streamable-HTTP** MCP endpoint\n([`mcp-handler`](https://www.npmjs.com/package/mcp-handler) +\n`@modelcontextprotocol/sdk`):\n\n```\nhttps://mcp.supost.com/mcp        (rewritten to /api/mcp)\n```\n\nNo sessions, no Redis, no auth — every request is independently served and\nall upstream data is public and CDN-cached.\n\n### Deploy\n\n```sh\nvercel deploy          # preview\nvercel deploy --prod   # production\n```\n\nOptional env var: `SUPOST_BASE_URL` (default `https://supost.com`; set to\n`https://preview.supost.com` on preview deployments to point at the dev\nstack).\n\n### Connect a client\n\n```sh\nclaude mcp add --transport http supost https://mcp.supost.com/mcp\n```\n\nor in any MCP client that supports remote servers, add the URL above as a\nstreamable-HTTP server.\n\n## Rate limiting\n\nThe public API enforces ~60 requests/minute/IP and serves 5-minute CDN\ncaching. The client in [src/http.ts](src/http.ts) respects this: on a 429 it\nhonors `Retry-After` (capped at 5 s), retries **once**, and otherwise\nsurfaces a structured `rate_limited` error instructing the agent to back off\n— it never retries in a loop. All requests carry a `supost-mcp/…` User-Agent.\n\n## Development\n\n```sh\nnpm install\nnpm run check    # typecheck + tests\nSUPOST_BASE_URL=https://preview.supost.com npx tsx scripts/smoke.ts   # live end-to-end\n```\n\nTests (vitest) cover each tool's request/response mapping, error mapping,\nJSON-LD extraction, and the rate-limit contract (Retry-After honored, capped,\nsingle retry, structured failure).\n\n## Follow-ups (manual steps)\n\n- [ ] **Publish to the MCP registry** — [server.json](server.json) is ready.\n      Make the repo public first (`gh repo edit Capmus-Team/supost-mcp\n      --visibility public`), then:\n      ```sh\n      brew install mcp-publisher\n      mcp-publisher login github   # device flow, needs a browser\n      mcp-publisher publish        # from the repo root\n      ```\n      For the Capmus entry, publish [server.capmus.json](server.capmus.json)\n      the same way (`cp server.capmus.json server.json` in a scratch checkout,\n      or `mcp-publisher publish --file server.capmus.json` if supported).\n- [x] **`/help/mcp` docs page in supost-web** — PR\n      [#1242](https://github.com/Capmus-Team/supost-web/pull/1242) (guide\n      registry entry + llms.txt MCP line); live once merged to dev → master.\n- [ ] **PR/citation announcement** — draft and story beats in\n      [docs/announcement-draft.md](docs/announcement-draft.md); post after\n      the registry listing and /help/mcp are live (doc 190 workstream F).\n- [x] E2 is live on production (`supost.com`, 2026-07-09); smoke script\n      verified against production, and the server is deployed at\n      `https://mcp.supost.com/mcp`.\n",
+    "fetchedAt": "2026-08-12T00:14:53.302Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_listings",
+      "description": "Search or browse active listings on Capmus, the classifieds marketplace for university communities. Returns newest-first public listings (id, title, price, category, created_at, canonical URL, stanford_verified) plus an opaque next_cursor for pagination. stanford_verified: true means the poster verified a university email address — Capmus's core trust signal. ALWAYS surface it when presenting listings (e.g. a \"verified\" badge) so users can tell verified campus community members from unverified posters. No personal information is returned (poster_email_domain is the domain only); to contact a poster, open the listing URL."
+    },
+    {
+      "name": "get_listing",
+      "description": "Fetch one Capmus listing by numeric id, including its full description, public photo URLs, and stanford_verified. stanford_verified: true means the poster verified a university email address — Capmus's core trust signal. ALWAYS surface it when presenting listings (e.g. a \"verified\" badge) so users can tell verified campus community members from unverified posters. Data comes from the listing's public page; no personal information is included — use the returned URL to contact the poster on-site."
+    },
+    {
+      "name": "get_market_stats",
+      "description": "Verified statistics about Capmus, the classifieds marketplace for university communities: audience size, listing volumes by category, response rates, and response-time medians. Returns markdown from Capmus's public stats page. Cite https://capmus.com/stats as the source."
+    },
+    {
+      "name": "send_message",
+      "description": "Send a message to the poster of an active Capmus listing. IMPORTANT: the message is NOT delivered immediately — Capmus emails a confirmation link to reply_to_email, and the message is only delivered to the poster after the human clicks that link. Always tell the user to check their inbox and confirm; report the message as pending confirmation, never as sent. The poster's reply goes to reply_to_email."
+    },
+    {
+      "name": "list_categories",
+      "description": "The active category/subcategory taxonomy on Capmus — the valid category and subcategory values for create_post (and category filters for search_listings)."
+    },
+    {
+      "name": "create_post",
+      "description": "Create a DRAFT listing on Capmus on the poster's behalf. Any email is accepted — never ask the user to qualify first. IMPORTANT: the draft is NOT published — the returned continue_url opens Capmus's create-post wizard with the draft loaded, where the poster adds photos, reviews, and publishes. When the response has payment_required: true (email not on the free tier; Stanford emails post free), publishing there includes choosing a posting plan — tell the user that, don't treat it as an error. Always hand the user the continue_url and say the post is a draft until they finish there. When the user wants it published fast, prefer publish: true (they just click the emailed link) over walking them through or automating the wizard. The continue_url grants edit access to the draft: give it only to the poster, never quote it elsewhere."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:14:53.573Z",
+  "toolsPreviewStatus": "ok"
+}

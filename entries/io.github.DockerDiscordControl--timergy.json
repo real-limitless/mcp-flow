@@ -1,0 +1,58 @@
+{
+  "id": "io.github.DockerDiscordControl/timergy",
+  "title": "Timergy",
+  "description": "Create scheduling polls, vote, and finalize times from AI agents.",
+  "summary": "Create scheduling polls, vote, and finalize times from AI agents.",
+  "offersHint": "Create scheduling polls, vote, and finalize times from AI agents. · Packages: npm:@timergy/mcp",
+  "version": "0.1.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@timergy/mcp",
+    "version": "0.1.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@timergy/mcp",
+      "version": "0.1.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/timergy-app/timergy",
+  "repository": {
+    "url": "https://github.com/timergy-app/timergy",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-16T11:02:08.53094Z",
+  "publishedAt": "2026-03-16T11:02:08.53094Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:03.331Z",
+    "sourceRepoAt": "2026-08-12T00:13:48.104Z",
+    "readmeAt": "2026-08-12T00:13:48.553Z",
+    "toolsAt": "2026-08-12T01:44:03.331Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/timergy-app/timergy",
+    "checkedAt": "2026-08-12T00:13:48.104Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/timergy-app/timergy/main/README.md",
+    "markdown": "# @timergy/mcp\n\n[![Smithery](https://smithery.ai/badge/timergy/timergy)](https://smithery.ai/server/timergy/timergy)\n\nMCP server for [Timergy](https://timergy.com) - the scheduling poll app. Create polls, vote on time slots, and finalize meetings directly from AI agents like Claude, ChatGPT, and Gemini.\n\n**No authentication required.** Works out of the box.\n\n## What is Timergy?\n\nTimergy is a scheduling poll service (like Doodle or When2Meet). You create a poll with time slot options, share it with participants, everyone votes on their availability, and you pick the best time.\n\n## Quick Start\n\n### Claude Desktop / Claude Code\n\nAdd to your MCP config (`~/.claude/claude_desktop_config.json` or project `.mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"timergy\": {\n      \"command\": \"npx\",\n      \"args\": [\"@timergy/mcp\"]\n    }\n  }\n}\n```\n\nThen just ask:\n\n> \"Create a poll for dinner next Friday or Saturday evening\"\n\n### Smithery (Remote, no install)\n\n```\nsmithery mcp add timergy/timergy\n```\n\nOr connect directly via `https://timergy--timergy.run.tools`\n\n### Other MCP Clients\n\nAny MCP-compatible client can use this server. Supports stdio (local) and Streamable HTTP (remote at `https://api.timergy.com/mcp`).\n\n## Tools\n\n### `create_poll`\n\nCreate a scheduling poll with time slot options.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `title` | string | yes | Poll title |\n| `options` | array | yes | Time slots (`{start, end}` in ISO 8601 with timezone) |\n| `description` | string | no | Poll description |\n| `deadline` | string | no | Voting deadline (ISO 8601) |\n| `location` | string | no | Event location |\n| `creatorName` | string | no | Name shown as poll creator |\n\n```\n\"Create a poll called 'Team Lunch' with slots on Monday 12-13 and Tuesday 12-13\"\n```\n\nReturns: poll URL (to share), passphrase (for admin access), option IDs.\n\n### `get_poll`\n\nGet poll details and time slot options (no votes). Use this to retrieve option IDs before voting or finalizing.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `pollId` | string | yes | Poll UUID |\n\n```\n\"Show me the details of poll abc-123\"\n```\n\n### `vote_on_poll`\n\nSubmit votes on a poll. Each vote maps a time slot to yes/maybe/no.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `pollId` | string | yes | Poll UUID |\n| `voterName` | string | yes | Name of the voter |\n| `voterEmail` | string | no | Voter email (for notifications) |\n| `votes` | array | yes | `{optionId, availability}` where availability is `yes`/`maybe`/`no` |\n\n```\n\"Vote 'yes' for Monday and 'no' for Tuesday on poll abc-123 as Max\"\n```\n\n### `get_results`\n\nSee who voted and which time slots are most popular.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `pollId` | string | yes | Poll UUID |\n\n```\n\"Show me the results for poll abc-123\"\n```\n\n### `finalize_poll`\n\nLock in the winning time slot. Notifies participants who provided an email.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `pollId` | string | yes | Poll UUID |\n| `optionId` | string | yes | Winning time slot UUID |\n| `passphrase` | string | no | Admin passphrase (auto-remembered from create_poll) |\n\n```\n\"Finalize poll abc-123 with the Monday slot\"\n```\n\n## Workflow\n\n```\n1. create_poll  ->  Get poll URL + passphrase\n2. Share URL    ->  Send to participants\n3. get_results  ->  See who voted yes/maybe/no\n4. finalize_poll -> Pick the best time, lock it in\n```\n\nThe passphrase from step 1 is automatically remembered for step 4 within the same session.\n\n## REST API\n\nThe MCP server calls the Timergy Open API under the hood. You can also use the API directly:\n\n| Method | Endpoint | Description |\n|--------|----------|-------------|\n| `POST` | `/api/open/polls` | Create a poll |\n| `GET` | `/api/open/polls/:id` | Get poll details |\n| `GET` | `/api/open/polls/:id/options` | Get time slots |\n| `GET` | `/api/open/polls/:id/results` | Get vote results |\n| `POST` | `/api/open/polls/:id/vote` | Submit votes |\n| `POST` | `/api/open/polls/:id/admin-token` | Get admin token |\n| `POST` | `/api/open/polls/:id/finalize` | Finalize poll |\n\nBase URL: `https://api.timergy.com`\n\nOpenAPI spec: `https://api.timergy.com/api/open/openapi.json`\n\n## Configuration\n\n| Environment Variable | Default | Description |\n|---------------------|---------|-------------|\n| `TIMERGY_API_URL` | `https://api.timergy.com` | API base URL |\n\nFor local development:\n\n```json\n{\n  \"mcpServers\": {\n    \"timergy\": {\n      \"command\": \"npx\",\n      \"args\": [\"@timergy/mcp\"],\n      \"env\": { \"TIMERGY_API_URL\": \"http://localhost:4000\" }\n    }\n  }\n}\n```\n\n## Rate Limits\n\n| Action | Limit |\n|--------|-------|\n| Create poll | 5 per hour |\n| Vote | 20 per minute |\n| Get poll/results | 60 per minute |\n| Admin token | 5 per 10 minutes |\n| Finalize | 3 per hour |\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:13:48.553Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:03.331Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

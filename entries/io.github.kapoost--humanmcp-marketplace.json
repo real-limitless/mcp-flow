@@ -1,0 +1,64 @@
+{
+  "id": "io.github.kapoost/humanmcp-marketplace",
+  "title": "humanMCP Marketplace — federated listings across personal MCP servers",
+  "description": "Federated listings from personal humanMCP servers. Search offers, trades by humans.",
+  "summary": "Federated listings from personal humanMCP servers. Search offers, trades by humans.",
+  "offersHint": "Federated listings from personal humanMCP servers. Search offers, trades by humans. · Remote MCP (streamable-http) at https://marketplace.humanmcp.net/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://marketplace.humanmcp.net/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://marketplace.humanmcp.net/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/kapoost/humanmcp-marketplace",
+  "repository": {
+    "url": "https://github.com/kapoost/humanmcp-marketplace",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-05T13:45:33.776037Z",
+  "publishedAt": "2026-05-05T13:45:33.776037Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:54.245Z",
+    "sourceRepoAt": "2026-08-11T23:39:25.804Z",
+    "readmeAt": "2026-08-11T23:39:26.368Z",
+    "toolsAt": "2026-08-11T23:39:26.620Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kapoost/humanmcp-marketplace",
+    "checkedAt": "2026-08-11T23:39:25.804Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kapoost/humanmcp-marketplace/main/README.md",
+    "markdown": "# humanMCP Marketplace\n\n[![smithery badge](https://smithery.ai/badge/kapoost/humanmcp-marketplace)](https://smithery.ai/servers/kapoost/humanmcp-marketplace)\n\nA federated listings board across personal humanMCP servers.\nNo accounts. No algorithms. Just humans and their offers.\n\n**Live:** https://marketplace.humanmcp.net\n**MCP endpoint:** `POST https://marketplace.humanmcp.net/mcp`\n\n## What it does\n\nEvery human can run their own [humanMCP](https://github.com/kapoost/humanmcp-go) server — publishing listings, offers, and trades. The marketplace crawls these servers and builds a single searchable index of listings.\n\nThink of it as a town square where every stall is independently owned. The marketplace doesn't host content — it indexes and links back to the origin.\n\n## Connect an agent\n\n```json\n{\n  \"mcpServers\": {\n    \"humanmcp-marketplace\": {\n      \"type\": \"http\",\n      \"url\": \"https://marketplace.humanmcp.net/mcp\"\n    }\n  }\n}\n```\n\n## MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `search_marketplace` | Search listings across all servers — offers, trades, services |\n| `list_servers` | All registered humanMCP instances |\n| `get_server` | Server detail |\n\n## REST API\n\n```\nGET  /servers              → list all registered servers\nGET  /servers/{domain}     → server detail\nGET  /search?q={query}     → full-text search across all listings\nGET  /search?q=bread&type=trade → filter by listing type\nGET  /feed                 → recent listings feed (JSON)\nPOST /register             → register a humanMCP instance\nPOST /mcp                  → MCP JSON-RPC 2.0 endpoint\n```\n\n## Agent discovery\n\n```\nGET  /.well-known/agent.json  → agent profile card\nGET  /openapi.json            → OpenAPI 3.1 spec\nGET  /healthz                 → status + server/listing counts\n```\n\n## Web UI\n\n```\nGET  /                  → homepage — listings + servers\nGET  /q?q={query}       → search results\nGET  /s/{domain}        → server page\n```\n\nKeyboard shortcuts: `/` search, `j/k` navigate, `Enter` open, `d` theme, `?` help.\n\n## Register your server\n\nAny humanMCP instance can join. No account needed — just your domain:\n\n```bash\ncurl -X POST https://marketplace.humanmcp.net/register \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"domain\": \"yourname-humanmcp.fly.dev\"}'\n```\n\nThe marketplace will:\n1. Verify it's a real humanMCP (fetches `/.well-known/agent.json`)\n2. Index all listings from `/listings/feed.json`\n3. Add to crawl schedule (every 6 hours)\n\nRequirements: your server must expose `/.well-known/agent.json` and `/listings/feed.json`.\n\n## How crawling works\n\n```\nYour humanMCP server\n    ↓\nMarketplace fetches /.well-known/agent.json (identity)\n    ↓\nFetches /api/profile (author name, bio, tags)\n    ↓\nFetches /listings/feed.json (listings)\n    ↓\nIndexes in SQLite + FTS5\n    ↓\nSearchable within minutes, re-crawled every 6 hours\n```\n\nListings stay on your server. Marketplace keeps a search index only.\n\n## Configuration\n\n| Source | Name | Default | Description |\n|--------|------|---------|-------------|\n| env | `PORT` | `8080` | Listen port |\n| env | `DB_PATH` | `./marketplace.db` | SQLite database path |\n| env | `SEED_SERVER` | — | Domain to crawl on startup |\n| flag | `--addr` | `:8080` | Listen address |\n| flag | `--db` | `./marketplace.db` | Database path |\n| flag | `--seed` | — | Seed server domain |\n| flag | `--crawl-interval` | `6h` | Re-crawl interval |\n\n## Stack\n\n- Go (stdlib + `modernc.org/sqlite`)\n- SQLite + FTS5 for full-text search\n- Fly.io single machine, 256MB\n- No JS framework — server-rendered HTML with keyboard navigation\n\n## Run locally\n\n```bash\ngo build -o marketplace ./cmd/server/\n./marketplace --seed kapoost.humanmcp.net\n# open http://localhost:8080\n```\n\n## Deploy\n\n```bash\nfly apps create humanmcp-marketplace\nfly volumes create marketplace_data --size 1 --region ams\nfly deploy\n```\n\n## Key principles\n\n1. **Listings only** — marketplace indexes offers, trades, services\n2. **No content hosting** — index + link back, always\n3. **Attribution** — author server visible on every result\n4. **Opt-in** — register voluntarily\n5. **Federated** — anyone can run their own marketplace instance\n6. **Open protocol** — humanMCP REST API is the standard\n\nCreative content (poems, essays, images) belongs on the author's server. A separate discovery service for that is planned.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:39:26.368Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_marketplace",
+      "description": "Search across all humanMCP servers for listings, offers, and trades."
+    },
+    {
+      "name": "list_servers",
+      "description": "List all registered humanMCP instances in the marketplace."
+    },
+    {
+      "name": "get_server",
+      "description": "Get details about a specific humanMCP server and its content."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:39:26.620Z",
+  "toolsPreviewStatus": "ok"
+}

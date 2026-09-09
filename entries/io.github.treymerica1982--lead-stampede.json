@@ -1,0 +1,104 @@
+{
+  "id": "io.github.treymerica1982/lead-stampede",
+  "title": "lead-stampede",
+  "description": "Find SMBs by name, city, and business type in the Lead Stampede directory via public MCP tools.",
+  "summary": "Find SMBs by name, city, and business type in the Lead Stampede directory via public MCP tools.",
+  "offersHint": "Find SMBs by name, city, and business type in the Lead Stampede directory via public MCP tools. · Remote MCP (streamable-http) at https://lead-stampede-mcp-server-production.up.railway.app/mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://lead-stampede-mcp-server-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://lead-stampede-mcp-server-production.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/treymerica1982/lead-stampede-mcp-server",
+  "repository": {
+    "url": "https://github.com/treymerica1982/lead-stampede-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-22T15:16:21.936234Z",
+  "publishedAt": "2026-05-22T15:16:21.936234Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:23.262Z",
+    "sourceRepoAt": "2026-08-11T23:17:52.919Z",
+    "readmeAt": "2026-08-11T23:17:53.376Z",
+    "toolsAt": "2026-08-11T23:17:53.509Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/treymerica1982/lead-stampede-mcp-server",
+    "checkedAt": "2026-08-11T23:17:52.919Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/treymerica1982/lead-stampede-mcp-server/main/README.md",
+    "markdown": "# Lead Stampede MCP Server\n\nThe live backend that powers Lead Stampede Agent Cards. Exposes SMB business\ndata as tools that AI agents can call over HTTP.\n\n## What this is\n\nAn Express server that implements four MCP tools:\n\n| Tool | What it returns |\n| --- | --- |\n| `get_business_profile` | Name, description, industry, service area, contact info |\n| `get_services` | List of services + pricing summary |\n| `get_availability` | Hours + booking URL (or phone/email fallback) |\n| `get_reviews` | Review count, average rating, summary |\n\nEach request is authenticated via an `X-Agency-API-Key` header that maps to a\nrow in the `agencies` table in Supabase. Clients are scoped to their agency,\nso one agency can never read another's data.\n\n## Setup\n\n### 1. Install\n\n```bash\nnpm install\n```\n\n### 2. Configure environment\n\n```bash\ncp .env.example .env\n```\n\nThen edit `.env` and fill in:\n\n- `SUPABASE_URL` — your project URL (e.g. `https://xlhxnlhxeprtzwbyepza.supabase.co`)\n- `SUPABASE_SERVICE_ROLE_KEY` — from Supabase → Project Settings → API → `service_role` secret\n- `PORT` — defaults to 3000\n\n**Never commit `.env` to git.** It's already in `.gitignore`.\n\n### 3. Run locally\n\n```bash\nnpm run dev\n```\n\nYou should see:\n\n```\nLead Stampede MCP server listening on port 3000\n```\n\n## Testing it works\n\n### Health check (no auth)\n\n```bash\ncurl http://localhost:3000/health\n# → {\"status\":\"ok\",\"timestamp\":\"...\"}\n```\n\n### List available tools (auth required)\n\n```bash\ncurl -H \"X-Agency-API-Key: YOUR_AGENCY_API_KEY\" \\\n  http://localhost:3000/mcp/tools\n```\n\n### Call a tool\n\n```bash\ncurl -X POST \\\n  -H \"X-Agency-API-Key: YOUR_AGENCY_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"arguments\":{\"client_slug\":\"grandinetti-molinar-law\"}}' \\\n  http://localhost:3000/mcp/tools/get_business_profile\n```\n\nExpected response:\n\n```json\n{\n  \"tool\": \"get_business_profile\",\n  \"result\": {\n    \"business_name\": \"Grandinetti & Molinar Law\",\n    \"description\": \"Austin-based law firm founded in 2002...\",\n    \"industry\": \"legal\",\n    ...\n  },\n  \"response_ms\": 42\n}\n```\n\n## Deploying to Railway\n\n1. Push this folder to a new GitHub repo.\n2. In Railway: **New Project → Deploy from GitHub repo**.\n3. Select this repo.\n4. Under **Variables**, add:\n   - `SUPABASE_URL`\n   - `SUPABASE_SERVICE_ROLE_KEY`\n5. Railway auto-detects Node.js, installs deps, and runs `npm start`.\n6. Once deployed, Railway gives you a public URL like `mcp-production.up.railway.app`.\n7. Point a custom subdomain (e.g. `mcp.leadstampede.io`) at it via Railway → Settings → Domains.\n\n## Architecture\n\n```\nAI agent  →  POST /mcp/tools/:name  →  auth.js → tools.js → supabase.js\n                                         ↓\n                                   analytics.js (fire-and-forget)\n                                         ↓\n                                   mcp_tool_calls table\n```\n\n## Next steps\n\n- Build the Cloudflare Worker that serves Agent Cards at `agentcards.leadstampede.io/{slug}`.\n- Build the onboarding form that populates `clients` rows in Supabase.\n- Build the agency portal dashboard.\n",
+    "fetchedAt": "2026-08-11T23:17:53.376Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_clients",
+      "description": "Search Lead Stampede's public client directory. Returns matching businesses with contact info, services, and ratings. Supports filtering by city, business type, and free-text query across name, description, and industry."
+    },
+    {
+      "name": "get_client",
+      "description": "Returns the full public Agent Card for a single Lead Stampede client by slug. Includes business details, contact info, services, hours, reviews, and booking URL."
+    },
+    {
+      "name": "list_business_types",
+      "description": "Returns the distinct business types available in the Lead Stampede public client directory."
+    },
+    {
+      "name": "list_cities",
+      "description": "Returns the distinct cities served by public Lead Stampede clients. Useful for discovering which locations have businesses in the directory."
+    },
+    {
+      "name": "get_availability",
+      "description": "Returns business hours and booking options for a Lead Stampede client. If the business has online scheduling, returns a tracked booking URL; otherwise returns phone/email. Works for all client types (service, automotive, ecommerce)."
+    },
+    {
+      "name": "get_reviews",
+      "description": "Returns social proof for a Lead Stampede client: review count, average rating, and a brief summary. Works for all client types."
+    },
+    {
+      "name": "search_inventory",
+      "description": "Searches a dealership's vehicle inventory. Filters by stock type (new/used/certified), make, model, year range, price range, body type, and fuel type. Optional natural-language query for full-text search. Returns up to 25 matching vehicles. Only available for automotive clients."
+    },
+    {
+      "name": "get_vehicle_details",
+      "description": "Returns full details for a specific vehicle by VIN or stock number. Only available for automotive clients."
+    },
+    {
+      "name": "get_specials",
+      "description": "Returns the dealership's current specials and offers — new-vehicle APR/lease specials, pre-owned specials, service & parts coupons, manufacturer rebates, and incentive programs. Only available for automotive clients."
+    },
+    {
+      "name": "search_products",
+      "description": "Searches the product catalog of an e-commerce client. Supports natural-language queries plus optional filters for category, price range, collection, and stock status. Only works for e-commerce clients."
+    },
+    {
+      "name": "get_product_details",
+      "description": "Returns full details for a single product by slug: name, description, price, sizes, colors, stock status, and product page URL. Only for e-commerce clients."
+    },
+    {
+      "name": "contact_sales",
+      "description": "Captures a sales lead for an automotive dealership. Use for test drive requests, vehicle inquiries, financing questions, lease questions, trade-in conversations, or general interest. Requires at least one contact method (email or phone). Only available for automotive clients."
+    },
+    {
+      "name": "schedule_service_appointment",
+      "description": "Captures a service appointment request for an automotive dealership. Records the customer's contact info, vehicle details, requested services, and preferred timing as a service lead. The dealership's service advisor will follow up to confirm. Requires at least one contact method (email or phone). Only available for automotive clients."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:17:53.509Z",
+  "toolsPreviewStatus": "ok"
+}

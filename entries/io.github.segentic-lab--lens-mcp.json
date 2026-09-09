@@ -1,0 +1,45 @@
+{
+  "id": "io.github.segentic-lab/lens-mcp",
+  "title": "lens-mcp",
+  "description": "Deterministic navigation maps over code + markdown + Prisma for AI agents: 13 MCP tools",
+  "summary": "Deterministic navigation maps over code + markdown + Prisma for AI agents: 13 MCP tools",
+  "offersHint": "Deterministic navigation maps over code + markdown + Prisma for AI agents: 13 MCP tools",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://github.com/segentic-lab/lens-mcp",
+  "sourceUrl": "https://github.com/segentic-lab/lens-mcp",
+  "repository": {
+    "url": "https://github.com/segentic-lab/lens-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T18:46:19.796392Z",
+  "publishedAt": "2026-07-06T18:46:19.796392Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:10.308Z",
+    "sourceRepoAt": "2026-08-11T23:21:57.319Z",
+    "readmeAt": "2026-08-11T23:21:58.616Z",
+    "toolsAt": "2026-08-12T01:02:10.308Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/segentic-lab/lens-mcp",
+    "checkedAt": "2026-08-11T23:21:57.319Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/segentic-lab/lens-mcp/main/README.md",
+    "markdown": "# lens-mcp\n\n**Deterministic navigation maps over code AND markdown — for AI agents.** One\nMCP server, two lenses: tree-sitter for source (TypeScript / JavaScript /\nPython) and a markdown lens for docs. It answers *\"where is X and what's the\nshape of this project?\"* in one cheap call — so an agent spends context on\nthinking, not on browsing files.\n\n> Speaks the [Model Context Protocol](https://modelcontextprotocol.io); works\n> with any MCP client — Claude Code, Cursor, Codex, or your own agent.\n\n## Why\n\nAn agent orienting in an unfamiliar repo otherwise burns tokens `ls`-ing,\n`grep`-ing, and Reading whole files to find the *one* function or the *right*\ndoc. lens returns the map instead of the territory:\n\n- **`function_body` reads one function** — often ~99% less context than Reading\n  the file it lives in.\n- **`heading` reads one doc section** — the referenced heading and its\n  subsections, nothing else.\n- **`map` returns the whole project's surface** — every code file's structure\n  **and** every doc's outline — in a single call.\n\nEvery output is deterministic (real parsing, not a model summarizing), capped\nwith an honest `truncated` flag, and framed by one contract:\n\n> **lens is a navigation map. Use it to *locate*, then Read the real\n> source/section before judging or modifying it. A signature is not the body;\n> an outline is not the section.**\n\n## Tools (13)\n\n### Orientation\n| Tool | What it does |\n|---|---|\n| `map` | Whole-tree surface in one call: per code file → structure; per doc → title + outline. Both families, one response. |\n| `info` | Version, sandbox root, supported languages/extensions, tool list, every output cap, and the lens contract. |\n| `lens_system` | Install status, self-update (`update.sh` under the hood), and fetch the current AGENTS.md — lens's self-maintenance tool. |\n\n### Code (tree-sitter — `.ts .tsx .mts .cts .js .jsx .mjs .cjs .py`) + Prisma (`.prisma`)\n| Tool | What it does |\n|---|---|\n| `overview` | One file's imports, exports, classes (+ methods), top-level functions, with line ranges. |\n| `functions` | Every function incl. nested — signatures, params/types, `parent` scope, kind. |\n| `function_body` | Verbatim source of ONE function — the focused read. |\n| `comments` | Comments + `TODO/FIXME/BUG/HACK/…` markers (`markersOnly` for the debt list). |\n| `find` | Locate a **definition** by name — functions, classes, and now `const`/`type`/`enum`/exports — across a directory. |\n| `references` | The inverse: who **uses** a symbol — call sites, imports, type-refs — tree-sitter-precise, no grep false positives. |\n\n### Docs (markdown — `.md .markdown .mdx`)\n| Tool | What it does |\n|---|---|\n| `outline` | Full heading hierarchy (the TOC) with line numbers. |\n| `heading` | Read ONE section by heading text / slug / line number. |\n| `links` | Extract inline / image / wikilink / autolink / reference links. |\n| `search` | Case-insensitive full-text search across docs (heading hits ranked first). |\n\n`overview`/`find`/`map` also cover **Prisma schemas** (`schema.prisma` → models, enums, fields, relations). JSON config/i18n isn't structurally mapped — lens says so honestly and points you to grep.\n\nCall a code tool on a `.md` (or a doc tool on a `.ts`) and it fails with a\nhelpful pointer to the right tool — no silent confusion.\n\n## Honest by construction\n\n- **Never silent data loss** — a file with syntax errors returns `hasErrors` +\n  `parseErrors`, still extracting what it can; unparseable files in `map`/`find`\n  appear with an inline `error`, never vanish.\n- **Caps everywhere** — every list is bounded (see `info.limits`) and every cap\n  is reported with the true total. A context-saving tool with unbounded output\n  is self-refuting.\n- **Path sandbox** — only files under the server's working directory are\n  readable; escaping symlinks are rejected. `info` reports the root.\n- **Errors name the fix** — `{error, path, hint}`, with `isError` set.\n\n## Install\n\nOne line clones, installs, and writes a ready-to-paste MCP config with this\ninstall's absolute path:\n\n```bash\ngit clone https://github.com/segentic-lab/lens-mcp && cd lens-mcp && ./install.sh\n```\n\nNo system packages and no native build — tree-sitter runs as WebAssembly, so it\nworks anywhere **Node 18+** runs (Linux, macOS, Windows via WSL/Git Bash). The\ninstaller checks Node, runs `npm ci`, builds (`tsc → dist/`), self-tests the full\nsuite (143 tests), and generates `mcp-config.json`.\n\n**Register it with your client** — the generated `mcp-config.json` looks like:\n\n```json\n{\n  \"mcpServers\": {\n    \"lens\": { \"command\": \"node\", \"args\": [\"/abs/path/lens-mcp/dist/index.js\"] }\n  }\n}\n```\n\n- **Claude Code:** `claude mcp add lens -- node /abs/path/lens-mcp/dist/index.js`\n  (or copy `mcp-config.json` into a project as `.mcp.json`)\n- **Cursor / Windsurf:** merge `mcp-config.json` into `~/.cursor/mcp.json`\n- **Codex CLI:** add `[mcp_servers.lens]` with the same command/args to `~/.codex/config.toml`\n\nlens reads files under its **working directory** — the project your client\nlaunches it in. Point it at a project and call `map(\".\")`. Nothing outside the\nworking directory is readable.\n\n**Update** later, in place:\n\n```bash\n./update.sh          # git pull --ff-only + reinstall + self-test\n```\n\n<sub>Prefer to do it by hand? `npm install && npm run build && npm test`, then\nrun `node dist/index.js`.</sub>\n\n## Lineage\n\nlens-mcp **supersedes** the earlier split servers `codelens-mcp` (code) and\n`docslens-mcp` (docs) — same engines, one server, one pipeline. Sibling of\n[periscope-mcp](https://github.com/segentic-lab/periscope-mcp) (web-app QA);\nbuilt to the same standard: honest errors, caps + truncated flags everywhere,\ndocs == behavior, tests before release.\n\nBuilt by **[Segentic Lab](https://lab.segentic.dev)**. AGPL-3.0.\n",
+    "fetchedAt": "2026-08-11T23:21:58.616Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:10.308Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

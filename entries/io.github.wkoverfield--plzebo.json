@@ -1,0 +1,94 @@
+{
+  "id": "io.github.wkoverfield/plzebo",
+  "title": "plzebo",
+  "description": "Cost-parity bench for agent loops: $/success and time across model mixes, with verifiable receipts.",
+  "summary": "Cost-parity bench for agent loops: $/success and time across model mixes, with verifiable receipts.",
+  "offersHint": "Cost-parity bench for agent loops: $/success and time across model mixes, with verifiable receipts. · Packages: npm:plzebo · Env vars: ANTHROPIC_API_KEY, OPENAI_API_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "plzebo",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "description": "Real Anthropic key for placebo-mode arms; arms only ever see placebo keys. Optional when every arm uses passthrough auth.",
+        "secret": true
+      },
+      {
+        "name": "OPENAI_API_KEY",
+        "description": "Real OpenAI-compatible key for placebo-mode arms. Optional when every arm uses passthrough auth.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "plzebo",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Real Anthropic key for placebo-mode arms; arms only ever see placebo keys. Optional when every arm uses passthrough auth.",
+          "secret": true
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "Real OpenAI-compatible key for placebo-mode arms. Optional when every arm uses passthrough auth.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "Real Anthropic key for placebo-mode arms; arms only ever see placebo keys. Optional when every arm uses passthrough auth.",
+      "secret": true
+    },
+    {
+      "name": "OPENAI_API_KEY",
+      "description": "Real OpenAI-compatible key for placebo-mode arms. Optional when every arm uses passthrough auth.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/wkoverfield/plzebo",
+  "repository": {
+    "url": "https://github.com/wkoverfield/plzebo",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T17:52:44.696325Z",
+  "publishedAt": "2026-07-30T17:52:44.696325Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:59.353Z",
+    "sourceRepoAt": "2026-08-11T23:14:59.382Z",
+    "readmeAt": "2026-08-11T23:14:59.872Z",
+    "toolsAt": "2026-08-12T00:55:59.353Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/wkoverfield/plzebo",
+    "checkedAt": "2026-08-11T23:14:59.382Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/wkoverfield/plzebo/main/README.md",
+    "markdown": "# plzebo\n\nCost-parity bench for agent loops. Point it at two or more ways of getting the same task done (a cheaper model mix, a different setup, a tool on vs off) and it measures which one delivers the outcome for less, in dollars and in minutes, and whether the gap is real or noise. Runs locally, on your own keys or your own subscription. An agent can call it on itself over MCP.\n\nThe headline metric is cost per successful outcome: total metered spend divided by successes, compared across arms with a 95% confidence interval. Time per successful outcome is reported beside it. When the data cannot support a claim, plzebo says so instead of making it.\n\n## How it measures\n\n- **Arms are whole loops.** An arm is a shell command that runs an agent to completion on a task, plus model rewrite rules applied at a local metering gateway. Loop code can be byte-identical across arms while the gateway maps every `claude-*` call to each arm's model.\n- **Every model call transits the gateway.** Arms receive a placebo key (`sk-placebo-...`) and a redirected base URL; the gateway swaps in the real key upstream and records provider-reported token usage per call. A call that bypasses the gateway fails at the provider instead of billing invisibly, and a trial with zero metered calls is flagged, never compared.\n- **Trials are paired and interleaved.** K pairs run back to back with a seeded coin flip deciding arm order per pair, so provider drift lands inside pairs. Prompt caching is disabled and every trial carries a unique nonce, so no arm warms a cache for another.\n- **Grading never trusts the agent's tree.** The diff is filtered against a protected-path list (tests, runner config), applied to a pristine checkout, and the test command runs there. Editing the tests fails the trial.\n- **Statistics refuse to overclaim.** Success differences use an exact McNemar test with Holm correction across arms. Parity requires an equivalence test, not just a failed significance test. Cost and time deltas come from a paired bootstrap. Fewer than five successes on either side blocks cost rulings. Timeouts are graded failures with spend included; crashes and provider throttling (429/529) are excluded with spend disclosed. Every refusal is printed as an explicit do-not-claim line.\n- **Receipts are the artifact.** Every run writes a JSON receipt: the spec and its pre-registration hash, every trial's raw rows (tokens, per-call status, changed paths, output tails), the stats inputs, the pricing table version, and a generated estimand statement. `plzebo verify receipt.json` recomputes every derived number from the raw rows and reports any divergence.\n\n## Requirements\n\nNode 22.6 or later (the CLI runs its TypeScript sources through Node type stripping; the launcher supplies the flag on versions that need it). Git, plus whatever your arms and oracle need (for the examples here: python3).\n\n## Quick start\n\n```\nnpx plzebo run spec.yaml --estimate   # prices the run from prior receipts; spends nothing\nnpx plzebo run spec.yaml              # runs the experiment\nnpx plzebo verify <receipt.json>      # recompute a receipt's claims from its raw rows\n```\n\nA spec:\n\n```yaml\nname: sonnet-vs-opus\nfixture:\n  repo: ./my-fixture-repo        # a git repo; every trial gets a fresh clone\n  ref: main\ntask: \"Make the failing tests in this repo pass. Do not edit the tests.\"\narms:\n  sonnet:\n    cmd: claude --print \"$PLZEBO_TASK\" --dangerously-skip-permissions --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --model claude-sonnet-5\n    auth: passthrough            # runs on your logged-in Claude subscription\n    rewrite:\n      claude-*: claude-sonnet-5  # pin every call this arm makes, including auxiliary ones\n  opus:\n    cmd: claude --print \"$PLZEBO_TASK\" --dangerously-skip-permissions --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --model claude-opus-4-7\n    auth: passthrough\n    rewrite:\n      claude-*: claude-opus-4-7\nbaseline: opus\noracle:\n  cmd: [python3, -m, unittest, discover, -s, tests, -t, .]\nk: 3\ntrialTimeoutMs: 600000\nbudgetUsd: 30                    # hard kill switch enforced at the gateway\n```\n\nEvery run prints its cost estimate before the first trial. A run without a budget is refused. Start with a small K: the report on an inconclusive run prints the exact K that would resolve it and the estimated cost, and `plzebo extend <receipt.json> --to-k K` reuses the trials you already paid for. A receipt can be extended once, and the extension is disclosed inside it.\n\n## Auth modes\n\n- `auth: placebo` (default): you export `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`; arms only ever see placebo keys. Strongest metering guarantee: a bypassing call fails loudly.\n- `auth: passthrough`: the arm uses its own login. No API credits are spent; USD is imputed from metered tokens at list rates and the receipt discloses this. Tokens are the ground truth either way. Verified for Claude Code, which honors `ANTHROPIC_BASE_URL` under subscription auth. Codex under ChatGPT auth routes to its own backend and ignores `OPENAI_BASE_URL`, so subscription-authed Codex is unmeterable; run Codex arms in API-key mode via the `codex-cli` template instead.\n\nTwo caveats for passthrough arms. A trial that bypasses the meter is excluded rather than falsely counted, but the tokens it consumed upstream are real; the receipt cannot see them. And a personal login carries personal agent configuration: instructions, hooks, and memory files travel with it, which can inflate costs and, for agents that act on standing instructions, cause writes outside the trial workspace. Prefer isolated-config templates when comparing loops rather than your own setup.\n\n## Providers\n\nThe gateway speaks two wire formats: Anthropic and OpenAI-compatible, which covers most open-weight serving (Ollama, vLLM, OpenRouter, Together, and similar). Arms can override providers individually:\n\n```yaml\narms:\n  local-qwen:\n    cmd: my-loop --task \"$PLZEBO_TASK\"\n    upstreams:\n      openai: http://127.0.0.1:11434   # any OpenAI-compatible server\n  gpt:\n    cmd: my-loop --task \"$PLZEBO_TASK\"\n    keysFrom:\n      openai: OPENAI_API_KEY           # env var NAME; specs never contain key values\n```\n\nConstraint: plzebo can only meter loops that authenticate with a key or token and honor a redirectable base URL (`ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL`).\n\n## MCP\n\n`npx plzebo-mcp` serves four tools on stdio: `measure_start`, `measure_extend`, `measure_status`, and `measure_result`. Starting a measurement is two-phase: the first call validates the request and returns a cost estimate plus a one-time confirm token while spending nothing; only a second call presenting that token runs trials. A budget is mandatory, and MCP arms come only from named templates (`claude-cli`, `claude-subscription`, `codex-cli`), never raw shell. Job state and receipts persist under `.plzebo/`, so verdicts survive the session that produced them.\n\n## What a receipt supports, and what it does not\n\nA receipt is a single-task result under a stated model mapping. It is not a model capability ranking and does not generalize beyond its fixture; the estimand text inside the receipt says exactly this. USD figures on passthrough arms are imputed at pricing-table rates from metered tokens, not billed spend, and the pricing table version travels in the receipt so the numbers stay recomputable after prices change.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:14:59.872Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:59.353Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,95 @@
+{
+  "id": "io.github.wundervault/wundervault-mcp",
+  "title": "wundervault-mcp",
+  "description": "Zero-knowledge MCP secrets vault for AI agents: secrets injected at runtime, never seen by the model",
+  "summary": "Zero-knowledge MCP secrets vault for AI agents: secrets injected at runtime, never seen by the model",
+  "offersHint": "Zero-knowledge MCP secrets vault for AI agents: secrets injected at runtime, never seen by the model · Packages: npm:@wundervault/mcp-server · Env vars: WUNDERVAULT_AGENT_NAME, WUNDERVAULT_AGENT_TOKEN",
+  "version": "1.6.9",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@wundervault/mcp-server",
+    "version": "1.6.9",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WUNDERVAULT_AGENT_NAME",
+        "description": "Agent name registered with the local wundervault-agent daemon (run onboard.py to register).",
+        "required": true
+      },
+      {
+        "name": "WUNDERVAULT_AGENT_TOKEN",
+        "description": "Optional daemon auth token. Defaults to ~/.wundervault/agents/<agentName>.token.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@wundervault/mcp-server",
+      "version": "1.6.9",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WUNDERVAULT_AGENT_NAME",
+          "description": "Agent name registered with the local wundervault-agent daemon (run onboard.py to register).",
+          "required": true
+        },
+        {
+          "name": "WUNDERVAULT_AGENT_TOKEN",
+          "description": "Optional daemon auth token. Defaults to ~/.wundervault/agents/<agentName>.token.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WUNDERVAULT_AGENT_NAME",
+      "description": "Agent name registered with the local wundervault-agent daemon (run onboard.py to register).",
+      "required": true
+    },
+    {
+      "name": "WUNDERVAULT_AGENT_TOKEN",
+      "description": "Optional daemon auth token. Defaults to ~/.wundervault/agents/<agentName>.token.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://wundervault.com",
+  "sourceUrl": "https://github.com/wundervault/wundervault-mcp",
+  "repository": {
+    "url": "https://github.com/wundervault/wundervault-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-13T20:44:34.601432Z",
+  "publishedAt": "2026-07-13T20:44:34.601432Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:54.714Z",
+    "sourceRepoAt": "2026-08-11T23:14:40.043Z",
+    "readmeAt": "2026-08-11T23:14:40.413Z",
+    "toolsAt": "2026-08-12T00:55:54.714Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/wundervault/wundervault-mcp",
+    "checkedAt": "2026-08-11T23:14:40.043Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/wundervault/wundervault-mcp/main/README.md",
+    "markdown": "# @wundervault/mcp-server\n\n[![npm version](https://img.shields.io/npm/v/%40wundervault%2Fmcp-server)](https://www.npmjs.com/package/@wundervault/mcp-server)\n[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.wundervault%2Fwundervault--mcp-blue)](https://registry.modelcontextprotocol.io/v0/servers?search=wundervault)\n[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)\n\n**A zero-knowledge secrets vault for AI agents.** Every API key you paste into an agent chat or a `.env` file ends up in context windows, transcripts, and provider logs. Wundervault's answer: the agent never receives the secret at all. It asks for *work* — \"run this deploy with the key injected\" — and a local daemon decrypts the secret, injects it into the subprocess environment, zeroes the buffer, and scrubs the output before the agent sees any of it.\n\nThis repo is the MCP server that exposes that workflow to any [Model Context Protocol](https://modelcontextprotocol.io) client — Claude Code, Cursor, Cline, and others.\n\n**Don't trust the claim — test it:** the zero-knowledge property is independently verifiable at your own network boundary in about 5 minutes (browser DevTools or a mitmproxy canary test). Guide + our own test transcript: [wundervault.com/verify](https://wundervault.com/verify).\n\n## How it works\n\n```\n┌──────────────┐  MCP (stdio)  ┌───────────────────┐  ciphertext only  ┌───────────────────┐\n│   AI agent   │──────────────▶│  wundervault-mcp  │◀─────────────────▶│  wundervault.com  │\n│ (Claude, …)  │◀──────────────│  + local daemon   │                   │ stores encrypted  │\n└──────────────┘ \"burned\" ack  │  decrypts HERE    │                   │ blobs, no keys    │\n                               └─────────┬─────────┘                   └───────────────────┘\n                                         │  secret → subprocess env\n                                         │  (buffer zeroed after spawn)\n                                         ▼\n                               ┌───────────────────┐\n                               │   your command    │ stdout/stderr scrubbed\n                               │ (deploy, API, …)  │ before the agent sees it\n                               └───────────────────┘\n```\n\nSecrets are encrypted client-side (AES-256-GCM via Web Crypto) before upload. The hosted service only ever stores ciphertext — it cannot derive the key, the passphrase, or the plaintext.\n\n## Install\n\n```bash\nnpm install -g @wundervault/mcp-server\n```\n\n## Quick Start\n\n```json\n{\n  \"mcpServers\": {\n    \"wundervault\": {\n      \"command\": \"wundervault-mcp\",\n      \"env\": {\n        \"WUNDERVault_AGENT_VAULT_URL\": \"https://wundervault.com\",\n        \"WUNDERVault_AGENT_VAULT_API_KEY\": \"wv_agent_<AGENT_ID>|<KEY_SUFFIX>\",\n        \"WUNDERVault_AGENT_KEY\": \"<BASE64_ENCRYPTION_KEY>\"\n      }\n    }\n  }\n}\n```\n\nOr using a credentials file:\n\n```bash\nwundervault-mcp --credentials ~/.wundervault/creds.json\n```\n\nNew account? [wundervault.com](https://wundervault.com) has a 90-second agent onboarding flow that generates this config for you.\n\n## Security Model\n\n- **Zero-knowledge:** The encryption key lives only in the MCP server process. The Wundervault server never sees it.\n- **Burn-after-reading:** Plaintext secrets are never returned to the calling agent. After decryption, the agent receives only `\"Secret retrieved and burned.\"`.\n- **Exec scrubbing:** Command stdout/stderr are scrubbed of the plaintext before being returned; shell-escape patterns (`$()`, backticks, `sh -c`, `eval`) and file redirects of secrets are rejected *before* decryption.\n- **Directive integrity:** Server-side directive signatures (PBKDF2-HMAC-SHA256, 600k iterations) are verified before any secret is released.\n- **Timing-safe:** HMAC comparison uses `crypto.timingSafeEqual`.\n- **Tiered access:** Per-entry access tiers are enforced server-side; high-tier secrets require human approval before an agent can use them.\n\n### Honest limitations\n\n- The platform is **open-core**: this MCP server and the [browser crypto](https://github.com/wundervault/wundervault-crypto) are AGPL-3.0 so you can audit everything that touches your secrets, but the hosted service itself is not open source.\n- A local daemon must run next to the agent; fully air-gapped setups don't fit.\n- By design the agent can never read a secret's value — if your workflow needs the model to *reason about* the secret itself, this is the wrong shape.\n\n## Tools\n\n### `vault_entries_list`\n\nList all vault entries available to this agent. Returns entry IDs and secret names — no values.\n\n```\nInput: {}\nOutput: \"Vault entries (N):\\n  [entry_id]  secret_name  (tier: read)\"\n```\n\n### `vault_entry_get`\n\nRetrieve and decrypt a vault secret. Optionally execute a command with it.\n\n```\nInput:\n  entry_id: string          # from vault_entries_list\n  purpose: string           # audit log reason\n  exec?: string             # optional shell command\n\nOutput: \"Secret retrieved and burned.\" (plaintext NEVER returned)\n```\n\n**Secure exec pattern** (sudo example):\n```bash\nsudo -S systemctl restart nginx <<< \"$WUNDERVault_SECRET\"\n```\nDo NOT use `echo $WUNDERVault_SECRET | sudo -S` — that exposes the secret in process logs.\n\n### `vault_exec`\n\nExecute a shell command with a vault secret injected as an env var — locally or on a remote host over SSH. The secret is injected into the subprocess and the buffer is zeroed immediately after spawn; escape patterns are rejected before decryption.\n\n```\nInput:\n  purpose: string           # audit log reason\n  command: string           # full shell command (no escape patterns)\n  entry_id?: string         # secret to inject (omit for SSH-key-only remote exec)\n  working_dir?: string\n  inject_as?: { env_key, pre_command?, post_command? }   # override entry's exec_config\n  remote_host?: { host, user, ssh_key_entry_id? | ssh_key? }\n```\n\nWith `remote_host.ssh_key_entry_id`, the SSH key is fetched from the vault and used without ever being written to disk.\n\n### `vault_entry_inject_env`\n\nWrite a vault secret directly into a config file (`~/.npmrc`, `~/.netrc`, `~/.docker/config.json`, or a project `.env`) without the plaintext passing through the agent.\n\n```\nInput:\n  entry_id: string\n  purpose: string\n  file_path: string         # allowed config file paths only\n  env_key: string           # variable name to set\n```\n\n### `vault_rsync`\n\nSync a local directory to a remote host using rsync over SSH, with the SSH key fetched from the vault (temp keyfile deleted immediately after transfer).\n\n### `vault_entry_forget`\n\nDiscard a local reference. No-op on the server.\n\n```\nInput: { entry_id: string }\nOutput: \"Reference [id] discarded from local context.\"\n```\n\n## Credential Loading Priority\n\n1. CLI flags (`--api-key`, `--enc-key`, `--url`)\n2. Environment variables (`WUNDERVault_AGENT_VAULT_API_KEY`, `WUNDERVault_AGENT_KEY`, `WUNDERVault_AGENT_VAULT_URL`)\n3. `WUNDERVault_CREDENTIALS_FILE` env var (explicit path)\n4. `~/.wundervault/creds.json`\n5. `~/.config/wundervault/credentials` (XDG)\n\n### Credentials file format\n\n```json\n{\n  \"agent_vault_url\": \"https://wundervault.com\",\n  \"agent_vault_api_key\": \"wv_agent_<ID>|<SUFFIX>\",\n  \"agent_encryption_key\": \"<BASE64_URL_SAFE_32_BYTES>\"\n}\n```\n\n## CLI Options\n\n```\nwundervault-mcp [options]\n\n  --api-key <key>     Agent API key\n  --enc-key <key>     Encryption key (base64 URL-safe)\n  --url <url>         API base URL (default: https://wundervault.com)\n  --credentials <f>   Path to credentials JSON file\n  --help              Show help\n```\n\n## Agent wallets (x402)\n\nAn [x402](https://x402.org) payment is just a signature, and a wallet key is a\nvault secret like any other. Store the key at **tier 2**, have the agent sign the\npayment payload through `vault_exec`, and the key is injected into a local signing\nsubprocess — it never enters the model context, and every use needs the owner's\napproval first (the agent's denied call carries a request id; approval is scoped\nto that agent + secret, once or for a 15/60-minute window). We ran this\nend-to-end on Base Sepolia — the verified run is written up at\n[wundervault.com/agent-wallets](https://wundervault.com/agent-wallets).\nPayment-specific policy (spend caps, payee allowlists) is not built yet:\ncompatible, not productized.\n\n## Sandbox / demo mode\n\nSet `WUNDERVAULT_MOCK=1` to run the server **without** a `wundervault-agent`\ndaemon or any credentials. In this mode every tool call returns a representative\nresponse clearly labelled `[DEMO MODE]` instead of contacting the vault — **no\nreal secret is ever involved**. This exists so you can poke at the tool surface\nwithout an account, and so MCP directory scanners and CI\n(e.g. [Glama](https://glama.ai)) can start the server, exercise each tool, and\nvalidate the build with no live vault. It is **off by default** and is never\nenabled in production.\n\n```jsonc\n\"env\": { \"WUNDERVAULT_MOCK\": \"1\" }   // demo/CI only — returns fake, labelled output\n```\n\n## Building from source\n\n```bash\ngit clone https://github.com/wundervault/wundervault-mcp.git\ncd wundervault-mcp\nnpm install\nnpm run build   # compiles TypeScript to dist/\nnpm test        # run the test suite\n```\n\n## License\n\nLicensed under the **GNU Affero General Public License v3.0 or later** (`AGPL-3.0-or-later`). See [LICENSE](LICENSE).\n\nWundervault is **open-core**: this MCP server and the client are open source; the hosted service at [wundervault.com](https://wundervault.com) is a commercial offering. For commercial or hosting inquiries, get in touch via [wundervault.com/contact](https://wundervault.com/contact).\n",
+    "fetchedAt": "2026-08-11T23:14:40.413Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:54.714Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

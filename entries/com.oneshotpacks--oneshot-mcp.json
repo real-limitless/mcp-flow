@@ -1,0 +1,59 @@
+{
+  "id": "com.oneshotpacks/oneshot-mcp",
+  "title": "oneshot-mcp",
+  "description": "Search receipt-verified agent build packs, with each pack's real M-of-N pass rate.",
+  "summary": "Search receipt-verified agent build packs, with each pack's real M-of-N pass rate.",
+  "offersHint": "Search receipt-verified agent build packs, with each pack's real M-of-N pass rate. · Packages: npm:oneshot-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "oneshot-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "oneshot-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://oneshotpacks.com",
+  "sourceUrl": "https://github.com/gkaffen338/oneshot-mcp",
+  "repository": {
+    "url": "https://github.com/gkaffen338/oneshot-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T23:01:41.57713Z",
+  "publishedAt": "2026-08-02T23:01:41.57713Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:55:46.852Z",
+    "sourceRepoAt": "2026-08-12T00:29:21.624Z",
+    "readmeAt": "2026-08-12T00:29:22.507Z",
+    "toolsAt": "2026-08-12T01:55:46.852Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gkaffen338/oneshot-mcp",
+    "checkedAt": "2026-08-12T00:29:21.624Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gkaffen338/oneshot-mcp/main/README.md",
+    "markdown": "# oneshot-mcp\n\nAn MCP server that lets your coding agent query the OneShot catalog of\n**receipt-verified build packs** without you leaving your editor. Mid-build,\nyour agent can ask \"is there a verified pack for this?\" instead of you having\nto remember to check the storefront.\n\n## Why you'd add this (honestly)\n\nThis is a vendor catalog: it lets your agent query OneShot's own paid build\npacks, plus their verification data, from inside your normal workflow. It's\nworth adding because it's useful independent of whether you ever buy anything\n-- `search_packs` and `list_packs` tell you plainly whether a receipt-verified\npack exists for what you're building, with real \"M of N runs passed\" numbers,\nnot marketing copy. `get_pack` puts the price, refund terms, and exact receipt\nfacts in front of you before you decide anything. But be clear-eyed about what\nit is: this is OneShot listing its own products to your agent, not an\nindependent recommendation engine. It never calls a pack \"best\" or invents a\nverification a receipt doesn't support, and every result carries the price and\nrefund pointer -- but the catalog is ours, and every entry in it is something\nwe sell.\n\n## Tools\n\n- **`search_packs({ query, limit? })`** -- keyword search (stack, problem, or\n  niche) over the catalog. Returns matching packs: title, one-liner, price,\n  verification status stated exactly as the receipt supports (e.g. `\"3 of 3\n  clean-room runs passed\"`, or `\"unverified\"` if no receipt exists yet), a\n  receipt summary, the refund-policy pointer, and the storefront URL. Never\n  ranks or calls a result \"best\" -- describes each match and leaves the\n  decision to the caller.\n- **`get_pack({ slug })`** -- full detail for one pack: what you get,\n  architecture-decision highlights, scale envelope, FAQ, exact receipt facts\n  (per-check pass/fail, model, token/wall-time cost) when verified, price,\n  refund pointer, and the buy URL.\n- **`list_packs()`** -- the whole catalog, compact: slug, title, one-liner,\n  niche, price, and verification status per pack, plus the refund-policy\n  summary once.\n\n## Data source: fetch-with-fallback (not a bundled catalog)\n\nTwo options were on the table: read `packs/*/pack.yaml` + `receipt/receipt.json`\n+ `LISTING.md` live at runtime, or ship a generated `catalog.json` baked into\nthe npm package. **Chosen: live reads, preferring the storefront's\n`/catalog.json` over a local checkout, in that order:**\n\n1. Try `GET $ONESHOT_CATALOG_URL` (default `https://oneshotpacks.com/catalog.json`,\n   3s timeout). Accepts either a bare array of pack objects or `{ \"packs\": [...] }`.\n2. If that fails for **any** reason -- network error, non-2xx, not JSON, wrong\n   shape -- fall back to reading `packs/*/pack.yaml` + `LISTING.md` +\n   `receipt/receipt.json` directly off disk under `$PACKS_DIR` (default\n   `../packs`, resolved from the current working directory -- matches\n   `storefront/lib/packs.ts`'s own convention when both this package and\n   `packs/` sit at the repo root).\n3. If neither source has anything, `list_packs`/`search_packs` say so plainly\n   (`catalog_source: \"none\"` + an explanatory note) instead of serving stale\n   bundled data. This server never fabricates catalog contents.\n\nA baked-in `catalog.json` was rejected because it goes stale the moment a\npack is re-verified or newly listed, and every server update would then\nrequire a new npm release just to refresh data the storefront already has\nlive. Live reads cost one `fetch` + a YAML parse -- the same low cost the\nstorefront's own loader pays -- and stay fresh without a redeploy of this\nserver, which is the whole point per `docs/03-marketing-distribution.md` Lever 2.\n\n**The storefront's `/catalog.json` endpoint is being built concurrently by a\ncolleague and may not exist yet.** This server does not depend on it existing:\nany fetch failure (including a plain 404 today) is treated as \"not there yet\"\nand falls straight through to the local-file fallback, logged to stderr, no\ncrash. Once `/catalog.json` ships, this server picks it up automatically on\nits next 5-minute cache refresh -- no config change needed as long as it's at\nthe default URL.\n\nResponses are cached in-process for 5 minutes so a long-lived stdio session\ndoesn't refetch on every tool call.\n\n## Install\n\nNot yet published to npm (publishing is step one of the launch checklist --\nsee `docs/09-launch-checklist.md`). Until then, point your MCP client at the\nabsolute path of this checked-out repo. After publishing, switch to the `npx`\nform -- same shape, just swap `command`/`args`.\n\n### Claude Code\n\nAdd to your project's `.mcp.json` (or via `claude mcp add`):\n\n```json\n{\n  \"mcpServers\": {\n    \"oneshot\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/oneshot/oneshot-mcp/src/index.ts\"]\n    }\n  }\n}\n```\n\nOnce published to npm:\n\n```json\n{\n  \"mcpServers\": {\n    \"oneshot\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"oneshot-mcp\"]\n    }\n  }\n}\n```\n\n### Cursor\n\nAdd to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project):\n\n```json\n{\n  \"mcpServers\": {\n    \"oneshot\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/oneshot/oneshot-mcp/src/index.ts\"]\n    }\n  }\n}\n```\n\nOnce published to npm, same swap as above (`\"command\": \"npx\", \"args\": [\"-y\", \"oneshot-mcp\"]`).\n\n### Env vars (optional, either client config's `env` block or your shell)\n\n| Var | Default | Purpose |\n|---|---|---|\n| `ONESHOT_CATALOG_URL` | `https://oneshotpacks.com/catalog.json` | Remote catalog tried first |\n| `ONESHOT_SITE_URL` | `https://oneshotpacks.com` | Base URL used to build pack/buy links |\n| `PACKS_DIR` | `../packs` (from cwd) | Local fallback packs directory |\n\n## Requirements\n\nNode >= 22.6 (uses Node's built-in TypeScript type-stripping to run `.ts`\nsource directly -- no build step, no bundler, no `tsc` in the loop).\n\n## Development\n\n```bash\nnpm install\nnpm test              # node --test test/tools.test.ts\nnpm start             # runs the server on stdio (Ctrl-C to stop)\nnode src/index.ts --help\n```\n\n`test/tools.test.ts` exercises `search_packs`, `get_pack`, and `list_packs`\ndirectly against fixture data in `fixtures/packs/` (not through the MCP\nprotocol -- the tool logic in `src/catalog.ts` is plain, transport-agnostic\nfunctions; `src/index.ts` only wires them to the SDK). Coverage: a search hit,\na search miss, an unverified pack rendered honestly (no fabricated pass rate),\na malformed `pack.yaml` skipped without crashing the rest of the catalog, and\nthe full fetch-with-fallback chain (remote success, remote 404, remote\nnetwork error, malformed remote shape, remote-entry-level tolerance, and TTL\ncaching).\n",
+    "fetchedAt": "2026-08-12T00:29:22.507Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:55:46.852Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

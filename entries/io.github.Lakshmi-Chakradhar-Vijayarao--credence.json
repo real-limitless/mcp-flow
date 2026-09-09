@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Lakshmi-Chakradhar-Vijayarao/credence",
+  "title": "Credence — Epistemic Guard",
+  "description": "Epistemic guard for AI coding: tracks uncertain values and blocks writes until verified.",
+  "summary": "Epistemic guard for AI coding: tracks uncertain values and blocks writes until verified.",
+  "offersHint": "Epistemic guard for AI coding: tracks uncertain values and blocks writes until verified. · Packages: pypi:credence-guard",
+  "version": "1.2.5",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "credence-guard",
+    "version": "1.2.5",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "credence-guard",
+      "version": "1.2.5",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Lakshmi-Chakradhar-Vijayarao/credence-ai",
+  "repository": {
+    "url": "https://github.com/Lakshmi-Chakradhar-Vijayarao/credence-ai",
+    "source": "github",
+    "id": "1221864133"
+  },
+  "updatedAt": "2026-05-06T04:34:00.017053Z",
+  "publishedAt": "2026-05-06T04:34:00.017053Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:33.649Z",
+    "sourceRepoAt": "2026-08-12T00:08:35.681Z",
+    "readmeAt": "2026-08-12T00:08:36.382Z",
+    "toolsAt": "2026-08-12T01:39:33.650Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Lakshmi-Chakradhar-Vijayarao/credence-ai",
+    "checkedAt": "2026-08-12T00:08:35.681Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Lakshmi-Chakradhar-Vijayarao/credence-ai/main/README.md",
+    "markdown": "# Credence\n\nAI doesn't remember what it wasn't sure about. Credence does.\n\n[![PyPI](https://img.shields.io/pypi/v/credence-guard)](https://pypi.org/project/credence-guard/)\n[![CI](https://github.com/Lakshmi-Chakradhar-Vijayarao/credence-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Lakshmi-Chakradhar-Vijayarao/credence-ai/actions/workflows/ci.yml)\n[![Python](https://img.shields.io/pypi/pyversions/credence-guard)](https://pypi.org/project/credence-guard/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n```bash\npip install credence-guard\ncredence demo   # 30-second smoke test, no API key required\n```\n\n`[mcp]` adds the FastMCP server for Claude Code. Core package has zero hard dependencies.\n\n---\n\n## The problem\n\nYou say: *\"The rate limit is probably around 50 — I haven't confirmed it yet.\"*\n\nFifteen turns later, Claude writes:\n\n```python\nRATE_LIMIT = 50   # no warning. no flag. shipped.\n```\n\nThe API rejects every request at 2am. The real limit was 10. Claude forgot you weren't sure.\n\nThis isn't hallucination. The model reproduced exactly what it read. What it read had the qualifier stripped — by context compression, fifteen turns back.\n\n---\n\n## What Credence does\n\nTracks uncertain values the moment you state them. Blocks writes that embed those values until you confirm them.\n\n```\nyou say \"rate limit is probably 50\"\n    → observer registers it (before Claude responds)\n    → Claude writes: RATE_LIMIT = 50  # ⚠ CREDENCE[unverified]\n    → write blocked until you confirm\n```\n\nEvery other tool warns. Credence enforces.\n\n---\n\n## What it looks like\n\n```python\n# Claude generates this. Credence intercepts before it ships.\n\nclass StripeClient:\n    API_VERSION  = \"2023-10-16\"  # ⚠⚠ CREDENCE[stale]: API date versions change on release — verify before shipping\n    RATE_LIMIT   = 100           # ⚠  CREDENCE[unverified]: I think Stripe rate limit is around 100 req/min\n    TOKEN_EXPIRY = 3600          # ⚠⚠ CREDENCE[stale]: Token/session lifetime values are set by the vendor — verify\n    MAX_RETRIES  = 3\n    TIMEOUT_MS   = 5000\n```\n\n```\ncredence: blocked Edit — 2 unverified value(s)\n  → I think Stripe rate limit is around 100 req/min | TOKEN_EXPIRY = 3600\n  Verify first, then retry. Use credence_constraints to see all pending.\n```\n\nAfter you confirm: `\"Confirmed — rate limit is 100 req/min per stripe.com/docs\"` → gate clears.\n\n![Gate demo](demo/gate_demo.gif)\n\n---\n\n## Setup\n\n**1. Add to `.mcp.json`:**\n```json\n{ \"mcpServers\": { \"credence\": { \"command\": \"credence-server\" } } }\n```\n\n**2. Add to `.claude/settings.json`:**\n```json\n{\n  \"hooks\": {\n    \"UserPromptSubmit\": [\n      { \"hooks\": [{ \"type\": \"command\", \"command\": \"python3 -m credence.observer\" }] }\n    ],\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"Write|Edit|Bash|NotebookEdit\",\n        \"hooks\": [{ \"type\": \"command\", \"command\": \"python3 -m credence.hooks\" }]\n      }\n    ]\n  }\n}\n```\n\nDone. No API key required.\n\n> **Registry:** Credence creates `epistemic_registry.db` in your working directory. Add `*.db` to your `.gitignore`, or set `CREDENCE_DB=~/.credence/registry.db` to keep it global.\n>\n> **Session tracking:** Set `CREDENCE_SESSION_ID=my-project` to keep constraints stable across directory changes and terminal restarts.\n>\n> **Event log:** The gate writes block/allow events to `~/.credence/events.jsonl` (local only, never sent anywhere). Set `CREDENCE_NO_LOG=1` to disable.\n>\n> **Constraint cap:** The registry allows up to 500 constraints per session by default. Override with `CREDENCE_MAX_CONSTRAINTS=<n>`.\n\n---\n\n## How it works\n\nTwo layers, neither requires model cooperation:\n\n| Layer | Hook | Role |\n|---|---|---|\n| Observer | `UserPromptSubmit` | Passive listener — registers uncertain values before Claude generates anything |\n| Gate | `PreToolUse` | Blocks writes that embed unverified values |\n\nThe observer fires before the model processes your message. If you say \"I think the rate limit is 50\", the registry has that entry before Claude generates a single token.\n\n---\n\n## What gets blocked\n\n```\ncredence: blocked Edit — 2 unverified value(s)\n  → rate limit is probably 50 req/min | token expires in 3600s\n  Verify first, then retry. Use credence_constraints to see all pending.\n```\n\nOnce verified, the gate clears.\n\n---\n\n## What Credence does NOT do\n\n- Does not verify facts — it cannot tell you if a value is correct\n- Does not catch uncertainty that was never stated\n- Does not block the model from *saying* a wrong value in prose — only from *writing* it to a file or command\n\n---\n\n## Measured results\n\n46% of uncertainty qualifiers are stripped by Claude Haiku during context compression. Credence blocks 100% of those writes (n=50, bootstrap CI: [0%–0%]).\n\nValidated across 7 open-weight models (Qwen, Mistral, Llama, Phi, Gemma) from 5 organizations: same failure mode, same block rate.\n\n```bash\ncredence demo                     # smoke test, no API key\ncredence stats                    # false-positive rate from real gate usage\ncredence feedback 1|2|3           # tag last gate block: correct / noise / skip\npython3 -m pytest tests/ -q       # 829 tests\npython3 -m evals.latency_report   # P50/P95/P99\n```\n\nFull methodology: [docs/TECHNICAL_REPORT.md](docs/TECHNICAL_REPORT.md)\n\n---\n\n## Project layout\n\n```\ncredence/         pip-installable package\n  observer.py     passive UserPromptSubmit hook\n  hooks.py        PreToolUse enforcement gate\n  mcp_server.py   17-tool MCP server\n  registry.py     SQLite constraint store\n  memory.py       cross-session persistence\ntests/            829 tests\nevals/            validation studies + multi-model benchmarks\ndocs/             technical report, architecture, ETP spec\ncredence_gate/    Rust gate (alternative to Python hooks.py)\nexperimental/     Phase 2 work — not yet shipped\npaper/            Research paper draft + figures\n```\n\n---\n\n## Research\n\nThe scientific basis for Credence is documented in `paper/` (EQL / EQLR / FCR).\n\nThe companion geometry thesis — on confabulation detection and why the detection\naxis is dissociable from the causal control axis — lives in a separate repo:\n→ **[Detection Without Control](https://github.com/Lakshmi-Chakradhar-Vijayarao/detection-without-control)**\n\n---\n\n## Built by\n\n**Lakshmi Chakradhar Vijayarao** — [GitHub](https://github.com/Lakshmi-Chakradhar-Vijayarao) · [LinkedIn](https://www.linkedin.com/in/lakshmichakradharvijayarao/) · [X](https://x.com/LChakradharV28)\n\nApache 2.0 License\n\n<!-- mcp-name: io.github.Lakshmi-Chakradhar-Vijayarao/credence -->\n",
+    "fetchedAt": "2026-08-12T00:08:36.382Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:33.650Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

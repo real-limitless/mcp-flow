@@ -1,0 +1,95 @@
+{
+  "id": "io.github.sp3ak/safenode-mcp-gateway",
+  "title": "SafeNode MCP Gateway",
+  "description": "Policy proxy for MCP tool calls. A denied call never reaches the downstream server.",
+  "summary": "Policy proxy for MCP tool calls. A denied call never reaches the downstream server.",
+  "offersHint": "Policy proxy for MCP tool calls. A denied call never reaches the downstream server. · Packages: npm:safenode-mcp-gateway · Env vars: SAFENODE_API_KEY, SAFENODE_BASE_URL",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "safenode-mcp-gateway",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SAFENODE_API_KEY",
+        "description": "SafeNode API key. Free tier at https://safenode.tech — no card required.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "SAFENODE_BASE_URL",
+        "description": "Override the SafeNode API base URL. Defaults to https://safenode.tech."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "safenode-mcp-gateway",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SAFENODE_API_KEY",
+          "description": "SafeNode API key. Free tier at https://safenode.tech — no card required.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "SAFENODE_BASE_URL",
+          "description": "Override the SafeNode API base URL. Defaults to https://safenode.tech."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SAFENODE_API_KEY",
+      "description": "SafeNode API key. Free tier at https://safenode.tech — no card required.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "SAFENODE_BASE_URL",
+      "description": "Override the SafeNode API base URL. Defaults to https://safenode.tech."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://safenode.tech",
+  "sourceUrl": "https://github.com/sp3ak/safenode-mcp-gateway",
+  "repository": {
+    "url": "https://github.com/sp3ak/safenode-mcp-gateway",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T08:30:28.251562Z",
+  "publishedAt": "2026-08-10T08:30:28.251562Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:57.181Z",
+    "sourceRepoAt": "2026-08-11T23:20:24.650Z",
+    "readmeAt": "2026-08-11T23:20:25.303Z",
+    "toolsAt": "2026-08-12T01:00:57.181Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sp3ak/safenode-mcp-gateway",
+    "checkedAt": "2026-08-11T23:20:24.650Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sp3ak/safenode-mcp-gateway/main/README.md",
+    "markdown": "# SafeNode MCP Gateway\n\nAn MCP proxy that enforces policy on every tool call. The agent cannot route around it.\n\n```bash\nnpx safenode-mcp-gateway\n```\n\n## Why a proxy\n\nAn MCP server that exposes an `evaluate_action` tool is theatre. The model can choose not to call\nit, which means it enforces nothing.\n\nThis is a **proxy**. It sits between your MCP client (Claude Desktop, Claude Code, Cursor, any MCP\nhost) and the MCP servers you already use. `tools/list` passes straight through, so the model sees\nexactly the tools it saw before. Every `tools/call` is evaluated against SafeNode *first*. A denial\nmeans the call never reaches the downstream server at all.\n\n```\nClaude Desktop ──► safenode-mcp-gateway ──► filesystem server\n                          │                   github server\n                          ▼                   postgres server\n                    SafeNode API\n                  allow/warn/review/deny\n```\n\nYour agent needs no code changes. It does not know the gateway is there.\n\n[Get an API key — free tier, no card](https://safenode.tech) ·\n[Docs](https://safenode.tech/docs) ·\n[Python SDK](https://pypi.org/project/safenode-sdk/)\n\n---\n\n## Setup\n\n### 1. Get an API key\n\nFree at [safenode.tech](https://safenode.tech). Keys look like `sn_...`.\n\n### 2. Write a config\n\n`safenode-gateway.json` — take the servers straight out of your existing MCP client config:\n\n```json\n{\n  \"failMode\": \"fail_closed\",\n  \"payloadMode\": \"redacted\",\n  \"logFile\": \"./safenode-decisions.jsonl\",\n  \"servers\": [\n    {\n      \"name\": \"filesystem\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"/Users/you/projects\"]\n    }\n  ],\n  \"tools\": {\n    \"read_file\": { \"failMode\": \"fail_open\" },\n    \"write_file\": { \"payloadMode\": \"metadata_only\" }\n  }\n}\n```\n\nDo **not** put your API key in this file. Set `SAFENODE_API_KEY` in the environment — it takes\nprecedence over the config, so the file stays safe to commit.\n\n### 3. See what would be sent, before sending anything\n\n```bash\nSAFENODE_API_KEY=sn_... npx safenode-mcp-gateway --dry-run\n```\n\nPrints the exact JSON body that an evaluation would POST. No network call. This is the fastest way\nto satisfy yourself about what leaves your machine.\n\n### 4. Point your MCP client at the gateway\n\n**Claude Desktop** — `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"safenode\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"safenode-mcp-gateway\", \"--config\", \"/absolute/path/to/safenode-gateway.json\"],\n      \"env\": { \"SAFENODE_API_KEY\": \"sn_...\" }\n    }\n  }\n}\n```\n\n**Claude Code** — `.mcp.json` in your project:\n\n```json\n{\n  \"mcpServers\": {\n    \"safenode\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"safenode-mcp-gateway\", \"--config\", \"./safenode-gateway.json\"],\n      \"env\": { \"SAFENODE_API_KEY\": \"sn_...\" }\n    }\n  }\n}\n```\n\n**Cursor** — `~/.cursor/mcp.json`, same shape as Claude Desktop.\n\nReplace your existing server entries with this one. The gateway spawns them itself, so listing them\nin both places would run each server twice.\n\n---\n\n## What each decision does\n\n| Decision | Behaviour |\n| --- | --- |\n| `allow` | Forwarded. The downstream result is returned unchanged. |\n| `warn` | Forwarded, with a `[SafeNode warning]` line prepended so the model *and* the human see it. |\n| `review` | **Not forwarded.** Returns a message saying approval is needed. |\n| `deny` | **Not forwarded.** Returns the human-readable reasons and the `trace_id`. |\n\nDenials come back as MCP tool *errors*, not transport failures, so the model sees why and can try\nsomething else instead of the host surfacing an opaque crash.\n\n## Fail behaviour\n\n`failMode` decides what happens when SafeNode itself is unreachable.\n\n| | |\n| --- | --- |\n| `fail_closed` **(default)** | Block the call. |\n| `fail_open` | Forward it, unevaluated. |\n| `raise` | Crash the gateway. |\n\n**The gateway defaults to `fail_closed`, unlike the SafeNode SDKs, which default to `fail_open`.**\nThat difference is deliberate. An SDK wraps a developer's own code, where taking production down\nduring a SafeNode outage loses the user forever. The gateway fronts arbitrary MCP tools it knows\nnothing about — filesystem writes, shell commands, payments — and silently letting all of that\nthrough the moment SafeNode is unreachable defeats the point of installing it.\n\nLoosen it per tool for the read-only ones:\n\n```json\n\"tools\": {\n  \"read_file\":   { \"failMode\": \"fail_open\" },\n  \"list_files\":  { \"failMode\": \"fail_open\" }\n}\n```\n\nDegraded decisions are logged to stderr and marked `\"degraded\": true` with a null `traceId` in the\ndecision log, so they can never be counted as real policy decisions.\n\n## What data leaves your machine\n\nFor every tool call, the gateway sends: the tool name, the downstream server name, a session id,\nany static context from your config, and the **tool arguments** as the payload.\n\n`payloadMode` controls the arguments:\n\n| | |\n| --- | --- |\n| `full` | Sent verbatim. |\n| `redacted` **(default)** | Scrubbed client-side first. |\n| `metadata_only` | No values at all — key names and hashes only. |\n\nRedaction covers emails, Luhn-validated credit cards, US SSNs, provider API key prefixes (`sk-`,\n`ghp_`, `xoxb-`, `AKIA`, `AIza`), bearer tokens, and PEM private key blocks. Values become\n`[REDACTED:<type>]`.\n\n### Why redaction counts are always sent\n\nAlongside the redacted payload, the gateway sends counts of what it removed:\n\n```json\n\"safenode_redactions\": { \"email\": 2, \"credit_card\": 1 }\n```\n\nThis is load-bearing. SafeNode's server-side `sensitive_data` rule matches patterns against payload\n*values*. If the gateway scrubbed those values and said nothing, a policy of \"deny any action\ncontaining a card number\" would silently start passing — the client-side privacy feature would have\ndisabled the server-side security control. Reporting counts closes that: policy can act on the\n*presence* of a card number without ever receiving one.\n\nIf you use `sensitive_data` with `patterns`, pair it with a `redaction_metadata` rule.\n\nThese counts are self-reported. They raise the floor for an honest client; they are not a defence\nagainst a hostile one.\n\n### No telemetry\n\nThe gateway talks to exactly two things: the downstream MCP servers you configured, and the SafeNode\nAPI. No analytics, no phone-home, no postinstall scripts.\n\n## Local decision log\n\nSet `logFile` to get a JSONL record of every decision, independent of the server-side audit trail —\nso you still have evidence of what your agent tried to do when the network was down:\n\n```json\n{\"timestamp\":\"2026-08-08T04:12:09.412Z\",\"server\":\"filesystem\",\"tool\":\"write_file\",\"decision\":\"deny\",\"degraded\":false,\"traceId\":\"9f1c…\",\"reasons\":[\"Path is outside the approved workspace.\"],\"forwarded\":false,\"durationMs\":143,\"sessionId\":\"a3f1…\"}\n```\n\n## Configuration reference\n\n| Key | Default | Meaning |\n| --- | --- | --- |\n| `apiKey` | — | Prefer `SAFENODE_API_KEY` in the environment |\n| `baseUrl` | `https://safenode.tech` | For staging |\n| `failMode` | `fail_closed` | `fail_closed` \\| `fail_open` \\| `raise` |\n| `payloadMode` | `redacted` | `full` \\| `redacted` \\| `metadata_only` |\n| `timeoutMs` | `5000` | Evaluation request budget |\n| `logFile` | `null` | JSONL decision log path |\n| `prefixTools` | `false` | Force `<server>__<tool>` naming |\n| `servers[]` | required | Downstream MCP servers |\n| `tools{}` | `{}` | Per-tool overrides |\n| `context{}` | `{}` | Static context on every evaluation |\n\n`failMode`, `payloadMode` and `context` can be set globally, per server, or per tool. Most specific\nwins.\n\n`tools.<name>.bypass: true` skips evaluation entirely for one tool. It does what it says — the call\nis forwarded with no policy check at all.\n\n### Tool name collisions\n\nIf two downstream servers export the same tool name, the gateway prefixes **every** tool with\n`<server>__` and logs a warning. Silently picking a winner would apply one server's policy to\nanother server's tool, which is a security bug rather than a cosmetic one.\n\n## What this is not\n\n- **Not a sandbox.** It decides whether a call is forwarded. It does not contain the downstream\n  server, restrict syscalls, or limit what that server can do once the call reaches it.\n- **Not a prompt-injection detector.** It evaluates the *action*, not the reasoning that produced\n  it. If your agent has been talked into deleting a table, this can stop the delete — it will not\n  tell you the agent was manipulated.\n- **Not offline.** Every tool call costs a round trip to the SafeNode API. There is no local policy\n  evaluation.\n- **Not a substitute for scoping the underlying servers.** Still pass a filesystem server the\n  narrowest root directory that works.\n- **Not free of side effects.** Every evaluation is recorded server-side and counts against your\n  monthly quota.\n\n## Latency\n\nEach gated tool call adds one round trip to the SafeNode API, with a 5000ms budget by default.\nBypassed tools add nothing.\n\nA measured p99 for the evaluate endpoint is not published yet, because it has not been measured\nunder realistic load. When it has been, it will go here and in the docs rather than being estimated.\n\n## Docker\n\n```bash\ndocker build -t safenode-mcp-gateway .\n```\n\nRunning it with no arguments starts against a bundled demo config that proxies an included echo\nserver, so you can see the proxy work without any setup:\n\n```bash\ndocker run -i --rm safenode-mcp-gateway\n```\n\nThe demo key is a placeholder, so `tools/list` passes through while any real tool call is denied by\nthe `fail_closed` policy. For real use, mount your own config and supply a key:\n\n```bash\ndocker run -i --rm \\\n  -e SAFENODE_API_KEY=sn_... \\\n  -v /path/to/safenode-gateway.json:/app/config.json \\\n  safenode-mcp-gateway --config /app/config.json\n```\n\n`-i` is required. MCP speaks JSON-RPC over stdio, so without stdin attached the gateway has nothing\nto talk to.\n\n## Requirements\n\nNode 18+. One runtime dependency: `@modelcontextprotocol/sdk`.\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports about enforcement gaps — anything that reaches a\ndownstream server when it should have been blocked — are the most valuable thing you can file.\n\n## Security\n\nSee [SECURITY.md](SECURITY.md). Please do not open public issues for vulnerabilities.\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:20:25.303Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:57.181Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

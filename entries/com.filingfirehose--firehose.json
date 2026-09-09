@@ -1,0 +1,69 @@
+{
+  "id": "com.filingfirehose/firehose",
+  "title": "FilingFirehose",
+  "description": "SEC EDGAR filings parsed: 8-K body-text classification, 13D activist tagging, S-3 ATM detection.",
+  "summary": "SEC EDGAR filings parsed: 8-K body-text classification, 13D activist tagging, S-3 ATM detection.",
+  "offersHint": "SEC EDGAR filings parsed: 8-K body-text classification, 13D activist tagging, S-3 ATM detection. · Remote MCP (streamable-http) at https://filingfirehose.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://filingfirehose.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://filingfirehose.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://filingfirehose.com",
+  "sourceUrl": "https://github.com/jaablon/filingfirehose-python",
+  "repository": {
+    "url": "https://github.com/jaablon/filingfirehose-python",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-10T06:40:00.053277Z",
+  "publishedAt": "2026-05-10T06:40:00.053277Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:34:40.790Z",
+    "sourceRepoAt": "2026-08-12T00:34:40.791Z",
+    "readmeAt": "2026-08-12T00:34:41.432Z",
+    "toolsAt": "2026-08-12T00:34:41.530Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jaablon/filingfirehose-python",
+    "checkedAt": "2026-08-12T00:34:40.791Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jaablon/filingfirehose-python/main/README.md",
+    "markdown": "# filing-firehose\n\nPython client for the [FilingFirehose](https://filingfirehose.com) SEC EDGAR\nAPI — body-text-parsed 8-Ks (with buried-event detection), activist-tagged\nSchedule 13D/G filings, and ATM offerings extracted from S-3 / 424B5 prospectus\nsupplements.\n\n## Install\n\n```\npip install filing-firehose\n```\n\n## Quick start\n\nThe free public tier returns the last 72 hours of filings — no API key required:\n\n```python\nfrom filing_firehose import FilingFirehose\n\nff = FilingFirehose()\n\n# Recent 8-Ks where the body language flags items the filer didn't report\nburied = ff.recent_8k(suspected_buried_only=True, limit=10)\nfor f in buried:\n    print(f\"{f.company_name}: filer reported {f.filer_reported_items}, \"\n          f\"body suggests {f.suspected_buried_events}\")\n\n# Recent activist 13D / 13G filings\nfor f in ff.recent_13d(activist=\"Saba\"):\n    print(f\"{f.company_name} — {f.percent_of_class}% by {f.activist_filers}\")\n\n# Recent ATM offerings with shelf size > $50M\nfor f in ff.recent_atm(min_shelf_million_usd=50):\n    print(f\"{f.company_name}: ${f.shelf_size_million_usd:.1f}M via {f.sales_agents}\")\n```\n\nFor the full historical archive, get an API key at\n[filingfirehose.com](https://filingfirehose.com):\n\n```python\nff = FilingFirehose(api_key=\"ff_live_...\")\n\n# Search the entire archive for cyber events\nfor f in ff.search_8k(items=\"1.05\", since=\"2026-01-01\"):\n    print(f.company_name, f.filed_at)\n```\n\n## Async\n\n```python\nimport asyncio\nfrom filing_firehose import AsyncFilingFirehose\n\nasync def main():\n    async with AsyncFilingFirehose() as ff:\n        filings = await ff.recent_8k(items=\"1.05,5.02\")\n        for f in filings:\n            print(f.company_name, f.detected_items)\n\nasyncio.run(main())\n```\n\n## Why this client\n\nThe wedge: most SEC filings APIs trust the filer-reported item codes on\n8-K filings. We body-text-classify every filing and surface a\n`suspected_buried_events` field flagging when the body language doesn't match\nthe filer's claimed item codes. From a [21-day analysis of 4,251 8-Ks](https://filingfirehose.com/research/buried-events),\n**7.3% of Item 8.01 filings contain language suggesting a more specific item\nshould have been used** — including buried cyber incidents (1.05), officer\ndepartures (5.02), and material agreements (1.01).\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:34:41.432Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_8k_filings",
+      "description": "Search recent SEC 8-K filings (current report) from the past 72 hours.\n\n    Args:\n        items: Comma-separated 8-K item codes to filter on. Examples: '1.05'\n            (cybersecurity), '5.02' (officer departure), '8.01' (other events),\n            '1.01' (material agreement). Leave None for all 8-Ks.\n        suspected_buried_only: If True, return only filings where our\n            body-text classifier flagged a suspected misclassification —\n            i.e. cyber language under Item 8.01 that should have been 1.05,\n            officer-departure language under 8.01 that should have been 5.02.\n        limit: Max results (1-50, default 25).\n\n    Returns:\n        JSON-formatted list of filings. Each includes: accession_number,\n        company_name, filed_at, filer_reported_items, detected_items,\n        discrepancy_items (in body but not reported), and\n        suspected_buried_events (map of reported→suspected).\n    "
+    },
+    {
+      "name": "search_13d_filings",
+      "description": "Search recent SEC Schedule 13D / 13G filings from the past 72 hours.\n\n    Args:\n        activist: Filter to filings tagged with this activist filer name.\n            Substring match, case-insensitive. Examples: 'Saba', 'Starboard',\n            'Icahn', 'Elliott', 'Pershing'.\n        min_percent: Minimum percent of class disclosed.\n        include_amendments: Include 13D/A and 13G/A amendments. Default True.\n        include_passive_13g: Include passive Schedule 13G filings. Default False\n            (only active 13D / 13D/A returned).\n        limit: Max results (1-50, default 25).\n\n    Returns:\n        JSON list of filings with cusip, percent_of_class, aggregate_amount,\n        activist_filers, and an Item 4 purpose excerpt.\n    "
+    },
+    {
+      "name": "search_atm_offerings",
+      "description": "Search recent SEC at-the-market (ATM) equity offerings from the past 72 hours.\n\n    Pulls from S-3 / 424B5 family filings where our parser flagged ATM-offering\n    indicators in the body language.\n\n    Args:\n        sales_agent: Filter by sales agent name (substring, case-insensitive).\n            Examples: 'Cantor Fitzgerald', 'Jefferies', 'Roth Capital',\n            'H.C. Wainwright'.\n        min_shelf_million_usd: Minimum shelf size in millions USD.\n        limit: Max results (1-50, default 25).\n\n    Returns:\n        JSON list with shelf_size_usd, is_atm, sales_agents, use_of_proceeds_excerpt.\n    "
+    },
+    {
+      "name": "get_filing",
+      "description": "Fetch one filing by SEC accession number, regardless of recency.\n\n    Useful when an agent has an accession number from a citation or earlier\n    tool call and needs the parsed details.\n\n    Args:\n        accession_number: SEC accession in 'XXXXXXXXXX-YY-NNNNNN' format.\n\n    Returns:\n        JSON for the filing if found in our archive, or {\"found\": false}.\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:34:41.530Z",
+  "toolsPreviewStatus": "ok"
+}

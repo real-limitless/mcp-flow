@@ -1,0 +1,109 @@
+{
+  "id": "io.github.nries1/tend-mcp",
+  "title": "tend-mcp",
+  "description": "Unofficial MCP server for Tend Dental appointment booking. Not affiliated with Tend.",
+  "summary": "Unofficial MCP server for Tend Dental appointment booking. Not affiliated with Tend.",
+  "offersHint": "Unofficial MCP server for Tend Dental appointment booking. Not affiliated with Tend. · Packages: npm:tend-mcp · Env vars: TEND_EMAIL, TEND_PASSWORD, TEND_REFRESH_TOKEN",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "tend-mcp",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "TEND_EMAIL",
+        "description": "Your Tend account email.",
+        "required": true
+      },
+      {
+        "name": "TEND_PASSWORD",
+        "description": "Your Tend account password. Set this OR TEND_REFRESH_TOKEN, not both required.",
+        "secret": true
+      },
+      {
+        "name": "TEND_REFRESH_TOKEN",
+        "description": "A Cognito refresh token obtained by hand from DevTools (see README). Alternative to TEND_PASSWORD.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "tend-mcp",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "TEND_EMAIL",
+          "description": "Your Tend account email.",
+          "required": true
+        },
+        {
+          "name": "TEND_PASSWORD",
+          "description": "Your Tend account password. Set this OR TEND_REFRESH_TOKEN, not both required.",
+          "secret": true
+        },
+        {
+          "name": "TEND_REFRESH_TOKEN",
+          "description": "A Cognito refresh token obtained by hand from DevTools (see README). Alternative to TEND_PASSWORD.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "TEND_EMAIL",
+      "description": "Your Tend account email.",
+      "required": true
+    },
+    {
+      "name": "TEND_PASSWORD",
+      "description": "Your Tend account password. Set this OR TEND_REFRESH_TOKEN, not both required.",
+      "secret": true
+    },
+    {
+      "name": "TEND_REFRESH_TOKEN",
+      "description": "A Cognito refresh token obtained by hand from DevTools (see README). Alternative to TEND_PASSWORD.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nries1/tend-mcp",
+  "repository": {
+    "url": "https://github.com/nries1/tend-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T20:18:57.877103Z",
+  "publishedAt": "2026-08-02T20:18:57.877103Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:33.858Z",
+    "sourceRepoAt": "2026-08-11T23:31:31.388Z",
+    "readmeAt": "2026-08-11T23:31:31.948Z",
+    "toolsAt": "2026-08-12T01:10:33.858Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nries1/tend-mcp",
+    "checkedAt": "2026-08-11T23:31:31.388Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nries1/tend-mcp/main/README.md",
+    "markdown": "# tend-mcp\n\nAn **unofficial** MCP (Model Context Protocol) server for [Tend](https://tend.com) dental — not affiliated with, endorsed by, or supported by Tend. It talks to internal API endpoints their own web app calls, discovered via browser devtools, not a published/documented API. Expect it to break without notice if Tend changes their frontend.\n\n**Use at your own risk.** This has not been reviewed against Tend's Terms of Service — read them yourself before running this, and be ready to stop if Tend objects. Each instance authenticates as one Tend account and only ever accesses that account's own data; it is not designed or intended to access any other patient's records.\n\n## Status\n\nReal, verified against a live HAR capture (2026-08-01) of an actual login → pick studio → pick service → pick time → book flow, plus live-tested auth: `list_studios`, `list_service_types` (static reference data — see below), `list_appointments`, `search_available_slots`, `book_appointment` (confirmed live — the capture includes a real booking that got a real Dentrix `external_id`).\n\n**Auth is fully real now — two ways in.** Tend authenticates via AWS Cognito behind their own thin proxy at `identity.hellotend.com`. You can use either:\n- **`TEND_PASSWORD`** — real email+password login (`POST identity.hellotend.com/login`, confirmed live), the same call the actual web app makes. No Cognito SRP dance needed client-side; Tend's backend handles that.\n- **`TEND_REFRESH_TOKEN`** — skips login, obtained by hand once from DevTools (see below).\n\nEither way, `TendClient` keeps itself signed in automatically: sessions renew via Cognito's `REFRESH_TOKEN_AUTH` (`Authorization: Bearer <idToken>`, ~24h tokens — confirmed live), falling back to a fresh password login if a refresh token expires/gets revoked and `TEND_PASSWORD` is set.\n\n## Setup\n\n```bash\nnpm install\ncp .env.example .env   # fill in TEND_EMAIL and (TEND_PASSWORD or TEND_REFRESH_TOKEN)\nnpm run dev             # or: npm run build && npm start\n```\n\nPoint an MCP client (Claude Desktop, etc.) at it by adding to its MCP config, e.g. Claude Desktop's `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"tend\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/tend-mcp/dist/index.js\"],\n      \"env\": { \"TEND_EMAIL\": \"you@example.com\", \"TEND_PASSWORD\": \"...\" }\n    }\n  }\n}\n```\n\n## Getting a refresh token (if not using TEND_PASSWORD)\n\n1. Log into [hellotend.com](https://hellotend.com) in Chrome.\n2. Open DevTools → **Application → Cookies** → `hellotend.com`.\n3. Copy the value of the `refreshToken` cookie into `TEND_REFRESH_TOKEN`.\n\n**Both `TEND_PASSWORD` and `TEND_REFRESH_TOKEN` are standing credentials — treat them like a password, not an API key.** A refresh token in particular can mint fresh sessions for a long time without re-entering anything. Never commit either, never paste either anywhere it might get logged — including into an AI chat. This isn't hypothetical: building this integration involved two real accidental exposures of live tokens into a chat session (once from a raw cookie paste, once from an incomplete redaction script missing `token` as a sensitive field name) — HAR \"sanitization\" and ad-hoc redaction scripts are not something to rely on. If you ever suspect either has leaked, log out of Tend everywhere / rotate your password.\n\n## Adding another endpoint\n\nLog into hellotend.com, open DevTools → Network → Fetch/XHR, perform the action, and note the request. Then add a method to `TendClient` following the existing ones' shape (raw snake_case API fields mapped to a camelCase TS interface) and a corresponding tool in `tools.ts`.\n\nIf you export a HAR to work from: response *bodies* (not just headers) still contain real PII — redact personal fields (name, email, phone, insurance, DOB) out of them before sharing, and never share cookie/token values regardless of what the export tool does or doesn't strip automatically. `.gitignore` here already excludes `*.har` so it won't land in git.\n\n## Design constraints (please keep these)\n\n- **One account per instance.** No multi-tenant credential store, no server-side proxy holding multiple users' logins.\n- **No anti-bot evasion.** If Tend's login has MFA or bot-detection, surface it to the user (or fail loudly) rather than trying to automate around it.\n- **No endpoints beyond what a real patient portal already exposes to that patient.** Don't add anything that reaches into other patients' data.\n- **`STUDIOS`/`SERVICE_TYPES` in `tendClient.ts` are a frozen snapshot, not live data.** No stable API for them was found (see the comment above `STUDIOS`) — they'll silently go stale as Tend adds/closes studios or changes services. Worth periodically re-checking against a fresh capture rather than assuming they're current.\n",
+    "fetchedAt": "2026-08-11T23:31:31.948Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:33.858Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

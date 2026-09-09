@@ -1,0 +1,77 @@
+{
+  "id": "io.github.Agaveis/hiberden-mcp",
+  "title": "Hiberden",
+  "description": "Read and verify your local media archive's 3-2-1 coverage across tape, disk, NAS, and cloud.",
+  "summary": "Read and verify your local media archive's 3-2-1 coverage across tape, disk, NAS, and cloud.",
+  "offersHint": "Read and verify your local media archive's 3-2-1 coverage across tape, disk, NAS, and cloud. · Packages: binary:https://github.com/Agaveis/hiberden-mcp/releases/download/v1.2.1/hiberden-1.2.1.mcpb · Env vars: HIBERDEN_DB",
+  "version": "1.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/Agaveis/hiberden-mcp/releases/download/v1.2.1/hiberden-1.2.1.mcpb",
+    "version": "1.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "HIBERDEN_DB",
+        "description": "Path to the Hiberden catalog.db. Leave unset to use the default location (%LOCALAPPDATA%\\Hiberden\\catalog.db), which is correct for a normal Hiberden install. Set this only if your catalog lives somewhere else."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/Agaveis/hiberden-mcp/releases/download/v1.2.1/hiberden-1.2.1.mcpb",
+      "version": "1.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "HIBERDEN_DB",
+          "description": "Path to the Hiberden catalog.db. Leave unset to use the default location (%LOCALAPPDATA%\\Hiberden\\catalog.db), which is correct for a normal Hiberden install. Set this only if your catalog lives somewhere else."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "HIBERDEN_DB",
+      "description": "Path to the Hiberden catalog.db. Leave unset to use the default location (%LOCALAPPDATA%\\Hiberden\\catalog.db), which is correct for a normal Hiberden install. Set this only if your catalog lives somewhere else."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://hiberden.app",
+  "sourceUrl": "https://github.com/Agaveis/hiberden-mcp",
+  "repository": {
+    "url": "https://github.com/Agaveis/hiberden-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-22T03:15:31.974098Z",
+  "publishedAt": "2026-07-22T03:15:31.974098Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:22.939Z",
+    "sourceRepoAt": "2026-08-12T00:17:44.068Z",
+    "readmeAt": "2026-08-12T00:17:44.617Z",
+    "toolsAt": "2026-08-12T01:47:22.939Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Agaveis/hiberden-mcp",
+    "checkedAt": "2026-08-12T00:17:44.068Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Agaveis/hiberden-mcp/main/README.md",
+    "markdown": "# hiberden-mcp: Hiberden MCP server\n\nExposes the Hiberden archive engine (`hiberden-core`) as [Model Context\nProtocol](https://modelcontextprotocol.io) tools over the stdio transport\n(newline-delimited JSON-RPC 2.0).\n\nMCP is an open, vendor-neutral standard, so this one server is drivable from any\nMCP client: Claude Desktop / Claude Code, OpenAI's Agents SDK and ChatGPT\ndesktop, Gemini, Cursor, Windsurf, and others. There is no model and no API key\nin this process. The client brings the LLM; this binary only answers tool calls\nagainst the local catalog. In its default mode it performs no network I/O.\n\n## Read + verify by default\n\nThe server advertises and answers the read/verify tools below by default, and\nnothing mutates configuration. The only state any default tool ever writes\nis what `verify_copy` records: the copy's status, its verify-pass provenance\n(which algorithm ran, when the last full pass succeeded), and an audit-log\nrow for each completed verify — and it only does that after a genuine\nread-back from the medium.\n\nWrite and delete tools (catalog management, destinations, policies) ARE\nimplemented, but behind a catalog-persisted permission tier that defaults to\nread-only and is only changeable in the Hiberden desktop app's settings; a\ntool above the active tier is neither advertised nor accepted. See\n`docs/Hiberden_MCP_Command_Surface_and_Permission_Model.md` (which supersedes\n`docs/mcp/write-gate-design.md`).\n\n## Read + verify tools (always on)\n\n| Tool | Args | What it does |\n|------|------|--------------|\n| `list_projects` | none | Top-level projects (containers). For each: name, policy, archive count, and a roll-up of how many of its archives sit in each coverage state. |\n| `list_archives` | `project_id?`, `collection_id?`, `name?` | The archives (leaves actually written to media). For each: project, size, SHA-256, 3-2-1 coverage, and per-copy status (destination + kind + status). Narrow by project, Collection, and/or a case-insensitive name substring. |\n| `list_collections` | `project_id` | The Collections inside one project (catalog-only organizational nodes): id, name, parent, archive count. |\n| `coverage_status` | none | Library-wide 3-2-1 roll-up: total archives plus counts in unconfigured, unprotected, in_progress, at_risk, and fully_covered. |\n| `archive_detail` | `archive_id` | Full detail for one archive: project, size, SHA-256, legacy MD5 (if imported), coverage, and every copy with its destination, kind, status, address, and written/verified timestamps. |\n| `list_destinations` | none | Configured destinations (Tape, LocalFs, NAS, Cloud) with id, slot, kind, name, and enabled/retired state. |\n| `list_tapes` | none | Tapes: serial, volume label, uuid, capacity, used bytes, last verified time, and copy count. |\n| `tape_detail` | `serial` | One cartridge by barcode: label, capacity, used bytes, last verified, and the archives stored on it. |\n| `recent_activity` | `limit?` | Recent copy activity, newest first (default 20): each copy's archive, destination, status, and write/verify timestamps. |\n| `find_file` | `query`, `limit?` | Find a file by name/path fragment across every archive, with the archive and every destination it is stored in. |\n| `list_archive_files` | `archive_id`, `offset?`, `limit?` | The file manifest of one archive from the catalog index (path, size, per-file SHA-256), paginated. The report enabler: client-ready deliverable lists and checksum manifests from the index (a one-time backfill may read a local copy of a pre-index archive). Archives with no buildable index (legacy tape-only imports) report `indexed: false` — manifest unavailable, not empty. |\n| `list_jobs` | `limit?` | Recent background jobs (saves, verifies, restores), newest first: verb, state, archive, destination, bytes, timestamps, and the recorded failure reason on failed/interrupted rows. |\n| `catalog_stats` | none | One-call inventory + capacity roll-up: counts, total archived bytes, copies by status, destinations by kind, tape capacity vs. use. |\n| `verify_copy` | `archive_id`, `destination_id`, `mode?` | Re-reads the copy off its medium and compares it to what was recorded. Default `mode: \"full\"` re-hashes SHA-256 plus the recorded BLAKE3 and stored signature when present, then stamps the copy Verified on a match, Failed on a mismatch, or Missing if the file is gone — the only pass that can promote. `mode: \"fast\"` is a BLAKE3-only re-read that sustains an already-Verified copy or exposes a mismatch but never promotes (no recorded fast hash falls back to a full pass, with the reason surfaced). Results and audit rows name the algorithm that ran. |\n\n`verify_copy` is the differentiator: it is proof from the actual medium, not a\nstored flag. Identify the copy by `archive_id` + `destination_id`. It works for\ndisk and NAS copies and for tape copies (the cartridge is mounted and read\nback). Cloud (S3) read-back verify runs in the Hiberden desktop app, not here:\nfor a cloud copy the tool returns a clear message that the copy was checked in\nthe desktop, not here, so it has not passed or failed. That message is a\nnot-attempted result, not a verification failure.\n\nAdding archives (writing bytes), save, and restore are not exposed here.\nCatalog, destination, and policy configuration tools exist behind the\npermission tier described above; at the default read-only tier they are\nneither advertised nor accepted.\n\n## Catalog selection\n\nThe server reads the single catalog shared by the desktop app, the CLI, and this\nserver. Path resolution:\n\n1. The `HIBERDEN_DB` environment variable, if set.\n2. Otherwise `%LOCALAPPDATA%\\Hiberden\\catalog.db` on Windows, or\n   `~/.hiberden/catalog.db` on Linux.\n\nThe catalog is opened fresh per tool call (sub-millisecond) rather than held for\nthe process lifetime. With WAL mode and a busy timeout, the desktop app and this\nserver can run against the same `catalog.db` at the same time without a\nmulti-process locking hazard.\n\nAll diagnostics go to stderr. stdout carries the JSON-RPC channel; anything\nwritten to stdout that is not a JSON-RPC message corrupts the stream.\n\n## Linux headless kit (BETA)\n\nLinux binaries are published on the [releases](../../releases) page and at\n`cdn.hiberden.app`. They are built on Ubuntu 22.04, so they run on Ubuntu\n22.04+, Debian 12+, and equivalents; verified on `debian:bookworm-slim` and\n`ubuntu:22.04`.\n\n```sh\ncurl -fsSLO https://cdn.hiberden.app/downloads/hiberden-cli-linux-x86_64\ncurl -fsSLO https://cdn.hiberden.app/downloads/hiberden-cli-linux-x86_64.sha256\nsha256sum -c hiberden-cli-linux-x86_64.sha256      # verify before running it\nchmod +x hiberden-cli-linux-x86_64\n./hiberden-cli-linux-x86_64 --version\n```\n\n`hiberden-mcp-linux-x86_64` is the same connector as the Windows build. The\nCLI (`hiberden`) catalogs, archives, verifies and restores with no display\nserver and no network — the whole point of the kit is that an air-gapped or\nheadless machine can run it.\n\n**What BETA means here, precisely:**\n\n- **Licensing is not wired on Linux yet.** The kit is unlicensed and\n  unrestricted; entitlement arrives with Linux GA. Nothing you archive now\n  becomes unreadable later: the format and catalog are identical across\n  platforms.\n- **The desktop app is Windows-only today.** Linux is the CLI + connector.\n- **Tape on Linux is unproven on hardware.** The backend targets the\n  open-source LTFS implementation and has never run against a drive on any\n  platform. Use `HIBERDEN_TAPE_FAKE=1` to exercise the flows without one.\n- Archives are signed by a per-install Ed25519 identity stored under\n  `~/.hiberden/keys/` (owner-only). It is the same custody model as the OS\n  keyrings on other platforms, and no stronger: it is not hardware-backed.\n\n## Setup\n\nThe binary self-installs into known MCP clients:\n\n```\nhiberden-mcp install          # auto-detect Claude Desktop / Cursor / Windsurf and write their config\nhiberden-mcp install --print  # print a paste-ready snippet instead of touching anything\nhiberden-mcp uninstall        # remove the hiberden entry from detected clients\nhiberden-mcp help             # show usage\n```\n\n`install` writes (or updates) an `mcpServers.hiberden` entry pointing at this\nexecutable. It is zero-config for the catalog: the entry only pins `HIBERDEN_DB`\nwhen you already have it set in your environment, otherwise it relies on the\ndefault `%LOCALAPPDATA%\\Hiberden\\catalog.db` path.\n\n### Manual configuration\n\nTo wire it up by hand, add this to your client's config (Claude Desktop:\n`claude_desktop_config.json`; Claude Code: `.mcp.json`; Cursor / Windsurf use the\nsame `mcpServers` shape). `command` is the path to the executable. `env` is\noptional: include `HIBERDEN_DB` only if your catalog lives somewhere other than\nthe default path.\n\n```json\n{\n  \"mcpServers\": {\n    \"hiberden\": {\n      \"command\": \"C:/path/to/hiberden-mcp.exe\",\n      \"env\": { \"HIBERDEN_DB\": \"C:/path/to/catalog.db\" }\n    }\n  }\n}\n```\n\n## Smoke test (no client needed)\n\nThis pipes three requests (initialize, list tools, read coverage) straight into\nthe binary:\n\n```bash\nprintf '%s\\n' \\\n  '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{}}}' \\\n  '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}' \\\n  '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"coverage_status\",\"arguments\":{}}}' \\\n  | HIBERDEN_DB=path/to/catalog.db hiberden-mcp\n```\n\n## Security\n\n- Local-only and closed-domain. The server is read + verify only and performs\n  zero network I/O; the only state it writes is the copy status `verify_copy`\n  stamps after a read-back. It never sends data to Hiberden or any third party.\n- No API key and no LLM are stored in the binary, so there is nothing to steal\n  there.\n- `verify_copy` gives ground-truth physical state: it re-reads and re-hashes the\n  actual medium, so even a manipulated assistant cannot fabricate a \"Verified\".\n- Tool annotations (`readOnlyHint`, `destructiveHint`, and so on) are hints, not\n  guarantees. Prompt injection is an unsolved industry-wide problem. The\n  architecture here is conservative by design; that is not a claim of immunity.\n\n## Privacy\n\nThe server runs entirely on your own machine, holds no account or API key, and\nin its default read-and-verify mode performs zero network I/O — it never sends\nyour catalog or your files to Hiberden or any third party. The only state any\ndefault tool writes is the copy status `verify_copy` stamps after a genuine\nread-back. Full details (what the server reads, what it never does, the role of\nthe separate AI client, and credential handling) are in\n[PRIVACY.md](./PRIVACY.md), hosted at <https://hiberden.app/mcp/privacy>.\n\n## Tape caveat\n\nTape support is in beta and has not been validated on physical tape hardware in\nthis implementation. The design never speaks SCSI directly and treats tape as a\nfilesystem via LTFS tooling, so any tape the LTFS tooling can mount should work\nby construction. That is an architectural property, not a tested hardware\nmatrix. Do not read these notes as a guarantee for any specific drive or\ngeneration.\n\nFor testing without a drive, the tape backend can run against a fake backend:\nset `HIBERDEN_TAPE_FAKE=1` (and optionally `HIBERDEN_TAPE_FAKE_ROOT=<dir>` to\npoint at a directory standing in for the mounted volume).\n",
+    "fetchedAt": "2026-08-12T00:17:44.617Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:22.939Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

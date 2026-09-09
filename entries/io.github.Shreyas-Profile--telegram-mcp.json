@@ -1,0 +1,63 @@
+{
+  "id": "io.github.Shreyas-Profile/telegram-mcp",
+  "title": "telegram-mcp",
+  "description": "Telegram bridge for your MCP-compatible agent. Bidirectional, no LLM in our stack.",
+  "summary": "Telegram bridge for your MCP-compatible agent. Bidirectional, no LLM in our stack.",
+  "offersHint": "Telegram bridge for your MCP-compatible agent. Bidirectional, no LLM in our stack. · Remote MCP (streamable-http) at https://telegram.regiq.in/api/mcp · Optional headers: Authorization",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://telegram.regiq.in/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://telegram.regiq.in/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <apiKey> — get yours at https://telegram.regiq.in after Google sign-in."
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/globalion/telegram-mcp",
+  "repository": {
+    "url": "https://github.com/globalion/telegram-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-14T12:23:15.36591Z",
+  "publishedAt": "2026-07-14T12:23:15.36591Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <apiKey> — get yours at https://telegram.regiq.in after Google sign-in."
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:55.354Z",
+    "sourceRepoAt": "2026-08-12T00:02:40.071Z",
+    "readmeAt": "2026-08-12T00:02:40.458Z",
+    "toolsAt": "2026-08-12T01:34:55.355Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/globalion/telegram-mcp",
+    "checkedAt": "2026-08-12T00:02:40.071Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/globalion/telegram-mcp/main/README.md",
+    "markdown": "# telegram-mcp\n\n> Built by [**Shreyas**](https://github.com/Shreyas-Profile) · Shipped by [**Globalion**](https://github.com/globalion)\n\n**Bidirectional Telegram ⇆ agent bridge. No LLM in our stack.**\n\nYour agent (Claude Desktop, Cursor, a custom script) is the brain. Our\nplatform is the pipe: we take messages you send on Telegram, store them,\nand hand them to your agent when it polls. When your agent has something\nto say back, it pushes through us to your Telegram.\n\n- **Bring your own agent.** Any MCP client works.\n- **No inference in the middle.** We don't call an LLM. No vendor lock-in.\n- **Bidirectional.** `get_new_messages` pulls inbound, `send_telegram_message` pushes outbound.\n- **Platform slash-commands.** `/help`, `/clear`, `/recent`, `/window`, `/usage` all work even if your agent is offline.\n\nHosted at **[telegram.regiq.in](https://telegram.regiq.in)** or self-host with the Docker Compose below.\n\n## Use it (hosted)\n\n1. Visit https://telegram.regiq.in, sign in with Google.\n2. DM [@BotFather](https://t.me/BotFather) → `/newbot`. Paste the token in your dashboard.\n3. On the dashboard: **Generate MCP API key**, copy it.\n4. Add to Claude Desktop's `claude_desktop_config.json` (or Cursor / any MCP client):\n\n    ```json\n    {\n      \"mcpServers\": {\n        \"telegram\": {\n          \"url\": \"https://telegram.regiq.in/api/mcp\",\n          \"headers\": {\n            \"Authorization\": \"Bearer YOUR_KEY_HERE\"\n          }\n        }\n      }\n    }\n    ```\n\n5. Send `/start` to your bot on Telegram.\n\nNow your agent can call `get_new_messages` to see what you sent it, and `send_telegram_message` to reply.\n\n## Tools\n\n| Tool | Direction | Notes |\n|------|-----------|-------|\n| `get_new_messages()` | user → agent | Returns inbound messages since the last pull. Read-once. |\n| `send_telegram_message(text)` | agent → user | Delivers text to the user's Telegram bot. |\n| `list_recent_messages(max=20)` | read | Last N stored messages, both directions. No cursor advance. |\n| `clear_history()` | action | Wipes stored history for the user. |\n\n## Slash commands (platform-handled)\n\nHandled by the platform directly — your agent isn't involved. So `/help` works even when nothing is polling.\n\n| Command | Effect |\n|---------|--------|\n| `/start` | Registers this Telegram chat with your account. |\n| `/help` | Lists commands. |\n| `/recent [N]` | Shows the last N stored messages. |\n| `/clear` | Wipes history. |\n| `/window N` | Sets the history window (default 20). |\n| `/usage` | Stored message count. |\n\n## Self-host\n\nYou'll need:\n- Docker + Compose\n- A Google OAuth client — [Cloud Console](https://console.cloud.google.com/apis/credentials). Scopes: `openid`, `email`, `profile`. Redirect: `<PUBLIC_BASE_URL>/api/auth/callback/google`\n- A public HTTPS domain for Telegram webhooks (Cloudflare Tunnel or `ngrok http 3012` locally)\n\n**No LLM key required.** Your agent brings its own model.\n\n```bash\ngit clone https://github.com/globalion/telegram-mcp\ncd telegram-mcp\ncp .env.example .env\n# fill NEXTAUTH_SECRET, GOOGLE_*, PUBLIC_BASE_URL\ndocker compose up -d\n# open http://localhost:3012\n```\n\n## Architecture\n\n```\n  Telegram app                                Your MCP agent\n     ▲   │                                      ▲   │\n     │   │ text                          poll   │   │ push\n     │   ▼                                      │   ▼\n   ┌──────────────────────────────────────────────────┐\n   │  Our platform (Hetzner)                          │\n   │  - /api/telegram/webhook/<per-user-secret>       │\n   │    · slash-commands answered here                │\n   │    · plain text stored, no reply                 │\n   │  - /api/mcp   Bearer-auth JSON-RPC               │\n   │    · get_new_messages, send_telegram_message     │\n   │    · list_recent_messages, clear_history         │\n   │  - Postgres: User, ApiKey, TelegramLink, Message │\n   └──────────────────────────────────────────────────┘\n```\n\nPer-user webhook URL segment is a random secret so a leaked bot token can't\nbe pointed at someone else's account. Google sign-in is identity + ban\nanchor only — per-message identity comes from the MCP API key + chatId.\n\n## License\n\nMIT. See `LICENSE`.\n",
+    "fetchedAt": "2026-08-12T00:02:40.458Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:55.355Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

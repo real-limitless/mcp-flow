@@ -1,0 +1,58 @@
+{
+  "id": "io.github.vola-trebla/tsconfig-inheritance-flattener-mcp",
+  "title": "tsconfig-inheritance-flattener-mcp",
+  "description": "Resolves TypeScript config inheritance chains and returns effective compiler options per file.",
+  "summary": "Resolves TypeScript config inheritance chains and returns effective compiler options per file.",
+  "offersHint": "Resolves TypeScript config inheritance chains and returns effective compiler options per file. · Packages: npm:tsconfig-inheritance-flattener-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "tsconfig-inheritance-flattener-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "tsconfig-inheritance-flattener-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp",
+  "repository": {
+    "url": "https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T17:48:17.780263Z",
+  "publishedAt": "2026-05-20T17:48:17.780263Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:33.818Z",
+    "sourceRepoAt": "2026-08-11T23:15:40.053Z",
+    "readmeAt": "2026-08-11T23:15:40.574Z",
+    "toolsAt": "2026-08-12T00:56:33.819Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp",
+    "checkedAt": "2026-08-11T23:15:40.053Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vola-trebla/tsconfig-inheritance-flattener-mcp/main/README.md",
+    "markdown": "# 🔍 tsconfig-inheritance-flattener-mcp\n\n[![npm](https://img.shields.io/npm/v/tsconfig-inheritance-flattener-mcp)](https://www.npmjs.com/package/tsconfig-inheritance-flattener-mcp)\n[![CI](https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp/actions)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n**Your AI agent reads `tsconfig.json`. It has no idea what it actually means.**\n\nMCP server that resolves the full TypeScript config inheritance chain and returns the **effective compiler options** that actually apply — including everything inherited from extended base configs, monorepo packages, and `node_modules` presets.\n\n---\n\n## 🤔 The problem\n\nYour agent reads `tsconfig.json` and sees:\n\n```json\n{ \"extends\": \"@tsconfig/strictest\", \"compilerOptions\": { \"paths\": { \"@/*\": [\"./src/*\"] } } }\n```\n\nIt has no idea that `@tsconfig/strictest` sets `strict: true`, `noUncheckedIndexedAccess: true`, `exactOptionalPropertyTypes: true`. It doesn't know that `baseUrl` is defined two levels up in your monorepo base config. So it:\n\n- Suggests code that would fail `noUncheckedIndexedAccess`\n- Gets confused about what `@/` resolves to\n- Doesn't know your `target` is `ES2022`, not `ES5`\n- Gives wrong answers about module resolution\n\nThe TypeScript compiler API already resolves all of this. This MCP just exposes it.\n\n---\n\n## 🛠️ Tools\n\n### `get_effective_compiler_options`\n\nResolves the full `extends` chain and returns the merged compiler options that actually apply to a given `tsconfig.json`. Shows the inheritance chain, all merged options (with enums as readable strings, not magic numbers), and include/exclude patterns.\n\n```\nEffective TypeScript Configuration\n  Config:            /project/apps/web/tsconfig.json\n  Inheritance chain: /project/apps/web/tsconfig.json\n                     → /project/tsconfig.base.json\n                     → node_modules/@tsconfig/strictest/tsconfig.json\n\nCompiler Options (merged):\n  target: \"ES2022\"\n  module: \"NodeNext\"\n  moduleResolution: \"NodeNext\"\n  strict: true\n  noUncheckedIndexedAccess: true\n  exactOptionalPropertyTypes: true\n  baseUrl: \"/project\"\n  paths: { \"@/*\": [\"apps/web/src/*\"] }\n```\n\n### `resolve_module_alias`\n\nMaps a TypeScript path alias (e.g. `@/hooks/useAuth`) to its physical file location on disk, using the resolved `paths` and `baseUrl` from the tsconfig. Returns all existing candidates with extension probing.\n\n```\nAlias Resolution: @/hooks/useAuth\n  Config:   /project/apps/web/tsconfig.json\n  Base URL: /project\n\nResolved physical paths:\n  /project/apps/web/src/hooks/useAuth.ts      ✓ exists\n```\n\n### `analyze_project_references`\n\nInspects the `references` array in a root `tsconfig.json` and validates that each referenced package has `composite: true`. Catches broken cross-package dependencies in TypeScript monorepos before they cause silent build failures.\n\n```\nProject References Analysis\n  Config: /project/tsconfig.json\n  References found: 2\n\n  [✓] packages/shared → /project/packages/shared/tsconfig.json\n  [✗ NOT FOUND] packages/deprecated → /project/packages/deprecated/tsconfig.json\n\nViolations:\n  ✗ packages/shared is referenced but does not have composite: true\n    Fix: add \"composite\": true to packages/shared/tsconfig.json\n```\n\n---\n\n## 🧪 What it looks like in practice\n\nAgent is helping debug a TypeScript error and asks:\n\n> \"What compiler options are actually active in this project?\"\n\nWithout this MCP, the agent guesses based on what it sees in `tsconfig.json`. With it:\n\n```\nget_effective_compiler_options(\"/project/apps/web/tsconfig.json\")\n→ strict: true, noUncheckedIndexedAccess: true, target: \"ES2022\", module: \"NodeNext\"\n```\n\nNow the agent knows exactly why `arr[0]` has type `string | undefined` and not just `string`. No more wrong suggestions.\n\n---\n\n## ⚡ Setup\n\n```json\n{\n  \"mcpServers\": {\n    \"tsconfig-flattener\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"tsconfig-inheritance-flattener-mcp\"]\n    }\n  }\n}\n```\n\n---\n\n## 🚀 Usage\n\n> \"What compiler options actually apply to `/project/apps/web/tsconfig.json`? It extends a monorepo base and @tsconfig/strictest.\"\n\n> \"Where does `@/components/Button` resolve to on disk?\"\n\n> \"Are the project references in my root tsconfig valid? Do all referenced packages have composite: true?\"\n\nWorks great alongside:\n\n- [ast-impact-mapper-mcp](https://www.npmjs.com/package/ast-impact-mapper-mcp) — for code→test correlation\n- [release-readiness-triage-mcp](https://www.npmjs.com/package/release-readiness-triage-mcp) — for CI triage\n\n---\n\n## 📦 Links\n\n- **npm:** [npmjs.com/package/tsconfig-inheritance-flattener-mcp](https://www.npmjs.com/package/tsconfig-inheritance-flattener-mcp)\n- **GitHub:** [github.com/vola-trebla/tsconfig-inheritance-flattener-mcp](https://github.com/vola-trebla/tsconfig-inheritance-flattener-mcp)\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:15:40.574Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:33.819Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

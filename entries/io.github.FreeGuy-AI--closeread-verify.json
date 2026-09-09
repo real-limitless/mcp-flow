@@ -1,0 +1,58 @@
+{
+  "id": "io.github.FreeGuy-AI/closeread-verify",
+  "title": "Closeread Verify",
+  "description": "A verified dependency-audit verdict any AI agent can call over MCP, not a raw scan.",
+  "summary": "A verified dependency-audit verdict any AI agent can call over MCP, not a raw scan.",
+  "offersHint": "A verified dependency-audit verdict any AI agent can call over MCP, not a raw scan. · Packages: pypi:closeread-verify",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "closeread-verify",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "closeread-verify",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/FreeGuy-AI/closeread-verify",
+  "repository": {
+    "url": "https://github.com/FreeGuy-AI/closeread-verify",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T18:01:31.400145Z",
+  "publishedAt": "2026-06-09T18:01:31.400145Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:41:34.483Z",
+    "sourceRepoAt": "2026-08-12T00:11:33.256Z",
+    "readmeAt": "2026-08-12T00:11:33.853Z",
+    "toolsAt": "2026-08-12T01:41:34.483Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/FreeGuy-AI/closeread-verify",
+    "checkedAt": "2026-08-12T00:11:33.256Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/FreeGuy-AI/closeread-verify/main/README.md",
+    "markdown": "# closeread-verify\n\n[![PyPI](https://img.shields.io/pypi/v/closeread-verify.svg)](https://pypi.org/project/closeread-verify/) [![Python](https://img.shields.io/pypi/pyversions/closeread-verify.svg)](https://pypi.org/project/closeread-verify/) [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE) [![MCP](https://img.shields.io/badge/MCP-server-1f6feb.svg)](https://modelcontextprotocol.io)\n\n**A verified dependency-audit verdict any AI agent can call.**\n\n<!-- mcp-name: io.github.FreeGuy-AI/closeread-verify -->\n\nA free scanner gives you raw CVEs. `closeread-verify` gives you the judgment: the\nverdict checked against the version you actually installed, the one finding that\nmatters, and the exact fix. It runs as an [MCP](https://modelcontextprotocol.io)\nserver, so any agent (Claude Code, Cursor, your own) can call it before it ships\ncode and get back a checked answer, not a wall of noise.\n\n## Why this and not `npm audit`\n\nA raw scanner and the agent itself can already produce a list of CVEs. What they\ncannot manufacture is the *verdict*. `closeread-verify` is built around the one\ndiscipline that separates a real audit from a scan:\n\n- **It reports the INSTALLED version, not the declared floor.** `^4.17.0` in a\n  manifest is not what you shipped. The tool resolves the real pinned version\n  from your lockfile and checks *that*, so it does not cry wolf over a caret\n  range you already patched, and does not miss a vulnerable pin a manifest-only\n  scan would wave through.\n- **It splits direct vs transitive.** The dependency you declared and own (yours\n  to bump) is separated from the one you inherited five levels down. Most scanners\n  flatten these into one undifferentiated list. This one tells you which is which.\n- **It surfaces the one finding that matters.** Instead of 200 rows, you get a\n  single `lead`: the highest-severity *direct production* issue, with the exact\n  fix. If the only findings are transitive or dev-only, the lead is honestly\n  `null` rather than a manufactured headline.\n- **It is deterministic and re-checkable.** No LLM in the path. Same lockfile in,\n  same verdict out. Advisories are confirmed against [OSV.dev](https://osv.dev).\n  The verdict carries its own basis so a reviewer can re-run it.\n\nThat verified artifact, not the raw scan, is the product.\n\n## Install\n\n```bash\npip install closeread-verify\n```\n\nPython 3.11+. No API key, no account, no source access. Lockfile in, verdict out.\n\n## See it in an agent loop\n\n[`examples/agent_loop.py`](examples/agent_loop.py) is a runnable agent that uses\ncloseread-verify as a pre-ship gate: it blocks on a real Flask CVE, applies the\nnamed fix, re-checks, and ships. Real MCP over stdio, real OSV advisories, no API\nkey.\n\n```bash\npython examples/agent_loop.py\n```\n\n## Use it as an MCP server\n\n`closeread-verify` is the stdio command that starts the server:\n\n```bash\ncloseread-verify\n```\n\n### Client config\n\nAdd it to your MCP client. Claude Code / Cursor style (`mcp.json` /\n`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"closeread-verify\": {\n      \"command\": \"closeread-verify\"\n    }\n  }\n}\n```\n\nIf you installed into a specific environment, point at that interpreter instead:\n\n```json\n{\n  \"mcpServers\": {\n    \"closeread-verify\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"closeread.mcp_server\"]\n    }\n  }\n}\n```\n\n## The three tools\n\n| Tool | Input | Use it when |\n|------|-------|-------------|\n| `audit_project` | `files`: a `{filename: content}` map | You have a real checkout. Pass the manifest **and** its lockfile together (e.g. `package.json` + `package-lock.json`) so the direct-vs-transitive split is recovered. Subdir prefixes like `server/package.json` are allowed. |\n| `audit_dependencies` | `lockfile_content`: str, `filename`: str | You have a single manifest or lockfile and want a one-shot verdict. |\n| `audit_repo` | `github_url`: str | You have a public repo URL. It shallow-clones and runs the same audit. Returns an error, never a fabricated result, if the clone fails. |\n\nThe filename is load-bearing: it routes the content to the right ecosystem\nparser. Supported lockfiles include `package-lock.json`, `yarn.lock`,\n`pnpm-lock.yaml`, `requirements.txt`, `poetry.lock`, `Pipfile.lock`,\n`Gemfile.lock`, `composer.lock`, and `Cargo.lock`.\n\n### Example\n\nCalling `audit_dependencies` on a `requirements.txt` that pins `flask==0.12.0`:\n\n```json\n{\n  \"source\": \"lockfile:requirements.txt\",\n  \"lead\": {\n    \"summary\": \"flask@0.12.0 affected by GHSA-562c-5r94-xh97\",\n    \"severity\": \"high\",\n    \"is_direct\": true,\n    \"dependency_kind\": \"prod\",\n    \"location\": \"requirements.txt:1\",\n    \"fix\": \"Update flask to a patched version (see references).\",\n    \"confidence\": 0.9\n  },\n  \"findings\": {\n    \"issues\": [],\n    \"direct\": [\n      {\n        \"kind\": \"dependency\",\n        \"package\": \"flask\",\n        \"severity\": \"high\",\n        \"is_direct\": true,\n        \"versions\": [\"0.12.0\"],\n        \"advisories\": [\"GHSA-562c-5r94-xh97\", \"GHSA-5wv5-4vpf-pj6m\", \"GHSA-m2qf-hxjv-5gpq\"],\n        \"locations\": [\"requirements.txt:1\"],\n        \"recommendation\": \"Update flask to a patched version (see references).\"\n      }\n    ],\n    \"transitive\": []\n  },\n  \"counts\": { \"product_critical\": 3, \"issues\": 0, \"direct\": 1, \"transitive\": 0 },\n  \"verification\": {\n    \"basis\": \"each version is the INSTALLED version resolved from the lockfile, not the declared floor; advisories confirmed via OSV; result is deterministic and re-checkable\",\n    \"scanner\": \"closeread SCA (deterministic, no LLM)\",\n    \"advisory_source\": \"OSV.dev\",\n    \"as_of\": \"2026-06-08T12:00:00+00:00\"\n  }\n}\n```\n\nThe agent does not get a scan to interpret. It gets a verdict to act on: bump\n`flask`, here is the line, here is why.\n\n## The verified-audit primitive for the agent era\n\nAgents are starting to write, review, and ship code on their own. Before an agent\nopens a PR or green-lights a deploy, it needs an answer to a simple question with\na checkable answer: *is anything I depend on known-vulnerable, in the version I\nactually pinned, and is it mine to fix?* `closeread-verify` is that primitive. One\nMCP call, a deterministic verdict, no LLM in the loop to hallucinate a CVE that\ndoes not exist or miss one that does.\n\n## Scope, honestly\n\n- **Ecosystems:** npm/yarn/pnpm, pip/poetry/pipenv, RubyGems, Packagist\n  (Composer), crates.io (Cargo).\n- **Deterministic:** no LLM, no network beyond OSV.dev advisory lookups.\n- **Lockfile-only:** it reads manifests and lockfiles. It does not need, request,\n  or transmit your source code.\n- **What it is not:** this is the free, deterministic dependency-audit tier. It is\n  not a full code review, not a SAST engine, not a license or architecture audit.\n  It does one thing: a verified verdict on your dependencies.\n\n## License\n\nMIT. Built by Free Guy.\n",
+    "fetchedAt": "2026-08-12T00:11:33.853Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:41:34.483Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

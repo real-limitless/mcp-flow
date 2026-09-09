@@ -1,0 +1,59 @@
+{
+  "id": "io.github.goww7/acttrace",
+  "title": "ActTrace",
+  "description": "Classify AI systems under the EU AI Act and generate Article 50 transparency notices.",
+  "summary": "Classify AI systems under the EU AI Act and generate Article 50 transparency notices.",
+  "offersHint": "Classify AI systems under the EU AI Act and generate Article 50 transparency notices. · Packages: pypi:acttrace-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "acttrace-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "acttrace-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/goww7/acttrace",
+  "sourceUrl": "https://github.com/goww7/acttrace",
+  "repository": {
+    "url": "https://github.com/goww7/acttrace",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-16T11:50:20.870855Z",
+  "publishedAt": "2026-05-16T11:50:20.870855Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:21:31.048Z",
+    "sourceRepoAt": "2026-08-11T23:44:46.871Z",
+    "readmeAt": "2026-08-11T23:44:47.374Z",
+    "toolsAt": "2026-08-12T01:21:31.048Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/goww7/acttrace",
+    "checkedAt": "2026-08-11T23:44:46.871Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/goww7/acttrace/main/README.md",
+    "markdown": "# ActTrace\n\n<!-- mcp-name: io.github.goww7/acttrace -->\n\nA developer-facing **EU AI Act compliance API** for non-financial SaaS and\ntechnology companies. ActTrace gives an engineering team three things,\nself-serve, over an API or via MCP:\n\n1. A deterministic **risk classification** of an AI feature under the EU AI Act.\n2. A ready-to-ship **Article 50 transparency notice**.\n3. A **free diagnostic** as the public entry point.\n\n> **Not legal advice.** ActTrace provides operational compliance workflow\n> support and documentation drafts. It does not provide legal advice, does not\n> certify compliance, and does not replace review by qualified counsel. Every\n> response carries this disclaimer.\n\nActTrace is scoped for **non-financial** companies. Financial-services use\ncases (banking, trading, portfolio/investment advice, credit scoring, …) are\ndeliberately classified `out_of_scope_financial_services`.\n\n## Install — Claude Code plugin / MCP server\n\nActTrace ships as a Claude Code plugin: an `acttrace` skill plus a local MCP\nserver. The MCP server runs via `uvx` — a deterministic rules engine, offline,\nno API key.\n\n```\n/plugin marketplace add goww7/acttrace\n/plugin install acttrace@acttrace\n```\n\nThen ask Claude *\"Is my chatbot EU AI Act compliant?\"* or *\"Write an Article 50\nnotice for our support assistant.\"* The MCP server also runs standalone with\nany MCP client: `uvx acttrace-mcp`.\n\n## Quickstart\n\n```bash\npython3 -m venv .venv && .venv/bin/pip install -r requirements.txt\n.venv/bin/uvicorn acttrace.app:app --reload --port 8080\n```\n\n```bash\n# 1. Free diagnostic — no key needed\ncurl -s localhost:8080/api/acttrace/diagnostics/free -H 'content-type: application/json' -d '{\n  \"feature_name\": \"AI reply assistant\",\n  \"description\": \"Drafts suggested customer support replies for agents.\",\n  \"user_facing\": true, \"model_provider\": \"OpenAI\", \"use_case\": \"support_assist\"\n}'\n\n# 2. Mint an API key\nKEY=$(curl -s -XPOST localhost:8080/api/keys/generate | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"api_key\"])')\n\n# 3. Classify (15 tokens)\ncurl -s localhost:8080/api/acttrace/classify -H \"X-API-Key: $KEY\" -H 'content-type: application/json' -d '{\n  \"feature_name\": \"AI reply assistant\",\n  \"description\": \"Drafts customer support replies shown to agents.\",\n  \"use_case\": \"support_assist\", \"user_facing\": true, \"model_provider\": \"OpenAI\"\n}'\n\n# 4. Generate an Article 50 notice (10 tokens)\ncurl -s localhost:8080/api/acttrace/notices -H \"X-API-Key: $KEY\" -H 'content-type: application/json' -d '{\n  \"ai_system_name\": \"Support Copilot\", \"notice_type\": \"chatbot\", \"tone\": \"plain\"\n}'\n```\n\n## Endpoints\n\n| Method & path | Auth | Tokens | Purpose |\n|---|---|--:|---|\n| `POST /api/acttrace/diagnostics/free` | none | 0 | Public risk diagnostic |\n| `POST /api/acttrace/classify` | key | 15 | Documented risk classification |\n| `POST /api/acttrace/notices` | key | 10 | Article 50 transparency notice |\n| `POST /api/keys/generate` | none | 0 | Issue a free-plan key |\n| `GET  /api/health` | none | 0 | Liveness |\n\nAuth is `X-API-Key`. Responses carry `X-Request-ID`, `X-Plan`,\n`X-Tokens-Charged`, `X-Tokens-Remaining`, `X-RateLimit-*`. Errors are\nstructured `{\"code\",\"message\",\"detail\"}` (401/403/429).\n\n## MCP\n\n`python -m acttrace.mcp_server --sse --port 8002` exposes two tools —\n`acttrace_classify` and `acttrace_generate_transparency_notice` — authenticated\nwith the same `X-API-Key`. A Claude Code skill is in `skill/acttrace/`.\n\n## Tests\n\n```bash\n.venv/bin/python -m pytest -q\n```\n\n54 tests: classification engine (7 acceptance fixtures), conflict guard,\nnotice generator, and HTTP API contract.\n\n## Deploy\n\n`docker-compose.yml` builds a standalone two-container stack (API + MCP) on\nports 8080 / 8002 with its own volume — isolated from FinanceData2. To go live,\nappend `caddy-acttrace.snippet` to the shared Caddyfile (replace the\nplaceholder domain). See `BLUEPRINT.md` for the full build contract.\n\n## Layout\n\n```\nacttrace/\n  app.py config.py dependencies.py\n  middleware/   api_key_auth.py\n  routers/      acttrace.py  keys.py\n  services/     acttrace_service.py  acttrace_classification_service.py\n                acttrace_notice_service.py  acttrace_constants.py\n                api_key_service.py\n  repositories/ acttrace_repository.py  api_key_repository.py\n  schemas/      acttrace.py\n  mcp_server/   server.py  __main__.py  context.py  tools/acttrace.py\nskill/acttrace/ SKILL.md  README.md\ntests/\n```\n",
+    "fetchedAt": "2026-08-11T23:44:47.374Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:21:31.048Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,76 @@
+{
+  "id": "io.github.chenxiaofie/memory-mcp",
+  "title": "memory-mcp",
+  "description": "情景+实体记忆 MCP 服务，为 Claude Code 提供持久化记忆能力",
+  "summary": "情景+实体记忆 MCP 服务，为 Claude Code 提供持久化记忆能力",
+  "offersHint": "情景+实体记忆 MCP 服务，为 Claude Code 提供持久化记忆能力 · Packages: pypi:chenxiaofie-memory-mcp · Env vars: CLAUDE_PROJECT_ROOT",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "chenxiaofie-memory-mcp",
+    "version": "0.2.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CLAUDE_PROJECT_ROOT",
+        "description": "项目根目录路径"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "chenxiaofie-memory-mcp",
+      "version": "0.2.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CLAUDE_PROJECT_ROOT",
+          "description": "项目根目录路径"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CLAUDE_PROJECT_ROOT",
+      "description": "项目根目录路径"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chenxiaofie/memory-mcp",
+  "repository": {
+    "url": "https://github.com/chenxiaofie/memory-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-12T13:30:18.829693Z",
+  "publishedAt": "2026-02-12T13:30:18.829693Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:28.711Z",
+    "sourceRepoAt": "2026-08-11T23:52:55.828Z",
+    "readmeAt": "2026-08-11T23:52:56.305Z",
+    "toolsAt": "2026-08-12T01:27:28.711Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chenxiaofie/memory-mcp",
+    "checkedAt": "2026-08-11T23:52:55.828Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chenxiaofie/memory-mcp/master/README.md",
+    "markdown": "# Memory MCP Service\n\n[![PyPI version](https://img.shields.io/pypi/v/chenxiaofie-memory-mcp)](https://pypi.org/project/chenxiaofie-memory-mcp/)\n[![Python](https://img.shields.io/pypi/pyversions/chenxiaofie-memory-mcp)](https://pypi.org/project/chenxiaofie-memory-mcp/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n\n<!-- mcp-name: io.github.chenxiaofie/memory-mcp -->\n\n[English](README.md) | [中文](README_zh.md)\n\nA persistent memory MCP service for Claude Code. Automatically saves conversations and retrieves relevant history across sessions.\n\n**What it does:** Every time you chat with Claude Code, your conversation context (decisions, preferences, key discussions) is saved and automatically recalled in future sessions — so Claude always has the background it needs.\n![Memory recall demo - retrieving past session history](image.png)\n## Quick Start\n\n### Prerequisites\n\nInstall [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package runner):\n\n```bash\n# Windows\npowershell -c \"irm https://astral.sh/uv/install.ps1 | iex\"\n\n# Mac/Linux\ncurl -LsSf https://astral.sh/uv/install.sh | sh\n```\n\n> Requires Python 3.10 - 3.13 (chromadb is not compatible with Python 3.14+).\n\n### 1. Initialize (First Time Only)\n\nDownload the vector model (~400MB, one-time):\n\n```bash\nuvx --from chenxiaofie-memory-mcp memory-mcp-init\n```\n\n### 2. Add MCP Server to Claude Code\n\n```bash\nclaude mcp add memory-mcp -s user -- uvx --from chenxiaofie-memory-mcp memory-mcp\n```\n\n### 3. Configure Hooks (Recommended)\n\nHooks enable **fully automatic** message saving. Without hooks, you need to manually call memory tools.\n\nAdd the following to `~/.claude/settings.json`:\n\n```json\n{\n  \"hooks\": {\n    \"SessionStart\": [{\n      \"matcher\": \".*\",\n      \"hooks\": [{ \"type\": \"command\", \"command\": \"uvx --from chenxiaofie-memory-mcp memory-mcp-session-start\" }]\n    }],\n    \"UserPromptSubmit\": [{\n      \"matcher\": \".*\",\n      \"hooks\": [{ \"type\": \"command\", \"command\": \"uvx --from chenxiaofie-memory-mcp memory-mcp-auto-save\" }]\n    }],\n    \"Stop\": [{\n      \"matcher\": \".*\",\n      \"hooks\": [{ \"type\": \"command\", \"command\": \"uvx --from chenxiaofie-memory-mcp memory-mcp-save-response\" }]\n    }],\n    \"SessionEnd\": [{\n      \"matcher\": \".*\",\n      \"hooks\": [{ \"type\": \"command\", \"command\": \"uvx --from chenxiaofie-memory-mcp memory-mcp-session-end\" }]\n    }]\n  }\n}\n```\n\n### 4. Verify\n\n```bash\nclaude mcp list\n```\n\nYou should see `memory-mcp: ... - ✓ Connected`.\n\nThat's it! Start a new Claude Code session and your conversations will be automatically saved and recalled.\n\n## How It Works\n\n```\nSession Start ──► Create Episode ──► Monitor Process (background)\n                                          │\nUser Message  ──► Save Message ──► Recall Related Memories ──► Inject Context\n                                          │\nClaude Reply  ──► Save Response           │\n                                          │\nSession End   ──► Close Signal ──► Archive Episode + Generate Summary\n```\n\n- **Episodes**: Each conversation session is an \"episode\" with auto-generated summaries\n- **Entities**: Key knowledge extracted from conversations (decisions, preferences, concepts)\n- **Dual-layer storage**: User-level (shared across projects) + Project-level (isolated per project)\n- **Semantic search**: Vector-based retrieval finds relevant past context\n\n## Usage\n\n### Automatic Mode (With Hooks)\n\nOnce hooks are configured, everything is automatic. Claude will see relevant history from past sessions as context.\n\n### Manual Mode\n\nYou can also call memory tools directly in Claude Code:\n\n```\n# Start a new episode\nmemory_start_episode(\"Login Feature Development\", [\"auth\"])\n\n# Record a decision\nmemory_add_entity(\"Decision\", \"Use JWT + Redis\", \"For distributed deployment\")\n\n# Search history\nmemory_recall(\"login implementation\")\n\n# Close episode\nmemory_close_episode(\"Completed JWT login feature\")\n```\n\n## Hooks Reference\n\n| Hook | What it does | Timing |\n|------|-------------|--------|\n| SessionStart | Creates a new episode | ~50ms |\n| UserPromptSubmit | Saves user message + retrieves related memories | ~1-2s |\n| Stop | Saves assistant response | ~1s |\n| SessionEnd | Signals episode closure | ~50ms |\n\n## Tools Reference\n\n| Tool | Description |\n|------|-------------|\n| `memory_start_episode` | Start a new episode |\n| `memory_close_episode` | Close and archive current episode |\n| `memory_get_current_episode` | Get current active episode |\n| `memory_add_entity` | Add a knowledge entity |\n| `memory_confirm_entity` | Confirm a detected entity candidate |\n| `memory_reject_candidate` | Reject a false detection |\n| `memory_deprecate_entity` | Mark an entity as outdated |\n| `memory_get_pending` | List pending entity candidates |\n| `memory_recall` | Semantic search across episodes and entities |\n| `memory_search_by_type` | Search entities by type |\n| `memory_get_episode_detail` | Get full episode details |\n| `memory_list_episodes` | List all episodes chronologically |\n| `memory_stats` | Get system statistics |\n| `memory_encoder_status` | Check vector encoder status |\n| `memory_cache_message` | Manually cache a message |\n| `memory_clear_cache` | Clear message cache |\n| `memory_cleanup_messages` | Clean up old cached messages |\n\n## Entity Types\n\n| Type | Level | Description |\n|------|-------|-------------|\n| `Decision` | Project | Technical decisions for this project |\n| `Architecture` | Project | Architecture designs |\n| `File` | Project | Important file descriptions |\n| `Preference` | User | Personal preferences (shared across projects) |\n| `Concept` | User | General concepts |\n| `Habit` | User | Work habits |\n\n## Storage Locations\n\n- **User-level**: `~/.claude-memory/`\n- **Project-level**: `{project-root}/.claude/memory/`\n\n<details>\n<summary>Alternative: Install from source</summary>\n\nIf you need to run from source (e.g., for development):\n\n```bash\ngit clone https://github.com/chenxiaofie/memory-mcp.git\ncd memory-mcp\n# Windows:\ninstall.bat\n# Mac/Linux:\nchmod +x install.sh && ./install.sh\n```\n\nThen configure MCP server with the venv Python:\n\n```bash\n# Windows:\nclaude mcp add memory-mcp -s user -- \"C:\\path\\to\\memory-mcp\\venv310\\Scripts\\python.exe\" -m memory_mcp.server\n\n# Mac/Linux:\nclaude mcp add memory-mcp -s user -- /path/to/memory-mcp/venv310/bin/python -m memory_mcp.server\n```\n\n</details>\n\n## Author\n\n**陈佳俊 (Jiajun Chen)** — front-end engineer based in Hangzhou, China.\nGitHub [@chenxiaofie](https://github.com/chenxiaofie) · feifeichen1999@gmail.com\n\n本项目由**陈佳俊**（GitHub: [chenxiaofie](https://github.com/chenxiaofie)）开发并维护。\n\n## License\n\nMIT License - see [LICENSE](LICENSE) file for details.\n",
+    "fetchedAt": "2026-08-11T23:52:56.305Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:28.711Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

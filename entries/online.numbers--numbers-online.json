@@ -1,0 +1,69 @@
+{
+  "id": "online.numbers/numbers-online",
+  "title": "Numbers Online — phone intelligence",
+  "description": "Read-only phone intelligence for AI voice agents — line type, risk, DNC, signed receipts.",
+  "summary": "Read-only phone intelligence for AI voice agents — line type, risk, DNC, signed receipts.",
+  "offersHint": "Read-only phone intelligence for AI voice agents — line type, risk, DNC, signed receipts. · Remote MCP (streamable-http) at https://numbers.online/api/v1/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://numbers.online/api/v1/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://numbers.online/api/v1/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://numbers.online/docs/integrations",
+  "sourceUrl": "https://github.com/numbers-online/numbers-online-mcp",
+  "repository": {
+    "url": "https://github.com/numbers-online/numbers-online-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-16T14:15:42.074992Z",
+  "publishedAt": "2026-06-16T14:15:42.074992Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:21.442Z",
+    "sourceRepoAt": "2026-08-11T23:09:07.475Z",
+    "readmeAt": "2026-08-11T23:09:08.015Z",
+    "toolsAt": "2026-08-11T23:09:08.098Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/numbers-online/numbers-online-mcp",
+    "checkedAt": "2026-08-11T23:09:07.475Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/numbers-online/numbers-online-mcp/main/README.md",
+    "markdown": "# Numbers Online — phone-intelligence MCP server\n\nA hosted, read-only **Model Context Protocol** server that gives an AI voice agent\nphone intelligence in a single call: *who is this inbound caller, and is this outbound\nnumber one to think twice about dialing* — **before** it burns agent minutes.\n\n- **Endpoint:** `POST https://numbers.online/api/v1/mcp` (Streamable HTTP, JSON-RPC 2.0)\n- **Transport:** remote / hosted — **nothing to install or run.** Point your agent at the URL.\n- **Auth:** `Authorization: Bearer <api_key>` for tool calls; discovery is public.\n- **Docs:** https://numbers.online/docs/integrations · **Site:** https://numbers.online\n\n> **Positioning.** Every output is an **advisory, low-confidence supplementary signal.**\n> The calling agent keeps every routing and dialing decision and remains responsible for\n> compliance. Nothing here asserts that a call is lawful, unlawful, \"safe\", or \"spam\".\n\n---\n\n## Tools\n\nFour **read-only** tools (all annotated `readOnlyHint`, `idempotentHint`). Discover them\nlive with `tools/list` (no auth required).\n\n| Tool | Returns | Billed |\n|---|---|---|\n| `phone_lookup` | Full bundle — validity, formatting, line type, range carrier, country, caller name (CNAM where available), STIR/SHAKEN verstat, a labeled spam signal, first-party DNC signal, signed receipt | bundled per-call |\n| `caller_risk` | Spam signal + verstat + first-party DNC signal + receipt (no name dip) | bundled per-call |\n| `line_type` | Deterministic only — validity, line type (mobile / fixed line / VoIP / …), carrier, country, formatting | free |\n| `dnc_check` | First-party do-not-contact signal + signed receipt | free |\n\n### About the DNC signal\n\nThe DNC signal is **first-party, consent-first**: it reflects a do-not-contact preference\n**registered and verified by the number's own owner** inside Numbers Online. It is **not**\na copy, mirror, or replica of any government or licensed do-not-call registry. The values:\n\n- **`SUPPRESS`** — the owner registered a do-not-contact preference for this channel.\n- **`NO_MATCH`** — no suppression preference on record (absence of suppression is **not** consent).\n- **`UNKNOWN`** — the number couldn't be evaluated.\n\nTreat it as a supplementary input to your own TCPA process, never a verdict that a call is\nlawful. (Reassigned-number status is inherently a carrier/FCC dataset and is intentionally\n**not** offered as a first-party signal — there's no `reassigned_check` tool.)\n\n---\n\n## Connect\n\n### Any MCP client (Claude Desktop, Claude Code, IDEs)\n\nAdd a **remote** server pointing at the endpoint. Example `mcp.json` fragment:\n\n```json\n{\n  \"mcpServers\": {\n    \"numbers-online\": {\n      \"type\": \"streamable-http\",\n      \"url\": \"https://numbers.online/api/v1/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer YOUR_API_KEY\" }\n    }\n  }\n}\n```\n\nA key needs the `mcp` use case. `initialize`, `ping`, and `tools/list` work without auth\n(capability discovery); `tools/call` is fail-closed and requires the key.\n\n### Vapi\n\nRegister Numbers Online as an MCP tool — the transport literal is **`shttp`**\n(see [`integrations/mcp/vapi-mcp-tool.json`](integrations/mcp/vapi-mcp-tool.json)).\nA Vapi custom-function-tool alternative lives at\n[`integrations/vapi/numbers-online-tool.json`](integrations/vapi/numbers-online-tool.json).\n\n### Retell\n\nPoint your agent's `call_inbound` webhook at the drop-in config in\n[`integrations/retell/inbound-webhook.json`](integrations/retell/inbound-webhook.json).\nIt always returns HTTP 200 within Retell's budget (fail-open) so a slow lookup never\nkeeps the caller ringing.\n\nFull walkthrough: [`docs/ai-voice-agents.md`](docs/ai-voice-agents.md).\n\n---\n\n## Quick smoke test\n\n```bash\n# discover tools (no auth)\ncurl -s https://numbers.online/api/v1/mcp \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n\n# call a tool (needs an mcp-scoped key)\ncurl -s https://numbers.online/api/v1/mcp \\\n  -H \"Authorization: Bearer $KEY\" -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"phone_lookup\",\"arguments\":{\"number\":\"+14155552671\"}}}'\n```\n\nRunnable reference clients (zero-dependency) are in [`examples/`](examples/) —\n[Node](examples/node/lookup.mjs) and [Python](examples/python/lookup.py).\n\n---\n\n## Signed receipts (verifiable \"checked as of T\" evidence)\n\nEvery billable answer can carry a `receipt_id` and an Ed25519 `response_signature`.\nFetch the receipt later — no API key required, the id is the capability:\n\n```\nGET https://numbers.online/api/v1/receipts/{id}\n```\n\n**No raw phone number is stored** — only `number_hash = sha256(E.164)`. Verify with the\npublic key at `GET https://numbers.online/api/v1/publickey`. A receipt is verifiable\nevidence that a status was *checked at a point in time* — not proof that dialing was\nlawful. Treat a receipt id as sensitive (a phone number is a small keyspace, so the hash\nis bindable to a candidate number).\n\n---\n\n## Privacy\n\nRaw phone numbers are never logged or stored; they are hashed (`sha256`). The MCP path is\nread-only and stateless. Privacy policy: https://numbers.online/privacy\n\n## Pricing\n\nThe full bundle is metered as one bundled per-call dip (validation + line type + risk +\nfirst-party DNC in a single call). `line_type` and `dnc_check` are free. See\nhttps://numbers.online for current rates.\n\n---\n\n**Developer:** Evergrow · **Product:** Numbers Online · **Contact:** contact@numbers.online\n· **License:** [MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:09:08.015Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "phone_lookup",
+      "description": "Return a supplementary, low-confidence intelligence bundle for a phone number: validity, formatting, line type, range carrier, country, caller name (CNAM, where available), STIR/SHAKEN verstat (supply the call's verstat to fold it into the spam signal), a labeled spam signal, and a first-party do-not-contact (DNC) signal — a suppression preference registered by the number's own owner, never a copy of any government registry. Advisory only — the agent keeps every routing and dialing decision."
+    },
+    {
+      "name": "line_type",
+      "description": "Return only the deterministic fields for a number — validity, line type (mobile / fixed line / VoIP / …), range carrier, country, and formatting. No paid dip; a free, fast classification a voice agent can call before deciding to enrich."
+    },
+    {
+      "name": "caller_risk",
+      "description": "Return a labeled, low-confidence risk read for an inbound caller: a spam signal (0–100, higher = riskier), verstat passthrough, and a first-party do-not-contact (DNC) signal — without a name dip. A supplementary input to the agent's own policy, never a verdict on whether to accept or reject the call. Supply the call's STIR/SHAKEN verstat to fold it into the signal — a failed validation raises the risk."
+    },
+    {
+      "name": "dnc_check",
+      "description": "Return a first-party do-not-contact signal (suppress / no_match / unknown) for a number, sourced ONLY from suppression preferences registered and verified by the number's own owner inside Numbers Online — never a copy of any government or licensed do-not-call registry. \"suppress\" = the owner asked not to be contacted on this channel; \"no_match\" = no suppression preference on record (absence of suppress is not consent); \"unknown\" = the number could not be evaluated. Comes with a signed receipt recording the status \"as of T\". Advisory input to the agent's own process — it does not assert that a call is lawful."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:09:08.098Z",
+  "toolsPreviewStatus": "ok"
+}

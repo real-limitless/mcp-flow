@@ -1,0 +1,52 @@
+{
+  "id": "com.invoicexml/invoicexml",
+  "title": "InvoiceXML",
+  "description": "Create, validate, convert & extract compliant e-invoices (UBL, Factur-X, ZUGFeRD, XRechnung)",
+  "summary": "Create, validate, convert & extract compliant e-invoices (UBL, Factur-X, ZUGFeRD, XRechnung)",
+  "offersHint": "Create, validate, convert & extract compliant e-invoices (UBL, Factur-X, ZUGFeRD, XRechnung) · Remote MCP (streamable-http) at https://mcp.invoicexml.com",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.invoicexml.com",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.invoicexml.com"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.invoicexml.com/mcp-server",
+  "sourceUrl": "https://github.com/InvoiceXML/invoicexml-mcp",
+  "repository": {
+    "url": "https://github.com/InvoiceXML/invoicexml-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-29T17:06:38.466232Z",
+  "publishedAt": "2026-05-29T17:06:38.466232Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:32:33.111Z",
+    "sourceRepoAt": "2026-08-12T00:32:33.111Z",
+    "readmeAt": "2026-08-12T00:32:33.756Z",
+    "toolsAt": "2026-08-12T00:32:34.000Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/InvoiceXML/invoicexml-mcp",
+    "checkedAt": "2026-08-12T00:32:33.111Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/InvoiceXML/invoicexml-mcp/main/README.md",
+    "markdown": "# InvoiceXML MCP Server\n\nA [Model Context Protocol](https://modelcontextprotocol.io) server that exposes the\n[InvoiceXML API](https://invoicexml.com) to AI agents. Covers Factur-X, ZUGFeRD,\nXRechnung, UBL / CII, and Peppol BIS Billing 3.0.\n\nThe same codebase runs in two deployment shapes, selected at startup by one\nenvironment variable:\n\n| Mode | Who runs it | Auth |\n|---|---|---|\n| Self-hosted | You, on your own machine or server | A single API key in env or `appsettings.json` |\n| Hosted | InvoiceXML, on its own infrastructure | OAuth 2.1 + Dynamic Client Registration against `invoicexml.com` |\n\nBoth run the same binary; only the configuration differs. The repository is\nplatform-independent — it knows nothing about where or how you host it.\n\n## Architecture\n\n```\n+----------------------+   ProjectReference   +----------------------+\n|  InvoiceXml.Mcp.Core | -------------------> |  InvoiceXml.Mcp.Host |\n|  (SDK: client+tools) |                      |  (the deployable)    |\n+----------------------+                      +----------------------+\n```\n\n**`InvoiceXml.Mcp.Core`** is a small, transport-agnostic SDK:\n\n- `IInvoiceXmlClient` — typed client over the public REST API\n- `HttpInvoiceXmlClient` — the only implementation; consumes an `HttpClient` from `IHttpClientFactory`\n- `InvoiceXmlClientOptions` — base URL, timeout (no auth)\n- `AddInvoiceXmlMcpCore(IServiceCollection, IConfiguration)` — DI entry point; returns the `IHttpClientBuilder` so the host attaches auth as a `DelegatingHandler`\n\nThe SDK **never sees credentials**. The host applies them through the HTTP pipeline.\nThat seam is what lets one codebase serve both deployment modes.\n\n**`InvoiceXml.Mcp.Host`** is an ASP.NET Core 10 app:\n\n- Reads `Mcp:AuthMode` (`ApiKey` or `OAuth`) at startup\n- Wires the matching `DelegatingHandler` onto the Core HTTP client via `AddHostAuth(...)`\n- Serves the MCP endpoint at `POST /`, a human-friendly welcome page at `GET /`, and `/health`\n\nAdding a new auth mode = one arm in `AuthExtensions.cs` plus a small folder under\n`Auth/<Mode>/`. Adding a new tool = one `[McpServerTool]` class. Nothing else changes.\n\n## Repository layout\n\n```\ninvoicexml-mcp/\n├── src/\n│   ├── InvoiceXml.Mcp.Core/              # the SDK: client, models, tools\n│   │   ├── Enums/  Interfaces/  Models/  Options/  Services/  Tools/  Extensions/\n│   └── InvoiceXml.Mcp.Host/              # the deployable host\n│       ├── Auth/{ApiKey,OAuth}/          # the two auth modes\n│       ├── Configuration/\n│       ├── Program.cs\n│       └── appsettings.json              # safe defaults, no secrets\n├── tests/\n│   ├── InvoiceXml.Mcp.Core.Tests/\n│   └── InvoiceXml.Mcp.Host.Tests/\n├── Directory.Build.props                 # repo-wide MSBuild defaults\n├── Directory.Packages.props              # Central Package Management\n├── global.json                           # pins the .NET SDK\n└── InvoiceXml.Mcp.slnx\n```\n\n## Running locally\n\nYou need a .NET 10 SDK and an InvoiceXML API key.\n\n```pwsh\n# 1. Provide your API key (pick one):\n\n# A. dotnet user-secrets (recommended — kept outside the repo)\ndotnet user-secrets --project src/InvoiceXml.Mcp.Host set \"Mcp:ApiKey:Value\" \"your-key\"\n\n# B. environment variable\n$env:INVOICEXML_API_KEY = \"your-key\"\n\n# 2. Run\ndotnet run --project src/InvoiceXml.Mcp.Host\n```\n\n`GET http://localhost:5004/` shows a welcome page in a browser; the MCP endpoint is\n`POST http://localhost:5004/`; `GET /health` returns `{ \"status\": \"ok\" }`.\n\n## Configuration\n\n```jsonc\n{\n  // Required in OAuth mode. The public origin where this MCP server is reachable.\n  // Used in the protected-resource metadata response.\n  \"McpUri\": \"https://mcp.example.com\",\n\n  \"InvoiceXml\": {\n    \"BaseUrl\": \"https://api.invoicexml.com\",   // override for staging / local\n    \"Timeout\": \"00:01:40\"\n  },\n\n  \"Mcp\": {\n    \"AuthMode\": \"ApiKey\",                       // \"ApiKey\" | \"OAuth\"\n    \"ApiKey\": {\n      \"Value\": \"\"                               // ApiKey mode: NEVER commit a real key\n    },\n    \"OAuth\": {\n      \"AuthorizationServer\": \"https://invoicexml.com\",\n      \"ScopesSupported\": [ \"api_token.read\" ]\n    },\n    \"FileInput\": {                              // limits for the URL-fetch input mode\n      \"MaxFileSizeBytes\": 5242880,\n      \"FetchTimeout\": \"00:00:30\"\n    }\n  }\n}\n```\n\nEnvironment variable equivalents (double underscore = nesting):\n\n| Variable | Maps to |\n|---|---|\n| `INVOICEXML_API_KEY` | `Mcp:ApiKey:Value` (friendly alias) |\n| `Mcp__ApiKey__Value` | `Mcp:ApiKey:Value` |\n| `Mcp__AuthMode` | `Mcp:AuthMode` (`ApiKey` or `OAuth`) |\n| `Mcp__OAuth__AuthorizationServer` | `Mcp:OAuth:AuthorizationServer` |\n| `McpUri` | `McpUri` (root-level) |\n| `InvoiceXml__BaseUrl` | `InvoiceXml:BaseUrl` |\n\n## OAuth mode\n\nWhen `Mcp:AuthMode=OAuth` the host stops accepting a static API key and instead:\n\n1. Returns **401** with `WWW-Authenticate: Bearer resource_metadata=\"…\"` for any\n   `POST /` that has no Bearer token.\n2. Serves `GET /.well-known/oauth-protected-resource` pointing MCP clients at\n   `invoicexml.com` as the authorization server.\n3. Forwards the inbound Bearer token verbatim on every outbound call to the\n   InvoiceXML API (the API is the source of truth for token validity; the MCP\n   server does not validate tokens locally).\n\nThe dance an MCP client performs:\n\n```\nclient → MCP  POST /                           → 401 + resource_metadata\nclient → /.well-known/oauth-protected-resource → { authorization_servers: [invoicexml.com] }\nclient → invoicexml.com/.well-known/oauth-authorization-server\n                                               → { authorize, token, register endpoints }\nclient → invoicexml.com/oauth/register         → client_id + client_secret  (DCR)\nclient → invoicexml.com/oauth/authorize        → user consents, gets code\nclient → invoicexml.com/oauth/token            → access_token  (= user's API key)\nclient → MCP  POST /  + Authorization: Bearer  → 200, tool call flows through\n```\n\n## Deployment\n\nThe host is a standard ASP.NET Core app — run it however you run .NET services\n(systemd, a container, a PaaS, etc.; the repo doesn't prescribe one):\n\n```pwsh\ndotnet publish src/InvoiceXml.Mcp.Host -c Release -o ./publish\n# then run ./publish/InvoiceXml.Mcp.Host on your host\n```\n\nSet configuration via environment variables on the host (never commit secrets):\n\n- `ASPNETCORE_ENVIRONMENT=Production`\n- `Mcp__AuthMode=ApiKey` (or `OAuth`)\n- `Mcp__ApiKey__Value=…` / `INVOICEXML_API_KEY=…` (ApiKey mode)\n- `McpUri=https://your-public-url` and `Mcp__OAuth__AuthorizationServer=https://invoicexml.com` (OAuth mode)\n\nTerminate TLS at your reverse proxy / load balancer and forward to the host's HTTP port.\nThe server is stateless, so you can run multiple instances behind a load balancer.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:32:33.756Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:32:34.000Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

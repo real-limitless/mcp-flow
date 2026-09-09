@@ -1,0 +1,71 @@
+{
+  "id": "io.github.PStryder/tablacognita",
+  "title": "TablaCognita",
+  "description": "MCP-native collaborative markdown editor with real-time AI document editing",
+  "summary": "MCP-native collaborative markdown editor with real-time AI document editing",
+  "offersHint": "MCP-native collaborative markdown editor with real-time AI document editing · Remote MCP (streamable-http) at https://app.tablacognita.com/mcp · Requires headers: Authorization",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://app.tablacognita.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.tablacognita.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "API key (tc_* prefix) from Settings > Account, or OAuth 2.0 access token",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://app.tablacognita.com",
+  "sourceUrl": "https://github.com/PStryder/TablaCognita",
+  "repository": {
+    "url": "https://github.com/PStryder/TablaCognita",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-09T18:18:18.738063Z",
+  "publishedAt": "2026-03-09T18:18:18.738063Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "API key (tc_* prefix) from Settings > Account, or OAuth 2.0 access token",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:36:32.005Z",
+    "sourceRepoAt": "2026-08-12T00:04:45.279Z",
+    "readmeAt": "2026-08-12T00:04:45.713Z",
+    "toolsAt": "2026-08-12T01:36:32.005Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/PStryder/TablaCognita",
+    "checkedAt": "2026-08-12T00:04:45.279Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/PStryder/TablaCognita/main/README.md",
+    "markdown": "# TablaCognita\n\n**Co-write with any AI. In your browser. No data on anyone's server.**\n\nTablaCognita is a browser-based Markdown editor where AI is a first-class participant, not a feature bolted onto a text box. Select text and send it to your AI. Watch edits land in real time. Undo anything. The AI sees the document through MCP tools — the same protocol that powers Claude Desktop, Cursor, and every other MCP-capable client.\n\nYour document lives in your browser. The relay server is a stateless wire. Nobody stores your writing.\n\n## How It Works\n\n```\n┌──────────────┐   MCP (stdio | HTTP)   ┌──────────────┐   WebSocket   ┌──────────────────┐\n│  Your AI     │◄───────────────────────►│    Relay      │◄────────────►│  Browser Editor   │\n│  (Claude,    │   Tool calls/results    │  (stateless)  │              │  (source of truth)│\n│   Cursor,    │                         │               │              │                   │\n│   any MCP)   │                         └──────────────┘              │  CodeMirror 6     │\n└──────────────┘                                                       │  Live preview     │\n                                                                       │  Section tracking │\n                                                                       │  Lock management  │\n                                                                       └──────────────────┘\n```\n\nThe AI reads and writes through 17 MCP tools. The editor handles section addressing, fuzzy text matching, collision avoidance, and undo. The relay just passes messages. That's it.\n\n## Quick Start\n\n```bash\ngit clone https://github.com/pstryder/tablacognita.git\ncd tablacognita\nnpm install\nnpm start\n```\n\nOpen `http://localhost:3000` in your browser. The editor is live.\n\nConnect your MCP client. For Claude Desktop, add to your config:\n\n```json\n{\n  \"mcpServers\": {\n    \"tabla-cognita\": {\n      \"command\": \"node\",\n      \"args\": [\"server/index.js\", \"--transport\", \"stdio\"],\n      \"cwd\": \"/path/to/tablacognita\"\n    }\n  }\n}\n```\n\nYour AI can now read your document, edit sections, replace text, and respond to selections you send it from the editor.\n\n## What Your AI Can Do\n\n**Read** — `read_document`, `get_structure`, `get_section`. The AI sees your full document, section outline, or individual sections by heading name or stable ID.\n\n**Write** — `replace_section`, `replace_text`, `insert_after`, `append`. Section-level edits with auto-locking. Fuzzy text matching that works through markdown formatting (`**bold text**` matched by searching \"bold text\"). Full document replacement requires your confirmation in the browser.\n\n**Coordinate** — `request_edit_lock`, `release_lock`, `get_cursor_context`, `get_dirty_regions`, `poll_context`. The AI knows where your cursor is, which sections you've edited since it last looked, and can lock sections for multi-step operations. All locks have TTLs — nothing stays locked forever.\n\n**Manage** — `open_document`, `snapshot`, `restore_snapshot`, `get_revision_history`. Named checkpoints saved to your browser's IndexedDB. Restore any snapshot with one tool call.\n\n## Key Design Decisions\n\n**Browser is source of truth.** The relay holds zero document state. If the relay restarts, your document is still in your browser. The AI reconnects and continues.\n\n**Section IDs are stable.** Rename a heading from \"Introduction\" to \"Overview\" — the section ID doesn't change. The AI can always find its way back.\n\n**Agent edits are undoable.** Every AI edit goes through CodeMirror's transaction system. Ctrl+Z works on AI edits exactly like your own.\n\n**Locks are intent signals, not mutexes.** Auto-locks during edits are atomic and invisible. Explicit locks for multi-step operations have TTLs and never block you — just a gentle indicator that the AI is working on a section.\n\n**Notifications are fire-and-forget.** The editor tells the AI when you move between sections, rename headings, or delete content. If the transport doesn't support notifications, the AI can poll instead. No feature depends on notifications arriving.\n\n**No data leaves your browser.** Documents live in CodeMirror's state. Snapshots live in IndexedDB. The relay is a WebSocket bridge with no storage. There is nothing to subpoena.\n\n## Project Structure\n\n```\nserver/\n  index.js          — MCP server + Express + WebSocket relay\n  relay.js          — WebSocket relay, request/response correlation\n  sessions.js       — Session management\n  tools.js          — MCP tool definitions and handlers\n\neditor/\n  index.html        — Editor shell with CodeMirror 6 via ESM CDN\n  app.js            — Editor logic, WebSocket handlers, all tool implementations\n  styles.css        — Dark theme\n\nshared/\n  protocol.js       — Message types, error codes, constants\n  sections.js       — Section parser with stable ID registry\n  fuzzy.js          — 4-level fuzzy matching cascade\n  locks.js          — Lock state machine with TTL\n  notifications.js  — Notification debouncing and validation\n\ntest/\n  relay.test.js     — Full relay round-trip tests\n  sections.test.js  — Section parser unit tests\n  fuzzy.test.js     — Fuzzy matching unit tests\n  locks.test.js     — Lock state machine tests\n  notifications.test.js — Notification system tests\n  mock-browser.js   — Mock WebSocket client for automated testing\n```\n\n## Running Tests\n\n```bash\nnpm test              # All 122 tests\nnpm run test:sections # Section parser only\nnpm run test:fuzzy    # Fuzzy matching only\nnpm run test:relay    # Relay round-trip only\n```\n\n## Transport Modes\n\n```bash\nnpm start                    # HTTP transport (default, port 3000)\nnpm run start:stdio          # stdio transport (for local MCP clients)\nnpm start -- --port 8080     # Custom port\n```\n\n## Requirements\n\n- Node.js 18+\n- A modern browser\n- Any MCP-capable AI client\n\n## Architecture Details\n\nSee [DESIGN.md](DESIGN.md) for the full specification: tool contracts, WebSocket protocol, invariants, failure modes, and build plan.\n\n## License\n\nApache 2.0\n\n## Credits\n\nTablaCognita was designed and built by [Pete Marchetti (PStryder)](https://github.com/pstryder) at Technomancy Laboratories, with architectural review and first live edit by Kee (Claude Opus 4.6).\n\n*The page that knows. — tabla cognita*\n",
+    "fetchedAt": "2026-08-12T00:04:45.713Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:36:32.005Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid_token\",\"error_description\":\"Authentication required. Pass API key or OAuth Bearer token.\"}",
+  "toolsPreviewStatus": "auth_required"
+}

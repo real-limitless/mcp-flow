@@ -1,0 +1,124 @@
+{
+  "id": "com.beycome/listing",
+  "title": "listing",
+  "description": "List on MLS, sell, show, compare and close your real estate property on beycome.",
+  "summary": "List on MLS, sell, show, compare and close your real estate property on beycome.",
+  "offersHint": "List on MLS, sell, show, compare and close your real estate property on beycome. · Remote MCP (streamable-http) at https://mcp.beycome.com/mcp · Optional headers: Authorization",
+  "version": "1.0.0",
+  "status": "inactive",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.beycome.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.beycome.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token from beycome login",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote",
+    "repo-offline"
+  ],
+  "homepage": "https://www.beycome.com",
+  "sourceUrl": "https://github.com/beycome/mcp.beycome.com",
+  "repository": {
+    "url": "https://github.com/beycome/mcp.beycome.com",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-30T01:30:35.340412Z",
+  "publishedAt": "2026-06-30T01:30:35.340412Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token from beycome login",
+      "secret": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:38:02.904Z",
+    "sourceRepoAt": "2026-08-12T00:38:02.904Z",
+    "readmeAt": "2026-08-12T00:38:03.137Z",
+    "toolsAt": "2026-08-12T00:38:03.628Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "not_found",
+    "url": "https://github.com/beycome/mcp.beycome.com",
+    "checkedAt": "2026-08-12T00:38:02.904Z",
+    "httpStatus": 404,
+    "error": "repository HTTP 404",
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "fetchedAt": "2026-08-12T00:38:03.137Z",
+    "error": "README.md not found on main/master"
+  },
+  "toolsPreview": [
+    {
+      "name": "beycome_signup",
+      "description": "Account stage — register a new beycome user (POST /auth/register).\n\nUse when the owner has no account yet. beycome is passwordless: registering\nautomatically emails the user a 6-digit sign-in code, so the next step is\n`beycome_signin_verify` with that code — do NOT call `beycome_signin_start`\nafter signup, the code is already on its way. If the email is already\nregistered, this still just sends a sign-in code (signup doubles as\nsignin-start). Requires ``firstname`` and ``phone``; validation errors come\nback as HTTP 400 with an ``errors`` array. No prop_id needed."
+    },
+    {
+      "name": "beycome_signin_start",
+      "description": "Account stage — send a one-time sign-in code (POST /auth/check-email).\n\nbeycome is passwordless — never ask the user for a password. This emails the\nuser a 6-digit code (a second, different code also goes out by SMS; either\none works). Ask the user for the code they received, then exchange it for\nthe access_token with `beycome_signin_verify`.\n\nRead the response body, not the HTTP status — the envelope's ``ok`` mirrors\nthe HTTP status, and auth failures here still return 2xx. Always check\n``data.success``:\n  - ``success: true`` (201, \"Email sent\") — code sent; ask the user for it.\n  - ``success: false`` with \"Email not found.\" (HTTP 200, ``ok: true``) —\n    no account for this email; run `beycome_signup` instead (signup also\n    sends a code).\n  - HTTP 422 (``ok: false``) — the email matched a secondary address; the\n    body still matters: it hints the masked primary login email to use\n    instead.\n\nCodes stay valid for 30 minutes. Re-running this tool sends a fresh code\nand invalidates the old one. Rate-limited (5/min and 100/day per email) —\nnever call it in a loop or as an automatic retry."
+    },
+    {
+      "name": "beycome_signin_verify",
+      "description": "Account stage — exchange the one-time code for the access_token (POST /auth/validate-code).\n\nThe gateway to the listing flow. Call after `beycome_signin_start` or\n`beycome_signup` (both send the code) with the 6-digit code the user\nreceived. On success the Bearer token is at ``data.data.access_token``\n(``expires_in`` gives its lifetime in seconds — tokens are long-lived, so\nmid-session expiry is rare). Pass it as ``access_token`` to every\nauthenticated tool: `beycome_submit_property_link`, `beycome_get_my_listings`,\n`beycome_questionnaire_link`, `beycome_offers`, `beycome_showings`,\n`beycome_messages`, and `beycome_reply_message`.\n\nIMPORTANT — persist the token: save the access_token to your long-term\nmemory/context (and tell the user you have done so). Save it together\nwith the account ``email``, which disambiguates multi-account users and\nlets you match the right token to the right person. In future sessions,\nscheduled tasks, and crons, reuse the saved token instead of asking the\nuser to sign in again — that is what makes autonomous workflows (e.g.\n\"check my messages every morning\") possible. Before signing a user in,\ncheck your memory for an existing token for that email and try it\nfirst; only restart the sign-in flow on a 401.\n\nThe next step depends on where the user is:\n  - No listing yet → `beycome_submit_property_link` to create one.\n  - Has a listing already (or unsure) → `beycome_get_my_listings` to find\n    it; if it is paid but the MLS questionnaire is not submitted, follow\n    with `beycome_questionnaire_link`.\n  - Listing already live → skip straight to the post-publish tools\n    (`beycome_messages`, `beycome_showings`, `beycome_offers`).\n\nA wrong or expired code returns HTTP 200 with ``success: false`` and\n\"Invalid code.\" — check ``data.success``, not the envelope's ``ok``. Codes\nexpire after 30 minutes; if expired, request a fresh one with\n`beycome_signin_start` (don't retry blindly — sends are rate-limited)."
+    },
+    {
+      "name": "beycome_check_coverage",
+      "description": "Discovery stage — is this state served by beycome MLS? (GET /mls/is-covered).\n\nNo account or prop_id needed. Use before listing to confirm beycome operates\nin the property's state; ``is_active: true`` means covered. If not covered,\nthe listing flow does not apply."
+    },
+    {
+      "name": "beycome_estimate",
+      "description": "Discovery stage — estimate a property's SALE value (beycome CMA + Zillow Zestimate).\n\nNo account or prop_id needed. Returns both estimates plus suggested pricing\nstrategies (fast / balanced / max). Use during discovery to set a list price;\npair with `beycome_comps`. For rental inquiries, use `beycome_rental_estimate` instead."
+    },
+    {
+      "name": "beycome_rental_estimate",
+      "description": "Discovery stage — estimate a property's monthly RENT (POST /gemini-estimate).\n\nNo account or prop_id needed. Pairs with `beycome_estimate`, but this tool\nis SPECIFICALLY for rental estimates: use it ONLY for rental inquiries or\nfor properties that have a unit number. For sale-price estimates, use\n`beycome_estimate`.\n\nReturns ``rentEstimate`` (e.g. \"$2,600\"), ``rentEstimateRange`` (e.g.\n\"$2,400 - $2,800\"), and the ``sources`` the figure was grounded on (source\nURLs are stripped to keep the response small).\n\nCaveat: an unrecognized address still returns ``success: true`` with a\ngeneric market-average rent — check that the source titles actually\nreference the property's address/city before trusting the number; if they\ndon't, treat the result as unavailable and ask the user to verify the\naddress."
+    },
+    {
+      "name": "beycome_comps",
+      "description": "Discovery stage — sold comparable listings near a location (GET /comps).\n\nNo account or prop_id needed. Supports price / beds / baths / area / lot /\ntype filters. Use during discovery to support pricing alongside\n`beycome_estimate`.\n\nSlow endpoint: a cold query can take up to ~1 minute to respond — this is\nnormal, you can always retry the call if it times out. Photo URL and\nlisting-link fields are stripped from the records to keep the response\nsmall."
+    },
+    {
+      "name": "beycome_questionnaire_link",
+      "description": "Questionnaire stage — mint a pre-authorized link to the MLS questionnaire form (POST /api/mls/questionnaire-link).\n\nRequires a PAID listing (premium active, Flat/Yes) — whether the user just\npaid on the submit-property page (`beycome_submit_property_link`) or\nalready had a paid listing with the questionnaire still pending. Returns a pre-authorized link (expires in 7 days) — this tool\nonly hands back the URL; everything else happens in the browser, with no\nlogin step. Present the URL and tell the user that on the page they will:\n  1. review the pre-filled MLS questionnaire and complete any fields Beycome\n     couldn't pre-fill,\n  2. upload property photos and the required documents,\n  3. review and submit.\nAfter they submit, the listing goes live within about 48 hours, provided all\nthe paperwork clears.\n\nFailure modes to relay plainly: 403 — the token is not the owner's; 422 —\nthe listing is not paid yet, or the questionnaire was already submitted;\n401 — bad/missing token."
+    },
+    {
+      "name": "beycome_submit_property_link",
+      "description": "Listing-creation stage — mint a pre-authorized link to the submit-property page (POST /api/mls/submit-property-link).\n\nCall AFTER signing in (`beycome_signin_verify`). User-scoped — no prop_id\nexists yet. Returns a\npre-authorized link (expires in 7 days) — this tool only hands back the URL;\nthe listing is created in the browser, with no login step. Present the URL\nand tell the user that on the page they will:\n  1. fill out their property's information,\n  2. set a price,\n  3. choose a package and any add-ons,\n  4. pay.\nTell them to return to the chat once payment is complete.\n\nPrefill: the page accepts prefill params baked into the signed URL.\n  - list_address: the full property address. By this stage the user has\n    already told Claude their address (discovery ran on it), so ALWAYS pass\n    list_address so the page opens pre-filled.\n  - package: the page PRESET INDEX (1-4), not a payment reference —\n      1 = Basic $99\n      2 = Enhanced $399\n      3 = Concierge $999\n      4 = Basic + Title $199\n    WARNING: this is the page preset index, NOT an internal payPremiumOpt\n    reference number. Passing a payPremiumOpt reference here is wrong. Only\n    pass package if the user has clearly chosen a tier in chat; otherwise omit\n    it and let them pick on the page.\n\nFailure modes to relay plainly: 401 — bad/unverified token.\n\nThis page is THE way to create a listing — the property is created, priced,\nand paid for there; there is no in-chat alternative. After the user returns,\ncall `beycome_get_my_listings` to recover the new prop_id, then\n`beycome_questionnaire_link`."
+    },
+    {
+      "name": "beycome_get_my_listings",
+      "description": "Recovery stage — the signed-in user's properties (GET /properties).\n\nToken-scoped RESO list endpoint on the normal api base. Two main uses:\n  - After the user finishes the submit-property page\n    (`beycome_submit_property_link`): find the newly created listing\n    (typically the newest entry), CONFIRM the address with the user, then\n    use its id as ``prop_id`` for `beycome_questionnaire_link`.\n  - As the entry point for a returning user who already has listings (or\n    references \"my listing\" without an id): locate the listing and read its\n    status to pick the next step — paid but questionnaire pending →\n    `beycome_questionnaire_link`; already live → the post-publish tools\n    (`beycome_messages`, `beycome_showings`, `beycome_offers`)."
+    },
+    {
+      "name": "beycome_offers",
+      "description": "Post-publish stage — offers received on the owner's listings (GET /offers).\n\nUsed once a listing is live. Requires ``access_token``. Returns a paginated\nlist (20 per page; pass ``page`` to advance) of every offer across all of the\nsigned-in user's listings — each entry is the full offer record (buyer,\nprice, contingencies, dates, status). Read-only.\n\nThere is no server-side ``prop_id`` filter; to show offers for one listing,\nfilter client-side on each offer's ``prop_id``. Responding to an offer\n(accept / reject / counter) is not exposed here."
+    },
+    {
+      "name": "beycome_showings",
+      "description": "Post-publish stage — calendar of showings, open houses, and offer deadlines (GET /calendar/events).\n\nUsed once a listing is live. The API requires the date range, so it defaults\nto today → +90 days when omitted (``from_date`` / ``to_date`` are\n``YYYY-MM-DD``, with ``to_date`` on or after ``from_date``). ``prop_id``\nfilters to one listing; omit it for every listing the user owns.\n\nThe response always mixes ALL event kinds — each event carries a ``type``\nfield (``showing`` / ``open_house`` / ``offer``). There is no server-side\ntype filter; when the user asks for one kind, filter on that field yourself."
+    },
+    {
+      "name": "beycome_messages",
+      "description": "Post-publish stage — read the owner's buyer/inquiry messages (GET /messages).\n\nRead-only. Requires ``access_token``. Two modes:\n  - Omit ``thread`` → lists the ~20 most recent conversations, newest first,\n    one row per thread (the latest message in each). Useful fields per row:\n    ``address``, ``prop_id``, ``prop_status``, ``msg`` (latest text),\n    ``subject``, ``requested_by`` / ``email`` (the other party), ``thread``,\n    ``read_msg`` (\"0\" = unread), ``attachments``, and ``message_type``\n    (``sender`` if the owner wrote the latest message, else ``receiver``).\n  - Pass ``thread`` → returns that one conversation in full, oldest-first.\n    Use the ``thread`` value from a list row to drill in.\n\nThe list is not paginated here on purpose (the upstream ``page`` param is\noverloaded — it sets both page size and page number — so it is not exposed).\nSoft-deleted messages are dropped after paging, so a page may hold fewer than\n20 rows; that is not an error. The payload is a bare array under ``data``.\n\nA 401 means the token is no longer valid (logged out, or very old) —\nre-authenticate with `beycome_signin_start` then `beycome_signin_verify`.\nTo answer a\nmessage, use `beycome_reply_message`."
+    },
+    {
+      "name": "beycome_reply_message",
+      "description": "Post-publish stage — reply to a buyer/inquiry message (POST /messages/reply).\n\nSends a real message and queues a real email notification to the recipient,\nso the text you send is final — treat this as a live send, not a draft.\n\nALWAYS improve the user's drafted reply before sending: fix grammar,\nspelling, punctuation, capitalization, and formatting, and tighten wording\nfor a clear, professional tone — while preserving their meaning and intent.\nSend the corrected version, never the raw draft. When the user says \"reply\nsaying X\", treat X as a rough draft to polish, not literal text to send\nverbatim.\n\nRequires ``to_user_id`` (the counterparty), ``message``, and ``access_token``.\nFor a threaded reply pass the original ``thread`` verbatim and omit\n``subject`` (the server prefixes \"Re: <original subject>\"). To find\n``to_user_id``, open the conversation with `beycome_messages` and take the\nparticipant id that is not the signed-in owner.\n\nSuccess is 201 with ``data.id`` set to the new message id. Failures come back\nas 400 with a plain message: \"User not found.\" (bad ``to_user_id``), \"You\ncannot send a message to yourself.\" (``to_user_id`` is the sender), or\n\"Invalid parameters\" (e.g. empty/over-long ``message``). A 401 means the\ntoken is no longer valid — re-authenticate with `beycome_signin_start` then\n`beycome_signin_verify`."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:38:03.628Z",
+  "toolsPreviewStatus": "ok"
+}

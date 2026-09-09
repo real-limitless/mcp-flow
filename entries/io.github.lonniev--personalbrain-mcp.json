@@ -1,0 +1,380 @@
+{
+  "id": "io.github.lonniev/personalbrain-mcp",
+  "title": "personalbrain-mcp",
+  "description": "FastMCP server for TheBrain API — AI access to a personal knowledge graph, Tollbooth-monetized",
+  "summary": "FastMCP server for TheBrain API — AI access to a personal knowledge graph, Tollbooth-monetized",
+  "offersHint": "FastMCP server for TheBrain API — AI access to a personal knowledge graph, Tollbooth-monetized · Remote MCP (streamable-http) at https://personal-brain.fastmcp.app/mcp",
+  "version": "1.17.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://personal-brain.fastmcp.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://personal-brain.fastmcp.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/lonniev/thebrain-mcp",
+  "repository": {
+    "url": "https://github.com/lonniev/thebrain-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T18:14:26.390922Z",
+  "publishedAt": "2026-08-10T18:14:26.390922Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:29.144Z",
+    "sourceRepoAt": "2026-08-11T23:37:35.218Z",
+    "readmeAt": "2026-08-11T23:37:35.734Z",
+    "toolsAt": "2026-08-11T23:37:35.828Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonniev/thebrain-mcp",
+    "checkedAt": "2026-08-11T23:37:35.218Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonniev/thebrain-mcp/main/README.md",
+    "markdown": "# thebrain-mcp v1.16.3\n\n**The first city on the Lightning Turnpike.**\n\n[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![Python](https://img.shields.io/badge/Python-3.12+-green.svg)](https://www.python.org/)\n[![Horizon](https://img.shields.io/badge/Deployed_on-Horizon-purple.svg)](https://www.fastmcp.com/)\n\n<p align=\"center\">\n  <img src=\"docs/diagrams/thebrain-mcp-hero.svg\" alt=\"Claude connects to PersonalBrain through thebrain-mcp, powered by Lightning micropayments\" width=\"800\">\n</p>\n\nAn MCP server that gives AI agents read-write access to a personal knowledge graph — and pays for itself with Bitcoin Lightning micropayments.\n\n> *The metaphors in this project are drawn with admiration from* The Phantom Tollbooth *by Norton Juster, illustrated by Jules Feiffer (1961). Milo, Tock, the Tollbooth, Dictionopolis, and Digitopolis are creations of Mr. Juster's extraordinary imagination. We just built the payment infrastructure.*\n\n---\n\n## The First City\n\nEvery turnpike needs its first city. Before the booths can collect fares and the authority can stamp purchase orders, someone has to build a destination worth driving to.\n\nthebrain-mcp is that city — a [FastMCP](https://github.com/jlowin/fastmcp) service deployed on Horizon that bridges AI agents to [TheBrain](https://www.thebrain.com/), a personal knowledge graph of 9,000+ interconnected thoughts built over a decade. Every thought, link, attachment, and note operation maps directly to TheBrain's cloud API at [api.bra.in](https://api.bra.in).\n\nIt's also the proving ground for [Tollbooth DPYC™](https://github.com/lonniev/tollbooth-dpyc) — the first MCP server where every tool call is metered via Bitcoin Lightning micropayments. Pre-fund, use, top up. No subscriptions, no API keys tied to billing accounts, no fiat payment processors. The novel contribution: an MCP server architecture where the operator monetizes AI agent access through Lightning micropayments without ever pestering the client mid-conversation.\n\n## Getting Started\n\n### Connecting via Horizon MCP\n\nConnect any MCP-compatible client (Claude Desktop, Cursor, your own agent) to the live endpoint:\n\n```\nhttps://personal-brain.fastmcp.app/mcp\n```\n\nNo configuration needed — Horizon OAuth handles authentication automatically.\n\n### First Connection Walkthrough\n\n1. **`session_status`** — Check your current session state.\n2. Get your **patron npub** from the dpyc-oracle's `how_to_join()` tool — this is the npub you registered as a DPYC™ Citizen, your identity for credit operations.\n3. **Secure Courier onboarding:**\n   - Call `request_credential_channel(recipient_npub=<patron_npub>)` — opens a Secure Courier channel; sends a welcome DM to your Nostr client.\n   - Reply via your Nostr client with your credentials in JSON: `{\"api_key\": \"...\", \"brain_id\": \"...\"}`\n   - Call `receive_credentials(sender_npub=<patron_npub>)` — vaults your credentials and activates the session. A seed balance is granted automatically.\n4. **`list_brains`** → **`set_active_brain`** — Select which brain to work with.\n5. **`brain_query`** — Start exploring your knowledge graph.\n\n**Returning users:** call `receive_credentials(sender_npub=<patron_npub>)` — vault-first lookup activates instantly, no relay I/O needed.\n\n### Secure Courier\n\nCredentials are delivered via encrypted Nostr DMs — they never appear in the chat window. On first-time relay receipt, the service sends an `ncred1...` credential card back to the patron via DM for scan-and-paste reuse.\n\n**Human in the loop:** The patron must consciously approve each credential delivery via their Nostr client. Never auto-poll or auto-retry `receive_*` calls — each `receive_credentials` drains the relay destructively (NIP-09 deletion after pickup). Call it exactly once per credential delivery.\n\n## Credits Model\n\n| Category | Pricing hint | Examples |\n|----------|-------------|----------|\n| `free`   | 0 sats      | `session_status`, `check_balance`, `check_price` |\n| `read`   | 1 sat       | `get_thought`, `search_thoughts`, `get_note` |\n| `write`  | 5 sats      | `create_thought`, `create_link`, `update_thought` |\n| `heavy`  | 10 sats     | `brain_query`, `get_modifications` |\n\nActual prices are set dynamically by the operator's pricing model in Neon via `api_sats` per tool. Auth and balance tools are always free. First-time users receive a seed balance on onboarding — enough to explore without purchasing credits up front.\n\nCredits are issued as tranches with a `tranche_lifetime` (TTL). Tranches are consumed FIFO; expired tranches are pruned automatically. Use `check_balance` to see your balance, active tranches, and usage history. Top up via `purchase_credits` with Bitcoin Lightning.\n\n## Security\n\n- **Identity is a Nostr keypair** — users are identified by an `npub` (Nostr public key), not an email or username. The `nsec` (private key) stays with the patron — never shared, never sent to a service.\n- **Proof is a kind-27235 Schnorr-signed NIP-98 event** — every paid tool requires a `proof` parameter. The proof is a JSON-serialized Nostr event signed by the patron's nsec, binding their npub to the specific tool call.\n- **Human in the loop** — the patron must sign each proof via their Nostr client. Proofs are never auto-generated or cached by the agent. The proof cache (vault-backed since v0.9.2) stores verified proofs for ~1 hour; renewal requires a fresh request/receive cycle.\n- **Credentials via Secure Courier** — TheBrain API keys and brain IDs are delivered via NIP-44 encrypted Nostr DMs, vaulted in Neon Postgres, and never exposed in the chat window.\n\n## BrainQuery (BQL)\n\nA Cypher-subset query language purpose-built for TheBrain. Agents and humans express graph operations in the same formalism — full CRUD via `MATCH`, `CREATE`, `SET`, `MERGE`, and `DELETE`.\n\n```cypher\nMATCH (n {name: \"Projects\"})-[:CHILD]->(m) RETURN m\nMATCH (n) WHERE n.name =~ \"quarterly review\" RETURN n\nMATCH (p {name: \"Ideas\"}) CREATE (p)-[:CHILD]->(n {name: \"New Concept\"})\nMATCH (root {name: \"Company\"})-[:CHILD*1..3]->(d) WHERE d.name CONTAINS \"Budget\" RETURN d\n```\n\nVariable-length paths, multi-hop chains, compound `WHERE` with `AND`/`OR`/`NOT`/`XOR`, similarity search, and property existence checks. Full grammar in [BRAINQUERY.md](BRAINQUERY.md).\n\n## Troubleshooting\n\nWhen a tool call fails, **read the response** — it tells you what happened and what to do next. Credential lifecycle states are not errors; they are expected situations with clear guidance.\n\n| Situation | What to do |\n|-----------|------------|\n| **proof is required** | Call `request_npub_proof` then `receive_npub_proof` — a fresh request/receive cycle. The cache expires after ~1 hour. |\n| **Insufficient credit balance** | Call `purchase_credits` to top up. |\n| **Cold start / session not ready** | Retry in 10-15 seconds. Inline retry is available in v0.13.5+. |\n| **Credentials not found** | Follow the Secure Courier onboarding flow (step 3 above). |\n| **Upstream API error** | Only if the error explicitly mentions TheBrain API failure. Not a credential or billing issue. |\n\n**Don't Pester Your Customer:** Do NOT ask the patron to re-authenticate or re-do the Courier flow unless the error message specifically says credentials are missing or expired.\n\n## Self-Hosting\n\nFor local installation and setup, see [INSTALL.md](INSTALL.md) and [QUICKSTART.md](QUICKSTART.md).\n\nTo run your own instance, set these environment variables:\n\n#### Required\n\n| Variable | Purpose |\n|----------|---------|\n| `TOLLBOOTH_NOSTR_OPERATOR_NSEC` | Operator's Nostr secret key -- the single bootstrap key for identity, Secure Courier DMs, and audit signing |\n\nThis is the only env var required to start. Certified operators bootstrap their Neon database URL from the Authority via encrypted Nostr DM -- `NEON_DATABASE_URL` is not read from the environment.\n\n#### Optional Tuning\n\n| Variable | Purpose |\n|----------|---------|\n| `TOLLBOOTH_NOSTR_RELAYS` | Comma-separated relay URLs (overrides defaults) |\n| `THEBRAIN_API_URL` | TheBrain API base URL (default: `https://api.bra.in`) |\n| `SEED_BALANCE_SATS` | Free starter balance for new users (0 to disable) |\n| `CREDIT_TTL_SECONDS` | Tranche lifetime in seconds (default: 604800 = 7 days) |\n| `DPYC_REGISTRY_CACHE_TTL_SECONDS` | How long to cache the DPYC community registry (default: 300) |\n| `CONSTRAINTS_ENABLED` | `\"true\"` to enable constraint engine evaluation on tool calls |\n\n#### Credentials via Secure Courier (NOT env vars)\n\nAll secrets flow through Secure Courier -- they never appear as environment variables:\n\n| Credential | Delivery |\n|------------|----------|\n| TheBrain API key + brain ID | Patron delivers via encrypted Nostr DM |\n| BTCPay credentials (`btcpay_host`, `btcpay_api_key`, `btcpay_store_id`) | Operator delivers via Secure Courier |\n\n> **Note:** `THEBRAIN_API_KEY` is not an environment variable. Patrons deliver their TheBrain API key and brain ID via Secure Courier (encrypted Nostr DM). Only the operator's nsec is configured as an env var.\n\n## Tool Surface\n\nThe server exposes the standard Tollbooth DPYC™ operator surface via\n`register_standard_tools()` from [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc),\nplus its domain tools. Tools fall into three paths in the DPYC three-actor\ntopology (Operator / Authority / Oracle):\n\n| Path | Tools | Status |\n|------|-------|--------|\n| Hot (local ledger) | `check_balance`, `account_statement`, `account_statement_infographic`, `restore_credits`, `service_status` | Implemented — delegates to server.py |\n| Hot (Secure Courier) | `session_status`, `request_credential_channel`, `receive_credentials`, `forget_credentials` | Implemented — Nostr credential delivery with credential card DM |\n| Delegation (Authority) | `purchase_credits`, `check_payment` | Implemented — auto-certifies via MCP-to-MCP |\n| Delegation (Authority) | `certify_credits`, `register_operator`, `operator_status` | Stub — connect to the Authority MCP directly |\n| Delegation (Oracle) | `lookup_member`, `how_to_join`, `get_tax_rate`, `about`, `network_advisory` | Implemented — MCP-to-MCP via OracleClient |\n\nPayment processing auto-certifies via the Authority (server-to-server OAuth). Secure Courier delivers encrypted credentials via Nostr DMs with automatic credential card (`ncred1...`) DM-back on first receipt. Oracle community tools route directly to the DPYC™ Oracle — free and unauthenticated.\n\n## Architecture\n\nThe Tollbooth DPYC™ ecosystem is a three-party protocol spanning three repositories:\n\n| Repo | Role |\n|------|------|\n| [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) | The institution — tax collection, Schnorr signing, purchase order certification |\n| [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) | The booth — operator-side credit ledger, BTCPay client, tool gating |\n| [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) | The concierge — community onboarding, tax rates, membership lookup |\n| **thebrain-mcp** (this repo) | The first city — reference MCP server powered by Tollbooth DPYC™ |\n\nSee the [Three-Party Protocol diagram](https://github.com/lonniev/tollbooth-authority/blob/main/docs/diagrams/tollbooth-three-party-protocol.svg) for the full architecture. The [operator-side flow](docs/diagrams/tollbooth-protocol-flow.svg) is also available.\n\n## Project Structure\n\n```\nthebrain-mcp/\n├── src/thebrain_mcp/        # Server source, BQL engine, Tollbooth\n├── tests/                   # Test suite (465+ tests)\n├── fastmcp.json             # Horizon deploy entrypoint (src/thebrain_mcp/server.py)\n├── pyproject.toml           # Package metadata and dependencies\n├── BRAINQUERY.md            # BQL grammar and reference\n├── INSTALL.md / QUICKSTART.md  # Local install and setup\n├── docs/diagrams/           # Architecture and protocol flow diagrams\n├── LICENSE                  # Apache License 2.0\n└── NOTICE                   # Attribution notice\n```\n\n## Prior Art & Attribution\n\nThe methods, algorithms, and implementations contained in this repository may represent original work by Lonnie VanZandt, first published on February 16, 2026. This public disclosure establishes prior art under U.S. patent law (35 U.S.C. 102).\n\nAll use, reproduction, or derivative work must comply with the Apache License 2.0 included in this repository and must provide proper attribution to the original author per the [NOTICE](NOTICE) file.\n\n### How to Attribute\n\nIf you use or build upon this work, please include the following in your documentation or source:\n\n    Based on original work by Lonnie VanZandt and Claude.ai\n    Originally published: February 16, 2026\n    Source: https://github.com/lonniev/thebrain-mcp\n    Licensed under Apache License 2.0\n\nVisit the technologist's virtual cafe for Bitcoin advocates and coffee aficionados at [stablecoin.myshopify.com](https://stablecoin.myshopify.com).\n\n### Patent Notice\n\nThe author reserves all rights to seek patent protection for the novel methods and systems described herein. Public disclosure of this work establishes a priority date of February 16, 2026. Under the America Invents Act, the author retains a one-year grace period from the date of first public disclosure to file patent applications.\n\n**Note to potential filers:** This public repository and its full Git history serve as evidence of prior art. Any patent application covering substantially similar methods filed after the publication date of this repository may be subject to invalidation under 35 U.S.C. 102(a).\n\n## DPYC™ Ecosystem\n\n- [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) — Python SDK (vault, auth, pricing, Lightning, Nostr identity)\n- [dpyc-community](https://github.com/lonniev/dpyc-community) — Governance registry: membership, advisories, threat model\n- [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) — Community concierge (free onboarding + member lookup)\n- [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) — Certification backbone (Schnorr-signed certificates)\n- [tollbooth-sample](https://github.com/lonniev/tollbooth-sample) — Sample Operator (canonical template)\n- [tollbooth-pricing-studio](https://github.com/lonniev/tollbooth-pricing-studio) — iOS pricing-model editor / operator console\n- [cypher-mcp](https://github.com/lonniev/cypher-mcp) — Monetized graph answers: named Cypher templates over Neo4j/AuraDB\n- [schwab-mcp](https://github.com/lonniev/schwab-mcp) — Charles Schwab brokerage data\n- [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) — TheBrain personal knowledge graph\n- [excalibur-mcp](https://github.com/lonniev/excalibur-mcp) — X/Twitter posting\n- [taxsort-mcp](https://github.com/lonniev/taxsort-mcp) — Tax classification + Cloudflare Pages UI\n- [optionality-mcp](https://github.com/lonniev/optionality-mcp) — Options analytics (brokerage-data operator)\n- [tollbooth-oauth2-collector](https://github.com/lonniev/tollbooth-oauth2-collector) — OAuth2 callback handler (advocate service)\n- [tollbooth-shortlinks](https://github.com/lonniev/tollbooth-shortlinks) — URL shortener utility\n\n## Further Reading\n\n[The Phantom Tollbooth on the Lightning Turnpike](https://stablecoin.myshopify.com/blogs/our-value/the-phantom-tollbooth-on-the-lightning-turnpike) — the full story of how we're monetizing the monetization of AI APIs, and then fading to the background.\n\n## Trademarks\n\nDPYC™, Tollbooth DPYC™, and Don't Pester Your Customer™ are trademarks of Lonnie VanZandt. See the [TRADEMARKS.md](https://github.com/lonniev/dpyc-community/blob/main/TRADEMARKS.md) in the dpyc-community repository for usage guidelines.\n\n## License\n\nApache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.\n\n---\n\n*Because in the end, the tollbooth was never the destination. It was always just the beginning of the journey.*\n",
+    "fetchedAt": "2026-08-11T23:37:35.734Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "brain_check_balance",
+      "description": "Check a patron's credit balance at this operator.\n\nThis is the patron's spending balance — credits purchased via\nLightning for tool calls at this operator. For the operator's\nown balance at the Authority (needed to certify patron purchases),\nuse authority_check_balance instead.\n\nFree — no credits required. Proof of npub ownership is required\nto prevent anyone-with-the-registry from enumerating balances."
+    },
+    {
+      "name": "brain_purchase_credits",
+      "description": "Buy credits via Bitcoin Lightning.\n\nCreates a Lightning invoice. Pay it with any Lightning wallet,\nthen call check_payment to confirm. Proof of npub ownership is\nrequired so credits land in the correct ledger.\n\nFree — no credits required to call."
+    },
+    {
+      "name": "brain_check_payment",
+      "description": "Check the payment status of a Lightning invoice.\n\nCall after paying the invoice from purchase_credits.\nFree — no credits required. Proof of npub ownership is required\nto prevent credit-grant front-running by an observer of the\ninvoice ID."
+    },
+    {
+      "name": "brain_restore_credits",
+      "description": "Credit a patron's ledger from a BTCPay-settled invoice.\n\n**RESTRICTED to the operator** — the operator owns the books and is\nthe only party who can issue a manual credit grant. Patrons who\nbelieve they paid but never got credits must escalate to the\noperator's support, who then invokes this tool on their behalf.\n\nUse cases: cold-start vault races during check_payment, ncred\ndelivery hiccups, patrons closing Top-Off sheets before settle,\nany infrastructure incident that left an invoice settled at BTCPay\nbut uncredited on the operator's ledger.\n\nIdempotent — if the invoice is already credited (in the patron's\n``credited_invoices``), returns success with credits_granted=0."
+    },
+    {
+      "name": "brain_account_statement",
+      "description": "Generate a patron's account statement at this operator.\n\nReturns the patron's purchase history, active credit tranches,\nper-tool usage breakdown, and recent daily usage logs. This is\nthe patron's spending account — not the operator's Authority\ntax balance.\n\nFree — no credits consumed. Proof of npub ownership is required\nto prevent statement-scraping of arbitrary patrons."
+    },
+    {
+      "name": "brain_account_statement_infographic",
+      "description": "Generate a visual SVG infographic of your account statement.\n\nReturns the same data as account_statement, rendered as a dark-themed\nSVG graphic with balance hero, metrics cards, health gauge, tranche\ntable, and tool usage breakdown. Costs 1 api_sat per call. Proof is\nverified by ``debit_or_deny`` before any cost is incurred."
+    },
+    {
+      "name": "brain_report_issue",
+      "description": "File a field report about this service as a GitHub issue on the operator's repo.\n\nFound a tool's metadata or response wrong or confusing? Report it where the tool\nlives. The **author of record is your npub** — no npub / no proof, no issue — and it\nis stamped into the issue so the report is attributed to you, not the operator. Costs\na small fee (a free write to an issue tracker would be abused). The report is PUBLIC\nand goes to the maintainers' normal triage; nothing is verified here.\n\nReturns the filed issue's repo, number, and url. If this operator has not enabled\nfield reports, returns an \"issue reporting not configured\" situation and you are not\ncharged."
+    },
+    {
+      "name": "brain_service_status",
+      "description": "Check the health and configuration of this service. Free."
+    },
+    {
+      "name": "brain_get_operator_onboarding_status",
+      "description": "Report this operator's configuration readiness.\n\nShows which operator settings are configured, which are missing,\nand how to deliver each missing value. For patron-level credential\nstatus, use get_patron_onboarding_status instead. Free."
+    },
+    {
+      "name": "brain_get_patron_onboarding_status",
+      "description": "Report a patron's credential readiness for this operator.\n\nFor set-once services (eXcalibur, TheBrain), shows which patron\nsecrets are configured and which are missing. For dynamic/OAuth2\nservices (Schwab), reports that no patron credentials are needed.\nFree. Proof of npub ownership is required because credential\npresence is sensitive information about the patron's setup."
+    },
+    {
+      "name": "brain_session_status",
+      "description": "Check operator readiness. Returns the operator lifecycle\nstate and clear guidance on what to do next. Free.\n\nLifecycle states:\n- ready: Operator is warm and fully operational — vault AND pricing\n  model verified. Proceed with tool calls.\n- warming_up: Operator is initializing (cold start). Try a tool call — it will warm up on demand.\n- misconfigured: Persistence rejected a query with a permanent SQL\n  error (permission denied, missing relation). Paid tools will fail\n  until the operator repairs the database — retrying does not help.\n- quota_exceeded: The persistence provider (Neon) answered HTTP 402 —\n  the operator's database has exhausted its compute/storage quota, so\n  the books are locked for billing. Paid tools fail; retrying does NOT\n  help. The operator's Authority must restore capacity (upgrade the\n  plan or wait for the quota reset). Free tools remain available.\n- not_registered: Operator has no Authority relationship yet. Call register_operator first.\n- no_identity: Operator nsec is not configured. Deployment issue."
+    },
+    {
+      "name": "brain_request_credential_channel",
+      "description": "Open a Secure Courier channel for credential delivery.\n\nThis is the CREDENTIAL-DELIVERY flow — use it to hand over a service\nsecret (API keys, tokens). To merely prove you control an npub (the\nusual answer to a ``proof_required`` error), use ``request_npub_proof``\ninstead. Note: dynamic/OAuth2 services (e.g. Schwab) need NO couriered\nsecret — check ``service_status`` first.\n\nSends a welcome DM with a credential template. The recipient\nmust read the DM in their Nostr client, fill in the fields,\nand reply manually. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user what to do.\nWait for the user to confirm they have replied before calling\n``receive_credentials``. Do NOT poll or retry — each\n``receive_credentials`` call destructively drains the relay\nmailbox."
+    },
+    {
+      "name": "brain_receive_credentials",
+      "description": "Pick up credentials from the Secure Courier.\n\nCompletes the CREDENTIAL-DELIVERY flow (the ownership-proof\ncounterpart is ``receive_npub_proof``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response you want with\n``(sender_npub, service, dpop_token)`` and the tool drains ONLY the\nrendezvous relay that channel was pinned to. Every popped DM with the\nwrong session phrase is deleted and its sender is NACK'd; the first DM\nwith the matching phrase is accepted (ACK'd) and the scan stops. If\nnone match, the queue is drained and a ``courier_not_found`` result is\nreturned. Do NOT poll, loop, or retry.\n\nIf a credential_card (ncred1...) is provided, it is redeemed directly\nwithout any relay access (dpop_token not required for that path). On\nsuccess, the payment processor client is reinitialized from the new\ncredentials — no server restart needed."
+    },
+    {
+      "name": "brain_forget_credentials",
+      "description": "Delete vaulted credentials for a specific service and npub.\n\nFor operator credentials, pass the operator's own npub. For patron\ncredentials, pass the patron's npub. Always requires proof of\nnpub ownership — a deletion is as destructive as a write."
+    },
+    {
+      "name": "brain_request_patron_credentials",
+      "description": "Open a Secure Courier channel for patron credential delivery.\n\nSends a welcome DM with a credential template to the patron.\nFree."
+    },
+    {
+      "name": "brain_receive_patron_credentials",
+      "description": "Pick up patron credentials from the Secure Courier.\n\nDeterministic, one-shot retrieval: name the response with\n``(sender_npub, dpop_token)`` and the tool drains ONLY the pinned\nrendezvous relay for that channel, stopping at the matching DM.\nProvide an ncred1... credential_card to redeem directly instead\n(dpop_token not required for that path). Do NOT poll or retry.\nFree."
+    },
+    {
+      "name": "brain_update_patron_credential",
+      "description": "Add or update a single patron credential field.\n\nMerges into existing stored credentials without affecting\nother fields. Useful for setting an account identifier\nafter OAuth, changing a default brain, etc. Free. Proof of\nnpub ownership is required — this is a write to the patron's\nsensitive credential vault."
+    },
+    {
+      "name": "brain_update_operator_credential",
+      "description": "Add or update a single operator secret field.\n\nMerges into the operator's stored credentials without touching the\nothers — the field-level counterpart to re-delivering the whole\nbundle over Secure Courier. Use it to rotate one secret (a reissued\n``btcpay_api_key``, say) without restating the six you did not\nchange, where any field omitted from a courier reply is destroyed.\n\nThe value is never echoed back. RESTRICTED to the operator —\nrequires proof (nsec-signed kind-27235 or a cached dpop_token\nphrase); patron proofs are rejected."
+    },
+    {
+      "name": "brain_delete_patron_credential",
+      "description": "Remove a single patron credential field.\n\nDeletes one field from stored credentials without affecting\nother fields. Free. Proof of npub ownership is required —\nthis is a write to the patron's sensitive credential vault."
+    },
+    {
+      "name": "brain_get_patron_credential_fields",
+      "description": "List stored patron credential field names (not values).\n\nReturns the names of fields stored for a patron, plus each\nfield's ``delivered_at`` ISO-8601 timestamp when known (null\nfor secrets vaulted before timestamps were recorded). Values\nare never exposed — use this to verify which fields are\nconfigured and how old each one is. Free. Proof of npub\nownership is required: the list of configured fields is itself\nsensitive (reveals which integrations a patron has set up)."
+    },
+    {
+      "name": "brain_request_npub_proof",
+      "description": "Request npub ownership proof from a patron via Nostr DM.\n\nThis is the npub-OWNERSHIP-PROOF flow — use it when a call returns\n``proof_required``. It proves the caller controls an npub; it does\nNOT deliver any service secret. To hand an operator its API keys or\nOAuth secrets, use ``request_credential_channel`` instead.\n\nSends a challenge DM that the patron must sign and reply to\nusing their Nostr client. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user to check their\nNostr client and reply to the challenge. Wait for the user to\nconfirm they have replied before calling ``receive_npub_proof``.\nDo NOT poll or retry — each ``receive_npub_proof`` call\ndestructively drains the relay mailbox.\n\n**Returns** a ``dpop_token`` — the demonstrated-proof-of-possession\ntoken that the calling application MUST remember and pass as the\n``dpop_token`` parameter on every subsequent paid tool call. The MCP\ndoes not retain this value across restarts.\n\n**Lifecycle:** The cached proof expires after the patron's\nchosen duration. When it expires, call ``request_npub_proof``\nagain for a fresh challenge, then wait for the user, then\ncall ``receive_npub_proof``.\n\nFree."
+    },
+    {
+      "name": "brain_receive_npub_proof",
+      "description": "Receive npub ownership confirmation from a patron.\n\nCompletes the npub-OWNERSHIP-PROOF flow (the credential-delivery\ncounterpart is ``receive_credentials``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response with\n``(patron_npub, dpop_token)`` — the ``dpop_token`` being the value\nreturned by ``request_npub_proof``. The tool drains ONLY the pinned\nrendezvous relay that challenge was published on, stopping at the DM\nwhose phrase matches. Mismatched DMs are deleted and NACK'd (without\nrevealing the expected phrase). If called before the user replies,\ntheir message will never be found. Do NOT poll, loop, or retry.\n\nThe signed DM itself proves npub ownership (the patron's nsec\nsigned it). On success, returns the ``dpop_token`` — the same\ntoken. The calling application MUST remember it and pass it as the\n``dpop_token`` parameter on every subsequent paid tool call. The\nproof (a hash of the token) is stored in the vault keyed by that\nhash — the MCP never stores the raw token itself. Free."
+    },
+    {
+      "name": "brain_check_proof_status",
+      "description": "Check whether a previously-cached dpop_token is still valid.\n\nMirrors ``check_oauth_status`` for the npub-proof flow: a calling\nagent can ask \"will my next paid call accept this dpop_token?\"\nbefore burning credits on a guaranteed failure.\n\nFree, no side effects — does not evict the cache or touch relays."
+    },
+    {
+      "name": "brain_oracle_how_to_join",
+      "description": "Get DPYC onboarding instructions from the Oracle. Free."
+    },
+    {
+      "name": "brain_oracle_get_tax_rate",
+      "description": "Get the current DPYC certification tax rate. Free."
+    },
+    {
+      "name": "brain_oracle_lookup_member",
+      "description": "Look up a DPYC community member by npub. Free."
+    },
+    {
+      "name": "brain_oracle_about",
+      "description": "Describe the DPYC ecosystem via the Oracle. Free."
+    },
+    {
+      "name": "brain_oracle_network_advisory",
+      "description": "Get active network advisories from the Oracle. Free."
+    },
+    {
+      "name": "brain_check_authority_balance",
+      "description": "Check this operator's tax balance at the Authority.\n\nReturns the sats available for certifying patron credit purchases.\nWhen this balance reaches zero, patron top-ups cannot be certified\nand the operator must call purchase_credits on the Authority.\n\nThis is the operator's own funding — not a patron balance. Free."
+    },
+    {
+      "name": "brain_get_pricing_model",
+      "description": "Get the active pricing model for this operator. Free.\n\nIf no model exists, self-initializes a scaffold with all\nregistered tools at 0 sats.  No economic data from code."
+    },
+    {
+      "name": "brain_set_pricing_model",
+      "description": "Set the active pricing model. RESTRICTED to operator.\n\nRequires a valid proof (Schnorr-signed kind-27235 event)\nproving the caller holds the operator's nsec."
+    },
+    {
+      "name": "brain_reset_pricing_model",
+      "description": "Erase all pricing models and restore a viable default.\n\nDeletes every stored model, then self-initializes a fresh one\nfrom the tool registry — all tools at 0 sats with proper UUIDs.\nReturns the new model.\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "brain_request_adoption",
+      "description": "Ask a chosen Authority to adopt this operator (deferred courtship).\n\nRESTRICTED to the operator — requires proof the caller controls this\noperator's npub. Resolves the Authority's MCP endpoint from the\ncommunity registry, mints an inline ownership proof with this\noperator's nsec, and delivers the request MCP-to-MCP. The Authority\nrecords it as pending; its owner approves on their own time. Poll\n``adoption_status`` for progress; the operator flips to ``ready``\nonce the Authority provisions it."
+    },
+    {
+      "name": "brain_adoption_status",
+      "description": "Check this operator's adoption-request status at a chosen Authority.\n\nFree. Polls the Authority MCP-to-MCP for the status of this operator's\nrequest (pending / approved / rejected / provisioned)."
+    },
+    {
+      "name": "brain_restore_neon_schema",
+      "description": "Re-run ``ensure_schema()`` on every NeonVault this operator uses.\n\nDiagnostic / recovery tool for the case where the Neon HTTP SQL API\nis returning persistent 4xx errors and the operator suspects the\nschema isn't there or grants are wrong. Idempotent — uses\n``CREATE TABLE IF NOT EXISTS`` so a successful re-run is harmless.\n\nReturns the per-step result. If any step raises, surfaces the Neon\nerror message inline (0.31.0 reads the SQL error body that earlier\nwheels swallowed behind ``raise_for_status``).\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "brain_list_canonical_identities",
+      "description": "Return canonical (tool_id, mcp_name, …) for every tool the wheel exposes.\n\nThe authoritative source for any client (Studio, agents, FE)\nthat needs to know how this MCP identifies its tools.\nReconcile uses this output to UUID-join against the stored\npricing model — no name-based UUID derivation, no guessing.\n\nIncludes both ToolIdentity-seeded tools and any UUID recorded by\n``@paid_tool`` that is missing from the registry. The latter appear\nwith ``registered: false`` (and in the top-level ``unregistered``\narray) so Reconcile can flag deploy drift instead of silently\nreporting clean when a live tool was never seeded (#174).\n\nIf the operator renames a function or rebrands a slug, the\nmcp_name in this output changes but tool_id stays. That's the\nwhole point of the canonical-UUID design.\n\nAlso diffs the live FastMCP wire surface against the registry.\nTools exposed on the wire but absent from the registry appear in\n``unregistered`` so Reconcile can flag deploy drift instead of\nsilently under-reporting (issue #175).\n\nFree, no side effects."
+    },
+    {
+      "name": "brain_get_nostr_profile",
+      "description": "Read an npub's public Nostr profile (NIP-01 kind-0 metadata).\n\nFree, no proof — the data is already public on relays. Returns the\nlatest metadata fields (name, display_name, about, picture, banner,\nnip05, website, lud16) or an empty profile if none is published."
+    },
+    {
+      "name": "brain_publish_nostr_profile",
+      "description": "Publish a CLIENT-SIGNED kind-0 profile to relays for an npub.\n\nThe wheel never holds a patron nsec. The frontend signs the kind-0\nmetadata event with the patron's session key or a NIP-07 extension and\npasses the signed event (JSON) here; the wheel verifies the signature\nmatches the npub, then relays it to public relays. The signature is the\nauthorization — no proof token, no key custody. Free."
+    },
+    {
+      "name": "brain_check_price",
+      "description": "Preview the effective cost of a tool call.\n\nShows the base cost and any constraint effects (discounts, free\ntrials, surge pricing). Free — no credits required."
+    },
+    {
+      "name": "brain_list_constraint_types",
+      "description": "List all available constraint types and their parameter schemas.\n\nReturns the type, category, description, and parameter specs for\nevery constraint that can be used in a pricing pipeline.\nFree — no credits required."
+    },
+    {
+      "name": "brain_mint_coupon",
+      "description": "Create a new operator-owned discount coupon."
+    },
+    {
+      "name": "brain_list_coupons",
+      "description": "List every coupon this operator has minted (newest first).\n\nEach row carries the current ``times_redeemed`` counter — the\nStudio renders a progress bar from this against ``total_uses``.\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "brain_update_coupon",
+      "description": "Patch a coupon's editable fields.\n\nPass only the fields you want to change.  To set a cap to\nunlimited (NULL in the schema), pass ``clear_uses_per_patron=true``\nor ``clear_total_uses=true``.  Renaming the code is allowed —\nexisting patron redemption rows survive (they key on coupon id).\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "brain_delete_coupon",
+      "description": "Delete a coupon.  Cascades to all patron redemptions.\n\nAny chain step referencing the deleted coupon_id becomes a\nno-op (the constraint returns neutral on unknown ids) — the\nStudio surfaces orphan references as warnings.\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "brain_redeem_coupon",
+      "description": "Claim a coupon by its name (the code the operator shared).\n\nLooks up the operator's coupon by ``code``, validates the window\nand total cap, and records a per-patron redemption row.\nSubsequent paid tool calls on this MCP auto-apply the discount\nuntil ``uses_per_patron`` is exhausted.\n\nFree — no credits required.  Requires proof of ``npub``.\nIdempotent: redeeming the same code twice returns the existing\nredemption."
+    },
+    {
+      "name": "brain_list_my_coupons",
+      "description": "List the coupons this patron has redeemed on this operator.\n\nReturns both active and exhausted redemptions with a per-row\n``status`` (``active`` / ``window_closed`` / ``patron_limit`` /\n``total_limit``).  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "brain_forget_coupon",
+      "description": "Remove a coupon from this patron's redemption list.\n\nCosmetic only — the coupon itself still exists at the operator,\nand the patron can re-redeem the same code later while the\nwindow allows.  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "brain_notarize_ledger",
+      "description": "Build a Merkle tree of all patron balances and submit the root\nto Bitcoin via OpenTimestamps.\n\nOperator-only background task. Bitcoin confirmation takes 1-6 hours.\nFree — no credits required."
+    },
+    {
+      "name": "brain_get_notarization_proof",
+      "description": "Generate a Merkle inclusion proof that a patron's balance was\nincluded in a Bitcoin-notarized snapshot."
+    },
+    {
+      "name": "brain_list_notarizations",
+      "description": "List recent Bitcoin notarization records."
+    },
+    {
+      "name": "brain_list_brains",
+      "description": "List available brains."
+    },
+    {
+      "name": "brain_get_brain",
+      "description": "Get details about a specific brain. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_set_active_brain",
+      "description": "Set the active brain for subsequent operations. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_brain_stats",
+      "description": "Get statistics about a brain. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_create_thought",
+      "description": "Create a new thought with optional type, color, label, and parent link. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_thought",
+      "description": "Get details about a specific thought. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_thought_by_name",
+      "description": "Exact name lookup — returns the first thought matching the name exactly. Requires npub for credit billing.\n\n⚠️ NOT AUTHORITATIVE. Backed by the vendor's name index, which is known to be\nincomplete on large brains (upstream: TheBrainTech/thebrain-api-quickstart-python#1):\na hit is real, but a MISS is NOT proof the thought is absent. Never conclude a\nthought does not exist from a null result here — verify by ID with get_thought, or\nby graph traversal from a known neighbour, before creating a duplicate."
+    },
+    {
+      "name": "brain_update_thought",
+      "description": "Update a thought's properties and/or its parent in one call. Requires npub for credit billing.\n\nSets any subset of {name, label, colors, kind, ac_type, type, parent} on a single\nthought. Reparenting via ``new_parent_id`` *replaces* the existing parent link (the old\nparent child-link is deleted and a new one created); it does not add an additional parent."
+    },
+    {
+      "name": "brain_delete_thought",
+      "description": "Permanently delete a thought by ID. Cannot be undone. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_search_thoughts",
+      "description": "Full-text search across thought names and content. Requires npub for credit billing.\n\n⚠️ NOT AUTHORITATIVE. Backed by the vendor's search index, which is incomplete on\nlarge brains (upstream: TheBrainTech/thebrain-api-quickstart-python#1) — it returns\nempty for the majority of thoughts that provably exist. A hit is real; an empty\nresult is NOT proof of absence. Use for discovery of older/established thoughts, not\nas an existence check — verify by ID with get_thought before acting on \"not found\"."
+    },
+    {
+      "name": "brain_get_thought_graph",
+      "description": "Get a thought's full connection graph. Requires npub for credit billing.\n\n⚠️ NOT AUTHORITATIVE FOR RECENT CHANGES. Served through the vendor's cached graph\nlayer (Azure App Service response cache), which lags writes by hours-to-days and\nreflects creates but NOT updates or deletes — it can return renamed/retyped thoughts\nwith their old values and even serve thoughts that were already deleted (upstream:\nTheBrainTech/thebrain-api-quickstart-python#2). Use this for fast traversal of\nestablished structure and for finding older thought IDs. Do NOT use it to verify a\nrecent write — confirm mutations by ID with get_thought, which reads the authoritative\ncommand store."
+    },
+    {
+      "name": "brain_get_thought_graph_paginated",
+      "description": "Cursor-based paginated traversal of a thought's connections. Requires npub for credit billing.\n\n⚠️ NOT AUTHORITATIVE FOR RECENT CHANGES. Same cached graph layer as get_thought_graph\n(upstream: TheBrainTech/thebrain-api-quickstart-python#2) — lags writes by hours-to-days\nand does not reflect updates or deletes. Use for traversal/ID discovery, never as\nread-after-write verification; confirm mutations by ID with get_thought."
+    },
+    {
+      "name": "brain_get_types",
+      "description": "List all thought types defined in the brain. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_tags",
+      "description": "Get all tags in a brain. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_create_link",
+      "description": "Create a relationship between two thoughts by ID. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_update_link",
+      "description": "Update link properties. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_link",
+      "description": "Get details about a specific link. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_delete_link",
+      "description": "Permanently delete a link by ID. Cannot be undone. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_add_file_attachment",
+      "description": "Add a file attachment to a thought. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_add_url_attachment",
+      "description": "Add a URL attachment to a thought. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_attachment",
+      "description": "Get metadata about an attachment. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_attachment_content",
+      "description": "Get the binary content of an attachment. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_delete_attachment",
+      "description": "Delete an attachment. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_list_attachments",
+      "description": "List all attachments for a thought. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_get_note",
+      "description": "Get the note content for a thought. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_create_or_update_note",
+      "description": "Create or update a note with markdown content. Requires npub for credit billing.\n\nNote style. Prefer plain prose. Reserve bold for rare critical flags only — a ⚠️ caution, an unconfirmed-status note — never for ordinary emphasis, labels, or whole clauses. Overusing bold buries the links and makes notes hard to scan; let thought-links and source links carry the visual emphasis. Put web sources on a quiet \"Sources:\" line rather than bolding labels like \"TL;DR\" or \"Source\".\nLinking to other thoughts. To link from inside a note to another thought, write a wikilink: [[Thought Name]] or [[Thought Name|display text]]. The tool resolves it to the correct in-plex thought link automatically — do not hand-write brain:// URLs or paste GUIDs. If a name is ambiguous or not found, the tool leaves the [[...]] literal and returns it in unresolved; disambiguate by pinning the id with [[#<thoughtId>]]. For external web pages, use normal markdown links: [text](https://…)."
+    },
+    {
+      "name": "brain_append_to_note",
+      "description": "Append content to an existing note. Requires npub for credit billing.\n\nNote style. Prefer plain prose. Reserve bold for rare critical flags only — a ⚠️ caution, an unconfirmed-status note — never for ordinary emphasis, labels, or whole clauses. Overusing bold buries the links and makes notes hard to scan; let thought-links and source links carry the visual emphasis. Put web sources on a quiet \"Sources:\" line rather than bolding labels like \"TL;DR\" or \"Source\".\nLinking to other thoughts. To link from inside a note to another thought, write a wikilink: [[Thought Name]] or [[Thought Name|display text]]. The tool resolves it to the correct in-plex thought link automatically — do not hand-write brain:// URLs or paste GUIDs. If a name is ambiguous or not found, the tool leaves the [[...]] literal and returns it in unresolved; disambiguate by pinning the id with [[#<thoughtId>]]. For external web pages, use normal markdown links: [text](https://…)."
+    },
+    {
+      "name": "brain_get_modifications",
+      "description": "The brain's authoritative, uncached change-log. Requires npub for credit billing.\n\nUnlike get_thought_graph and search (Azure-cached, stale for recent writes),\nthis feed reflects every operation promptly — CREATED (101), DELETED (102),\nCHANGED_NAME (103), SET_TYPE (203), MOVED_LINK (402), etc. — with old→new\nvalues and timestamps. Use it for two things:\n\n1. **Confirm a write landed** — after a mutation, query with start_time set to\n   just before it and check for the matching entry. This is the authoritative\n   read-after-write check (stronger than the cached graph, and it confirms\n   deletes and type/link changes the graph hides). The heavy mutating tools\n   also expose a ``confirm=True`` flag that does this for you.\n2. **Discover recent / peer activity** — \"what changed since T\" so an agent can\n   pick up where others left off.\n\n⚠️ ``userId`` is the TheBrain *account* owner, shared by every agent using this\noperator's key — it distinguishes human-desktop vs API activity, NOT one agent\nfrom another. Peer discovery here is by time + content, not by author."
+    },
+    {
+      "name": "brain_brain_query",
+      "description": "Primary tool for pattern-based operations on TheBrain. Requires npub for credit billing.\n\nAccepts BrainQuery (BQL) -- a Cypher subset supporting MATCH, WHERE, CREATE,\nSET, MERGE, DELETE, and RETURN.\n\n⚠️ Name-based matching (MATCH by name, WHERE CONTAINS/STARTS WITH/=~) resolves through\nthe vendor's search/name index, which is incomplete on large brains\n(TheBrainTech/thebrain-api-quickstart-python#1): a query may fail to match a thought\nthat provably exists. An empty match set is NOT proof of absence — do not CREATE/MERGE a\nnode on the assumption it is missing without an ID-based check (get_thought). Matching by\nID is reliable; matching by name inherits the index's blind spots."
+    },
+    {
+      "name": "brain_morph_thought",
+      "description": "Atomically reparent and/or retype a thought in one operation. Requires npub for credit billing.\n\nReparenting *replaces* the thought's existing parent link (the old parent child-link is\ndeleted and a new one created); it does not add an additional parent. To also set the\nthought's name or label in the same call, use update_thought (which now accepts new_parent_id)."
+    },
+    {
+      "name": "brain_scan_orphans",
+      "description": "Scan for orphaned thoughts with zero connections and optionally rescue them. Requires npub for credit billing."
+    },
+    {
+      "name": "brain_event_for_person",
+      "description": "Create an Event+Person+Day in one action. Requires npub for credit billing."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:35.828Z",
+  "toolsPreviewStatus": "ok"
+}

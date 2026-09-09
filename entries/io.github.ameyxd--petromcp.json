@@ -1,0 +1,59 @@
+{
+  "id": "io.github.ameyxd/petromcp",
+  "title": "petromcp",
+  "description": "Local-first MCP server: read LAS well logs and DLIS files from your own disk.",
+  "summary": "Local-first MCP server: read LAS well logs and DLIS files from your own disk.",
+  "offersHint": "Local-first MCP server: read LAS well logs and DLIS files from your own disk. · Packages: pypi:petroleum-mcp",
+  "version": "0.8.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "petroleum-mcp",
+    "version": "0.8.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "petroleum-mcp",
+      "version": "0.8.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/ameyxd/petromcp",
+  "sourceUrl": "https://github.com/ameyxd/petromcp",
+  "repository": {
+    "url": "https://github.com/ameyxd/petromcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T16:52:21.086585Z",
+  "publishedAt": "2026-07-27T16:52:21.086585Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:30:41.814Z",
+    "sourceRepoAt": "2026-08-11T23:57:01.527Z",
+    "readmeAt": "2026-08-11T23:57:02.068Z",
+    "toolsAt": "2026-08-12T01:30:41.814Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ameyxd/petromcp",
+    "checkedAt": "2026-08-11T23:57:01.527Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ameyxd/petromcp/main/README.md",
+    "markdown": "# petromcp\n\nRead well logs with Claude without the data ever leaving your machine.\n\npetromcp is an MCP server for petroleum data formats, built for teams whose\nfiles legally cannot be uploaded to a cloud service. No telemetry, no\nphone-home, no automatic updates, and a default-deny path allowlist that\nrefuses to open anything you have not explicitly permitted. LAS today; DLIS,\nSEG-Y, and pump cards next.\n\nIf you can upload your data somewhere, you have more options than this. If you\ncan't, this was written for you.\n\n## What this gives you\n\nLLM hosts cannot read binary or semi-structured petroleum formats. petromcp\nwraps the established open-source parsers — `lasio` and `dlisio` today, with\n`segyio` queued for a later slice — and exposes them as MCP tools, so\nyou can have a conversation with your data instead of copy-pasting curve\nvalues into chat.\n\n## What \"local-first\" means here, concretely\n\nNot a posture. Four things you can verify in the source:\n\n- **Default deny.** A fresh install can read nothing. Access is granted per\n  directory, and every tool routes through one validator that resolves\n  symlinks before checking, so a link inside an allowed directory cannot\n  reach outside it. There is no environment variable that widens the\n  allowlist and no tool that changes it at runtime.\n- **No network, declared.** petromcp opens no outbound connections. All five\n  tools ship `openWorldHint: false` and `readOnlyHint: true`, so your host\n  can verify that claim rather than take it.\n- **An audit trail.** Every tool call is logged with a timestamp, the tool\n  name, and the resolved path.\n- **Bounded output.** Curve reads are capped and report `downsampled` and\n  `original_count`, so a 20,000-point log cannot silently dump into a\n  context window.\n\nThe threat model, and what does *not* count as a vulnerability, are in\n[SECURITY.md](SECURITY.md). Read\n[docs/DATA_PRIVACY.md](docs/DATA_PRIVACY.md) before pointing this at real\ndata — it is authoritative, and if the code contradicts it the code is the\nbug.\n\n## Install\n\nRequires Python 3.10+ and [uv](https://docs.astral.sh/uv/).\n\nAdd petromcp to your MCP host's config — no clone, no build:\n\n```json\n{\n  \"mcpServers\": {\n    \"petromcp\": {\n      \"command\": \"uvx\",\n      \"args\": [\"petroleum-mcp\", \"serve\"]\n    }\n  }\n}\n```\n\nOn macOS that file is\n`~/Library/Application Support/Claude/claude_desktop_config.json`. Restart\nthe host afterwards. macOS notes and troubleshooting:\n[docs/INSTALL.md](docs/INSTALL.md).\n\nTo work on petromcp rather than just use it:\n\n    git clone https://github.com/ameyxd/petromcp\n    cd petromcp\n    make setup\n    make install-claude\n\n## Configure\n\nBy default petromcp can read nothing. Tell it which directories are fair\ngame:\n\n    uvx petroleum-mcp config init\n    uvx petroleum-mcp config add-path ~/petroleum/wells\n\nOr, if you want to try it without your own data, generate the synthetic\nsample from a checkout and allowlist that:\n\n    make generate\n    uvx petroleum-mcp config add-path \"$(pwd)/examples/sample_data\"\n\nRestart your MCP host after editing the allowlist — it is read once at\nstartup.\n\n## Use\n\nOpen a new conversation and ask, in plain language:\n\n    What's wrong with this well log? /path/to/well.las\n    Compare these two wells: /path/to/A.las and /path/to/B.las\n    Convert 1500 psi to kPa.\n\nClaude picks the right tool, reads the file through petromcp, and answers.\n\nWorked examples, with real tool output rather than prose:\n\n- [QC a well log](examples/walkthroughs/01-qc-a-well-log.md) — finds a planted\n  density gap, a washout, and a gamma ray spike\n- [Compare two wells](examples/walkthroughs/02-compare-two-wells.md) — depth\n  overlap, a missing curve, and a unit mismatch that is invisible in one file\n- [Unit conversion](examples/walkthroughs/03-unit-conversion.md)\n- [Read a DLIS file](examples/walkthroughs/04-read-a-dlis-file.md) — logical\n  files, frames, and what happens when a channel name is ambiguous\n\nEvery value in those documents is generated by calling the tools; CI fails if\nthey drift.\n\n## Tools\n\n| Tool                    | What it does                                          |\n|-------------------------|-------------------------------------------------------|\n| `read_las_file`         | Header-level summary of a LAS file                    |\n| `summarize_las_curves`  | Per-curve min, max, mean, stddev, gap percentage      |\n| `read_las_curve`        | Depths and values for one curve, with sampling cap    |\n| `compare_well_logs`     | Common curves, depth overlap, unit consistency, flags |\n| `convert_units`         | ft<->m, psi<->kPa, psi<->bar, bbl<->m3, degF<->degC, mD<->m2 |\n| `list_supported_units`  | Every convertible pair with its physical quantity      |\n| `read_dlis_file`        | DLIS structure: logical files, frames, index types     |\n| `list_dlis_channels`    | Every DLIS channel with its frame, units, and length   |\n| `read_dlis_channel`     | One DLIS channel's values, with a sampling cap         |\n| `qc_a_well_log` prompt  | Walks Claude through a standard QC pass               |\n\nEvery tool is read-only and opens no network connection, and declares that\nin its MCP annotations. Full reference:\n[docs/TOOLS_REFERENCE.md](docs/TOOLS_REFERENCE.md).\n\nDLIS files hold several logging runs, each with several frames, so a channel\nname is unique only within a frame. `read_dlis_channel` refuses an ambiguous\nname and lists the candidates rather than guessing, because the values differ.\n\nSEG-Y and pump card support land in subsequent releases.\n\n## Status\n\nv0.7 ships the LAS and DLIS slices, a comparison tool, a units utility, and\nconfig-management CLI subcommands. The remaining formats are tracked in\n[SPEC_petromcp.md](SPEC_petromcp.md). The non-goals list there is real;\nread it before filing feature requests.\n\nRelease history: [CHANGELOG.md](CHANGELOG.md). Security policy and threat\nmodel: [SECURITY.md](SECURITY.md).\n\n## License\n\nMIT.\n\n<!--\nThe official MCP registry verifies that whoever publishes\n`io.github.ameyxd/petromcp` also controls the PyPI package, by looking for this\nmarker in the package's README. Removing it makes registry publishing fail with\na 400; `make release-check` guards it.\n-->\n\nmcp-name: io.github.ameyxd/petromcp\n\n---\n\nBuilt by [Amey Ambade](https://heyamey.com). I write about AI systems in\nindustries where the data can't leave the building, at\n[writing.heyamey.com](https://writing.heyamey.com).\n",
+    "fetchedAt": "2026-08-11T23:57:02.068Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:30:41.814Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

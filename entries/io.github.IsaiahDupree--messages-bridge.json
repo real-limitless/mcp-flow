@@ -1,0 +1,53 @@
+{
+  "id": "io.github.IsaiahDupree/messages-bridge",
+  "title": "messages-bridge",
+  "description": "MCP connector for iMessage & Contacts via a local Mac agent + Vercel relay",
+  "summary": "MCP connector for iMessage & Contacts via a local Mac agent + Vercel relay",
+  "offersHint": "MCP connector for iMessage & Contacts via a local Mac agent + Vercel relay · Remote MCP (streamable-http) at https://messagesbridge.vercel.app/mcp",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://messagesbridge.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://messagesbridge.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://messagesbridge.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/messages-bridge",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/messages-bridge",
+    "source": "github",
+    "id": "1305781081"
+  },
+  "updatedAt": "2026-08-01T01:45:44.933347Z",
+  "publishedAt": "2026-08-01T01:45:44.933347Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:28.941Z",
+    "sourceRepoAt": "2026-08-12T00:09:55.978Z",
+    "readmeAt": "2026-08-12T00:09:56.454Z",
+    "toolsAt": "2026-08-12T01:40:28.941Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/messages-bridge",
+    "checkedAt": "2026-08-12T00:09:55.978Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/messages-bridge/master/README.md",
+    "markdown": "<div align=\"center\">\n\n# 💬 MessagesBridge\n\n**Use your iMessage & Contacts inside ChatGPT — through your own Mac.**\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-f5b942.svg)](./LICENSE)\n[![npm](https://img.shields.io/npm/v/apple-messages-agent.svg?color=4ade80&label=apple-messages-agent)](https://www.npmjs.com/package/apple-messages-agent)\n\n</div>\n\nMessagesBridge is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) connector that lets ChatGPT work with your **iMessage conversations and Contacts**. It never uploads your messages to a third party — every action runs on **your own Mac** through a tiny local agent. The cloud piece is only a stateless relay that shuttles requests between ChatGPT and your Mac.\n\n```\n  ChatGPT  ──OAuth──►  MessagesBridge relay  ──job queue──►  apple-messages-agent  ──►  Messages.app + Contacts\n (connector)          (Vercel, stateless)      (your Mac, polls & executes)        (on your Mac)\n```\n\nYour Mac is the only place your messages are ever read or contacts written. The relay stores only short-lived job payloads and your account record; it never sees a message unless a job is in flight, and jobs expire in seconds.\n\n---\n\n## For users — 3 steps\n\n**1. Create your account** at **[messagesbridge.vercel.app](https://messagesbridge.vercel.app)** and generate a pairing code.\n\n**2. Install the Mac agent** (needs [Node 18+](https://nodejs.org)):\n\n```bash\nnpx apple-messages-agent pair <YOUR-CODE>   # link this Mac to your account\nnpx apple-messages-agent install            # keep it running on every restart\n```\n\nThe agent needs two macOS permissions, granted once: **Full Disk Access** so it can *read* your message history (System Settings → Privacy & Security → Full Disk Access), and **Automation** the first time it *sends* a message or reads Contacts — macOS asks **\"Terminal wants to control Messages\"** and to access **Contacts**; click **OK**.\n\n**3. Connect ChatGPT:** Settings → **Plugins** → turn on **Developer mode** (Security & login) → **Create** a custom plugin → paste the MCP Server URL **`https://messagesbridge.vercel.app/mcp`** → Authentication **OAuth** → sign in & **Allow**.\n\nThat's it. In a new chat: *\"Search my messages for the dinner plans\"* or *\"Text Sarah that I'm running 10 minutes late.\"* (You confirm every send before it goes out.)\n\n> Your Mac must be awake with the agent running. `npx apple-messages-agent install` makes it start automatically at login and restart if it ever crashes.\n\n### Managing the agent\n\n```bash\nnpx apple-messages-agent status      # is it paired & reachable?\nnpx apple-messages-agent logs        # recent activity\nnpx apple-messages-agent uninstall   # stop auto-start\n```\n\n---\n\n## What ChatGPT can do\n\n| Tool | Action |\n|------|--------|\n| `search_messages` | Search your iMessage/SMS history by keyword |\n| `list_recent_threads` | List recent conversations, newest first, with a last-message preview |\n| `get_thread` | Read one conversation in order (by phone, email, or chat id) |\n| `send_message` | Send an iMessage to one recipient (you confirm first — no bulk) |\n| `search_contacts` | Find people by name (returns their phones + emails) |\n| `get_contact` | Read one contact by name or id |\n| `create_contact` | Add a contact (name, optional phone/email) |\n\nReads come first; the only write tools are `send_message` and `create_contact`, and each is confirmed by you in ChatGPT before it runs. Sends always go to **one recipient at a time — never in bulk**.\n\n---\n\n## Self-hosting\n\nYou can run your own relay so nothing depends on the hosted instance.\n\n**Prereqs:** a [Vercel](https://vercel.com) account and a [Supabase](https://supabase.com) project (free tiers are fine).\n\n1. **Storage** — in your Supabase project's SQL editor, run [`supabase/schema.sql`](./supabase/schema.sql). It creates a tiny Redis-shaped KV + queue surface (`nb_*` functions) with RLS on.\n2. **Deploy** the `server/` directory to Vercel.\n3. **Set env vars** (see [`server/.env.example`](./server/.env.example)):\n   - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` — your project + service-role key\n   - `JWT_SECRET` — `openssl rand -hex 32`\n4. **Verify:** `curl https://YOUR-APP.vercel.app/api/health` → `redisConfigured`, `redisOk`, `jwtSecretSet` all `true`.\n5. Point the agent at it: `npx apple-messages-agent pair <CODE> --server https://YOUR-APP.vercel.app`.\n\n---\n\n## How it works\n\n- **Auth** — OAuth 2.1 with PKCE and Dynamic Client Registration (RFC 7591). ChatGPT registers itself, the user signs in on the MessagesBridge consent page, and ChatGPT gets a scoped MCP access token. JWTs are HMAC-signed; three kinds (`session`, `agent`, `mcp`) with distinct privileges. Optional email verification via Resend (`RESEND_API_KEY`); off unless configured, and enforcement is opt-in (`REQUIRE_EMAIL_VERIFICATION`).\n- **Relay** — MCP tool call → job pushed to `jobs:<user>` (TTL ≤ the caller's wait window, so an abandoned job can't run late) → the Mac agent (holding a hanging long-poll) is handed the job within ~200ms, executes it, pushes the result → the MCP handler returns it. The long-poll means jobs are delivered on arrival rather than on a fixed interval, so relay overhead is ~300ms instead of ~1s. The agent is considered \"online\" only while it's actively connected.\n- **Agent** — a dependency-free Node CLI. Read tools query the Messages `chat.db` directly (read-only SQLite); send and contact tools run via JXA (`osascript -l JavaScript`) against Messages.app and Contacts; arguments are passed as JSON over argv (never shell-interpolated). A macOS LaunchAgent keeps it alive across logins and crashes.\n\n## Repository layout\n\n```\nserver/    Vercel functions: OAuth + MCP endpoint + relay        (deploy this)\nagent/     apple-messages-agent — the npm-published Mac CLI          (users npx this)\nkit/       Browser automations: register the dev-mode connector AND\n           fill the OpenAI directory submission (see kit/README.md)\nsupabase/  schema.sql for self-hosting the storage\ntest/      end-to-end OAuth + MCP integration test\n```\n\n## Development\n\n```bash\n# server\ncd server && cp .env.example .env.local   # fill in, then: vercel dev\n# end-to-end test against a live deployment (reads ../.env.local)\nnode test/e2e-oauth.mjs\n# agent unit tests\nnode --test agent/test-agent-unit.mjs\n```\n\n## Security & privacy\n\n- Messages are read and sent, and contacts read and added, **only on your Mac**. The relay never persists message content — job payloads live in Redis-shaped storage with a short TTL and are deleted on delivery.\n- The agent token is stored at `~/.messagesbridge-agent.json` (mode `600`).\n- No secrets are committed; see [`.gitignore`](./.gitignore) and the `.env.example` files.\n- Write tools are marked destructive so ChatGPT asks before it sends a message or adds a contact — every send goes to one confirmed recipient at a time, never in bulk.\n\n## License\n\n[MIT](./LICENSE) © Isaiah Dupree\n",
+    "fetchedAt": "2026-08-12T00:09:56.454Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:28.941Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\"}",
+  "toolsPreviewStatus": "auth_required"
+}

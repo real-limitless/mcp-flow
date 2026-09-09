@@ -1,0 +1,58 @@
+{
+  "id": "io.github.mdfifty50-boop/trace-forge",
+  "title": "trace-forge",
+  "description": "Structured execution trace and span logging for AI agents",
+  "summary": "Structured execution trace and span logging for AI agents",
+  "offersHint": "Structured execution trace and span logging for AI agents · Packages: npm:trace-forge-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "trace-forge-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "trace-forge-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mdfifty50-boop/trace-forge-mcp",
+  "repository": {
+    "url": "https://github.com/mdfifty50-boop/trace-forge-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-24T13:35:39.865051Z",
+  "publishedAt": "2026-04-24T13:35:39.865051Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:31.175Z",
+    "sourceRepoAt": "2026-08-11T23:34:44.652Z",
+    "readmeAt": "2026-08-11T23:34:45.304Z",
+    "toolsAt": "2026-08-12T01:13:31.175Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mdfifty50-boop/trace-forge-mcp",
+    "checkedAt": "2026-08-11T23:34:44.652Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mdfifty50-boop/trace-forge-mcp/main/README.md",
+    "markdown": "# trace-forge-mcp\n\nMCP server for writing structured traces, spans, and decisions. The only write-path observability MCP — all 9 existing observability MCPs are read-only.\n\nBuilt for EU AI Act traceability compliance (Article 14, due August 2026).\n\n## Install\n\n```bash\nnpx trace-forge-mcp\n```\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"trace-forge\": {\n      \"command\": \"npx\",\n      \"args\": [\"trace-forge-mcp\"]\n    }\n  }\n}\n```\n\n### From source\n\n```bash\ngit clone https://github.com/mdfifty50-boop/trace-forge-mcp.git\ncd trace-forge-mcp\nnpm install\nnode src/index.js\n```\n\n## Tools\n\n### trace_start\n\nBegin a new trace for an agent task.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `agent_id` | string | yes | Unique agent identifier |\n| `task_description` | string | yes | What the agent is doing |\n| `metadata` | object | no | Optional metadata (model, department, priority) |\n\nReturns: `{ trace_id, started_at }`\n\n### trace_span\n\nCreate a span within a trace. Spans can be nested via `parent_span_id`.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `trace_id` | string | yes | Trace to attach to |\n| `span_name` | string | yes | Span name (e.g. \"research\", \"validation\") |\n| `parent_span_id` | string | no | Parent span for nesting |\n| `metadata` | object | no | Optional span metadata |\n\nReturns: `{ span_id, trace_id }`\n\n### trace_tool_call\n\nLog a tool call within a trace. Auto-calculates cost estimate from token count.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `trace_id` | string | yes | Trace this belongs to |\n| `span_id` | string | no | Span this belongs to |\n| `tool_name` | string | yes | Tool that was called |\n| `args` | object | yes | Arguments passed |\n| `result_preview` | string | yes | Result preview (max 500 chars) |\n| `tokens_used` | number | no | Token count (enables cost estimation) |\n| `duration_ms` | number | yes | Call duration in milliseconds |\n| `status` | string | yes | `\"success\"`, `\"error\"`, or `\"timeout\"` |\n\nReturns: `{ event_id, logged: true }`\n\n### trace_decision\n\nLog an agent decision point with reasoning and alternatives considered.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `trace_id` | string | yes | Trace this belongs to |\n| `reasoning` | string | yes | Why the agent made this decision |\n| `alternatives_considered` | string[] | yes | Other options evaluated |\n| `chosen_action` | string | yes | What was decided |\n| `confidence` | number | yes | Confidence 0.0 to 1.0 |\n\nReturns: `{ event_id, logged: true }`\n\n### trace_end\n\nComplete a trace. Auto-calculates total duration, event counts, and span counts.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `trace_id` | string | yes | Trace to complete |\n| `outcome` | string | yes | `\"success\"`, `\"failure\"`, `\"partial\"`, or `\"timeout\"` |\n| `summary` | string | no | Optional summary |\n\nReturns: `{ trace_id, duration_ms, events_count, spans_count, tool_calls_count }`\n\n### get_trace\n\nRetrieve a complete trace tree with all spans, events, tool calls, and decisions.\n\n| Param | Type | Required | Description |\n|-------|------|----------|-------------|\n| `trace_id` | string | yes | Trace ID to retrieve |\n\nReturns: Full trace object with nested span tree, all events, and computed totals.\n\n### search_traces\n\nFind traces by agent ID and/or status.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `agent_id` | string | - | Filter by agent |\n| `status` | string | - | Filter by status |\n| `limit` | number | 20 | Max results (1-100) |\n\nReturns: Matching traces sorted by recency with summary stats.\n\n## Resources\n\n| URI | Description |\n|-----|-------------|\n| `traces://recent` | Last 20 traces with summary |\n| `traces://stats` | Aggregate statistics (total, avg duration, success rate) |\n\n## Usage Pattern\n\n```\n1. trace_start — when agent begins a task\n2. trace_span — create logical work units (research, generation, validation)\n3. During execution:\n   - trace_tool_call — after each tool invocation\n   - trace_decision — at each decision point\n4. trace_end — when task completes\n5. get_trace — retrieve full audit trail\n6. search_traces — find traces by agent or status\n```\n\n## EU AI Act Compliance\n\nArticle 14 of the EU AI Act requires high-risk AI systems to maintain traceability of decisions and actions. trace-forge-mcp provides:\n\n- Structured decision logging with reasoning and alternatives\n- Complete tool call audit trails with timing and cost\n- Hierarchical span trees for complex multi-step tasks\n- Agent identification and task attribution\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:34:45.304Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:31.175Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

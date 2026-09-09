@@ -1,0 +1,133 @@
+{
+  "id": "io.github.llmops-pro/paywall-mcp",
+  "title": "paywall-mcp",
+  "description": "Lightning-paywall sidecar: wraps any stdio MCP server, requires paid invoices before tool calls.",
+  "summary": "Lightning-paywall sidecar: wraps any stdio MCP server, requires paid invoices before tool calls.",
+  "offersHint": "Lightning-paywall sidecar: wraps any stdio MCP server, requires paid invoices before tool calls. · Packages: npm:paywall-mcp · Env vars: NWC_CONNECTION_STRING, PAYWALL_DEFAULT_PRICE_SATS, PAYWALL_PRICE_MAP, PAYWALL_UPSTREAM_ARGS, PAYWALL_UPSTREAM_COMMAND",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "paywall-mcp",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "PAYWALL_UPSTREAM_COMMAND",
+        "description": "Command to spawn the upstream MCP server (e.g. npx)",
+        "required": true
+      },
+      {
+        "name": "PAYWALL_UPSTREAM_ARGS",
+        "description": "JSON array of args for the upstream command"
+      },
+      {
+        "name": "NWC_CONNECTION_STRING",
+        "description": "NWC connection string of the receiving wallet (receive-only recommended)",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "PAYWALL_DEFAULT_PRICE_SATS",
+        "description": "Default price in sats for tools not in PAYWALL_PRICE_MAP"
+      },
+      {
+        "name": "PAYWALL_PRICE_MAP",
+        "description": "JSON map of tool name to price in sats"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "paywall-mcp",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "PAYWALL_UPSTREAM_COMMAND",
+          "description": "Command to spawn the upstream MCP server (e.g. npx)",
+          "required": true
+        },
+        {
+          "name": "PAYWALL_UPSTREAM_ARGS",
+          "description": "JSON array of args for the upstream command"
+        },
+        {
+          "name": "NWC_CONNECTION_STRING",
+          "description": "NWC connection string of the receiving wallet (receive-only recommended)",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "PAYWALL_DEFAULT_PRICE_SATS",
+          "description": "Default price in sats for tools not in PAYWALL_PRICE_MAP"
+        },
+        {
+          "name": "PAYWALL_PRICE_MAP",
+          "description": "JSON map of tool name to price in sats"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "NWC_CONNECTION_STRING",
+      "description": "NWC connection string of the receiving wallet (receive-only recommended)",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "PAYWALL_DEFAULT_PRICE_SATS",
+      "description": "Default price in sats for tools not in PAYWALL_PRICE_MAP"
+    },
+    {
+      "name": "PAYWALL_PRICE_MAP",
+      "description": "JSON map of tool name to price in sats"
+    },
+    {
+      "name": "PAYWALL_UPSTREAM_ARGS",
+      "description": "JSON array of args for the upstream command"
+    },
+    {
+      "name": "PAYWALL_UPSTREAM_COMMAND",
+      "description": "Command to spawn the upstream MCP server (e.g. npx)",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/llmops-pro/paywall-mcp",
+  "repository": {
+    "url": "https://github.com/llmops-pro/paywall-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-12T10:09:20.56071Z",
+  "publishedAt": "2026-06-12T10:09:20.56071Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:31.321Z",
+    "sourceRepoAt": "2026-08-11T23:37:42.605Z",
+    "readmeAt": "2026-08-11T23:37:43.314Z",
+    "toolsAt": "2026-08-12T01:16:31.321Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/llmops-pro/paywall-mcp",
+    "checkedAt": "2026-08-11T23:37:42.605Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/llmops-pro/paywall-mcp/main/README.md",
+    "markdown": "# paywall-mcp\n\n**Paywall ANY stdio MCP server with Lightning, without modifying it.** `paywall-mcp` is a generic sidecar: configure it with an upstream MCP server command and a per-tool price map, and it transparently:\n\n- Forwards `tools/list` from the upstream to the LLM client, with prices appended to each tool's description.\n- Intercepts `tools/call`: free tools pass through; priced tools require a paid Lightning invoice (via Nostr Wallet Connect / NIP-47) before the call is forwarded.\n\nNo code changes to the upstream server. Works with Anthropic's reference MCP servers, your own, or any third-party MCP server that speaks stdio.\n\n> **v0.1 — proxy + payment gate complete.** Spawns a stdio upstream as a child process; per-tool pricing via env; in-memory invoice cache + replay protection; audit log; read-only mode. Persistent cache + HTTP/SSE upstream transport deferred to v0.2.\n\n---\n\n## Why this exists\n\nModern paid-API patterns (Lightning paywall, L402, micropayments) exist for HTTP but the MCP ecosystem has no standard for paid tool calls. Building it into each individual server is repetitive and error-prone. `paywall-mcp` is the missing sidecar: write your tools as a normal MCP server, then wrap it with `paywall-mcp` to charge sats per call.\n\n## How the dual-call pattern works\n\nFor any priced tool:\n\n1. **First call** — LLM calls `priced_tool({...args})` *without* `payment_hash`. paywall-mcp issues a bolt11 invoice through your NWC wallet and returns:\n   ```json\n   {\n     \"error\": \"payment_required\",\n     \"invoice\": \"lnbc...\",\n     \"payment_hash\": \"abc123...\",\n     \"amount_sats\": 21,\n     \"expires_in_seconds\": 600,\n     \"next_step\": \"Pay this bolt11 ...\"\n   }\n   ```\n2. **Payment** — the LLM (or its operator) pays the invoice. Easiest path: use [`nwc-mcp`](https://npmjs.com/package/nwc-mcp) — the same LLM can call `nwc_pay_invoice` to settle.\n3. **Second call** — LLM calls `priced_tool({...args, payment_hash: \"abc123...\"})`. paywall-mcp verifies settlement via NWC `lookup_invoice`, strips `payment_hash` from the args, forwards the original call to the upstream, returns the upstream's result.\n\nReplay protection: the same `payment_hash` cannot be redeemed twice. Buyers pay a fresh invoice for each call.\n\n---\n\n## What you can build with it\n\n- **Charge sats for premium tools** in an MCP server you already have, by adding one wrapper process.\n- **Per-tool pricing tiers** — `free_lookup: 0`, `premium_analysis: 100`, `rare_alpha_signal: 5000`. Buyers see prices in tool descriptions.\n- **Bundle-and-resell third-party MCP servers** — wrap someone else's open-source MCP server with your paywall and offer it as a managed paid service.\n- **A/B test pricing** — adjust `PAYWALL_PRICE_MAP` in env, restart, you're at the new price.\n- **Time-limited promotional pricing** — start at 21 sats, raise to 100 sats once usage proves the value.\n\n---\n\n## Requirements\n\n- Node 20+\n- An existing stdio MCP server to wrap (paywall-mcp doesn't host tools itself; it gates an upstream's tools).\n- A NIP-47 NWC connection string for the **seller's** receive wallet. `make_invoice` + `lookup_invoice` are the only permissions paywall-mcp needs. **A receive-only NWC connection is perfectly fine and recommended** — paywall-mcp never spends.\n\n## Install\n\n```bash\n# From npm\nnpx -y paywall-mcp\n\n# From source\ngit clone <repo>\ncd paywall-mcp\ncorepack enable pnpm\npnpm install\npnpm build\n```\n\n## Configure\n\n```bash\ncp .env.example .env\n# edit .env: set PAYWALL_UPSTREAM_COMMAND/ARGS, NWC_CONNECTION_STRING, prices\n```\n\nThe server auto-loads `.env` from its own directory (next to `dist/`) — deliberately NOT from cwd, to avoid env collisions when running multiple MCP servers in the same Claude Code session.\n\n### Required\n\n| Var | Purpose |\n|---|---|\n| `PAYWALL_UPSTREAM_COMMAND` | Executable to spawn as the upstream MCP server (e.g., `node`). |\n| `PAYWALL_UPSTREAM_ARGS` | JSON array of args passed to the upstream command (e.g., `[\"/path/to/upstream/dist/index.js\"]`). |\n\n### Required when any tool has a non-zero price\n\n| Var | Purpose |\n|---|---|\n| `NWC_CONNECTION_STRING` | NIP-47 NWC URI for the seller's RECEIVE wallet. `make_invoice` + `lookup_invoice` permissions sufficient. paywall-mcp never spends. |\n\n### Pricing\n\n| Var | Default | Purpose |\n|---|---|---|\n| `PAYWALL_DEFAULT_PRICE_SATS` | `0` | Default price for any tool not in the price map. `0` = free passthrough. |\n| `PAYWALL_PRICE_MAP` | `{}` | JSON object mapping tool names to sat prices. Per-tool 0 = free; missing = use default. Example: `{\"premium_compliment\":21,\"rare_alpha_signal\":5000}`. |\n\n### Optional\n\n| Var | Default | Purpose |\n|---|---|---|\n| `PAYWALL_UPSTREAM_CWD` | (parent cwd) | Working directory for the upstream child process. |\n| `PAYWALL_UPSTREAM_ENV` | (inherits) | JSON object of env-var overrides for the upstream. |\n| `PAYWALL_READ_ONLY` | `false` | Disables all paid tool calls (`tools/list` still works). Useful for maintenance. |\n| `PAYWALL_INVOICE_TTL_SECONDS` | `600` | Invoice TTL. Past this, `payment_hash` is forgotten from cache and the buyer must re-issue. |\n| `PAYWALL_PRICE_LABEL_TEMPLATE` | `\"(💰 {price} sats)\"` | Label appended to each priced tool's description in `tools/list`. `{price}` is substituted with the sat amount. |\n| `PAYWALL_LOG_PATH` | `./paywall-mcp.log` | Server log. |\n| `PAYWALL_AUDIT_PATH` | `./paywall-mcp-audit.log` | NDJSON audit log (one line per call). |\n\n---\n\n## End-to-end example: paywall the bundled `paywall-mcp-test` server\n\nThe companion `paywall-mcp-test` package exposes a single tool — `premium_compliment`. It already implements its own paywall pattern internally, but it's also a convenient stand-in for \"any upstream MCP server\" to demonstrate paywall-mcp itself.\n\n`.env`:\n\n```\nPAYWALL_UPSTREAM_COMMAND=node\nPAYWALL_UPSTREAM_ARGS=[\"/abs/path/to/paywall-mcp-test/dist/index.js\"]\n\nNWC_CONNECTION_STRING=nostr+walletconnect://...\n\nPAYWALL_DEFAULT_PRICE_SATS=21\nPAYWALL_PRICE_MAP={\"premium_compliment\":21}\n```\n\nWire `paywall-mcp` (not the upstream directly) into your MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"paywall\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"paywall-mcp\"],\n      \"env\": {}\n    }\n  }\n}\n```\n\nNow from your agent:\n\n```\n1. tools/list  → premium_compliment ... (💰 21 sats) This tool requires ...\n2. premium_compliment({})  → returns invoice + payment_hash\n3. nwc_pay_invoice(invoice)  → buyer pays\n4. premium_compliment({ payment_hash: \"...\" })  → upstream's result returned\n```\n\n---\n\n## Safety model\n\n```\ntools/list      → upstream.listTools() → augment descriptions with prices → return\ntools/call:\n  if price == 0           → upstream.callTool(args)                  (passthrough)\n  elif PAYWALL_READ_ONLY  → refuse with paywall_read_only            (block)\n  elif no payment_hash    → gate.issue() → return bolt11 + hash      (issue)\n  elif bad hash format    → refuse with invalid_payment_hash         (block)\n  else (have hash):\n      gate.verify() ──┬─ unknown_payment_hash         → block\n                      ├─ payment_hash_already_redeemed → block (replay)\n                      ├─ payment_hash_tool_mismatch    → block\n                      ├─ payment_not_settled           → block\n                      └─ ok → strip hash → upstream.callTool()      (paid passthrough)\n```\n\nAudit log entries (NDJSON, one per request):\n\n- **`outcome: \"ok\"`** — invoice issued, free passthrough, or paid passthrough completed\n- **`outcome: \"blocked\"`** — read-only refusal, invalid hash, replay, mismatch, not-settled\n- **`outcome: \"error\"`** — upstream call failed, NWC `lookup_invoice` failed, etc.\n\nTail the audit log for ground truth — independent of whatever the LLM tells you.\n\n```bash\ntail -f paywall-mcp-audit.log | jq .\n```\n\n---\n\n## Wire into Claude Desktop / Claude Code / Cursor\n\n```json\n{\n  \"mcpServers\": {\n    \"paywall\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"paywall-mcp\"],\n      \"env\": {}\n    }\n  }\n}\n```\n\nSame `.env`-via-binary-dir pattern as the rest of the substrate — leave `env` empty in the client config; secrets stay in `paywall-mcp/.env`.\n\n---\n\n## Testing\n\n```bash\npnpm typecheck\npnpm test        # 13 vitest cases (config resolution + payment-gate state machine)\npnpm build       # ~18 KB ESM bundle\n```\n\n---\n\n## Companion servers\n\n- [`nwc-mcp`](https://npmjs.com/package/nwc-mcp) — Lightning wallet for the **buyer**. Lets the agent pay the invoices paywall-mcp issues. The matching half of the agent-pays-a-paid-tool loop.\n- [`nostr-ops-mcp`](https://npmjs.com/package/nostr-ops-mcp) — NOSTR identity, publishing, encrypted DMs.\n- [`marketplace-mcp`](https://npmjs.com/package/marketplace-mcp) — Run a NIP-15 / Shopstr storefront from an agent.\n- [`albyhub-admin-mcp`](https://npmjs.com/package/albyhub-admin-mcp) — Alby Hub node-admin via HTTP API.\n\n---\n\n## License\n\nMIT — see [`LICENSE`](./LICENSE).\n\n## Contact / Issues\n\nBuilt by **LLMOps.Pro**.\n\n- **NOSTR:** [`npub1hdg932jvwc3jdvkqywgqv0ue4nn60exrf92asy8mtazt3hjg7d2s2yw0nw`](https://njump.me/npub1hdg932jvwc3jdvkqywgqv0ue4nn60exrf92asy8mtazt3hjg7d2s2yw0nw) — follow, DM, zap.\n- **Lightning Address:** `sovereigncitizens@getalby.com` — for support zaps and \"this was useful\" tips.\n- **Bug reports / feature requests:** open a GitHub issue (link forthcoming).\n- **Security issues:** please disclose privately via NOSTR DM before opening a public issue.\n",
+    "fetchedAt": "2026-08-11T23:37:43.314Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:31.321Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,82 @@
+{
+  "id": "io.github.loicfontaine-max/qorami",
+  "title": "qorami",
+  "description": "Check an email before an AI agent sends it: send / ask a human / block. Detects prompt injection.",
+  "summary": "Check an email before an AI agent sends it: send / ask a human / block. Detects prompt injection.",
+  "offersHint": "Check an email before an AI agent sends it: send / ask a human / block. Detects prompt injection. · Packages: npm:qorami-mcp · Env vars: QORAMI_API_KEY",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "qorami-mcp",
+    "version": "1.0.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "QORAMI_API_KEY",
+        "description": "Your Qorami workspace API key (get one at https://qorami.fr/dashboard/).",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "qorami-mcp",
+      "version": "1.0.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "QORAMI_API_KEY",
+          "description": "Your Qorami workspace API key (get one at https://qorami.fr/dashboard/).",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "QORAMI_API_KEY",
+      "description": "Your Qorami workspace API key (get one at https://qorami.fr/dashboard/).",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/loicfontaine-max/qorami-sdk",
+  "repository": {
+    "url": "https://github.com/loicfontaine-max/qorami-sdk",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-01T12:59:32.675272Z",
+  "publishedAt": "2026-06-01T12:59:32.675272Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:32.434Z",
+    "sourceRepoAt": "2026-08-11T23:37:32.863Z",
+    "readmeAt": "2026-08-11T23:37:33.447Z",
+    "toolsAt": "2026-08-12T01:16:32.434Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/loicfontaine-max/qorami-sdk",
+    "checkedAt": "2026-08-11T23:37:32.863Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/loicfontaine-max/qorami-sdk/main/README.md",
+    "markdown": "# Qorami SDK\n\nOfficial clients, tool schemas and an MCP server for [Qorami](https://qorami.fr) —\na control point between your AI agents and actually sending email. Before each\nsend, the agent asks Qorami, which replies **send**,\n**request_human_confirmation**, or **do_not_send**.\n\nGet an API key in the [dashboard](https://qorami.fr/dashboard/).\nFull API reference: <https://qorami.fr/docs>.\n\n| Path | What |\n|---|---|\n| [`js/`](js) | Zero-dependency JavaScript / TypeScript client (`fetch`, Node 18+ or browser). |\n| [`python/`](python) | Zero-dependency Python client (stdlib only) + LangChain, CrewAI, LlamaIndex & OpenAI-Agents tools. |\n| [`tools/`](tools) | Drop-in OpenAI function-calling & Anthropic tool-use schemas for `qorami_check_email`. |\n| [`mcp/`](mcp) | Stdio MCP server (`qorami_health`, `verify_email`, `check_action_status`) for Claude Desktop, Cursor, any MCP client. |\n| [`n8n-nodes-qorami/`](n8n-nodes-qorami) | **n8n community node** (`Settings → Community Nodes → n8n-nodes-qorami`) — guard an email, usable as an AI-Agent tool. |\n| [`n8n/`](n8n) | No-code recipe: guard a workflow's email with a plain HTTP Request node (no install). |\n| [`examples/`](examples) | Runnable Node & Python quickstarts. |\n\n## JavaScript / TypeScript\n\n```js\nimport { QoramiClient } from './js/qorami.mjs'\n\nconst qorami = new QoramiClient({ apiKey: process.env.QORAMI_API_KEY })\n\nawait qorami.guard(\n  { recipient: 'client@example.com', subject: 'Our offer', body, policyProfile: 'sales' },\n  {\n    send: () => mailer.send(),                            // allowed\n    requestHumanConfirmation: (r) => queue(r.action.id), // a human was notified\n    doNotSend: (r) => log('blocked', r.decision),        // do not send\n  },\n)\n```\n\nOr step by step with `qorami.verify(...)` and, after a review, poll\n`qorami.status(actionId)` until `nextAction.type === 'send'`.\n\n## Python\n\n```python\nfrom qorami import QoramiClient\nqorami = QoramiClient(api_key=os.environ[\"QORAMI_API_KEY\"])\n\nresult = qorami.verify(recipient=\"client@example.com\", subject=\"Our offer\",\n                       body=email_body, policy_profile=\"sales\")\nif result.next_action_type == \"send\":\n    send_email()\nelif result.next_action_type == \"request_human_confirmation\":\n    queue_for_review(result.action_id)   # a human was notified by email\n# else: do_not_send\n```\n\n### Agent framework tools\n\n`pip install qorami[<framework>]` ships a drop-in `qorami_check_email` wrapper —\neach returns `ALLOWED` / `NEEDS HUMAN APPROVAL` / `BLOCKED` and reuses the client:\n\n| Framework | Install | Import |\n|---|---|---|\n| LangChain | `pip install qorami[langchain]` | `from qorami_langchain import build_qorami_tool` |\n| CrewAI | `pip install qorami[crewai]` | `from qorami_crewai import QoramiEmailGuard` |\n| LlamaIndex | `pip install qorami[llamaindex]` | `from qorami_llamaindex import build_qorami_tool` |\n| OpenAI Agents SDK | `pip install qorami[openai-agents]` | `from qorami_openai_agents import qorami_check_email` |\n\n```python\nfrom qorami_langchain import build_qorami_tool\ntool = build_qorami_tool()        # reads QORAMI_API_KEY\n```\n\nNo-code workflows (n8n) use a plain HTTP Request node — see [`n8n/`](n8n).\n\n## MCP server\n\nRegister Qorami as a native tool in Claude Desktop / Cursor / any MCP client —\nsee [`mcp/`](mcp). It exposes `qorami_health`, `verify_email` and `check_action_status` over stdio.\n\n## The contract\n\nEvery client returns the same decision the agent must obey via `nextAction.type`:\n`send`, `request_human_confirmation` (a human approves first — poll the action),\nor `do_not_send`. See <https://qorami.fr/docs>.\n\n## Cleaned version (auto-remediation)\n\nWhen an email is risky **only** because of mechanically-removable content (a leaked\nsecret, a suspicious link, an IBAN/card/SSN), the verify result carries a cleaned,\nsendable copy — send `remediation.safeBody` instead of blocking outright:\n\n```js\nconst r = await qorami.verify({ recipient, subject, body, policyProfile: 'general' })\nif (r.nextAction.type === 'do_not_send' && r.remediation?.safeToSend) {\n  mailer.send({ ...email, body: r.remediation.safeBody })   // safe, redacted copy\n}\n```\n\n```python\nr = qorami.verify(recipient=..., subject=..., body=email_body)\nif r.next_action_type == \"do_not_send\" and (r.remediation or {}).get(\"safeToSend\"):\n    send_email(body=r.remediation[\"safeBody\"])   # safe, redacted copy\n```\n\n`remediation.removed` lists what was stripped (e.g. `[\"secret\", \"link\"]`). The MCP\nserver surfaces the same field.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:37:33.447Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:32.434Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

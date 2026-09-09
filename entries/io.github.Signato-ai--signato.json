@@ -1,0 +1,77 @@
+{
+  "id": "io.github.Signato-ai/signato",
+  "title": "signato",
+  "description": "Local confidentiality chamber: blocks the wrong AI output before it leaves the machine.",
+  "summary": "Local confidentiality chamber: blocks the wrong AI output before it leaves the machine.",
+  "offersHint": "Local confidentiality chamber: blocks the wrong AI output before it leaves the machine. · Packages: pypi:signato · Env vars: JOHARI_GUARD_CONFIG",
+  "version": "0.13.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "signato",
+    "version": "0.13.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "JOHARI_GUARD_CONFIG",
+        "description": "Absolute path to your matrix.yaml (who-can-know-what). Without it the server answers NOT_CHECKED and points to 'signato quickstart'."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "signato",
+      "version": "0.13.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "JOHARI_GUARD_CONFIG",
+          "description": "Absolute path to your matrix.yaml (who-can-know-what). Without it the server answers NOT_CHECKED and points to 'signato quickstart'."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "JOHARI_GUARD_CONFIG",
+      "description": "Absolute path to your matrix.yaml (who-can-know-what). Without it the server answers NOT_CHECKED and points to 'signato quickstart'."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://signato.ai",
+  "sourceUrl": "https://github.com/Signato-ai/signato-integrations",
+  "repository": {
+    "url": "https://github.com/Signato-ai/signato-integrations",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-17T13:07:37.067689Z",
+  "publishedAt": "2026-07-17T13:07:37.067689Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:54.649Z",
+    "sourceRepoAt": "2026-08-12T00:02:35.961Z",
+    "readmeAt": "2026-08-12T00:02:36.552Z",
+    "toolsAt": "2026-08-12T01:34:54.649Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Signato-ai/signato-integrations",
+    "checkedAt": "2026-08-12T00:02:35.961Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Signato-ai/signato-integrations/main/README.md",
+    "markdown": "# Signato integrations\n\n**The chamber between your AI and the world.**\n\nSignato is a deterministic confidentiality chamber that runs 100% on your own machine. You declare\nwho must NOT know what (people with detection aliases, subjects with trigger keywords, an\nenforcement mode per wall), and every outbound event is checked, person against subject, in the\nsame text. A `hard` wall denies the send before it happens; a `soft` wall lets it pass with a\nwarning. Nothing is uploaded, ever: there is no server in the picture.\n\nThis repository is the public integration surface: how to wire the chamber into Claude Code today,\nthe adapter contract for wiring it into other hosts, and synthetic configuration examples you can\ncopy. The Signato software itself is proprietary and is **not** in this repository: install it\nwith `pip install signato` ([PyPI](https://pypi.org/project/signato/), proprietary license, the\nsame full 30-day local trial, no card), or as a direct download with a published SHA-256 at\n[signato.ai/trial](https://signato.ai/trial).\n\n## Why a deterministic external layer\n\nAI agents draft and act at scale. Prompt instructions do not reliably hold confidentiality: in the\nConfAIde benchmark (ICLR 2024), even the best-performing frontier model leaked contextually private\ninformation in 39% of measured scenarios, and others did worse. The defense has to live outside the\nmodel: deterministic, testable, and checked on every outbound event that passes through it. That is\nwhat the chamber is.\n\n## See it block, before installing anything\n\nAn in-browser simulation of the same rule, with a synthetic matrix, runs at\n[signato.ai/demo](https://signato.ai/demo). Nothing you type there leaves the tab.\n\n## Quickstart: Claude Code hook (turnkey today)\n\nThe package ships an adapter for Claude Code's `PreToolUse` hook contract. This repository is\nalso a Claude Code plugin marketplace, so the fastest path is two commands inside Claude Code\n(after `pip install signato`, Python 3.10+):\n\n```shell\n/plugin marketplace add Signato-ai/signato-integrations\n/plugin install signato-guard@signato\n```\n\nThe plugin registers the hook and looks for your matrix at `~/.signato/matrix.yaml`\n(override with `JOHARI_GUARD_CONFIG`); details in\n[plugins/signato-guard/README.md](plugins/signato-guard/README.md).\n\nPrefer to wire it by hand? Point the hook at your matrix in `.claude/settings.json`:\n\n```json\n{\n  \"hooks\": {\n    \"PreToolUse\": [\n      {\n        \"matcher\": \"*\",\n        \"hooks\": [\n          {\n            \"type\": \"command\",\n            \"command\": \"JOHARI_GUARD_CONFIG=/absolute/path/matrix.yaml JOHARI_GUARD_TELEMETRY=/absolute/path/telemetry.jsonl python3 -m johari_guard.adapters.claude_code\"\n          }\n        ]\n      }\n    ]\n  }\n}\n```\n\nFrom that point, every agent action passes through the chamber before it executes. The contract,\nverified against version 0.13.2:\n\n| Verdict | Hook behavior |\n|---|---|\n| HARD (forbidden pair) | exit 2, `permissionDecision: \"deny\"` with the reason; the action is blocked |\n| SOFT (warned pair) | exit 0, `permissionDecision: \"allow\"` plus `additionalContext` with the warning; the agent sees it and can rephrase |\n| Clean | exit 0, no output; zero friction |\n\nA real deny, from a live run against the synthetic example matrix:\n\n```\nBLOCK johari-guard [advisor-a-succession-only]: 'abel' is walled off company-sale(purchase offer)\n```\n\nStep-by-step setup, including the failure posture you should choose per channel, is in\n[docs/claude-code-hook.md](docs/claude-code-hook.md).\n\n## Building your matrix\n\nStart from [examples/matrix.example.yaml](examples/matrix.example.yaml) (100% synthetic), or let\nthe package interview you: `signato init` in the terminal, or `signato studio` for the same\nfive screens in your browser, served from 127.0.0.1, your machine. Every generated matrix ships\nwith derived test scenarios ([examples/scenarios.example.yaml](examples/scenarios.example.yaml))\nso the wall is executable, not aspirational: `signato test` runs them, `signato simulate` replays\nhistory before you change a wall, `signato attest` keeps an append-only record for audit.\n\n## MCP server (any MCP client)\n\nSince 0.13.0 the chamber speaks MCP. Install the optional extra and run the server over stdio:\n\n```bash\npip install \"signato[mcp]\"\nsignato mcp\n```\n\nThree tools, a thin protocol shell over the same engine the hook uses: `check_confidentiality`\n(verdict for a text before it leaves), `lint_matrix` (authoring errors in your matrix), and\n`run_matrix_tests` (your own scenarios). Point any MCP client at it:\n\n```json\n{\"mcpServers\": {\"signato\": {\"command\": \"signato\", \"args\": [\"mcp\"],\n  \"env\": {\"JOHARI_GUARD_CONFIG\": \"/absolute/path/to/matrix.yaml\"}}}}\n```\n\nNo matrix yet? The server answers NOT CHECKED and points you to `signato quickstart`, which\nbuilds a first working matrix in minutes and shows you a real block before asking anything\nelse. Everything stays local; the server sends nothing anywhere.\n\n## Wiring a different host\n\nThe adapter spine is deliberately thin: a channel adapter implements only `extract(message)` and\n`apply(verdict)`; the orchestration (extract, check, apply, with a declared fail-open or\nfail-closed posture) is fixed and lives outside the adapter. The contract is documented in\n[docs/adapter-contract.md](docs/adapter-contract.md). Email gateways and document pipelines are\nimplementation work we do with customers on assisted plans, or a custom adapter on the same\ncontract; if you build one, we want to hear about it, open an issue.\n\n## Security posture, verifiable\n\n- **Local-first is structural, not a setting.** The core makes no network call, at install, at\n  check time, or ever. Test it yourself: install, disconnect from the internet, and every command\n  keeps working. The only network access in the whole journey is `pip` fetching one open-source\n  dependency (PyYAML) at install time.\n- **Checksum.** The trial download is published with its SHA-256 on\n  [signato.ai/trial](https://signato.ai/trial); verify before installing.\n- **Fail posture is yours to declare.** Fail-closed on external sends, fail-open for gradual\n  rollout, per channel. On the standalone verification commands (`check`, `scan`, `test`,\n  `report`, `attest`, `simulate`), an expired license refuses service rather than failing open.\n  The Claude Code hook deliberately does not gate on license state: a wall that guards your\n  agent's workflow should not stop standing because a card expired.\n- **The package carries 830 automated tests** (version 0.13.2).\n\nVulnerability reports: see [SECURITY.md](SECURITY.md).\n\n## Pricing and licensing\n\nThe 30-day local trial is the full product, no card. Paid plans are per operation, not per seat:\n[signato.ai/pricing](https://signato.ai/pricing). Documentation and examples in this repository\nare MIT-licensed ([LICENSE.md](LICENSE.md)); the Signato software is proprietary.\n\n---\n\nSignato is the maker of the local confidentiality chamber and a publisher of practical\nAI-governance intelligence. It is not a law firm and never a substitute for advice from a\nqualified lawyer. Belo Horizonte, Brazil. [hello@signato.ai](mailto:hello@signato.ai)\n",
+    "fetchedAt": "2026-08-12T00:02:36.552Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:54.649Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

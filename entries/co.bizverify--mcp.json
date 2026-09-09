@@ -1,0 +1,90 @@
+{
+  "id": "co.bizverify/mcp",
+  "title": "BizVerify",
+  "description": "KYB for AI agents: verify business registrations from MCP clients.",
+  "summary": "KYB for AI agents: verify business registrations from MCP clients.",
+  "offersHint": "KYB for AI agents: verify business registrations from MCP clients. · Remote MCP (streamable-http) at https://api.bizverify.co/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.bizverify.co/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.bizverify.co/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://bizverify.co/mcp/",
+  "sourceUrl": "https://github.com/BizVerify/bizverify-mcp",
+  "repository": {
+    "url": "https://github.com/BizVerify/bizverify-mcp",
+    "source": "github",
+    "id": "1183216135"
+  },
+  "updatedAt": "2026-06-03T07:47:15.785232Z",
+  "publishedAt": "2026-06-03T07:47:15.785232Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:46.981Z",
+    "sourceRepoAt": "2026-08-12T00:39:46.981Z",
+    "readmeAt": "2026-08-12T00:39:47.523Z",
+    "toolsAt": "2026-08-12T00:39:47.738Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/BizVerify/bizverify-mcp",
+    "checkedAt": "2026-08-12T00:39:46.981Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/BizVerify/bizverify-mcp/main/README.md",
+    "markdown": "# BizVerify MCP Server\n\n> KYB for AI agents — verify and search business entities across US state and international company registries, straight from any MCP client.\n\n[![Glama score](https://glama.ai/mcp/servers/BizVerify/bizverify-mcp/badges/score.svg)](https://glama.ai/mcp/servers/BizVerify/bizverify-mcp)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)\n\n[BizVerify](https://bizverify.co) confirms a company's legal existence, status, good standing, registered agent, officers, and filing history by reading official government business registries in real time.\n\nThe canonical BizVerify MCP server is **hosted** as a Streamable HTTP endpoint:\n\n```\nhttps://api.bizverify.co/mcp\n```\n\nThis repository packages that server as a local **stdio bridge** (plus a Docker image) for MCP clients and sandboxes that expect a local process. The bridge is a thin transparent proxy — tool definitions and results come directly from the hosted server, so it never drifts out of sync.\n\n## Tools\n\n| Tool | Auth | What it does |\n|------|------|--------------|\n| `get_config` | – | Supported jurisdictions, credit pricing, packages, features |\n| `list_jurisdictions` | – | All jurisdictions with capabilities and active status |\n| `verify_business` | ✅ | Confirm a named business in one jurisdiction — existence, status, good standing (quick), plus entity type, formation date, registered agent, officers, principal address and filings (deep) |\n| `search_entities` | ✅ | Discover candidate businesses by name across one or all active jurisdictions |\n| `check_job_status` | ✅ | Poll an async verification job (free) |\n| `get_entity` | ✅ | Retrieve cached entity data by ID (free) |\n| `get_entity_history` | ✅ | Historical verification snapshots for an entity |\n| `get_account` | ✅ | Account details and credit balance |\n| `purchase_credits` | ✅ | Create a Stripe checkout session for more credits |\n\nTools marked ✅ require an API key (or OAuth token). `get_config` and `list_jurisdictions` are free and unauthenticated.\n\n## Quick start\n\n### Option A — Hosted endpoint (recommended)\n\nIf your client supports remote MCP servers, just point it at `https://api.bizverify.co/mcp` and send your key as an `X-API-Key` header (OAuth 2.1 Bearer tokens are also accepted).\n\nFor stdio-only clients, bridge the hosted endpoint with [`mcp-remote`](https://www.npmjs.com/package/mcp-remote):\n\n```json\n{\n  \"mcpServers\": {\n    \"bizverify\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\", \"mcp-remote\", \"https://api.bizverify.co/mcp\",\n        \"--header\", \"X-API-Key:${BIZVERIFY_API_KEY}\"\n      ],\n      \"env\": { \"BIZVERIFY_API_KEY\": \"your-api-key\" }\n    }\n  }\n}\n```\n\n### Option B — This bridge (from source)\n\n```bash\ngit clone https://github.com/BizVerify/bizverify-mcp.git\ncd bizverify-mcp\nnpm install\nnpm run build\n```\n\nThen register it with your client (Claude Desktop, Cursor, etc.):\n\n```json\n{\n  \"mcpServers\": {\n    \"bizverify\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/bizverify-mcp/dist/index.js\"],\n      \"env\": { \"BIZVERIFY_API_KEY\": \"your-api-key\" }\n    }\n  }\n}\n```\n\n### Option C — Docker\n\n```bash\ndocker build -t bizverify-mcp .\ndocker run -i --rm -e BIZVERIFY_API_KEY=your-api-key bizverify-mcp\n```\n\n```json\n{\n  \"mcpServers\": {\n    \"bizverify\": {\n      \"command\": \"docker\",\n      \"args\": [\"run\", \"-i\", \"--rm\", \"-e\", \"BIZVERIFY_API_KEY\", \"bizverify-mcp\"],\n      \"env\": { \"BIZVERIFY_API_KEY\": \"your-api-key\" }\n    }\n  }\n}\n```\n\n## Configuration\n\n| Env var | Required | Default | Description |\n|---------|----------|---------|-------------|\n| `BIZVERIFY_API_KEY` | For authenticated tools | – | Your BizVerify API key, sent as `X-API-Key`. `get_config` and `list_jurisdictions` work without it. |\n| `BIZVERIFY_MCP_URL` | No | `https://api.bizverify.co/mcp` | Override the upstream MCP endpoint. |\n\n## Getting an API key\n\nCreate one in seconds — new accounts get **50 free credits**:\n\n```bash\n# 1. Request an access code (sent by email)\ncurl -X POST https://api.bizverify.co/v1/auth/request-access \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"accept_terms\":true}'\n\n# 2. Exchange the 6-digit code for an API key\ncurl -X POST https://api.bizverify.co/v1/auth/verify-access \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"code\":\"123456\",\"label\":\"mcp\"}'\n```\n\nSee the [setup guide](https://bizverify.co/mcp/) and [docs](https://docs.bizverify.co) for full details.\n\n## Development\n\n```bash\nnpm install\nnpm run build        # compile to dist/\nnpm run typecheck    # type-check only\nnpm start            # run the stdio bridge\n\n# Refresh the offline tool snapshot from the live endpoint\nnode scripts/gen-snapshot.mjs\n```\n\nThe bundled `src/tools-snapshot.ts` is used **only** as an offline fallback for `tools/list` (e.g. during a sandboxed container check). Live calls always proxy to the hosted server.\n\n## Links\n\n- 🌐 Website: https://bizverify.co\n- 🔌 MCP setup guide: https://bizverify.co/mcp/\n- 📚 Docs: https://docs.bizverify.co\n- 🧩 Glama connector: https://glama.ai/mcp/connectors/co.bizverify/mcp\n\n## License\n\n[MIT](./LICENSE) © BizVerify\n",
+    "fetchedAt": "2026-08-12T00:39:47.523Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_config",
+      "description": "Returns BizVerify's public configuration as readable text: active US and international jurisdictions, per-operation credit costs, the free-tier allowance, credit packages with pricing, feature flags, and documentation/legal links. Free and requires no authentication. Call this first to discover what jurisdictions are supported and what each operation costs before verifying."
+    },
+    {
+      "name": "list_jurisdictions",
+      "description": "Lists every registered jurisdiction with its code, active/inactive status, and supported capabilities — search, entity lookup, quick verification, and deep verification. Free and requires no authentication. Use it to confirm a state or country is supported and which verification tiers it offers before calling verify_business or search_entities."
+    },
+    {
+      "name": "verify_business",
+      "description": "Confirm a specific, named business in one jurisdiction — the PRIMARY tool whenever the user wants to verify, check, confirm, or look up a company's existence, status, good standing, or details (e.g. \"verify Acme LLC in Delaware\", \"is Acme registered in FL?\", \"I need to verify a company in Delaware\"). If the user has verification intent but has not given the exact company name, ASK them for the name and use THIS tool — do NOT fall back to search_entities. Two tiers: quick (1 credit) returns existence + status + good-standing. Deep (15 credits, or 25 with force_refresh) adds entity type, formation date, registered agent, officers, principal address, and filing history. Deep is available in a subset of jurisdictions; requesting deep where unavailable returns a quick result with a reason. Requires authentication. A completed verification deducts credits whether or not the business is found — a confirmed no-match is a result. Calls that cannot produce an answer (source unavailable or timed out) are refunded."
+    },
+    {
+      "name": "search_entities",
+      "description": "Discover candidate businesses when the exact entity is UNKNOWN — a listing/discovery tool, NOT a verification tool. Use only when the user wants to browse or list multiple companies matching a partial or fuzzy name, or does not yet know which specific entity they mean. If the user can name one specific company they want to confirm or check, use verify_business instead (ask them for the name first if needed). Costs 2 credits per jurisdiction searched and requires authentication."
+    },
+    {
+      "name": "check_job_status",
+      "description": "Poll a long-running (async) verification job created by verify_business. Returns the full verification result once complete, a failure reason if it failed, or a \"still processing\" status to poll again. Free — no credits charged — but requires authentication. Pass the job_id from the verify_business async response."
+    },
+    {
+      "name": "get_entity",
+      "description": "Fetch a previously verified business entity from BizVerify's cache by its ID — returns name, jurisdiction, status, type, good-standing, formation date, registered agent, and the number of snapshots on record. Free and read-only; does NOT fetch a fresh live result (use verify_business with force_refresh for live data). Requires authentication. Pass an entity_id returned by a prior verify_business or search_entities call."
+    },
+    {
+      "name": "get_entity_history",
+      "description": "Returns the chronological verification snapshots recorded for an entity — each with a timestamp, name, and status — newest first, with pagination. Costs 5 credits and requires authentication. Use it to see how a company's status or details have changed over time."
+    },
+    {
+      "name": "get_account",
+      "description": "Returns your BizVerify account summary: email and verification status, plan, current credit balance, member-since date, and your active and revoked API keys. Free and read-only; requires authentication. Use it to check your remaining credit balance before running paid verifications."
+    },
+    {
+      "name": "purchase_credits",
+      "description": "Starts a credit purchase: creates a Stripe checkout session for the chosen package and returns a payment URL to present to the user. Does NOT charge immediately and does NOT add credits until the user completes payment — credits are then added automatically. Requires authentication. Packages: credits_100, credits_500, credits_2000, credits_10000 (see get_config for current prices)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:39:47.738Z",
+  "toolsPreviewStatus": "ok"
+}

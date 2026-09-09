@@ -1,0 +1,58 @@
+{
+  "id": "io.github.srmorete/mobile-device-mcp",
+  "title": "Mobile Device MCP",
+  "description": "Control iOS and Android devices with multi-device and seamless Native/WebView support.",
+  "summary": "Control iOS and Android devices with multi-device and seamless Native/WebView support.",
+  "offersHint": "Control iOS and Android devices with multi-device and seamless Native/WebView support. · Packages: npm:@srmorete/mobile-device-mcp",
+  "version": "0.1.10",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@srmorete/mobile-device-mcp",
+    "version": "0.1.10",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@srmorete/mobile-device-mcp",
+      "version": "0.1.10",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/srmorete/mobile-device-mcp",
+  "repository": {
+    "url": "https://github.com/srmorete/mobile-device-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T06:03:24.123402Z",
+  "publishedAt": "2026-07-31T06:03:24.123402Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:39.809Z",
+    "sourceRepoAt": "2026-08-11T23:20:09.162Z",
+    "readmeAt": "2026-08-11T23:20:09.531Z",
+    "toolsAt": "2026-08-12T01:00:39.809Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srmorete/mobile-device-mcp",
+    "checkedAt": "2026-08-11T23:20:09.162Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srmorete/mobile-device-mcp/main/README.md",
+    "markdown": "# Mobile Device MCP\n\nAn MCP server that lets AI agents control iOS and Android devices (tap, scroll, type, take screenshots, read UI trees, and run code). Works with multiple devices at the same time.\n\n## How It Works\n\nThree-layer architecture:\n\n1. **On-device servers** — Lightweight HTTP servers running on each mobile device (UIAutomator on Android, XCUITest on iOS) that expose the accessibility tree and accept interaction commands.\n2. **UI tree filter** — Normalizes raw UI trees from both platforms into a unified flat element list.\n3. **MCP server** — The external interface. Handles device discovery, bootstrapping, port allocation, and proxies requests to on-device servers.\n\nDevices are bootstrapped on first use — the server installs the driver app, allocates a port, starts the on-device server, and polls until it's healthy. After that, all tool calls are proxied over localhost HTTP with per-device bearer token auth.\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `list_devices` | List available iOS and Android devices |\n| `screenshot` | Capture the device screen (JPEG) |\n| `uitree` | Get the UI element tree as a flat list, with optional search and limit. Off-screen elements are excluded unless `include_invisible: true` |\n| `tap` | Tap at screen coordinates |\n| `double_tap` | Double-tap at screen coordinates |\n| `long_press` | Long-press at screen coordinates (configurable duration) |\n| `scroll` | Swipe from start to end coordinates |\n| `type_text` | Type text into the focused element |\n| `press_button` | Press a hardware/navigation button (home, back, enter, volumeUp/Down, dpadUp/Down/Left/Right/Center) |\n| `launch_app` | Launch an app by bundle ID / package name |\n| `terminate_app` | Force-stop an app |\n| `list_apps` | List installed apps |\n| `install_app` | Install an app from a host-local file (`.apk` for Android, `.app` for iOS simulator, `.app`/`.ipa` for iOS device). Replaces existing installs |\n| `run_code` | Execute sandboxed JavaScript on-device (see [run_code](#run_code) below) |\n\n### run_code\n\nAgents can pass code _that looks like_ UIAutomator or XCUITest, both being Javascript under the hood.\nThe sandbox restricts (Android) potentially dangerous Java operations and only allows (iOS) some XCUITest-ish commands\n\n- **Android:** Rhino engine with UIAutomator bindings — `uiDevice` (click, swipe, find elements, press keys, read display info), `By` (selectors), `Until` (wait conditions), `console.log()`\n- **iOS:** JavaScriptCore with XCUITest bindings — `app` (query elements, tap, type, swipe), `springboard`, `device`, `openApp(bundleId)`, `sleep(ms)`, `console.log()`\n\nBoth platforms automatically kill runaway scripts (infinite loops) and create a fresh sandbox per call.\n\n## Prerequisites\n\n- **Node.js** 18+ (for running via `npx`)\n- **Android:** Android SDK with `adb` on PATH\n- **iOS Simulator:** Xcode with `xcrun`, `simctl`\n- **iOS Real Device:** Xcode with `xcodebuild`, `devicectl`, and `iproxy` (from [libimobiledevice](https://libimobiledevice.org/))\n- **Building from source:** [Bun](https://bun.sh/) runtime, Gradle (Android), Xcode (iOS)\n\n## Installation\n\n### Claude Code\n\n```bash\nclaude mcp add mobile-device-mcp -- npx -y @srmorete/mobile-device-mcp@latest\n```\n\nOr with custom ports:\n```bash\nclaude mcp add mobile-device-mcp -e MDMS_PORT_ANDROID=20000 -e MDMS_PORT_IOS=21000 -- npx -y @srmorete/mobile-device-mcp@latest\n```\n\n### Modifying `.mcp.json` (Cursor, Claude Desktop, etc)\n\n```json\n{\n  \"mcpServers\": {\n    \"mobile-device-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@srmorete/mobile-device-mcp@latest\"],\n      \"env\": {\n        \"MDMS_PORT_ANDROID\": \"18000\",           # optional\n        \"MDMS_PORT_IOS\": \"19000\"                # optional\n      }\n    }\n  }\n}\n```\n\n## Building from Source\n\n```bash\ngit clone <repo-url>\ncd mobile-device-mcp\nbun install\n\n# Build drivers for both platforms and pack tarball\n./scripts/build.sh\n```\n\nThe build script compiles the on-device drivers (Android APKs via Gradle, iOS test bundle via xcodebuild), copies them to `drivers/`, and creates an npm tarball.\n\nTo run locally during development:\n\n```bash\nbun run start           # Start the MCP server\nbun test                # Run the test suite\n```\n\n## Configuration\n\n| Environment Variable | Default | Description |\n|---------------------|---------|-------------|\n| `MDMS_PORT_ANDROID` | 18000 | Base port for Android on-device servers |\n| `MDMS_PORT_IOS` | 19000 | Base port for iOS on-device servers |\n\nPorts are assigned sequentially — first Android device gets `18000`, second gets `18001`, and so on. Same for iOS starting at `19000`.\n\n## Acknowledgements\n\nMobile Device MCP server stands on the shoulders of giants such as [mobile-mcp](https://github.com/mobile-next/mobile-mcp) and [Maestro](https://github.com/mobile-dev-inc/maestro).\nUsed as inspiration but reframed the current approach to be multi-device and with seamless Native/WebView support (especially on Android).\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:20:09.531Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:39.809Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

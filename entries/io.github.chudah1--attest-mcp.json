@@ -1,0 +1,77 @@
+{
+  "id": "io.github.chudah1/attest-mcp",
+  "title": "attest-mcp",
+  "description": "Credential enforcement middleware for MCP servers — verifies scoped tokens on every tool call",
+  "summary": "Credential enforcement middleware for MCP servers — verifies scoped tokens on every tool call",
+  "offersHint": "Credential enforcement middleware for MCP servers — verifies scoped tokens on every tool call · Packages: npm:@attest-dev/mcp · Env vars: ATTEST_BASE_URL",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@attest-dev/mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ATTEST_BASE_URL",
+        "description": "Base URL of the Attest server"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@attest-dev/mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ATTEST_BASE_URL",
+          "description": "Base URL of the Attest server"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ATTEST_BASE_URL",
+      "description": "Base URL of the Attest server"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/chudah1/attest-dev",
+  "repository": {
+    "url": "https://github.com/chudah1/attest-dev",
+    "source": "github",
+    "subfolder": "sdks/typescript/mcp"
+  },
+  "updatedAt": "2026-04-11T09:40:37.087372Z",
+  "publishedAt": "2026-04-11T09:40:37.087372Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:01.879Z",
+    "sourceRepoAt": "2026-08-11T23:52:40.425Z",
+    "readmeAt": "2026-08-11T23:52:40.857Z",
+    "toolsAt": "2026-08-12T01:27:01.879Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/chudah1/attest-dev",
+    "checkedAt": "2026-08-11T23:52:40.425Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/chudah1/attest-dev/main/README.md",
+    "markdown": "# Attest\n\n[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n\nAttest controls and proves risky AI actions before they hit production systems. It gives agents signed, scope-limited credentials, routes high-risk mutations through policy and optional approval, issues short-lived execution grants, and leaves signed receipts that can be verified later.\n\nThis repository also includes a standalone MCP server:\n\n- [TypeScript MCP server](./sdks/typescript/mcp-server/README.md) — a real stdio Model Context Protocol server that exposes Attest tools like `issue_credential`, `delegate_credential`, `list_tasks`, `get_audit_trail`, `get_evidence`, and approval actions.\n- [TypeScript MCP middleware](./sdks/typescript/mcp/README.md) — middleware for protecting your own MCP server with Attest.\n\n---\n\n## Quickstart (TypeScript)\n\n```ts\nimport { AttestClient } from '@attest-dev/sdk';\n\nconst client = new AttestClient({ baseUrl: 'http://localhost:8080', apiKey: 'dev' });\n\n// 1. Issue a root credential for your agent workflow\nconst root = await client.issue({\n  agent_id: 'support-bot',\n  user_id: 'alice@acme.com',\n  scope: ['refund:execute', 'credit:execute'],\n  instruction: 'Review support incidents and safely process eligible refunds.',\n});\n\n// 2. Request a risky action before touching the target system\nconst action = await client.requestAction({\n  action_type: 'refund',\n  target_system: 'stripe',\n  target_object: 'order_ORD-4821',\n  action_payload: {\n    amount_cents: 4799,\n    currency: 'USD',\n    reason: 'damaged_item',\n  },\n  agent_id: 'support-bot',\n  sponsor_user_id: 'alice@acme.com',\n  att_tid: root.claims.att_tid,\n});\n\nif (action.status !== 'approved' || !action.grant?.token) {\n  throw new Error(`refund needs approval: ${action.status}`);\n}\n\n// 3. Execute with the short-lived grant, then record the receipt\nconst receipt = await client.executeAction(action.id, {\n  outcome: 'success',\n  provider_ref: 're_abc123',\n  response_payload: { stripe_status: 'succeeded' },\n});\nconsole.log(receipt.signed_packet_hash);\n\n// 4. Fetch the immutable receipt later\nconst confirmed = await client.getReceipt(action.id);\nconsole.log(confirmed.outcome, confirmed.provider_ref);\n```\n\n---\n\n## Scope syntax\n\nScopes follow the pattern `resource:action`. Either field may be `*` as a wildcard.\n\n| Expression | Meaning |\n|---|---|\n| `gmail:send` | Send via Gmail only |\n| `gmail:*` | All Gmail actions |\n| `*:read` | Read access to any resource |\n| `*:*` | Full access (root grants only) |\n\nDelegation still enforces that child scope is a **strict subset** of the parent scope.\nThe Action API builds on top of that delegation substrate to gate risky writes.\n\n---\n\n## Getting started\n\n**Prerequisites:** Docker and Docker Compose.\n\n```bash\n# Clone and start everything\ngit clone https://github.com/chudah1/attest-dev\ncd attest-dev\ndocker compose up --build\n\n# The server is now running at http://localhost:8080\n# PostgreSQL at localhost:5432\n\n# Issue your first credential (replace YOUR_API_KEY with the key from POST /v1/orgs)\ncurl -s -X POST http://localhost:8080/v1/credentials \\\n  -H 'Content-Type: application/json' \\\n  -H 'Authorization: Bearer YOUR_API_KEY' \\\n  -d '{\n    \"agent_id\":    \"orchestrator-v1\",\n    \"user_id\":     \"usr_alice\",\n    \"scope\":       [\"research:read\", \"gmail:send\"],\n    \"instruction\": \"Research competitors and email the board\"\n  }' | jq .\n\n# Open the interactive demo\nopen demo/index.html\n```\n\nIf you want to run the Go server outside Docker, point it at the Compose database:\n\n```bash\ndocker compose up -d postgres\ncd server\nDATABASE_URL=postgres://attest:attest@localhost:5432/attest go run ./cmd/attest\n```\n\n---\n\n## API reference\n\n| Method | Path | Description |\n|---|---|---|\n| `POST` | `/v1/orgs` | Create an organization and get an API key |\n| `POST` | `/v1/credentials` | Issue a root credential |\n| `POST` | `/v1/credentials/delegate` | Delegate to a child agent |\n| `GET` | `/v1/actions` | List action requests |\n| `POST` | `/v1/actions/request` | Create an action request and run policy |\n| `GET` | `/v1/actions/{id}` | Fetch an action request |\n| `POST` | `/v1/actions/{id}/approve` | Approve a pending action |\n| `POST` | `/v1/actions/{id}/deny` | Deny a pending action |\n| `POST` | `/v1/actions/{id}/execute` | Record execution and mint a receipt |\n| `GET` | `/v1/actions/{id}/receipt` | Fetch the signed execution receipt |\n| `DELETE` | `/v1/credentials/{jti}` | Revoke credential and all descendants |\n| `GET` | `/v1/revoked/{jti}` | Check revocation status (public, no auth) |\n| `GET` | `/v1/tasks/{tid}/audit` | Retrieve the audit chain for a task |\n| `POST` | `/v1/audit/report` | Report an agent action to the audit log |\n| `POST` | `/v1/audit/status` | Report agent lifecycle event (started/completed/failed) |\n| `POST` | `/v1/approvals` | Request human-in-the-loop approval |\n| `POST` | `/v1/approvals/{id}/grant` | Grant a pending HITL approval |\n| `GET` | `/orgs/{orgId}/jwks.json` | Public key set for offline verification |\n| `GET` | `/health` | Health check |\n\n---\n\n## Specification\n\nThe credential format is defined in [spec/WCS-01.md](spec/WCS-01.md) (Attest Credential Standard, revision 01).\n\n---\n\n## License\n\nApache 2.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:52:40.857Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:01.879Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

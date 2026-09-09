@@ -1,0 +1,58 @@
+{
+  "id": "io.github.base76-research-lab/token-compressor",
+  "title": "token-compressor",
+  "description": "Compress prompts 40-60% using local LLM + embedding validation. Preserves all conditionals.",
+  "summary": "Compress prompts 40-60% using local LLM + embedding validation. Preserves all conditionals.",
+  "offersHint": "Compress prompts 40-60% using local LLM + embedding validation. Preserves all conditionals. · Packages: pypi:token-compressor-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "token-compressor-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "token-compressor-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/base76-research-lab/token-compressor",
+  "repository": {
+    "url": "https://github.com/base76-research-lab/token-compressor",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-03T10:59:30.009101Z",
+  "publishedAt": "2026-03-03T10:59:30.009101Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:19.679Z",
+    "sourceRepoAt": "2026-08-11T23:55:26.356Z",
+    "readmeAt": "2026-08-11T23:55:26.942Z",
+    "toolsAt": "2026-08-12T01:29:19.680Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/base76-research-lab/token-compressor",
+    "checkedAt": "2026-08-11T23:55:26.356Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/base76-research-lab/token-compressor/main/README.md",
+    "markdown": "# token-compressor \n## Reduce LLM prompt tokens by 30–70% while preserving semantic meaning.\n\nmcp-name: io.github.base76-research-lab/token-compressor\n\n**Semantic prompt compression for LLM workflows. Reduce token usage by 40–60% without losing meaning.**\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n[![Requires: Ollama](https://img.shields.io/badge/requires-Ollama-111827)](https://ollama.com)\n[![MCP Compatible](https://img.shields.io/badge/MCP-compatible-8b5cf6)](https://modelcontextprotocol.io)\n\nBuilt by [Base76 Research Lab](https://base76.se) — research into epistemic AI architecture.\n\n---\n\n## Live demo\n\nIntent Compiler MVP is now live and uses this project as part of the idea -> spec -> compressed output flow:\n\n- Live: https://intent-compiler-mvp.pages.dev\n- Product repo: https://github.com/base76-research-lab/token-compressor\n\n---\n\n## What it does\n\ntoken-compressor is a two-stage pipeline that compresses prompts before they reach an LLM:\n\n1. **LLM compression** — a local model (llama3.2:1b via Ollama) rewrites the prompt to its semantic minimum, preserving all conditionals and negations\n2. **Embedding validation** — cosine similarity between original and compressed embeddings must exceed a threshold (default: 0.85) — if not, the original is sent unchanged\n\nThe result: shorter prompts, lower costs, same intent.\n\n```\nInput prompt (300 tokens)\n        ↓\n  LLM compresses\n        ↓\n  Embedding validates (cosine ≥ 0.85?)\n        ↓\n  Pass → compressed (120 tokens)   Fail → original (300 tokens)\n```\n\n**Key design principle:** conditionality is never sacrificed. If your prompt says \"only do X if Y\", that constraint survives compression.\n\n---\n\n## Requirements\n\n- Python 3.10+\n- [Ollama](https://ollama.com) running locally\n- Two models pulled:\n\n```bash\nollama pull llama3.2:1b\nollama pull nomic-embed-text\n```\n\n- Python dependencies:\n\n```bash\npip install ollama numpy\n```\n\n---\n\n## Quick start\n\n```python\nfrom compressor import LLMCompressEmbedValidate\n\npipeline = LLMCompressEmbedValidate()\nresult = pipeline.process(\"Your prompt text here...\")\n\nprint(result.output_text)   # compressed (or original if validation failed)\nprint(result.report())      # MODE / COVERAGE / TOKENS saved\n```\n\n**Result object:**\n\n| Field | Description |\n|-------|-------------|\n| `output_text` | Text to send to your LLM |\n| `mode` | `compressed` / `raw_fallback` / `skipped` |\n| `coverage` | Cosine similarity (0.0–1.0) |\n| `tokens_in` | Estimated input tokens |\n| `tokens_out` | Estimated output tokens |\n| `tokens_saved` | Difference |\n\n---\n\n## CLI usage\n\n```bash\necho \"Your long prompt here...\" | python3 cli.py\n```\n\nOutput: compressed text on stdout, stats on stderr.\n\n---\n\n## Claude Code hook (recommended setup)\n\nAdd to your `~/.claude/settings.json` under `hooks → UserPromptSubmit`:\n\n```json\n{\n  \"type\": \"command\",\n  \"command\": \"echo \\\"${CLAUDE_USER_PROMPT:-}\\\" | python3 /path/to/token-compressor/cli.py > /tmp/compressed_prompt.txt 2>/tmp/compress.log || true\"\n}\n```\n\nThis runs on every prompt submission and writes the compressed version to a temp file, which can be injected back into context via a second hook or MCP server.\n\n---\n\n## MCP server\n\nThe MCP server exposes compression as a tool callable from Claude Code and any MCP-compatible client.\n\n**Install:**\n\n```bash\npip install token-compressor-mcp\n```\n\n**Tool:** `compress_prompt`\n- Input: `text` (string)\n- Output: compressed text + stats footer\n\n**Claude Code MCP config** (`~/.claude/settings.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"token-compressor\": {\n      \"command\": \"uvx\",\n      \"args\": [\"token-compressor-mcp\"]\n    }\n  }\n}\n```\n\nOr from source:\n\n```json\n{\n  \"mcpServers\": {\n    \"token-compressor\": {\n      \"command\": \"python3\",\n      \"args\": [\"-m\", \"token_compressor_mcp\"],\n      \"cwd\": \"/path/to/token-compressor\"\n    }\n  }\n}\n```\n\n---\n\n## Configuration\n\n```python\npipeline = LLMCompressEmbedValidate(\n    threshold=0.85,          # cosine similarity floor (lower = more aggressive)\n    min_tokens=80,           # skip pipeline below this (not worth compressing)\n    compress_model=\"llama3.2:1b\",\n    embed_model=\"nomic-embed-text\",\n)\n```\n\n---\n\n## How it works\n\n**Stage 1 — LLM compression**\n\nThe compression prompt instructs the model to:\n- Preserve all conditionals (`if`, `only if`, `unless`, `when`, `but only`)\n- Preserve all negations\n- Remove filler, hedging, redundancy\n- Target 40–60% of original length\n\n**Stage 2 — Embedding validation**\n\nComputes cosine similarity between the original and compressed text using `nomic-embed-text`. If similarity falls below threshold, the original is returned unchanged. This prevents silent meaning loss.\n\n---\n\n## Results\n\nTested across Swedish and English prompts, technical and natural language:\n\n| Input | Tokens in | Tokens out | Saved |\n|-------|-----------|------------|-------|\n| Research abstract (EN) | 89 | 38 | 57% |\n| Session intent (SV) | 32 | 18 | 44% |\n| Technical instruction | 47 | 22 | 53% |\n| Short command (<80t) | — | — | skipped |\n\n---\n\n## Research background\n\nThis tool implements the architecture from:\n\n> Wikström, B. (2026). *When Alignment Reduces Uncertainty: Epistemic Variance\n> Collapse and Its Implications for Metacognitive AI.*\n> DOI: [10.5281/zenodo.18731535](https://doi.org/10.5281/zenodo.18731535)\n\nPart of the [Base76 Research Lab](https://base76.se) toolchain for epistemic AI infrastructure.\n\n---\n\n## License\n\nMIT — Base76 Research Lab, Sweden\n",
+    "fetchedAt": "2026-08-11T23:55:26.942Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:19.680Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

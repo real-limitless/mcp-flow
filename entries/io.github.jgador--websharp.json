@@ -1,0 +1,56 @@
+{
+  "id": "io.github.jgador/websharp",
+  "title": "websharp",
+  "description": "Search the web and extract article text for LLMs.",
+  "summary": "Search the web and extract article text for LLMs.",
+  "offersHint": "Search the web and extract article text for LLMs. · Packages: oci:docker.io/jessegador/websharp-mcp:v0.99.0-rc2",
+  "version": "v0.99.0-rc2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/jessegador/websharp-mcp:v0.99.0-rc2",
+    "transport": "streamable-http"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/jessegador/websharp-mcp:v0.99.0-rc2",
+      "transport": "streamable-http"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jgador/websharp",
+  "repository": {
+    "url": "https://github.com/jgador/websharp",
+    "source": "github"
+  },
+  "updatedAt": "2025-09-22T09:09:05.052334Z",
+  "publishedAt": "2025-09-22T09:09:05.052334Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:03.277Z",
+    "sourceRepoAt": "2026-08-11T23:41:15.000Z",
+    "readmeAt": "2026-08-11T23:41:15.526Z",
+    "toolsAt": "2026-08-12T01:19:03.277Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jgador/websharp",
+    "checkedAt": "2026-08-11T23:41:15.000Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jgador/websharp/master/README.md",
+    "markdown": "# WebSharp MCP HTTP Server\n\nWebSharp is a Model Context Protocol (MCP) server written in C# (.NET 9) that exposes web search and readable page extraction tools over the streamable HTTP transport. It pairs a SearXNG metasearch instance with the SmartReader content extraction library and ships with Docker assets so you can run everything locally with one command.\n\n## Highlights\n- Streamable HTTP MCP endpoint served by ASP.NET Core via `ModelContextProtocol.AspNetCore`.\n- SearXNG-backed metasearch tool that returns both a readable summary and structured JSON metadata.\n- SmartReader-powered page reader tools for single URLs or batches, ideal for grounding and fact checking workflows.\n- Container-first development story with Docker Compose and an inspector-ready `.mcp.json` profile.\n\n## Available MCP tools\n\n### `web_search`\n| Parameter | Type | Default | Notes |\n| --- | --- | --- | --- |\n| `query` | string | _required_ | Free-form search string submitted to the configured search backend (defaults to SearXNG). |\n| `limit` | integer | 10 | Maximum number of results to surface in the text summary. When set to `0` or negative, the parameter is omitted and the backend decides the result count. |\n| `categories` | string | `\"general\"` | Comma-separated categories forwarded to the backend (for SearXNG, examples include `general,it,science`). |\n| `language` | string | `\"en\"` | Language tag forwarded to the backend. When using the default SearXNG instance, see its language list. |\n\n**Response**\n- Text summary showing the top results, related suggestions, and any unresponsive engines.\n- `structuredContent` contains a JSON object with:\n  - `query`: echo of the evaluated query string.\n  - `items`: array of result objects (`title`, `url`, `content`, `engine/engines`, `category`, `positions`, `parsed_url`).\n  - `suggestions`: related queries returned by the backend (SearXNG surfaces them when available).\n  - `unresponsive_engines`: list of engines that timed out or failed, with optional messages.\n  - `error`: present when the search could not be completed.\n\n### `web_page_read`\n| Parameter | Type | Default | Notes |\n| --- | --- | --- | --- |\n| `urls` | array<string> | _required_ | One or more absolute HTTP/HTTPS URLs to fetch and parse. |\n\n**Response**\n- When a single URL is provided, returns the article title, excerpt, a preview of the readable text (~800 characters), and footer metadata (source URL, detected language).\n- When multiple URLs are provided, the summary includes overall success/failure counts, per-page details (title, URL, full text, language), and error messages for any failures. Requests run concurrently and honor the MCP cancellation token.\n- `structuredContent` is not populated; all data is returned in the text block.\n\n\n### Run everything with Docker Compose\n1. Install Docker Desktop (or another OCI-compatible runtime) and ensure it is running.\n2. From the repository root, start both the SearXNG dependency and the MCP server:  \n   `docker compose -f docker-compose.yaml --project-name websharp up -d` (add `--build` on the first run or whenever the Dockerfile changes).\n3. Wait until the `websharp-mcp` container reports `Now listening on: http://0.0.0.0:8080`.\n4. The MCP server is now reachable at `http://localhost:8081` (mapped from container port 8080). SearXNG is available at `http://localhost:8080/` for inspection.\n\n### Build the Docker image manually\nRun the server image build without Docker Compose from the repository root:\n```powershell\ndocker build -f .\\src\\WebSharp.Mcp.Http\\Dockerfile -t jessegador/websharp-mcp:v0.99.0-rc2 --no-cache src\n```\nUpdate `-t` to match the image registry and tag you plan to publish.\n\n### Connect with the MCP Inspector\n1. Start (or keep running) the compose stack above.\n2. Launch the Inspector with the included client profile:  \n   `npx -y @modelcontextprotocol/inspector --config .\\.mcp.json --server websharp-mcp`\n3. Copy the printed token into the Inspector UI by opening `http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=<token>` in your browser.\n4. In the Inspector UI, pick the `websharp-mcp` server to explore the available tools and try calls right away.\n\n## Running from source\n- Install the [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0).\n- Ensure you have access to a SearXNG endpoint. The easiest option is to keep using the Docker Compose service and export `Searxng__BaseUrl` to `http://localhost:8080` before starting the app.\n- Launch the server:  \n  `dotnet run --project src/WebSharp.Mcp.Http/WebSharp.Mcp.Http.csproj --urls http://localhost:8081`\n- The MCP endpoint listens on `/`. In `DEBUG` builds you can hit `/__routes` to inspect the configured ASP.NET endpoints.\n\n## Configuration\n| Environment variable | Default | Description |\n| --- | --- | --- |\n| `ASPNETCORE_URLS` | `http://0.0.0.0:8080` (Docker) | Listening address(es) for the HTTP server. Override to change the exposed MCP port. |\n| `Searxng__BaseUrl` | `http://searxng:8080` | Base URL of the SearXNG instance. Required if you are not running the bundled Docker service. Must be an absolute URI. |\n| `Cors__AllowAnyOrigin` | `true` | Permit all origins. Set to `false` when you want to limit callers via `Cors__AllowedOrigins__0=<origin>` style keys. |\n| `Cors__AllowAnyHeader` | `true` | Allow all request headers. |\n| `Cors__AllowAnyMethod` | `true` | Allow all HTTP methods. |\n| `Cors__AllowCredentials` | `false` | When `true`, credentials are accepted and you must explicitly enumerate origins. |\n| `Cors__AllowedOrigins__{n}` | _(empty)_ | Optional origin allowlist entries when `AllowAnyOrigin` is `false`. |\n| `Cors__AllowedHeaders__{n}` | _(empty)_ | Optional header allowlist. |\n| `Cors__AllowedMethods__{n}` | _(empty)_ | Optional method allowlist. |\n\nAll configuration values can also be supplied via `appsettings.json`/`appsettings.Development.json`. The Docker Compose definition mounts the correct defaults for local experimentation.\n\n## Using a different SearXNG instance\n- Point `Searxng__BaseUrl` at your hosted SearXNG deployment (for example `https://searxng.example.com`).\n- Make sure the endpoint you target exposes the [SearXNG Search API](https://docs.searxng.org/user/search-api.html) and permits the categories/languages you request.\n- Consider adjusting the bundled `searxng/settings.yml` to tune activated engines, safe search, or rate limits before publishing to the MCP registry.\n\n## Security notes\n- The HTTP transport does **not** include authentication. Run behind a reverse proxy, tunnel, or VPN when exposing beyond localhost.\n- CORS defaults to permissive settings for debugging. Tighten them before deploying to shared environments.\n- The server respects MCP cancellation tokens, and page fetches enforce short HTTP timeouts to avoid hanging client sessions.\n\n## Registry metadata\n- **Name**: `websharp-mcp`\n- **Transport**: `streamable-http`\n- **Endpoint**: `/`\n- See `.mcp.json` for a ready-to-use inspector profile.\n\n## License\nThis project is available under the MIT license (see `LICENSE`).\n\n\n\n\n",
+    "fetchedAt": "2026-08-11T23:41:15.526Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:03.277Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,68 @@
+{
+  "id": "io.github.ako2345/android-security-analyzer",
+  "title": "Android Security Analyzer",
+  "description": "MCP server for static security analysis of Android source code",
+  "summary": "MCP server for static security analysis of Android source code",
+  "offersHint": "MCP server for static security analysis of Android source code · Remote MCP (streamable-http) at https://android-security-analyzer.ako-labs.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://android-security-analyzer.ako-labs.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://android-security-analyzer.ako-labs.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/ako2345/android-security-analyzer",
+  "repository": {
+    "url": "https://github.com/ako2345/android-security-analyzer",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-14T19:38:27.848667Z",
+  "publishedAt": "2026-03-14T19:38:27.848667Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:12.481Z",
+    "sourceRepoAt": "2026-08-11T23:57:48.288Z",
+    "readmeAt": "2026-08-11T23:57:48.978Z",
+    "toolsAt": "2026-08-11T23:57:49.435Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ako2345/android-security-analyzer",
+    "checkedAt": "2026-08-11T23:57:48.288Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ako2345/android-security-analyzer/main/README.md",
+    "markdown": "# Android Security Analyzer\n\nMCP server for static security analysis of Android application source code. Runs on Cloudflare Workers as a remote MCP server over Streamable HTTP.\n\n## What it does\n\nAnalyzes Android project source files — **without building the project** — and returns a structured security report. The analysis covers:\n\n- **Manifest analysis** — exported components, dangerous permissions, cleartext traffic, debug flags, backup settings, SDK versions\n- **Gradle/build config** — release build misconfigurations, outdated SDKs, suspicious dependencies, hardcoded secrets\n- **Source code (Java/Kotlin)** — insecure WebView, SSL/TLS bypass, weak crypto, SQL injection patterns, process execution, insecure file storage, PendingIntent issues\n- **XML configuration** — network security config weaknesses, overly broad file provider paths\n- **Secret scanning** — API keys, tokens, passwords, private keys, cloud credentials, high-entropy strings\n\nAll analysis is regex/pattern-based and runs natively in the Workers runtime with no external tools, Java, or Android SDK required.\n\n## Architecture\n\n```\nPOST /mcp ──► McpServer (JSON-RPC 2.0) ──► Tool Router\n                                              │\n              ┌───────────────────────────────┘\n              ▼\n         Orchestrator\n              │\n    ┌─────────┼─────────┬─────────────┬──────────────┐\n    ▼         ▼         ▼             ▼              ▼\n Manifest  Gradle   Source Code   XML Config    Secret\n Analyzer  Analyzer  Analyzer     Analyzer     Scanner\n    │         │         │             │              │\n    └─────────┴─────────┴─────────────┴──────────────┘\n              │\n              ▼\n     Scoring + Deduplication ──► AnalysisReport\n```\n\n**Key design decisions:**\n- Stateless — no sessions, no Durable Objects\n- Minimal MCP JSON-RPC 2.0 implementation (no heavy SDK dependencies)\n- Data-driven rule engine with extensible rule registry\n- Independent analyzers with unified Finding type\n- Lightweight XML parsing via `fast-xml-parser`\n- Input validation via `zod`\n- Bundle size: ~66KB gzipped\n\n## MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `analyze_android_project` | Full security analysis of project files |\n| `list_android_security_checks` | List all implemented security rules |\n| `explain_finding` | Detailed explanation of a specific rule |\n| `health` | Server status and rule engine stats |\n\n## Install\n\n**Hosted server (recommended for Cline / MCP clients):** no local install needed. The server runs at:\n\n`https://android-security-analyzer.ako-labs.workers.dev/mcp`\n\nAdd this URL to your MCP client configuration (see [Connecting from an MCP client](#connecting-from-an-mcp-client) below).\n\n**Local development:**\n\n```bash\nnpm install\n```\n\n## Development\n\n```bash\nnpm run dev\n```\n\nThis starts a local Wrangler dev server. The MCP endpoint is available at `http://localhost:8787/mcp`.\n\n## Deploy\n\n```bash\nnpm run deploy\n```\n\nDeploys to Cloudflare Workers. Requires `wrangler` authentication (`npx wrangler login`).\n\n## Testing\n\n```bash\nnpm test              # Run all tests\nnpm run test:watch    # Watch mode\nnpm run typecheck     # TypeScript type checking\n```\n\n## Local MCP Testing\n\n### Initialize the connection\n\nUnix:\n```bash\ncurl -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}'\n```\n\nWindows (PowerShell):\n```powershell\n(Invoke-WebRequest -Method Post -Uri \"http://localhost:8787/mcp\" -ContentType \"application/json\" -Body '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"test\",\"version\":\"1.0\"}}}' -UseBasicParsing).Content\n```\n\n### List available tools\n\nUnix:\n```bash\ncurl -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}'\n```\n\nWindows (PowerShell): ответ приходит в `result.tools`; чтобы увидеть список как JSON, используйте сырой ответ:\n```powershell\n(Invoke-WebRequest -Method Post -Uri \"http://localhost:8787/mcp\" -ContentType \"application/json\" -Body '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}' -UseBasicParsing).Content\n```\nЛибо через объект: `(Invoke-RestMethod ...).result.tools | ConvertTo-Json -Depth 5`\n\n### Check health\n\nUnix:\n```bash\ncurl -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"health\",\"arguments\":{}}}'\n```\n\nWindows (PowerShell):\n```powershell\n(Invoke-WebRequest -Method Post -Uri \"http://localhost:8787/mcp\" -ContentType \"application/json\" -Body '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"health\",\"arguments\":{}}}' -UseBasicParsing).Content\n```\n\n### Run analysis (minimal example)\n\nUnix:\n```bash\ncurl -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 4,\n    \"method\": \"tools/call\",\n    \"params\": {\n      \"name\": \"analyze_android_project\",\n      \"arguments\": {\n        \"projectName\": \"TestApp\",\n        \"files\": [\n          {\n            \"path\": \"app/src/main/AndroidManifest.xml\",\n            \"content\": \"<manifest><application android:debuggable=\\\"true\\\" android:allowBackup=\\\"true\\\"></application></manifest>\"\n          }\n        ]\n      }\n    }\n  }'\n```\n\nWindows (PowerShell):\n```powershell\n$body = @{\n  jsonrpc = \"2.0\"\n  id = 4\n  method = \"tools/call\"\n  params = @{\n    name = \"analyze_android_project\"\n    arguments = @{\n      projectName = \"TestApp\"\n      files = @(\n        @{\n          path = \"app/src/main/AndroidManifest.xml\"\n          content = \"<manifest><application android:debuggable=`\"true`\" android:allowBackup=`\"true`\"></application></manifest>\"\n        }\n      )\n    }\n  }\n} | ConvertTo-Json -Depth 10\n(Invoke-WebRequest -Method Post -Uri \"http://localhost:8787/mcp\" -ContentType \"application/json\" -Body $body -UseBasicParsing).Content\n```\n\n### Connecting from an MCP client\n\nAdd to your MCP client configuration:\n\n```json\n{\n  \"mcpServers\": {\n    \"android-security-analyzer\": {\n      \"url\": \"http://localhost:8787/mcp\"\n    }\n  }\n}\n```\n\nFor production (hosted):\n\n```json\n{\n  \"mcpServers\": {\n    \"android-security-analyzer\": {\n      \"url\": \"https://android-security-analyzer.ako-labs.workers.dev/mcp\"\n    }\n  }\n}\n```\n\n## Security Rules\n\nThe analyzer implements 53 security rules across 5 categories:\n\n| Category | Prefix | Rules | Examples |\n|----------|--------|-------|----------|\n| Manifest | MAN-* | 17 | debuggable, allowBackup, exported components, permissions |\n| Gradle | GRD-* | 9 | release config, SDK versions, dependencies, secrets |\n| Source | SRC-* | 17 | WebView, SSL/TLS, crypto, injection, file storage |\n| XML Config | XML-* | 4 | network security config, file provider paths |\n| Secret | SEC-* | 7 | API keys, tokens, passwords, cloud credentials |\n\nEach finding includes:\n- Stable rule ID\n- Severity (critical/high/medium/low/info) and confidence (high/medium/low)\n- File path and line number (when determinable)\n- Evidence snippet\n- CWE and OWASP Mobile Top 10 mappings\n- Actionable recommendation\n\n## Scoring\n\nRisk score (0-100) is computed from finding severities:\n- Critical: 9 points\n- High: 6 points\n- Medium: 3 points\n- Low: 1 point\n- Info: 0 points\n\nThe raw sum is normalized against an expected maximum of 50 points.\n\n## Limitations\n\n- **Not a SAST replacement** — pattern/regex-based heuristics, not full AST/dataflow analysis\n- **No build required** — analyzes raw source, so build-time transforms are not visible\n- **False positives possible** — especially for secret scanning and some code patterns\n- **Workers constraints** — 128MB memory limit, CPU time limits, no filesystem access\n- **No APK/AAB analysis** — source code only\n- **No inter-procedural analysis** — patterns are matched per-file, not across call graphs\n\n## Project Structure\n\n```\nsrc/\n├── index.ts                          # Worker entry point\n├── server/\n│   ├── mcp.ts                        # MCP JSON-RPC 2.0 handler\n│   └── tools/                        # MCP tool implementations\n│       ├── analyzeAndroidProject.ts\n│       ├── listAndroidSecurityChecks.ts\n│       ├── explainFinding.ts\n│       └── health.ts\n├── core/\n│   ├── types.ts                      # TypeScript types & Zod schemas\n│   ├── scoring.ts                    # Risk score computation\n│   ├── registry.ts                   # Rule registry\n│   └── orchestrator.ts              # Analysis orchestrator\n├── analyzers/\n│   ├── manifestAnalyzer.ts\n│   ├── gradleAnalyzer.ts\n│   ├── sourceAnalyzer.ts\n│   ├── xmlConfigAnalyzer.ts\n│   └── secretScanner.ts\n├── parsers/\n│   ├── xml.ts                        # XML parser wrapper\n│   ├── gradle.ts                     # Gradle file parser\n│   ├── source.ts                     # Source code pattern matcher\n│   └── files.ts                      # File classifier\n├── rules/\n│   ├── manifestRules.ts\n│   ├── gradleRules.ts\n│   ├── sourceRules.ts\n│   ├── xmlRules.ts\n│   └── secretRules.ts\n├── mappings/\n│   ├── cwe.ts                        # CWE descriptions\n│   └── owaspMobile.ts               # OWASP Mobile Top 10\n└── utils/\n    ├── lines.ts                      # Line number utilities\n    ├── paths.ts                      # Path classification\n    └── text.ts                       # Text utilities\ntest/\n├── fixtures/                         # Sample Android project files\n├── unit/                             # Unit tests per module\n└── integration/                      # Full analysis integration tests\n```\n\n## Adding New Rules\n\n1. Define the rule in the appropriate file under `src/rules/`\n2. Add detection logic in the corresponding analyzer under `src/analyzers/`\n3. Add CWE mapping in `src/mappings/cwe.ts` if needed\n4. Add a test case\n5. The rule is automatically registered via `src/core/registry.ts`\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:57:48.978Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "analyze_android_project",
+      "description": "Analyzes an Android project's source code for security vulnerabilities. Accepts project files (AndroidManifest.xml, build.gradle, Java/Kotlin sources, XML configs) and returns a structured security report with findings, severity scores, and recommendations."
+    },
+    {
+      "name": "list_android_security_checks",
+      "description": "Returns the list of all implemented security checks/rules with their IDs, categories, severity levels, and descriptions."
+    },
+    {
+      "name": "explain_finding",
+      "description": "Explains a specific security finding by its rule ID. Returns why it is a risk, how to fix it, and false positive considerations."
+    },
+    {
+      "name": "health",
+      "description": "Returns the server health status, version, and rule engine statistics."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:57:49.435Z",
+  "toolsPreviewStatus": "ok"
+}

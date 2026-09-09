@@ -1,0 +1,58 @@
+{
+  "id": "io.github.aryanspv/har-forensics-mcp",
+  "title": "har-forensics-mcp",
+  "description": "Tells you what leaked in a .har capture, who's on the page, and what to strip. No network calls.",
+  "summary": "Tells you what leaked in a .har capture, who's on the page, and what to strip. No network calls.",
+  "offersHint": "Tells you what leaked in a .har capture, who's on the page, and what to strip. No network calls. · Packages: npm:har-forensics-mcp",
+  "version": "0.3.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "har-forensics-mcp",
+    "version": "0.3.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "har-forensics-mcp",
+      "version": "0.3.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/aryanspv/har-forensics-mcp",
+  "repository": {
+    "url": "https://github.com/aryanspv/har-forensics-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-06T12:36:39.558665Z",
+  "publishedAt": "2026-08-06T12:36:39.558665Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:55.940Z",
+    "sourceRepoAt": "2026-08-11T23:56:19.173Z",
+    "readmeAt": "2026-08-11T23:56:19.708Z",
+    "toolsAt": "2026-08-12T01:29:55.940Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aryanspv/har-forensics-mcp",
+    "checkedAt": "2026-08-11T23:56:19.173Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aryanspv/har-forensics-mcp/main/README.md",
+    "markdown": "# har-forensics-mcp\n\nAudit a `.har` capture from inside your editor. Other HAR tools show you a list\nof requests. This one answers the question you opened the file for: what leaked,\nwho's on the page, and what to strip before you send it anywhere.\n\nReads a file from local disk, computes, writes to stdout. **It makes no network\ncalls**, which is the point: a real capture holds live session cookies,\n`Authorization` headers, and sometimes card numbers.\n\nWorks with anything that speaks MCP over stdio — Cursor, Claude Code, Windsurf,\nZed, VS Code Copilot.\n\n## Setup\n\n**Claude Code:**\n\n```bash\nclaude mcp add --scope user har-forensics -- npx -y har-forensics-mcp\n```\n\n`--scope user` registers it for every directory. Without it the server is scoped\nto whichever directory you ran the command in — which still reports success, and\nthen the tools are silently absent everywhere else.\n\n**Cursor** — `.cursor/mcp.json` in the project, or `~/.cursor/mcp.json` globally:\n\n```json\n{\n  \"mcpServers\": {\n    \"har-forensics\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"har-forensics-mcp\"]\n    }\n  }\n}\n```\n\n**Windsurf / Zed / VS Code Copilot** take the same `command` + `args` shape in\ntheir own MCP config files.\n\nRestart the editor, then point a tool at a capture:\n\n> Run `analyze_har` on `~/Downloads/checkout.har`\n\nRequires Node 20+. Nothing else — no clone, no build, no API key, no account.\n\n## Tools\n\n| Tool | Answers |\n| --- | --- |\n| `find_captures` | \"Where are my .har files?\" — scans Downloads, Desktop, Documents, cwd, temp. |\n| `analyze_har` | \"What's in this capture?\" — triage overview, one verdict per check. **Start here.** |\n| `har_brief` | The full audit as redacted markdown. The artifact to quote or paste. |\n| `har_findings` | Findings, worst-first, filterable by severity. Paged. |\n| `har_vendors` | Every third party, scored 0–100 by blast radius, with an HTTP Archive scrutiny tier. |\n| `har_provenance` | Who loaded whom — the fourth parties your vendors brought with them. |\n| `har_perf` | \"Why was this slow?\" — slowest requests by dominant phase, per-origin handshake cost, uncompressed assets, time lost to redirects. |\n| `har_csp` | A starter Content-Security-Policy synthesized from observed traffic. |\n| `har_hunt` | Query requests — `is:thirdparty`, `status:>=400`, `type:script`, `host:…`. Returns entry indices. |\n| `har_entry` | Everything about one request: headers, cookies, body, timing phases. |\n| `har_curl` | That request as a runnable cURL or `fetch()`, credentials masked. |\n| `har_diff` | Before vs. after: what was added, what regressed, which third parties are new. |\n| `sanitize_har` | Write a `.redacted.har` safe to attach to a ticket. |\n\n`har_hunt` → `har_entry` → `har_curl` is the loop: find the request, read it,\nreplay it. Every tool that returns a list takes a `limit` and tells you the\ntotal, so nothing silently returns a first page as if it were the whole answer.\n\nEvery tool except `sanitize_har` is annotated `readOnlyHint`, and all of them are\n`openWorldHint: false` — the no-network guarantee below, in a form your client\ncan read and act on rather than prose you have to take on trust.\n\n## Three properties it inherits from the web app\n\n**No network.** The analyzers contain no `fetch`, and this transport does not add\none. That invariant is the product — Cloudflare shipped a DLP profile in March\n2026 that detects HAR files in HTTP traffic and lets admins block the upload\noutright, because unsanitized HARs are a known credential-exfiltration path.\n\n**Summaries, never dumps.** Every tool returns a rendered conclusion, not raw\nentries, and every list is bounded with its total stated. The captures this\nexists for run to tens of thousands of entries and hundreds of megabytes;\nhanding an agent the entry list would blow its context and make it slower at a\njob the analyzers already did. (This was a promise the code broke until 0.2.0 —\n`har_findings` had no cap and returned ~93,000 tokens on a 10,000-entry capture.\nThe 27-entry demo returned ~175, which is exactly why it went unnoticed.)\n\n**Redacted by default.** `har_brief` and `har_findings` route through the same\nredactor the browser export uses, built from a single shared secret-pattern\ntable. An agent reading a capture in an editor is *more* likely to paste a\nfinding into a chat window than a human with a download folder.\n\n## What it will not do\n\n- **Overwrite anything.** `sanitize_har` refuses to write over an existing target\n  or the original capture.\n- **Read a file above ~512 MB.** Guarded rather than left to OOM — pinned just\n  under V8's maximum string length, since the file is read as one string.\n- **Answer a query it did not understand.** A misspelled filter (`is:third-party`,\n  `staus:404`) is an error, not an empty result. Those were the same response\n  until 0.2.0, which meant a typo could report a capture clean.\n- **Judge time against your clock.** A HAR is a historical artifact, so token\n  expiry is measured against each entry's `startedDateTime`. Comparing to `now`\n  marks every token in a week-old capture as expired and buries the one that was\n  genuinely dead when the browser sent it.\n\n## Reading the code\n\nThis package ships one file, `dist/server.js`. It is deliberately not\nminified — the build treats it as something a human debugging an editor\nintegration will read far more often than something a machine will parse for\nsize — so it is the same code a build would produce, already built. There is\nno separate source repository to clone; the shipped file is the artifact to\naudit.\n\n## License\n\nMIT. Bundled vendor data is generated from\n[`third-party-web`](https://github.com/patrickhulce/third-party-web) — MIT,\nCopyright (c) 2017 Patrick Hulce, derived from HTTP Archive.\n",
+    "fetchedAt": "2026-08-11T23:56:19.708Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:55.940Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,91 @@
+{
+  "id": "io.github.Easton-OU/rootpilot-ssh-diagnose",
+  "title": "rootpilot-ssh-diagnose",
+  "description": "Read-only SSH server diagnostics via a fixed 38-command whitelist; secrets redacted, no write path.",
+  "summary": "Read-only SSH server diagnostics via a fixed 38-command whitelist; secrets redacted, no write path.",
+  "offersHint": "Read-only SSH server diagnostics via a fixed 38-command whitelist; secrets redacted, no write path. · Packages: npm:@rootpilot/mcp-ssh-diagnose · Env vars: RP_HOSTS, RP_PROBE_URL",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@rootpilot/mcp-ssh-diagnose",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "RP_HOSTS",
+        "description": "Path to your hosts.json (see hosts.example.json in the repo)",
+        "required": true
+      },
+      {
+        "name": "RP_PROBE_URL",
+        "description": "Target URL for the outbound-connectivity / DNS probes (default: https://cloudflare.com)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@rootpilot/mcp-ssh-diagnose",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "RP_HOSTS",
+          "description": "Path to your hosts.json (see hosts.example.json in the repo)",
+          "required": true
+        },
+        {
+          "name": "RP_PROBE_URL",
+          "description": "Target URL for the outbound-connectivity / DNS probes (default: https://cloudflare.com)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "RP_HOSTS",
+      "description": "Path to your hosts.json (see hosts.example.json in the repo)",
+      "required": true
+    },
+    {
+      "name": "RP_PROBE_URL",
+      "description": "Target URL for the outbound-connectivity / DNS probes (default: https://cloudflare.com)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Easton-OU/rootpilot-mcp",
+  "repository": {
+    "url": "https://github.com/Easton-OU/rootpilot-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-13T08:40:41.978666Z",
+  "publishedAt": "2026-07-13T08:40:41.978666Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:03.251Z",
+    "sourceRepoAt": "2026-08-12T00:13:46.487Z",
+    "readmeAt": "2026-08-12T00:13:47.025Z",
+    "toolsAt": "2026-08-12T01:44:03.251Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Easton-OU/rootpilot-mcp",
+    "checkedAt": "2026-08-12T00:13:46.487Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Easton-OU/rootpilot-mcp/main/README.md",
+    "markdown": "# rootpilot-ssh-diagnose\n\n> This is the open-source, bring-your-own-LLM taste of [RootPilot](https://rootpilotx.com). The full product adds calibrated diagnosis (89.7% across 29 standard failure scenarios, zero false alarms on healthy hosts), alert-triggered auto-diagnosis, history, and multi-host management → [rootpilotx.com](https://rootpilotx.com) · deployment repo: [rootpilot-release](https://github.com/Easton-OU/rootpilot-release)\n\nAn [MCP](https://modelcontextprotocol.io) server that lets any MCP client — Claude Desktop, Claude Code, or your own — **safely collect read-only diagnostics from your servers over SSH**. It gathers evidence from a fixed whitelist of read-only commands; **your model does the reasoning**. The server never runs anything outside the whitelist, and never makes a change to your hosts.\n\n## Why\n\nWhen a server misbehaves, you end up SSH-ing in and running the same twenty commands — `df -h`, `docker ps`, `dmesg | grep -i oom`, `free -m` — then eyeballing the output. This server turns that into a conversation: your LLM asks for exactly the evidence it needs, gets structured, secret-redacted output back, and reasons about the root cause. You stay in control; nothing leaves your machine except SSH to your own hosts.\n\n## Security model (read this first)\n\n- **Read-only whitelist.** There are exactly 38 built-in commands (`get_whitelist` lists them all). There is no tool that runs an arbitrary command — not even with a confirmation prompt. Every command only inspects state.\n- **The only injectable value is a container name**, validated against `^[a-zA-Z0-9_.-]+$` before it is ever placed in a command. `web; rm -rf /` is rejected, not escaped.\n- **Secrets are redacted** from output before it reaches your model: `KEY=value` secrets, `Bearer`/`Basic` tokens, `sk-`/`ghp_`/`AKIA…` key shapes, PEM private-key blocks, and credentials embedded in URLs. `docker inspect` env values are scrubbed.\n- **Per-command timeout** (15s) and output truncation guard against hangs and floods.\n- **Credentials stay local.** Host definitions live in a file you control; passwords are never logged.\n\n## 30-second setup\n\nAdd the server to your MCP client. For **Claude Desktop** (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"rootpilot-ssh-diagnose\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@rootpilot/mcp-ssh-diagnose\"],\n      \"env\": {\n        \"RP_HOSTS\": \"/Users/me/.rootpilot-mcp/hosts.json\"\n      }\n    }\n  }\n}\n```\n\nThen create `hosts.json` (see [`hosts.example.json`](./hosts.example.json)):\n\n```json\n[\n  { \"name\": \"prod-1\", \"host\": \"1.2.3.4\", \"port\": 22, \"user\": \"rootpilot\",\n    \"auth\": { \"type\": \"key\", \"keyPath\": \"~/.ssh/rootpilot_key\" } },\n  { \"name\": \"prod-2\", \"host\": \"10.0.0.5\", \"user\": \"ops\",\n    \"auth\": { \"type\": \"password\", \"password\": \"...\" } }\n]\n```\n\nRestart your client. Ask it: **\"Diagnose prod-1\"** (or run the `diagnose-host` prompt).\n\n> **Use a least-privilege account.** Create a dedicated read-only SSH user for diagnostics rather than reusing root. The commands only read state, but the account should reflect that.\n\n## Tools\n\n| tool | arguments | what it does |\n|---|---|---|\n| `list_hosts` | `probe?` | List configured hosts; with `probe`, also test SSH reachability |\n| `get_whitelist` | — | Return all 38 commands (key, purpose, template) so you and the model can audit exactly what can run |\n| `collect` | `host`, `keys[]` (≤8), `container?` | Run specific whitelisted commands and return redacted, truncated output |\n| `collect_base` | `host` | Shortcut: the base overview (`docker_ps`, `df`, `df_inode`, `free`, `uptime`, `dmesg_oom`, `docker_daemon`) |\n| `container_deep_dive` | `host`, `container` | Shortcut: `docker_logs`, `docker_inspect` (redacted), `container_state`, `docker_stats` for one container |\n\nTwo prompts ship built-in: **`diagnose-host`** (evidence-first root-cause walkthrough) and **`health-check`** (a light sweep).\n\n## Configuration\n\n| env var | default | purpose |\n|---|---|---|\n| `RP_HOSTS` | — | Path to your `hosts.json` (**required**) |\n| `RP_PROBE_URL` | `https://cloudflare.com` | Target for the outbound-connectivity / DNS probes |\n| `RP_NO_PROMO` | — | Set to `1` to silence the one-line pointer to the full product |\n\n## How it works\n\n```\n  your MCP client (the LLM)\n        │  \"collect df, docker_ps, dmesg_oom from prod-1\"\n        ▼\n  rootpilot-ssh-diagnose  ──ssh──▶  your server\n        │  renders a whitelisted template, runs it read-only,\n        │  redacts secrets, truncates, returns structured output\n        ▼\n  the LLM reasons about root cause from the evidence\n```\n\nThe server deliberately does **no** analysis of its own — no built-in LLM call, no multi-round orchestration. That boundary is the point: it's a clean, auditable evidence collector. Calibrated diagnosis (deciding *which* evidence to pull for *which* symptom, across follow-up rounds, scored against a failure-scenario library) is what the full [RootPilot](https://rootpilotx.com) product does.\n\n## FAQ\n\n**Does it ever change my server?** No. Every command is read-only, and there is no arbitrary-command tool. The full whitelist is visible via `get_whitelist`.\n\n**Where does my data go?** Nowhere except SSH between this server (running on your machine) and your hosts. Command output goes to your MCP client's model. No telemetry.\n\n**Which LLM does it use?** None of its own — it's bring-your-own. Whatever model your MCP client runs does the reasoning.\n\n**Can it manage Windows servers or jump hosts?** Not in v1. It targets Linux hosts over direct SSH.\n\n**How is this different from RootPilot?** This collects evidence; you (or your model) interpret it ad hoc. RootPilot adds calibrated diagnosis, alert-triggered auto-diagnosis, a per-host history (\"medical record\"), and multi-host management. See [rootpilotx.com](https://rootpilotx.com).\n\n## Development\n\n```bash\nnpm install\nnpm run build      # compile to dist/\nnpm test           # whitelist / injection / redaction / timeout tests\nnpm run typecheck\n```\n\n## License\n\nMIT — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:13:47.025Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:03.251Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

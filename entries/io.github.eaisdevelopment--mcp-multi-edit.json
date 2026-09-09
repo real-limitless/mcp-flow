@@ -1,0 +1,58 @@
+{
+  "id": "io.github.eaisdevelopment/mcp-multi-edit",
+  "title": "mcp-multi-edit",
+  "description": "Atomic multi-file find-and-replace by Essential AI Solutions (essentialai.uk)",
+  "summary": "Atomic multi-file find-and-replace by Essential AI Solutions (essentialai.uk)",
+  "offersHint": "Atomic multi-file find-and-replace by Essential AI Solutions (essentialai.uk) · Packages: npm:@essentialai/mcp-multi-edit",
+  "version": "0.2.7",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@essentialai/mcp-multi-edit",
+    "version": "0.2.7",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@essentialai/mcp-multi-edit",
+      "version": "0.2.7",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/eaisdevelopment/mcp-multi-edit",
+  "repository": {
+    "url": "https://github.com/eaisdevelopment/mcp-multi-edit",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-13T09:49:04.224484Z",
+  "publishedAt": "2026-02-13T09:49:04.224484Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:44.456Z",
+    "sourceRepoAt": "2026-08-11T23:47:55.546Z",
+    "readmeAt": "2026-08-11T23:47:56.125Z",
+    "toolsAt": "2026-08-12T01:23:44.456Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/eaisdevelopment/mcp-multi-edit",
+    "checkedAt": "2026-08-11T23:47:55.546Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/eaisdevelopment/mcp-multi-edit/main/README.md",
+    "markdown": "# Multi Edit MCP Server\n\n[![npm version](https://img.shields.io/npm/v/@essentialai/mcp-multi-edit)](https://www.npmjs.com/package/@essentialai/mcp-multi-edit)\n[![license](https://img.shields.io/npm/l/@essentialai/mcp-multi-edit)](./LICENSE)\n[![tests](https://img.shields.io/badge/tests-264%20passed-brightgreen)](./tests)\n[![coverage](https://img.shields.io/badge/coverage-90%25%2B-brightgreen)](./tests)\n\nAn [MCP](https://modelcontextprotocol.io) server that gives Claude the ability to perform **multiple find-and-replace operations in a single tool call** with guaranteed atomicity -- all edits succeed or none apply.\n\nBuilt by [Essential AI Solutions](https://essentialai.uk) for Claude Code and Claude Desktop.\n\n## Why Multi Edit?\n\nClaude's built-in `Edit` tool handles **one** find-and-replace per call. When renaming a variable across a file or refactoring multiple files, that means dozens of individual tool calls -- each consuming context tokens and adding latency.\n\n**Multi Edit batches them into a single call:**\n\n```\nWithout multi_edit:      105 tool calls   |   15,750 tokens\nWith multi_edit:          21 tool calls   |    7,850 tokens   (-80% calls, -50% tokens)\nWith multi_edit_files:     6 tool calls   |    4,550 tokens   (-94% calls, -71% tokens)\n```\n\n> Benchmarks run on realistic scenarios (bulk rename, logging migration, cross-file refactor).\n> See [benchmarks/results/BENCHMARK-REPORT.md](./benchmarks/results/BENCHMARK-REPORT.md) for full details.\n\n## Quick Start\n\n### Claude Code\n\nAdd `.mcp.json` to your project root:\n\n```json\n{\n  \"mcpServers\": {\n    \"Multi Edit from Essential AI Solutions (essentialai.uk)\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@essentialai/mcp-multi-edit\"]\n    }\n  }\n}\n```\n\nRestart Claude Code. Then add the included `CLAUDE.md` to your project root so Claude **automatically prefers** `multi_edit` over the built-in Edit tool:\n\n```markdown\n## Editing Files\n\nWhen making multiple edits to the same file or across multiple files,\nprefer using the `multi_edit` and `multi_edit_files` MCP tools over\nthe built-in Edit tool. These batch edits atomically in a single call.\n```\n\nThat's it -- Claude will now use `multi_edit` whenever it's the right tool for the job.\n\n> **Display name:** Claude Code uses the key name in `mcpServers` as the server's display name. You can change the key to any name you prefer.\n\n**Alternative:** One-liner via CLI:\n\n```bash\nclaude mcp add --transport stdio multi-edit -- npx -y @essentialai/mcp-multi-edit\n```\n\n> **Note:** The CLI only accepts simple names (letters, numbers, hyphens, underscores). For the full branded display name, use the `.mcp.json` approach above.\n\n### Claude Desktop\n\nAdd to your config file (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n\n```json\n{\n  \"mcpServers\": {\n    \"Multi Edit from Essential AI Solutions (essentialai.uk)\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@essentialai/mcp-multi-edit\"]\n    }\n  }\n}\n```\n\nRestart Claude Desktop.\n\n> **Full installation guide:** [docs/installation.md](./docs/installation.md)\n\n## Tools\n\n### `multi_edit` -- Single file, multiple edits\n\nBatch multiple find-and-replace operations on one file. Edits apply sequentially and atomically.\n\n```json\n{\n  \"file_path\": \"/project/src/app.ts\",\n  \"edits\": [\n    { \"old_string\": \"const oldName = getValue()\", \"new_string\": \"const newName = getValue()\" },\n    { \"old_string\": \"console.log\", \"new_string\": \"logger.info\", \"replace_all\": true }\n  ]\n}\n```\n\n| Parameter | Type | Default | Description |\n|-----------|------|---------|-------------|\n| `file_path` | string | required | Absolute path to the file |\n| `edits` | array | required | Find-and-replace operations (applied in order) |\n| `edits[].old_string` | string | required | Text to find (exact match) |\n| `edits[].new_string` | string | required | Replacement text |\n| `edits[].replace_all` | boolean | `false` | Replace all occurrences |\n| `dry_run` | boolean | `false` | Preview changes without applying |\n| `backup` | boolean | `true` | Create `.bak` backup before editing |\n\n### `multi_edit_files` -- Multiple files, one atomic operation\n\nCoordinate edits across multiple files. If any file fails, **all files are rolled back** automatically.\n\n```json\n{\n  \"files\": [\n    {\n      \"file_path\": \"/project/src/types.ts\",\n      \"edits\": [\n        { \"old_string\": \"interface UserData {\", \"new_string\": \"interface UserProfile {\" }\n      ]\n    },\n    {\n      \"file_path\": \"/project/src/api.ts\",\n      \"edits\": [\n        { \"old_string\": \"UserData\", \"new_string\": \"UserProfile\", \"replace_all\": true }\n      ]\n    }\n  ]\n}\n```\n\n| Parameter | Type | Default | Description |\n|-----------|------|---------|-------------|\n| `files` | array | required | Array of file edit operations |\n| `files[].file_path` | string | required | Absolute path to the file |\n| `files[].edits` | array | required | Edits for this file (same format as above) |\n| `dry_run` | boolean | `false` | Preview changes without applying |\n\n> **Full usage guide with examples:** [docs/usage.md](./docs/usage.md)\n\n## Features\n\n- **Atomic operations** -- all edits succeed or none apply, no partial state\n- **Multi-file rollback** -- if any file fails, all previously changed files are restored\n- **Dry-run preview** -- see exactly what would change before committing\n- **Automatic backups** -- `.bak` files created before every edit (disable with `backup: false`)\n- **Structured errors** -- machine-readable error codes with recovery hints for automatic retry\n- **Conflict detection** -- warns when `old_string` matches multiple locations\n- **Path validation** -- absolute path enforcement, symlink resolution, existence checks\n\n## Error Codes\n\n| Code | Retryable | Description |\n|------|-----------|-------------|\n| `MATCH_NOT_FOUND` | Yes | `old_string` not found in file |\n| `AMBIGUOUS_MATCH` | Yes | `old_string` matches multiple locations |\n| `VALIDATION_FAILED` | Yes | Invalid input schema |\n| `FILE_NOT_FOUND` | No | File does not exist |\n| `PERMISSION_DENIED` | No | Insufficient file permissions |\n| `BACKUP_FAILED` | No | Could not create backup file |\n\nWhen `retryable` is `true`, Claude reads the `recovery_hints` in the response, adjusts the input, and retries automatically.\n\n> **Troubleshooting guide:** [docs/troubleshooting.md](./docs/troubleshooting.md)\n\n## Requirements\n\n- **Node.js** 20 or later\n- **Claude Code** or **Claude Desktop**\n\n## Development\n\n```bash\nnpm install           # Install dependencies\nnpm run build         # Compile TypeScript\nnpm test              # Run 264 tests\nnpm run test:coverage # Coverage report (90%+)\nnpm run benchmark     # Run benchmark suite\nnpm run dev           # Watch mode\n```\n\n### Project Structure\n\n```\nsrc/\n  index.ts              # MCP server entry (stdio transport)\n  server.ts             # Server factory and tool registration\n  tools/\n    multi-edit.ts       # multi_edit tool handler\n    multi-edit-files.ts # multi_edit_files tool handler\n  core/\n    editor.ts           # File editing engine (atomic read-modify-write)\n    validator.ts        # Zod input validation schemas\n    reporter.ts         # Result formatting and diff generation\n    errors.ts           # Error classification and envelope creation\n  types/\n    index.ts            # TypeScript type definitions\n```\n\n## Documentation\n\n| Document | Description |\n|----------|-------------|\n| [Installation Guide](./docs/installation.md) | All setup options for Claude Code and Claude Desktop |\n| [Usage Guide](./docs/usage.md) | Detailed tool reference with examples |\n| [Troubleshooting](./docs/troubleshooting.md) | Common issues and solutions |\n| [Changelog](./CHANGELOG.md) | Version history |\n| [Benchmark Report](./benchmarks/results/BENCHMARK-REPORT.md) | Performance measurements |\n\n## License\n\n[PolyForm Noncommercial License 1.0.0](./LICENSE)\n\nFree for personal and non-commercial use. For commercial licensing, contact [support@essentialai.uk](mailto:support@essentialai.uk).\n\n---\n\nBuilt by [Essential AI Solutions](https://essentialai.uk)\n",
+    "fetchedAt": "2026-08-11T23:47:56.125Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:23:44.456Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

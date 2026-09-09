@@ -1,0 +1,59 @@
+{
+  "id": "io.github.New1Direction/motokano",
+  "title": "dazai — burn-after-reading secret (motokano)",
+  "description": "Serve a secret to an agent exactly N times from locked RAM, then wipe it and self-destruct.",
+  "summary": "Serve a secret to an agent exactly N times from locked RAM, then wipe it and self-destruct.",
+  "offersHint": "Serve a secret to an agent exactly N times from locked RAM, then wipe it and self-destruct. · Packages: binary:https://github.com/New1Direction/ningen-shikkaku/releases/download/v0.1.0/motokano-0.1.0.mcpb",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/New1Direction/ningen-shikkaku/releases/download/v0.1.0/motokano-0.1.0.mcpb",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/New1Direction/ningen-shikkaku/releases/download/v0.1.0/motokano-0.1.0.mcpb",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://new1direction.github.io/ningen-shikkaku/",
+  "sourceUrl": "https://github.com/New1Direction/ningen-shikkaku",
+  "repository": {
+    "url": "https://github.com/New1Direction/ningen-shikkaku",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-11T21:26:23.785663Z",
+  "publishedAt": "2026-06-11T21:26:23.785663Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:27.408Z",
+    "sourceRepoAt": "2026-08-12T00:05:49.362Z",
+    "readmeAt": "2026-08-12T00:05:50.079Z",
+    "toolsAt": "2026-08-12T01:37:27.408Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/New1Direction/ningen-shikkaku",
+    "checkedAt": "2026-08-12T00:05:49.362Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/New1Direction/ningen-shikkaku/main/README.md",
+    "markdown": "# ningen-shikkaku\n\n[![CI](https://github.com/New1Direction/ningen-shikkaku/actions/workflows/ci.yml/badge.svg)](https://github.com/New1Direction/ningen-shikkaku/actions/workflows/ci.yml)\n[![docs](https://img.shields.io/badge/docs-ningen--shikkaku-c0392b)](https://new1direction.github.io/ningen-shikkaku/)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n\n**Burn-after-reading secrets for AI agents.**\n\n`ningen-shikkaku` ships two small Rust binaries — **`dazai`** (the session-bound daemon) and **`motokano`** (a self-immolating one-shot MCP server).\n\nYour MCP configs are full of plaintext API keys, and every agent you run can\nread all of them — and they keep working long after the agent is done. dazai\ninverts that: secrets live in locked, non-swappable RAM, are served to agents\nover MCP, and are **destroyed after N reads — or the instant your session\ndies**.\n\n![burn-after-reading demo](docs/src/assets/burn.gif)\n\n```bash\nmotokano --calls 1 --tool 'name=get_key,kind=static,value=s3cr3t' --arm\n```\n\nPoint any MCP client at it and call `get_key` **once** → you receive `s3cr3t`\n→ the server wipes the value out of locked memory and `SIGKILL`s itself. Call\nagain → the process is gone.\n\n## Install\n\n```bash\n# prebuilt binaries (macOS arm64/x86_64, Linux x86_64/arm64)\ncurl --proto '=https' --tlsv1.2 -LsSf https://github.com/New1Direction/ningen-shikkaku/releases/latest/download/dazai-installer.sh | sh\n\n# or homebrew\nbrew install New1Direction/tap/dazai New1Direction/tap/motokano\n\n# or from source (required for the Linux seccomp build)\ngit clone https://github.com/New1Direction/ningen-shikkaku\ncd ningen-shikkaku/rs\ncargo build --release                       # -> target/release/{dazai, motokano}\ncargo build --release --features seccomp    # Linux: seccomp syscall allowlist\n```\n\nPrebuilt binaries are built with default features; the seccomp-confined daemon\nis a from-source build (it links libseccomp — install `libseccomp-dev` +\n`pkg-config` first).\n\n## Use it with Claude Code\n\n```bash\n# a one-shot secret an agent can read exactly once:\nclaude mcp add burn-once -- motokano --calls 1 --arm \\\n  --tool 'name=get_key,kind=static,value=YOUR-SECRET'\n\n# or the session-bound daemon: agents register their PID and get SIGKILLed\n# the moment your session dies\ndazai daemon --arm --grace 5 &\nclaude mcp add dazai -- dazai mcp\n```\n\nAny MCP client works the same way — the transport is plain stdio.\n\n## And the second act: a dead-man's switch for your agents\n\nThe same daemon is a session kill-switch. Any MCP client registers its PID;\nwhen your shell/SSH session dies, your heartbeat stops, or a panic signal\narrives, dazai `SIGKILL`s every registered process, overwrites its secrets\nwith a wipe the compiler can't optimize away, and exits. Walk away: agents\ndie, secrets burn.\n\n```bash\ndazai daemon --ping-timeout 15        # terminal A  (dry-run by default; --arm makes it real)\ndazai client --interval 5             # terminal B\n# close terminal B  ->  the daemon wipes its secrets and exits\n```\n\nIt runs **only on your own machine, on your own secrets and your own configured\ntools**. It never touches another process, file, or host.\n\n## What's in the box\n\nIt ships in two layers:\n\n- a **hardened Rust daemon + tooling** — the real thing: `mlock` (no swap),\n  `madvise(MADV_DONTDUMP)` + `prctl(PR_SET_DUMPABLE, 0)` (no core dumps / no\n  ptrace), a **seccomp** syscall allowlist (no `execve`/`open`/`connect`/…), and\n  a non-elidable `explicit_bzero` / `memset_s` wipe; and\n- a **Python reference implementation** — the original proof-of-concept that\n  established the mechanism (see [`python-reference.md`](python-reference.md)).\n\n| Component | What it does |\n|---|---|\n| `dazai daemon` | The watchdog: holds `mlock`'d secrets + a UNIX-socket heartbeat; wipes and self-destructs on session loss. seccomp-confined on Linux. |\n| `dazai client` | The heartbeat client — ties the daemon's life to a shell / SSH session. |\n| `dazai mcp` | An MCP server exposing the daemon as tools, so any agent can register its PID for session-bound protection (it gets `SIGKILL`ed if your session dies). |\n| `motokano` | A standalone **self-immolating** MCP server: serve N tool calls, then wipe secret state and exit. |\n| Python reference | `secmem.py` / `deadman.py` / `heartbeat.py` / `shellrc.sh` — the portable proof-of-concept. |\n\n## Architecture\n\n```mermaid\nflowchart LR\n    A[\"MCP client / AI agent<br/>(stdio transport)\"]\n\n    subgraph Daemon[\"dazai daemon (kikka Watchdog)\"]\n        D[\"dazai daemon<br/>mlock'd SecretBuffers (goodnight)<br/>seccomp-confined on Linux (kekkai)\"]\n        SOCK[(\"UNIX socket 0600<br/>HELLO heartbeat + REGISTER / ARM / STATUS\")]\n    end\n\n    MCPD[\"dazai mcp<br/>(rei · rmcp server)\"]\n    HB[\"dazai client<br/>(heartbeat: HELLO / PING)\"]\n    MOTO[\"motokano<br/>(self-immolating MCP server)<br/>static values in SecretBuffer\"]\n    KILL{{\"wipe (explicit_bzero / memset_s)<br/>+ SIGKILL\"}}\n\n    A -->|\"register pid / status / panic\"| MCPD\n    A -->|\"get_key (static, N reads)\"| MOTO\n    MCPD -->|\"relay verbs + signals via pidfile\"| SOCK\n    HB -->|\"holds liveness connection\"| SOCK\n    SOCK --- D\n    MOTO -. \"optional --dazai-socket: register + monitor\" .-> SOCK\n    D ==>|\"on trigger: SIGKILL registered PIDs, then wipe + self-SIGKILL\"| KILL\n    MOTO ==>|\"after N calls / EOF / daemon death: wipe + exit\"| KILL\n    HB -. \"drop / ping-timeout / panic signal\" .-> D\n```\n\n## Threat model\n\ndaZai shrinks the *window* and the *surface* in which plaintext secrets are\nreachable, and makes session-end deterministically destroy them.\n\n**It protects against:**\n\n| Risk | How |\n|---|---|\n| Secrets paged to **swap** | `mlock` locks the buffers into RAM |\n| Secrets captured in **core dumps** | `madvise(MADV_DONTDUMP)` + `prctl(PR_SET_DUMPABLE, 0)` (Linux) |\n| **Session loss** leaving secrets resident | heartbeat drop / logout → wipe + `SIGKILL` |\n| Secrets lingering in **process memory** after use | `explicit_bzero` / `memset_s` — a wipe the compiler may not elide |\n| A confined process **escaping** | seccomp allowlist denies `execve` / `open` / `connect` / `ptrace` / … (Linux) |\n| **ptrace** snooping the daemon | `prctl(PR_SET_DUMPABLE, 0)` (Linux) |\n\n**It does NOT protect against** (and the project is deliberately honest about\nthis):\n\n- **GPU VRAM.** If an attached LLM/agent copies a secret into GPU memory,\n  killing the host process does not wipe VRAM. daZai controls host RAM and the\n  processes it supervises — not an accelerator's memory.\n- **`exec`-tool stdout.** `motokano`'s `kind=exec` tools return a command's\n  stdout, which is OS-buffered and **not** held in a locked buffer. Use\n  `kind=static` (a pre-loaded, locked, wipeable value) when you need the wipe\n  guarantee.\n- **Managed-runtime residue (Python reference).** CPython copies `bytes` freely,\n  so a secret may transiently live in unlocked heap before/after the locked\n  buffer. The **Rust** implementation eliminates this for its own buffers (data\n  is written into the locked mapping and never copied to a GC heap); the Python\n  tier is a *reference*, not a hard guarantee.\n- **A privileged or same-UID attacker on the live box** (root, `/proc/<pid>/mem`,\n  a debugger) reading memory before the wipe. `mlock` stops swap, not memory\n  reads; seccomp + `PR_SET_DUMPABLE` raise the bar on Linux, but an adversary\n  who already has privileged access to your running machine is out of scope.\n- **Cold-boot / DMA / physical** attacks on RAM.\n- **A hard crash** (kernel OOM, an external `kill -9`, power loss): the wipe\n  path can't run, so nothing is zeroed. The mechanism is best-effort on these\n  paths and never claims otherwise.\n\nIn short: daZai is not, and cannot be, a guarantee against an attacker who\nalready owns your running machine. It is a sharp tool for making secrets\nephemeral and session-bound, with every limitation stated up front.\n\n## Verification\n\n- **66 tests** across the Rust workspace (secure memory, the panic policy, the\n  wire protocol, the MCP layer, the one-shot lifecycle) plus the **29-test**\n  Python reference.\n- **Linux seccomp is validated on both architectures under the real\n  `KillProcess` filter** — `aarch64` (locally) and `x86_64`\n  ([CI](https://github.com/New1Direction/ningen-shikkaku/actions)) — where the daemon\n  installs the live filter and the full integration suite runs against it with\n  no `SIGSYS`.\n- Every push runs the whole suite (default **and** `--features seccomp`),\n  `clippy -D warnings`, and `rustfmt --check` on x86_64 Linux as a permanent\n  regression gate.\n\nDeep technical docs (per-crate design, the seccomp allowlist, the\nadversarial-review history) live in [`rs/README.md`](rs/README.md); the Python\nproof-of-concept is in [`python-reference.md`](python-reference.md).\n\n## The name\n\nNamed for the novelist **Osamu Dazai**, whose work circles themes of\ndisappearance and self-erasure — fitting for software whose defining act is to\nwipe itself out the moment it is no longer being watched over. The repository\ntakes its name from his novel *No Longer Human* (人間失格, *Ningen Shikkaku*).\nIt's flavor, not a manifesto; the software just self-destructs on cue.\n\n## License\n\n[MIT](LICENSE) © 2026 New1Direction.\n",
+    "fetchedAt": "2026-08-12T00:05:50.079Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:37:27.408Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,94 @@
+{
+  "id": "io.github.IsaiahDupree/devstack-mcp",
+  "title": "devstack-mcp",
+  "description": "Dev-registry data: npm/PyPI/Docker/VS Code packages, dep graphs, vulns, 50+ ecosystems.",
+  "summary": "Dev-registry data: npm/PyPI/Docker/VS Code packages, dep graphs, vulns, 50+ ecosystems.",
+  "offersHint": "Dev-registry data: npm/PyPI/Docker/VS Code packages, dep graphs, vulns, 50+ ecosystems. · Remote MCP (streamable-http) at https://devstack-mcp.vercel.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://devstack-mcp.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://devstack-mcp.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://devstack-mcp.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/devstack-mcp",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/devstack-mcp",
+    "source": "github",
+    "id": "1318902117"
+  },
+  "updatedAt": "2026-08-01T02:34:08.340071Z",
+  "publishedAt": "2026-08-01T02:34:08.340071Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:29.190Z",
+    "sourceRepoAt": "2026-08-12T00:09:52.887Z",
+    "readmeAt": "2026-08-12T00:09:54.690Z",
+    "toolsAt": "2026-08-12T00:09:54.886Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/devstack-mcp",
+    "checkedAt": "2026-08-12T00:09:52.887Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/devstack-mcp/master/README.md",
+    "markdown": "# devstack-mcp\n\nA remote **MCP (Model Context Protocol)** connector for [DevStack API](https://devstack-api.vercel.app) — the libraries.io successor: one keyless, normalized view of the whole developer registry across **npm, PyPI, Docker Hub, and the VS Code Marketplace** (search, package details, versions, download/pull stats), plus **resolved dependency graphs** (deps.dev), **per-version vulnerabilities** (OSV.dev), **OSSF Scorecard insights** (deps.dev), and **cross-registry lookups over 50+ ecosystems** (ecosyste.ms).\n\n**Target deploy:** `https://devstack-mcp.vercel.app/mcp` — 10 tools. Since the upstream DevStack deployment is metered (RapidAPI/Apify) and gates `/v1/*` behind a RapidAPI proxy-secret guard, this connector authenticates its own outbound calls with that same proxy secret (`DEVSTACK_MCP_PROXY_SECRET`, sent as the `X-RapidAPI-Proxy-Secret` header) and applies a soft per-IP rate limit (`DEVSTACK_MCP_RATE_LIMIT`, default 30 tool-calls/hour, in-memory) so the free MCP tier stays a discovery channel rather than an unmetered bypass of the paid listing — see `lib/ratelimit.js`.\n\n## What this is, and why it's a separate connector\n\nDevStack API is a plain REST API. Any HTTP client can already call it directly. This repo exists because **MCP clients (Claude, ChatGPT, and other MCP-aware agents) don't consume arbitrary REST APIs — they consume MCP tools.** `devstack-mcp` is a thin adapter layer that:\n\n- Exposes each DevStack endpoint as a discoverable, typed MCP **tool** (name, description, zod input schema, annotations) that an LLM can reason about and call directly, instead of having to be taught the REST surface out-of-band.\n- Speaks the MCP **streamable-HTTP** transport at a single `/mcp` endpoint, so it can be registered as a connector in Claude, ChatGPT, or any other MCP client with one URL.\n- Does nothing else. It has no business logic of its own — every tool call is a pass-through `fetch` to DevStack, and the JSON response DevStack returns is handed back verbatim as the tool result.\n\n## Authentication: None on the MCP side (deliberate)\n\nDevStack's data has **no per-user dimension at all** — it's public developer-registry metadata (package listings, versions, download counts, dependency graphs, published CVEs). There is nothing to gate per-caller, so this connector intentionally ships with:\n\n- No OAuth, no login, no per-user bearer tokens\n- No Supabase / database\n- No demo-vs-real account split — every caller gets the same real, live data\n\nThe one server-side secret it carries (`DEVSTACK_MCP_PROXY_SECRET`) is **not** per-caller auth — it's how this connector, as a single consumer, gets past the upstream's RapidAPI proxy-secret guard to reach real data. Combined with the soft per-IP rate limit, that keeps this a free discovery tier over the metered DevStack product rather than an unmetered bypass of the paid RapidAPI/Apify listing.\n\n## Tool list\n\nOne tool per DevStack `/v1` endpoint (from `devstack-api/openapi.yaml`):\n\n| Tool | DevStack endpoint | Description |\n|---|---|---|\n| `get_package` | `GET /v1/package` | Normalized package details by registry + name (`registry=all` fans out). |\n| `search_packages` | `GET /v1/search` | Search npm/Docker/VS Code (or `all`); PyPI has no search API. |\n| `get_versions` | `GET /v1/versions` | Published versions / image tags / extension versions. |\n| `get_downloads` | `GET /v1/downloads` | Download / pull statistics (npm + PyPI only). |\n| `get_dependency_graph` | `GET /v1/deps` | Fully resolved dependency graph for one exact version (deps.dev). |\n| `get_vulnerabilities` | `GET /v1/vulns` | Known CVEs/GHSAs per package/version (OSV.dev). |\n| `scan_vulnerabilities_batch` | `POST /v1/vulns` | Batch/lockfile vulnerability scan — up to 100 queries in one call (OSV.dev). |\n| `get_insights` | `GET /v1/insights` | OSSF Scorecard + repo signal + licenses/advisories (deps.dev). |\n| `search_ecosystems` | `GET /v1/ecosystems/search` | Cross-registry exact-name lookup across 50+ ecosystems (ecosyste.ms). |\n| `get_ecosystems_package` | `GET /v1/ecosystems/package` | One package on one registry, with reverse-dependency counts (ecosyste.ms). |\n\nAll 10 tools are read-only and annotated `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }`. `scan_vulnerabilities_batch` is an HTTP `POST` but is a read-only *query* (it mutates nothing), so it carries the same read-only annotations.\n\n## How it wraps devstack-api\n\nEach tool handler does a plain `fetch(\\`${DEVSTACK_MCP_API_BASE_URL}${path}\\`, ...)` against the real DevStack REST API and returns the parsed JSON as MCP tool-result content:\n\n```js\n{ content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }\n```\n\nUpstream HTTP errors (4xx/5xx) are caught and surfaced as a typed MCP error result via an `asError` helper rather than crashing the request.\n\n### Environment variables\n\n| Env var | Purpose | Default |\n|---|---|---|\n| `DEVSTACK_MCP_API_BASE_URL` | Upstream DevStack base URL. | `https://devstack-api.vercel.app` |\n| `DEVSTACK_MCP_PROXY_SECRET` | RapidAPI proxy secret, sent as `X-RapidAPI-Proxy-Secret` to pass the upstream `/v1/*` guard. | `\"\"` (omitted) |\n| `DEVSTACK_MCP_RATE_LIMIT` | Soft per-IP tool-calls/hour cap for this free tier. | `30` |\n\n## Project layout\n\n```\napi/mcp.js       MCP endpoint (StreamableHTTPServerTransport, stateless, no per-caller auth)\napi/health.js    GET /api/health\nlib/tools.js     All 10 tool definitions (zod schemas + fetch-and-forward handlers)\nlib/ratelimit.js Soft per-IP tools/call cap (free discovery tier)\nlocal-server.js  Plain-Node http server for local dev / smoke testing (not deployed)\ntest/smoke.mjs   Real end-to-end smoke test (initialize, tools/list, tools/call)\nvercel.json      Routes /mcp -> api/mcp.js, /health -> api/health.js\nserver.json      MCP registry publish manifest\n```\n\n## Local development\n\n```bash\nnpm install\nnpm run dev          # starts local-server.js on http://localhost:3900\n```\n\nEndpoints locally: `POST http://localhost:3900/mcp`, `GET http://localhost:3900/health`.\n\nTo point at a self-hosted / open DevStack instance instead of production (useful for a fully keyless end-to-end run, since production's `/v1/*` is behind the RapidAPI proxy-secret guard):\n\n```bash\n# In devstack-api (guard is inert when RAPIDAPI_PROXY_SECRET is unset):\nnode server.js                                   # listens on :8080\n\n# In devstack-mcp:\nDEVSTACK_MCP_API_BASE_URL=http://localhost:8080 npm run dev\n```\n\n## Smoke test\n\n```bash\nnpm run dev &                 # terminal 1\nnpm run smoke                 # terminal 2\n```\n\n`test/smoke.mjs` drives the running server over real HTTP/JSON-RPC and verifies:\n\n1. `GET /health` returns `{ ok: true, ... }`\n2. `initialize` succeeds and reports `serverInfo.name === \"devstack\"`\n3. `tools/list` returns all 10 tools with their zod-derived JSON schemas\n4. `tools/call` for `get_package` with `{ registry: \"npm\", name: \"react\" }` returns real package data fetched live (not mocked)\n\nAgainst production, step 4 needs `DEVSTACK_MCP_PROXY_SECRET` set (the RapidAPI proxy guard); against a locally self-hosted `devstack-api` with no `RAPIDAPI_PROXY_SECRET`, the guard is inert and real data flows keyless.\n\n## Deploy\n\nNot deployed by this build. Once ready:\n\n```bash\ncd /Users/isaiahdupree/Software/devstack-mcp\nnpx vercel --yes --prod\n```\n\nAfter deploy, set `DEVSTACK_MCP_PROXY_SECRET` in the Vercel project so the connector can reach the guarded production `/v1/*`, then register the MCP connector URL in Claude/ChatGPT/any MCP client:\n\n```\nhttps://<deployment-domain>/mcp\n```\n",
+    "fetchedAt": "2026-08-12T00:09:54.690Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_package",
+      "description": "Full normalized details for one package by registry + name, in a single unified Package shape across npm, PyPI, Docker Hub, and the VS Code Marketplace. name handles scoped npm ids (e.g. @types/node), Docker namespaces (e.g. library/nginx or a bare nginx for official images), and VS Code publisher.extension ids. With registry=all the request fans out to every registry in parallel and returns a packages array (missing registries are silently dropped); otherwise a single package is returned."
+    },
+    {
+      "name": "search_packages",
+      "description": "Search a registry for packages matching q. registry=all fans out to npm, Docker Hub, and the VS Code Marketplace and merges the results. PyPI has no public search API, so registry=pypi returns 400 not_supported — look a PyPI package up by name via get_package instead. Results are normalized PackageSummary items (npm adds a relevance score; Docker adds isOfficial)."
+    },
+    {
+      "name": "get_versions",
+      "description": "List published versions (npm/PyPI), image tags (Docker Hub, most recent 25), or extension versions (VS Code) for a package. registry=all is NOT supported here — pick a single registry. Each item carries version and released, plus registry-specific extras (files for PyPI, size for Docker tags)."
+    },
+    {
+      "name": "get_downloads",
+      "description": "Download statistics for a package. Only npm (via api.npmjs.org) and PyPI (via pypistats.org) support this; any other registry returns 400 not_supported. npm returns a period window with downloads, start, and end; PyPI returns last_day, last_week, and last_month totals."
+    },
+    {
+      "name": "get_dependency_graph",
+      "description": "The fully resolved dependency graph for one exact package version, via deps.dev. Returns a flat nodes[] array plus integer-index edges[] (walk from/to to rebuild the tree). Each node carries relation (self | direct | indirect) and a direct boolean; node[0] is always the queried root (relation: self). Node order is NOT stable — look nodes up by name/relation, never by positional index. system is case-insensitive and lowercased (npm, pypi, cargo, go, maven, nuget). version is REQUIRED (a graph is resolved for one exact version)."
+    },
+    {
+      "name": "get_vulnerabilities",
+      "description": "Known vulnerabilities (CVE / GHSA / PYSEC / GO advisories) for a package, via OSV.dev. Pass version to filter to advisories affecting that exact version, or omit it for the package's full advisory history. Each result carries the OSV id, cross-id aliases, a severity word grade (LOW|MODERATE|HIGH|CRITICAL), the cvss vector string, affectedRanges with fixed-version events, references, and cwes. A clean package returns count: 0 with an empty list (not an error). ecosystem is CASE-SENSITIVE — use OSV's spelling (npm, PyPI, Go, crates.io, Maven, NuGet, RubyGems, …). Use scan_vulnerabilities_batch for lockfile batch scans."
+    },
+    {
+      "name": "scan_vulnerabilities_batch",
+      "description": "Scan many packages in one call — ideal for a whole lockfile. Pass a queries[] array (max 100) of { ecosystem, name, version? }; results are returned positionally aligned, one row per query, each with a count and a hydrated vulns[] array. Advisories are de-duplicated and hydrated across the batch. ecosystem is CASE-SENSITIVE (OSV spelling)."
+    },
+    {
+      "name": "get_insights",
+      "description": "Health and security insights for a package's source project, via deps.dev. Returns the linked source repository, GitHub stars/forks/openIssues, licenses, resolved dependencyCount, security advisories, and the full OSSF Scorecard (ossfScore 0..10 plus the per-check breakdown). Omit version to use the registry default version — note deps.dev's default is a MOVING target and an unverified default mirror may have no computed scorecard (ossfScore: null); pin version for a stable, scorecard-backed result. system is lowercased (npm, pypi, cargo, go, maven, …)."
+    },
+    {
+      "name": "search_ecosystems",
+      "description": "Look a package name up across 50+ registries at once, via ecosyste.ms. This is an EXACT-name lookup (not fuzzy full-text): q=react returns the react package everywhere it exists (npm, cargo, nuget, pub, bower, …), each as a normalized ecosystemsPackage with reverse-dependency counts. Pass ecosystem to narrow to one registry. Results carry dependentReposCount, dependentPackagesCount, and vulnerabilityCount."
+    },
+    {
+      "name": "get_ecosystems_package",
+      "description": "Full normalized metadata for one package on one of 50+ registries, via ecosyste.ms — including the fields v1 registries can't give you: dependentReposCount and dependentPackagesCount (reverse dependencies), ecosystem, and vulnerabilityCount. Scoped/namespaced names are handled automatically. Returns 404 if the package does not exist on that ecosystem."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:09:54.886Z",
+  "toolsPreviewStatus": "ok"
+}

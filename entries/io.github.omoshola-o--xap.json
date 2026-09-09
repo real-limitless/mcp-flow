@@ -1,0 +1,92 @@
+{
+  "id": "io.github.omoshola-o/xap",
+  "title": "xap",
+  "description": "Agent settlement protocol — discover, negotiate, settle, and verify with XAP.",
+  "summary": "Agent settlement protocol — discover, negotiate, settle, and verify with XAP.",
+  "offersHint": "Agent settlement protocol — discover, negotiate, settle, and verify with XAP. · Packages: npm:@agenticamem/xap-mcp · Env vars: XAP_API_KEY, XAP_MODE",
+  "version": "0.4.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@agenticamem/xap-mcp",
+    "version": "0.4.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "XAP_MODE",
+        "description": "Operating mode: 'sandbox' (free, no key needed) or 'live' (requires API key)"
+      },
+      {
+        "name": "XAP_API_KEY",
+        "description": "API key for live mode (not needed for sandbox)",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@agenticamem/xap-mcp",
+      "version": "0.4.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "XAP_MODE",
+          "description": "Operating mode: 'sandbox' (free, no key needed) or 'live' (requires API key)"
+        },
+        {
+          "name": "XAP_API_KEY",
+          "description": "API key for live mode (not needed for sandbox)",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "XAP_API_KEY",
+      "description": "API key for live mode (not needed for sandbox)",
+      "secret": true
+    },
+    {
+      "name": "XAP_MODE",
+      "description": "Operating mode: 'sandbox' (free, no key needed) or 'live' (requires API key)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/agentra-commerce/xap-sdk",
+  "repository": {
+    "url": "https://github.com/agentra-commerce/xap-sdk",
+    "source": "github",
+    "subfolder": "npm"
+  },
+  "updatedAt": "2026-03-21T14:29:35.493134Z",
+  "publishedAt": "2026-03-21T14:29:35.493134Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:12.615Z",
+    "sourceRepoAt": "2026-08-11T23:30:51.659Z",
+    "readmeAt": "2026-08-11T23:30:52.183Z",
+    "toolsAt": "2026-08-12T01:10:12.615Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/agentra-commerce/xap-sdk",
+    "checkedAt": "2026-08-11T23:30:51.659Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/agentra-commerce/xap-sdk/main/README.md",
+    "markdown": "# XAP SDK\n\n**Settlement objects for autonomous agent commerce.**\n\n[![CI](https://github.com/agentra-commerce/xap-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/agentra-commerce/xap-sdk/actions)\n[![PyPI](https://img.shields.io/pypi/v/xap-sdk)](https://pypi.org/project/xap-sdk/)\n[![Python](https://img.shields.io/pypi/pyversions/xap-sdk)](https://pypi.org/project/xap-sdk/)\n[![Tests: 262 passing](https://img.shields.io/badge/Tests-262%20passing-brightgreen.svg)](#)\n[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18944370.svg)](https://doi.org/10.5281/zenodo.18944370)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/agentra-commerce/xap-sdk/blob/main/LICENSE)\n[![Patent Pending](https://img.shields.io/badge/Patent-Pending-blue.svg)](#)\n\nXAP is the only protocol combining schema validation, cryptographic signatures, enforced state machines, idempotency, governed receipts, and replayable reasoning into one governed object model.\n\n---\n\n## Install\n\n```bash\npip install xap-sdk\n```\n\nFor MCP integration (Claude, Cursor, any MCP-compatible AI):\n\n```bash\npip install xap-sdk[mcp]\n```\n\n---\n\n## Quickstart: Two Agents, One Settlement, Full Provenance\n\n```python\nimport asyncio\nfrom xap import XAPClient\n\n# Create two agents — sandbox uses fake money, no external services needed\nprovider = XAPClient.sandbox(balance=0)\nconsumer = XAPClient.sandbox(balance=100_000)  # $1,000.00\nconsumer.adapter.fund_agent(str(provider.agent_id), 0)\nprovider.adapter = consumer.adapter\n\n# Provider registers a capability with SLA guarantees\nprovider_identity = provider.identity(\n    display_name=\"SummarizeBot\",\n    capabilities=[{\n        \"name\": \"text_summarization\",\n        \"version\": \"1.0.0\",\n        \"pricing\": {\"model\": \"fixed\", \"amount_minor_units\": 500, \"currency\": \"USD\", \"per\": \"request\"},\n        \"sla\": {\"max_latency_ms\": 2000, \"availability_bps\": 9950},\n    }],\n)\nconsumer.discovery.register(provider_identity)\n\n# Consumer discovers and negotiates\nresults = consumer.discovery.search(capability=\"text_summarization\")\noffer = consumer.negotiation.create_offer(\n    responder=provider.agent_id,\n    capability=\"text_summarization\",\n    amount_minor_units=500,\n)\naccepted = provider.negotiation.accept(offer)\n\n# Settle with full decision provenance\nasync def settle():\n    settlement = consumer.settlement.create_from_contract(\n        accepted_contract=accepted,\n        payees=[{\"agent_id\": str(provider.agent_id), \"share_bps\": 10000}],\n    )\n    locked = await consumer.settlement.lock(settlement)\n    result = await consumer.settlement.verify_and_settle(\n        settlement=locked,\n        condition_results=[{\n            \"condition_id\": \"cond_0001\",\n            \"type\": \"deterministic\",\n            \"check\": \"output_delivered\",\n            \"passed\": True,\n        }],\n    )\n\n    # Every decision is deterministically replayable\n    assert consumer.receipts.verify_replay(result.verity_receipt)\n    print(f\"Settlement: {result.receipt['outcome']}\")\n    print(f\"Replay verified: {result.verity_receipt['replay_hash']}\")\n    return result\n\nasyncio.run(settle())\n```\n\n---\n\n## The Verification Handshake\n\nWhat separates XAP from every other agent protocol is Step 2 — trust verified before money moves:\n\n```python\nfrom xap import XAPClient\nfrom xap.verify import verify_manifest\n\nasync def find_trusted_agent(capability: str, min_success_rate_bps: int = 9000):\n    client = XAPClient.sandbox()\n\n    # Step 1 — DECLARE: query the registry\n    results = client.discovery.search(\n        capability=capability,\n        min_success_rate_bps=min_success_rate_bps,\n        include_manifest=True,\n    )\n\n    for agent in results:\n        # Step 2 — VERIFY: replay Verity receipts to confirm claimed track record\n        manifest = agent[\"manifest\"]\n        verification = await verify_manifest(\n            manifest=manifest,\n            sample_receipts=3,\n        )\n\n        if verification.confirmed:\n            print(f\"Agent {agent['agent_id']} verified:\")\n            print(f\"  Claimed:  {manifest['capabilities'][0]['attestation']['success_rate_bps'] / 100}%\")\n            print(f\"  Verified: {verification.verified_rate_bps / 100}%\")\n            print(f\"  Receipts replayed: {verification.receipts_checked}\")\n\n            # Step 3 — NEGOTIATE: enter negotiation with verified trust\n            return client.negotiation.create_offer(\n                responder=agent[\"agent_id\"],\n                capability=capability,\n                amount_minor_units=1000,\n            )\n\n    return None\n```\n\nNo other agent protocol has Step 2. Verification against real Verity receipts before a single dollar is committed.\n\n---\n\n## Three-Agent Split Settlement\n\n```python\nimport asyncio\nfrom xap import XAPClient\n\nasync def multi_agent_workflow():\n    orchestrator = XAPClient.sandbox(balance=500_000)\n    executor     = XAPClient.sandbox(balance=0)\n    verifier     = XAPClient.sandbox(balance=0)\n\n    executor.adapter = orchestrator.adapter\n    verifier.adapter = orchestrator.adapter\n    orchestrator.adapter.fund_agent(str(executor.agent_id), 0)\n    orchestrator.adapter.fund_agent(str(verifier.agent_id), 0)\n\n    settlement = orchestrator.settlement.create(\n        payer_id=str(orchestrator.agent_id),\n        payees=[\n            {\"agent_id\": str(executor.agent_id),    \"share_bps\": 7000},  # 70%\n            {\"agent_id\": str(verifier.agent_id),     \"share_bps\": 2000},  # 20%\n            {\"agent_id\": str(orchestrator.agent_id), \"share_bps\": 1000},  # 10%\n        ],\n        amount_minor_units=10_000,  # $100.00\n        currency=\"USD\",\n    )\n\n    locked = await orchestrator.settlement.lock(settlement)\n    result = await orchestrator.settlement.verify_and_settle(\n        settlement=locked,\n        condition_results=[{\n            \"condition_id\": \"cond_0001\",\n            \"type\": \"probabilistic\",\n            \"check\": \"quality_score\",\n            \"score_bps\": 9200,\n            \"threshold_bps\": 8500,\n            \"passed\": True,\n        }],\n    )\n\n    print(f\"Outcome:   {result.receipt['outcome']}\")\n    print(f\"Executor:  ${result.receipt['payouts'][str(executor.agent_id)] / 100:.2f}\")\n    print(f\"Verifier:  ${result.receipt['payouts'][str(verifier.agent_id)] / 100:.2f}\")\n\nasyncio.run(multi_agent_workflow())\n```\n\n---\n\n## What XAP Does\n\nEvery agent-to-agent economic interaction produces governed objects that are:\n\n- **Schema-validated** — structured, machine-readable, JSON Schema Draft 2020-12\n- **Cryptographically signed** — Ed25519, tamper-evident\n- **State-transitioned** — explicit state machines, no implicit jumps\n- **Idempotent** — safe retries, no duplicate effects\n- **Receipted** — every settlement emits a governed `ExecutionReceipt`\n- **Replayable** — every decision captured in a `VerityReceipt`, independently verifiable\n\n---\n\n## The Six Primitives\n\n| # | Primitive | What It Does |\n|---|---|---|\n| 0 | `AgentManifest` | Signed, Verity-backed trust credential. How agents find and verify each other. |\n| 1 | `AgentIdentity` | Permanent economic passport with append-only reputation. |\n| 2 | `NegotiationContract` | Time-bound offer/counter/accept flow with conditional pricing. |\n| 3 | `SettlementIntent` | Conditional hold instruction with declared release conditions and split rules. |\n| 4 | `ExecutionReceipt` | Tamper-proof record of every economic event. |\n| 5 | `VerityReceipt` | Deterministically replayable proof of why a decision was made. |\n\n---\n\n## The Stack\n\n```\nxap-protocol    — Open standard (MIT). The language agents speak.\nverity-engine   — Open source truth engine (Rust, MIT). The Git of financial truth.\nxap-sdk         — This package. Build XAP-native agents in Python.\nAgentra Rail    — Commercial infrastructure. Production settlement at scale.\n```\n\n---\n\n## MCP Integration\n\nConnect XAP to Claude, Cursor, Windsurf, or any MCP-compatible AI:\n\n**Quickest install (npm — no Python config needed):**\n\n```json\n{\n  \"mcpServers\": {\n    \"xap\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@agenticamem/xap-mcp\"]\n    }\n  }\n}\n```\n\nAdd to your Claude Desktop config and restart. Works in sandbox mode\nwith no account required.\n\n**Python install:**\n\n```bash\npip install xap-sdk[mcp]\npython -m xap.mcp.setup   # auto-configure Claude Desktop\n```\n\n**Run manually:**\n\n```bash\nxap-mcp\n```\n\n**The 8 MCP tools:**\n\n| Tool | What it does |\n|---|---|\n| `xap_discover_agents` | Search registry by capability, price, success rate |\n| `xap_verify_manifest` | Verify agent trust credential via Verity receipt replay |\n| `xap_create_offer` | Create a negotiation offer |\n| `xap_respond_to_offer` | Accept, reject, or counter |\n| `xap_settle` | Execute settlement with conditional hold |\n| `xap_verify_receipt` | Verify any receipt (public, no auth) |\n| `xap_check_balance` | Check sandbox or live balance |\n| `xap_verify_workflow` | Verify complete causal chain of multi-agent workflow |\n\n[Full MCP docs →](https://zexrail.com/docs/mcp)\n\n---\n\n## Examples\n\n| Example | What It Shows |\n|---|---|\n| [`two_agent_demo.py`](examples/two_agent_demo.py) | Full flow: discover, negotiate, settle, replay. The canonical starting point. |\n| [`three_agent_split.py`](examples/three_agent_split.py) | Multi-party settlement with basis point splits. Atomic payment to multiple agents. |\n| [`unknown_outcome.py`](examples/unknown_outcome.py) | When verification is ambiguous. Partial settlement and refund scenarios. |\n| [`manifest_demo.py`](examples/manifest_demo.py) | Build a manifest, sign it, verify receipts, query the registry. |\n| [`mcp_demo.py`](examples/mcp_demo.py) | XAP as MCP tools. Negotiate and settle from a Claude conversation. |\n\n---\n\n## Institutional Verification\n\nFor systems that need audit-grade verification, the SDK provides full\nverification of all seven trust properties:\n\n```python\nfrom xap.verify import verify_receipt_full\n\n# Verify a single receipt — checks all 7 properties\nresult = await verify_receipt_full(\"vrt_a1b2c3...\")\nprint(f\"TSA anchored:      {result.tsa_anchored}\")\nprint(f\"Policy verified:   {result.policy_verified}\")\nprint(f\"Signing key:       {result.signing_key_id}\")\nprint(f\"Causal depth:      {result.causal_depth}\")\n```\n\n## Causal Chain Verification\n\nFor multi-agent workflows, verify the entire causal chain:\n\n```python\nfrom xap.clients.workflow import WorkflowClient\n\nwf = WorkflowClient(base_url=\"https://api.zexrail.com\")\nresult = await wf.verify_workflow(\"wf_a1b2c3d4\")\nprint(f\"Chain length: {result['receipt_count']}\")\nprint(f\"All valid:    {result['all_valid']}\")\n```\n\n---\n\n## Key Concepts\n\n**Money is always integers.** `500` means $5.00 (minor units). No floating point, ever. This is not a convention — it is an invariant enforced at every layer.\n\n**Shares are basis points.** `4000` means 40%. All shares in a settlement must sum to exactly `10000`. The settlement engine rejects anything else.\n\n**Every decision is replayable.** The `VerityReceipt` captures inputs, rules, computation steps, and a replay hash. Any party can independently verify the outcome. Given the same inputs and rules, the same outcome is guaranteed.\n\n**Sandbox mode is zero-config.** `XAPClient.sandbox()` gives you fake money, in-memory registry, and test adapter. No external services, no accounts, no configuration.\n\n**Manifests are credentials, not claims.** An `AgentManifest` is signed with the agent's Ed25519 key and contains Verity receipt hashes from real past settlements. It is not \"here is what I can do\" — it is cryptographic proof of what has been done.\n\n---\n\n## Links\n\n- [XAP Protocol Specification](https://github.com/agentra-commerce/xap-protocol)\n- [Verity Truth Engine](https://github.com/agentra-commerce/verity-engine)\n- [Agentra Rail — Production Infrastructure](https://www.agentralabs.tech)\n- [Discord Community](https://discord.gg/agentralabs)\n\n---\n\n## Citation\n\n```bibtex\n@software{xap_sdk_2026,\n  title  = {XAP SDK: Settlement objects for autonomous agent commerce},\n  author = {Agentra Labs},\n  year   = {2026},\n  doi    = {10.5281/zenodo.18944370},\n  url    = {https://github.com/agentra-commerce/xap-sdk}\n}\n```\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:30:52.183Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:12.615Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

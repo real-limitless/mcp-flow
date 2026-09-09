@@ -1,0 +1,82 @@
+{
+  "id": "io.github.rwestergren/rachio-mcp",
+  "title": "rachio-mcp",
+  "description": "MCP server for Rachio sprinkler controllers — schedules, zones, and live watering control",
+  "summary": "MCP server for Rachio sprinkler controllers — schedules, zones, and live watering control",
+  "offersHint": "MCP server for Rachio sprinkler controllers — schedules, zones, and live watering control · Packages: pypi:rachio-mcp · Env vars: RACHIO_ACCESS_TOKEN",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "rachio-mcp",
+    "version": "0.1.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "RACHIO_ACCESS_TOKEN",
+        "description": "Long-lived Rachio OAuth access token. Mint one with `rachio-mcp-token` (or `uvx --from rachio-mcp rachio-mcp-token`). The token lasts ~25 years and replaces sending your password to the MCP process.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "rachio-mcp",
+      "version": "0.1.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "RACHIO_ACCESS_TOKEN",
+          "description": "Long-lived Rachio OAuth access token. Mint one with `rachio-mcp-token` (or `uvx --from rachio-mcp rachio-mcp-token`). The token lasts ~25 years and replaces sending your password to the MCP process.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "RACHIO_ACCESS_TOKEN",
+      "description": "Long-lived Rachio OAuth access token. Mint one with `rachio-mcp-token` (or `uvx --from rachio-mcp rachio-mcp-token`). The token lasts ~25 years and replaces sending your password to the MCP process.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/rwestergren/rachio-mcp",
+  "repository": {
+    "url": "https://github.com/rwestergren/rachio-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-30T17:23:39.267975Z",
+  "publishedAt": "2026-06-30T17:23:39.267975Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:03:07.710Z",
+    "sourceRepoAt": "2026-08-11T23:23:20.637Z",
+    "readmeAt": "2026-08-11T23:23:21.082Z",
+    "toolsAt": "2026-08-12T01:03:07.710Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rwestergren/rachio-mcp",
+    "checkedAt": "2026-08-11T23:23:20.637Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rwestergren/rachio-mcp/main/README.md",
+    "markdown": "# rachio-mcp\n\n<!-- mcp-name: io.github.rwestergren/rachio-mcp -->\n\nAn [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server for [Rachio](https://rachio.com/) sprinkler controllers, built on the reverse-engineered Android-app gRPC API.\n\nThe [public Rachio API](https://rachio.readme.io/) exposes only read-only access to schedules and a handful of single-action endpoints. This server instead talks to the same internal gRPC backend (`cloud.rach.io:443`) that the official mobile app uses, giving an agent the full set of operations: listing devices and zones, inspecting schedules, **creating and previewing new schedules**, updating and deleting them, starting and stopping manual zone runs, setting rain delays, and more.\n\n> ⚠️ **Unofficial.** This server uses a reverse-engineered API. It works as of Rachio Android v4.21.18 and is not supported by Rachio. The schema can change without notice.\n\n## Features\n\n- **Devices and zones** — list controllers, sensors, and weather stations; inspect zone soil/nozzle/plant configuration and live state\n- **Schedules** — list, read, preview (dry-run), create, update, delete, copy, run, and skip schedules\n- **Live control** — stop watering, run specific zones manually, set rain delays, skip/pause/resume the currently-running zone\n- **Context** — calendar of upcoming runs, recent/past run history, active alerts, observed/forecast weather readings\n\n## Quick Start\n\n### 1. Install [uv](https://docs.astral.sh/uv/)\n\n```bash\ncurl -LsSf https://astral.sh/uv/install.sh | sh\n```\n\n### 2. Mint a long-lived access token\n\nThe MCP server itself never sees your Rachio password. Instead you mint a long-lived (~25-year) access token once, and supply only the token to the MCP client.\n\n```bash\nuvx --from rachio-mcp rachio-mcp-token\n```\n\nIt will prompt for your Rachio email and password, then print a `RACHIO_ACCESS_TOKEN` value to paste into your MCP client config. The token remains valid until you change your password or explicitly log out from another device.\n\nOr, if you'd rather have the commands on your PATH permanently, install once:\n\n```bash\nuv tool install rachio-mcp\n```\n\nThen `rachio-mcp-token` (and `rachio-mcp` itself) are available as regular commands.\n\nFor scripting (e.g. pipe into a password manager):\n\n```bash\nRACHIO_EMAIL=you@example.com RACHIO_PASSWORD=... \\\n    uvx --from rachio-mcp rachio-mcp-token --json | jq .access_token\n```\n\n### 3. Configure your MCP client\n\n`uvx` downloads and runs the server on demand — no separate install step required.\n\n#### OpenCode (`opencode.json`)\n\n```json\n{\n  \"$schema\": \"https://opencode.ai/config.json\",\n  \"mcp\": {\n    \"rachio\": {\n      \"type\": \"local\",\n      \"command\": [\"uvx\", \"rachio-mcp\"],\n      \"environment\": {\n        \"RACHIO_ACCESS_TOKEN\": \"{env:RACHIO_ACCESS_TOKEN}\"\n      },\n      \"enabled\": true\n    }\n  }\n}\n```\n\n#### Claude Desktop (`claude_desktop_config.json`)\n\n```json\n{\n  \"mcpServers\": {\n    \"rachio\": {\n      \"command\": \"uvx\",\n      \"args\": [\"rachio-mcp\"],\n      \"env\": {\n        \"RACHIO_ACCESS_TOKEN\": \"paste-your-token-here\"\n      }\n    }\n  }\n}\n```\n\nIf a tool call later returns a \"token rejected\" error, rerun `rachio-mcp-token` to mint a fresh one and update the config.\n\n## Available Tools\n\n24 tools over stdio transport.\n\n### Discovery\n\n| Tool | Description |\n|------|-------------|\n| `list_devices` | Every device on the account — controllers, sensors, weather stations |\n| `get_device` | Full details + live state for a single device |\n| `list_zones` | Zones configured on a controller, with agronomic metadata |\n| `get_zone` | Full detail for a single zone |\n| `get_calendar` | Scheduled runs + skip events for a date range |\n| `get_run_history` | Observed recent/past zone-run telemetry plus calendar context |\n| `get_active_alerts` | Unresolved alerts on a device or zone |\n| `get_weather` | Observed + forecast weather readings for a location |\n\n### Schedule CRUD\n\n| Tool | Description |\n|------|-------------|\n| `list_schedules` | Filter by device, location, zone, or schedule id |\n| `get_schedule` | Single schedule + its locations/devices |\n| `preview_schedule` | **Dry-run** — returns the Schedule that `create_schedule` would produce, including the server-generated human-readable summary. Never persists |\n| `create_schedule` | Create a new schedule |\n| `update_schedule` | Partial-merge edit: name, enabled, timing/criteria, day restrictions, and per-zone add/update/remove |\n| `delete_schedule` | Permanent, destructive |\n| `copy_schedule` | Duplicate an existing schedule |\n| `run_schedule` | Trigger an immediate run |\n| `skip_schedule` | Skip or re-arm the next scheduled run |\n| `get_schedule_runs` | Past runs + skip events for a schedule |\n\n### Live controller ops\n\n| Tool | Description |\n|------|-------------|\n| `stop_watering` | Stop whatever is running |\n| `start_zones` | Start one or more zones manually by zone number + duration |\n| `set_rain_delay` | Defer all schedules until a given time |\n| `skip_current_zone` | Skip to the next zone in the active run |\n| `pause_watering` | Pause the current zone for N seconds |\n| `resume_watering` | Resume a paused run |\n\nAll `device_id`, `zone_id`, `schedule_id`, and `location_id` parameters are UUIDs obtained from the `list_*` tools. Dates use `YYYY-MM-DD` (or `MM-DD` for annual-recurring schedules); times use `HH:MM`.\n\n## Recommended Workflow for Schedule Changes\n\n1. `list_devices` → pick your controller\n2. `list_zones(device_id=...)` → note each zone's id and `zone_number`\n3. `list_schedules(device_id=...)` and `get_schedule(schedule_id=...)` → understand what's already configured\n4. `preview_schedule(...)` → dry-run your proposed schedule. Read the returned `summary` string and the per-zone breakdown\n5. `create_schedule(...)` (same arguments) → commit\n6. `get_schedule(schedule_id=<new>)` → confirm\n7. `delete_schedule(schedule_id=<new>)` → rollback if needed\n\n`preview_schedule` is safe to call repeatedly — it never writes anything.\n\nTo edit an existing schedule instead of recreating it, use `update_schedule`. It performs a partial merge: read the schedule with `get_schedule`, then pass only the fields you want to change (name, enabled, timing/criteria, `days`, or `zones`/`zone_ids_to_remove`). Omitted fields are left untouched.\n\n## How It Works\n\nThis server talks to `cloud.rach.io:443` over TLS-protected gRPC, the same backend used by the Rachio Android app. Authentication uses the OAuth 2 password grant against `oauth.rach.io/oAuth/token` with the Android app's hardcoded client credentials.\n\nThe gRPC `.proto` definitions were recovered by decompiling the Rachio Android APK (v4.21.18) with jadx, extracting the embedded `FileDescriptorProto` payloads from the generated Java classes, and round-tripping them through `protoc` to produce clean `.proto` source. Pre-compiled Python stubs for the 40-odd messages/services used by the 23 MCP tools ship in `src/rachio_mcp/proto/`.\n\nRegenerate those stubs any time the app's proto surface changes:\n\n```bash\nscripts/build_protos.sh\n```\n\nThe stub generator reads from `reverse-engineering/protos/`, which is not shipped in the wheel but is kept alongside the source for future updates.\n\n## Python API\n\nThe MCP server wraps a standalone client you can use directly:\n\n```python\nfrom rachio_mcp import RachioClient\n\nc = RachioClient()\n\n# Discovery\nfor d in c.list_devices():\n    print(d[\"type\"], d[\"id\"], d.get(\"name\"))\n\n# Preview a proposed schedule\npreview = c.preview_schedule(\n    name=\"Fall Lawn\",\n    schedule_type=\"FIXED\",\n    zones=[\n        {\"device_id\": \"<controller>\", \"zone_id\": \"<zone>\", \"watering_time\": 1200},\n    ],\n    start_time=\"06:00\",\n    days=[\"WED\"],\n    annual_start=\"09-16\",\n    annual_end=\"11-15\",\n    smart_cycle=True,\n)\nprint(preview[\"summary\"])\n\n# Commit\ncreated = c.create_schedule(name=\"Fall Lawn\", ...)\nprint(\"created\", created[\"id\"])\n\n# Rollback\nc.delete_schedule(created[\"id\"])\n```\n\nThe client reads `RACHIO_ACCESS_TOKEN` from the environment, derives the user's `user_id` lazily on first use (via `LocationService.ListLocations`), and keeps both in memory for the lifetime of the process. Nothing is written to disk.\n\n## Environment\n\n| Variable | Required | Description |\n|----------|----------|-------------|\n| `RACHIO_ACCESS_TOKEN` | Yes | Long-lived bearer token minted by `rachio-mcp-token`. Valid for ~25 years unless revoked. |\n| `LOG_LEVEL` | No | Python logging level (default: INFO). Logs go to stderr; stdio transport's stdout is reserved for the MCP protocol. |\n\n### Minting a token (one-time setup)\n\n| Variable | Used by | Description |\n|----------|---------|-------------|\n| `RACHIO_EMAIL` | `rachio-mcp-token` only | Rachio account email. If unset, `rachio-mcp-token` prompts interactively. |\n| `RACHIO_PASSWORD` | `rachio-mcp-token` only | Rachio account password. If unset, `rachio-mcp-token` prompts interactively with a masked input. |\n\nNeither `RACHIO_EMAIL` nor `RACHIO_PASSWORD` is ever read by the MCP server itself — they exist only to feed the one-time token-mint CLI.\n\n## Transport\n\nstdio only. Remote HTTP with OAuth 2.1 is not supported in v0.1.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:23:21.082Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:03:07.710Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

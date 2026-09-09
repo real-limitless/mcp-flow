@@ -1,0 +1,58 @@
+{
+  "id": "io.github.cleburn/aegis-mcp",
+  "title": "aegis-mcp",
+  "description": "Runtime governance enforcement for AI agents. Zero token overhead.",
+  "summary": "Runtime governance enforcement for AI agents. Zero token overhead.",
+  "offersHint": "Runtime governance enforcement for AI agents. Zero token overhead. · Packages: npm:aegis-mcp-server",
+  "version": "0.1.15",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "aegis-mcp-server",
+    "version": "0.1.15",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "aegis-mcp-server",
+      "version": "0.1.15",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/cleburn/aegis-mcp",
+  "repository": {
+    "url": "https://github.com/cleburn/aegis-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-17T08:01:39.29459Z",
+  "publishedAt": "2026-03-17T08:01:39.29459Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:27:02.356Z",
+    "sourceRepoAt": "2026-08-11T23:52:35.089Z",
+    "readmeAt": "2026-08-11T23:52:35.524Z",
+    "toolsAt": "2026-08-12T01:27:02.356Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/cleburn/aegis-mcp",
+    "checkedAt": "2026-08-11T23:52:35.089Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/cleburn/aegis-mcp/main/README.md",
+    "markdown": "# aegis-mcp-server\n<!-- mcp-name: io.github.cleburn/aegis-mcp -->\n\n<p align=\"center\">\n  <img src=\"https://img.shields.io/npm/v/aegis-mcp-server?style=flat&label=npm\" alt=\"npm version\" />\n  <img src=\"https://img.shields.io/badge/license-MIT-blue?style=flat\" alt=\"License: MIT\" />\n  <img src=\"https://img.shields.io/badge/MCP-Registry-purple?style=flat\" alt=\"MCP Registry\" />\n</p>\n\n**MCP enforcement layer for the [Aegis](https://github.com/cleburn/aegis-spec) agent governance specification.**\n\nPolicy at the root. Enforcement at runtime. Accountability on every action.\n\n## What It Does\n\n<p align=\"center\">\n  <img src=\"assets/Open-page.png\" alt=\"Aegis Lifecycle Overview\" width=\"800\" />\n</p>\n\n`aegis-mcp-server` is an MCP server that validates every agent action against your `.agentpolicy/` files **before** it happens. Path permissions, content scanning, role boundaries, quality gates — all enforced at runtime with zero token overhead to the agent.\n\nThe agent never loads your governance files. The MCP server reads them into its own process memory and validates silently. The agent calls governed tools and gets back either a success or a blocked response with the specific reason.\n\n## Quick Start\n\n```bash\n# Install globally\nnpm install -g aegis-mcp-server\n```\n\nIf you generated your policy with [aegis-cli](https://github.com/cleburn/aegis-cli), the `.mcp.json` connection config is already in your project root. Just install the MCP and open your agent — it connects automatically.\n\n### First Prompt\n\nWhen starting a new agent session in a governed project, use this as your first prompt:\n\n```\nCall aegis_policy_summary now. This is your governance contract — it defines your\nrole, your boundaries, and which tools to use. Do not take any action until you have\ncalled this tool and received confirmation from the user to proceed.\n```\n\nFor initial builds, the [Aegis CLI](https://github.com/cleburn/aegis-cli) generates a custom handoff prompt tailored to your project — use that instead.\n\n## How It Works\n\n### Universal Mode (Default)\n\nThe MCP starts without a pre-assigned role. When the agent calls `aegis_policy_summary`, it receives the list of available roles — including the built-in **construction** role and all specialist roles from `.agentpolicy/roles/`. The agent presents them to the user, the user picks, and the agent calls `aegis_select_role` to lock in. All enforcement uses the selected role for the rest of the session.\n\nThis is the default behavior — no configuration needed beyond the `.mcp.json` that `aegis init` creates automatically.\n\n### Construction Mode\n\nThe **construction** role is always available for initial builds and major restructuring. When selected:\n\n- The agent has full repository access (all paths writable and readable)\n- The `.agentpolicy/` files serve as the blueprint — the agent reads constitution, governance, and role files to understand the project's architecture, conventions, and quality standards\n- File operations run through native tools rather than governed tools, for speed\n- The MCP logs the construction session start to `state/overrides.jsonl` with a timestamp and `human_confirmed: true`\n- When the build is complete, the agent calls `aegis_complete_task` to run quality gates and close construction mode — the closing timestamp is logged alongside the opening entry\n- All future sessions after construction should select a specialist role for governed operations\n\nConstruction mode is not a bypass — the agent still follows the governance files as its blueprint. It's a speed optimization for greenfield builds where enforcing write restrictions on every file would be counterproductive.\n\n### Fixed Mode\n\nIf you know which role to assign at startup:\n\n```json\n{\n  \"mcpServers\": {\n    \"aegis\": {\n      \"command\": \"aegis-mcp\",\n      \"args\": [\"--project\", \".\", \"--role\", \"backend\"]\n    }\n  }\n}\n```\n\nThe MCP locks to that role immediately. `aegis_policy_summary` returns the role's boundaries directly, skipping role selection.\n\n## Tools\n\n| Tool | What it does | Token cost |\n|------|-------------|------------|\n| `aegis_policy_summary` | Role boundaries and governance summary (or available roles in universal mode) | ~200 tokens |\n| `aegis_select_role` | Select a role (including construction) in universal mode | Tiny |\n| `aegis_check_permissions` | Pre-check if an operation is allowed | Tiny |\n| `aegis_write_file` | Governed write with path + content validation | Same as a normal write |\n| `aegis_read_file` | Governed read with path validation | Same as a normal read |\n| `aegis_delete_file` | Governed delete with path validation | Tiny |\n| `aegis_execute` | Governed command execution | Command output only |\n| `aegis_complete_task` | Run quality gates and close construction mode if active | Gate results only |\n| `aegis_request_override` | Execute a blocked action after human confirmation | Tiny |\n\n## Zero Token Overhead\n\nTraditional approach: load governance files into the agent's context window. Token cost scales with policy complexity.\n\nAegis MCP approach: the server loads policy into its own process memory. The agent calls tools and gets structured results. A project with 200 lines of governance has the same token cost as one with 20 lines. The complexity is absorbed by the server, not the agent.\n\n## Enforcement\n\n<p align=\"center\">\n  <img src=\"assets/03-runtime.png\" alt=\"Aegis Runtime Enforcement\" width=\"800\" />\n</p>\n\n- **Governance boundaries** — `writable`, `read_only`, `forbidden` path lists\n- **Role scoping** — agents confined to their role's writable and readable paths\n- **Sensitive pattern detection** — content scanned against governance-defined regex patterns (content only, not path-based)\n- **Cross-domain boundaries** — imports validated against shared interface rules\n- **Quality gate validation** — `pre_commit` flags mapped to `build_commands` and executed\n- **Override logging** — every blocked action logged to append-only `overrides.jsonl`\n- **Immutable policies** — designated rules that cannot be overridden, ever\n- **Construction session logging** — start and end timestamps for initial builds\n\n## Override Protocol\n\n<p align=\"center\">\n  <img src=\"assets/04-completion.png\" alt=\"Aegis Completion\" width=\"800\" />\n</p>\n\nWhen an action is blocked and the governance override behavior is `warn_confirm_and_log`:\n\n1. The blocked response includes an `override_token` and the specific policy violated\n2. The agent presents the violation to the user\n3. If the user confirms, the agent calls `aegis_request_override` with the token and the user's rationale\n4. The action proceeds — the override is logged with `human_confirmed: true`\n5. Normal governance resumes immediately — the override is a one-time exception\n\nImmutable policies (e.g., HIPAA compliance, ITAR data sovereignty, audit completeness) return `override_available: false` and cannot be overridden. The user must modify the governance through `aegis init`.\n\n## Consent-Based Governance\n\nThe Aegis MCP does not override the agent's native directives. It introduces itself through tool descriptions, explains why governance is active, and asks the agent to seek user permission to route write operations through Aegis tools. The user's authority is the enforcement mechanism.\n\nNative tools for reading, searching, and exploring the codebase work fine without governance gating. Only write, delete, and execute operations benefit from routing through Aegis.\n\n## Architecture\n\n```\nAgent ──→ aegis-mcp-server ──→ File System\n              │\n              ├── Loads .agentpolicy/ into process memory (once)\n              ├── Watches for policy changes (auto-reload)\n              ├── Validates every tool call against policy\n              ├── Returns success or blocked with override option\n              └── Logs all enforcement decisions to overrides.jsonl\n```\n\nThree artifacts, one governance framework:\n\n- [**aegis-spec**](https://github.com/cleburn/aegis-spec) — The governance standard\n- [**aegis-cli**](https://github.com/cleburn/aegis-cli) — Generates the governance\n- **aegis-mcp-server** — Enforces the governance\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:52:35.524Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:27:02.356Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

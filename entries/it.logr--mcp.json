@@ -1,0 +1,76 @@
+{
+  "id": "it.logr/mcp",
+  "title": "logr",
+  "description": "Query any public logr profile — timelines, events, full context — plus owner-authorized writes.",
+  "summary": "Query any public logr profile — timelines, events, full context — plus owner-authorized writes.",
+  "offersHint": "Query any public logr profile — timelines, events, full context — plus owner-authorized writes. · Remote MCP (streamable-http) at https://logr.it/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://logr.it/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://logr.it/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/koshikraj/logr",
+  "repository": {
+    "url": "https://github.com/koshikraj/logr",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T08:27:12.564485Z",
+  "publishedAt": "2026-08-07T08:27:12.564485Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:52:49.923Z",
+    "sourceRepoAt": "2026-08-11T23:10:56.790Z",
+    "readmeAt": "2026-08-11T23:10:57.297Z",
+    "toolsAt": "2026-08-11T23:10:57.527Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/koshikraj/logr",
+    "checkedAt": "2026-08-11T23:10:56.790Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/koshikraj/logr/main/README.md",
+    "markdown": "# logr\n\n**A personal portfolio + AI context layer.** Most people have a LinkedIn. Nobody has a structured, machine-readable, queryable version of their story that works with any AI tool. logr fills that gap — an editorial life-log that is beautiful for humans to read and structured for AI to query.\n\nYou log your story once. It becomes three things:\n\n- a **timeline** at `logr.it/you` — year-grouped, hover-to-expand, in your choice of 9 palettes × 8 layouts,\n- machine-readable **Markdown context** any AI agent can ingest — the real moat, and\n- a grounded **AI chat widget** where visitors ask questions answered strictly from your log.\n\nSee **[ROADMAP.md](ROADMAP.md)** for what's built and what's next.\n\n## Features\n\n- **Multi-user** — sign in with Google, claim a handle at `/welcome`, edit at `/dashboard` with a live preview.\n- **AI import** — paste your story, upload a resume (PDF/DOCX), or point at a URL; AI structures it into timeline events you review and confirm before anything is saved.\n- **Grounded chat** — the visitor chat is prompted with the same complete Markdown context as the public routes, streams via OpenRouter, and is rate-limited. Facts-only: if it's not in your log, it says so.\n- **Theming** — 9 palettes (incl. dark `ink`) × 8 layouts (`timeline`, `journal`, `magazine`, `terminal`, `feed`, `card`, `centered`, `polaroid`), persisted per profile, previewable live.\n- **Pinned events** — pin up to 7 events from the dashboard events tab (pins dialog); they replace the \"recent\" side rail (and the OG image's rail) and are marked in the Markdown context.\n- **Media** — image upload (S3, or local FS in dev), video/tweet embeds, unfurled link cards, dynamic OG image per profile.\n\nChat, S3, and Google auth are each feature-gated on their env vars and degrade gracefully when unset.\n\n## Routes\n\n| Route | What |\n|-------|------|\n| `/` | Marketing landing |\n| `/[username]` | Public timeline (e.g. `/koshik`) |\n| `/[username]/ask` | Dedicated, shareable grounded-chat page |\n| `/[username]/llms.txt` | Primary Markdown context; full unless the profile is oversized |\n| `/[username]/llms-full.txt` | Complete, unabridged Markdown context |\n| `/[username].md` | Clean Markdown counterpart to the public profile |\n| `/[username]/llm.txt` | Legacy-compatible complete context URL |\n| `/mcp` | Global MCP server (Streamable HTTP) — agents query any public profile; OAuth-authorized owner writes |\n| `/oauth/authorize` | OAuth 2.1 consent screen for MCP write access (+ `/api/oauth/token`, `/api/oauth/register`, `/.well-known/*` discovery) |\n| `/api/[username]/chat` | Streaming grounded chat API |\n| `/dashboard` | Owner editor (auth-gated) — profile · events · appearance · import |\n| `/welcome` | Onboarding — claim a handle, seed your timeline |\n| `/login` | Google sign-in |\n\n## Tech stack\n\nNext.js 16 (App Router) · React 19 · TypeScript · Postgres (Supabase) + Prisma 6 · Auth.js (NextAuth v5, Google OAuth) · Vercel AI SDK via OpenRouter · AWS S3 (local FS in dev) · Tailwind v4 + scoped CSS driven by theme tokens · Source Serif 4 + JetBrains Mono · Vercel.\n\n## Running locally\n\n```bash\nnpm install\ncp .env.example .env     # fill in the values below\nnpx prisma migrate dev   # applies migrations to your Postgres\nnpm run db:seed          # loads a demo profile + ~18 events\nnpm run dev              # http://localhost:3000\n```\n\n`.env` (see `.env.example` for details):\n\n- `DATABASE_URL` / `DIRECT_URL` — Supabase Postgres; transaction pooler (`:6543`, `?pgbouncer=true`) for runtime, session (`:5432`) for `prisma migrate`.\n- `AUTH_SECRET` + `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` — Google sign-in for `/dashboard` and onboarding.\n- `OPENROUTER_API_KEY` — optional; enables the visitor chat + AI import (`OPENROUTER_MODEL` to override the default model).\n- `AWS_*` — optional; S3 image storage (falls back to `./public/uploads`).\n\n## Project structure\n\n```\ndesign/                     # design handoff — visual source of truth (not shipped)\nprisma/\n  schema.prisma             # Profile, User/Account/Session, Event, Media, ChatMessage\n  seed.ts                   # demo profile + events\nsrc/\n  auth.ts                   # NextAuth (Google + Prisma adapter)\n  app/\n    page.tsx                    # marketing landing\n    [username]/page.tsx         # public timeline (SSR)\n    [username]/llms.txt/route.ts # primary machine-readable context\n    [username]/opengraph-image.tsx\n    dashboard/page.tsx          # owner editor (auth-gated)\n    welcome/page.tsx            # onboarding / handle claim\n    api/[username]/chat/route.ts# streaming grounded chat\n    api/upload/route.ts         # image upload\n  components/\n    Portfolio.tsx, ChatWidget.tsx, ShareModal.tsx, ...\n    admin/                      # dashboard: forms, theme editor, events, import dialogs\n    onboarding/, marketing/, ui/\n  lib/\n    actions.ts                  # all server actions\n    chat.ts, narrate.ts, import.ts, llmtxt.ts, profile.ts, theme.ts, storage.ts, ...\n```\n\nJSON-shaped fields (`socials`, `theme`, event `link`) are stored as serialized strings so the schema stays portable. Outbound fetches of user-supplied URLs go through the SSRF-guarded client in `lib/import.ts`.\n\n## Domain\n\nProduct domain `logr.it`; portfolios at `logr.it/<handle>`. Primary agent context lives at `logr.it/<handle>/llms.txt`, with complete Markdown at `logr.it/<handle>/llms-full.txt` and `logr.it/<handle>.md`.\n",
+    "fetchedAt": "2026-08-11T23:10:57.297Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "find_profiles",
+      "description": "Search public logr profiles by name, handle, bio, or location. Returns handles to use with the other tools."
+    },
+    {
+      "name": "get_profile",
+      "description": "A profile's identity card: who they are, what they're doing now, socials, and timeline stats."
+    },
+    {
+      "name": "get_timeline",
+      "description": "A profile's timeline events, newest first, optionally filtered by tag, year, featured, or pinned."
+    },
+    {
+      "name": "get_event",
+      "description": "One timeline event in full, including its media (image/video/link URLs)."
+    },
+    {
+      "name": "search_events",
+      "description": "Keyword search over a profile's timeline (title, body, tags). All terms must match. Plain text matching — no semantic search."
+    },
+    {
+      "name": "get_context",
+      "description": "The complete Markdown context for a profile — identity, about, and full timeline with sources. Same content as the logr://profiles/{username} resource, for clients that prefer tools."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:10:57.527Z",
+  "toolsPreviewStatus": "ok"
+}

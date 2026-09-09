@@ -1,0 +1,96 @@
+{
+  "id": "com.sendpageapp/sendpage",
+  "title": "sendpage",
+  "description": "Publish an HTML document as a link anyone can open in one tap, plus PDF, image and Word export.",
+  "summary": "Publish an HTML document as a link anyone can open in one tap, plus PDF, image and Word export.",
+  "offersHint": "Publish an HTML document as a link anyone can open in one tap, plus PDF, image and Word export. · Remote MCP (streamable-http) at https://sendpageapp.com/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://sendpageapp.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://sendpageapp.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token. Generate a free key at https://sendpageapp.com/docs/mcp — no signup required. Format: 'Bearer sp_live_...'",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://sendpageapp.com/docs/mcp",
+  "sourceUrl": "https://github.com/jcaiagent7143-ui/sendpage-mcp",
+  "repository": {
+    "url": "https://github.com/jcaiagent7143-ui/sendpage-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T14:25:51.74328Z",
+  "publishedAt": "2026-08-02T14:25:51.74328Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token. Generate a free key at https://sendpageapp.com/docs/mcp — no signup required. Format: 'Bearer sp_live_...'",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:54:20.315Z",
+    "sourceRepoAt": "2026-08-12T00:27:15.577Z",
+    "readmeAt": "2026-08-12T00:27:16.057Z",
+    "toolsAt": "2026-08-12T00:27:16.158Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jcaiagent7143-ui/sendpage-mcp",
+    "checkedAt": "2026-08-12T00:27:15.577Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jcaiagent7143-ui/sendpage-mcp/main/README.md",
+    "markdown": "# SendPage MCP server\n\nPublish an HTML document as a shareable link the recipient can open in one tap —\nwithout leaving the conversation that wrote it.\n\n**Endpoint:** `https://sendpageapp.com/mcp` · **Transport:** Streamable HTTP\n(stateless) · **Auth:** bearer API key, free, no signup\n\n---\n\n## Why\n\nAn HTML file is a set of drawing instructions, not a document. Sent as an\nattachment it arrives as raw source, gets stripped by corporate mail filters as a\nknown phishing vector, or simply will not open on a phone — which is where most\npeople read first. Printing to PDF loses interactive charts and quietly cuts the\nright-hand columns off wide tables, which is the failure worth fearing: nobody\nnotices until a client asks about a figure that is not in the document.\n\nA link avoids all of it. The recipient taps once and reads the page as designed,\non whatever device they have.\n\n## Connect it\n\nGenerate a free key at **https://sendpageapp.com/docs/mcp**, then:\n\n```bash\nclaude mcp add --transport http sendpage https://sendpageapp.com/mcp \\\n  --header \"Authorization: Bearer sp_live_...\"\n```\n\nOr by hand, in `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"sendpage\": {\n      \"type\": \"http\",\n      \"url\": \"https://sendpageapp.com/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer sp_live_...\" }\n    }\n  }\n}\n```\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `publish_document` | HTML in, share link out. Returns the link, the document id and an edit token — plus a warning naming any images that would fail to load. |\n| `update_document` | Replace the contents or title. **The link does not change**, so a typo found after sending costs a correction rather than a second URL. |\n| `list_documents` | Documents published with this key, with links and view counts. |\n\n### The missing-image warning\n\nAI tools emit a page *plus* an `images/` folder, and people paste only the HTML —\nso the images 404 and every reader sees broken icons. `publish_document` returns\nthe offending files **by name**, so they can be inlined as data URIs and the\ndocument updated before the link is handed over. This is the single most common\nway a published page is quietly wrong.\n\n## The Skill\n\n[`skills/sendpage/SKILL.md`](skills/sendpage/SKILL.md) teaches Claude when to\noffer a link, how to repair a document whose images would not load, and to update\nan existing document rather than publish a second one.\n\n```bash\nmkdir -p ~/.claude/skills/sendpage\ncurl -o ~/.claude/skills/sendpage/SKILL.md \\\n  https://sendpageapp.com/skills/sendpage/SKILL.md\n```\n\n## Limits\n\n- **Free: 5 documents a month**, each with a small \"Made with SendPage\" footer.\n  Pro removes both.\n- **2 MB per document**, inlined images included.\n- **Links are unlisted, not secret.** Anyone with the URL can read the document,\n  and `robots.txt` keeps them out of search results. Password protection exists\n  for anything confidential, and it gates the exports and the preview thumbnail\n  too — not just the page.\n- The API key is stored only as a hash. It is shown once when generated and\n  cannot be recovered; if you lose it, revoke it and generate another.\n\n## Notes on the transport\n\nStateless Streamable HTTP: a single `POST` returns one JSON body, and `GET`\nanswers `405` to decline the optional server-initiated SSE stream. Sessions are\nnever created, so any instance can serve any request — which is what makes the\nserver hostable on a serverless runtime, where a long-lived SSE connection would\nbe killed by the execution limit rather than by anything the client did.\n\nWithout a key the endpoint answers **401 with a `WWW-Authenticate` header** —\nthat is a missing credential, not a broken server.\n\n## Issues\n\nThis repository holds the connection metadata and the Skill. For problems with\nthe server itself, open an issue here.\n",
+    "fetchedAt": "2026-08-12T00:27:16.057Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "publish_document",
+      "description": "Publish an HTML document to SendPage and get a shareable link the recipient can open in one tap on any device. Use this whenever the user has an HTML document and wants to send, share, or deliver it to someone — it is the delivery step after the document is written. The link renders the page as designed, previews with a title and preview card in WhatsApp/Telegram/Slack/email, and can be exported to PDF, image or Word. Returns the share link plus an edit token for later updates."
+    },
+    {
+      "name": "update_document",
+      "description": "Replace the contents or title of a document already published to SendPage. The share link stays exactly the same, so use this to fix a typo or update figures instead of publishing again — anyone who already has the link sees the correction."
+    },
+    {
+      "name": "list_comments",
+      "description": "Read the feedback people have left on a document you published. Call this when the user asks whether anyone has responded or replied, and always before revising a document — the comments say what to change. Returns each comment with who left it and when, oldest first."
+    },
+    {
+      "name": "get_document",
+      "description": "Fetch the current HTML of a document you published, so it can be edited rather than rewritten. Call this before update_document: acting on feedback usually means one small change, and regenerating the whole file loses everything else about it."
+    },
+    {
+      "name": "list_documents",
+      "description": "List the documents published with this API key, newest first, with their share links and view counts. Use it to find a document the user published earlier so it can be updated or re-sent."
+    },
+    {
+      "name": "check_document",
+      "description": "Check an HTML document for the problems a recipient will notice and you cannot: links that lead nowhere, images that will not load, placeholder text left in, http:// references the viewer blocks. Call this BEFORE handing someone a share link — a hallucinated URL or a dead CDN image is invisible while writing and obvious when reading. Pass `html` to check a draft, or `shortId` to re-check something already published after fixing it."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:27:16.158Z",
+  "toolsPreviewStatus": "ok"
+}

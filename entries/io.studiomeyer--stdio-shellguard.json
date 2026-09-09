@@ -1,0 +1,58 @@
+{
+  "id": "io.studiomeyer/stdio-shellguard",
+  "title": "MCP stdio ShellGuard",
+  "description": "Defense-in-depth for MCP stdio servers: shell-injection guard, AST audit CLI, RCE blocking.",
+  "summary": "Defense-in-depth for MCP stdio servers: shell-injection guard, AST audit CLI, RCE blocking.",
+  "offersHint": "Defense-in-depth for MCP stdio servers: shell-injection guard, AST audit CLI, RCE blocking. · Packages: npm:mcp-stdio-shellguard",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-stdio-shellguard",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-stdio-shellguard",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/studiomeyer-io/mcp-stdio-shellguard",
+  "repository": {
+    "url": "https://github.com/studiomeyer-io/mcp-stdio-shellguard",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-29T19:27:16.340301Z",
+  "publishedAt": "2026-05-29T19:27:16.340301Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:53:43.947Z",
+    "sourceRepoAt": "2026-08-11T23:11:41.136Z",
+    "readmeAt": "2026-08-11T23:11:42.259Z",
+    "toolsAt": "2026-08-12T00:53:43.947Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/studiomeyer-io/mcp-stdio-shellguard",
+    "checkedAt": "2026-08-11T23:11:41.136Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/studiomeyer-io/mcp-stdio-shellguard/main/README.md",
+    "markdown": "<!-- studiomeyer-mcp-stack-banner:start -->\n> **Part of the [StudioMeyer MCP Stack](https://studiomeyer.io)** — Built in Mallorca 🌴 · ⭐ if you use it\n<!-- studiomeyer-mcp-stack-banner:end -->\n\n# mcp-stdio-shellguard\n\n\n<!-- badges -->\n[![npm version](https://img.shields.io/npm/v/mcp-stdio-shellguard?style=flat-square&color=cb3837&logo=npm&label=npm)](https://www.npmjs.com/package/mcp-stdio-shellguard)\n[![npm downloads](https://img.shields.io/npm/dm/mcp-stdio-shellguard?style=flat-square&color=cb3837&logo=npm&label=installs%2Fmo)](https://www.npmjs.com/package/mcp-stdio-shellguard)\n![License](https://img.shields.io/github/license/studiomeyer-io/mcp-stdio-shellguard?style=flat-square&color=22c55e&label=license)\n![Last commit](https://img.shields.io/github/last-commit/studiomeyer-io/mcp-stdio-shellguard?style=flat-square&color=88c0d0&label=updated)\n![GitHub stars](https://img.shields.io/github/stars/studiomeyer-io/mcp-stdio-shellguard?style=flat-square&color=ffd700&logo=github&label=stars)\n<!-- /badges -->Defense-in-depth bundle for MCP stdio servers. Wraps `child_process.exec/spawn`\nwith allowlist + sandbox + replay-detection, plus an AST audit CLI (`mcp-shellguard-audit`)\nthat scans MCP server sources for unsanitized shell calls. Closes the Ox-Security\nMCP stdio-RCE class (200k vulnerable servers, May 2026 disclosure).\n\n- **MCP spec**: 2025-06-18\n- **SDK**: `@modelcontextprotocol/sdk` ^1.29.0\n- **Node**: >= 20\n- **License**: MIT\n- **Author**: Matthias Meyer (StudioMeyer)\n\n## Install\n\n```bash\nnpm install mcp-stdio-shellguard\n```\n\nOr run the audit CLI directly without installing:\n\n```bash\nnpx -y -p mcp-stdio-shellguard mcp-shellguard-audit scan ./src\n```\n\n## What it gives you\n\nThree layers, opt-in piecewise:\n\n1. **Library API** — drop-in `guardExec` / `guardSpawn` you call from your\n   own MCP server. Default-deny allowlist, sandbox profiles, replay window.\n2. **Audit CLI** — `mcp-shellguard-audit scan <path>` walks the AST, reports\n   12 anti-patterns from LOW (`no timeout`) to CRITICAL (`exec(\\`...${userInput}...\\`)`).\n3. **Reference MCP server** — `mcp-stdio-shellguard-demo` exposes 8 tools\n   so the MCP Inspector / Claude Desktop can drive the bundle directly.\n\n## Tools (reference server)\n\n| Tool | Type | Purpose |\n|------|------|---------|\n| `guard_exec` | destructive | Defended `child_process.exec`. Forces args[] vector, allowlist + sandbox + replay. Returns `stdout`, `stderr`, `exitCode`, `canonicalHash`, `isReplay`, `trustTier`. |\n| `guard_spawn` | destructive | Defended `child_process.spawn`. Returns SHA-256 hashes of stdout/stderr instead of full bodies. Hard-rejects `shell:true`. |\n| `register_allowlist` | mutating | Register a tool name with executable + args regex. Without registration the default-deny applies. |\n| `audit_source` | read-only | Scan a TS/JS path for shell-injection anti-patterns. Returns `AuditFinding[]` + summary. |\n| `audit_report` | read-only | Format an audit result as markdown / json / SARIF 2.1.0. |\n| `replay_check` | read-only | Compute canonical SHA-256 hash for an invocation and report whether it's already in the replay window. |\n| `sandbox_status` | read-only | Report active sandbox profile + concrete limits + cgroup-v2 active flag. |\n| `trust_tier` | read-only | Derive LOW/MEDIUM/HIGH/CRITICAL tier for a registered tool plus improvement hints. |\n\n## Sandbox profiles\n\n| Profile | Timeout | Max stdout | Max stderr | FD budget | cgroup-v2 |\n|---------|---------|-----------|-----------|-----------|-----------|\n| `strict` | 5 s | 1 MB | 256 KB | 32 | yes (cpu/memory) |\n| `standard` (default) | 30 s | 10 MB | 1 MB | 256 | yes |\n| `permissive` | 5 min | 100 MB | 10 MB | 1024 | no |\n\nCaller can tighten via `timeoutMs` / `fdBudget` per call. Caller cannot widen\nbeyond the profile.\n\n## Trust tiers\n\n| Tier | Condition |\n|------|-----------|\n| LOW | tool not registered (default-deny) |\n| MEDIUM | registered but `argsPatterns` empty (any args allowed) |\n| HIGH | `argsPatterns` set but sandbox or replay tracker inactive |\n| CRITICAL | argsPatterns + sandbox + replay all active |\n\nLift LOW → CRITICAL by registering the tool + setting argsPatterns + running\nthrough `guardExec`/`guardSpawn` (which always activate sandbox + replay).\n\n## Library quickstart\n\n```ts\nimport {\n  AllowlistRegistry,\n  ReplayWindow,\n  guardExec,\n} from \"mcp-stdio-shellguard\";\n\nconst registry = new AllowlistRegistry();\nconst replay = new ReplayWindow();\n\nregistry.register({\n  toolName: \"git-log\",\n  executable: \"/usr/bin/git\",\n  argsPatterns: [\"^log$\", \"^--oneline$\", \"^-n$\", \"^\\\\d+$\"],\n  sandboxProfile: \"strict\",\n});\n\nconst result = await guardExec(\n  {\n    toolName: \"git-log\",\n    command: \"/usr/bin/git\",\n    args: [\"log\", \"--oneline\", \"-n\", \"10\"],\n  },\n  { registry, replay },\n);\n\nconsole.log(result.stdout); // → commit lines\nconsole.log(result.trustTier); // → \"CRITICAL\"\nconsole.log(result.canonicalHash); // → 64-char SHA-256\n```\n\n## Audit CLI\n\n```bash\nmcp-shellguard-audit scan ./src\nmcp-shellguard-audit scan ./src --format sarif --output audit.sarif\nmcp-shellguard-audit scan ./src --severity-floor HIGH    # CI gate\n```\n\nExit codes:\n\n- `0` clean (no findings at-or-above floor)\n- `1` findings present\n- `2` parse / IO errors\n\n## Anti-pattern library (12 rules)\n\n| ID | Severity | Triggers on |\n|----|----------|-------------|\n| `exec_template_literal_with_input` | CRITICAL | `child_process.exec(\\`ls ${x}\\`)` |\n| `exec_dynamic_string` | CRITICAL | `child_process.exec(cmd)` |\n| `exec_sync_dynamic_string` | CRITICAL | `child_process.execSync(cmd)` |\n| `eval_near_child_process` | CRITICAL | `eval(...)` |\n| `function_constructor_near_child_process` | CRITICAL | `new Function(...)` |\n| `spawn_dynamic_file_args` | HIGH | `spawn(bin, userArgs)` |\n| `exec_file_dynamic` | HIGH | `execFile(bin, ...)` |\n| `shell_true_option` | HIGH | `{ shell: true }` |\n| `os_system_equivalent` | HIGH | `Deno.run` / `Bun.spawn` |\n| `spawn_literal_dynamic_args` | MEDIUM | `spawn('git', userArgs)` |\n| `unbounded_buffer` | LOW | exec without `maxBuffer` |\n| `missing_timeout` | LOW | exec/spawn without `timeout` |\n\nThe scanner resolves *renamed* `child_process` bindings before matching,\nso the dangerous shapes below are caught even when the call goes through an\nalias rather than a literal `child_process.exec`:\n\n- `const execAsync = promisify(exec); execAsync(`...${x}`)`\n- `import cp from \"node:child_process\"; cp.exec(`...${x}`)`\n- `const { exec: sh } = require(\"child_process\"); sh(`...${x}`)`\n- `import { exec as run } from \"node:child_process\"; run(...)`\n\nSynchronous variants (`spawnSync`, `execFileSync`) share their async rules,\nand `shell_true_option` also fires on a string shell (`{ shell: \"/bin/sh\" }`)\nor a dynamic shell value — not just the literal `{ shell: true }`. A\n`promisify` of a non-child_process function, a destructure off another\nmodule, and `{ shell: false }` stay clean (no false positives).\n\n## Pragmas\n\n- `// shellguard:ignore-next-line` — suppress one finding\n- `// shellguard:ignore-file` — suppress whole file (rare; prefer per-line)\n\n## Why this exists\n\nOx-Security disclosed (2026-05) that 200k+ MCP stdio servers wrap\n`child_process.exec` with template literals carrying user input straight from\nLLM tool args. LiteLLM v1.83.6 was the canonical example (CVE patched in 1.83.7).\nThis bundle is the defensive-security counterpart: a drop-in guard + scanner\nthat closes the class. Inspired by AWS Linux `seccomp` + Chromium sandbox tiers.\n\n## See also\n\n- `HOOK_RECIPES.md` — Claude Code hook recipes that auto-block dangerous tool calls\n- `CHANGELOG.md` — release history\n- Ox-Security MCP audit: <https://venturebeat.com/security/200000-mcp-stdio-servers/>\n- LiteLLM CVE-2026-XXXX: <https://github.com/BerriAI/litellm/security/advisories>\n\n## License\n\nMIT — Copyright (c) 2026 Matthias Meyer (StudioMeyer)\n",
+    "fetchedAt": "2026-08-11T23:11:42.259Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:53:43.947Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

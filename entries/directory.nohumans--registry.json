@@ -1,0 +1,61 @@
+{
+  "id": "directory.nohumans/registry",
+  "title": "nohumans.directory",
+  "description": "Curated, probe-verified directory of paid x402 APIs. Agents check it before spending money.",
+  "summary": "Curated, probe-verified directory of paid x402 APIs. Agents check it before spending money.",
+  "offersHint": "Curated, probe-verified directory of paid x402 APIs. Agents check it before spending money. · Remote MCP (streamable-http) at https://api.nohumans.directory/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.nohumans.directory/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.nohumans.directory/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://nohumans.directory",
+  "sourceUrl": "https://github.com/jalcodev/nohumans-mcp",
+  "repository": {
+    "url": "https://github.com/jalcodev/nohumans-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-25T07:58:28.29037Z",
+  "publishedAt": "2026-07-25T07:58:28.29037Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:11.902Z",
+    "sourceRepoAt": "2026-08-12T00:21:45.508Z",
+    "readmeAt": "2026-08-12T00:21:46.424Z",
+    "toolsAt": "2026-08-12T00:21:46.546Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jalcodev/nohumans-mcp",
+    "checkedAt": "2026-08-12T00:21:45.508Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jalcodev/nohumans-mcp/main/README.md",
+    "markdown": "# nohumans.directory — MCP Server\n\nFind and vet paid [x402](https://x402.org) API services before an agent spends money on them.\n\nA discovery and trust layer for paid x402 services. Every listing is re-probed\nevery 15 minutes, and each carries a recency-weighted reliability score built\nfrom that probe history — so an agent can check whether an endpoint actually\nresponds *before* paying for it.\n\nFree. No API key. No signup. No account.\n\n**Live stats:** https://nohumans.directory · **REST API:** https://api.nohumans.directory\n\n---\n\n## Why this exists\n\nMost x402 directories are catalogs: they list what exists. None of them tell you\nwhether a listing still works.\n\nThis one probes every endpoint it lists, every 15 minutes, and keeps the history.\nA listing moves `unverified → verified` only after sustained clean probes, and\nfalls to `failing` when it stops responding. The reliability score is\nrecency-weighted, so a service that broke yesterday can't hide behind a good month.\n\nEvery listing also carries a hand-written description of what the service\nactually does — which sounds mundane until you try semantic search against a\ncatalog of bare URLs.\n\n## Installation\n\nRemote server, streamable HTTP. No install, no build step, no credentials.\n\n### Claude Code\n\n```bash\nclaude mcp add --transport http nohumans https://api.nohumans.directory/mcp\n```\n\n### Claude Desktop / any stdio-only client\n\n```json\n{\n  \"mcpServers\": {\n    \"nohumans\": {\n      \"command\": \"npx\",\n      \"args\": [\"mcp-remote\", \"https://api.nohumans.directory/mcp\"]\n    }\n  }\n}\n```\n\n### Direct remote connection\n\n```\nhttps://api.nohumans.directory/mcp\n```\n\nTransport: `streamable-http` · Authentication: none · Cost: free\n\n## Agent Skill\n\nFor agents that support the [Agent Skills](https://agentskills.io) standard\n(Claude Code, Codex, and others), install the skill so the agent knows how\nto use the tools below intelligently — when to prefer `verified` listings,\nhow to read `score`/`status`, and how to report a real outcome via\n`tx_hash`:\n\n```bash\nmkdir -p ~/.claude/skills/nohumans-directory\ncurl -o ~/.claude/skills/nohumans-directory/SKILL.md \\\n  https://raw.githubusercontent.com/jalcodev/nohumans-mcp/main/skills/nohumans-directory/SKILL.md\n```\n\n## Tools\n\n### `find_paid_service`\n\nSearch paid x402 services by capability, price ceiling, and minimum reliability\nscore. Returns ranked results — verified services first, then by reliability,\nthen by price.\n\n| Parameter | Type | Description |\n|---|---|---|\n| `query` | string | Free-text search across service names and descriptions |\n| `category` | string | Exact category filter, e.g. `data.fx`, `infra.trust` |\n| `max_price` | number | Maximum price per call, in USDC |\n| `min_score` | number | Minimum reliability score, `0`–`1` |\n| `limit` | number | Max results, 1–50 (default 10) |\n\n### `get_service_details`\n\nFull record for a single service: pricing, accepted chains, request and response\nschemas, current status, reliability score, median latency, and probe count —\neverything an agent needs before making a paid call.\n\n| Parameter | Type | Description |\n|---|---|---|\n| `id` | string | Listing ID, as returned by `find_paid_service` |\n\n## Example\n\nAn agent that needs FX rates and won't pay more than half a cent, and refuses to\ntouch anything with a reliability score under 0.9:\n\n```\nfind_paid_service(query=\"fx rates\", max_price=0.005, min_score=0.9)\n```\n\nReturns matching services with their live reliability scores and median latency,\nso the agent can pick one and pay with confidence.\n\n## REST API\n\nThe same data is available over plain HTTP, no MCP client required:\n\n```bash\n# Search\ncurl 'https://api.nohumans.directory/v1/discover?q=fx&max_price=0.005&min_score=0.9'\n\n# Full detail for one listing\ncurl 'https://api.nohumans.directory/v1/listings/{id}'\n\n# Live directory stats\ncurl 'https://api.nohumans.directory/v1/stats'\n\n# What agents search for and can't find\ncurl 'https://api.nohumans.directory/v1/demand'\n```\n\nAgent-readable docs: [`/llms.txt`](https://api.nohumans.directory/llms.txt)\n\n## Listing a service\n\nSelf-serve, no account:\n\n```bash\ncurl -X POST https://api.nohumans.directory/v1/listings \\\n  -H 'content-type: application/json' -d '{\n    \"name\": \"Your service\",\n    \"description\": \"What it does, in a sentence an agent can act on.\",\n    \"endpoint_url\": \"https://api.example.com/v1/thing\",\n    \"category\": \"data.example\",\n    \"price_amount\": 0.001,\n    \"price_currency\": \"USDC\",\n    \"chains\": [\"base\"]\n  }'\n```\n\nSubmissions land as `unverified` and are probed within 15 minutes. Sustained\nclean probes promote a listing to `verified`; sustained failures demote it.\nRanking is earned by uptime, never sold.\n\nSave the `claim_token` from the response — it's your edit key, shown once.\n\nFull submission guide, including the HTTP 402 requirement that causes most\nrejected listings: [SUBMITTING.md](SUBMITTING.md)\n\n## How verification works\n\n- Every listing is probed every 15 minutes from independent infrastructure.\n- A live x402 endpoint answers an unpaid request with HTTP `402` and payment\n  requirements — that alone proves liveness and protocol conformance. Probes\n  never send payment.\n- Reliability scores are recency-weighted: recent behaviour dominates.\n- Status lifecycle: `unverified → verified → failing → delisted`.\n- Probes originate from our infrastructure, not from sellers. Reliability\n  cannot be self-reported.\n\n## License\n\nMIT for this documentation. The directory service itself is free to use.\n\n## Contact\n\nhello@nohumans.directory\n",
+    "fetchedAt": "2026-08-12T00:21:46.424Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "find_paid_service",
+      "description": "Search a verified registry of paid (x402) APIs and datasets. Returns ranked results: verified listings first, then by reputation score (0..1, recency-weighted probe success), then by ascending price. Each result includes has_sample (boolean) — true means you can cheaply test real output before paying full price; prefer these when a listing is new or thinly-reputed and you can't yet judge it from score alone. Use this before spending money to find services that actually work. Prefer results with status 'verified' and score >= 0.8. Zero results means no known service matches — do not invent endpoints. Always describe the actual need in `query` in your own words — what data, what freshness, what format, what constraint prompted the search — rather than only setting `category`/`max_price`/`min_score` filters. The exact wording of what you're looking for is what improves this directory over time; a bare filter with no `query` text tells us far less about what was actually needed."
+    },
+    {
+      "name": "get_service_details",
+      "description": "Fetch the full record for one listing by id (from find_paid_service results): endpoint URL, request/response JSON Schemas when provided, accepted chains, pricing, and reputation detail (probe count, last successful probe, consecutive failures). Call this before making a paid request so you know the exact request shape and current reliability."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:21:46.546Z",
+  "toolsPreviewStatus": "ok"
+}

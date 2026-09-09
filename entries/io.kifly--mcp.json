@@ -1,0 +1,148 @@
+{
+  "id": "io.kifly/mcp",
+  "title": "Kifly — Agentic Commerce & Payments",
+  "description": "Multi-seller shopping for AI agents. Settle via Stripe MPP or x402 USDC on Base. Hosted.",
+  "summary": "Multi-seller shopping for AI agents. Settle via Stripe MPP or x402 USDC on Base. Hosted.",
+  "offersHint": "Multi-seller shopping for AI agents. Settle via Stripe MPP or x402 USDC on Base. Hosted. · Remote MCP (streamable-http) at https://kifly.io/api/mcp · Requires headers: Authorization",
+  "version": "1.1.4",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://kifly.io/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://kifly.io/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <kfa_live_...> — agent API key issued from the Kifly seller portal at https://kifly.io/dashboard/api-keys. One key per seller (or per cross-seller network) determines catalog scope.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://kifly.io",
+  "updatedAt": "2026-05-29T06:07:48.992843Z",
+  "publishedAt": "2026-05-29T06:07:48.992843Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <kfa_live_...> — agent API key issued from the Kifly seller portal at https://kifly.io/dashboard/api-keys. One key per seller (or per cross-seller network) determines catalog scope.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:24.499Z",
+    "sourceRepoAt": "2026-08-11T23:12:55.308Z",
+    "readmeAt": "2026-08-12T00:54:24.499Z",
+    "toolsAt": "2026-08-11T23:12:55.308Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:12:55.308Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:54:24.499Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_products",
+      "description": "Search or browse Kifly's product catalog. Multilingual semantic search (100+ languages). Returns a JSON-LD ItemList with `kifly:totalCatalogSize`. When empty, `kifly:emptyReason` is 'empty_catalog' | 'no_matches_for_query' — on 'no_matches_for_query' tell the buyer nothing matched rather than guessing, then offer `kifly:suggestions` (related products — NOT matches) and `kifly:availableCategories` (what the catalog carries) so you can help without a second search. Results carry `kifly:relevanceScore` [0–1]; a semantic similarity floor filters out irrelevant results automatically. Omit `q` to browse. In cross-seller (network) results, each item's `kifly:seller` is just the seller's handle — look it up once in the ItemList's `kifly:sellers` map (keyed by handle) to read `delivery_fee_cents` and `delivery_coverage` — `nationwide:true` for all 50 states, a `states` list, or `coverage_configured:false` meaning the seller ships NOWHERE yet (empty `states` is NOT nationwide). `merchant_managed:true` is a THIRD case: the seller settles on their own checkout and sets shipping there, so quote no coverage and no delivery fee, and never report them as not shipping. `delivery_coverage.cities` may be capped — compare `cities.length` against `city_count` and call `get_seller` for the full list if fewer. Seller-scoped results carry the full record once at the list level (`kifly:seller` on the ItemList itself) instead. Each item also carries `kifly:variantId`. When a product has 2+ size/style variants, `kifly:productOptions` gives the option AXES (Color, Size, …) in the seller's own order, each listing only values a real variant exists for — ask the buyer one axis at a time, never recite the combination matrix. `kifly:hasVariant` lists every combination with its own `kifly:variantId` plus `kifly:optionValues` positionally aligned to those axes; match the buyer's answers against it and pass that `kifly:variantId` to `create_cart`/`add_to_cart`. Two fields are omitted when redundant: a variant's `name` when `kifly:optionValues` is present (it was those values joined by ' / '), and its `offers` when it costs the same as the product's own `offers` — a missing variant price means the product price applies, NOT that it is unpriced. No `kifly:productOptions` means the seller never declared options: read each variant's `name` instead. Capped at 100 variants; `kifly:variantCount` is set if the product has more. `image` is capped to 2 URLs per product — if `kifly:imageCount` is present, there are more than shown (not retrievable via this API; the cap is a hard limit, not a paginated detail). Each result's `offers` carries `kifly:purchasable`: when **false**, the seller is discovery-only (directory-tier or not yet able to charge) — checkout will hand off / fail, so present it as a referral, not a buy. `availability:InStock` is about stock, NOT buyability — read `kifly:purchasable` to decide whether to route the buyer to checkout. **You can read the delivery fee and check coverage from here — no need to call `set_shipping_address` just to learn the cost.** **Pagination (browse only):** when `kifly:hasMore` is true, pass `kifly:nextCursor` as `cursor` to fetch the next page. **Seller filter:** pass `seller_handle` to scope results to one seller. **Category filter:** free-text, case-insensitive (e.g. 'fashion'). **Multiple queries:** pass `q` as an array (up to 5) to try several phrasings in one call instead of N separate searches. **Before checkout, call `set_shipping_address`.**"
+    },
+    {
+      "name": "create_cart",
+      "description": "Create a new shopping cart on Kifly. **For network (cross-seller) tokens you MUST pass `seller_handle`** — each cart is bound to exactly one seller. Get the handle from search_products results (every item's `kifly:seller` IS the handle in network results) or get_seller. Seller-scoped tokens may omit the handle — their own seller is implicit. Returns a cart_id to use with add_to_cart and checkout. The response's `seller.kifly_purchasable` (and `seller.fulfillment`) tells you upfront whether this seller can complete a real Kifly checkout — `false`/`\"external\"` means directory-tier: checkout will hand off to the seller's own site instead of charging, so present the flow as a referral, not a purchase. Cart-building still works either way (needed to generate the handoff's per-product links), and the same flag rides every add_to_cart/get_cart response on this cart too."
+    },
+    {
+      "name": "add_to_cart",
+      "description": "Requires `checkout:write` scope. Add a product variant to an existing cart. Use the variant_id from search_products results. Returns full cart state including item_ids you can use with update_cart_item. **Max quantity per item and max cart total are enforced — call `get_platform_limits` to check the current limits before building a large cart.** Exceeding the per-item limit returns 400 `QUANTITY_EXCEEDS_LIMIT`; exceeding the cart total returns 400 `CART_TOTAL_EXCEEDS_LIMIT` at checkout. `cart.kifly_purchasable` (and `cart.fulfillment`) carries the same non-transactable signal as create_cart's `seller` field — check it before telling the buyer this is a real purchase."
+    },
+    {
+      "name": "get_cart",
+      "description": "Inspect the current state of a cart — line items, quantities, prices, and shipping address. Each item includes an `item_id` you can pass to `update_cart_item` to change quantity or remove the item. Call this after `add_to_cart` to review the cart before checkout, or any time the buyer asks what's in the cart. `kifly_purchasable: false` (`fulfillment: \"external\"`) means checkout on this cart will hand off to the seller's own site instead of charging — say so before the buyer expects a real purchase."
+    },
+    {
+      "name": "update_cart_item",
+      "description": "Requires `checkout:write` scope. Change the quantity of a line item in an open cart, or remove it entirely. Set `quantity` to 0 to remove the item. Get the `item_id` from `get_cart` or the `cart` field in the `add_to_cart` response. Returns the updated cart state. **The per-item quantity ceiling applies here too — call `get_platform_limits` to check the current limit.** Exceeding it returns 400 `QUANTITY_EXCEEDS_LIMIT`."
+    },
+    {
+      "name": "set_shipping_address",
+      "description": "Requires `checkout:write` scope. Persist a shipping address on the cart and confirm whether the seller can deliver to it. **Call BEFORE `checkout`.** Returns `delivery_eligible: true/false`. When false, `delivery_coverage: { states, cities }` tells you exactly which US states and cities the seller covers — tell the buyer where coverage is available. When true, returns `cart_total_with_delivery_cents` so you can quote the full price (item subtotal + flat delivery fee) before sending the buyer to pay."
+    },
+    {
+      "name": "quick_buy",
+      "description": "Requires `cart:write` scope. Create a cart, add items, and set the shipping address in ONE call — the fast path when you already know the seller, the exact variant(s), and the buyer's address (e.g. a reorder, or a buyer who has decided). Prefer this over the create_cart → add_to_cart → set_shipping_address sequence to save round trips; those granular tools stay available for exploratory, multi-step carts. **You must call `search_products` first** so Kifly knows each variant's seller (quick_buy returns 422 `VARIANT_SNAPSHOT_MISSING` otherwise). One cart = one seller: every item must belong to the same seller (409 `CART_SELLER_MISMATCH` otherwise) — for a network token, pass that seller's `seller_handle`. Returns `{ cart_id, items_added, seller, delivery }`. `delivery` is exactly what set_shipping_address returns: when `delivery_eligible: true` it carries `cart_total_with_delivery_cents` (quote it before sending the buyer to pay); when `false` it carries `reason` + `delivery_coverage` and NO address is saved, so you can call quick_buy again (or set_shipping_address) with a covered address on info you already have. **quick_buy never charges — it stops at the cart. The buyer still pays via `checkout`**, which returns the payment link they open themselves. On a 5xx/'temporarily unavailable' error, retry once with the same arguments."
+    },
+    {
+      "name": "checkout",
+      "description": "Requires `checkout:write` scope. **Requires `set_shipping_address` to have been called first.** Returns 400 `invalid_shipping` if no address is on the cart, or 400 `delivery_unavailable` if the buyer's address is outside the seller's coverage. Cart total must not exceed the platform cap (`kifly://platform/limits`). **Checkout is always human-in-the-loop: it returns a link the buyer opens and confirms — it never charges a card or completes an order on its own.** On success: `payment_rail` tells you which outcome you got. `'stripe-checkout'` — a real Kifly purchase: returns `payment_url` (the Stripe link the BUYER must open and pay), `session_id` for `order_status`, and amount breakdown. **Relay the link and tell the buyer they need to complete payment themselves — do not imply the purchase is done until `order_status` reports `paid`.** `'directory-handoff'` — this seller is discovery-only (`kifly_purchasable: false` on the cart, as already signaled by create_cart/add_to_cart/get_cart); there is NO `payment_url`/`session_id`. Instead a `handoff` object carries `seller` (name, handle, storefront_url) and `items` (each with a tracked `link` to the product on the seller's own site, or null — fall back to `seller.storefront_url`), plus a `disclaimer` to relay verbatim. Present this as a referral to complete the purchase off-platform, not as a completed Kifly order. **To pre-fill the buyer's email on the payment page, pass `email` — ask the buyer for it in plain language ('what email should the receipt go to?'). Never ask the buyer to paste a token.** `buyer_token_status` in the response reports whether an (internal) token was applied to pre-fill the saved email: `'resolved'` / `'invalid'` / `'none'` — an invalid token is NOT an error response. On 502/503 errors, check `retryable: true` in the body — those are transient upstream faults; wait `retry_after_seconds` then retry once."
+    },
+    {
+      "name": "register_buyer",
+      "description": "Start registering a buyer so they can be recognized across future purchases without re-entering their details. Takes the buyer's email and name and always emails a 6-digit verification code — the response is `{ verification_required: true, buyer_profile_id }` whether the email is brand new or already has an account (so this call alone never reveals which). Ask the buyer to read you the code from their inbox, then call `verify_buyer` with the same email + code to get a `buyer_token` (`kfb_live_...`). **Store that token and pass it to `checkout` on every future order** — it pre-fills the buyer's email on the secure Stripe payment link. Safe to call for a buyer you believe is new; if they already have an account, verify_buyer still recovers it."
+    },
+    {
+      "name": "request_buyer_code",
+      "description": "Send a 6-digit verification code to a **returning** buyer's email so they can prove the account is theirs and recover their saved name + shipping address on this connection — without pasting any token or re-entering their name. Call this when the buyer says they've shopped with Kifly before and gives you their email; then ask them to read you the code from their inbox and call `verify_buyer`. Always returns `{ sent: true }` — for the buyer's privacy the response is identical whether or not the email has a Kifly account (so it can't be used to probe who shops here), and a code is only actually emailed if an account exists. If the buyer never receives a code, they likely don't have an account yet: call `register_buyer` instead, which creates one and emails a code either way. Requires the `buyer:write` capability (marketplace/network keys)."
+    },
+    {
+      "name": "verify_buyer",
+      "description": "Verify the 6-digit code a returning buyer received by email (from `request_buyer_code`). On success returns `{ buyer_token, buyer_profile_id }` — pass the `buyer_token` to `get_buyer_profile` to auto-fill their saved name + shipping address, and to `checkout` to pre-fill their email on the payment link. Fails with `invalid_otp` if the code is wrong or expired (ask them to re-check, or call `request_buyer_code` again). Requires the `buyer:write` capability."
+    },
+    {
+      "name": "get_buyer_profile",
+      "description": "Retrieve a repeat buyer's saved name, email, and default shipping address. **At the start of every purchase flow, ask the buyer in plain language: 'Are you a returning Kifly shopper? What's the email on your Kifly account?' — never ask them to paste a token.** If they have a Kifly account, recover it by email: call `request_buyer_code` with their email, ask them for the 6-digit code we email them, then call `verify_buyer` to obtain their `buyer_token`, and finally call this tool with that token to auto-fill name, email, and shipping — they skip all manual data entry. (Alternative if email verification isn't available: send them the one-click sign-in link `https://kifly.ai/buyer?return_url=<encoded_current_chat_url>` — they sign in with Google and return with their details; the same link creates an account if they're new.) Use the returned `name` and `default_shipping_address` to auto-fill `set_shipping_address`. Pass the `buyer_token` to `checkout` so Stripe pre-fills their email. Returns `{ name, email, default_shipping_address }` where `default_shipping_address` may be null if the buyer hasn't saved one yet — if null, collect the address normally then call `save_buyer_address` so it's pre-filled next time."
+    },
+    {
+      "name": "list_orders",
+      "description": "List a returning buyer's recent orders and their current fulfillment status — use this in a NEW session to answer 'did my order ship?' / 'where's my package?' when you don't have the original `session_id` from `checkout`. Requires the buyer's `buyer_token` (recover it via `request_buyer_code` + `verify_buyer` if you don't have one). Returns `{ orders, count }`, newest first; each order has `status` (`paid` | `shipped` | `delivered`), `items`, `amount_cents`, `placed_at`, and — once shipped — `tracking_number`, `carrier`, and a public `tracking_url`. **Pass `since` (an ISO-8601 timestamp from a previous check) to get only orders that changed since then** — surface those proactively ('your last order just shipped'). `order_id` identifies the order; `session_id` cross-references `order_status` for a single live checkout."
+    },
+    {
+      "name": "save_buyer_address",
+      "description": "Save a shipping address to the buyer's Kifly profile so it auto-fills on future purchases. **Call this after a successful checkout if `get_buyer_profile` returned `default_shipping_address: null`.** The address is persisted server-side against the buyer token — the buyer never needs to re-enter it. Use the same address that was passed to `set_shipping_address` for this order."
+    },
+    {
+      "name": "submit_feedback",
+      "description": "Send structured feedback to the Kifly team. **Call after a confusing response, a dead-end, or a successful workaround you had to invent** — it's how we improve the agent surface. Fire-and-forget: returns 202 immediately, no blocking, safe to skip if it would add latency to a user-facing flow. `category` and `severity` are required enums (don't free-form them). Include `context` with what you were doing (tool called, query used, response shape, what you expected). Add `suggested_fix` only if you have a concrete idea. Rate-limited to 10/min per agent token; everything is reviewed before influencing anything."
+    },
+    {
+      "name": "request_feature",
+      "description": "Submit the buyer's **product/feature request** to the Kifly team. Use this when the buyer wishes Kifly *itself* did something it doesn't — a missing capability, a rough flow, an idea to improve the platform. **This is NOT `submit_feedback`** (that's for reporting a broken/confusing API response you hit). Requires the buyer's `kfb_live_` token — only registered buyers can file requests. Help the buyer articulate a real problem: ask OPEN, non-leading questions ('what were you trying to do? what got in the way? how do you handle it today?') — never 'would feature X help?'. Pre-fill the fields from the conversation and ask only for the gaps; keep it short. Separate the `problem` (the pain) from any `proposed_solution` (the fix). Name and email are taken from the buyer profile automatically — do not ask for them. Returns 202: it's logged for review. **Do NOT promise the user anything will be built** — just confirm it was recorded."
+    },
+    {
+      "name": "get_seller",
+      "description": "Retrieve a seller's public profile: name, location (city/region/country), storefront URL, delivery fee, delivery coverage, and catalog size. **Call this before `create_cart` or `set_shipping_address` to validate that the seller ships to the buyer's area or to set expectations about catalog size.** `delivery_coverage` is `{ states, cities, nationwide, state_count, city_count, coverage_configured }` — the US state codes (e.g. 'CA', 'NE') and city names the seller delivers to; an address is eligible when its region matches a covered state OR its city matches a covered city. This is the full profile — `cities` is never capped here (unlike `list_sellers`/`search_products`). **`coverage_configured: false` means the seller has set up NO delivery yet — they ship NOWHERE; never tell the buyer they ship anywhere (an empty `states` list is NOT nationwide). `nationwide: true` means all 50 states, with `states` omitted to save space. `merchant_managed: true` means shipping is decided at the seller's OWN checkout — `states`/`cities` are empty and meaningless, `delivery_fee_cents` is 0 because Kifly charges none, and the buyer sees real shipping options at that checkout; do NOT present this seller as not shipping.** `delivery_fee_cents` is the flat fee added at checkout; `catalog_size` is the total number of products listed. **For network (cross-seller) tokens, pass `handle` to name which seller you're asking about** (e.g. `handle: 'bay-clothing-district'`). Handle lookup is case-insensitive — 'BayClothingDistrict' and 'bayclothingdistrict' both resolve. Seller-scoped tokens may omit `handle` — their own seller is implicit."
+    },
+    {
+      "name": "list_sellers",
+      "description": "List all active sellers on the Kifly network. **Requires a network token (kfn_live_…).** Returns each seller's handle, name, city, region, delivery coverage (`nationwide:true` or a `states` list), delivery fee, and catalog size. `delivery_coverage.cities` may be capped to a handful of entries — compare `cities.length` against `city_count`; if fewer, call `get_seller` for that seller's full city list. Use this to discover which sellers are available and which ship to a buyer's location before calling `get_seller` or `search_products`. **Pagination:** when `kifly:hasMore` is true, pass `kifly:nextCursor` as `cursor` to fetch the next page. Default page size is 20, max 50."
+    },
+    {
+      "name": "get_platform_limits",
+      "description": "Returns the current platform-enforced cart limits: `max_item_quantity` (per-line-item ceiling), `max_cart_total_cents`, and `max_cart_total_usd`. Call this once at session start before building a large cart so you can quote limits to the buyer proactively rather than discovering them via errors. The limits are operator-configurable; always read them at runtime rather than hardcoding."
+    },
+    {
+      "name": "order_status",
+      "description": "Check the status of a Stripe checkout session. Poll every 5 seconds after checkout until status is 'paid', 'shipped', or 'failed'. Returns order details (order_id, amount, items) when paid. When the seller marks the order as shipped, status becomes 'shipped' and tracking_number, carrier, and shipped_at are included — share these with the buyer. Call get_help if the buyer needs Kifly's support contact."
+    },
+    {
+      "name": "get_help",
+      "description": "Get Kifly's website and support contact email. Call this if you are stuck, hit an unresolvable error, or the buyer asks how to reach a human. Returns the website URL and support email — always share both with the buyer."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:12:55.308Z",
+  "toolsPreviewStatus": "ok"
+}

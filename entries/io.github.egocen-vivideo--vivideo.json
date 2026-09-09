@@ -1,0 +1,162 @@
+{
+  "id": "io.github.egocen-vivideo/vivideo",
+  "title": "vivideo",
+  "description": "AI video generation via the Vivideo API: auto or manual mode, avatars, voices, brand kits.",
+  "summary": "AI video generation via the Vivideo API: auto or manual mode, avatars, voices, brand kits.",
+  "offersHint": "AI video generation via the Vivideo API: auto or manual mode, avatars, voices, brand kits. · Remote MCP (streamable-http) at https://api.vivideo.ai/mcp · Packages: npm:@vivideo/mcp · Requires headers: Authorization · Env vars: VIVIDEO_API_KEY",
+  "version": "1.0.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.vivideo.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.vivideo.ai/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer vv_live_... — your Vivideo API key, created in the app under Settings > More > API Keys.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@vivideo/mcp",
+    "version": "1.0.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "VIVIDEO_API_KEY",
+        "description": "Your Vivideo API key (vv_live_...), created in the app under Settings > More > API Keys.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@vivideo/mcp",
+      "version": "1.0.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "VIVIDEO_API_KEY",
+          "description": "Your Vivideo API key (vv_live_...), created in the app under Settings > More > API Keys.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "VIVIDEO_API_KEY",
+      "description": "Your Vivideo API key (vv_live_...), created in the app under Settings > More > API Keys.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/egocen-vivideo/vivideo-toolchain",
+  "repository": {
+    "url": "https://github.com/egocen-vivideo/vivideo-toolchain",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T13:44:29.653631Z",
+  "publishedAt": "2026-07-28T13:44:29.653631Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer vv_live_... — your Vivideo API key, created in the app under Settings > More > API Keys.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:22.925Z",
+    "sourceRepoAt": "2026-08-11T23:47:22.850Z",
+    "readmeAt": "2026-08-11T23:47:23.564Z",
+    "toolsAt": "2026-08-11T23:47:23.652Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/egocen-vivideo/vivideo-toolchain",
+    "checkedAt": "2026-08-11T23:47:22.850Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/egocen-vivideo/vivideo-toolchain/main/README.md",
+    "markdown": "# Vivideo Toolchain\n\nThe developer + agent integration layer for the [Vivideo API](https://developers.vivideo.ai) — a shared client, an MCP server, a CLI, and Skills. **Agents are a primary user, not an afterthought.**\n\nEverything sits *on top of* the public API (the source of truth). No backend business logic is duplicated here — the toolchain only adds client-side ergonomics and guardrails.\n\n```\nvivideo-toolchain/            npm workspaces monorepo (TypeScript)\n├── packages/core   @vivideo/core   one typed API client + guardrails (shared)\n├── packages/mcp    @vivideo/mcp    MCP server (stdio) — 13 agent tools\n├── packages/cli    @vivideo/cli    `vivideo` CLI — humans, scripts, CI, agents\n├── skills/                          reusable agent Skills (SKILL.md)\n└── docs/                            installation, configuration, workflows\n```\n\n## Architecture\n\nOne client, one set of types, derived from [`packages/core/openapi.yaml`](packages/core/openapi.yaml). The MCP server and CLI both call `@vivideo/core` — there is exactly **one** representation of each request/response, so the tools, CLI, docs and OpenAPI stay consistent.\n\n`@vivideo/core` adds only client-side concerns, never business logic:\n\n| Guardrail | What it does |\n|---|---|\n| **Rate limiting** | Token-bucket cap on request rate (default 8/s) — the client can't *become* a request flood. |\n| **Concurrency cap** | Semaphore limits in-flight requests (default 4). |\n| **Bounded retries** | Retries only `retryable` failures, with full-jitter backoff, capped attempts. |\n| **Honors `Retry-After`** | On 429 it waits the API-specified delay before retrying. |\n| **Idempotency** | Every video-create sends an `Idempotency-Key`; retries reuse it → no duplicate charges. |\n| **Timeouts** | Per-request `AbortController` timeout (default 30s). |\n| **Safe waiting** | `waitForVideo` polls at the API's suggested interval, with a hard timeout — never a `while(true)`. |\n| **Secret redaction** | API keys / signing secrets are stripped from every log, error, and output. |\n\nThese complement — and never bypass — the API's own auth, rate limits, idempotency, credit checks, premium gates, ownership and error model.\n\n## Quick start\n\n```bash\n# from the repo (until packages are published to npm)\nnpm install\nnpm run build\n\n# authenticate (stored 0600 in ~/.vivideo/config.json), or use VIVIDEO_API_KEY\nexport VIVIDEO_API_KEY=\"vv_live_...\"   # from https://app.vivideo.ai/account/api-keys\n\n# CLI\nnode packages/cli/dist/index.js account\nnode packages/cli/dist/index.js create auto --prompt \"A 20s product teaser\" --wait\n\n# MCP server (stdio) — point an MCP client at this command\nnode packages/mcp/dist/index.js\n```\n\nOnce published: `npm i -g @vivideo/cli` (gives `vivideo`), and `npx @vivideo/mcp` for the server.\n\n## Docs\n\n- [MCP server — install, configure, connect to clients, tool reference](docs/mcp.md)\n- [CLI — install, auth, command reference, JSON & non-interactive use, exit codes](docs/cli.md)\n- [Skills — install & use](skills/README.md)\n- [Workflows — human & agent, end to end](docs/workflows.md)\n- [Security, rate limits, idempotency, credits & premium, troubleshooting](docs/guide.md)\n\n## Authentication & security\n\n- Keys are read from (in order): explicit option → `VIVIDEO_API_KEY` env → `~/.vivideo/config.json` (written owner-only `0600`).\n- The key is **never printed** — all output passes through secret redaction; `configure` stores it without echoing it.\n- Keys are account-scoped secrets. Keep them server-side; one per integration so a leak is revocable in isolation.\n\n## Not included (honest scope)\n\n- **Cancellation** — the public API has no cancel endpoint, so no cancel tool/command is offered. Failed/stuck renders are auto-refunded by the API.\n- **Agent/chat mode** — not exposed by the public API, so not in the toolchain.\n- Nothing here publishes to npm, provisions DNS, or deploys — those are external steps (see the final section of [docs/mcp.md](docs/mcp.md)).\n\n## Development\n\n```bash\nnpm run build       # build all three packages (tsc -b)\nnpm run typecheck   # type-check the whole workspace\nnpm test            # vitest\n```\n\nRequires Node ≥ 18.17.\n",
+    "fetchedAt": "2026-08-11T23:47:23.564Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_configuration",
+      "description": "Check whether a Vivideo API key is present on this request. Call this FIRST. Returns { configured: boolean }. If false, ask the user to add an Authorization: Bearer vv_live_... header to the MCP server config (a key from https://app.vivideo.ai/account/api-keys). Never asks for or exposes the key."
+    },
+    {
+      "name": "check_account",
+      "description": "Get the account plan, premium status, and remaining credit balance. Use this to decide whether the user can generate a video (rendering needs a premium plan and enough credits). Returns plan, premium, credits, free_video_available, and links (upgrade / buy_credits). Cheap and safe to call often."
+    },
+    {
+      "name": "list_models",
+      "description": "List the video models available for MANUAL mode plus the auto-generate pipeline (id \"vivideo-auto\"). Each model lists its operations, allowed durations, resolutions, aspect ratios, style presets and per-second credit rate — use these to build a valid create request. Filter with `mode` to keep the response small."
+    },
+    {
+      "name": "list_avatars",
+      "description": "List available avatars for auto-mode videos (the stock catalogue plus the account's own avatars). Stock avatars are grouped by person, each with a `looks` array — pass a looks[].avatar_id (or an owned avatar's id) as `avatar_id` in create_auto_video. Use `search`/`limit` to keep responses small."
+    },
+    {
+      "name": "list_voices",
+      "description": "List available voices for auto-mode videos. Returns voice ids to pass as `voice_id` in create_auto_video. Filter by language/gender/search and cap with `limit`. Voice cloning is not available via the API."
+    },
+    {
+      "name": "list_brand_kits",
+      "description": "List the account's brand kits (logo, colors, fonts, motion style). Returns brand_ref ids to pass as `brand_kit_id` in create_auto_video to produce an on-brand video."
+    },
+    {
+      "name": "estimate_credits",
+      "description": "Estimate the credits a generation will cost, from the published per-model rates — BEFORE creating it. This is an estimate, not a charge; the exact amount is returned as credits_charged when you create the video. Use it with check_account to confirm the user can afford the request."
+    },
+    {
+      "name": "create_auto_video",
+      "description": "Create a video in AUTO mode: Vivideo writes the script and produces a complete AI-avatar video from your prompt. Returns immediately with a video id and status \"processing\" (paid) or \"preview\" (free accounts — see the preview field and upgrade link). Then call wait_for_video or get_video. An Idempotency-Key is sent automatically so a retry never creates a duplicate. Rendering requires a premium plan and credits."
+    },
+    {
+      "name": "create_manual_video",
+      "description": "Create a video in MANUAL mode: send your prompt straight to a specific model (get ids/options from list_models). The operation is inferred from inputs — add image_url for image-to-video. resolution/duration/aspect_ratio must match the model (an invalid value returns a 400 listing what is allowed). Returns a video id and status; then wait_for_video or get_video. Idempotency handled automatically."
+    },
+    {
+      "name": "get_video",
+      "description": "Get a video's current status and result. status is one of queued | processing | completed | failed | preview. When completed, video_url is the MP4. When failed, credits are refunded and error explains why. Cheap; prefer wait_for_video for polling instead of calling this in a tight loop."
+    },
+    {
+      "name": "wait_for_video",
+      "description": "Wait for a video to reach a terminal state (completed / failed / preview), then return it. Polls safely at the API-suggested interval for up to ~20 seconds per call (HTTP requests are time-capped). If it does not finish in time it returns { timed_out: true } with the latest status — simply call it again with the same id to keep waiting. It never blocks indefinitely or over-polls."
+    },
+    {
+      "name": "list_videos",
+      "description": "List the account's videos, newest first. Filter by status and limit the count to keep responses small."
+    },
+    {
+      "name": "render_preview",
+      "description": "For FREE accounts only: after the user upgrades, render a video that was returned as status \"preview\". Charges run on the same project (the first video after upgrading is free). If the video is already rendering/complete, returns its current state. If the account is still free, returns an upgrade_required error with an upgrade link."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:47:23.652Z",
+  "toolsPreviewStatus": "ok"
+}

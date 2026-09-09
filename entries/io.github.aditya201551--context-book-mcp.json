@@ -1,0 +1,53 @@
+{
+  "id": "io.github.aditya201551/context-book-mcp",
+  "title": "Context Book",
+  "description": "Stop re-explaining yourself to Agents. Give it the right context, right when needed.",
+  "summary": "Stop re-explaining yourself to Agents. Give it the right context, right when needed.",
+  "offersHint": "Stop re-explaining yourself to Agents. Give it the right context, right when needed. · Remote MCP (streamable-http) at https://context-book-mcp-production.up.railway.app",
+  "version": "1.0.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://context-book-mcp-production.up.railway.app",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://context-book-mcp-production.up.railway.app"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://context-book-production.up.railway.app/",
+  "sourceUrl": "https://github.com/aditya201551/context-book",
+  "repository": {
+    "url": "https://github.com/aditya201551/context-book",
+    "source": "github",
+    "id": "1240226719"
+  },
+  "updatedAt": "2026-05-17T18:36:25.087884Z",
+  "publishedAt": "2026-05-17T18:36:25.087884Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:56.212Z",
+    "sourceRepoAt": "2026-08-11T23:58:41.059Z",
+    "readmeAt": "2026-08-11T23:58:41.503Z",
+    "toolsAt": "2026-08-12T01:31:56.213Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aditya201551/context-book",
+    "checkedAt": "2026-08-11T23:58:41.059Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aditya201551/context-book/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"banner.png\" alt=\"ContextBook\" width=\"100%\">\n</p>\n\n[![smithery badge](https://smithery.ai/badge/context-book/connect)](https://smithery.ai/servers/context-book/connect) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n<a href=\"https://www.producthunt.com/products/contextbook?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-contextbook\" target=\"_blank\" rel=\"noopener noreferrer\"><img alt=\"ContextBook - Stop re-explaining. Give agents the right context | Product Hunt\" width=\"250\" height=\"54\" src=\"https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1152644&amp;theme=light&amp;t=1779372437431\"></a>\n\n**Stop re-explaining yourself to Agents. Give it the right context, right when needed.**\n\nLLMs are stateless — each conversation starts from scratch. ContextBook gives your AI tools a persistent, searchable knowledge library to draw the right context when they need it. No bloatware, no pre-loaded junk. Just the right information, at the right time.\n\n## How It Works\n\n```mermaid\nflowchart LR\n    AI[\"🤖 AI Clients\\nClaude · Cursor · Windsurf\"]\n    Browser[\"🌐 Browser Dashboard\"]\n    MCP[\"🔌 MCP Server :8081\\n8 Bearer-authenticated tools\"]\n    API[\"⚙️ REST API :8080\\nOAuth 2.0 · Books · Pages · Search\"]\n    DB[\"🗄️ PostgreSQL\\npgvector · pg_trgm\"]\n    VOYAGE[\"🧠 Voyage AI\\nvoyage-4 (1024-dim)\"]\n\n    AI -- \"MCP · Bearer Token\" --> MCP\n    Browser -- \"Session · HTTP JSON\" --> API\n    MCP --- DB\n    API --- DB\n    API -- \"OAuth 2.0 PKCE\" --> AI\n    DB --- VOYAGE\n```\n\nTwo Go binaries share a PostgreSQL database:\n\n- **API server** (`cmd/api`) — the control plane: user login, OAuth 2.0, dashboard, book/page CRUD\n- **MCP server** (`cmd/mcp`) — the data plane: 8 MCP tools for AI agents, protected by Bearer tokens\n\n## MCP Tools\n\nAll tools require a valid Bearer token and are scoped to the authenticated user.\n\n| Tool | Description |\n|------|-------------|\n| `book_create_or_update` | Create a Book or update its metadata |\n| `book_list` | Paginated list of Book metadata |\n| `book_get` | Retrieve all pages of a Book |\n| `page_insert` | Push an atomic page into a Book; embeds immediately |\n| `page_update` | Replace a page's content; re-embeds |\n| `page_delete` | Remove a page (indices not re-numbered) |\n| `page_search` | Semantic search across all Books |\n| `readme` | Returns the usage guide (call once per session) |\n\n## Quick Start\n\n### Prerequisites\n\n- Go 1.26+\n- Node.js 22+\n- PostgreSQL 16+ with [pgvector](https://github.com/pgvector/pgvector) and `pg_trgm`\n- A [Voyage AI](https://www.voyageai.com/) API key\n\n### 1. Set up the database\n\n```sql\nCREATE DATABASE contextbook_db;\n\\c contextbook_db\nCREATE EXTENSION IF NOT EXISTS vector;\nCREATE EXTENSION IF NOT EXISTS pg_trgm;\n```\n\nMigrations run automatically on API server startup.\n\n### 2. Configure environment\n\n```bash\ncp .env.example backend/.env\n# Edit backend/.env — set DATABASE_URL, API_KEY_SALT, VOYAGE_API_KEY\n```\n\n### 3. Run the backend\n\n```bash\ncd backend\ngo run ./cmd/api/main.go    # API + dashboard (:8080)\ngo run ./cmd/mcp/main.go     # MCP server (:8081)\n```\n\n### 4. Run the frontend (optional)\n\n```bash\ncd frontend\nnpm install && npm run dev    # Vite dev server on :5173\n```\n\n### 5. Connect an AI client\n\nFor **Cursor** (`.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"contextbook\": {\n      \"url\": \"http://localhost:8081/mcp\"\n    }\n  }\n}\n```\n\nFor any MCP-compatible client, point the server URL to `http://localhost:8081/mcp`.\n\n## Documentation\n\n- [Backend README](backend/README.md) — API routes, auth flows, database schema, MCP tools, configuration\n- [Frontend README](frontend/README.md) — components, routing, design system, development setup\n- [Architecture](architecture.md) — full system overview with Mermaid diagrams\n\n## Project Structure\n\n```\ncontext-book/\n├── backend/\n│   ├── cmd/api/main.go          REST API + auth server\n│   ├── cmd/mcp/main.go          MCP tool server\n│   └── internal/\n│       ├── api/                  REST handlers + routes\n│       ├── auth/                 OAuth 2.0 PKCE, sessions, SSO\n│       ├── context/              Book/Page business logic\n│       ├── db/                  pgx queries + migrations\n│       ├── embedding/            Voyage AI client\n│       ├── logger/               slog + HTTP access logging\n│       └── mcp/                  8 MCP tool handlers\n├── frontend/                     React 19 + Vite + TypeScript SPA\n│   └── src/\n│       ├── App.tsx               Router + app shell\n│       ├── lib/api.ts            HTTP client\n│       └── components/           UI components\n├── Dockerfile                    API server container\n├── Dockerfile.mcp                MCP server container\n└── go.work                       Go workspace\n```\n\n## Contributing\n\n1. Fork the repository\n2. Create a feature branch (`git checkout -b feature/my-feature`)\n3. Make your changes\n4. Ensure the backend compiles (`cd backend && go build ./cmd/api ./cmd/mcp`)\n5. Ensure the frontend builds (`cd frontend && npm run build`)\n6. Commit and push\n7. Open a Pull Request\n\n## License\n\nMIT — see the [LICENSE](LICENSE) file for details.\n",
+    "fetchedAt": "2026-08-11T23:58:41.503Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:31:56.213Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"status\":\"error\",\"code\":404,\"message\":\"Application not found\",\"request_id\":\"jOajpr3-SBeNysaSlt7tkg\"}",
+  "toolsPreviewStatus": "unreachable"
+}

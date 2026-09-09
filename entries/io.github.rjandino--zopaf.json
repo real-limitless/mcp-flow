@@ -1,0 +1,51 @@
+{
+  "id": "io.github.rjandino/zopaf",
+  "title": "zopaf",
+  "description": "Negotiation math engine. Pareto frontier, counteroffer generation, zero LLM tokens.",
+  "summary": "Negotiation math engine. Pareto frontier, counteroffer generation, zero LLM tokens.",
+  "offersHint": "Negotiation math engine. Pareto frontier, counteroffer generation, zero LLM tokens. · Remote MCP (streamable-http) at https://zopaf-mcp-production.up.railway.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://zopaf-mcp-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://zopaf-mcp-production.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/rjandino/zopaf",
+  "repository": {
+    "url": "https://github.com/rjandino/zopaf",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-04T18:08:14.169084Z",
+  "publishedAt": "2026-04-04T18:08:14.169084Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:03:52.149Z",
+    "sourceRepoAt": "2026-08-11T23:23:52.406Z",
+    "readmeAt": "2026-08-11T23:23:52.996Z",
+    "toolsAt": "2026-08-12T01:03:52.149Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rjandino/zopaf",
+    "checkedAt": "2026-08-11T23:23:52.406Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rjandino/zopaf/main/README.md",
+    "markdown": "# Zopaf Negotiation Engine -- MCP Server\n\nA negotiation math engine exposed as MCP tools that any AI agent can call. Zopaf computes Pareto frontiers, generates iso-utility counteroffers, and infers counterpart priorities from their reactions -- all through pure MILP optimization. Zero LLM tokens burned. The calling agent handles the conversation; Zopaf handles the math.\n\n## Quick Start\n\n### Claude Desktop\n\nAdd to your Claude Desktop configuration (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"zopaf\": {\n      \"type\": \"streamable-http\",\n      \"url\": \"https://zopaf-mcp-production.up.railway.app/mcp\"\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add zopaf --transport streamable-http https://zopaf-mcp-production.up.railway.app/mcp\n```\n\n### Generic MCP Client\n\nConnect to the Streamable HTTP endpoint:\n\n```\nURL: https://zopaf-mcp-production.up.railway.app/mcp\nTransport: Streamable HTTP\n```\n\n## Tools Reference\n\n| Tool | Description |\n|------|-------------|\n| `create_session` | Create a new negotiation session. Returns a session_id used by all other tools. |\n| `add_issue` | Add a negotiable issue/term with options ordered worst to best for the user. |\n| `set_issue_range` | Set the acceptable range for a numeric issue, enabling 0-100 scoring. |\n| `record_preference` | Record that the user prioritizes some issues over others. Updates the weight model. |\n| `set_batna` | Record the user's alternatives if the deal falls through. Determines leverage. |\n| `generate_counteroffers` | Generate 3 iso-utility counteroffers to present simultaneously. |\n| `process_counterpart_response` | Process the counterpart's reaction to infer their priorities and generate a round-2 offer. |\n| `analyze_deal` | Score a specific deal against the Pareto frontier. Shows value captured and suggested trades. |\n| `get_negotiation_state` | Get current model state: issues, weights, BATNA, frontier size, and recommended next step. |\n\n## How It Works\n\n1. **Create session** -- Initialize a new negotiation model with `create_session`.\n\n2. **Add issues** -- Define the terms on the table with `add_issue`. Each issue includes options ordered worst to best for the user (e.g., Salary: `['$150K', '$160K', '$170K', '$180K']`).\n\n3. **Set ranges** -- For numeric issues, call `set_issue_range` to map values onto a 0-100 scoring scale.\n\n4. **Record preferences** -- Call `record_preference` as you learn what the user cares about. Each call updates the internal weight model.\n\n5. **Set BATNA** -- Use `set_batna` to record alternatives. The number and quality determines leverage strength and anchoring strategy.\n\n6. **Generate 3 counteroffers** -- Call `generate_counteroffers` to produce three packages that are equally good for the user but structured differently. Present ALL THREE simultaneously. Never lead with one and fall back to another.\n\n7. **Process counterpart response** -- Call `process_counterpart_response` with which package they preferred and what they pushed back on. The engine infers their hidden priorities.\n\n8. **Get round-2 offer** -- Returns a refined offer on the efficient frontier, with value split weighted by leverage.\n\n## Example: Job Offer Negotiation\n\n```\ncreate_session\n-> {\"session_id\": \"a1b2c3d4\"}\n\nadd_issue(session_id=\"a1b2c3d4\", issue_name=\"Salary\", options=[\"$150K\", \"$160K\", \"$170K\", \"$180K\"])\nadd_issue(session_id=\"a1b2c3d4\", issue_name=\"Equity\", options=[\"0.1%\", \"0.25%\", \"0.5%\", \"0.75%\"])\nadd_issue(session_id=\"a1b2c3d4\", issue_name=\"Signing Bonus\", options=[\"$0\", \"$10K\", \"$20K\", \"$30K\"])\nadd_issue(session_id=\"a1b2c3d4\", issue_name=\"Remote Work\", options=[\"On-site\", \"Hybrid\", \"Fully Remote\"])\n\nset_issue_range(issue_name=\"Salary\", worst_acceptable=150000, best_hoped=180000,\n    option_values={\"$150K\": 150000, \"$160K\": 160000, \"$170K\": 170000, \"$180K\": 180000})\n-> {\"scores\": {\"$150K\": 0.0, \"$160K\": 33.3, \"$170K\": 66.7, \"$180K\": 100.0}}\n\nrecord_preference(preferred_issues=[\"Salary\", \"Equity\"], over_issues=[\"Signing Bonus\", \"Remote Work\"])\n-> {\"learned_weights\": {\"Salary\": 0.345, \"Equity\": 0.345, \"Signing Bonus\": 0.155, \"Remote Work\": 0.155}}\n\nset_batna(alternatives=[\"Competing offer from Company B at $165K\", \"Stay in current role\"])\n-> {\"leverage_strength\": \"strong\"}\n\ngenerate_counteroffers(target_satisfaction=\"ambitious\")\n-> {\n  \"counteroffers\": [\n    {\"label\": \"A\", \"terms\": {\"Salary\": \"$180K\", \"Equity\": \"0.25%\", \"Signing Bonus\": \"$10K\", \"Remote Work\": \"On-site\"}},\n    {\"label\": \"B\", \"terms\": {\"Salary\": \"$170K\", \"Equity\": \"0.5%\", \"Signing Bonus\": \"$0\", \"Remote Work\": \"Hybrid\"}},\n    {\"label\": \"C\", \"terms\": {\"Salary\": \"$160K\", \"Equity\": \"0.75%\", \"Signing Bonus\": \"$20K\", \"Remote Work\": \"On-site\"}}\n  ]\n}\n\nprocess_counterpart_response(preferred_package=\"B\", pushback_issues=[\"Equity\"])\n-> {\n  \"counterpart_priorities_inferred\": {\"Equity\": 0.571, \"Salary\": 0.143, ...},\n  \"round_2_offer\": {\"Salary\": \"$180K\", \"Equity\": \"0.25%\", \"Signing Bonus\": \"$20K\", \"Remote Work\": \"Hybrid\"},\n  \"value_split\": \"User gets 75% of surplus\"\n}\n```\n\nThe engine inferred that the counterpart cares most about equity (57% of their weight). The round-2 offer concedes on equity -- where it costs the user less -- and captures value on salary and signing bonus. Both sides improve. The user captures 75% of the surplus based on their strong BATNA.\n\n## Use Cases\n\n- **Job offers** -- Salary, equity, bonus, title, remote work, start date, PTO\n- **VC term sheets** -- Valuation, board seats, liquidation preferences, anti-dilution, pro-rata rights\n- **Real estate** -- Price, closing date, contingencies, repairs, inclusions, rent-back periods\n- **Vendor contracts** -- Price, SLA guarantees, payment terms, exclusivity, renewal clauses\n- **Salary negotiations** -- Base pay, bonus structure, review timeline, scope of role\n- **Business partnerships** -- Revenue split, IP ownership, decision rights, exit clauses, territory\n- **Legal settlements** -- Monetary terms, non-disclosure terms, admission of liability, timeline\n\n## Why Zero Tokens?\n\nZopaf is a math engine, not a language model. It runs MILP optimization and combinatorial scoring -- operations that are computationally cheap but tedious for an LLM to attempt in-context.\n\nYour agent's LLM handles the conversation with the user, asks the right questions, and explains the strategy. Zopaf handles the optimization -- computing Pareto frontiers, generating iso-utility packages, solving preference weights from revealed choices, and positioning offers on the efficient frontier.\n\nYou bring the brain. Zopaf brings the calculator.\n",
+    "fetchedAt": "2026-08-11T23:23:52.996Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:03:52.149Z",
+  "toolsPreviewError": "timeout 15000ms",
+  "toolsPreviewStatus": "unreachable"
+}

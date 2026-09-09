@@ -1,0 +1,56 @@
+{
+  "id": "io.github.piotrkowalczuk/zordon",
+  "title": "zordon",
+  "description": "Supervise a local dev stack — databases, brokers and services declared in an Alphasfile — over MCP.",
+  "summary": "Supervise a local dev stack — databases, brokers and services declared in an Alphasfile — over MCP.",
+  "offersHint": "Supervise a local dev stack — databases, brokers and services declared in an Alphasfile — over MCP. · Packages: binary:https://github.com/piotrkowalczuk/zordon/releases/download/v0.18.1/zordon_0.18.1_universal.mcpb",
+  "version": "0.18.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "binary",
+    "package": "https://github.com/piotrkowalczuk/zordon/releases/download/v0.18.1/zordon_0.18.1_universal.mcpb",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "binary",
+      "package": "https://github.com/piotrkowalczuk/zordon/releases/download/v0.18.1/zordon_0.18.1_universal.mcpb",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/piotrkowalczuk/zordon",
+  "repository": {
+    "url": "https://github.com/piotrkowalczuk/zordon",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T09:31:57.623483Z",
+  "publishedAt": "2026-08-07T09:31:57.623483Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:08:53.464Z",
+    "sourceRepoAt": "2026-08-11T23:29:34.154Z",
+    "readmeAt": "2026-08-11T23:29:34.722Z",
+    "toolsAt": "2026-08-12T01:08:53.465Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/piotrkowalczuk/zordon",
+    "checkedAt": "2026-08-11T23:29:34.154Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/piotrkowalczuk/zordon/main/README.md",
+    "markdown": "# Zordon\n\n[![Go Reference](https://pkg.go.dev/badge/github.com/piotrkowalczuk/zordon.svg)](https://pkg.go.dev/github.com/piotrkowalczuk/zordon)\n[![Go Report Card](https://goreportcard.com/badge/github.com/piotrkowalczuk/zordon)](https://goreportcard.com/report/github.com/piotrkowalczuk/zordon)\n[![CI](https://github.com/piotrkowalczuk/zordon/actions/workflows/ci.yml/badge.svg)](https://github.com/piotrkowalczuk/zordon/actions/workflows/ci.yml)\n[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE.md)\n\n> **The local stack your inner loop runs against** — databases, brokers, proxies and services as fast, disposable **host processes**, declared once and supervised together. No containers.\n\nZordon is a supervisor for the local stack your code runs against — the databases, brokers, proxies and services that have to be alive for your code to be exercised for real.\nIt runs them as ordinary **host processes** instead of containers, declared once in an [`Alphasfile`](https://zordon.io/alphasfile/) and supervised together, so standing the stack up, duplicating it, and throwing it away are all cheap.\n\nThree goals shape every decision.\n**Low latency** — standing the stack up and re-running sit inside the loop, not around it; iteration shouldn't wait on infrastructure.\n**Resourcefulness** — per-stack overhead stays small enough that many agents run side by side, each with a stack real enough to evaluate against rather than a wall of mocks.\n**Guardrails** — the `Alphasfile` doubles as a contract, so the [MCP server](https://zordon.io/reference/mcp/) hands an agent only a narrow, declared surface: bring the stack up, inspect it, run a provision you named, and work through that interface instead of improvising against the host.\n\nWhy not containers?\nCode is increasingly written in a loop — change something, run the real stack against it, read the result, go again, hundreds of times an hour.\nContainers buy isolation by paying full cold-start and idle-overhead cost on *every* run: right for production, wasteful for a loop.\nZordon takes the other side, recovering isolation from per-run [workspaces](https://zordon.io/workspaces/) instead of images — so a second stack beside yours, or a tenth, is a non-event.\n\nDeclare the whole stack in one `Alphasfile`:\n\n```hcl\nservice \"go\" \"nats\" {\n  git {\n    url = \"github.com/nats-io/nats-server\"\n    tag = \"v2.14.0\"\n  }\n\n  vars = { client = net::pickport() }   # grab a free port, no clashes\n  arguments { values = { main = { p = self.vars.client } } }\n}\n```\n\n```sh\nzordon start   # resolve, build, bring it up, stream logs until everything is READY\n```\n\n## Features\n\n- **No containers, no daemon.** Your databases, brokers, proxies and services run as plain supervised host processes — nothing to image, mount or register.\n- **Polyglot toolchains.** Go, Rust, Ruby, Node.js and Java (Maven/Gradle) services built straight from a git URL or local source; native packages (Redis, PostgreSQL, etcd, …) provisioned through [mise](https://mise.jdx.dev).\n- **One manifest.** The whole stack — source, build, run, env, readiness, logs — declared in a single [`Alphasfile`](https://zordon.io/alphasfile/).\n- **Dynamic configuration as a graph.** Values are functions, not strings: `net::pickport()` picks a free port, `fs::tmp()`/`fs::hash()` give per-run paths, and services reference each other (`service.go.caddy.vars.http`) with zero hardcoded wiring. → [docs](https://zordon.io/dynamic-config/)\n- **Workspaces.** `zordon workspace create x` stands up a second, fully isolated copy of the entire stack — own ports, own dirs — an agent's sandbox beside yours, no port-mapping. → [docs](https://zordon.io/workspaces/)\n- **Federation.** Alphasfiles chain by directory position: a project *sits below* shared infra instead of importing it. Move it in the tree and its environment recomputes. → [docs](https://zordon.io/federation/)\n- **Readiness-aware bringup.** HTTP and exec readiness checks over a dependency graph; `zordon start` returns the moment every service is READY, then keeps the stack alive in the background.\n- **Convergent re-runs.** Re-running costs only what actually changed — no blanket teardown and rebuild.\n- **Provisions.** One-off setup (migrations, seeding, topic creation) declared per service, run on demand, with `zordon clean` for teardown.\n- **Agent-friendly output.** `--agent` emits terse, structured logs; output is kept signal-dense because when a model reads your logs, tokens are the budget.\n- **MCP server.** `zordon mcp` exposes every command — and every provision — as MCP tools, so an agent can drive the whole stack. → [docs](https://zordon.io/reference/mcp/)\n- **Guardrails for agents.** The `Alphasfile` plus the MCP surface form a narrow, declared interface between agent and stack — it runs the *named* provisions you defined, not an open shell, so it can't improvise its way around your setup.\n- **No runtime dependencies.** Three static Go binaries — `zordon`, `alpha`, `tommy` — and nothing else to install, image, or register.\n\n## Documentation\n\nFull docs: **<https://zordon.io>**\n(source in [`docs/`](docs/), built with MkDocs Material).\n\n- [Alphasfile](https://zordon.io/alphasfile/) — the manifest: services, source pointers, readiness, logs\n- [Dynamic configuration](https://zordon.io/dynamic-config/) — the DAG, helpers, `self`, cross-service refs\n- [Workspaces](https://zordon.io/workspaces/) — parallel, isolated copies of the whole stack\n- [Federation](https://zordon.io/federation/) — chained Alphasfiles, shared infra, `zordon sudo`\n- [MCP server](https://zordon.io/reference/mcp/) — drive zordon (and its provisions) from an agent over MCP\n- [Install the Claude Code plugin](https://zordon.io/how-to/install-the-claude-code-plugin/) — zero-config setup via `/plugin install`\n\n## Installation\n\nHomebrew (macOS):\n\n```sh\nbrew install piotrkowalczuk/tap/zordon\n```\n\nA release tarball (macOS and Linux, `arm64` and `amd64`) from\n[Releases](https://github.com/piotrkowalczuk/zordon/releases):\n\n```sh\ntar -xzf zordon_<version>_<os>_<arch>.tar.gz -C ~/.local/bin zordon alpha tommy\n```\n\nOr from source, if you have a Go toolchain:\n\n```sh\ngo install github.com/piotrkowalczuk/zordon/cmd/...@latest\n```\n\nEvery variant installs the same three binaries — `zordon`, `alpha`, and\nthe `tommy` reaper. Keep them in one directory and make sure that\ndirectory is on your `$PATH`: `zordon` finds `alpha` via `$PATH`, and\n`alpha` finds `tommy` only as a sibling of its own executable. See\n[Binaries and layout](https://zordon.io/reference/binaries/).\n\n## Quick start\n\nCreate an `Alphasfile` (see [examples/simple](examples/simple/Alphasfile)), then:\n\n```sh\nzordon start              # spawn alpha, push config, stream bringup logs\nzordon status             # what's running across the whole chain right now?\nzordon stop               # ask alpha to shut its children down and exit\nzordon clean              # run each provision's clean teardown (stack stopped)\nzordon workspace create x  # a parallel, isolated copy of the stack\n```\n\nSee the [docs](https://zordon.io) for everything else.\n\n## Use with Claude (MCP)\n\n`zordon mcp` runs an [MCP](https://modelcontextprotocol.io) server over stdio.\nIt exposes every zordon command — and every provision — as a tool, so an agent can drive your stack and run provisions on demand.\n\nThe fastest path is the Claude Code plugin — no manual config:\n\n```sh\n/plugin marketplace add piotrkowalczuk/zordon\n/plugin install zordon@zordon\n```\n\nThis registers the `zordon mcp` server and a skill nudging the agent toward it automatically; see the [install how-to](https://zordon.io/how-to/install-the-claude-code-plugin/).\n\nFor other MCP clients, or without the plugin:\n\nThe MCP **client launches the server**; you don't run `zordon mcp` yourself.\nWith Claude Code, register it from your project directory:\n\n```sh\nclaude mcp add zordon -- zordon mcp\n```\n\nOr add it to your client's MCP config (e.g. `.mcp.json`):\n\n```json\n{ \"mcpServers\": { \"zordon\": { \"command\": \"zordon\", \"args\": [\"mcp\"] } } }\n```\n\nThe server resolves the chain from its working directory, so launch the client from the project tree (or pass `-e ZORDON_HOME=…`).\nProvisions run inside the live `alpha`, so `zordon start` first — or let the agent call the `start` tool.\n\nThe server advertises its purpose to the agent via MCP `instructions` (when to reach for these tools), so it should pick them up on its own.\nTo nudge it harder in a zordon-managed repo, add a line to your `CLAUDE.md` (or `AGENTS.md`): *\"this project's local stack is managed by zordon — use the `zordon` MCP tools to bring it up, inspect it, and run provisions.\"*\n\nSee the [`zordon mcp` reference](https://zordon.io/reference/mcp/) and [how-to](https://zordon.io/how-to/run-a-provision-via-mcp/).\n\n## License\n\n[GNU General Public License v3.0](https://www.gnu.org/licenses/gpl.txt),\nsee [LICENSE.md](LICENSE.md).\n",
+    "fetchedAt": "2026-08-11T23:29:34.722Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:08:53.465Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,80 @@
+{
+  "id": "io.github.ConvergentMethods/arezzo",
+  "title": "Arezzo",
+  "description": "Deterministic Google Docs API compiler. Your agent stops silently corrupting documents.",
+  "summary": "Deterministic Google Docs API compiler. Your agent stops silently corrupting documents.",
+  "offersHint": "Deterministic Google Docs API compiler. Your agent stops silently corrupting documents. · Packages: pypi:arezzo · Env vars: GOOGLE_APPLICATION_CREDENTIALS",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "arezzo",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GOOGLE_APPLICATION_CREDENTIALS",
+        "description": "Path to the Google OAuth2 client credentials JSON (Desktop application type, Docs API enabled). Required — the Google Docs API does not support anonymous access. Run 'arezzo init' to walk through OAuth setup and write platform config.",
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "arezzo",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to the Google OAuth2 client credentials JSON (Desktop application type, Docs API enabled). Required — the Google Docs API does not support anonymous access. Run 'arezzo init' to walk through OAuth setup and write platform config.",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "description": "Path to the Google OAuth2 client credentials JSON (Desktop application type, Docs API enabled). Required — the Google Docs API does not support anonymous access. Run 'arezzo init' to walk through OAuth setup and write platform config.",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/ConvergentMethods/arezzo",
+  "sourceUrl": "https://github.com/ConvergentMethods/arezzo",
+  "repository": {
+    "url": "https://github.com/ConvergentMethods/arezzo",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-22T19:41:38.892613Z",
+  "publishedAt": "2026-04-22T19:41:38.892613Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:44:50.411Z",
+    "sourceRepoAt": "2026-08-12T00:14:36.754Z",
+    "readmeAt": "2026-08-12T00:14:37.188Z",
+    "toolsAt": "2026-08-12T01:44:50.411Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ConvergentMethods/arezzo",
+    "checkedAt": "2026-08-12T00:14:36.754Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ConvergentMethods/arezzo/main/README.md",
+    "markdown": "# Arezzo\n\n<!-- mcp-name: io.github.ConvergentMethods/arezzo -->\n\nDeterministic compiler for Google Docs API operations.\n\nYou cannot safely modify a Google Doc by constructing `batchUpdate` requests yourself. The API uses UTF-16 code units with cascading index shifts — insert 10 characters at position 50, and every subsequent index in your batch is now wrong. A single miscalculation silently corrupts the document with no error message.\n\nArezzo compiles semantic intent into a correct request sequence. Tell it what you want to do; it handles the index arithmetic.\n\n## For AI agents (MCP tools)\n\nArezzo exposes three tools via the Model Context Protocol:\n\n```\nread_document(document_id)\n  → Returns the document's structural map: headings with hierarchy,\n    named ranges, tables, section boundaries. Call this before editing\n    so you know what addresses are available.\n\nedit_document(document_id, operations)\n  → Compiles operations into correct batchUpdate requests and executes\n    them. Handles UTF-16 arithmetic, cascading index shifts, and\n    OT-compatible request ordering. Supported operations: insert/delete/\n    replace text, formatting (bold, italic, headings, links), tables,\n    lists, images, headers/footers, footnotes, named ranges.\n\nvalidate_operations(document_id, operations)\n  → Compile-only dry run. Returns the compiled requests for inspection\n    without executing. Use before edit_document when uncertain.\n```\n\n### Operation format\n\n```json\n{\n  \"type\": \"insert_text\",\n  \"address\": {\"heading\": \"Revenue Analysis\"},\n  \"params\": {\"text\": \"New paragraph content.\\n\"}\n}\n```\n\n**Address modes:**\n- `{\"heading\": \"Section Name\"}` — by heading text\n- `{\"named_range\": \"range_name\"}` — by named range\n- `{\"bookmark\": \"bookmark_id\"}` — by bookmark ID\n- `{\"start\": true}` — document start\n- `{\"end\": true}` — document end\n- `{\"index\": 42}` — absolute UTF-16 index\n\n**Operation types:**\n`insert_text`, `delete_content`, `replace_all_text`, `replace_section`,\n`update_text_style`, `update_paragraph_style`, `insert_bullet_list`,\n`insert_table`, `insert_table_row`, `insert_table_column`,\n`delete_table_row`, `delete_table_column`, `insert_image`,\n`create_header`, `create_footer`, `create_footnote`,\n`create_named_range`, `replace_named_range_content`, `insert_page_break`\n\n### Recommended workflow\n\n```\nread_document → edit_document → (if structural changes) read_document → edit_document\n```\n\nAlways read before editing. After inserting structural elements (tables, headers, footers),\nread again to get the new element indices before adding content inside them.\n\n## Installation\n\n```bash\npip install arezzo\narezzo init\n```\n\n`arezzo init` walks through Google OAuth setup and writes platform config files for your MCP client.\n\n## Setup\n\n**Prerequisites:** A Google Cloud project with the Google Docs API enabled and an OAuth 2.0 client ID (Desktop application type).\n\n```bash\narezzo init\n```\n\nThe wizard:\n1. Copies your `credentials.json` to `~/.config/arezzo/`\n2. Runs the OAuth consent flow (browser opens once)\n3. Generates config files for Claude Code, Cursor, and VS Code\n\nFor Claude Desktop, `arezzo init` prints the config block to add manually.\n\n## Platform configs\n\nAfter `arezzo init`, config files are written to your project directory:\n\n**Claude Code / Cursor** (`.mcp.json`):\n```json\n{\n  \"mcpServers\": {\n    \"arezzo\": {\n      \"command\": \"arezzo\"\n    }\n  }\n}\n```\n\n**VS Code** (`.vscode/mcp.json`):\n```json\n{\n  \"servers\": {\n    \"arezzo\": {\n      \"type\": \"stdio\",\n      \"command\": \"arezzo\"\n    }\n  }\n}\n```\n\n**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n```json\n{\n  \"mcpServers\": {\n    \"arezzo\": {\n      \"command\": \"arezzo\"\n    }\n  }\n}\n```\n\n## Why Arezzo exists\n\nThe Google Docs `batchUpdate` API operates on UTF-16 code units with absolute index positions. Every character insertion or deletion shifts all subsequent indices. In a batch with multiple mutations, each request's indices must account for the effect of every prior request in the same batch.\n\nGetting this right requires:\n- UTF-16 length calculation (not Python `len()` — surrogate pairs count differently)\n- Reverse-order execution for same-type mutations (delete from end to start)\n- Two-phase compilation (content mutations before format mutations)\n- Cascading offset tracking across multi-step operations\n\nArezzo handles this deterministically. The same input always produces the same output. No reasoning, no guessing, no \"usually works.\"\n\n## Architecture\n\n```\nsemantic operation\n    ↓\narezzo.parser.parse_document()    — build heading/range/bookmark indexes\n    ↓\narezzo.address.resolve_address()  — semantic reference → document index\n    ↓\narezzo.operations.*               — operation → batchUpdate request(s)\n    ↓\narezzo.index.sort_requests()      — OT-compatible mutation ordering\n    ↓\ncorrect batchUpdate request sequence\n```\n\nThe engine is a pure function: `compile_operations(doc, operations) → requests`. Deterministic. No side effects. No API calls.\n\nThe MCP server (`arezzo.server`) wraps the engine with Google Docs API I/O and behavioral guidance fields (`next_step`, `present_to_user`, `document_reality`).\n\n## License\n\nMIT — Convergent Methods, LLC\n",
+    "fetchedAt": "2026-08-12T00:14:37.188Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:44:50.411Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

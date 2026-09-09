@@ -1,0 +1,99 @@
+{
+  "id": "ai.proofslip/mcp-server",
+  "title": "ProofSlip",
+  "description": "Receipt-based verification for AI agent workflows — create, verify, and poll ephemeral proof objects",
+  "summary": "Receipt-based verification for AI agent workflows — create, verify, and poll ephemeral proof objects",
+  "offersHint": "Receipt-based verification for AI agent workflows — create, verify, and poll ephemeral proof objects · Packages: npm:@proofslip/mcp-server · Env vars: PROOFSLIP_API_KEY, PROOFSLIP_BASE_URL",
+  "version": "0.2.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@proofslip/mcp-server",
+    "version": "0.2.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "PROOFSLIP_API_KEY",
+        "description": "Your ProofSlip API key (get one free at proofslip.ai)",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "PROOFSLIP_BASE_URL",
+        "description": "API base URL (defaults to https://proofslip.ai)",
+        "default": "https://proofslip.ai"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@proofslip/mcp-server",
+      "version": "0.2.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "PROOFSLIP_API_KEY",
+          "description": "Your ProofSlip API key (get one free at proofslip.ai)",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "PROOFSLIP_BASE_URL",
+          "description": "API base URL (defaults to https://proofslip.ai)",
+          "default": "https://proofslip.ai"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "PROOFSLIP_API_KEY",
+      "description": "Your ProofSlip API key (get one free at proofslip.ai)",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "PROOFSLIP_BASE_URL",
+      "description": "API base URL (defaults to https://proofslip.ai)",
+      "default": "https://proofslip.ai"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://proofslip.ai",
+  "sourceUrl": "https://github.com/Johnny-Z13/proofslip",
+  "repository": {
+    "url": "https://github.com/Johnny-Z13/proofslip",
+    "source": "github",
+    "subfolder": "packages/mcp-server"
+  },
+  "updatedAt": "2026-04-05T07:54:11.612339Z",
+  "publishedAt": "2026-04-05T07:54:11.612339Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:45:16.160Z",
+    "sourceRepoAt": "2026-08-12T00:45:16.160Z",
+    "readmeAt": "2026-08-12T00:45:16.866Z",
+    "toolsAt": "2026-08-12T00:45:17.267Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Johnny-Z13/proofslip",
+    "checkedAt": "2026-08-12T00:45:16.160Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Johnny-Z13/proofslip/master/README.md",
+    "markdown": "# ProofSlip\n\n**A public proof that a specific GitHub Actions job ran for a specific commit.**\n\nProofSlip verifies a GitHub Actions OIDC token, records the provider-backed job identity and execution context, and returns a stable public proof URL. No ProofSlip account or API key is required for release proofs.\n\n[Live site](https://proofslip.ai) · [Agent Skill](.agents/skills/proofslip-release-proof/SKILL.md) · [Docs](https://proofslip.ai/docs) · [OpenAPI](https://proofslip.ai/.well-known/openapi.json) · [Privacy](https://proofslip.ai/privacy)\n\n## Install the Agent Skill\n\n```bash\nnpx skills add Johnny-Z13/proofslip --skill proofslip-release-proof\n```\n\nThe open-source skill gives Codex, Claude Code, Cursor, and other skills-compatible agents two focused workflows:\n\n- verify an existing ProofSlip URL and report provider facts, ProofSlip observations, submitted context, expiry, and limitations separately;\n- prepare the smallest GitHub Actions change in the workflow that actually deploys or releases a project.\n\nThe skill inspects before editing, shows the proposed workflow change, and asks for approval. It does not create a synthetic “proof-only” workflow, and it never commits, pushes, or releases without separate authorization.\n\nExample prompts:\n\n```text\nVerify this ProofSlip URL and tell me exactly what it proves and does not prove.\n\nAdd ProofSlip after the real deploy step in this repository. Show me the patch before changing it.\n```\n\n## What a release proof means\n\nEvery `release-proof/v1` object keeps three evidence sources separate:\n\n| Field | Source | What it establishes |\n|---|---|---|\n| `issuer` | GitHub Actions OIDC, provider-verified | The identity and execution context of the workflow job that requested the token. |\n| `observations` | ProofSlip | Optional facts ProofSlip observed at issuance time, such as an HTTP status. |\n| `submitted_context` | Workflow input | Caller-supplied labels, explicitly marked unverified. |\n\nA proof does **not** establish that tests passed, that the entire workflow succeeded, or that a deployment contains the claimed commit.\n\n## Manual GitHub Actions quickstart\n\n```yaml\npermissions:\n  contents: read\n  id-token: write\n\nsteps:\n  - name: Create ProofSlip release proof\n    shell: bash\n    run: |\n      TOKEN=\"$(curl -sSf \\\n        -H \"Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}\" \\\n        \"${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fproofslip.ai\" \\\n        | jq -r .value)\"\n\n      BODY=\"$(jq -n \\\n        --arg key \"${GITHUB_REPOSITORY}:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}\" \\\n        '{idempotency_key:$key}')\"\n\n      curl --fail-with-body -sS \\\n        -X POST https://proofslip.ai/v1/proofs/releases/github-actions \\\n        -H \"Authorization: Bearer ${TOKEN}\" \\\n        -H \"Content-Type: application/json\" \\\n        --data \"${BODY}\"\n```\n\nOptional request fields let the workflow ask ProofSlip to observe a public HTTPS endpoint and attach unverified labels:\n\n```json\n{\n  \"idempotency_key\": \"owner/repo:run_id:attempt\",\n  \"deployment\": {\n    \"url\": \"https://app.example.com\",\n    \"health_path\": \"/health\"\n  },\n  \"submitted_context\": {\n    \"environment\": \"production\",\n    \"label\": \"web release\"\n  }\n}\n```\n\nThe response includes a human `proof_url` and a machine-readable `proof_id`:\n\n```json\n{\n  \"proof_id\": \"prf_...\",\n  \"proof_url\": \"https://proofslip.ai/proof/prf_...\",\n  \"schema_version\": \"release-proof/v1\",\n  \"is_valid\": true,\n  \"is_expired\": false,\n  \"trust_level\": \"provider_verified\",\n  \"verification_method\": \"github_actions_oidc\",\n  \"issuer\": {\n    \"type\": \"github_actions\",\n    \"repository\": \"owner/repo\",\n    \"ref\": \"refs/heads/main\",\n    \"sha\": \"...\",\n    \"run_id\": \"...\",\n    \"run_attempt\": 1\n  },\n  \"observations\": [],\n  \"submitted_context\": null,\n  \"issued_at\": \"...\",\n  \"expires_at\": \"...\"\n}\n```\n\nFetch JSON with:\n\n```bash\ncurl https://proofslip.ai/v1/proofs/prf_...\n```\n\n## API surface\n\n| Method | Endpoint | Auth | Purpose |\n|---|---|---|---|\n| `POST` | `/v1/proofs/releases/github-actions` | GitHub Actions OIDC | Create a provider-backed release proof. |\n| `GET` | `/v1/proofs/:proof_id` | None | Fetch public proof JSON. |\n| `GET` | `/proof/:proof_id` | None | View the human evidence page. |\n| `POST` | `/v1/receipts` | ProofSlip API key | Create a legacy workflow receipt. |\n| `GET` | `/v1/verify/:receipt_id` | None | Verify a legacy receipt. |\n| `GET` | `/v1/receipts/:receipt_id/status` | None | Poll legacy receipt status. |\n| `POST` | `/v1/auth/signup` | None | Create an API key for legacy receipts. |\n\nThe full contract is available in [the human docs](https://proofslip.ai/docs), [OpenAPI](https://proofslip.ai/.well-known/openapi.json), and [`docs/specs/release-proof-v1.md`](docs/specs/release-proof-v1.md).\n\n## Public access and retention\n\nRelease proof URLs are public, including proofs created from private repositories. The proof can expose repository metadata, workflow identifiers, actor, ref, SHA, and any submitted context.\n\nRelease proofs have a 90-day validity window. After that window they return HTTP `410` with `is_expired: true`, but V1 keeps the full record inspectable. Expiration is not automatic deletion. Read the [privacy policy](https://proofslip.ai/privacy) before enabling private-repository workflows.\n\nLegacy receipts are different: they expire after at most 24 hours and are deleted by automated cleanup.\n\nAggregate release-proof event rows contain no tokens, emails, IPs, or payload content and are deleted after at most 90 days.\n\n## Security properties\n\n- GitHub OIDC signature verification against GitHub's JWKS.\n- Strict issuer, audience, expiry, not-before, issued-at, algorithm, and required-claim checks.\n- Raw OIDC tokens are never stored or logged.\n- Token IDs are stored only as SHA-256 digests for replay protection.\n- Provider claims, ProofSlip observations, and submitted context never share a trust category.\n- Release proof records are immutable through the application API.\n- Idempotent retries return the existing proof; conflicting retries fail with `409`.\n- Deployment observations use public HTTPS only, pin the validated DNS address, never follow redirects, and never read response bodies.\n- Global request bodies are limited to 16KB.\n\n## Legacy receipt integrations\n\nThe published integrations currently expose the original short-lived receipt API, not release-proof creation.\n\n### MCP\n\n```bash\nnpx -y @proofslip/mcp-server\n```\n\nTools: `create_receipt`, `verify_receipt`, `check_status`, `signup`.\n\n### LangChain\n\n```bash\npip install langchain-proofslip\n```\n\nTools: create receipt, verify receipt, and check status, plus a toolkit wrapper.\n\n## Machine discovery\n\n| Endpoint | Format | Purpose |\n|---|---|---|\n| [`/llms.txt`](https://proofslip.ai/llms.txt) | Text | Compact agent context. |\n| [`/llms-full.txt`](https://proofslip.ai/llms-full.txt) | Text | Complete agent contract. |\n| [`/.well-known/openapi.json`](https://proofslip.ai/.well-known/openapi.json) | JSON | OpenAPI 3.1. |\n| [`/.well-known/agent.json`](https://proofslip.ai/.well-known/agent.json) | JSON | Agent discovery. |\n| [`/.well-known/mcp.json`](https://proofslip.ai/.well-known/mcp.json) | JSON | Legacy receipt MCP package. |\n\n## Local development\n\nRequirements: Node.js 18+ and PostgreSQL (the production deployment uses Neon).\n\n```bash\ngit clone https://github.com/Johnny-Z13/proofslip.git\ncd proofslip\nnpm install\ncp .env.example .env\nnpm run db:migrate\nnpm run dev\n```\n\nImportant environment variables:\n\n| Variable | Purpose |\n|---|---|\n| `DATABASE_URL` | Application database. Production deployments point this at the production branch. |\n| `TEST_DATABASE_URL` | Dedicated test database or Neon branch. It must not resolve to the same target as `DATABASE_URL`. |\n| `BASE_URL` | Public base URL; defaults to `https://proofslip.ai`. |\n| `CRON_SECRET` | Protects cleanup of expired receipts and 90-day aggregate proof events. |\n| `RESEND_API_KEY` | Optional transactional signup email. |\n| `PROOFSLIP_API_KEY` | Used by production smoke tests for legacy receipts. |\n\nThe integration test setup remaps `DATABASE_URL` to `TEST_DATABASE_URL` and fails closed if the two targets are identical, including pooled versus direct Neon URLs.\n\n## Tests\n\n```bash\nnpm run test:unit      # unit + integration; mutates TEST_DATABASE_URL only\nnpm run test:smoke     # live production smoke tests\nnpm run test:packages  # SDK + MCP package tests\nnpm run test:all       # all four layers, including LangChain pytest\n```\n\nThe LangChain layer runs from `packages/langchain/.venv` when available.\n\n## Project structure\n\n```text\nsrc/\n├── routes/proofs.ts          # release-proof create/fetch routes\n├── routes/receipts.ts        # legacy receipt creation\n├── lib/github-oidc.ts        # GitHub OIDC verification\n├── lib/observe-deployment.ts # pinned-address HTTPS observation\n├── lib/proof-format.ts       # shared public proof representation\n└── views/                    # HTML and discovery surfaces\npackages/\n├── sdk/                      # legacy receipt TypeScript client\n├── mcp-server/               # @proofslip/mcp-server\n└── langchain/                # langchain-proofslip\ntests/\n├── lib/\n├── routes/\n├── smoke/\n└── packages/\n```\n\n## Context Capsule\n\nProofSlip and Context Capsule remain separate products with one narrow connection:\n\n- **ProofSlip is evidential:** “What did the release environment attest, and can the next agent check it?”\n- **Context Capsule is navigational:** “What is the situation, what matters, and what should happen next?”\n\nA `coding-handoff/v1` capsule can include release-proof IDs in `references.proofslip_ids`. The receiving agent still fetches and inspects each proof; a reference alone does not make a handoff claim verified. See [Context Capsule](https://www.contextcapsule.ai).\n\n## Status\n\nProofSlip is live and open source. `release-proof/v1` and the backward-compatible receipt API are deployed. The repository-owned release-proof Agent Skill is the primary authoring and verification path under active validation; website and discovery changes should be deployed only after the full local and production checks pass.\n",
+    "fetchedAt": "2026-08-12T00:45:16.866Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:45:17.267Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

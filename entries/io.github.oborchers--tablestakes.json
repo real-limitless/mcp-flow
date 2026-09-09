@@ -1,0 +1,58 @@
+{
+  "id": "io.github.oborchers/tablestakes",
+  "title": "tablestakes",
+  "description": "Read and edit HTML/Markdown tables in GitBook-synced documents via MCP tools.",
+  "summary": "Read and edit HTML/Markdown tables in GitBook-synced documents via MCP tools.",
+  "offersHint": "Read and edit HTML/Markdown tables in GitBook-synced documents via MCP tools. · Packages: pypi:tablestakes",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "tablestakes",
+    "version": "1.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "tablestakes",
+      "version": "1.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/oborchers/tablestakes",
+  "repository": {
+    "url": "https://github.com/oborchers/tablestakes",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-24T14:06:35.602377Z",
+  "publishedAt": "2026-03-24T14:06:35.602377Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:21.758Z",
+    "sourceRepoAt": "2026-08-11T23:31:09.442Z",
+    "readmeAt": "2026-08-11T23:31:09.897Z",
+    "toolsAt": "2026-08-12T01:10:21.758Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/oborchers/tablestakes",
+    "checkedAt": "2026-08-11T23:31:09.442Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/oborchers/tablestakes/main/README.md",
+    "markdown": "# tablestakes\n\n[![PyPI version](https://img.shields.io/pypi/v/tablestakes.svg)](https://pypi.org/project/tablestakes/)\n[![Python versions](https://img.shields.io/pypi/pyversions/tablestakes.svg)](https://pypi.org/project/tablestakes/)\n[![CI](https://github.com/oborchers/tablestakes/actions/workflows/ci.yml/badge.svg)](https://github.com/oborchers/tablestakes/actions/workflows/ci.yml)\n[![License](https://img.shields.io/pypi/l/tablestakes.svg)](https://github.com/oborchers/tablestakes/blob/main/LICENSE)\n\nAn MCP server that gives LLMs clean, surgical access to tables trapped in messy HTML.\n\n## The Problem\n\nTools like GitBook, Notion exports, and CMS platforms collapse tables into single-line HTML when syncing to Markdown files. The result looks like this in your editor:\n\n```\n<table><thead><tr><th width=\"520.11\">Requirement</th><th width=\"122.07\">Priority</th><th>Priority 1-2-3</th></tr></thead><tbody><tr><td><strong>1.1</strong> Agent sees only their Salesforce-assigned cases <strong>in the currently selected organization</strong> (case is \"assigned\" when SF <code>Case.OwnerId</code> matches the agent's linked SF user ID)...</td><td>Must</td><td>1</td></tr></tbody></table>\n```\n\nThis is unreadable for humans and unreliable for LLMs. Models struggle to parse collapsed HTML tables, frequently hallucinate cell boundaries, and cannot edit them without corrupting the structure.\n\n**tablestakes fixes this.** It sits between the LLM and the file, converting tables to clean pipe format on read and writing back in the original format on save — preserving GitBook compatibility, HTML attributes, and inline formatting.\n\n## What the LLM Sees\n\n**Discovery** — scan a 26-table document in one call:\n\n```\n26 tables\n\nT0 pipe 5r 3c v:485f65f7b470 [Cross-Domain Dependencies]\n  A:Integration | B:Source | C:Requirements\n\nT2 gitbook 18r 3c v:77a9495fd328 [Case List]\n  A:Requirement | B:Priority | C:Priority 1-2-3\n\nT7 gitbook 3r 4c v:d9a9a45a370f [Attachments]\n  A:Requirement | B:Priority | C:Dependency | D:Priority 1-2-3\n```\n\n**Read** — collapsed HTML becomes a clean pipe table:\n\n```\nv:d9a9a45a370f gitbook 3r 4c [Attachments]\nA:Requirement | B:Priority | C:Dependency | D:Priority 1-2-3\n| Requirement | Priority | Dependency | Priority 1-2-3 |\n| --- | --- | --- | --- |\n| **5.1** View inbound attachments in-app... | Must | — | 1 |\n| **5.2** Send outbound attachments... | Must | Blocked on SF API | 1 |\n| **5.3** Attachment file size limits... | Should | — |  |\n```\n\n**Write** — surgical cell edit, version-checked:\n\n```\nv:5749c94ffb1f\n```\n\n14 characters. The file is updated, GitBook HTML format preserved, `width` attributes intact.\n\n## Token Efficiency\n\nBaseline: Claude Code's built-in Read + Edit tools operating on the same file. Measured on a synthetic 18-row, 4-column table with realistic requirement-style content (bold IDs, inline emphasis, mixed-length cells).\n\n| Operation | Read + Edit | tablestakes | Savings |\n|---|---|---|---|\n| `list_tables` (26 HTML tables) | ~28,400 tokens | ~2,500 tokens | **91%** |\n| `read_table` (18-row HTML) | ~1,100 tokens | ~690 tokens | **39%** |\n| `read_table` (18-row GFM) | ~780 tokens | ~690 tokens | 11% |\n| Cell edit (18-row HTML) | ~35 tokens | ~27 tokens | **23%** |\n| Cell edit (18-row GFM) | ~99 tokens | ~27 tokens | **73%** |\n| **10-edit workflow (HTML)** | **~1,470 tokens** | **~960 tokens** | **35%** |\n\nWhere the savings come from:\n- **Read (HTML)**: collapsed HTML tags (`<td>`, `<tr>`, `<th>`, `<strong>`, `width=\"...\"`) are pure overhead. Pipe tables carry the same information without markup. The Read tool also adds `cat -n` line-number prefixes.\n- **Read (GFM)**: modest savings from stripping line-number prefixes and surrounding document context. The table content itself is already clean.\n- **Write**: the Edit tool requires `old_string` (enough context to be unique in the file) + `new_string` (the modified version), both generated as output tokens. For GFM, `old_string` is the entire row line (~190 chars). tablestakes needs only `{\"row\": 0, \"column\": \"B\", \"value\": \"Should\"}` (~18 tokens).\n- **Discovery**: without tablestakes, the LLM reads the entire file to find tables. `list_tables` returns a compact index — metadata + 1 preview row per table.\n\n- **Compact pipe tables** with no column padding. Per the [ImprovingAgents benchmark](https://improvingagents.com), GFM pipe tables achieve the best token-to-accuracy ratio: 1.24x CSV cost at 51.9% QA accuracy, beating JSON (2.08x, 52.3%) and YAML (1.88x, 54.7%).\n\n<details>\n<summary><strong>Experiment details</strong></summary>\n\nTokenizer: tiktoken `cl100k_base` (GPT-4). Claude uses a different tokenizer, but relative comparisons hold. The benchmark script (`script.py`) constructs tables programmatically and generates tablestakes output using the actual converter code — no hardcoded strings.\n\n**Read baseline**: `simulate_read_tool()` wraps file content in `cat -n` format (line-number prefix per line), matching what Claude Code's Read tool returns. The full file (document text + table) enters the LLM context.\n\n**Write baseline**: for each cell edit, the script computes the minimum unique `old_string` by expanding leftward from the target `<td>` until the substring is unique in the file. `new_string` is the same context with the cell value replaced. This is a best-case scenario for the Edit tool — a human might include more context than the minimum.\n\n**list_tables baseline**: 26 copies of an 18-row GitBook HTML table in a markdown document. Naive = Read the full file (~28k tokens). tablestakes = `list_tables` output with `preview_rows=0..3`:\n\n| `preview_rows` | Tokens | Savings |\n|---|---|---|\n| 0 (metadata only) | ~1,230 | 96% |\n| 1 (default) | ~2,530 | 91% |\n| 2 | ~3,510 | 88% |\n| 3 | ~4,420 | 84% |\n\nReproduce: `uv run --with tiktoken python scripts/script.py`\n\n</details>\n\n## Quick Start\n\n**Claude Code:**\n\n```bash\nclaude mcp add tablestakes -- uvx tablestakes\n```\n\n**Codex CLI:**\n\n```bash\ncodex mcp add tablestakes -- uvx tablestakes\n```\n\n**Gemini CLI:**\n\n```bash\ngemini mcp add tablestakes -- uvx tablestakes\n```\n\nOr install from PyPI directly: `pip install tablestakes`\n\n<details>\n<summary><strong>Other clients (Cursor, Windsurf, Claude Desktop)</strong></summary>\n\nAdd the following JSON to your client's MCP config file:\n\n```json\n{\n  \"mcpServers\": {\n    \"tablestakes\": {\n      \"command\": \"uvx\",\n      \"args\": [\"tablestakes\"]\n    }\n  }\n}\n```\n\n| Client | Config file |\n|---|---|\n| Cursor | `.cursor/mcp.json` |\n| Windsurf | `~/.codeium/windsurf/mcp_config.json` |\n| Claude Desktop | `claude_desktop_config.json` |\n\n</details>\n\n## Tools\n\n### Discovery & Read\n\n| Tool | Purpose |\n|---|---|\n| `list_tables(file_path, preview_rows=1)` | Scan file, return all tables with metadata + preview |\n| `read_table(file_path, table_index)` | Full table normalized to pipe format + version hash |\n\n### Cell, Row & Column Operations\n\n| Tool | Purpose |\n|---|---|\n| `update_cells(file_path, table_index, version, updates)` | Batch `{row, column, value}` patches |\n| `insert_row(file_path, table_index, version, position, values)` | Insert row at position (-1 to append) |\n| `delete_row(file_path, table_index, version, row_index)` | Remove row by index |\n| `insert_column(file_path, table_index, version, name, ...)` | Insert column with default value |\n| `delete_column(file_path, table_index, version, column)` | Remove column |\n| `rename_column(file_path, table_index, version, old_name, new_name)` | Rename header |\n| `replace_table(file_path, table_index, version, new_content)` | Full table replacement from pipe input |\n| `create_table(file_path, content, position, format)` | Create new table from pipe input (default: HTML) |\n\nAll write tools require a `version` hash from `read_table` — optimistic concurrency that prevents stale overwrites without locks.\n\n## Supported Table Formats\n\n| Format | Read | Write | Round-trip |\n|---|---|---|---|\n| GFM pipe tables | Pass-through | In-place edit | Lossless |\n| GitBook collapsed HTML | HTML → pipe | Pipe → collapsed HTML | Preserves `width`, `data-*`, inline formatting |\n| General HTML tables | HTML → pipe or pretty HTML | Reconstructs HTML | Preserves structure |\n\nWhile GitBook is the primary motivation, tablestakes works with any Markdown document containing HTML tables — CMS exports, Notion dumps, wiki migrations, or hand-written HTML in `.md` files.\n\n## Column Addressing\n\nColumns can be referenced by:\n- **Letter**: `\"A\"`, `\"B\"`, `\"AA\"` (bijective base-26, like Excel)\n- **Name**: `\"Priority\"` (must be unique)\n- **Composite**: `\"B:Priority\"` (for disambiguation)\n- **Index**: `\"0\"`, `\"1\"` (0-based)\n\n## Development\n\n```bash\nmake init      # First-time setup: venv + deps + pre-commit hooks\nmake check     # All checks: format + lint + typecheck + test\nmake test      # Run tests only\nmake test-cov  # Tests with coverage report\n```\n\n## License\n\nApache-2.0\n\n---\n\nmcp-name: io.github.oborchers/tablestakes\n",
+    "fetchedAt": "2026-08-11T23:31:09.897Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:21.758Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

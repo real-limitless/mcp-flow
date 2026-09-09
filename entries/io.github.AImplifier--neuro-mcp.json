@@ -1,0 +1,59 @@
+{
+  "id": "io.github.AImplifier/neuro-mcp",
+  "title": "neuro-mcp",
+  "description": "MCP for NeuroAgents assisting clinicians: MNE processing, EHR store, NeuroII visualization.",
+  "summary": "MCP for NeuroAgents assisting clinicians: MNE processing, EHR store, NeuroII visualization.",
+  "offersHint": "MCP for NeuroAgents assisting clinicians: MNE processing, EHR store, NeuroII visualization. · Packages: pypi:neuro-mcp",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "neuro-mcp",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "neuro-mcp",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://aimplifier.github.io/neuro-mcp/",
+  "sourceUrl": "https://github.com/AImplifier/neuro-mcp",
+  "repository": {
+    "url": "https://github.com/AImplifier/neuro-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T22:02:55.116305Z",
+  "publishedAt": "2026-07-24T22:02:55.116305Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.297Z",
+    "sourceRepoAt": "2026-08-12T00:18:08.070Z",
+    "readmeAt": "2026-08-12T00:18:08.598Z",
+    "toolsAt": "2026-08-12T01:47:49.297Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AImplifier/neuro-mcp",
+    "checkedAt": "2026-08-12T00:18:08.070Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AImplifier/neuro-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AImplifier/neuro-mcp -->\n\n<div align=\"center\">\n\n# 🧠 neuro-mcp\n\n### An MCP for NeuroAgents that assist clinicians and researchers\n\n[![PyPI](https://img.shields.io/pypi/v/neuro-mcp?color=3775a9&logo=pypi&logoColor=white)](https://pypi.org/project/neuro-mcp/)\n[![Python](https://img.shields.io/pypi/pyversions/neuro-mcp?color=3775a9)](https://pypi.org/project/neuro-mcp/)\n[![Docs](https://img.shields.io/badge/docs-aimplifier.github.io-4f8cff)](https://aimplifier.github.io/neuro-mcp/)\n[![License](https://img.shields.io/badge/license-BSD--3--Clause-4f8cff)](LICENSE)\n\n**[Documentation](https://aimplifier.github.io/neuro-mcp/)** · **[PyPI](https://pypi.org/project/neuro-mcp/)** · **[Tutorial](https://aimplifier.github.io/neuro-mcp/examples/tutorial-first-eeg-review/)** · **[Tool Reference](https://aimplifier.github.io/neuro-mcp/tools/)**\n\n</div>\n\nIt gives an AI agent one interface over the whole clinical/research EEG\nworkflow: signal processing and source imaging (via\n[MNE-Python](https://mne.tools)), a persistent dataset + **EHR** store\n(Postgres + [BIDS](https://bids.neuroimaging.io)), and **NeuroII** web\nvisualization.\n\n## Concept\n\n```mermaid\nflowchart LR\n    Clinician([\"🩺 Clinician\"])\n    Researcher([\"🔬 Researcher\"])\n    Agent[[\"🤖 AI Agent\"]]\n    Server((\"neuro-mcp<br/>FastMCP · 54 tools\"))\n\n    Clinician -- talks to --> Agent\n    Researcher -- talks to --> Agent\n    Agent -- MCP --> Server\n\n    Server --> Processing[\"Processing &amp; Source Imaging<br/>MNE-Python + ESI\"]\n    Server --> Data[\"Data &amp; EHR Store<br/>Postgres + BIDS<br/>versioned &amp; audited\"]\n    Server --> NeuroII[\"NeuroII<br/>Web Visualization\"]\n\n    classDef proc fill:#4f8cff,stroke:#2f5fbf,color:#fff\n    classDef data fill:#2fb380,stroke:#1c7a55,color:#fff\n    classDef viz fill:#b06fe0,stroke:#7c3fae,color:#fff\n    class Processing proc\n    class Data data\n    class NeuroII viz\n```\n\nA clinician or researcher never calls a tool directly — they talk to an\nagent in plain English, and the agent drives neuro-mcp's 54 tools underneath.\nSee the [Tutorial](https://aimplifier.github.io/neuro-mcp/examples/tutorial-first-eeg-review/)\nfor what that actually looks like end to end.\n\n## Actors & workflows\n\n- **Clinician** — reviews a recording, adds/edits **annotations**, and **amends\n  EHR** (records a diagnosis/observation, corrects a value), then signs off.\n- **Researcher** — discovers datasets, imports to BIDS, runs MNE processing +\n  source imaging.\n- **Agent** — orchestrates the above via tool calls.\n\n### Clinical-safety model (EHR & annotations)\n\nEHR records and annotations are **versioned, never overwritten or hard-deleted**:\n\n- **Amend = a new audited version.** `amend_ehr_record` / `update_annotation`\n  insert a new version; the prior one is retained with status `amended`. So a\n  clinician *can* modify the EHR — the current view updates while the original\n  and its author are preserved.\n- **Retract = soft void.** `void_ehr_record` / `void_annotation` set status\n  `entered-in-error`; the record stays in the history.\n- **Every mutation is audited** (`audit_log`: actor, action, before/after).\n- Mutating tools take an explicit `actor` so authorship is on the record.\n  (Auth/RBAC enforcement is planned for v0.2; the fields and trail are in place.)\n\nEach tool returns an `outcome` field for the operation (created/amended/voided/…)\ndistinct from the record's clinical `status`, so the two never collide.\n\n## Tools (54)\n\n- **Processing** (`load_neuro`, `filter_neuro`, `resample_neuro`, `set_montage`,\n  `set_reference`, `detect_bad_channels`, `run_ica`/`apply_ica`, `find_events`,\n  `epoch_neuro`, `compute_psd`, `compute_erp`, `time_frequency`, `plot_*`) and\n  **source imaging / ESI** (`fetch_template_head` … `extract_label_timecourses`).\n- **Data/EHR**: `register_subject`, `get_subject`, `add_ehr_record`,\n  `amend_ehr_record`, `get_ehr_history`, `void_ehr_record`; `import_recording`,\n  `register_dataset`, `query_datasets`, `list_recordings`; `add_annotation`,\n  `update_annotation`, `list_annotations`, `void_annotation`; `get_audit_log`.\n- **neuroii**: `neuroii_push_recording`, `neuroii_create_viz_session`,\n  `neuroii_pull_annotations`.\n- **neuroii visualizations** (standalone interactive HTML, Plotly): `visualize_timeseries`\n  (stacked multi-channel EEG with scroll + amplitude buttons), `visualize_averaging`\n  (ERP butterfly + scalp topomap scrubbed by a time slider), `visualize_esi`\n  (source-estimate ROI time courses + per-time activation bars).\n\n## Install\n\n```bash\nconda create -n neuro-mcp python=3.11 -y   # or any Python >=3.10 env\nconda activate neuro-mcp\npip install neuro-mcp              # core, from PyPI\npip install \"neuro-mcp[postgres]\"  # + PostgreSQL driver (LGPL-3.0)\npip install \"neuro-mcp[viz3d]\"     # + 3D source rendering (PySide6, LGPL-3.0)\n```\n\nWorking on neuro-mcp itself instead? Clone the repo and use\n`pip install -e .` in place of the line above — see\n[Installation](https://aimplifier.github.io/neuro-mcp/installation/) for\nthe full zero-to-hero setup, including Claude Code/Codex CLI/Claude Desktop\nregistration.\n\n## Configure (environment variables)\n\n| Variable | Default | Purpose |\n|----------|---------|---------|\n| `DATABASE_URL` | `sqlite:///~/.neuro-mcp/neuro_mcp.db` | Store. Prod: `postgresql+psycopg://user:pass@host/db` |\n| `BIDS_ROOT` | `~/.neuro-mcp/bids` | Root of the BIDS-on-disk recording tree |\n| `NEUROII_API_URL` | *(unset)* | neuroii base URL; unset → tools return the documented contract |\n| `NEUROII_API_TOKEN` | *(unset)* | Optional bearer token for neuroii |\n| `NEURO_MCP_HOME` | `~/.neuro-mcp` | Base dir for the SQLite + BIDS defaults |\n\nThe default (SQLite + a scratch BIDS dir) runs with **zero setup**; point\n`DATABASE_URL` at Postgres for a multi-user/clinical deployment.\n\n## Run / register with an MCP host\n\n```bash\npython -m neuro_mcp     # stdio transport\n```\n\n```json\n{\n  \"mcpServers\": {\n    \"neuro-analysis\": {\n      \"command\": \"/path/to/envs/neuro-mcp/bin/python\",\n      \"args\": [\"-m\", \"neuro_mcp\"],\n      \"env\": { \"DATABASE_URL\": \"sqlite:////data/neuro_mcp.db\", \"BIDS_ROOT\": \"/data/bids\" }\n    }\n  }\n}\n```\n\n## neuroii web visualization\n\nThree tools port NEUROII's main views into **self-contained interactive HTML**\nfiles (Plotly, embedded — no server, works offline). Each returns the `.html`\npath; interaction runs client-side:\n\n- `visualize_timeseries` (RawView) — MNE-style stacked channels with page\n  navigation (⏮ ◀ ▶ ⏭), a page-length box, scroll-to-zoom amplitude, and a grid\n  toggle.\n- `visualize_averaging` (EvokedView) — the averaged ERP as stacked channels with\n  a green time cursor + a scalp topomap; a time slider scrubs both, plus a\n  summary sidebar (nave / peak / tmin / tmax).\n- `visualize_esi` (EsiView) — a **volumetric** source estimate (fsaverage\n  template) rendered to canvas on three orthogonal MRI slices\n  (sagittal/coronal/axial) with a black-blue-white-red activation overlay,\n  crosshair, L/R and MNI-coordinate labels; the cut planes recentre on each\n  frame's peak. Below, the ERP butterfly carries a red current-time cursor and a\n  blue half-peak marker. Controls: time slider, global/frame colormap-scale\n  toggle, and a mask-threshold slider. Faithful port of NEUROII's views; needs\n  epochs (`epoch_neuro` + `set_montage`).\n\n```\nvisualize_averaging(session_id=\"s\") -> {\"out_path\": \".../averaging_s.html\", ...}\n```\n\n## neuroii integration (greenfield)\n\nneuroii integration is not wired yet. The tools define and return the expected\nREST contract (see `neuro_mcp/neuroii/client.py`); until `NEUROII_API_URL` is\nset they respond `{\"status\": \"not_configured\", \"contract\": {…}}` so the neuroii\napp has a fixed target to implement (`POST /api/v1/recordings`,\n`POST /api/v1/viz-sessions`, `GET /api/v1/recordings/{id}/annotations`).\n\n## Testing\n\n```bash\npython testing/verify.py     # in-memory MCP client, temp SQLite + BIDS, synthetic EEG\n```\nCovers rename integrity, the processing core, the full clinician EHR/annotation\nlifecycle (add → amend → history → void, with audit), and the neuroii stub.\nFor a full-stack run against Postgres, use `testing/docker-compose.yml`.\n\n## Licensing\n\nneuro-mcp is **BSD-3-Clause** and bundles no third-party source. All required\ndependencies are permissive (BSD/MIT/Apache-2.0/PSF). Optional extras carry\ntheir own terms — psycopg (LGPL-3.0), PySide6 (LGPL-3.0, chosen over GPL\nPyQt6). Full attribution and compliance notes are in [NOTICE](NOTICE).\n\n## License\n\nBSD-3-Clause — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:18:08.598Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.297Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

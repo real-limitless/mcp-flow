@@ -1,0 +1,52 @@
+{
+  "id": "io.github.filingtape/vigia-edgar",
+  "title": "vigia-edgar",
+  "description": "Always-on SEC EDGAR watcher: ~45s alerts when an insider files a Form 4 or a firm drops an 8-K.",
+  "summary": "Always-on SEC EDGAR watcher: ~45s alerts when an insider files a Form 4 or a firm drops an 8-K.",
+  "offersHint": "Always-on SEC EDGAR watcher: ~45s alerts when an insider files a Form 4 or a firm drops an 8-K. · Remote MCP (streamable-http) at https://vigia-edgar.mcpize.run/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://vigia-edgar.mcpize.run/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://vigia-edgar.mcpize.run/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mcpize.com/mcp/vigia-edgar",
+  "sourceUrl": "https://github.com/filingtape/vigia-edgar",
+  "repository": {
+    "url": "https://github.com/filingtape/vigia-edgar",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-16T07:37:21.45702Z",
+  "publishedAt": "2026-06-16T07:37:21.45702Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:42.461Z",
+    "sourceRepoAt": "2026-08-11T23:46:13.265Z",
+    "readmeAt": "2026-08-11T23:46:13.774Z",
+    "toolsAt": "2026-08-12T01:22:42.461Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/filingtape/vigia-edgar",
+    "checkedAt": "2026-08-11T23:46:13.265Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/filingtape/vigia-edgar/main/README.md",
+    "markdown": "# vigía EDGAR — Always-on SEC EDGAR watcher (Form 4 / 8-K alerts)\n\n> **Public copy & quickstart live in [`mcp/README.md`](mcp/README.md).** This root README is the\n> developer/architecture doc for the two-layer system (engine + skin).\n\nAn always-on engine that watches US SEC EDGAR for you and queues an alert about ~45 seconds (median,\nunder ~2 min worst case — fast polling, not instant/real-time) after the SEC accepts an insider\n**Form 4** or a company's **8-K**. Set a ticker watchlist (AAPL, TSLA, NVDA…) and your AI agent gets\ninsider-trading and material-event alerts on Claude, Cursor, or any MCP client — no setup on your\nside. Free: 1 ticker. Pro ($29): unlimited tickers.\n\n> **Latency, stated honestly:** about **45 seconds median** from when the SEC accepts a filing,\n> **under ~2 minutes worst case** (measured on the EDGAR `getcurrent` feed). The engine polls fast\n> and never sleeps.\n\n## Why this needs an MCP server (the moat)\n\nAn LLM agent on its own cannot watch EDGAR 24/7. The value here is **infrastructure that never\nsleeps**: a cron-driven engine continuously polls the SEC, dedupes every filing, and keeps a\nper-user cursor so your agent only ever sees what's new. The agent just asks; the engine has\nalready been watching.\n\n## Tools\n\n### `watch_insider(tickers: string[])`\nRegister US tickers to monitor (Form 4 + 8-K). Resolves each ticker to its SEC CIK and starts\nwatching. Returns the resolved list and any tickers it couldn't find.\n\n### `get_alerts()`\nReturn new filings detected for your watched tickers **since your last call** (a per-user cursor\nadvances automatically, so you never get duplicates). Each alert includes: `ticker`, `company`,\n`formType`, `category` (`insider` | `material_event`), `accession`, `acceptanceTime`,\n`detectedTime`, `latencySeconds`, and a direct `filingUrl`.\n\n## Architecture\n\nTwo layers:\n\n- **Engine (Cloudflare Worker + D1):** a cron trigger polls EDGAR's `getcurrent` atom feed every\n  minute (two polls ~30s apart per tick → ~30s effective cadence). It dedupes accession numbers,\n  matches filings to watched companies **by CIK** (robust to name changes), and stores matches in\n  D1. State: `seen` (dedupe), `watches` (per-user CIKs), `alerts`, `cursors` (per-user delivery),\n  `ticker_map` (refreshed daily from `company_tickers.json`).\n- **Skin (this MCP server, hosted on MCPize):** exposes the two tools and reads/writes the engine\n  over an authenticated HTTP API (`/watch`, `/alerts`). MCPize handles auth and billing.\n\nPer-user isolation: set `WATCH_NAMESPACE` (your own key) in the MCP server config to keep your\nwatchlist and cursor private. Defaults to `default`.\n\n## SEC compliance\n\nAll requests to the SEC use the required identifiable `User-Agent` and stay well under the 10 req/s\nlimit (the EDGAR feed is polled once per cron cycle).\n\n## Configuration (env / secrets)\n\n- `WORKER_URL` — base URL of the Cloudflare engine.\n- `VIGIA_KEY` — shared secret the skin uses to call the engine.\n- `WATCH_NAMESPACE` — per-user watchlist namespace (optional; defaults to `default`).\n\n## Funnel instrumentation\n\nThe engine counts four product numbers in the D1 `funnel` table (one aggregate row\nper namespace, idempotent upserts — negligible cost):\n\n1. **installs** — namespace connected the MCP (first `/watch`)\n2. **activations** — actually used it (resolved a ticker, or pulled `/alerts`)\n3. **wall_hits** — bounced off the Free 1-ticker cap (hunger for Pro)\n4. **conversions** — paid → Pro active (Stripe-verified)\n\nRead them (admin, needs `X-Vigia-Key`):\n\n```\nGET /admin/funnel            -> { funnel: { installs, activations, wall_hits, total_wall_hits, conversions } }\nGET /admin/funnel?detail=1   -> also returns per-namespace rows\n```\n\nOr straight from D1:\n\n```\nSELECT COUNT(installed_utc)  installs,\n       COUNT(activated_utc)  activations,\n       COUNT(first_wall_utc) wall_hits,\n       COUNT(converted_utc)  conversions\nFROM funnel;\n```\n\n## Repo layout\n\n```\nworker/   Cloudflare Worker engine (cron + D1)  — npx wrangler deploy\nmcp/      MCPize MCP server (the 2 tools)        — npx mcpize deploy\n```\n",
+    "fetchedAt": "2026-08-11T23:46:13.774Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:42.461Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Bearer token required\"},\"id\":null}",
+  "toolsPreviewStatus": "auth_required"
+}

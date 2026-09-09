@@ -1,0 +1,106 @@
+{
+  "id": "io.github.rafavecchi/grantd",
+  "title": "grantd",
+  "description": "Grantd MCP server: let your AI agent act on a user's behalf across third-party APIs via OAuth.",
+  "summary": "Grantd MCP server: let your AI agent act on a user's behalf across third-party APIs via OAuth.",
+  "offersHint": "Grantd MCP server: let your AI agent act on a user's behalf across third-party APIs via OAuth. · Packages: npm:grantd-mcp · Env vars: GRANTD_API_KEY, GRANTD_BASE_URL, GRANTD_END_USER",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "grantd-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GRANTD_API_KEY",
+        "description": "A Grantd secret key (sk_...). Treat it like a password.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "GRANTD_BASE_URL",
+        "description": "Base URL of your Grantd broker (default http://localhost:8787)."
+      },
+      {
+        "name": "GRANTD_END_USER",
+        "description": "Default end-user id so tools don't need it passed each call."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "grantd-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GRANTD_API_KEY",
+          "description": "A Grantd secret key (sk_...). Treat it like a password.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "GRANTD_BASE_URL",
+          "description": "Base URL of your Grantd broker (default http://localhost:8787)."
+        },
+        {
+          "name": "GRANTD_END_USER",
+          "description": "Default end-user id so tools don't need it passed each call."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GRANTD_API_KEY",
+      "description": "A Grantd secret key (sk_...). Treat it like a password.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "GRANTD_BASE_URL",
+      "description": "Base URL of your Grantd broker (default http://localhost:8787)."
+    },
+    {
+      "name": "GRANTD_END_USER",
+      "description": "Default end-user id so tools don't need it passed each call."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/rafavecchi/grantd",
+  "repository": {
+    "url": "https://github.com/rafavecchi/grantd",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T22:02:36.019889Z",
+  "publishedAt": "2026-06-09T22:02:36.019889Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:50.266Z",
+    "sourceRepoAt": "2026-08-11T23:24:52.911Z",
+    "readmeAt": "2026-08-11T23:24:53.467Z",
+    "toolsAt": "2026-08-12T01:04:50.266Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rafavecchi/grantd",
+    "checkedAt": "2026-08-11T23:24:52.911Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rafavecchi/grantd/master/README.md",
+    "markdown": "# Grantd\n\nOAuth-for-agents: a dead-simple, MCP-native OAuth token broker that lets AI agents securely\nact on a user's behalf across third-party APIs (Gmail, Slack, GitHub, Notion…). Tokens are\nvaulted server-side and never touch the LLM.\n\nStack: TypeScript · Hono · Postgres · generic OAuth2 driven by a declarative provider registry ·\nenvelope encryption (AES-256-GCM, key-versioned) · Postgres advisory locks for refresh concurrency\n(no Redis). Security model and how to report issues: [SECURITY.md](SECURITY.md).\n\n## Security at a glance\n\nGrantd vaults users' OAuth tokens, so security is the product, not a feature. The fundamentals:\n\n- **Tokens encrypted at rest** — AES-256-GCM envelope encryption, fresh IV per record, key-versioned,\n  and **fail-closed** (a missing key refuses to write; it never silently stores plaintext).\n- **Tokens never reach the LLM or the caller.** The proxy injects the access token at the network\n  boundary and returns only the provider's response — the raw token is never serialized back.\n- **API keys hashed at rest** (pbkdf2-sha256, peppered); the raw `sk_` key is shown once.\n- **No SQL injection** — every query is a parameterized `postgres.js` tagged template.\n- **Tenant isolation** on every query by environment id; **Row-Level Security** enabled on all tables\n  so a Postgres REST layer (e.g. Supabase/PostgREST) can't read the vault.\n- **256-bit random** OAuth `state` + session tokens; **PKCE (S256)** where the provider supports it.\n- **Durable, Postgres-backed rate limiting** — per secret key on auth routes, per IP on public routes.\n\nThis is open-source infrastructure **you run yourself**. Self-hosting responsibilities (key custody,\nTLS, an edge/WAF for volumetric DoS) and known limitations are documented honestly in\n[SECURITY.md](SECURITY.md). If you intend to run a hosted, multi-tenant deployment that holds other\npeople's tokens, work through [HOSTED-CHECKLIST.md](HOSTED-CHECKLIST.md) first.\n\n## Providers\n\n| Provider | Status |\n|---|---|\n| Google (Gmail, Calendar, …) | ✅ Verified end-to-end, including token refresh |\n| GitHub | ✅ Verified end-to-end |\n| Slack | 🧪 Experimental — config present, not yet verified against live OAuth |\n| Notion | 🧪 Experimental — config present, not yet verified against live OAuth |\n\nAdding a provider is data, not code (see `src/providers.ts`). Help verifying Slack/Notion is welcome.\n\n## Quick start (dev)\n\n```bash\nnpm install\nnpm run keygen            # prints an ENCRYPTION_KEYRING + API_KEY_SALT\ncp .env.example .env      # then paste keygen output + your DATABASE_URL\nnpm run migrate           # apply SQL migrations\nnpm run dev               # start the broker on :8787\n```\n\n## MCP server\n\nExposes the broker to an AI agent (Claude Code / Cursor / Claude Desktop) as tools:\n`list_providers`, `check_connection`, `create_connect_link`, and `call_provider`. The\nauth-gating wedge: if the agent calls `call_provider` for a user who isn't connected, it\nreturns an `authorization_required` result with a connect link instead of failing.\n\nThe MCP server is published to npm as [`grantd-mcp`](https://www.npmjs.com/package/grantd-mcp), so\nyou don't need to clone this repo to use it — just point an MCP client at it (you do need a running\nbroker and a secret key). For local development: `npm run mcp` (needs the broker running); smoke\ntest: `npm run mcp:test`.\n\nAdd to Claude Code:\n\n```bash\nclaude mcp add grantd \\\n  --env GRANTD_API_KEY=sk_... \\\n  --env GRANTD_BASE_URL=https://your-broker.example.com \\\n  --env GRANTD_END_USER=user-123 \\\n  -- npx -y grantd-mcp\n```\n\nOr in a Cursor / Claude Desktop `mcpServers` config:\n\n```json\n{\n  \"mcpServers\": {\n    \"grantd\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"grantd-mcp\"],\n      \"env\": {\n        \"GRANTD_API_KEY\": \"sk_...\",\n        \"GRANTD_BASE_URL\": \"https://your-broker.example.com\",\n        \"GRANTD_END_USER\": \"user-123\"\n      }\n    }\n  }\n}\n```\n\n## Layout\n\n```\nmigrations/   SQL schema (Supabase/Postgres compatible)\nscripts/      keygen + migrate helpers\nsrc/\n  config.ts   env loading + validation + keyring parse\n  crypto.ts   envelope encryption + API-key hashing\n  db.ts       postgres.js client\n  providers.ts declarative provider registry (Google, GitHub, Slack, Notion)\n  oauth.ts    generic OAuth2 client (authorize / exchange / refresh) driven by the registry\n  server.ts   Hono app + routes (WIP)\n```\n",
+    "fetchedAt": "2026-08-11T23:24:53.467Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:50.266Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

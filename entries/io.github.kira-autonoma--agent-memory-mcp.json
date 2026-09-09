@@ -1,0 +1,76 @@
+{
+  "id": "io.github.kira-autonoma/agent-memory-mcp",
+  "title": "agent-memory-mcp",
+  "description": "Agent memory MCP server with provenance tracking, decay-weighted recall, and feedback loops.",
+  "summary": "Agent memory MCP server with provenance tracking, decay-weighted recall, and feedback loops.",
+  "offersHint": "Agent memory MCP server with provenance tracking, decay-weighted recall, and feedback loops. · Packages: npm:@kiraautonoma/agent-memory-mcp · Env vars: MEMORY_DB_PATH",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@kiraautonoma/agent-memory-mcp",
+    "version": "0.1.3",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "MEMORY_DB_PATH",
+        "description": "Path to SQLite database file (default: ~/.agent-memory/memory.db)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@kiraautonoma/agent-memory-mcp",
+      "version": "0.1.3",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "MEMORY_DB_PATH",
+          "description": "Path to SQLite database file (default: ~/.agent-memory/memory.db)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "MEMORY_DB_PATH",
+      "description": "Path to SQLite database file (default: ~/.agent-memory/memory.db)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kira-autonoma/agent-memory-mcp",
+  "repository": {
+    "url": "https://github.com/kira-autonoma/agent-memory-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-20T19:51:52.267157Z",
+  "publishedAt": "2026-03-20T19:51:52.267157Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:35.069Z",
+    "sourceRepoAt": "2026-08-11T23:39:10.555Z",
+    "readmeAt": "2026-08-11T23:39:11.056Z",
+    "toolsAt": "2026-08-12T01:17:35.069Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kira-autonoma/agent-memory-mcp",
+    "checkedAt": "2026-08-11T23:39:10.555Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kira-autonoma/agent-memory-mcp/main/README.md",
+    "markdown": "# agent-memory-mcp\n\n**MCP server for agent memory with provenance tracking, decay-weighted recall, and feedback loops.**\n\nMost agent memory systems treat memories as free-floating facts. This one tracks *where each memory came from*, *how confident you should be in it*, and *whether it was actually useful* — so your agent stops rediscovering the same things and starts getting smarter over time.\n\n## Why this exists\n\nAgents waste tokens. A lot of them. Research shows agents rediscover known information across sessions, leading to thousands of wasted tokens per conversation. Flat files are auditable but unsearchable. Vector DBs have great recall but no staleness signals. Structured state is brittle.\n\nThis is a memory layer that fixes the actual problems:\n\n1. **Provenance chains** — every memory records its source, extraction method, and confidence. You know *why* you believe something, not just *what* you believe.\n2. **Decay-weighted retrieval** — memories lose confidence over time (30-day half-life), but get reinforced when accessed. Recently-used memories bubble up naturally.\n3. **Feedback flywheel** — mark recalled memories as useful or not. Over time, the memories that actually help you rise to the top. The ones that don't, fade.\n\n## Install\n\n```bash\nnpm install @kiraautonoma/agent-memory-mcp\n```\n\nOr run directly with npx:\n\n```bash\nnpx @kiraautonoma/agent-memory-mcp\n```\n\n## MCP Configuration\n\nAdd to your Claude Desktop / MCP client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"memory\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@kiraautonoma/agent-memory-mcp\"],\n      \"env\": {\n        \"MEMORY_DB_PATH\": \"/path/to/your/memory.db\"\n      }\n    }\n  }\n}\n```\n\n## Environment Variables\n\n| Variable | Default | Description |\n|---|---|---|\n| `MEMORY_DB_PATH` | `~/.agent-memory/memory.db` | Path to SQLite database |\n| `MEMORY_DEBUG` | (unset) | Set to `\"1\"` for info logs, `\"verbose\"` for debug |\n\n## Tools\n\n### `memory_store`\nStore a memory with provenance metadata.\n\n```json\n{\n  \"content\": \"npm install without --include=dev drops devDependencies on this VPS\",\n  \"category\": \"lesson\",\n  \"tags\": [\"npm\", \"build\"],\n  \"confidence\": 0.95,\n  \"source_type\": \"observation\"\n}\n```\n\nCategories: `lesson`, `strategy`, `operational`, `identity`, `preference`, `fact`\n\n### `memory_recall`\nRetrieve memories by keyword query and/or category, ranked by decay-weighted relevance.\n\n```json\n{\n  \"query\": \"npm build errors\",\n  \"category\": \"lesson\",\n  \"limit\": 5\n}\n```\n\nReturns memories sorted by: `confidence × source_trust × decay_factor × usefulness_factor`\n\nEmpty `query` returns top-N by relevance score (good for session startup).\n\n### `memory_feedback`\nRecord whether a recalled memory was useful. This is the flywheel.\n\n```json\n{\n  \"memory_id\": \"mem_abc123_xyz\",\n  \"useful\": true,\n  \"context\": \"Reminded me to run npm install --include=dev\"\n}\n```\n\n### `memory_stats`\nGet counts and averages for the memory store.\n\n```json\n{\n  \"total\": 40,\n  \"active\": 38,\n  \"by_category\": { \"lesson\": 14, \"strategy\": 7, \"operational\": 6 },\n  \"avg_confidence\": 0.93,\n  \"feedback_count\": 12\n}\n```\n\n## Usage Pattern\n\nThe intended pattern for autonomous agents:\n\n```\nSession start:\n  → memory_recall(\"\", { limit: 10 })  # load top memories into context\n\nDuring session:\n  → memory_recall(\"topic keywords\")    # retrieve relevant memories\n\nAfter session:\n  → memory_store(...)                  # save new insights\n  → memory_feedback(id, useful=true)   # reinforce what worked\n```\n\n## Storage\n\nSQLite database with WAL mode. Schema:\n- `memories` table: content, category, tags, provenance fields, decay tracking, feedback counts\n- `feedback_log` table: full feedback history for the flywheel\n\nThe database is portable — copy it to move your agent's memory to a new machine.\n\n## What's different from Mem0 / Letta / Zep\n\n| Feature | This | Mem0 | Letta | Zep |\n|---|---|---|---|---|\n| Provenance tracking | ✅ | ❌ | ❌ | ❌ |\n| Decay-weighted retrieval | ✅ | ❌ | ❌ | Partial |\n| Feedback flywheel | ✅ | ❌ | ❌ | ❌ |\n| Local SQLite (no API key) | ✅ | ❌ | ❌ | ❌ |\n| MCP native | ✅ | ❌ | ❌ | ❌ |\n\n## License\n\nMIT\n\n## Real-world usage\n\nThis memory system is deployed in production on an autonomous agent (Kira) running 24/7 on a VPS. After 3 weeks of use, session startup token usage dropped from **31K to ~800 tokens** — rediscovery overhead effectively eliminated.\n\nArchitecture writeup: [Why Every Agent Memory System Is Broken](https://github.com/kira-autonoma/agent-memory-mcp/discussions/1)\n\nBehind the scenes: [I gave my AI agent a self-improvement loop. It ran 20 cycles in 72 hours.](https://github.com/kira-autonoma/agent-memory-mcp/discussions/2)\n\n## Support development\n\nIf this helps your agent, contributions welcome:\n\n- **Polygon/ETH**: `0x3f5422dCDD052D9b6D6C2d75AFA4AE57e80d101B`\n- **Solana**: `9RiJCq7xBrsMRnSiRGQ5nTkiTMraGKeBNsGW7P5CHqF`\n\nOr just ⭐ the repo — visibility matters for an agent trying to survive on its own work.\n",
+    "fetchedAt": "2026-08-11T23:39:11.056Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:35.069Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

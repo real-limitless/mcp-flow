@@ -1,0 +1,61 @@
+{
+  "id": "io.github.IsaiahDupree/jobstack-mcp",
+  "title": "jobstack-mcp",
+  "description": "Unified jobs search over official feeds + ATS boards (USAJOBS, Adzuna, Muse, Greenhouse, Lever...)",
+  "summary": "Unified jobs search over official feeds + ATS boards (USAJOBS, Adzuna, Muse, Greenhouse, Lever...)",
+  "offersHint": "Unified jobs search over official feeds + ATS boards (USAJOBS, Adzuna, Muse, Greenhouse, Lever...) · Remote MCP (streamable-http) at https://jobstack-mcp.vercel.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://jobstack-mcp.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jobstack-mcp.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://jobstack-mcp.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/jobstack-mcp",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/jobstack-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-01T03:20:06.561672Z",
+  "publishedAt": "2026-08-01T03:20:06.561672Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:26.084Z",
+    "sourceRepoAt": "2026-08-12T00:10:00.138Z",
+    "readmeAt": "2026-08-12T00:10:00.633Z",
+    "toolsAt": "2026-08-12T00:10:00.793Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/jobstack-mcp",
+    "checkedAt": "2026-08-12T00:10:00.138Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/jobstack-mcp/master/README.md",
+    "markdown": "# jobstack-mcp\n\nA remote **MCP (Model Context Protocol)** connector for **JobStack** — the unified jobs-search API ([jobs-api](https://jobs-api-gamma.vercel.app)) that fuses official job-board feeds and public ATS boards (USAJOBS, Adzuna, Jooble, The Muse, Reed, and Greenhouse/Lever/Ashby/Workable/SmartRecruiters behind one `ats` engine) into one flat `Job` shape.\n\n**Live:** `https://jobstack-mcp.vercel.app/mcp` — 2 tools, exposed over the MCP streamable-HTTP transport. Since the upstream jobs-api deployment is metered (RapidAPI/Apify) and its `/v1/*` routes sit behind a RapidAPI proxy-secret guard, this connector authenticates its own outbound calls with that same secret (`JOBSTACK_MCP_PROXY_SECRET`, sent as the `X-RapidAPI-Proxy-Secret` header) and applies a soft per-IP rate limit (`JOBSTACK_MCP_RATE_LIMIT`, default 30 tool-calls/hour, in-memory) so the free MCP tier stays a discovery channel rather than an unmetered bypass of the paid listing — see `lib/ratelimit.js`.\n\n## What this is\n\nJobStack is a plain REST API. This repo is a thin adapter that exposes each endpoint as a discoverable, typed MCP **tool** so MCP clients (Claude, ChatGPT, any MCP-aware agent) can call it directly, speaking the MCP streamable-HTTP transport at a single `/mcp` endpoint. It has no business logic of its own — every tool call is a pass-through `fetch` to jobs-api, and the JSON response is handed back verbatim as the tool result.\n\n## Tools\n\n| Tool | JobStack endpoint | Description |\n|---|---|---|\n| `search_jobs` | `GET /v1/jobs/search` | Search + merge job postings across all (or a `sources=` subset of) engines, sorted newest-first, paginated. |\n| `get_job` | `GET /v1/jobs/{source}/{id}` | Fetch one job by its source engine + native id (composite `board:company:nativeId` for `ats`). |\n\nBoth tools are read-only and annotated `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }`.\n\n### `search_jobs` inputs\n\n- `keywords` (string, optional) — free-text search terms.\n- `location` (string, optional) — free-text location filter.\n- `remote` (boolean, optional) — filter to remote roles where the source signals it.\n- `sources` (string, optional) — comma list of engine keys: `usajobs, adzuna, jooble, themuse, reed, ats`. Omit for all six.\n- `limit` (int 1-100, optional, default 20).\n- `offset` (int ≥0, optional, default 0).\n\n### `get_job` inputs\n\n- `source` (enum: `usajobs | adzuna | jooble | themuse | reed | ats`).\n- `id` (string) — native upstream id from a search result; for `ats`, the composite `board:company:nativeId` string.\n\n## Config\n\n- `JOBSTACK_MCP_API_BASE_URL` — upstream base URL. Default `https://jobs-api-gamma.vercel.app`.\n- `JOBSTACK_MCP_PROXY_SECRET` — the RapidAPI proxy secret forwarded as `X-RapidAPI-Proxy-Secret` on outbound calls (needed for the production origin, which guards `/v1/*`).\n- `JOBSTACK_MCP_RATE_LIMIT` — soft per-IP tools/call cap per hour. Default 30.\n\n## Local development\n\n```bash\nnpm install\nnpm run dev          # starts local-server.js on http://localhost:3900\nnpm run smoke        # in another terminal — real HTTP/JSON-RPC smoke test\n```\n\n`test/smoke.mjs` drives the running server over real HTTP/JSON-RPC and verifies `GET /health`, `initialize` (`serverInfo.name === \"jobstack\"`), and `tools/list` (the 2 tools with their zod-derived schemas), then attempts a live `search_jobs` tools/call. Without `JOBSTACK_MCP_PROXY_SECRET` set locally the upstream origin returns 403 (its RapidAPI guard) — an expected upstream-auth condition the smoke test reports as a soft warning while still verifying the full protocol surface.\n\n## Deploy\n\n```bash\ncd /Users/isaiahdupree/Software/jobstack-mcp\nnpx vercel --yes --prod\n```\n\nAfter deploy, the MCP connector URL to register in Claude/ChatGPT/any MCP client is `https://<deployment-domain>/mcp`.\n",
+    "fetchedAt": "2026-08-12T00:10:00.633Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_jobs",
+      "description": "Search job postings across every configured source and merge the results into one flat Job shape. Fans out in parallel to USAJOBS, Adzuna, Jooble, The Muse, Reed, and the ats engine (Greenhouse/Lever/Ashby/Workable/SmartRecruiters), then merges + sorts by postedDate (newest first) and paginates the combined set. Each Job has id, source, title, company, location, remote, url, description, postedDate, salaryMin, salaryMax, salaryCurrency, department, and employmentType. The response envelope carries meta, the echoed query, sources_requested, an optional sources_errored map, total, count, limit, offset, and results. Use sources= to restrict to specific engines."
+    },
+    {
+      "name": "get_job",
+      "description": "Fetch one job posting by its source engine and native id, returned as { meta, job } with the same flat Job shape search_jobs yields. The id is the native upstream id as returned by that source in search results (NOT prefixed with the source name). Exception: for source=\"ats\" the id is a composite \"board:company:nativeId\" string (e.g. \"greenhouse:airbnb:7995153\") so the lookup can round-trip to the right ATS board. Not every source supports single-job lookup — a search-only source returns a not_supported / not_found error."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:10:00.793Z",
+  "toolsPreviewStatus": "ok"
+}

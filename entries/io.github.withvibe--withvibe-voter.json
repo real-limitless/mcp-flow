@@ -1,0 +1,44 @@
+{
+  "id": "io.github.withvibe/withvibe-voter",
+  "title": "withvibe-voter",
+  "description": "Vote-gated change control for WithVibe — the agent proposes a change via MCP; team approves first.",
+  "summary": "Vote-gated change control for WithVibe — the agent proposes a change via MCP; team approves first.",
+  "offersHint": "Vote-gated change control for WithVibe — the agent proposes a change via MCP; team approves first.",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/withvibe/withvibe-voter",
+  "repository": {
+    "url": "https://github.com/withvibe/withvibe-voter",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T01:21:53.055638Z",
+  "publishedAt": "2026-06-09T01:21:53.055638Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:05.242Z",
+    "sourceRepoAt": "2026-08-11T23:14:56.383Z",
+    "readmeAt": "2026-08-11T23:14:56.797Z",
+    "toolsAt": "2026-08-12T00:56:05.243Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/withvibe/withvibe-voter",
+    "checkedAt": "2026-08-11T23:14:56.383Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/withvibe/withvibe-voter/main/README.md",
+    "markdown": "# Voter — a WithVibe plugin\n\n> Turn **any** [WithVibe](https://withvibe.dev) env into a **team-voted workspace**. When this plugin is enabled, the AI doesn't apply a prompt straight away — it opens a **proposal** the team votes on, and only an **approved** proposal gets built. Enable it on any env and that env becomes a vote-gated sandbox.\n\n```\nYou (in chat):  \"add a dark-mode toggle\"\n        │\n        ▼\n   voter_propose_change ──────►  Proposal #7 opens (10-min vote)\n        │                           👍 👎  team votes in the panel\n   voter_await_decision  ◄───────  APPROVED ✅  /  REJECTED ✗\n        │\n        ▼  (only if approved)\n   agent makes the change  ──►  voter_record_change  ──►  shows up in History\n```\n\nIt's content-agnostic — it knows nothing about what the env contains. Whatever\nthe env is (an app, a doc, a 3D scene, a config), enabling Voter makes every\nchange go through the team first. Multiple envs = multiple independent boards.\n\n## How the gate works (and why it's just a plugin)\n\nWithVibe auto-injects an enabled plugin's MCP tools into the agent's turn.\nVoter uses that to gate prompts **without any change to WithVibe core**:\n\n1. `voter_propose_change(prompt)` — opens a proposal and tells the agent to\n   **not** touch anything yet.\n2. `voter_await_decision(proposal_id)` — long-polls the vote. The platform's\n   MCP bridge caps a single tool call at 60s, so this returns after ~45s with\n   `STILL_VOTING` and the agent simply calls it again until it's terminal.\n3. On `APPROVED`, the agent makes the change and calls `voter_record_change`.\n   On `REJECTED` / `EXPIRED` it makes no change.\n\nMeanwhile every teammate votes in the plugin's own UI panel — independent of the\nagent. The gate is **agent-cooperative** (enforced via tool instructions), which\nis the right trade-off for a friendly workflow; hardening it to be unbypassable\nis a later option that would need a small core hook.\n\n## MCP tools\n\n| Tool | Purpose |\n|---|---|\n| `voter_propose_change` | Open a proposal for the requested change. Agent must call this instead of editing. |\n| `voter_await_decision` | Long-poll the team's verdict (`APPROVED` / `REJECTED` / `EXPIRED` / `STILL_VOTING`). |\n| `voter_record_change` | Record what shipped after applying an approved change. |\n| `voter_report_failure` | Mark an approved change as failed (e.g. build broke). |\n| `voter_status` | Show the current board: proposals in voting + recently resolved. |\n\n## State\n\nFour tables in the plugin's isolated Postgres schema (`shared-postgres` storage):\n`settings` (vote window + thresholds), `proposal`, `vote`, `feed_event`.\n\nResolution rule: a proposal passes when approvals reach the threshold, fails when\nrejections reach the threshold, and at the deadline the majority wins (ties\nexpire). Defaults: 600s window, 1 approval / 1 rejection — tune them in the panel.\n\n## Architecture\n\n```\nmanifest.yaml ──► WithVibe spawns one container per env (scope: env)\n       │\n   server.js (express)\n   ├── /health      platform health probe\n   ├── /mcp         agent's MCP endpoint            ─► mcp.js  (the gate)\n   ├── /ui          htmx voting panel               ─► ui.js\n   └── /ui/version  cheap freshness check (live updates)\n                │\n              db.js (pg) ─► shared-postgres, per-env schema\n```\n\n## Build\n\n```bash\ndocker build -t local/voter:0.1 .\n```\n\nFor the marketplace this is published multi-arch as `ghcr.io/withvibe/voter:<version>`.\n\n## Install in WithVibe\n\n1. Workspace admin → **Plugins** → **Install plugin** (or **Marketplace** once listed).\n2. Paste [manifest.yaml](manifest.yaml) (or 1-click install from the catalog).\n3. Open any env → enable **Voter** → that env is now a vote-gated workspace.\n\n## Local development\n\n```bash\ndocker build -t local/voter:0.1 .\ndocker run --rm -p 8080:8080 \\\n  -e DATABASE_URL=\"postgres://user:pass@host.docker.internal:5432/withvibe_plugins\" \\\n  -e PGSCHEMA=\"voter_dev\" \\\n  local/voter:0.1\n# open http://localhost:8080/ui  — two browsers = two voters\n```\n\n## Repository layout\n\n```\nmanifest.yaml   WithVibe plugin manifest (install input)\nDockerfile      runtime image\npackage.json    deps (express, pg, @modelcontextprotocol/sdk, zod)\nserver.js       express entry — HTTP + MCP routes + vote handling\ndb.js           pg pool, schema, proposal/vote/resolution helpers\nmcp.js          the gate: propose / await / record MCP tools\nui.js           htmx voting panel + dark theme\n```\n\n## License\n\n[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.\n",
+    "fetchedAt": "2026-08-11T23:14:56.797Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:05.243Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

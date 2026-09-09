@@ -1,0 +1,76 @@
+{
+  "id": "io.github.nicofains1/agentwatch",
+  "title": "AgentWatch",
+  "description": "Multi-agent observability: cascade failure detection, heartbeats, and forensic replay",
+  "summary": "Multi-agent observability: cascade failure detection, heartbeats, and forensic replay",
+  "offersHint": "Multi-agent observability: cascade failure detection, heartbeats, and forensic replay · Packages: npm:@nicofains1/agentwatch · Env vars: AGENTWATCH_DB",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@nicofains1/agentwatch",
+    "version": "0.3.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AGENTWATCH_DB",
+        "description": "Path to SQLite database file"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@nicofains1/agentwatch",
+      "version": "0.3.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AGENTWATCH_DB",
+          "description": "Path to SQLite database file"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AGENTWATCH_DB",
+      "description": "Path to SQLite database file"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nicofains1/agentwatch",
+  "repository": {
+    "url": "https://github.com/nicofains1/agentwatch",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-16T23:27:08.567119Z",
+  "publishedAt": "2026-03-16T23:27:08.567119Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:56.413Z",
+    "sourceRepoAt": "2026-08-11T23:31:51.051Z",
+    "readmeAt": "2026-08-11T23:31:51.572Z",
+    "toolsAt": "2026-08-12T01:10:56.413Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nicofains1/agentwatch",
+    "checkedAt": "2026-08-11T23:31:51.051Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nicofains1/agentwatch/main/README.md",
+    "markdown": "# agentwatch\n\nYour agent swarm crashed at 2am. You have logs from 10 agents and no idea which one started the cascade. AgentWatch tells you.\n\nIt tracks heartbeats, links actions across agents, walks backward from any failure to the root cause, and replays the full sequence. Works with any agent framework (CrewAI, AutoGen, LangGraph, PocketFlow, custom). Stores everything in a local SQLite file.\n\nEarly stage. Issues and feedback welcome: https://github.com/nicofains1/agentwatch/issues\n\n---\n\n## See it in action\n\nNo install needed:\n\n```bash\nnpx @nicofains1/agentwatch demo\n```\n\nThis seeds a 5-agent fleet, triggers a cascade failure, and shows you the full trace:\n\n```\nAgentWatch Fleet Dashboard\n============================================================\nAgents: 5 total | 3 healthy | 1 degraded | 1 error | 0 offline\n\nCascade Failure (4 steps, root cause: scheduler/dispatch-batch)\n============================================================\n[ROOT] scheduler/dispatch-batch [ok] 15ms\n       {\"assigned_to\": \"fetcher\"}\n       |\n[  1 ] fetcher/call-api [error] 30000ms\n       TIMEOUT after 30000ms\n       |\n[  2 ] processor/transform [error] 120ms\n       Error: input is null - expected array from fetcher\n       |\n[FAIL] notifier/send-alert [error] 8ms\n       Error: no processed data to report\n```\n\n---\n\n## Install\n\n```bash\nnpm install @nicofains1/agentwatch\n```\n\nRequires Node 18+. Uses `better-sqlite3` (native bindings, no external database needed).\n\n---\n\n## Quick start\n\n```typescript\nimport { AgentWatch } from '@nicofains1/agentwatch';\n\nconst aw = new AgentWatch(); // creates agentwatch.db in the current directory\n\n// Report heartbeats from your agents\naw.report('agent-a', 'healthy');\naw.report('agent-b', 'healthy');\n\n// Trace an action in agent-a\nconst traceId = aw.createTraceId();\nconst e1 = aw.trace(traceId, 'agent-a', 'fetch-data',\n  'url=https://api.example.com', 'rows=150');\n\n// Trace a dependent action in agent-b that fails\nconst e2 = aw.trace(traceId, 'agent-b', 'process',\n  JSON.stringify({ rows: 150 }), 'Error: out of memory', {\n    parentEventId: e1.id,\n    status: 'error',\n    durationMs: 4200,\n  });\n\n// Walk back to the root cause\nconst chain = aw.correlate(e2.id);\nconsole.log(chain?.root_cause);\n// -> { agent: 'agent-a', action: 'fetch-data', ... }\n\n// Print fleet status\nconsole.log(aw.dashboardText());\n```\n\n---\n\n## What it does\n\n**Heartbeats** - Each agent calls `aw.report(name, status)` on a schedule. AgentWatch tracks health over time and marks agents as stale or offline based on configurable thresholds.\n\n**Cross-agent tracing** - Actions are linked by trace ID and optional parent event ID. When agent-c fails because agent-b sent bad data that came from agent-a, the full chain is queryable.\n\n**Cascade detection** - `correlate(failureEventId)` walks backward from any failure to the root cause, returning the full chain with timing and output at each step.\n\n**Alert de-duplication** - The same alert type from the same agent within a time window collapses into one entry with an incrementing count. Severity auto-escalates: info (1x) -> warning (3x) -> critical (10x).\n\n**Forensic replay** - `replay(traceId)` returns all cascade chains within a trace. Useful for post-mortem analysis when a single trace touched multiple agents.\n\n**OpenTelemetry export** - Export traces as OTEL spans (GenAI semantic conventions). Works with Jaeger, Grafana, or any OTEL-compatible backend. Requires optional peer deps.\n\n---\n\n## CLI\n\n```bash\nnpx @nicofains1/agentwatch demo                   # run the demo\nnpx @nicofains1/agentwatch dashboard              # fleet health overview\nnpx @nicofains1/agentwatch cascade <event-id>     # trace cascade from a failure\nnpx @nicofains1/agentwatch failures [agent]       # list recent failures\nnpx @nicofains1/agentwatch alerts [agent]         # list active alerts\nnpx @nicofains1/agentwatch replay <trace-id>      # replay all cascades in a trace\nnpx @nicofains1/agentwatch mcp                    # start MCP server (stdio)\n```\n\nSet `AGENTWATCH_DB` to point to your database file. Default: `agentwatch.db` in the current directory.\n\n---\n\n## MCP server\n\nAgentWatch runs as an MCP server. Add it to your Claude Code or Cursor config:\n\n**Claude Code** (`~/.claude/claude_desktop_config.json` or `.claude/settings.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"agentwatch\": {\n      \"command\": \"npx\",\n      \"args\": [\"@nicofains1/agentwatch\", \"mcp\"],\n      \"env\": {\n        \"AGENTWATCH_DB\": \"/absolute/path/to/agentwatch.db\"\n      }\n    }\n  }\n}\n```\n\n**Cursor** (`.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"agentwatch\": {\n      \"command\": \"npx\",\n      \"args\": [\"@nicofains1/agentwatch\", \"mcp\"],\n      \"env\": {\n        \"AGENTWATCH_DB\": \"/absolute/path/to/agentwatch.db\"\n      }\n    }\n  }\n}\n```\n\nThis exposes 13 tools: `agentwatch_dashboard`, `agentwatch_report_heartbeat`, `agentwatch_trace`, `agentwatch_cascade`, `agentwatch_replay`, `agentwatch_get_alerts`, `agentwatch_get_failures`, `agentwatch_get_trace`, `agentwatch_fleet_health`, `agentwatch_create_trace_id`, `agentwatch_alert`, `agentwatch_resolve_alert`, `agentwatch_dashboard_text`.\n\n---\n\n## API reference\n\n### Constructor\n\n```typescript\nconst aw = new AgentWatch({\n  db_path: 'agentwatch.db',        // SQLite file path\n  alert_window_minutes: 30,         // de-dup window for alerts\n  heartbeat_stale_minutes: 30,      // when to mark agents as offline\n});\n```\n\n### Heartbeats\n\n```typescript\naw.report(agent, status, context?)     // status: 'healthy' | 'degraded' | 'error' | 'offline'\naw.getLatestHeartbeat(agent)           // -> Heartbeat | undefined\naw.getFleetHealth()                    // -> AgentHealth[]\n```\n\n### Tracing\n\n```typescript\naw.createTraceId()                                // -> string (UUID)\naw.trace(traceId, agent, action, input, output, {\n  parentEventId?: number,\n  status?: 'ok' | 'error',                        // default: 'ok'\n  durationMs?: number,\n})                                                // -> TraceEvent\naw.getTraceEvents(traceId)                        // -> TraceEvent[]\naw.getRecentFailures(agent?, limit?)              // -> TraceEvent[]\n```\n\n### Cascade detection\n\n```typescript\naw.correlate(failureEventId)    // -> CascadeChain | null\naw.replay(traceId)              // -> CascadeChain[]\n```\n\n### Alerts\n\n```typescript\naw.alert(agent, alertType, message)\naw.resolveAlert(alertId)\naw.activeAlerts(agent?)         // -> Alert[]\n```\n\n### Dashboard\n\n```typescript\naw.dashboard()      // -> DashboardOutput (structured)\naw.dashboardText()  // -> string (formatted for terminal)\n```\n\n### OpenTelemetry export\n\nRequires optional peer deps `@opentelemetry/api` and `@opentelemetry/sdk-trace-base`.\n\n```typescript\nawait aw.exportTraceToOtel(traceId, { serviceName: 'my-agents' });\nawait aw.exportRecentToOtel(1); // last 1 hour\n```\n\n---\n\n## Storage\n\nSQLite via `better-sqlite3`. The database file is created automatically on first use. WAL mode is on for concurrent reads.\n\nTables: `heartbeats`, `trace_events`, `alerts`.\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:31:51.572Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:56.413Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

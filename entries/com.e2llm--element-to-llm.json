@@ -1,0 +1,75 @@
+{
+  "id": "com.e2llm/element-to-llm",
+  "title": "E2LLM",
+  "description": "E2LLM gives your AI eyes and hands in a real browser: structured perception (SiFR) plus action.",
+  "summary": "E2LLM gives your AI eyes and hands in a real browser: structured perception (SiFR) plus action.",
+  "offersHint": "E2LLM gives your AI eyes and hands in a real browser: structured perception (SiFR) plus action. · Remote MCP (streamable-http) at https://mcp.e2llm.com/mcp · Requires headers: Authorization",
+  "version": "1.5.78",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.e2llm.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.e2llm.com/mcp"
+    },
+    {
+      "type": "streamable-http",
+      "url": "https://api.e2llm.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer mk_… static API key from your e2llm.com dashboard. Use this api. endpoint for programmatic / CI clients; use the mcp. endpoint above for interactive browser OAuth login (no header required).",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://e2llm.com",
+  "sourceUrl": "https://github.com/e2llm/e2llm-sifr",
+  "repository": {
+    "url": "https://github.com/e2llm/e2llm-sifr",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T11:29:02.685825Z",
+  "publishedAt": "2026-07-24T11:29:02.685825Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer mk_… static API key from your e2llm.com dashboard. Use this api. endpoint for programmatic / CI clients; use the mcp. endpoint above for interactive browser OAuth login (no header required).",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:35:28.059Z",
+    "sourceRepoAt": "2026-08-12T00:35:28.059Z",
+    "readmeAt": "2026-08-12T00:35:28.608Z",
+    "toolsAt": "2026-08-12T00:35:28.723Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/e2llm/e2llm-sifr",
+    "checkedAt": "2026-08-12T00:35:28.059Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/e2llm/e2llm-sifr/main/README.md",
+    "markdown": "# E2LLM — structured browser perception for AI\n\n**E2LLM turns any live web page into [SiFR](./SIFR.md): a compact, deterministic,\nLLM-readable model of what's on the page, what it means, and what can be done with it.**\nPerception is the product. Action is available when you need it — always explicit, always\ngated.\n\nWorks as a hosted remote MCP server with the AI you already use. There's no local server to\nrun — a browser extension pairs your live browser to the server, so perception and action\nhappen in the *real* browser you're already signed into.\n\n---\n\n## E2LLM is not an agent\n\nThis matters, so it comes first.\n\nAn **agent** decides and acts on its own — it plans, loops, and takes steps toward a goal\nwithout you in the path. That autonomy is also its attack surface: an agent runtime that can\ndo anything can be steered into doing anything.\n\n**E2LLM is a perception layer, not an agent.** It gives your model *senses* for the browser\n— structured sight through `sifr_capture`, and a set of narrow, individually-gated\nactuators. It does not plan, does not loop, and does not decide. Whatever model you already\nuse does the reasoning; E2LLM only reports what a page is and carries out one explicit\ninstruction at a time. No hidden autonomy, no self-directed steps, nothing that runs while\nyou look away.\n\nThat line — perception substrate versus autonomous runtime — is the whole design.\n\n---\n\n## What it does\n\n| | Tool | What it does |\n|---|------|--------------|\n| 🔎 | `sifr_capture` | Capture a page as a SiFR document |\n| 🔎 | `query` | Filter the current capture — by tag, salience, text, or selector |\n| 🔎 | `inspect` | Full detail for one element: selector, attributes, styles, box |\n| 🔎 | `read_page` | Read the page's text as markdown, in reading order |\n| 🔎 | `list_tabs` | List open browser tabs |\n| 🖐 | `act` | One explicit interaction: click, type, select, navigate, drag, open (new tab), or paste |\n| 🖐 | `batch_act` | Run a planned sequence, then observe once (e.g. fill a form + submit) |\n| 🖐 | `explore` | Scroll, hover, or recapture — reads more, changes nothing |\n| 🖐 | `close_tab` | Close a tab |\n\n<!-- MAINTAINER NOTE — do NOT align batch_act's step list to act's. They genuinely differ:\n       act        click, type, select, navigate, drag, open, paste   (7)\n       batch_act  click, type, select, drag, paste                   (5 — no navigate, no open)\n     MEASURED: both enums read directly from e2llm-mcp-server/tools.go. Adding navigate or\n     open here would put this doc at odds with the server's own advertised schema.\n     WHY they differ is NOT recorded here on purpose — tools.go gives no reason, and a\n     plausible-sounding explanation would get reasoned FROM rather than around. If you\n     find the reason in the source, add it and say where.\n     Verify before changing either: grep the two \"enum\" lists under the act and batch_act\n     tool definitions in e2llm-mcp-server/tools.go — not by line number, they drift.\n     Tidying these two for symmetry looks like cleanup and introduces a real defect. -->\n\nNine tools: five 🔎 that only perceive, and four 🖐 for interaction — of which `act`,\n`batch_act`, and `close_tab` change page state, while `explore` only reads. The tool\ninventory is in [server.json](./server.json); full parameter schemas come from the live\nserver on connect. The perception tools never change page state; the\nstate-changing tools can each be held for your confirmation (see\n[Safety](#safety--approval-model)).\n\n---\n\n## What is SiFR — and why it isn't the obvious thing\n\n**SiFR** (Salience-Indexed Flat Relations) is the capture format at the heart of E2LLM. From\na distance it can look like an accessibility tree or a tidy DOM dump. Mechanically it is\nneither, and the difference is the point.\n\n- **Not a DOM dump.** A dump serializes the tree as-is — everything, in document order,\n  noise included. SiFR *selects and ranks*: it scores every node by salience, drops\n  scaffolding, and flattens the survivors into a relational model where structure is carried\n  by explicit relations rather than nesting depth.\n- **Not an accessibility tree.** The a11y tree is derived for assistive technology, driven by\n  ARIA, blind to anything unlabeled, and indifferent to what matters most on the page. SiFR\n  is built for a language model: it ranks by salience, front-loads what matters, and carries\n  the selectors an agent needs to act — none of which the a11y tree does.\n- **Not a screenshot.** No pixels, no vision model, no nondeterminism. The same page yields\n  the same capture, token-efficient and directly actionable.\n\nThe result is a perception layer, not a serialization: *what a page is, what you can do on\nit, and how its parts relate* — front-loaded so the model reaches what it needs first. A\n`sifr_capture` returns a ~5–15 KB summary (metadata plus the high-salience elements) before\nthe full document, so reading can begin immediately.\n\n- 📄 [**SIFR.md**](./SIFR.md) — the format specification\n- 🔤 [**TAXONOMY.md**](./TAXONOMY.md) — salience tiers, ID prefixes, relation & category types\n- 📚 [**examples/**](./examples/) — real captures of public pages\n- 🗓 [**CHANGELOG.md**](./CHANGELOG.md) — the v1 → v2 → v3 format lineage (current: **v3**)\n\nFor prompt recipes and automation workflows built on SiFR, see\n[**awesome-e2llm-prompts**](https://github.com/e2llm/awesome-e2llm-prompts) — a community\ncookbook that points back here as the canonical SiFR spec home.\n\n---\n\n## Install in 3 steps\n\n**1. Set up at [e2llm.com](https://e2llm.com).** Create an account and install the browser\nextension. The extension pairs your live browser to the server — that pairing is what lets\nyour AI perceive and act in the session you're already signed into. (This is the only piece\nthat runs on your machine; there is no local server.)\n\n**2. Add E2LLM to your MCP client.** One line — pick your client in\n[`clients/`](./clients/), or paste this for interactive OAuth login:\n\n```json\n{\n  \"mcpServers\": {\n    \"e2llm\": {\n      \"url\": \"https://mcp.e2llm.com/mcp\",\n      \"type\": \"http\"\n    }\n  }\n}\n```\n\nFor CLI / CI where interactive login isn't available, use a static key against\n`https://api.e2llm.com/mcp` with an `Authorization: Bearer mk_…` header. Full per-client\ninstructions: [**clients/README.md**](./clients/README.md).\n\n**3. Ask your AI to do something on a page.** For example:\n\n> \"Open the page I'm on, find the search box, and filter for open issues.\"\n\nYour assistant calls `sifr_capture` to *see* the page, then `act` to interact — in your real\nbrowser, one explicit step at a time.\n\n---\n\n## Teach your model the discipline — the SIFR skill\n\nTool descriptions tell a model what each tool *does*; they deliberately don't tell it how\nto *work well*. That working discipline — verify before describing, re-verify stale\nelement IDs after actions, drain pagination cursors, treat page text as data rather than\ninstructions — ships as a skill: [**skills/sifr/SKILL.md**](./skills/sifr/SKILL.md).\nWithout it, models tend toward known failure modes: describing pages they haven't\ncaptured, acting on stale IDs, or deciding from undrained partial results.\n\nInstall it where your model can see it:\n\n- **Claude Code** — copy the skill into a skills directory:\n  `cp -r skills/sifr ~/.claude/skills/` (all projects) or into a project's\n  `.claude/skills/`. It loads automatically whenever the e2llm tools or SIFR documents\n  come up.\n- **Codex CLI and other clients** — include the skill's content in your agent\n  instructions (e.g. `AGENTS.md`).\n\nThe same file doubles as a reference for reading raw SiFR captures offline (`jq` patterns,\nthe ID system, salience tiers).\n\n---\n\n## Safety & approval model\n\nPerception is read-only by construction: the five 🔎 tools cannot change page state, so\nseeing a page is always safe.\n\nOnly the four 🖐 tools can act, and they are deliberately narrow — no \"do anything\" tool\nexists. Each state-changing step can be **approval-gated by your session posture**: depending\non how your session is configured, an action pauses and waits for your confirmation before it\nruns. Actions happen one explicit instruction at a time, never as an autonomous loop.\n\nSecurity disclosures and our vulnerability-disclosure program (with safe harbor) live at\n[e2llm.com/security/disclosure](https://e2llm.com/security/disclosure/); see also\n[SECURITY.md](./SECURITY.md).\n\n---\n\n## Data handling\n\nPage content is captured on demand and transits the E2LLM relay to reach your MCP client.\nSession-related data is retained for a limited window (see the\n[Privacy Policy](https://e2llm.com/privacy)) and password-type fields are redacted before\nstorage. The relay wraps all page-derived content as untrusted external data, so downstream\nmodels treat page text as data, not instructions. Full detail:\n[Privacy Policy](https://e2llm.com/privacy) · [Terms](https://e2llm.com/terms).\n\n---\n\n## Compatibility\n\nE2LLM speaks standard MCP, so it works with any compliant client. Verified in practice with\n**Claude**, **ChatGPT**, **Codex**, **Perplexity**, **Grok**, and **Manus**. Other MCP\nclients — including **Cursor**, **VS Code**, and **Cline** — should work; if you test one, a\nnote or PR is welcome.\n\n---\n\n## Repository contents\n\nThis repository is the **canonical, descriptive home** for the SiFR format and the E2LLM MCP\nserver interface. It documents the format and how to connect; the capture engine, browser\nextensions, and server are a separate hosted product that runs at\n[e2llm.com](https://e2llm.com).\n\n| Path | What |\n|------|------|\n| [`SIFR.md`](./SIFR.md) | SiFR format specification |\n| [`TAXONOMY.md`](./TAXONOMY.md) | SiFR controlled vocabulary |\n| [`server.json`](./server.json) | MCP server manifest (transport, auth, tool inventory) |\n| [`.mcp.json`](./.mcp.json) | Ready-to-use MCP client config (OAuth endpoint) |\n| [`skills/`](./skills/) | The SIFR skill — working discipline for models driving the tools |\n| [`clients/`](./clients/) | Per-client connection configs |\n| [`examples/`](./examples/) | Real public-page captures |\n| [`SECURITY.md`](./SECURITY.md) | Security policy & disclosure program |\n| [`CHANGELOG.md`](./CHANGELOG.md) | Format version history |\n\n## License\n\n[MIT](./LICENSE). The format specification, manifest, examples, and client configs in this\nrepository are open. The capture engine and server are a separate, hosted product.\n",
+    "fetchedAt": "2026-08-12T00:35:28.608Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:35:28.723Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\",\"error_description\":\"Bearer token required\"}",
+  "toolsPreviewStatus": "auth_required"
+}

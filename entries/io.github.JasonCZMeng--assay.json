@@ -1,0 +1,91 @@
+{
+  "id": "io.github.JasonCZMeng/assay",
+  "title": "assay",
+  "description": "x402 service-quality oracle: check a service's paid-probe quality tier and score before paying it.",
+  "summary": "x402 service-quality oracle: check a service's paid-probe quality tier and score before paying it.",
+  "offersHint": "x402 service-quality oracle: check a service's paid-probe quality tier and score before paying it. · Packages: npm:assay-oracle-mcp · Env vars: ASSAY_URL, ASSAY_WALLET_KEY",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "assay-oracle-mcp",
+    "version": "0.2.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ASSAY_URL",
+        "description": "Assay instance to query (default: https://assay.nominal-labs.com)"
+      },
+      {
+        "name": "ASSAY_WALLET_KEY",
+        "description": "Optional Base wallet private key; when set, get_score auto-purchases full reports ($0.005, hard-capped 0.01 USDC/call)",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "assay-oracle-mcp",
+      "version": "0.2.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ASSAY_URL",
+          "description": "Assay instance to query (default: https://assay.nominal-labs.com)"
+        },
+        {
+          "name": "ASSAY_WALLET_KEY",
+          "description": "Optional Base wallet private key; when set, get_score auto-purchases full reports ($0.005, hard-capped 0.01 USDC/call)",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ASSAY_URL",
+      "description": "Assay instance to query (default: https://assay.nominal-labs.com)"
+    },
+    {
+      "name": "ASSAY_WALLET_KEY",
+      "description": "Optional Base wallet private key; when set, get_score auto-purchases full reports ($0.005, hard-capped 0.01 USDC/call)",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/JasonCZMeng/assay",
+  "repository": {
+    "url": "https://github.com/JasonCZMeng/assay",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-05T16:08:33.04882Z",
+  "publishedAt": "2026-08-05T16:08:33.04882Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:20.631Z",
+    "sourceRepoAt": "2026-08-12T00:09:23.678Z",
+    "readmeAt": "2026-08-12T00:09:24.444Z",
+    "toolsAt": "2026-08-12T01:40:20.631Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/JasonCZMeng/assay",
+    "checkedAt": "2026-08-12T00:09:23.678Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/JasonCZMeng/assay/main/README.md",
+    "markdown": "# Assay\n\n**The quality oracle for the x402 agent economy** — [x402](https://www.x402.org/) being\nthe open protocol that lets machines pay for HTTP APIs with stablecoin micropayments.\nAssay pays real USDC to probe machine-payable services, verifies what actually comes\nback, and sells the resulting quality scores — every rating backed by an on-chain\npayment receipt and a Bitcoin-anchored evidence trail.\n\n**Live:** [assay.nominal-labs.com](https://assay.nominal-labs.com) ·\n[Leaderboard](https://assay.nominal-labs.com/leaderboard) ·\n[Agent guide (SKILL.md)](https://assay.nominal-labs.com/SKILL.md)\n\n## The problem\n\nAgents are starting to buy API responses from other machines over x402 — HTTP 402\npayment challenges settled in USDC on [Base](https://base.org) (Coinbase's Ethereum L2),\nno accounts, no invoices. Tens of thousands of services already advertise themselves in\ndiscovery catalogs like the Coinbase x402 Bazaar. But an agent holding a wallet has no\nway to know which of them actually deliver: whether payment settles, whether the\nresponse matches the advertised schema, whether the data is even true. The trust signals\nthat exist score *liveness* — uptime, latency, payment telemetry. Nobody pays these\nservices and verifies what actually comes back. Paying to find out is the only real test\n— so that's what Assay does, on a schedule, with its own money, so your agent doesn't\nhave to.\n\n## How scoring works\n\nAssay probes a curated set of x402 services several times a day, at randomized times,\nwith real paid requests. Each probe is scored on four independent checks:\n\n| Component | Weight | Question it answers |\n|---|---|---|\n| Settlement | 40% | Did payment settle and a response come back? (tx hash recorded) |\n| Schema | 30% | Does the response match the service's advertised output schema? |\n| Ground truth | 20% | Does the data agree with an independent reference source? |\n| LLM judge | 10% | Does the response deliver what the service claims to sell? |\n\nWeights renormalize over the components a service has data for. A service's **composite\nscore (0–100)** is computed over its trailing 30 days of probes and publishes only once it\nhas **20+ probes spread across days** — no scores from thin evidence. Tiers: **gold** ≥ 85,\n**ok** ≥ 60, otherwise **avoid**.\n\n## Why the history can't be quietly rewritten\n\nScores are only as trustworthy as the evidence behind them, so the probe corpus is\nappend-only and publicly anchored:\n\n- Every probe row (settlement result, response hash, paid amount, tx hash) becomes a leaf\n  in a per-day **Merkle tree**; the root is anchored to **Bitcoin** via\n  [OpenTimestamps](https://opentimestamps.org/) (OTS) after a safety lag.\n- Daily Merkle roots and their OTS proofs are public at\n  [`/api/digests`](https://assay.nominal-labs.com/api/digests).\n- Anything that ever touches recorded history — migrations, re-anchoring — is logged in\n  the open in [docs/CORPUS-LOG.md](docs/CORPUS-LOG.md).\n\nThe accumulating corpus is the point: anyone can copy the code, but nobody can backdate\nthe evidence — the anchors prove when each day's records existed.\n\n## Using Assay\n\n**HTTP** — the oracle itself is an x402 service at `https://assay.nominal-labs.com`.\nPaid endpoints answer with an HTTP 402 payment challenge that any x402 client settles\nautomatically:\n\n| Endpoint | Price | Returns |\n|---|---|---|\n| `GET /score/{url-encoded service URL}` | $0.005 USDC (Base) | Composite, component breakdown, trend, probe count |\n| `GET /tier/{url-encoded service URL}` | free | `gold` / `ok` / `avoid` / `unrated` verdict |\n| `GET /leaderboard` | free | All scored services, ranked |\n| `GET /api/digests` | free | Daily Merkle roots + OTS proofs |\n\n**MCP server** ([Model Context Protocol](https://modelcontextprotocol.io) — how AI\nassistants call external tools) — [`assay-oracle-mcp`](https://www.npmjs.com/package/assay-oracle-mcp)\non npm and the [official MCP registry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.JasonCZMeng/assay).\nFor Claude Code:\n\n```sh\nclaude mcp add assay -- npx -y assay-oracle-mcp\n```\n\n**Spend guard** — [`assay-x402-guard`](https://www.npmjs.com/package/assay-x402-guard)\nwraps your agent's paying fetch and throws *before* money moves to a service rated `avoid`:\n\n```ts\nimport { wrapFetchWithAssay } from \"assay-x402-guard\";\n// payFetch = your x402-paying fetch (e.g. wrapFetchWithPayment from @x402/fetch)\nconst safeFetch = wrapFetchWithAssay(payFetch);\n```\n\nMore background: [SUMMARY.md](SUMMARY.md) (what/why) and\n[docs/specs/](docs/specs/) (design).\n\n## Development (any OS)\n\n1. `cp .env.example .env` and fill in (all vars documented in the example):\n   - `PROBE_WALLET_KEY`: fresh dedicated wallet, ≤ $50 USDC on Base mainnet (no ETH\n     needed — x402 \"exact\" settles via facilitator using EIP-3009 signatures)\n   - `ANTHROPIC_API_KEY`: the LLM judge\n2. `npm install && npm test` (no network or wallet needed for the suite)\n3. `npx tsx scripts/verify-env.mts` — preflight; fails loudly on misconfiguration\n4. `npm run dev` — server on :3402 (localhost-bound by default) plus crons:\n   catalog ingest (6h), probe sweeps (every 4h at :15 + jitter), daily digest anchoring\n5. Curate services to probe:\n   - `npm run curate -- list`\n   - write a template JSON (see docs/templates/), then\n     `npm run curate -- add <serviceUrl> <template.json>`\n6. Ops dashboard: http://127.0.0.1:3402/dashboard (pause/resume, probe-now, retire/restore)\n\nThe money path is deliberately paranoid: a hard per-payment cap, a daily budget summed\nfrom actually-settled amounts, and fail-closed guards on unparsable payment requirements\n— all unit-tested with injected fakes.\n\nNote that a fresh deployment starts with an empty corpus — the scores are only as good\nas the probe history behind them.\n\n## Production deploys\n\nHow the reference instance at assay.nominal-labs.com is operated (adapt for your own):\ncommit to `main`, ship to the VPS as a git bundle, apply with `git reset --hard` +\n`systemctl restart assay` (provisioning and update runbook in\n[deploy/README.md](deploy/README.md)). The SQLite file at `data/assay.db` is the product\n— never recreate it; the VPS keeps daily on-box snapshots via\n`/etc/cron.daily/assay-backup`.\n\nPayments: `PAYMENTS_ENABLED=true` + `RECEIVE_WALLET_ADDRESS` + a\n[Coinbase Developer Platform (CDP)](https://portal.cdp.coinbase.com/) API key\n(`CDP_API_KEY_ID`/`CDP_API_KEY_SECRET` — the server auto-selects the CDP facilitator\nfor Base mainnet when both are set).\n\n## Layout\n\n- `src/` — the whole system: server + APIs, prober, scoring, digests, ingest, pages\n- `mcp/` — `assay-oracle-mcp`: MCP server (`check_service`, `get_score`, `top_services`)\n- `middleware/` — `assay-x402-guard`: wrapFetchWithAssay spend-guard for agents\n- `tests/` — vitest; money-path logic unit-tested with injected fakes\n- `scripts/` — preflight, wallet rotation, smoke tests; `start-assay.*` are legacy\n  launchers from an earlier home-PC deployment, superseded by systemd\n- `deploy/` — Caddyfile, systemd unit, provisioning runbook\n- `docs/` — [CORPUS-LOG.md](docs/CORPUS-LOG.md) (public integrity log), specs, templates\n\n## License\n\n[MIT](LICENSE) — the whole repo, including the npm packages ([`mcp/`](mcp/) and\n[`middleware/`](middleware/)). The code is freely reusable; the evidence corpus and its\nBitcoin-anchored history are what a fresh deployment can't copy.\n",
+    "fetchedAt": "2026-08-12T00:09:24.444Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:20.631Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

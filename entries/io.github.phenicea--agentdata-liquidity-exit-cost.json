@@ -1,0 +1,57 @@
+{
+  "id": "io.github.phenicea/agentdata-liquidity-exit-cost",
+  "title": "AgentData - Executable Liquidity / Exit-Cost",
+  "description": "Size-aware exit cost, depeg risk & liquidity fragility for a Base token (x402, testnet).",
+  "summary": "Size-aware exit cost, depeg risk & liquidity fragility for a Base token (x402, testnet).",
+  "offersHint": "Size-aware exit cost, depeg risk & liquidity fragility for a Base token (x402, testnet). · Remote MCP (streamable-http) at https://agentdata-liquidity-exit-cost.onrender.com/mcp/",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://agentdata-liquidity-exit-cost.onrender.com/mcp/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://agentdata-liquidity-exit-cost.onrender.com/mcp/"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://github.com/phenicea/agentdata",
+  "sourceUrl": "https://github.com/phenicea/agentdata",
+  "repository": {
+    "url": "https://github.com/phenicea/agentdata",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-18T16:16:15.224678Z",
+  "publishedAt": "2026-06-18T16:16:15.224678Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:08:57.689Z",
+    "sourceRepoAt": "2026-08-11T23:29:44.500Z",
+    "readmeAt": "2026-08-11T23:29:44.975Z",
+    "toolsAt": "2026-08-11T23:29:45.253Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/phenicea/agentdata",
+    "checkedAt": "2026-08-11T23:29:44.500Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/phenicea/agentdata/master/README.md",
+    "markdown": "# AgentData — Executable Liquidity (endpoint #1)\n\nA pay-per-call data endpoint for AI agents: **size-aware exit cost, depeg risk, and\nliquidity fragility** for a token on Base. Not raw prices — *computed, normalized,\ndecision-grade* intelligence an agent needs before it acts. Settled in USDC via\n[x402](https://x402.org) (Phase 2). Sourced on-chain, so the derived data is\ncleanly redistributable.\n\n> Strategy, values, and roadmap live in [`CLAUDE.md`](./CLAUDE.md). Decisions are\n> logged in [`decisions/DECISION_LOG.md`](./decisions/DECISION_LOG.md) and\n> [`decisions/adr/`](./decisions/adr/).\n\n## What it answers\n\n> \"If I try to exit this position right now, what does it actually cost me, how\n> much can I move before slippage blows past X bps, and how fragile is that\n> liquidity?\"\n\nThree priced tiers (single source of truth in `agentdata/api/pricing.py`):\n\n| Tier  | Contents                                                        | Mainnet price |\n|-------|-----------------------------------------------------------------|---------------|\n| quote | best-route exit cost for one size                               | $0.008        |\n| risk  | exit cost + fragility (+ depeg for pegged assets) — **default** | $0.02         |\n| deep  | risk + multi-size exit-cost curve + max-size-before-cost ladder | $0.04         |\n\nTestnet forces every price to **$0** (the 402 flow is still exercised end-to-end).\n\n## Layout\n\n```\nsrc/agentdata/\n  config.py            # env-driven; NETWORK_MODE testnet|mainnet (testnet default)\n  compute/             # the value-add: pure, deterministic, unit-tested math\n    amm.py             #   constant-product + Solidly stable curve, exit cost\n    routing.py         #   cheapest-venue selection\n    depeg.py           #   depeg deviation / dispersion / score\n    fragility.py       #   depth + concentration + convexity -> fragility score\n    tiers.py           #   quote / risk / deep orchestration\n  chain/               # on-chain Base reads (Aerodrome / Uniswap), web3 lazy\n    provider.py        #   FixturePoolProvider (default) + factory\n    onchain.py         #   OnChainPoolProvider (env-gated, no guessed addresses)\n  api/                 # FastAPI JSON layer + pricing + stable schema\n  monitoring/          # uptime, latency p50/p95, error rate, calls per tier\ntests/                 # unittest (stdlib for compute; fastapi for api)\n```\n\n## Run it (local, no funds, no network)\n\n```bash\npip install -e .            # or: pip install fastapi pydantic 'uvicorn[standard]'\nuvicorn agentdata.api.app:app --reload\n# then:\ncurl 'http://127.0.0.1:8000/v1/liquidity/exit-cost?token=WETH&size=10&tier=risk'\ncurl 'http://127.0.0.1:8000/pricing'\ncurl 'http://127.0.0.1:8000/metrics'\n```\n\nDefaults: `NETWORK_MODE=testnet`, `POOL_SOURCE=fixture` (deterministic demo pools\n`WETH`, `THIN`, `USDX`). See `.env.example`.\n\n## Test\n\n```bash\n# compute core needs no dependencies:\nPYTHONPATH=src python -m unittest discover -s tests\n```\n\n## Status\n\n- **Phase 1 (local endpoint): done.** compute + chain seam + API + monitoring, 42\n  tests green.\n- **Phase 2 (x402 testnet): next.** Payment middleware in front of the API, free\n  testnet facilitator on Base Sepolia. No real USDC; mainnet is an escalated human\n  decision (CLAUDE.md §0/§14).\n- On-chain mode requires a verified pool registry before use (ADR-001) — the code\n  refuses to run on guessed contract addresses rather than fake data.\n",
+    "fetchedAt": "2026-08-11T23:29:44.975Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "liquidity_exit_cost",
+      "description": "Size-aware exit cost, depeg risk, and liquidity fragility for a token on Base. Given a token and a sell size, returns the realized cost of exiting (price impact + fee, in bps and units), the best route across venues, an aggregated fragility score, and — for pegged assets — a depeg-risk score. Computed deterministically from on-chain AMM state, so the result is reproducible and auditable. Three tiers by compute depth (default 'risk'): 'quote' = best-route exit cost for one size; 'risk' = exit cost + fragility (+ depeg for pegged tokens); 'deep' = adds a multi-size exit-cost curve, max-size-before-cost thresholds, and an internal cross-check. Pricing per call (USDC): quote = $0, risk = $0, deep = $0. Status: testnet/preview — payment runs over the x402 HTTP surface, not this tool."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:29:45.253Z",
+  "toolsPreviewStatus": "ok"
+}

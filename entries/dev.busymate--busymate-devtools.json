@@ -1,0 +1,227 @@
+{
+  "id": "dev.busymate/busymate-devtools",
+  "title": "Busymate DevTools",
+  "description": "Capture, inspect & debug HTTPS traffic across iOS, Android, browsers & backends — 304 MCP tools.",
+  "summary": "Capture, inspect & debug HTTPS traffic across iOS, Android, browsers & backends — 304 MCP tools.",
+  "offersHint": "Capture, inspect & debug HTTPS traffic across iOS, Android, browsers & backends — 304 MCP tools. · Remote MCP (streamable-http) at https://mcp.busymate.dev",
+  "version": "1.0.481",
+  "status": "inactive",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.busymate.dev",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.busymate.dev"
+    }
+  ],
+  "flags": [
+    "remote",
+    "repo-offline"
+  ],
+  "homepage": "https://busymate.dev/mcp",
+  "sourceUrl": "https://github.com/serebano/busymate-devtools",
+  "repository": {
+    "url": "https://github.com/serebano/busymate-devtools",
+    "source": "github",
+    "subfolder": "supabase/functions/mcp"
+  },
+  "updatedAt": "2026-07-08T11:12:05.771828Z",
+  "publishedAt": "2026-07-08T11:12:05.771828Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:51:14.319Z",
+    "sourceRepoAt": "2026-08-12T00:23:07.702Z",
+    "readmeAt": "2026-08-12T01:51:14.319Z",
+    "toolsAt": "2026-08-12T00:23:08.260Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "not_found",
+    "url": "https://github.com/serebano/busymate-devtools",
+    "checkedAt": "2026-08-12T00:23:07.702Z",
+    "httpStatus": 404,
+    "error": "repository HTTP 404",
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "fetchedAt": "2026-08-12T01:51:14.319Z",
+    "error": "README.md not found on main/master"
+  },
+  "toolsPreview": [
+    {
+      "name": "list_breakpoint_events",
+      "description": "List HELD (paused) breakpoint exchanges — the READ side of the breakpoint-continue flow (public.breakpoint_events; a row with resumed_at NULL is a request/response the proxy is holding RIGHT NOW, waiting for breakpoint_continue — feed it the returned request_id). YOUR OWN devices' events by default (owner-scoped to the calling account — the same reach the dashboard /breakpoints page gives you), or EVERY device with `all:true` (devices:view operators only; re-verified server-side — for a non-operator `all` is rejected, never silently widened). Each row is a SLIM projection: id, request_id, device_uuid + device_name (the human name, resolved via the devices join — never a bare uuid), workspace_id, kind (request|response), paused_at, resumed_at, outcome (continued|dropped|edited|timeout|null), held. Currently-held rows only by default; pass include_resumed:true for the recent resolved history too. Never returns the raw HTTP bodies (slim payloads). Read-only, no confirm. Returns { ok, scope: own|fleet, count, events }."
+    },
+    {
+      "name": "get_device",
+      "description": "Get one device row by uuid, name, OR its PAC PORT — the DIRECT resolver for a KNOWN device: when you already hold a device uuid/name (from traffic rows, audit events, another tool's result) or a per-device PAC/proxy endpoint, call this instead of browsing or paging list_devices. `pac_port` accepts EVERY spelling: a bare port (10807), the PAC hostname (10807.busymate.net), a full PAC URL (http://10807.busymate.net/ or https://10807.busymate.net/proxy.pac), or host:port — the leading label of a PAC host IS the device's allocated port. A host with no numeric leading label and no explicit port is REFUSED as ambiguous rather than guessed, and a port owned by NO device returns { ok:true, found:false, note } — a normal complete answer, never an error and never an empty list you could misread as 'unsupported'. Returns the canonical record (uuid, name, model, os_version, setup, last_seen_at) plus found:true and the derived pac_port/pac_url. `deviceName` matches a device's name EXACTLY — case-insensitively and ignoring surrounding whitespace, but NOT partially, so an extra word (a device TYPE like \"iphone\", a serial) will not match a name that lacks it. When a name matches nothing you get `{ ok:true, found:false, query, candidates[] }` — the near-miss devices (device_uuid, name, platform, last_seen_at, matched_tokens), ranked by how many of your words their NAME contains: re-issue get_device with the device_uuid of the one you meant. That is the complete answer — do NOT fall back to paging list_devices. Candidates are SUGGESTIONS and are never auto-selected, however few: sibling names like a farm host and the phone under it differ by one token, so picking for you could target the wrong machine. Owner-scoped: without devices:view you may still resolve YOUR OWN device by uuid/name/pac_port (the PAC-port match is pinned to devices you own, so port-guessing can never reach another account)."
+    },
+    {
+      "name": "list_devices",
+      "description": "List devices, ONE PAGE at a time — YOUR OWN by default (owner-scoped to the calling account: the same reach the dashboard gives you), or the WHOLE fleet with `all:true` (devices:view operators only; re-verified server-side — for a non-operator `all` is rejected, never silently widened). PAGINATION (read this before concluding anything is absent): every response carries `total` (the EXACT count in scope), `returned` (rows in THIS page), `has_more`, and `next_cursor`. If `has_more` is true the answer is INCOMPLETE — call again with `cursor: <next_cursor>` (same `order` and same scope) and repeat until `has_more` is false. NEVER report that a device/port/name is absent from a page where has_more was true; page to the end or resolve it directly with get_device. `truncated_by:\"byte_budget\"` means the page stopped early to fit the response budget — the cut rows are simply the NEXT page, nothing was lost. ORDERING: `order:\"last_seen\"` (default) is recency-first and best for browsing, but last_seen_at moves whenever a device heartbeats, so a row can shift ahead of the cursor mid-run — for a GUARANTEED complete enumeration pass `order:\"uuid\"` (immutable key, `stable_enumeration:true`). Each row is a slim projection: uuid, name, platform, online (DERIVED from last_seen_at freshness — #776, never the raw device_status latch), last_seen_at, vpn_state, the per-device connection_type override (null = inherits user → global), and pac_port/pac_url for PAC-provisioned devices; null keys are omitted. `fields:\"full\"` adds model, os_version and parent_device_id + parent_name (farm/iOS children resolve their host's NAME) at ~2x the bytes per row. Fleet rows also resolve each owner to a human name. OPERATOR CROSS-USER: `owner_email` scopes the fleet to the account(s) whose email matches that substring (case-insensitive) — the dashboard /devices owner-email search's MCP twin; devices:view is required and re-verified in-handler, so for a non-operator `owner_email` is rejected exactly like `all`. Use to answer \"what devices do I own\" / \"list my devices\" / \"which devices are online\". BROWSING ONLY: to resolve a device you ALREADY have a uuid, name, or PAC port/URL for, call get_device with it directly — never scan or page this list hunting for a known device. Read-only, no confirm. Returns { ok, scope: own|fleet, order, stable_enumeration, returned, total, has_more, next_cursor, truncated_by, fields, devices:[…], note? }."
+    },
+    {
+      "name": "get_device_status",
+      "description": "Get a device's live status: `online` is DERIVED truth (#776 — devices.last_seen_at within 90s, 150s for farm hosts; the same derivation as every other surface, so it can't latch stale), plus the device_status row (last_heartbeat_at, ip, vpn_state, source, reported_online = the raw stored flag, diagnostics only). Works even for a device that never wrote a status row (entries-only clients) — `online` still evaluates from last_seen_at."
+    },
+    {
+      "name": "get_device_health",
+      "description": "THE ONE QUERY (#1157/#1160): the latest capture-health projection for ONE device — one `device_health` row, no scan, no on-device access needed. Answers \"is the TLS-intercept engine armed, and if not, WHY\": engine_state ('armed'|'inert') + engine_reason (e.g. no_ca_key) + state_established_at (when that state was first established, so a stale fact is visibly stale), the CA triple (ca_loaded / ca_key_present / ca_trusted — 'trusted CA, missing key' means refetch the cert BUNDLE; 'CA not trusted' means reinstall the profile: opposite fixes today's signals cannot distinguish), ssl_domain_count + ssl_domain_hash (compare against the server's expected effective-settings hash: mismatch = config-delivery fault, match + inert = engine fault), config_hash/config_fetched_at, the decrypt counters (flows_total / flows_decrypted / flows_reasons {reason: count} over no_engine|no_sni|out_of_scope|leaf_mint_failed|ca_untrusted|pinned|upstream_failed), events_dropped + last_seq/seq_gaps (the telemetry stream's own honesty detectors), tunnel_state, app_build + ios_version + boot_id, and last_error. The row is trigger-written from device_events (the DEVICE's own claims about itself — diagnostic, never authorization). iOS-ONLY BY TRIGGER (#1208): device_events is a MULTI-PRODUCER stream (the PAC/proxy server writes to it too), but this projection admits ONLY legacy/no-producer and detail.producer='ios' rows — a proxy/PAC event can never refresh last_event_at/updated_at or overwrite last_error, so this row is never 'recently healthy' on another process's evidence, and every unknown future producer fails closed the same way. For the proxy's own stream use list_device_events with producer:'proxy-server'. A device with NO row returns found:false + a note (it has never emitted telemetry — needs an iOS build with the #1160 emitter); that is a NORMAL complete answer, and absence of telemetry is never evidence of health. Owner-scoped: without devices:view you may still read YOUR OWN device by uuid/name."
+    },
+    {
+      "name": "list_device_events",
+      "description": "The MULTI-PRODUCER device TELEMETRY event stream (#1160/#1208) — every DECISION and STATE TRANSITION reported about the capture pipeline by the iOS app OR by the PAC/proxy server (public.device_events, 14-day retention, weekly-partitioned). iOS kinds — this list is what the app ACTUALLY emits, corrected in #1232 after SEVEN of the fifteen declared categories turned out to have zero emit sites and zero rows while this description told operators they existed. BASELINE (always on, no flag): capture.health (armed|inert + why + decrypt counters), cert.state, config.applied / config.fetch, tunnel.lifecycle, app.launch / app.phase, auth.signin / auth.switch / auth.signout / auth.token_refresh, device.pair, permission.vpn_consent / permission.notifications, control.channel / control.recovery, applink.open / applink.replay (query parameter NAMES only, fragment PRESENCE only — never a value), push.received (the RESOLVED action, so the deliberate broadcast+wake double delivery reads as stop-then-noop). AUDIT TIER (opt-in, TTL-expiring): mitm.decision, and it is FAULT-ONLY by design — only no_engine / leaf_mint_failed / ca_untrusted / upstream_failed ever produce a row, so a healthy device emits NONE however long audit mode is armed; the per-host answer for decrypted / out_of_scope / no_sni / pinned lives on entries.payload.mitmDecision under owner-scoped RLS, which is the right home for browsing-shaped data. Plus the server-authored telemetry.rate_clipped / audit_mode.ended breadcrumbs. The iOS app does NOT emit ui.*, net.* or process.* — those three were retired from its vocabulary in #1232 (see the category filter below: net and process are still live, from the PAC/proxy producer). PAC/proxy kinds (#1208): process.lifecycle, push.realtime, config.settings / config.port_allocation / config.port_release / config.pac_serve, capture.entry / capture.flush / capture.drop, net.forward / net.retry / net.dead_letter, tunnel.connect / tunnel.close, mitm.decision / mitm.handshake. Newest-first slim rows { id, at (server receive time), device_uuid, level (baseline|debug), category, action (the dotted kind = category.action), outcome, reason, host, ts (device clock), boot_id, seq, app_build, ios_version, process_role, user_id, session_id, auth_provider, install_id, tenant_id, request_id, producer }. The identity block (#1160) + request_id (#1390) are FIRST-CLASS columns, not buried in detail: process_role (app|tunnel|proxy-server), the user/session/provider/install/tenant the event was emitted under, and request_id — which JOINs public.audit_log.request_id so a device event and its server-side audit consequence link into ONE incident. `producer` is the PROCESS DISCRIMINATOR, hoisted out of `detail` into EVERY slim row (no with_detail needed) because the whole isolation contract rests on it: 'proxy-server' for PAC/proxy rows; NULL for legacy rows that carry no producer key at all, and 'ios' where the app stamps one — null is a real fact about the row and is NEVER normalised to 'ios'. iOS-authored rows carry ts/boot_id/seq/app_build/ios_version; PAC/proxy rows leave those five NULL by construction and carry transport / proxy_build / node_version / process_boot_id / producer_seq inside `detail`. `with_detail:true` adds the redacted `detail` jsonb (≤4 KB, redacted at write — parameter NAMES only, never query values/bodies/keys). A gap in (boot_id, seq) = a dropped iOS event; a gap in detail.producer_seq = a dropped proxy event (both detectable at read time even when the drop counter itself was lost). Filters: category / action / outcome / reason / host / boot_id / process_role / user_id / session_id / install_id / request_id (exact), level, producer, failures:true (outcome ∈ fail|deny|inert — the partial-index fast path), since / until (ISO, on `at`). DEFAULT WINDOW (#1390): with no `since` and no cursor the read is bounded to the last 48h (so an unfiltered fleet sweep can never time out); the response echoes `since_applied` + `default_window:true` — pass an explicit `since` to reach older telemetry, or a keyset cursor (which is exempt from the default). producer:'ios' means the PROJECTION-ELIGIBLE set — producer IS NULL **or** 'ios', byte-identical to the device_events_project_health trigger's WHEN clause — so it never hides pre-#1208 rows; any other slug is an exact match, so a FUTURE producer is filterable the day it starts emitting. Producer gating applies ONLY to the iOS-only device_health projection (see get_device_health): the broadcast trigger is unconditional, so device_events:<uuid> and device_events:all carry EVERY producer's row live, and so does this tool when `producer` is omitted. KEYSET pagination: when a page is full, feed next_cursor's before_at + before_id back verbatim (both together — a bulk insert lands a whole batch on ONE timestamp, so at-only paging would skip batches). ONE device by device_uuid/deviceName (owner-scoped: without devices:view you may read YOUR OWN device), or omit the selector for the FLEET-WIDE stream (devices:view operators only, re-verified server-side). limit default 50, cap 200."
+    },
+    {
+      "name": "list_device_audit_modes",
+      "description": "Every device with AUDIT-mode telemetry currently armed — device_uuid + name, enabled, expires_at + expires_in, level, categories, who armed it (set_by_label) and when (set_at). The 'standing cost is never invisible' list (#1160 spec §5): audit mode is per-device + TTL-expiring, and this is where you see everything armed right now. YOUR OWN devices by default; devices:view operators see the whole fleet (re-verified server-side). Read-only, no confirm. Backed by the list_device_audit_modes DEFINER RPC."
+    },
+    {
+      "name": "test_pac_connection",
+      "description": "PROVE whether PAC capture actually works for ONE device — the \"is it really working?\" answer, not \"does it look configured\". Runs 8 independent checks and returns a per-check verdict with a specific human fix: (1) connection mode — is the device even on `pac` (a `vpn`/`off` device is SAID SO plainly, never reported as broken PAC); (2) PAC port + URL — a pool port is allocated and http://<port>.busymate.net/ + /proxy.pac + /wpad.dat each serve HTTP 200 with the PAC content type; (3) THE HEADLINE — the PAC the proxy really serves this device carries a PROXY directive and is NOT the silent DIRECT fallback (a DIRECT PAC means the device bypasses capture ENTIRELY while looking perfectly configured — ~11k serves/day hit this); (4) egress IP is in the asserted allowlist (the dominant cause of that DIRECT fallback); (5) the proxy is really routing this device's requests right now; (6) the effective SSL-proxying list is NON-EMPTY and covers hosts the device actually contacts (an empty list = configured to decrypt NOTHING, which FAILS); (7) live decryption evidence — genuinely DECRYPTED requests for hosts in this device's OWN resolved list (a CONNECT envelope or a raw-TCP row is never counted as proof); (8) the device-reported CA-trust readiness + its exact remediation. Every check is pass | fail | unverified — a check that could not reach the thing it judges returns UNVERIFIED and is NEVER reported as healthy. Overall verdict ok | degraded | broken | unverified plus ONE plain-language next action. YOUR OWN (or demo) devices by default; testing someone else's device requires devices:view (re-verified server-side, fail-closed). Read-only, no confirm, changes nothing."
+    },
+    {
+      "name": "get_my_account",
+      "description": "YOUR account at a glance — ONE self-scoped read returning the calling account's profile (name, display_name, email, role, sign-in providers, user_id, created_at), your per-user default connection type (own value + the global default + the effective fold), your linked Telegram accounts, the devices YOU own (uuid/name/model/last_seen_at — the uuids feed get_device / rename_device / …), your Stripe subscription status, and the API endpoints callable with this token. The MCP mirror of the dashboard Account page. SELF-ONLY: every read is pinned server-side to the verified caller — it takes NO target args and CANNOT read another user's account (cross-account browsing stays the admin surface: /users, list_telegram_links, get_subscription all_users:true). Own-data, read-only → no capability gate, no confirm; any signed-in user may call it. Use when a user asks \"who am I\" / \"what's my account/role/email\" / \"what devices do I own\" / \"is my Telegram linked\" / \"am I subscribed\". Returns { ok, account, connection, telegram, devices, subscription, endpoints }."
+    },
+    {
+      "name": "get_device_egress_status",
+      "description": "Read a device's egress-IP set (#1432) — the CONNECT-source IPs the proxy allowlists for it, PLUS any manual dev overrides. Each row carries `ip`, `source` ('proxy' = an automatic /allocate row, rolling 48h window + 10-most-recent-per-device cap; 'manual' = a TTL'd dev override, EXEMPT from the cap), first_seen_at/last_seen_at, `expires_at` (manual only), `set_by` (who set a manual override), hit_count, and a derived `active` flag using the SAME window the kernel ipset feed (active_egress_ips) uses — proxy: last_seen within 48h; manual: not yet expired — so `active_count` is the set currently allowlisted for the device. Owner-scoped: without devices:view you may still read YOUR OWN device by uuid/name. Read-only."
+    },
+    {
+      "name": "get_entry_count",
+      "description": "Count entries in a workspace (workspace_id or workspace_slug) with optional device/host/method/status/search filters."
+    },
+    {
+      "name": "search_entries",
+      "description": "LOCATE captured entries by host/url substring (`q`). Optionally scope to a device_uuid and an absolute date range. Returns SLIM locator rows ({id, ts, device_uuid, kind, request_id, host, path, method, status, contentType, url} + a ~200-char requestBodyPreview/responseBodyPreview) — NOT full bodies; limit defaults 50, capped 100. For full request/response bodies + headers use inspect_requests (deep per-host detail), export_har, or db_select on the row id."
+    },
+    {
+      "name": "list_entries",
+      "description": "LIST the newest captured traffic entries as SLIM feed rows (id, ts, device, kind, request_id, host, path, method, status, contentType, url — NO bodies/headers) — the dashboard main live feed's MCP-parity read (#778). No search term needed (unlike search_entries' required `q`). FULL /feed filter set (#819): scope to ONE device (device_uuid/deviceName), an EXACT `host` or a `host_contains` substring, an HTTP `method`, a `status` (exact code or a class '2xx'/'4xx'/'5xx'), and/or an absolute ts range; `since_id` returns ONLY rows newer than an id you already hold (the live-tail append cursor — poll cheaply for what's new); order newest (default) or oldest; limit default 30, capped 100. Owner-scoped like the dashboard: your own devices' traffic by default. OPERATORS (devices:view, re-verified in-handler fail-closed) may scope the feed to ANOTHER user's account via `owner_email` (exact) or `owner_user_id` — that user's devices only. For full bodies/headers use inspect_requests; for substring search use search_entries. Returns { ok, count, entries:[…] }."
+    },
+    {
+      "name": "get_entry",
+      "description": "Get ONE captured entry's FULL detail by the id you already hold — method, URL, host, path, status, timing (duration_ms) + sizes, the request AND response HEADERS, and the request AND response BODIES (size-capped, truncation stated explicitly). The ID-SCOPED twin of inspect_requests (which is per-HOST): when a live feed row, an audit event or another tool hands you an `entry_id` (or a `request_id`), call this to see THAT exact request — never re-query by host and guess which result matched. This is the MCP/widget parity twin of the dashboard's request-detail pane, and the tool the live-traffic widget's row-expand invokes. Owner-scoped like the dashboard: an entry belongs to the owner of the device that captured it, so YOUR OWN devices' entries need no capability; reading an entry captured by ANOTHER account's device requires devices:view, re-verified in-handler fail-closed (a foreign id is DENIED with a clear reason, never silently empty). Bodies default to 8000 chars each and cap at 40000 via `max_body_chars`; anything clipped is reported in `truncation` (truncated + returned_chars/total_chars + the encoding, `base64` when the captured body was binary) and named in `note` — a truncated body is NEVER presented as complete. For the complete artifact use export_har. Treat any tokens / cookies / credentials in headers + bodies as SECRETS. Read-only, no confirm. Returns { ok, entry, truncation, note }."
+    },
+    {
+      "name": "export_har",
+      "description": "Export captured entries as a HAR 1.2 log. Optionally scope by device, host, and date range."
+    },
+    {
+      "name": "inspect_requests",
+      "description": "Deep-inspect FULL captured request/response detail for ONE host — method, URL, request + response HEADERS, and request + response BODIES (size-capped). The tool for reverse-engineering how a real app/API works from its actual captured traffic (auth flows, required headers, payload shapes) and for building repro (curl/fetch). `host` MUST be a full hostname containing a dot (e.g. 'identity.doordash.com') — a bare brand word is rejected (an exact-host index scan is fast; a substring scan times out). Scoped to a device (device_uuid/deviceName) it scans that device's full history; WITHOUT a device (fleet-wide) it defaults to the last 7 days — pass `after`/`before` (up to 31 days back) to widen. Optionally narrow by path substring, method, or status. Newest first. Treat any tokens / cookies / credentials in headers + bodies as SECRETS."
+    },
+    {
+      "name": "summarize_device_traffic",
+      "description": "BOUNDED traffic aggregation for ONE device — the FIRST tool to call to report what a device is doing, find the busy/flooding host, or pick a host to clean up. REQUIRES a device (`device_uuid` or `deviceName`) — a host alone is NOT enough: if you don't know which device, ask the user (or check list_devices) BEFORE calling. NEVER scans or returns raw rows (use it instead of search_entries/inspect_requests on a high-volume device — those time out at scale). Omit `host` → top hosts by request count (which host dominates). Pass `host` → top path-bases on that host with per-path count + last-seen (which endpoint floods). Optional absolute time range. Fast on 17k+ rows (one index-only GROUP BY). Returns ONLY {host|path_base, count, last_seen} — no headers/bodies."
+    },
+    {
+      "name": "list_service_groups",
+      "description": "List every service group (full rows incl. ssl_proxy_domains) with each group's primary_agent + ordered agents[] from the service_group_agents join."
+    },
+    {
+      "name": "get_service_group",
+      "description": "Get one service group by id or name."
+    },
+    {
+      "name": "list_tags",
+      "description": "List every tag (id, name, color, patterns)."
+    },
+    {
+      "name": "get_device_settings",
+      "description": "Read settings_device for one device (device_uuid or deviceName)."
+    },
+    {
+      "name": "get_subscription",
+      "description": "Return the caller's OWN Stripe subscription(s) — status/price/product/quantity/period/trial/cancel-at-period-end (from stripe_subscriptions, owner-scoped to the caller's OAuth sub). A billing:view operator (admin via grants_all) may pass `all_users:true` for the whole fleet. Returns { count, subscriptions:[…] }. Phase 1 is Stripe TEST mode."
+    },
+    {
+      "name": "list_invoices",
+      "description": "List the caller's OWN Stripe invoices — status/amounts (minor units)/currency/hosted_invoice_url/period (from stripe_invoices, owner-scoped to the caller's OAuth sub), newest first. Optional `limit` (default 50, max 200). A billing:view operator may pass `all_users:true` for the fleet. Returns { count, invoices:[…] }."
+    },
+    {
+      "name": "get_usage",
+      "description": "Return the caller's OWN metered usage rollup (metric `captured_entries` = count of captured entries per device per period; from stripe_usage_events, owner-scoped to the caller's OAuth sub) aggregated by period over a window. `since_days` (default 30, max 365), `metric` (default captured_entries). A billing:view operator may pass `all_users:true` for the fleet. Returns { metric, since, count, total_quantity, usage:[{period_start, device_uuid, quantity, reported_at}] }."
+    },
+    {
+      "name": "get_block_rules_device",
+      "description": "Read what ONE device ENFORCES — the EFFECTIVE 4-tier block-rule union (global ++ service ++ user ++ device, de-duped by id, device wins then user then service then global) plus the SERVICE list (the applied service groups' rules, flattened in service-group name order), the device owner's USER list, and that device's per-device list. Pass device_uuid or deviceName. A rule shadowed on this device by a same-id higher tier is correctly absent — this is the policy in force here, not the fleet catalogue. For the fleet-wide global tier use get_block_rules_global."
+    },
+    {
+      "name": "list_todos",
+      "description": "List YOUR to-dos from the /todo app (public.todos) — the shared \"what to do / what's done\" list you + the user both maintain. Owner-scoped to the calling account. Filters: `status` (open|in_progress|done|blocked), `priority` (low|medium|high|urgent), `source` (user|claude|ask), `tag` (one tag to match). By DEFAULT hides completed todos (the active worklist); pass include_done:true (or an explicit status) to include them. Ordered by manual `position` (nulls last) then newest-first. Returns { count, todos:[{id,owner,title,notes,status,priority,tags,source,position,due_at,created_at,updated_at,done_at}] }."
+    },
+    {
+      "name": "get_todo",
+      "description": "Get ONE of YOUR to-dos by id — its full row. Owner-scoped: an id you don't own returns not-found (never reveals another user's to-do). Returns { todo }."
+    },
+    {
+      "name": "list_advisor_findings",
+      "description": "Browse the ADVISOR CENTER findings (public.advisor_findings) — the advisor-monitor's deduped audit/health findings you see on the dashboard /advisor view. Filter by `severity` (info|warning|alert), `kind` (a taxonomy slug like audit.denied_spike / advisor.security), and `q` (free-text over the finding title + kind + fingerprint). Newest-first (last_seen_at); keyset-paginate by passing the returned `next_cursor` as `before`. Each row: fingerprint, kind, severity, first_seen_at, last_seen_at, times_seen, analysis {title,body,suggestion,fix}, filters, sample_event_ids. Gated audit:view."
+    },
+    {
+      "name": "get_advisor_finding",
+      "description": "Get ONE advisor finding in FULL by its `fingerprint` (from list_advisor_findings) — with its up-to-20 resolved (already-redacted) audit EVENTS, the SCOPED /audit deep link, and the /advisor permalink, so you can act with zero re-investigation. Returns { found, finding, events:[{id,at,surface,action,status,actor_label,target_kind,target_id,request_id}], deep_link (absolute https://dash.busymate.dev/audit?…), advisor_url (https://dash.busymate.dev/advisor?f=…) }. Gated audit:view."
+    },
+    {
+      "name": "share_advisor_finding",
+      "description": "Build a SHAREABLE package for ONE advisor finding — the max-context markdown + flat LLM prose + the permalink, so it can be dropped into a doc/chat/issue with full context (Finding · Analysis · Evidence · Deep links · Repro · Meta). Returns { format, permalink (https://dash.busymate.dev/advisor?sev&kind&f), advisor_url, markdown, llm_text } — `format` is an emphasis hint (markdown|llm|links) ECHOED BACK in the result (defaulted to markdown when omitted or unrecognized); every other field is returned regardless of it. Read-only. Gated audit:view."
+    },
+    {
+      "name": "list_issue_reports",
+      "description": "List issue reports from the one-tap reporter (public.issue_reports — the durable rows behind report_issue + the dashboard ⌘⇧1 dialog). YOUR OWN reports by default (owner-scoped to the calling account — the same reach the RLS gives you), or EVERY reporter's with `all:true` (audit:view operators only; re-verified server-side, fail-closed — for a non-operator `all` is rejected, never silently widened). Each row is a SLIM projection: id, title, category, status (pending|filed|closed), occurrences (the dedup-coalesced repeat count), issue_number + issue_url (the auto-created GitHub issue once filed), source (dashboard|mcp|busybro|telegram), route + build + version (unpacked server-side from the report's captured context), created_at, last_seen_at (newest activity first — a coalesced repeat bumps it); fleet rows resolve the reporter to a human name (never a bare uuid). Filter with `status`; `limit` default 100, cap 500. Read-only, no confirm. Returns { ok, scope: own|fleet, count, reports }."
+    },
+    {
+      "name": "list_workspaces",
+      "description": "List workspaces. YOUR OWN by default (owner-scoped to the caller — the reach the dashboard RLS owner arm gives you); `all:true` lists EVERY account's workspaces and needs the workspaces.view capability (re-verified in-handler, fail-closed). Omits archived unless include_archived."
+    },
+    {
+      "name": "get_workspace",
+      "description": "Get one workspace by id or slug."
+    },
+    {
+      "name": "list_tabs",
+      "description": "List a workspace's tabs (workspace_id or workspace_slug)."
+    },
+    {
+      "name": "list_snapshots",
+      "description": "List snapshot files in the snapshots storage bucket."
+    },
+    {
+      "name": "download_snapshot",
+      "description": "Get a 5-minute signed download URL for a snapshot file (name from list_snapshots)."
+    },
+    {
+      "name": "list_push_tokens",
+      "description": "List registered APNs push tokens (masked). Optionally scope to one device."
+    },
+    {
+      "name": "get_push_response",
+      "description": "Read back a device's answer to an actionable push (#75) by the correlation_id returned from send_push. Returns the push_responses row { correlation_id, device_uuid, action (accept|reject|skip), context, responded_at, action_intent } or null if the user hasn't responded yet. action_intent (or null) carries the SERVER-RECORDED action-binding + its outcome: { action_kind, params, issued_by, created_at, executed_at, result } — so you learn BOTH the user's choice and what the binding actually did (e.g. block_rule_toggle result.enabled_after)."
+    },
+    {
+      "name": "get_stats",
+      "description": "Return the live stats snapshot (get_stats RPC)."
+    },
+    {
+      "name": "get_status",
+      "description": "Return the latest infra status snapshot (service_status) MERGED with the Edge tier's self-reported deployed build. The VPS posts the StatusBody (overall, host{cpu,load,mem,uptime}, components[], and — when it supplies one — builds[]); this RECONCILES that builds[] against the Edge tier's own numbers and adds `buildDrift` (#987: the VPS cannot ask the Edge bundle what build it runs, so its supabase/busybro rows arrive running:null and were being counted as in-sync — the reconciled rows + buildDrift replace that green-while-dead reading; both keys are present only when the snapshot carried builds[]). It also always adds `edge: { supabase: {component,version,build,commit}, bro: {…} }` — version/build baked into the deployed Edge bundle (buildInfo.ts), `commit` resolved at runtime from a deploy-time env var (#210) — so it reflects what mcp/ask/busybro-bot ACTUALLY run, letting the dashboard infra board show declared-vs-running drift (version-everywhere). Gated by status:view."
+    },
+    {
+      "name": "list_audit_events",
+      "description": "Read the platform AUDIT TRAIL (public.audit_log) — the unified who-did-what-when-how ledger across every surface (mcp / busybro / dashboard / rest / db / auth / proxy / daemon / cron / ios / cdp / farm / edge:<fn> — #533: the surface is DERIVED at the DB trigger tier by HOW a write ARRIVED — a direct-Postgres write→db (the tamper class, also flagged by is_direct_pg), a device PostgREST write→ios/cdp/farm/rest by its platform, a dashboard PostgREST write→dashboard, a plain REST write→rest). YOUR OWN events by default (owner-scoped to the calling account's actor_id — the same reach the /audit page gives you), or the WHOLE FLEET with `all:true` (audit:view operators only; re-verified server-side, fail-closed — for a non-operator `all` is rejected, never silently widened). Each row is a SLIM projection (no detail/statement_excerpt — fetch those with get_audit_event): id, at, actor_kind (user|service|device|webhook|anon|system), actor_id + actor_label (the human name snapshot), client_id, jti, actor_ip, user_agent, db_session_user, is_direct_pg (a DIRECT-Postgres write — the #026 tamper signature), surface, action, target_kind/target_id/target_label, device_uuid, rows_changed, status (ok|denied|error|timeout), method, latency_ms, request_id (correlate one action across layers). MANDATORY time window: `since`/`until` (ISO; since defaults to 24h ago, clamped to ≥ 90 days ago — the retention horizon). Filters: `surface`, `status`, `actor_id` (exact — operators only for a foreign actor), `actor_q`/`action_q`/`target_q` (per-field substring), `target_kind`+`target_id` (exact — the history deep-link), `request_id`, `direct_only:true` (only direct-PG writes), `q` (free-text multi-column substring across action/actor/target/surface). KEYSET pagination: pass the returned `next_cursor` {before_at, before_id} to page further; `asc:true` for oldest-first; `limit` (default 100, cap 500). detail is REDACTED at write time (never raw args/secrets). Returns { ok, scope: own|fleet, count, next_cursor, events:[…] }."
+    },
+    {
+      "name": "get_audit_event",
+      "description": "Get ONE audit-trail row in FULL by its `id` (from list_audit_events) — including the fields the list omits: the REDACTED `detail` (old→new diffs for allowlisted keys, redacted at write time — never raw args/secrets) and `statement_excerpt` (the left-400-char SQL for a direct-PG write). Owner-scoped: a row whose actor isn't YOU returns not-found (found:false) unless you hold audit:view (operators can read any row) — an out-of-reach row is never distinguished from a non-existent one. Pass `at` (the row's timestamp from the list) to prune the partition for a faster lookup. Returns { ok, found, event }."
+    },
+    {
+      "name": "list_device_service_groups",
+      "description": "List the device↔service-group membership edges (public.device_service_groups) — the delegation boundary: which devices belong to which service group. Resolves device_name + service_group_name. Filters: `service_group_id`, `device_uuid`, `limit` (default 500, cap 1000). This is the ADMIN-CONTROLLED authz edge (never traffic-derived); it powers \"users whose devices are in group X\". Gated devices:view. Read-only."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:23:08.260Z",
+  "toolsPreviewStatus": "ok"
+}

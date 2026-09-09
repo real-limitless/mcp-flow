@@ -1,0 +1,58 @@
+{
+  "id": "io.github.rahuljava2807/claude-bridge-mcp",
+  "title": "claude-bridge-mcp",
+  "description": "Pipes Claude Code session output into Claude Chat — no more copy-paste between tools",
+  "summary": "Pipes Claude Code session output into Claude Chat — no more copy-paste between tools",
+  "offersHint": "Pipes Claude Code session output into Claude Chat — no more copy-paste between tools · Packages: npm:@rahulonramp2807/claude-bridge-mcp",
+  "version": "2.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@rahulonramp2807/claude-bridge-mcp",
+    "version": "2.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@rahulonramp2807/claude-bridge-mcp",
+      "version": "2.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/rahuljava2807/claude-code-bridge-mcp",
+  "repository": {
+    "url": "https://github.com/rahuljava2807/claude-code-bridge-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-17T05:08:00.032138Z",
+  "publishedAt": "2026-04-17T05:08:00.032138Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:36.894Z",
+    "sourceRepoAt": "2026-08-11T23:24:54.436Z",
+    "readmeAt": "2026-08-11T23:24:54.889Z",
+    "toolsAt": "2026-08-12T01:04:36.894Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rahuljava2807/claude-code-bridge-mcp",
+    "checkedAt": "2026-08-11T23:24:54.436Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rahuljava2807/claude-code-bridge-mcp/main/README.md",
+    "markdown": "# claude-code-bridge-mcp\n\n[![npm version](https://img.shields.io/npm/v/claude-code-bridge-mcp.svg)](https://www.npmjs.com/package/claude-code-bridge-mcp)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)\n[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)\n\n> MCP server that pipes Claude Code session output directly into Claude Chat — no more copy-paste between tools.\n\n`claude-code-bridge-mcp` is a Model Context Protocol (MCP) server that reads Claude Code's local session logs from `~/.claude/projects/<project-hash>/` and exposes them as tools to any MCP-compatible client (Claude Desktop, Claude Chat, Cursor, etc.). Run Claude Code in your terminal and pull its latest output into Claude Chat with a single tool call.\n\n## Features\n\n- **`get_latest_output`** — grab the most recent assistant message from any (or the most-recent) Claude Code session.\n- **`list_sessions`** — enumerate all local sessions with project path, message count, and timestamps.\n- **`get_session_context`** — fetch the last N messages from a session for context injection.\n- **`watch_session`** — poll a session file every 2 seconds and drain new messages on demand.\n- **`write_context`** _(v2)_ — snapshot the last N messages into `~/.claude/bridge-context.md` and `~/Documents/claude-bridge-context.md` as clean markdown.\n- **`start_auto_sync`** _(v2)_ — keep that markdown snapshot live: rewrites both files every 30 seconds (configurable) so a synced folder stays current without manual calls.\n- **`setup_drive_sync`** _(v2.1)_ — authorize direct Google Drive upload. Each sync tick then upserts a Google Doc named `claude-bridge-context` via the Drive API — no Drive desktop client required.\n- **`send_to_session`** _(v2.2)_ — queue a prompt for a specific Claude Code session via a cooperative inbox at `~/.claude/bridge-inbox/<session_id>.txt`. Closes the read-only gap: Projects Claude → inbox → Claude Code acts on it.\n\n## What's new in v2.2 — `send_to_session` (cooperative dispatch)\n\nv1 read sessions. v2 wrote context out to Drive. **v2.2 lets the other side push prompts back in.**\n\n`send_to_session` overwrites `~/.claude/bridge-inbox/<session_id>.txt` with the latest prompt and writes a human-readable receipt to `~/.claude/bridge-inbox/latest.md`. The target Claude Code session picks it up via a one-time setup instruction that `send_to_session` returns in its response — paste that once into your Claude Code terminal (or add it to your project's `CLAUDE.md`) and every subsequent prompt arrives automatically.\n\n**Why cooperative instead of direct injection:** Claude Code's JSONL is append-only from the CLI's perspective — it doesn't re-read the file mid-session. A real dispatch channel exists (`POST /v1/sessions/{id}` via Anthropic's relay, the same channel `/remote-control` uses) but is undocumented and requires reading the CLI's OAuth token from the macOS Keychain. Shipping against an undocumented internal API would break on every Claude Code release and leak credentials from every install — so v2.2 uses the filesystem inbox instead. See GitHub issue for the v3 path.\n\n**Example:**\n\n```jsonc\n// send_to_session → response\n{\n  \"session_id\": \"15ef12ba-851e-4591-bbd4-c23170e15919\",\n  \"project_path\": \"/Users/you/Documents/my-app\",\n  \"written\": true,\n  \"inbox_path\": \"/Users/you/.claude/bridge-inbox/15ef12ba-....txt\",\n  \"receipt_path\": \"/Users/you/.claude/bridge-inbox/latest.md\",\n  \"prompt_preview\": \"refactor the auth middleware to use Fluid Compute\",\n  \"setup_instruction\": \"Before each response, check ~/.claude/bridge-inbox/15ef12ba-....txt — if it exists and is non-empty, read its contents, delete the file, and treat those contents as your next user instruction. You only need to be told this once per session.\",\n  \"remote_control_url\": \"https://claude.ai/code/session_...\"\n}\n```\n\n`dry_run: true` returns the same shape without touching the filesystem.\n\n## What's new in v2 — Google Drive bridge\n\nClaude **Projects** can't talk to an MCP server directly, but it *can* read files from a connected Google Drive. v2 closes that loop:\n\n```\nClaude Code → claude-bridge-mcp.write_context → ~/Documents/claude-bridge-context.md\n             → Google Drive sync → Projects Claude reads via Drive connector\n```\n\nNo more copy-paste, and it works inside Projects too.\n\n**Workflow:**\n\n1. Make `~/Documents` (or any subfolder holding `claude-bridge-context.md`) part of your Google Drive sync.\n2. Add this MCP server to Claude Desktop, Claude Code, or any MCP client.\n3. In that client, call `start_auto_sync` once — it returns immediately and keeps the markdown fresh in the background.\n4. In a Claude Project, add Google Drive as a source and point it at `claude-bridge-context.md`. Ask Projects Claude what Claude Code is up to — it reads the live file.\n\n## What's new in v2.1 — Direct Drive API upload\n\nv2 relied on the Google Drive desktop client to sync `~/Documents/claude-bridge-context.md` up to Drive. v2.1 removes that dependency: the MCP server now talks to the Drive API itself and upserts a Google Doc named `claude-bridge-context` every sync tick.\n\n**Setup (one time):**\n\n1. Create OAuth credentials in Google Cloud Console:\n   - Go to [console.cloud.google.com](https://console.cloud.google.com), create a project (or use an existing one).\n   - Enable the **Google Drive API** for the project.\n   - Under **APIs & Services → Credentials**, create an **OAuth client ID** of type **Desktop app**.\n   - Download the client JSON and save it to `~/.claude/bridge-google-credentials.json`.\n2. Enable the Drive sync and (re)start the MCP server with `GOOGLE_DRIVE_ENABLED=true` in its environment. In Claude Desktop's `claude_desktop_config.json`:\n\n   ```json\n   {\n     \"mcpServers\": {\n       \"claude-bridge\": {\n         \"command\": \"node\",\n         \"args\": [\"/absolute/path/to/claude-code-bridge-mcp/dist/index.js\"],\n         \"env\": { \"GOOGLE_DRIVE_ENABLED\": \"true\" }\n       }\n     }\n   }\n   ```\n3. Call the `setup_drive_sync` tool from any connected client. It opens a browser tab for Google consent, saves the refresh token to `~/.claude/bridge-google-token.json`, and performs an initial upload. The response includes the Doc URL.\n4. Call `start_auto_sync`. From now on, every tick writes the local markdown **and** pushes the same content to the Google Doc. The refresh token is reused silently on future server restarts.\n\n**What the user sees:**\n\n- A single Google Doc in Drive root named `claude-bridge-context`, live-updated every 30s with the most recent Claude Code session output.\n- Add it as a source to any Claude Project, or open it directly — no Drive desktop client, no copy-paste.\n\n**Opting out:** Omit `GOOGLE_DRIVE_ENABLED` (or set it to anything other than `true`) and the server behaves exactly like v2 — local markdown only, no Drive calls.\n\n## Installation\n\n```bash\ngit clone https://github.com/rahuljava2807/claude-code-bridge-mcp.git\ncd claude-code-bridge-mcp\nnpm install\nnpm run build\n```\n\n### Add it to Claude Desktop\n\nEdit `claude_desktop_config.json`:\n\n- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`\n- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"claude-bridge\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/claude-code-bridge-mcp/dist/index.js\"]\n    }\n  }\n}\n```\n\nRestart Claude Desktop. The `claude-bridge` tools will appear in the tool picker.\n\n## Usage\n\nTypical workflow:\n\n1. Run `claude` in a terminal to start a Claude Code session and do some work.\n2. In Claude Chat, ask:\n   > \"Use `list_sessions` to find my most recent Claude Code session, then call `get_latest_output` on it and summarize what Claude Code just did.\"\n3. For continuous streaming during a long-running Claude Code task, call `watch_session` repeatedly — each call returns only new messages since the last call.\n\n### Example tool call\n\n```jsonc\n// get_latest_output with no arguments → uses the most recently updated session\n{\n  \"content\": \"I've refactored the auth middleware to use Fluid Compute...\",\n  \"timestamp\": \"2026-04-16T15:32:11.441Z\",\n  \"session_id\": \"01HZ...\",\n  \"project_path\": \"/Users/you/code/my-app\"\n}\n```\n\n## Claude Code log format\n\nSessions are stored as JSONL at:\n\n```\n~/.claude/projects/<project-hash>/<session-id>.jsonl\n~/.claude/projects/<project-hash>/sessions/<session-id>.jsonl\n```\n\nEach line is one JSON event with fields like `type`, `role`, `content`, and `timestamp`. The parser tolerates variations in shape and extracts assistant text from both string and content-block payloads.\n\n## Development\n\n```bash\nnpm run dev      # tsc --watch\nnpm run build    # compile to dist/\nnpm start        # run the compiled server over stdio\n```\n\n## License\n\nMIT — see [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:24:54.889Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:36.894Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

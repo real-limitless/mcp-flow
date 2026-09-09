@@ -1,0 +1,58 @@
+{
+  "id": "io.github.bickov/slimsnap",
+  "title": "slimsnap",
+  "description": "Your recent screen captures as structured JSON your AI agent can read. Local only, no network.",
+  "summary": "Your recent screen captures as structured JSON your AI agent can read. Local only, no network.",
+  "offersHint": "Your recent screen captures as structured JSON your AI agent can read. Local only, no network. · Packages: npm:@slimsnap/mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@slimsnap/mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@slimsnap/mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/bickov/slimsnap-mcp",
+  "repository": {
+    "url": "https://github.com/bickov/slimsnap-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T13:35:40.316898Z",
+  "publishedAt": "2026-07-30T13:35:40.316898Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:03.817Z",
+    "sourceRepoAt": "2026-08-11T23:55:12.123Z",
+    "readmeAt": "2026-08-11T23:55:14.587Z",
+    "toolsAt": "2026-08-12T01:29:03.817Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bickov/slimsnap-mcp",
+    "checkedAt": "2026-08-11T23:55:12.123Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bickov/slimsnap-mcp/main/README.md",
+    "markdown": "# SlimSnap connector\n\nYour recent screen captures, as structured data your AI can actually read.\n\nTake a capture in [SlimSnap](https://slimsnap.ai), mark what you mean, then in Claude or Cursor say \"look at my last capture\". No pasting, no file paths, no clipboard.\n\n## What your agent gets\n\nNot a screenshot. A JSON document: every piece of text on screen with its position and colour, plus the arrows, boxes and callouts you drew, and which element each one points at.\n\nThat matters for three reasons.\n\nA screenshot pasted into an agent gets downscaled before the model reads it, and nobody tells you. Anthropic's own docs say to pre-resize and crop your images because resizing \"might make text less legible\". A tall page loses its text entirely.\n\nImages returned over MCP are worse still. In Claude Code they are passed through as text rather than native image blocks, costing roughly 15-25k tokens against about 1.6k for the same image pasted directly, and the model cannot read them at all ([claude-code#31208](https://github.com/anthropics/claude-code/issues/31208), closed as not planned). A big enough result blows the per-result token ceiling outright ([#9152](https://github.com/anthropics/claude-code/issues/9152)).\n\nAnd an oversized screenshot can poison a session permanently. It stays in context, gets re-sent every turn, and there is no way to remove it ([#55040](https://github.com/anthropics/claude-code/issues/55040)).\n\nThis connector sidesteps all three by never sending the picture. An ordinary screen costs roughly a third less than the same screen as an image, and on a tall page the comparison stops being about cost at all: shrinking an 18,410 pixel page to fit the model's 1568 pixel limit leaves body text 1.4 pixels tall, so the cheap image is cheap because it is unreadable. Either way the agent gets exact coordinates rather than a guess about which button you meant.\n\nWhen you genuinely need pixels (visual style, spacing, colour balance) there is a separate tool for that, and the image is already downscaled to a size the model can read.\n\n## Install\n\n**Claude Code**\n\n```bash\nclaude mcp add slimsnap -- npx -y @slimsnap/mcp\n```\n\nThen check it: `/mcp` should list `slimsnap` with 4 tools.\n\n**Claude Desktop**\n\nDownload `slimsnap-mcp.mcpb` from [Releases](https://github.com/bickov/slimsnap-mcp/releases) and open it. Claude shows an install dialog. The connector then appears under Settings.\n\n**Cursor**\n\n[![Add to Cursor](https://img.shields.io/badge/Add_to_Cursor-black?style=for-the-badge&logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=slimsnap&config=eyJ0eXBlIjoic3RkaW8iLCJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBzbGltc25hcC9tY3AiXX0%3D)\n\nOr add it by hand to `.cursor/mcp.json` in your project, or `~/.cursor/mcp.json` for every project:\n\n```json\n{\n  \"mcpServers\": {\n    \"slimsnap\": {\n      \"type\": \"stdio\",\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@slimsnap/mcp\"]\n    }\n  }\n}\n```\n\nProject config wins over global when both exist. Then ask Cursor about your last capture the same way you would ask Claude.\n\n**As a Claude Code plugin** (same connector, installed and updated as a plugin)\n\n```\n/plugin marketplace add bickov/slimsnap-mcp\n/plugin install slimsnap@slimsnap\n```\n\nYou need SlimSnap 0.5.0 or newer, because that is the version that started keeping recent captures on disk.\n\n### Approving the tools\n\nThe first time Claude Code uses each tool it asks for permission, and the approval is scoped to the folder you were in. Four tools means four prompts, and they come back in the next project. Nothing is wrong; that is how Claude Code gates MCP tools.\n\nTo approve them once, everywhere, add this to `~/.claude/settings.json`:\n\n```json\n{\n  \"permissions\": {\n    \"allow\": [\n      \"mcp__slimsnap__get_latest_capture\",\n      \"mcp__slimsnap__list_captures\",\n      \"mcp__slimsnap__get_capture\",\n      \"mcp__slimsnap__get_capture_image\"\n    ]\n  }\n}\n```\n\nIf the file already exists, merge the `allow` entries into it rather than replacing it. Restart Claude Code afterwards.\n\n## Tools\n\n| Tool | What it does |\n| --- | --- |\n| `get_latest_capture` | The newest capture as structured JSON. This is the one that gets used most. |\n| `list_captures` | Recent captures newest first, with a text preview. Use it to find an older one, or to work through several marked screens at once. |\n| `get_capture` | One capture by id. |\n| `get_capture_image` | One frame as a downscaled image, for when the JSON cannot answer the question. |\n\nFour tools on purpose. Tool descriptions are charged against your context window on every turn, so the surface stays small.\n\n## See a real capture\n\nTwo sample captures live in [`samples/`](samples/) — one single screen, one\nthree-frame scroll capture, both with an arrow resolved to the element it points\nat. Copy either into `~/.slimsnap/recent/` and the connector will read it, so you\ncan try all four tools before installing SlimSnap.\n\n```bash\nmkdir -p ~/.slimsnap/recent\ncp -R samples/single-frame ~/.slimsnap/recent/2026-07-30T09-00-00-000000-00-00\n```\n\nThen ask your agent *what did I mark in my last capture?* — it should come back\nwith the **Save changes** button and the note attached to it.\n\n## Where the data lives\n\nSlimSnap keeps your recent captures in `~/.slimsnap/recent/`, newest 20 by default. Each capture is a folder with `capture.json`, a small `meta.json` index, and one PNG per frame capped at 1568px on the long edge.\n\nThe connector finds that folder by reading `~/.slimsnap/config.json`, which SlimSnap rewrites whenever your settings change. Move your save folder and the connector follows, with nothing to reconfigure.\n\nChange how many are kept, or turn the cache off entirely, in SlimSnap under Settings, Export, Recent captures. There is a Clear button in the same place.\n\n## Privacy Policy\n\nThe server reads files under your home directory and talks to nobody. There is no network code in it. It cannot capture your screen and it cannot ask SlimSnap to capture your screen. It only reads captures you already took and chose to keep.\n\nNothing is uploaded, there is no account, and no telemetry.\n\nNo personal data is collected, stored, transmitted or shared. The server has no network code and no analytics. Full policy: <https://slimsnap.ai/privacy>.\n\n## Requirements\n\nSlimSnap 0.5.0 or newer, macOS or Windows. Works with Claude Code, Claude Desktop and Cursor.\n\nCodex is not supported yet. It caps a single tool result at about 10 KB, which a real capture goes past, and it drops image content when structured output is present ([codex#7906](https://github.com/openai/codex/issues/7906), [#10334](https://github.com/openai/codex/issues/10334)). Both are open upstream.\n\nThe Claude Desktop route needs nothing else: Desktop ships its own Node and the `.mcpb` bundle uses it. The Claude Code route runs `node` from your PATH, so it needs Node 18 or newer installed. That catches people out on a fresh Windows machine, where Node usually isn't there.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:55:14.587Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:03.817Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

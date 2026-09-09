@@ -1,0 +1,59 @@
+{
+  "id": "io.github.rudranaresh0201/devmcp",
+  "title": "devmcp",
+  "description": "Git/CI MCP server with the full protocol surface (tools, resources, prompts, roots, sampling).",
+  "summary": "Git/CI MCP server with the full protocol surface (tools, resources, prompts, roots, sampling).",
+  "offersHint": "Git/CI MCP server with the full protocol surface (tools, resources, prompts, roots, sampling). · Packages: pypi:devmcp-server",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "devmcp-server",
+    "version": "0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "devmcp-server",
+      "version": "0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/rudranaresh0201/mcp/tree/main/devmcp#readme",
+  "sourceUrl": "https://github.com/rudranaresh0201/mcp",
+  "repository": {
+    "url": "https://github.com/rudranaresh0201/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-05T15:25:37.470708Z",
+  "publishedAt": "2026-08-05T15:25:37.470708Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:03:21.746Z",
+    "sourceRepoAt": "2026-08-11T23:23:25.875Z",
+    "readmeAt": "2026-08-11T23:23:25.907Z",
+    "toolsAt": "2026-08-12T01:03:21.746Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rudranaresh0201/mcp",
+    "checkedAt": "2026-08-11T23:23:25.875Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rudranaresh0201/mcp/main/README.md",
+    "markdown": "# A trusted agent stack for MCP\n\n<!-- mcp-name: io.github.rudranaresh0201/verimcp -->\n\n[![PyPI - verimcp](https://img.shields.io/pypi/v/verimcp?label=verimcp)](https://pypi.org/project/verimcp/)\n[![PyPI - devmcp-server](https://img.shields.io/pypi/v/devmcp-server?label=devmcp-server)](https://pypi.org/project/devmcp-server/)\n[![CI](https://github.com/rudranaresh0201/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/rudranaresh0201/mcp/actions/workflows/ci.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\nListed on the [official MCP Registry](https://registry.modelcontextprotocol.io/?search=rudranaresh0201) as `io.github.rudranaresh0201/verimcp` and `io.github.rudranaresh0201/devmcp`.\n\n## Problem\n\nMCP tool calls are trusted by default, in two different ways that both bite in production agent workflows:\n\n1. **Claims aren't checked.** When a server says a commit succeeded, a file was written, or a CI check passed, the Host has no way to know if that's true — `isError: false` only means the tool didn't crash, not that it did what it claimed. An agent wired up to git, CI, or infrastructure through MCP is one confidently-wrong tool response away from acting on a lie.\n2. **Retries aren't safe.** When a Host resends a `tools/call` after an ambiguous response (a timeout, a dropped connection), nothing in MCP stops the backend from just running it again — a second commit, a second CI run, a second charge. The protocol has no concept of \"didn't I already do this?\"\n\n## Solution\n\n**`verimcp`** is a transparent proxy that sits between an MCP Host and a backend server and forwards every message unchanged, except for two independent checks around each call:\n\n- **Before forwarding** *(pre-check)* — if this exact call was already sent once and independently verified true this session, answer the retry from that confirmed result instead of hitting the backend again. `--idempotent-replay`, see [Proof](#proof-not-just-claims) below.\n- **After the backend responds** *(post-check)* — for calls it knows how to check, independently re-derive the real outcome (re-read the file, re-check the git log, re-run the safe parts of a CI step) and compare that against what the backend claimed. A lie gets rewritten into a real error before the Host ever sees it as a success.\n\n**`devmcp`** is the backend it's proven against — a real git/CI MCP server, deliberately built with the full protocol surface (tools, resources, prompts, roots, sampling), because a proxy is only as convincing as what it's shown catching.\n\n```\nHost  <--stdio-->  verimcp (pre-check: dedupe retries + post-check: verify claims)  <--stdio-->  devmcp (git/CI server)\n```\n\nBoth are independently installable and have no import dependency on each other — `verimcp` works in front of *any* MCP backend (proven against the official `mcp-server-git` too, not just devmcp), and `devmcp` works with any Host directly, unproxied.\n\n## Proof, not just claims\n\nTwo runnable benchmarks, real subprocess pipes, no mocks — the numbers below are what they actually print, gaps included:\n\n```bash\npip install verimcp devmcp-server\npython scripts/benchmark_claim_acceptance.py    # does verimcp catch a lying backend?\npython scripts/benchmark_retry_duplication.py   # does --idempotent-replay stop a retry from duplicating a side effect?\n```\n\n**Claim-acceptance** — a real MCP Host with no verification layer accepts 100% of fabricated results by construction; that's not a benchmark artifact, it's the actual gap in the protocol:\n\n```\nRAW claim-acceptance rate:     12/12  (100%)\nverimcp claim-catch rate:       9/12  (75%)\n```\n\nThe 75%, not 100%, is deliberate and stated in the script's own output: 3 of the 12 scenarios exploit documented, principled gaps in specific verifiers (e.g. a hash-exists check can't tell *this* call created the hash vs an old one) — named plainly rather than hidden, because a tool claiming a perfect score on its own benchmark is the real red flag.\n\n**Retry-duplication** — same idea applied to `--idempotent-replay`, against 5 realistic non-idempotent side effects (a counter bump, a notification send, an invoice increment, an audit entry, a two-step pipeline):\n\n```\nRAW duplicate-action rate:      5/5  (100%)\nverimcp duplicate-action rate:  0/5  (0%)\n```\n\n`scripts/demo.py` is the smaller, narrative version of the same proof — one fabricated commit hash caught, one real write confirmed and passed through unchanged. `tests/test_adversarial_corpus.py` and `tests/test_proxy_integration.py` run the same claims through the real proxy pipe in CI on every commit, not just on demand.\n\n## Technical summary\n\n- **Correctness verifiers** — one per tool/resource with an independently-checkable postcondition: `write_file` (disk hash-compare), `git_commit`/`git_branch` (re-derived from real git state), `run_ci_pipeline` (self-consistency + re-execution of steps marked safe to re-run), plus resource reads (`repo://status`, `repo://log`, `repo://file/{path}`). New verifiers are a plugin system (`importlib.metadata.entry_points`, the same mechanism pytest/Black use) — see [`docs/writing-a-verifier.md`](docs/writing-a-verifier.md).\n- **Verify-before-retry** (`--idempotent-replay`) — a retried `tools/call` is only ever answered from cache if the *previous* identical call was independently verified true by the checks above; a key match with no prior verified success is a cache miss, not a false dedupe. Adapted from [arXiv:2608.02645](https://arxiv.org/abs/2608.02645), moved to the proxy layer so it works for any Host/backend pair verimcp fronts, not just one agent framework's own retry wrapper.\n- **Policy gates** — allow/deny/require-approval rules evaluated *before* a call reaches the backend, for the calls that have no objective truth to check (sampling rate limits, arbitrary tool-name/argument policy via YAML, human-in-the-loop approval over real MCP `elicitation/create`).\n- **Audit + replay** — every call verimcp handles is logged and served back as a real `verimcp://audit` MCP resource; `verimcp replay` re-runs recorded traffic against a new policy to backtest \"would this have changed anything.\"\n- **Observability** — every call gets an OpenTelemetry span/metric using the GenAI semantic conventions, exportable to any OTLP collector.\n- **Proven against real clients, not just our own tests** — the official MCP Inspector and VS Code's native MCP support (Copilot Chat) each caught a real bug our own test suite never triggered, now fixed with regression tests.\n\nDeeper design reasoning (why prompts/roots get no verifier on principle, why policy is a separate concept from verification, etc.) lives in [`docs/adr/`](docs/adr/) for anyone who wants to go that deep — the summary above is everything needed to use or evaluate the project.\n\n## Getting started\n\n**As a user** — install straight from PyPI:\n\n```bash\npip install verimcp devmcp-server\nverimcp -- devmcp --repo-path ./some-repo\n```\n\n> Note on names: the PyPI distribution is `devmcp-server` (`devmcp` was blocked by\n> PyPI's typosquat-similarity check against an unrelated existing package), but the\n> Python import and CLI command are both still plain `devmcp` — nothing above changes\n> if you're reading devmcp's own source.\n\n**In Docker** — no local Python/git needed:\n\n```bash\ndocker build -t verimcp-devmcp .\ndocker run -i -v /path/to/your/repo:/repo verimcp-devmcp\n```\n\n**As a contributor** — editable installs from this repo:\n\n```bash\npip install -e \".[dev]\"\npip install -e \"./devmcp[dev]\"\n\npytest tests devmcp/tests   # 138 tests, real subprocess + real git repo, nothing mocked\nruff check src tests devmcp/src devmcp/tests\n\npython scripts/inspector_smoke_test.py   # verify against the real MCP Inspector client (needs node/npx)\n```\n\n## Try the observability yourself\n\n```bash\n# spans/metrics print to stderr (verimcp's stdout is the live MCP protocol channel)\nverimcp --otel-exporter console -- devmcp --repo-path ./some-repo\n\n# or point a real collector, Jaeger, or Grafana Agent at it\npip install \"verimcp[otel]\"\nverimcp --otel-exporter otlp --otel-endpoint localhost:4317 -- devmcp --repo-path ./some-repo\n```\n\nOmitting `--otel-exporter` entirely means zero telemetry overhead — the default, same as every other opt-in flag here.\n\n## Try verify-before-retry yourself\n\n```bash\nverimcp --idempotent-replay -- devmcp --repo-path ./some-repo\n```\n\nSend the same `tools/call` twice in a row (same tool, same arguments, new request id — exactly what a client resending after a timeout looks like on the wire). The first call runs for real; the second is answered from the confirmed result without touching the backend again. Omit the flag for the unchanged default: every retry is re-executed, same as before this existed.\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, how to add a verifier,\nthis project's ADR discipline, and commit/PR conventions. See\n[CHANGELOG.md](CHANGELOG.md) for release history.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:23:25.907Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:03:21.746Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

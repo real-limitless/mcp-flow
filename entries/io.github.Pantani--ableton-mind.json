@@ -1,0 +1,58 @@
+{
+  "id": "io.github.Pantani/ableton-mind",
+  "title": "ableton-mind — Ableton Live MCP server",
+  "description": "Control Ableton Live from Claude, Cursor or Codex with LOM tools, device knowledge and recipes.",
+  "summary": "Control Ableton Live from Claude, Cursor or Codex with LOM tools, device knowledge and recipes.",
+  "offersHint": "Control Ableton Live from Claude, Cursor or Codex with LOM tools, device knowledge and recipes. · Packages: npm:ableton-mind",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "ableton-mind",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "ableton-mind",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Pantani/ableton-mind",
+  "repository": {
+    "url": "https://github.com/Pantani/ableton-mind",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-11T09:04:00.583736Z",
+  "publishedAt": "2026-06-11T09:04:00.583736Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:36:20.972Z",
+    "sourceRepoAt": "2026-08-12T00:04:52.099Z",
+    "readmeAt": "2026-08-12T00:04:52.798Z",
+    "toolsAt": "2026-08-12T01:36:20.972Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Pantani/ableton-mind",
+    "checkedAt": "2026-08-12T00:04:52.099Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Pantani/ableton-mind/main/README.md",
+    "markdown": "# ableton-mind\n\n[![ableton-mind MCP server](https://glama.ai/mcp/servers/Pantani/ableton-mind/badges/score.svg)](https://glama.ai/mcp/servers/Pantani/ableton-mind)\n\nDefinitive MCP (Model Context Protocol) server for **Ableton Live**. Exposes the full **Live Object Model** to LLMs (Claude, Cursor, etc.) with an embedded native device knowledge base, declarative music recipes, an integrated verify loop, and reactive listeners.\n\n> Status: **alpha / v0.1.1 published** — core smoke passed against Ableton Live 12.4.1 on macOS and package validation is green. npm, GitHub Release `.mcpb`, and the MCP Registry are live. Glama has a listing, but its hosted release/deploy must be published separately from the Glama admin build flow; Smithery metadata is present and may lag indexing. API unstable. Don't use in production yet.\n>\n> Phase 8 status: slice 1 delivers read-only Max for Live/plug-in introspection and Link/remote status discovery. Deeper M4L control, VST3 sidecars, remote DAW integration and mobile companion work remain pending.\n\n📚 **Full documentation:** [pantani.github.io/ableton-mind/](https://pantani.github.io/ableton-mind/)\n\n## Architecture (3 layers)\n\n```\nClaude/Cursor ──MCP/stdio──▶ ableton-mind (TS, Node 20+) ──TCP NDJSON JSON-RPC──▶ Remote Script (Python, inside Live)\n```\n\n- **`src/`** — TypeScript MCP server. Tools, resources, prompts, TCP client, recipe runner, knowledge loader.\n- **`live/AbletonMind/`** — Python Remote Script. TCP server on port `9876`, dispatches JSON-RPC to LiveAPI.\n- **`recipes/`**, **`src/knowledge/`** — embedded JSON (drum kits, basslines, racks, device schemas).\n\nFull spec in [`PLAN.md`](PLAN.md). Frozen contracts in [`_workspace/contracts/`](_workspace/contracts/).\n\n## Highlights vs. existing MCP/OSC servers\n\n| Capability | ahujasid/ableton-mcp | AbletonOSC + MCP wrapper | **ableton-mind** |\n|---|---|---|---|\n| MCP tools | 22 | ~30 | **36** |\n| LOM coverage | ~10% | ~95% | **~100%** |\n| Knowledge base | none | none | **55 devices, scales, drum kits** |\n| Recipes | none | none | **14 across 7 categories** |\n| Verify loop | no | no | **yes, integrated (`session_snapshot/diff`)** |\n| Render preview | no | no | yes (snapshot now, bounce planned) |\n| Reactive listeners → MCP notifications | no | partial (OSC) | **yes (7 events live)** |\n| Transactions (undo unitary) | no | no | **yes** |\n| Automation envelopes | no | partial | **complete (linear / hold)** |\n| Push 1/2/3 control | no | no | **yes (pad/button/mode LEDs)** |\n| Docker | no | no | yes |\n| `.mcpb` 1-click | no | no | yes |\n| Doctor CLI | no | no | yes |\n\n## Requirements\n\n- Node 20+\n- Ableton Live 12 (priority; Live 11 supported)\n- macOS (primary), Windows (Phase 1 final)\n\n## Setup (source install)\n\n```bash\nnpm install\nnpm run typecheck\nnpm run lint\nnpm run test\nnpm run build\n```\n\n## Install Remote Script (Python bridge)\n\nDev mode (symlink):\n```bash\nnode scripts/install-remote-script.mjs           # creates symlink\nnode scripts/install-remote-script.mjs --check   # status only\nnode scripts/install-remote-script.mjs --copy    # full copy (CI / snapshot)\n```\n\nManual:\n- **macOS:** copy `live/AbletonMind/` to `~/Music/Ableton/User Library/Remote Scripts/AbletonMind/`\n- **Windows:** copy to `~/Documents/Ableton/User Library/Remote Scripts/AbletonMind/`\n\nThen **Live → Preferences → Link/Tempo/MIDI → Control Surface → AbletonMind**.\n\nSmoke test: [`docs/smoke-test.md`](docs/smoke-test.md).\n\n## Run the MCP server\n\n```bash\nnpm run build\nnode dist/index.js\n```\n\nEnv vars:\n\n| Var | Default | |\n|---|---|---|\n| `ABLETON_MIND_HOST` | `127.0.0.1` | Python bridge host |\n| `ABLETON_MIND_PORT` | `9876` | Bridge TCP port |\n| `ABLETON_MIND_TIMEOUT_MS` | `5000` | Per-request timeout |\n| `ABLETON_MIND_MAX_FRAME_BYTES` | `1048576` | Max incoming JSON-RPC frame |\n| `ABLETON_MIND_MAX_PENDING_REQUESTS` | `128` | Max in-flight JSON-RPC calls |\n| `ABLETON_MIND_LOG_LEVEL` | `info` | `debug` \\| `info` \\| `warn` \\| `error` |\n\n## Local copilot\n\nRun a local LLM against a curated subset of the same Ableton tools:\n\n```bash\nollama pull qwen2.5:3b      # optional; the UI can pull too\nnode dist/index.js chat     # opens http://127.0.0.1:4142\nnode dist/index.js ask \"What is in this set?\"\n```\n\nThe default tier is read-only (`safe`). Use `--write` for simple changes or `--creative` for recipes/browser load.\n\n| Var | Default | |\n|---|---|---|\n| `ABLETON_MIND_LLM_BASE_URL` | `http://127.0.0.1:11434/v1` | OpenAI-compatible endpoint |\n| `ABLETON_MIND_LLM_MODEL` | `qwen2.5:3b` | Local model id |\n| `ABLETON_MIND_LLM_TIER` | `safe` | `safe` \\| `standard` \\| `creative` |\n| `ABLETON_MIND_CHAT_PORT` | `4142` | Browser UI port |\n\nSee [Local copilot](docs/guide/local-copilot.md).\n\n## Doctor CLI\n\n```bash\nnpx ableton-mind-doctor\n```\n\nChecks Node version, Remote Script install, bridge port, knowledge base integrity, recipes.\n\n## Distribution\n\n- **npm:** `npm install -g ableton-mind`.\n- **Claude Code plugin marketplace:** `claude plugin marketplace add Pantani/ableton-mind`, then `claude plugin install ableton-mind@ableton-mind`.\n- **Claude Desktop one-click:** download `ableton-mind-0.1.1.mcpb` from the [v0.1.1 GitHub Release](https://github.com/Pantani/ableton-mind/releases/tag/v0.1.1).\n- **MCP Registry:** `io.github.Pantani/ableton-mind` is active in the official registry.\n- **Glama:** listed at [glama.ai/mcp/servers/Pantani/ableton-mind](https://glama.ai/mcp/servers/Pantani/ableton-mind); hosted release is separate from the GitHub Release and still requires the Glama admin deploy + Make Release flow.\n- **Source:** `npm ci && npm run build && npm run install:remote-script`.\n- **Docker:** `docker build -t ableton-mind . && docker run --rm -i --network host ableton-mind`.\n- **Smithery:** [`smithery.yaml`](smithery.yaml) is ready for listing/indexing.\n\n## Roadmap\n\nSee [`PLAN.md §12`](PLAN.md) and [`_workspace/PROGRESS.md`](_workspace/PROGRESS.md).\n\n| Phase | Status |\n|---|---|\n| 0 — Spike | ✅ real smoke pass |\n| 1 — ahujasid parity | ✅ 22/22 |\n| 2 — Listeners | ✅ 7 events |\n| 3 — Knowledge | ✅ 55 devices |\n| 4 — Automation envelopes | ✅ |\n| 5 — Preview/verify | ✅ snapshot+diff (bounce planned) |\n| 6 — Push | ✅ pad/button/mode LEDs |\n| 7 — Distribution | ✅ DXT/Docker/Smithery/CI/release ready |\n| 8 — Long tail | 🔵 slice 1 delivered: read-only M4L/plug-in introspection + Link/remote status discovery; deeper M4L/VST3/remote DAW/mobile work pending |\n\n## License\n\n[MIT](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:04:52.798Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:36:20.972Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,59 @@
+{
+  "id": "dev.lastseen/mortality",
+  "title": "lastseen mortality",
+  "description": "Check whether an npm package, GitHub Action, MCP server or Docker image is dead or abandoned.",
+  "summary": "Check whether an npm package, GitHub Action, MCP server or Docker image is dead or abandoned.",
+  "offersHint": "Check whether an npm package, GitHub Action, MCP server or Docker image is dead or abandoned. · Packages: pypi:lastseen-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "lastseen-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "lastseen-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://lastseen.dev",
+  "sourceUrl": "https://github.com/agentidx/lastseen-mcp",
+  "repository": {
+    "url": "https://github.com/agentidx/lastseen-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T17:29:57.115928Z",
+  "publishedAt": "2026-08-10T17:29:57.115928Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:48.136Z",
+    "sourceRepoAt": "2026-08-12T00:22:42.385Z",
+    "readmeAt": "2026-08-12T00:22:42.739Z",
+    "toolsAt": "2026-08-12T01:50:48.137Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/agentidx/lastseen-mcp",
+    "checkedAt": "2026-08-12T00:22:42.385Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/agentidx/lastseen-mcp/main/README.md",
+    "markdown": "# lastseen-mcp\n\n<!-- MCP registry ownership -->\nmcp-name: dev.lastseen/mortality\n\n[![last seen](https://img.shields.io/endpoint?url=https%3A%2F%2Flastseen.dev%2Fbadge%2Fagentidx%2Flastseen-mcp)](https://lastseen.dev)\n[![data: CC-BY-4.0](https://img.shields.io/badge/data-CC--BY--4.0-blue)](https://creativecommons.org/licenses/by/4.0/)\n[![code: MIT](https://img.shields.io/badge/code-MIT-green)](LICENSE)\n\n**Is this dependency dead?** Dated observations of whether an npm package, GitHub Action, MCP\nserver, or Docker image is **alive, dormant, abandoned, archived, or deleted** — published by\n[lastseen.dev](https://lastseen.dev). Free, no API key, zero telemetry.\n\nThere are two ways in, and they answer the same question from the same dated data:\n\n1. **Call the free HTTP API directly** — the durable, machine-native path (below). An agent that\n   keeps a dependency list can re-check it on every build.\n2. **Run it as an MCP server** — a thin stdio wrapper over that same API, for MCP clients.\n\n---\n\n## 1. The free API (call it directly)\n\nNo key. No signup. **60 requests/minute**, anonymous GET. Every response is a **dated\nobservation with its source** — not a score, not advice. Base URL `https://lastseen.dev`.\n\n```bash\n# one component (owner/repo)\ncurl https://lastseen.dev/api/v1/entity/actions/checkout\n\n# everything held under a GitHub owner/org\ncurl https://lastseen.dev/api/v1/org/actions\n\n# a whole manifest at once (names-only body)\ncurl -X POST https://lastseen.dev/api/v1/manifest \\\n  -H 'content-type: application/json' \\\n  -d '{\"channel\":\"api\",\"components\":[{\"name\":\"actions/checkout\",\"kind\":\"github-action\"}]}'\n\n# self-describing API docs (JSON)\ncurl https://lastseen.dev/api/v1/docs\n```\n\nA single-component response carries the `latest_state`, the dated `series` behind it, the\n`source_of_record`, and interval-censoring notes — enough to re-check any verdict against GitHub\nyourself. **This is the recurring path:** wire `GET /api/v1/entity/{owner}/{repo}` into CI and a\ndead dependency shows up on the build that introduces it, not months later.\n\n### Contract\n\n- **Lookups, not advice.** Every answer is a dated observation with its source. Never \"use X\n  instead\", never a composite score, never a ranking by preference, never urgency language.\n- **Fails closed.** An unknown or fabricated subject returns a clean `not_observed` — never a\n  fabricated result. A network/store error *degrades* (try later); it is never read as \"dead\".\n- **Absence ≠ gone.** No record means \"not checked\", never \"deleted\". Only an authoritative\n  HTTP 404 is a deletion.\n\n### States\n\n`alive` (≤180d since last commit) · `dormant` (180–365d) · `abandoned` (>365d) ·\n`archived` (repo archived) · `deleted` (authoritative HTTP 404) · `eol` (declared end-of-life) ·\n`unknown-stale` (the observation the verdict rests on is older than the 180-day threshold and was\nnot re-verified — no state asserted; **not** a death) · `not_observed` (403 / 429 / timeout / not\nheld — **not** dead).\n\n---\n\n## 2. Run it as an MCP server\n\nA **pure-standard-library** stdio wrapper over the API above — no `mcp` package, no `requests`,\nno FastAPI/Starlette, nothing that can conflict with a host app. It speaks JSON-RPC 2.0 over\nstdio and calls the free API over `urllib`.\n\n### Install\n\n```bash\npipx install lastseen-mcp\n# or run without installing:\nuvx lastseen-mcp\n```\n\nRequires Python ≥ 3.10. No dependencies.\n\n### Add to an MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"lastseen\": { \"command\": \"lastseen-mcp\" }\n  }\n}\n```\n\n(If you use `uvx`, set `\"command\": \"uvx\", \"args\": [\"lastseen-mcp\"]`.)\n\n### Tools\n\n| Tool | What it does |\n| --- | --- |\n| `check_entity(slug, live?)` | Dated survival series for one `owner/repo` (e.g. `actions/checkout`). `live=true` attaches a live GitHub read (absence ≠ gone). |\n| `check_org(name)` | Dated states for every held component under a GitHub owner/org. |\n| `check_manifest(paste)` | Paste a GitHub Actions workflow (`uses:` refs) or `owner/repo` lines; get the dated state per component. Unheld components are `not_observed`. |\n| `survival_profile(category)` | Category ranking — **not available over the free API**; returns an honest not-supported result pointing to the per-entity/org/manifest lookups and the CC-BY dumps. |\n\n`check_manifest` looks up at most 30 parsed components per call (free-tier rate bound); any\nremainder is reported as `n_truncated`.\n\n---\n\n## Privacy\n\nZero telemetry. The client and the API store nothing and transmit no identifier about you, your\norg, or the subjects you look up — anonymous GETs only.\n\n## Licensing\n\n- **Code:** MIT (see `LICENSE`).\n- **Data:** the mortality/survival observations are published by lastseen.dev under\n  **CC-BY-4.0** (attribution required). The two licenses are independent.\n\n## Links\n\n- Service & data: <https://lastseen.dev>\n- API docs (self-describing JSON): <https://lastseen.dev/api/v1/docs>\n- MCP registry entry: `dev.lastseen/mortality`\n",
+    "fetchedAt": "2026-08-12T00:22:42.739Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:50:48.137Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

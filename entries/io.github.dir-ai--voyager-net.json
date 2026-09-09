@@ -1,0 +1,58 @@
+{
+  "id": "io.github.dir-ai/voyager-net",
+  "title": "voyager-net",
+  "description": "A safe, read-only, authorized audit of one host you own: DNS, ports, TLS, HTTP hygiene.",
+  "summary": "A safe, read-only, authorized audit of one host you own: DNS, ports, TLS, HTTP hygiene.",
+  "offersHint": "A safe, read-only, authorized audit of one host you own: DNS, ports, TLS, HTTP hygiene. · Packages: npm:@dir-ai/voyager-net",
+  "version": "0.14.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@dir-ai/voyager-net",
+    "version": "0.14.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dir-ai/voyager-net",
+      "version": "0.14.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/dir-ai/voyager-net",
+  "repository": {
+    "url": "https://github.com/dir-ai/voyager-net",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-20T17:46:58.607266Z",
+  "publishedAt": "2026-07-20T17:46:58.607266Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:25.907Z",
+    "sourceRepoAt": "2026-08-11T23:48:34.559Z",
+    "readmeAt": "2026-08-11T23:48:35.192Z",
+    "toolsAt": "2026-08-12T01:24:25.907Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dir-ai/voyager-net",
+    "checkedAt": "2026-08-11T23:48:34.559Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dir-ai/voyager-net/main/README.md",
+    "markdown": "# voyager-net\n\n**Voyager's network organ — a safe, read-only, *authorized* audit of one host or\ndomain you own, so an AI agent can find the falle in your infra and describe the\nfix.**\n\nVoyager penetrates the **web** (`@dir-ai/voyager`), the **repo**\n(`@dir-ai/voyager-repo`), and — here — **networks**. This is the *sense*: it finds\nproblems. Applying fixes (\"the hands\") is a separate, consent-gated organ, by\ndesign — an AI must never mutate live infrastructure on its own.\n\n```bash\nvoyager-net scan yourhost.example.com --authorized\nvoyager-net scan 10.0.5.20 --authorized --ports 22,80,443,5432\n```\n\n## What it checks (read-only)\n\n- **Resolve-once + IP pinning (every probe, HTTP included)** — a domain is\n  resolved a single time and **the DNS, port, TLS *and* HTTP probes are all pinned\n  to that one IP** via a custom socket lookup, so nothing re-resolves the name\n  mid-scan (closes the HTTP DNS-rebinding path). The resolved IP is classified\n  canonically (via `ipaddr.js`) and any non-public address — loopback, private,\n  link-local, CGNAT, NAT64, IPv4-mapped IPv6, metadata — is refused.\n- **DNS** — A/AAAA/MX/TXT/CAA + email/CA hygiene, and it **grades the content**:\n  SPF `+all` (anyone may send) and DMARC `p=none` (no enforcement) are findings,\n  not just presence checks. All target-controlled records are injection-framed.\n- **Ports** — a bounded common-service probe by plain TCP `connect()` with **real\n  states** (open / closed / filtered / unreachable — an OS timeout reads as\n  *filtered*, not closed), no SYN tricks, no payloads, no range/CIDR sweeps.\n- **Service fingerprinting** — reads the banner a service *volunteers* on connect\n  (SSH, SMTP, FTP, POP3, IMAP) to identify product + version (framed).\n- **Unauthenticated-service detection** — for auth-expecting services (Redis,\n  Memcached, Elasticsearch, CouchDB, Docker API, ZooKeeper) it sends ONE benign,\n  read-only protocol hello (e.g. Redis `PING`) and reports the service as exposed\n  only if it answers *without* asking for credentials. Honest scope: this and the\n  TLS/HTTP inspectors DO send bytes (a ClientHello, a `GET /`, a protocol hello) —\n  the audit is active-but-safe (no writes, no mutation, no exploit), not purely\n  passive, and it runs only against the host you authorized.\n- **TLS** — the full set of **accepted** protocol versions (not just the\n  negotiated one), chain trust against the system store (**any** validation\n  failure is reported, not only self-signed), RSA key size (EC/EdDSA exempted),\n  certificate expiry/issuer.\n- **HTTP hygiene (graded)** — status, Server banner, **HSTS/CSP quality** (weak\n  `max-age`, `unsafe-inline`/wildcard — not just presence), clickjacking\n  protection, **per-cookie** Secure/HttpOnly (each cookie evaluated on its own),\n  **CORS** wildcard *and* the dangerous credentials-with-origin case, version-leak,\n  and HTTP→HTTPS redirect. All pinned to the vetted IP.\n- **Honest partial** — an open TLS/HTTP port that couldn't be inspected is\n  reported as *UNKNOWN*, never folded into a \"no issues\" verdict.\n\nFindings that name a detected service+version suggest checking it against a CVE\nfeed — voyager-net detects the version; **CVE *matching* stays a lookup, and CVE\n*probing* (Nuclei &c.) is out of scope** — that is active testing, a separate,\nmore-gated capability, not a read-only sense.\n\nEach finding carries a **severity**, **confidence**, and a **described fix** — e.g.\n\"certificate expires in 6d → renew and automate ACME\", \"mysql reachable publicly →\nrestrict to a private network\", \"no DMARC → publish `v=DMARC1; p=quarantine`\".\n\n## Safety — non-negotiable\n\n- **Authorized-only, fail-closed.** Without `--authorized` (CLI) / `authorized:true`\n  (MCP) it refuses. You assert you own / may test the target.\n- **One host or domain only.** CIDR ranges, IP ranges, lists, wildcards, and URLs\n  are rejected — it can never become a mass scanner.\n- **Cloud metadata endpoints are hard-blocked** (169.254.169.254 etc.).\n- **Read-only.** It never applies a fix, exploits, floods, or mutates anything.\n  Bounded concurrency and timeouts; a plain TCP connect, not a scanner's SYN sweep.\n- **Untrusted output framed.** Every target-controlled string — banners,\n  certificate subject/issuer/SANs, Server/CSP headers, CORS value, **and DNS\n  TXT/CAA/MX records** — is injection-stripped before your model sees it.\n- **Exit codes:** `0` clean · `1` high/critical finding(s) · `2` tool error / not authorized.\n\n> Scanning infrastructure you do not own or have explicit permission to test may\n> be illegal in your jurisdiction. This tool is for auditing **your own** systems.\n\n## MCP\n\n```bash\nvoyager-net mcp\n```\n\nTool: `scan_host` — same audit, fail-closed (`authorized` defaults off).\n\n## Library\n\n```ts\nimport { scan } from '@dir-ai/voyager-net'\nconst brief = await scan('yourhost.example.com', { authorized: true })\nconst urgent = brief.findings.filter((f) => f.severity === 'high' || f.severity === 'critical')\n```\n\n## Roadmap\n\nWrap Prowler/Steampipe (cloud config), Trivy (CVE), Hubble (flow) under the same\ntrust contract; attack-path correlation; drift (IaC declared ↔ actual). Then —\nseparately and consent-gated — the remediation \"hands\".\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:48:35.192Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:25.907Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

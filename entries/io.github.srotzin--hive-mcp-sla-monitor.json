@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-sla-monitor",
+  "title": "Hive Sla Monitor",
+  "description": "Service level agreement monitoring for the Hive agent fleet",
+  "summary": "Service level agreement monitoring for the Hive agent fleet",
+  "offersHint": "Service level agreement monitoring for the Hive agent fleet · Remote MCP (streamable-http) at https://hive-mcp-sla-monitor.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-sla-monitor.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-sla-monitor.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-sla-monitor",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-sla-monitor",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:48:07.176075Z",
+  "publishedAt": "2026-04-28T23:48:07.176075Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:36.979Z",
+    "sourceRepoAt": "2026-08-11T23:20:06.900Z",
+    "readmeAt": "2026-08-11T23:20:07.563Z",
+    "toolsAt": "2026-08-12T01:00:36.979Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-sla-monitor",
+    "checkedAt": "2026-08-11T23:20:06.900Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-sla-monitor/main/README.md",
+    "markdown": "# hive-mcp-sla-monitor\n\n[![srotzin/hive-mcp-sla-monitor MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-sla-monitor/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-sla-monitor)\n\nSLA observation broker for the A2A network. Agents register a public health\nendpoint with target uptime and p95 latency; the shim probes it on a 60s\nschedule (read-only HTTP, 8s timeout) and records the result. When a rolling\nwindow misses the targets, a breach record is written. Reading breach records\nis paid. Inbound only. `ENABLE=true` by default.\n\nBrand color: `#C08D23` (Pantone 1245 C, Hive Civilization gold).\n\n## Observation only\n\nHive does not underwrite or settle SLA claims. This is observational data\nonly. The shim does not hold custody, does not pay claims, and does not\nindemnify counterparties. The disclaimer rides every paid response and every\nbreach record.\n\n## Surface\n\n| Layer | Endpoint | Description |\n|---|---|---|\n| MCP | `POST /mcp` | JSON-RPC 2.0, Streamable-HTTP, protocol `2024-11-05`. |\n| Discovery | `GET /.well-known/mcp.json` | Tool list and transport metadata. |\n| REST | `POST /v1/sla/register` | Register an endpoint. 402 if no proof. |\n| REST | `GET /v1/sla/status/{id}` | Read observed uptime and p95. 402 if no proof. |\n| REST | `GET /v1/sla/breaches?monitor_id=…` | Read recent breach records. 402 if no proof. |\n| REST | `GET /v1/sla/today` | UTC-day ledger snapshot. Free. |\n| Health | `GET /health` | Liveness, pricing, recipient address. |\n| Root | `GET /` | HTML for browsers, JSON for agents (Accept-header sniff). |\n\n## Tools\n\n| Name | Tier | Cost | Description |\n|---|---|---|---|\n| `sla_register` | 1 | $0.01/probe | Register a public endpoint for probing. |\n| `sla_status` | 1 | $0.01 | Read observed uptime and p95 over the rolling window. |\n| `sla_breach_history` | 2 | $0.10 | Read recent breach records. Disclaimer rides every record. |\n| `sla_unregister` | 0 | free | Deactivate a monitor. |\n\n## Probe semantics\n\nThe scheduler scans active monitors every 60 seconds and issues a `GET`\nwith an 8-second timeout. `2xx` and `3xx` count as up; `5xx` and timeouts\ncount as down. Probe rows are stored at `/tmp/sla.db` along with the monitor\nrecord and any breach records.\n\nThe breach evaluator runs after each probe. It looks at the rolling window\n(default 60 minutes), computes observed uptime and observed p95 latency, and\nrecords a breach if either target is missed. Repeated breaches inside half\nthe window are de-bounced so a single bad window does not fan out.\n\nThe service caps active monitors at 100 (`SLA_MAX_MONITORS`) to keep probe\nfan-out deterministic.\n\n## x402 envelope\n\nEvery paid endpoint returns a 402 envelope on first hit:\n\n```json\n{\n  \"error\": \"payment_required\",\n  \"x402_version\": 1,\n  \"disclaimer\": \"Hive does not underwrite or settle SLA claims. This is observational data only.\",\n  \"payment\": {\n    \"nonce\": \"…\",\n    \"amount_usd\": 0.01,\n    \"accept_min_usd\": 0.007,\n    \"accepts\": [{\n      \"chain\": \"base\",\n      \"asset\": \"USDC\",\n      \"contract\": \"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913\",\n      \"decimals\": 6,\n      \"recipient\": \"0x15184bf50b3d3f52b60434f8942b7d52f2eb436e\",\n      \"scheme\": \"exact\"\n    }],\n    \"tier\": 1,\n    \"product\": \"sla_register\",\n    \"floor_pct\": 0.7\n  }\n}\n```\n\nSubmit the proof inline via `X-Payment` header on the retry, or POST it to\nmint an access token used in `X-Hive-Access`.\n\nPricing inherits the hivemorph barter floor pattern: the envelope advertises\nboth `amount_usd` (asking) and `accept_min_usd` (floor). A client may submit\na proof whose on-chain paid amount is anywhere in `[floor, asking]` and the\nshim accepts it.\n\n## Settlement\n\nUSDC on Base L2 (`0x833589fcd6edb6e08f4c7c32d4f71b54bda02913`) to the\nrecipient address above. Verification reads `Transfer` logs on the receipt\nagainst the configured Base RPC. Real chain reads, no mocks. A single\n`tx_hash` may only be redeemed once.\n\n## Environment\n\n| Variable | Default | Notes |\n|---|---|---|\n| `PORT` | `3000` | HTTP port. |\n| `ENABLE` | `true` | When false, only `/health` and `/` respond. |\n| `WALLET_ADDRESS` | `0x1518…436e` | USDC recipient. |\n| `SLA_REGISTER_PRICE_USDC` | `0.01` | Per registration. |\n| `SLA_BREACH_PRICE_USDC` | `0.10` | Per breach-history read. |\n| `SLA_STATUS_PRICE_USDC` | `0.01` | Per status read. |\n| `SLA_PROBE_INTERVAL_MS` | `60000` | Probe loop interval. |\n| `SLA_PROBE_TIMEOUT_MS` | `8000` | Per-probe HTTP timeout. |\n| `SLA_MAX_MONITORS` | `100` | Active monitor cap. |\n| `BASE_RPC_URL` | `https://mainnet.base.org` | Base L2 JSON-RPC. |\n| `SLA_DB_PATH` | `/tmp/sla.db` | SQLite path. |\n\n## Run\n\n```bash\nnpm install\nnpm start\n# → http://localhost:3000/health\n```\n\n## License\n\nMIT. Author: Steve Rotzin <steve@thehiveryiq.com>.\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:07.563Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:36.979Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

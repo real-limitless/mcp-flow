@@ -1,0 +1,58 @@
+{
+  "id": "io.github.matematicsolutions/mcp-nsa",
+  "title": "mcp-nsa",
+  "description": "MCP server for Polish administrative court rulings (NSA/WSA) via CBOSA with citations.",
+  "summary": "MCP server for Polish administrative court rulings (NSA/WSA) via CBOSA with citations.",
+  "offersHint": "MCP server for Polish administrative court rulings (NSA/WSA) via CBOSA with citations. · Packages: npm:@matematicsolutions/mcp-nsa",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@matematicsolutions/mcp-nsa",
+    "version": "1.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@matematicsolutions/mcp-nsa",
+      "version": "1.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/matematicsolutions/mcp-nsa",
+  "repository": {
+    "url": "https://github.com/matematicsolutions/mcp-nsa",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T14:33:22.641088Z",
+  "publishedAt": "2026-07-28T14:33:22.641088Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:28.536Z",
+    "sourceRepoAt": "2026-08-11T23:35:31.201Z",
+    "readmeAt": "2026-08-11T23:35:31.750Z",
+    "toolsAt": "2026-08-12T01:14:28.536Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/matematicsolutions/mcp-nsa",
+    "checkedAt": "2026-08-11T23:35:31.201Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/matematicsolutions/mcp-nsa/main/README.md",
+    "markdown": "# mcp-nsa\n\n## Installation (one command)\n\nPublished on npm + the MCP Registry (`io.github.matematicsolutions/mcp-nsa`). Run without cloning:\n\n```bash\nnpx -y @matematicsolutions/mcp-nsa\n```\n\nMCP client configuration (stdio):\n\n```json\n{ \"mcpServers\": { \"mcp-nsa\": { \"command\": \"npx\", \"args\": [\"-y\", \"@matematicsolutions/mcp-nsa\"] } } }\n```\n\n(Building from source - below.)\n\n[![MCP](https://img.shields.io/badge/MCP-Server-blue)](https://modelcontextprotocol.io) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE) [![Node](https://img.shields.io/badge/Node-18%2B-brightgreen)](https://nodejs.org)\n\nMCP server for the case law of the Polish administrative courts -\nNaczelny Sad Administracyjny / NSA (Supreme Administrative Court) + 16 Wojewodzkie Sady Administracyjne / WSA (regional administrative courts) - via **CBOSA** (Centralna Baza Orzeczen Sadow Administracyjnych - the administrative courts' central case-law database)\n(`orzeczenia.nsa.gov.pl`).\n\n## Why\n\nSAOS (the common-courts case-law analysis system) **does not index the administrative courts**.\nYet that is exactly where the substantive case law lives:\n\n- **GDPR / data protection** - decisions of the President of UODO appealed to the WSA, cassation appeals to the NSA\n- **Taxes** - individual tax rulings, decisions of tax authorities\n- **Customs and excise**\n- **Administrative permits, concessions**\n- **Review of public-administration activity**\n\n`mcp-nsa` closes this gap. Coverage: **2,390,000+ rulings** (verified live 2026-07-08 across the full date range), from 1981 to today.\n\n## Tools\n\n- **`search(query, caseNumber?, court?, dateFrom?, dateTo?, pageNumber?)`**\n  - search by keyword, case number, court, date. Fetches the top 5 full\n  rulings (case number, court, date, panel, keywords, legal basis, excerpt).\n- **`get_judgment(doc_id)`** - full ruling by 10-character hex doc_id\n  (from the CBOSA URL, e.g. `7E50984BB7`).\n- **`search_by_case(caseNumber)`** - shortcut: search by case number\n  (e.g. `III OSK 1377/23`, `I SA/Gl 659/22`).\n\nEvery response contains `structuredContent.citations` with the fields:\n`title`, `url` (CBOSA), `case_number`, `court`, `judgment_date`,\n`decision_type`, `snippet`, `doc_id`. Patron reads this field automatically\nand surfaces it in the UI panel as the section **\"Rulings from CBOSA (NSA / WSA - administrative courts)\"**.\n\n## Stack\n\n- Node 18+\n- `@modelcontextprotocol/sdk`\n- Stdio transport\n- `https` + regex HTML parser (zero external deps beyond the SDK)\n- 500 ms throttle between requests (2 req/s)\n- SSL: `rejectUnauthorized: false` - the CBOSA chain is sometimes incomplete on some\n  machines; public rulings, no PII, MITM risk negligible against the benefit.\n  See: LDH issue #167.\n\n## Build + run\n\n```bash\nnpm install\nnpm run build\nnode dist/index.js   # starts the server on stdio\n```\n\n## Wiring into Patron\n\nIn `patron/backend/mcp-servers.json` (alongside `mcp-saos` and `mcp-eu-sparql`):\n\n```json\n{\n  \"name\": \"nsa\",\n  \"transport\": \"stdio\",\n  \"command\": \"node\",\n  \"args\": [\"C:/Users/<YOUR-USERNAME>/mcp-nsa/dist/index.js\"],\n  \"enabled\": true\n}\n```\n\n## Smoke test\n\n```bash\necho '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"s\",\"version\":\"0\"}}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"search\",\"arguments\":{\"query\":\"RODO art 6\"}}}' \\\n  | node dist/index.js\n```\n\nShould return ~1500 hits + the top 5 with Polish NSA/WSA case numbers + CBOSA URLs\n+ structuredContent.citations.\n\n## Lineage\n\nImplementation rewritten in TypeScript on the basis of the HTTP/HTML contract from\n[`legal-data-hunter/sources/PL/NSA`](https://github.com/worldwidelaw/legal-sources)\n(Python + BeautifulSoup, MIT). It does not import the source code - it reproduces the\nquery pattern and HTML parsing.\n\n## License\n\nMIT.\n\n## Part of the MateMatic legal stack\n\nThis server is one of five MCP connectors covering Polish jurisdiction +\nEU law, used by [Patron](https://github.com/matematicsolutions/patron)\n(AGPL-3.0) and any other MCP-aware legal AI agent.\n\n- **mcp-nsa** (this repo) - NSA + 16 WSA administrative courts (CBOSA)\n- [mcp-saos](https://github.com/matematicsolutions/mcp-saos) - common courts, SN, TK, KIO\n- [mcp-isap](https://github.com/matematicsolutions/mcp-isap) - Polish legislation (Dz.U. + M.P.)\n- [mcp-krs](https://github.com/matematicsolutions/mcp-krs) - Polish company registry (KRS)\n- [mcp-eu-sparql](https://github.com/matematicsolutions/mcp-eu-sparql) - EU law + CJEU (EUR-Lex)\n\n\nAll five MCP servers share the same `structuredContent.citations`\ncontract: each tool returns an array of `{title, url, snippet?, ...metadata}`\nthat legal agents can render directly in their citation panel.\n\nSee [matematicsolutions/.github](https://github.com/matematicsolutions)\nfor the full org profile.\n",
+    "fetchedAt": "2026-08-11T23:35:31.750Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:28.536Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

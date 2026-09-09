@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-backup",
+  "title": "Hive Backup",
+  "description": "Snapshot and restore service for agent state and DID-bound configuration",
+  "summary": "Snapshot and restore service for agent state and DID-bound configuration",
+  "offersHint": "Snapshot and restore service for agent state and DID-bound configuration · Remote MCP (streamable-http) at https://hive-mcp-backup.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-backup.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-backup.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-backup",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-backup",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:47:12.655028Z",
+  "publishedAt": "2026-04-28T23:47:12.655028Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:42.598Z",
+    "sourceRepoAt": "2026-08-11T23:20:13.232Z",
+    "readmeAt": "2026-08-11T23:20:13.792Z",
+    "toolsAt": "2026-08-12T01:00:42.598Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-backup",
+    "checkedAt": "2026-08-11T23:20:13.232Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-backup/main/README.md",
+    "markdown": "# hive-mcp-backup\n\n[![srotzin/hive-mcp-backup MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-backup/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-backup)\n\nSnapshot and backup service for the A2A network. Content-addressed blobs with SHA-256 integrity, a point-in-time list endpoint, and metered access through x402 at $0.01 per GB-month of storage and $0.05 per restore. Inbound only.\n\nHive Civilization. Brand gold `#C08D23` (Pantone 1245 C).\n\n## What it does\n\n- **Stores** agent payloads up to 10 MB per object as content-addressed blobs on disk.\n- **Verifies** every read with SHA-256 before returning bytes.\n- **Lists** snapshots at a point in time, with optional `agent_did` and `since`/`until` filters.\n- **Meters** through x402: $0.01 per GB-month of storage, computed nightly per `agent_did`; $0.05 per restore op.\n\n## MCP tools\n\n| Tool | Purpose |\n| ---- | ------- |\n| `backup_create` | Persist a payload up to 10 MB. Returns id and SHA-256 digest. |\n| `backup_list` | Point-in-time list, filtered by `agent_did` and a created_at window. |\n| `backup_restore` | Restore by id with SHA-256 verification. Tier 2; $0.05 via x402. |\n\n## REST endpoints\n\n| Method | Path | Notes |\n| ------ | ---- | ----- |\n| `POST` | `/v1/backup/create` | JSON, multipart up to 10 MB, or raw `application/octet-stream`. |\n| `GET` | `/v1/backup/list` | Filter by `agent_did`, `since`, `until`, `limit`, `offset`. |\n| `GET` | `/v1/backup/{id}` | Download. Verifies SHA-256. Metered. |\n| `POST` | `/v1/backup/restore` | Returns JSON with base64 body. Metered. |\n| `GET` | `/v1/backup/today` | Daily counters and storage-cost roll-up. |\n| `GET` | `/health` | Service health, store statistics, pricing. |\n| `POST` | `/mcp` | MCP 2024-11-05 over Streamable-HTTP / JSON-RPC 2.0. |\n\n## x402\n\n| Surface | Price | Notes |\n| ------- | ----- | ----- |\n| Storage | $0.01 / GB-month | Computed daily from live byte total per `agent_did`. |\n| Restore | $0.05 / op | Charged on `/v1/backup/{id}` and `/v1/backup/restore`. |\n| Prepay bundle | $1.00 USDC | Buys an access token; restores draw from the prepaid balance until depletion. |\n\nSettlement: USDC on Base L2.\n\n## Quick reference\n\n```sh\n# Create\ncurl -X POST $HOST/v1/backup/create \\\n  -H 'content-type: application/json' \\\n  -d '{\"agent_did\":\"did:hive:agent-42\",\"name\":\"state.json\",\"body\":{\"v\":1}}'\n\n# List\ncurl -i \"$HOST/v1/backup/list?agent_did=did:hive:agent-42\"\n\n# Pay, then restore\ncurl -X POST $HOST/v1/x402/proof/submit \\\n  -H 'content-type: application/json' \\\n  -d '{\"nonce\":\"...\",\"payer\":\"0x...\",\"chain\":\"base\",\"tx_hash\":\"0x...\"}'\n\ncurl -i \"$HOST/v1/backup/<id>\" -H \"X-Hive-Access: hive_...\"\n```\n\n## Configuration\n\n| Variable | Default |\n| -------- | ------- |\n| `PORT` | `3000` |\n| `ENABLE` | `true` |\n| `WALLET_ADDRESS` | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` |\n| `BACKUP_PRICE_PER_GB_MONTH_USD` | `0.01` |\n| `BACKUP_PRICE_PER_RESTORE_USD` | `0.05` |\n| `BACKUP_PREPAY_BUNDLE_USD` | `1.0` |\n| `BACKUP_MAX_OBJECT_BYTES` | `10485760` |\n| `BACKUP_DB_PATH` | `/tmp/backup.db` |\n| `BACKUP_BLOB_DIR` | `/tmp/backup_blobs` |\n\n## License\n\nMIT.\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:13.792Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:42.598Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

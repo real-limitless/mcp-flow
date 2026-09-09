@@ -1,0 +1,100 @@
+{
+  "id": "io.github.xerno42/helldivers2-mcp",
+  "title": "helldivers2-mcp",
+  "description": "MCP server exposing live Helldivers 2 galactic war data.",
+  "summary": "MCP server exposing live Helldivers 2 galactic war data.",
+  "offersHint": "MCP server exposing live Helldivers 2 galactic war data. · Remote MCP (streamable-http) at https://mcp.avengersofsuperearth.com/mcp · Packages: npm:helldivers2-mcp, oci:docker.io/xerno42/helldivers2-mcp:latest",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.avengersofsuperearth.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.avengersofsuperearth.com/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "helldivers2-mcp",
+    "version": "1.0.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "helldivers2-mcp",
+      "version": "1.0.1",
+      "transport": "stdio"
+    },
+    {
+      "kind": "oci",
+      "package": "docker.io/xerno42/helldivers2-mcp:latest",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/xerno42/helldivers2-mcp",
+  "repository": {
+    "url": "https://github.com/xerno42/helldivers2-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-22T07:28:07.514164Z",
+  "publishedAt": "2026-05-22T07:28:07.514164Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:39.367Z",
+    "sourceRepoAt": "2026-08-11T23:14:24.817Z",
+    "readmeAt": "2026-08-11T23:14:25.300Z",
+    "toolsAt": "2026-08-11T23:14:25.401Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/xerno42/helldivers2-mcp",
+    "checkedAt": "2026-08-11T23:14:24.817Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/xerno42/helldivers2-mcp/main/README.md",
+    "markdown": "# helldivers2-mcp\n\nA stateless [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes live **Helldivers 2** galactic war data to LLMs.\n\nData is sourced from the community API at [api.helldivers2.dev](https://api.helldivers2.dev).\n\n---\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `get_war_status` | Galaxy-wide war statistics (kills by faction, missions won/lost, accuracy, deaths, impact multiplier) and active planets with owner, player count, active events, attack vectors, and region health |\n| `get_assignments` | Active Major Orders with title, briefing, decoded task list (faction, difficulty, target planet), current progress numbers, reward type and amount, and time until expiry |\n| `get_all_planets` | Full planet list with IDs, names, and sectors |\n| `get_planet_details` | Detailed per-planet info: biome, hazards, initial/current owner, health, waypoints, active events, full combat statistics, attacking planets, and regions (up to 5 planets per call) |\n| `get_dispatches` | In-game dispatch feed — High Command broadcasts with published date (relative time) and message text; optional `limit` parameter (default 20, max 50) |\n| `get_steam_news` | Steam news for Helldivers 2 with title, URL, publish date (relative time), and full article content; optional `limit` parameter (default 10, max 30) |\n| `get_space_station_details` | DSS details: current host planet (full planet info), time until next election, and active tactical actions with name, description, status, planet effects, and resource costs |\n\n---\n\n## Quickstart\n\n### Prerequisites\n\n- Node.js 22+ or Docker\n- A contact email for the `X-Super-Contact` header (required by the upstream API)\n\n### Local dev\n\n```bash\ncp .env.example .env   # set X_SUPER_CONTACT=your@email.com\nnpm install\nnpm run dev               # hot-reload via tsx watch on :3000\n```\n\n### Production build\n\n```bash\nnpm run build   # tsc → dist/\nnpm run start\n```\n\n### Docker\n\nImage is available on [Docker Hub](https://hub.docker.com/r/xerno42/helldivers2-mcp).\n\n```bash\ndocker pull xerno42/helldivers2-mcp # pull from Docker Hub\n# or\ndocker build -t helldivers2-mcp . # build locally\n\n#then run with:\ndocker run -p 3000:3000 -e X_SUPER_CONTACT=your@email.com helldivers2-mcp\n```\n\n---\n\n## Configuration\n\nAll configuration is via environment variables.\n\n| Variable | Default | Description |\n|----------|---------|-------------|\n| `X_SUPER_CONTACT` | *(required)* | Forwarded as `X-Super-Contact` to the upstream API per their usage guidelines |\n| `PORT` | `3000` | HTTP port to listen on |\n| `BIND_HOST` | `127.0.0.1` | Interface to bind (`0.0.0.0` for Docker/containers) |\n| `MCP_ALLOWED_ORIGINS` | *(unset)* | Comma-separated list of allowed browser `Origin` headers. Unset means browser-originated requests are blocked; server-to-server calls (no `Origin` header) are always allowed |\n| `MCP_RATE_LIMIT_PER_MIN` | `60` | Sustained request rate limit (requests per minute) |\n| `MCP_RATE_LIMIT_BURST` | `= MCP_RATE_LIMIT_PER_MIN` | Burst capacity for the token-bucket rate limiter |\n\n---\n\n## Endpoints\n\n| Method | Path | Description |\n|--------|------|-------------|\n| `POST` | `/mcp` | MCP Streamable HTTP transport endpoint |\n| `GET` | `/health` | Liveness check — returns `{ \"ok\": true }` |\n\nThe server uses the **stateless** Streamable HTTP transport. Each `POST /mcp` request creates a fresh `McpServer` + transport pair, handles the request, then tears them down. There is no session state.\n\n---\n\n## Usage in Code\n\nCall the MCP server directly over HTTP using the Streamable HTTP transport. Each request is a JSON-RPC `tools/call` message sent to `POST /mcp`.\n\n### JavaScript / TypeScript\n\nUsing the official [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk):\n\n```typescript\nimport { Client } from \"@modelcontextprotocol/sdk/client/index.js\";\nimport { StreamableHTTPClientTransport } from \"@modelcontextprotocol/sdk/client/streamableHttp.js\";\n\nconst client = new Client({ name: \"my-app\", version: \"1.0.0\" });\n\nconst transport = new StreamableHTTPClientTransport(\n  new URL(\"https://mcp.avengersofsuperearth.com/mcp\")\n);\n\nawait client.connect(transport);\n\n// List available tools\nconst { tools } = await client.listTools();\nconsole.log(tools.map((t) => t.name));\n\n// Get current war status\nconst warStatus = await client.callTool({\n  name: \"get_war_status\",\n  arguments: {},\n});\nconsole.log(warStatus.content[0].text);\n\n// Get details for specific planets by index (up to 5)\nconst planets = await client.callTool({\n  name: \"get_planet_details\",\n  arguments: { planetindices: [57, 153] },\n});\nconsole.log(planets.content[0].text);\n\nawait client.close();\n```\n\nWithout the SDK — raw JSON-RPC over `fetch`:\n\n```typescript\nasync function callTool(name: string, args: Record<string, unknown> = {}) {\n  const res = await fetch(\"https://mcp.avengersofsuperearth.com/mcp\", {\n    method: \"POST\",\n    headers: {\n      \"Content-Type\": \"application/json\",\n      \"Accept\": \"application/json, text/event-stream\",\n    },\n    body: JSON.stringify({\n      jsonrpc: \"2.0\",\n      id: 1,\n      method: \"tools/call\",\n      params: { name, arguments: args },\n    }),\n  });\n  const text = await res.text();\n  // The response is an SSE frame (\"event: message\\ndata: {json}\\n\\n\");\n  // concatenate its data line(s) to recover the JSON-RPC payload.\n  const json = text\n    .split(\"\\n\")\n    .filter((line) => line.startsWith(\"data:\"))\n    .map((line) => line.slice(5).trim())\n    .join(\"\");\n  const data = JSON.parse(json);\n  return data.result.content[0].text;\n}\n\nconst status = await callTool(\"get_war_status\");\nconst assignments = await callTool(\"get_assignments\");\nconst dispatches = await callTool(\"get_dispatches\", { limit: 5 });\nconst planets = await callTool(\"get_planet_details\", { planetindices: [57, 153] });\n```\n\n### Python\n\nUsing the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk):\n\n```python\nimport asyncio\nfrom mcp import ClientSession\nfrom mcp.client.streamable_http import streamablehttp_client\n\nasync def main():\n    async with streamablehttp_client(\"https://mcp.avengersofsuperearth.com/mcp\") as (read, write, _):\n        async with ClientSession(read, write) as session:\n            await session.initialize()\n\n            # List available tools\n            tools = await session.list_tools()\n            print([t.name for t in tools.tools])\n\n            # Get current war status\n            result = await session.call_tool(\"get_war_status\", {})\n            print(result.content[0].text)\n\n            # Get details for specific planets by index (up to 5)\n            result = await session.call_tool(\n                \"get_planet_details\",\n                {\"planetindices\": [57, 153]},\n            )\n            print(result.content[0].text)\n\nasyncio.run(main())\n```\n\nWithout the SDK — raw JSON-RPC over `httpx`:\n\n```python\nimport httpx\n\nMCP_URL = \"https://mcp.avengersofsuperearth.com/mcp\"\n\ndef call_tool(name: str, arguments: dict = {}) -> str:\n    payload = {\n        \"jsonrpc\": \"2.0\",\n        \"id\": 1,\n        \"method\": \"tools/call\",\n        \"params\": {\"name\": name, \"arguments\": arguments},\n    }\n    headers = {\n        \"Content-Type\": \"application/json\",\n        \"Accept\": \"application/json, text/event-stream\",\n    }\n    response = httpx.post(MCP_URL, json=payload, headers=headers)\n    response.raise_for_status()\n    import json\n    # The response is an SSE frame (\"event: message\\ndata: {json}\\n\\n\");\n    # concatenate its data line(s) to recover the JSON-RPC payload.\n    text = \"\".join(\n        line[5:].strip()\n        for line in response.text.splitlines()\n        if line.startswith(\"data:\")\n    )\n    return json.loads(text)[\"result\"][\"content\"][0][\"text\"]\n\nstatus = call_tool(\"get_war_status\")\nassignments = call_tool(\"get_assignments\")\nplanets = call_tool(\"get_planet_details\", {\"planetindices\": [57, 153]})\n```\n\n---\n\n## Connecting to Claude Desktop\n\n### Hosted server (easiest)\n\nA public instance is available at `https://mcp.avengersofsuperearth.com/mcp`. No setup required — just add it to your `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"helldivers2\": {\n      \"url\": \"https://mcp.avengersofsuperearth.com/mcp\"\n    }\n  }\n}\n```\n\n### Self-hosted (local binary)\n\n```json\n{\n  \"mcpServers\": {\n    \"helldivers2\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/helldivers2-mcp/dist/index.js\"],\n      \"env\": {\n        \"X_SUPER_CONTACT\": \"your@email.com\"\n      }\n    }\n  }\n}\n```\n\n### Self-hosted (HTTP server)\n\n```json\n{\n  \"mcpServers\": {\n    \"helldivers2\": {\n      \"url\": \"http://localhost:3000/mcp\"\n    }\n  }\n}\n```\n\n---\n\n## Development\n\n```bash\nnpm run test              # Jest (ESM mode)\nnpm run test:watch\nnpm run test:coverage\nnpm run lint              # ESLint\n```\n\nRun a single test file:\n\n```bash\nnpm run test src/__tests__/tools.war.test.ts\n```\n\n### Adding a tool\n\n1. Create `src/tools/your-tool.ts` and export a `Tool` object with `.definition` and `.handler`.\n2. Import it and add it to the `TOOLS` array in [src/index.ts](src/index.ts).\n3. Return `textResponse(...)` on success or `errorResponse(...)` on failure — never throw from a handler.\n4. All upstream calls must go through `hd2Fetch` (in-memory 2-minute cache + rate-limit-aware queue).\n\n---\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:14:25.300Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_war_status",
+      "description": "Fetch the current war status and active planets. Returns aggregated war statistics (impact multiplier, total missions won, total missions lost, total mission time, total terminid kills, total automaton kills, total illuminate kills, total bullets fired, total bullets hit, total deaths, total revives, total friendly fire casualties, overall mission success rate, overall accuracy), and a list of active planets (planets with active players or ownership change) with their name, sector, initial owner, current owner, player count, active event information if any (Event: faction, current health, max health, start and end time), the planets each active planet is currently attacking (id and name), and active regions (Region: name, health, max health, regen per second, size, active players)."
+    },
+    {
+      "name": "get_assignments",
+      "description": "Fetch the currently active assignments (Major Orders) issued by Super Earth high command. Returns each assignment with title, briefing, task description, decoded task list (type and value information including races, difficulties, and target planet names), current progress numbers, reward (type and amount), and expiration (seconds until expiry)."
+    },
+    {
+      "name": "get_all_planets",
+      "description": "Fetch a list of all planets in the current galactic war. Returns a list of planets with their id (index), name, and sector."
+    },
+    {
+      "name": "get_planet_details",
+      "description": "Fetch detailed information about one or more planets by providing their planet index/indices. Requires: planetindices parameter (array of integers of planet indices, maximum of 5) Returns: For each planet - index, name, sector, biome (Biome: name, description), hazards (Hazard: name, description), position, list of waypoints (planet indices) the planet is connected to, max health, current health, initial owner, current owner, regen per second, event information if one is active (faction who initiated the event, current health, max health, start and end time), statistics (Statistics: missions won, missions lost, mission time, terminid kills, automaton kills, illuminate kills, bullets fired, bullets hit, time played, deaths, revives, friendly fire casualties, mission success rate, accuracy, player count), attacking (a list of planet indices this planet is currently attacking), regions (Region: name, description, health, max health, size, regen per second, active players)."
+    },
+    {
+      "name": "get_dispatches",
+      "description": "Fetch the latest dispatches (news feed) from Super Earth high command. Returns recent dispatches with their published date (relative time) and message text. Optional `limit` parameter caps how many items to return (default 20, max 50)."
+    },
+    {
+      "name": "get_steam_news",
+      "description": "Fetch the latest Steam news for Helldivers 2. Returns recent items with title, URL, published date (relative time), and content. Optional `limit` parameter caps how many items to return (default 10, max 30)."
+    },
+    {
+      "name": "get_space_station_details",
+      "description": "Fetch the current Democracy Space Station (DSS) details. Returns the planet the DSS is currently supporting (full planet details), election end (relative time until the next planet vote ends), and a list of active tactical actions (Tactical action: name, description, strategic description, status, status expire, effects (Effect: name, description), costs (Cost: item name, current value, delta per second, max donation amount))."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:14:25.401Z",
+  "toolsPreviewStatus": "ok"
+}

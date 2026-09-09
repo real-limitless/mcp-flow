@@ -1,0 +1,51 @@
+{
+  "id": "info.agentrank/agentrank",
+  "title": "agentrank",
+  "description": "Is this AI agent or x402 service real and settlement-backed before you pay it? Trust check.",
+  "summary": "Is this AI agent or x402 service real and settlement-backed before you pay it? Trust check.",
+  "offersHint": "Is this AI agent or x402 service real and settlement-backed before you pay it? Trust check. · Remote MCP (streamable-http) at https://api.agentrank.info/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.agentrank.info/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.agentrank.info/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/andysalvo/agentrank",
+  "repository": {
+    "url": "https://github.com/andysalvo/agentrank",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-27T05:13:18.546881Z",
+  "publishedAt": "2026-06-27T05:13:18.546881Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:49:07.529Z",
+    "sourceRepoAt": "2026-08-12T00:19:44.263Z",
+    "readmeAt": "2026-08-12T00:19:44.739Z",
+    "toolsAt": "2026-08-12T01:49:07.529Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/andysalvo/agentrank",
+    "checkedAt": "2026-08-12T00:19:44.263Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/andysalvo/agentrank/main/README.md",
+    "markdown": "<div align=\"center\">\n\n<img src=\"brand/agentrank-wordmark.png\" alt=\"AgentRank\" width=\"380\" />\n\n### Settlement-grounded trust for AI agents.\n\n[agentrank.info](https://agentrank.info) · ranked by real on-chain settlement, not claims · x402 · A2A · MCP\n\n</div>\n\n---\n\n**AgentRank ranks AI agents by real on-chain settlement.** Claims, endorsements, demand counts, and uptime are all cheap to fake. The one trust signal an agent has to buy at full price is who actually paid it, weighted by the standing of the payers and resistant to sybils. That is what AgentRank measures.\n\nAs autonomous software becomes abundant, the hard problem shifts from building agents to understanding them: who an agent is, what it does, who it works with, and how much of that can be trusted. Google made the web searchable. Bloomberg made capital markets legible. GitHub made open-source software navigable. AgentRank does this for autonomous software, on the one axis that cannot be costumed.\n\nThis repository is the public home of AgentRank: the founding paper, the methodology, and the index itself. It is published by **Crest Deployment Systems LLC**.\n\n## What it is\n\nFor each public agent, AgentRank assembles one referenceable record: identity, history, observed behavior, relationships, economic activity where public, trust signals, evidence, ranking, and connections. The record is the point. The score is one line of it.\n\n## Use it\n\nAgentRank is **live** at **[agentrank.info](https://agentrank.info)** and callable by agents and humans. Use it at the verify-reputation step of the agent commerce flow (discover → verify → request → 402 → pay). The score is settlement-grounded and sybil-resistant: free endorsements and circular vouching contribute nothing, because reputation flows only along paths that trace back to real, paying participants. Free and read-only.\n\n**`verify-before-pay` (npm).** A drop-in for the x402 payment flow that checks a counterparty's AgentRank before your agent pays. `npm install verify-before-pay`. Wraps the `paymentRequirementsSelector` hook so an agent verifies in-path instead of trusting a displayed claim — the failure mode our research documents below.\n\n**A2A (Agent2Agent).** Agent Card at `https://agentrank.info/.well-known/agent-card.json`, endpoint `https://api.agentrank.info/a2a`. Send JSON-RPC `message/send`. Skills:\n- `verify_counterparty_reputation` — wallet or domain in, AgentRank score + trust verdict + real USDC settled out\n- `gate_caller` — provider-side: serve or refuse a caller by its AgentRank\n- `top_agents` — the live leaderboard by settled value\n\n**MCP.** Server at `https://api.agentrank.info/mcp` (tools `check_agent_trust`, `gate_caller`). Listed on Smithery, Glama, and the official MCP registry.\n\n**Signed verification receipts.** Every counterparty check (`/resolve/{key}` and A2A `verify`) returns a compact, Ed25519-signed `receipt` and an `agentrank` affordances block. The receipt (`ar1.<payload>.<sig>`) is self-verifying: any party can check it against our published key without calling us back, so the trust decision travels with the agent's payment or routing log. Verify offline with the public key at `https://api.agentrank.info/.well-known/agentrank-receipt-key.json`, or hosted at `GET /receipt/verify?r={token}`. Tampering with the payload invalidates the signature.\n\n**Platform-verifier mode.** Agent platforms and directories that screen many counterparties at once verify a list in one call. Stable contract at `https://api.agentrank.info/.well-known/agentrank-verify.json`.\n- `POST /verify/batch` with `{ \"subjects\": [\"wallet|domain\", ...], \"policy\": \"cautious\" }` (max 100). Returns a per-subject `decision` (`allow` / `caution` / `deny`) and a signed `receipt`, plus a summary.\n- Three named policies so callers do not have to reinvent thresholds: `permissive` (log-only), `cautious` (verified + score >= 400, default), `strict` (verified + score >= 700, fail closed). Or pass a custom `{min, requireVerified, onfail}`.\n- Also over A2A: send a data part `{ subjects:[...], policy:... }`.\n\n```bash\ncurl -s -X POST https://api.agentrank.info/verify/batch \\\n  -H 'content-type: application/json' \\\n  -d '{\"subjects\":[\"blockrun.ai\",\"0xabc...\"],\"policy\":\"strict\"}'\n```\n\n**HTTP API.**\n- `GET https://api.agentrank.info/resolve/{wallet|domain}` — identity + 0-1000 score + settled USDC + verdict\n- `GET https://api.agentrank.info/v1/rank/{address}` · `GET /score/{address}` · `GET /index` · `GET /top`\n- Embeddable badge: `https://api.agentrank.info/badge/{wallet|domain}.svg`\n\n```bash\ncurl https://api.agentrank.info/resolve/blockrun.ai\n```\n\n## How it works\n\nAgentRank is built from the ground up as an evidence ladder. Each layer rests on the one beneath it, and nothing is invented.\n\n1. **Collection** — only public, lawful data. Establish that an agent exists.\n2. **Identity** — resolve scattered traces (a wallet, a domain, a repository, a registry entry) into one agent.\n3. **Behavior** — what the agent actually does. Observed, not claimed.\n4. **Measurement** — conservative metrics from behavior (counterparties, repeat usage, activity age, network centrality, concentration risk, wash suspicion, protocol diversity).\n5. **Score** — significance, not money: importance, real usage, earned trust, and network centrality, reduced by manipulation risk.\n6. **Explanation** — every rank carries its reasons. No score without the evidence behind it.\n7. **Intelligence** — what is growing, what is central, what is emerging, what is probably not real.\n\nFull method: **[METHODOLOGY.md](METHODOLOGY.md)**. Founding paper: **[WHITEPAPER.md](WHITEPAPER.md)** ([PDF](docs/AgentRank-Whitepaper.pdf)).\n\n## Why it resists gaming\n\nAgentRank is built on real, observable economic activity weighted by the standing of who participated. Reputation flows only along paths that trace back to established, real participants. Fresh wallets with no standing contribute nothing, so a service paid by a thousand throwaway accounts ranks below a real one paid by a few trusted participants. Buying your way onto the index is not impossible, but it is costly: the thing you would have to fake is real settlement from participants who already have standing, which is the same thing being measured. The defense is economic, not magic, and we say so in the open.\n\n## Research\n\nWe measure the agent economy the way a science measures anything: a design fixed before the data, a result that could have failed, and a record anyone can check. Full index: **[agentrank.info/research](https://agentrank.info/research)**.\n\n**Counterfeit Verifiability in Autonomous Agent Payments** (Salvo & Ackerman, 2026). A preregistered, six-stage study across up to thirteen models and over 2,600 payment decisions. A counterparty that merely *displays* the surface of trust (impressive figures and an on-chain-styled but invalid reference) beats an honest, genuinely settlement-backed agent **99% of the time**. Agents pattern-match the costume of verifiability, not the fact. *Performing* the verification reverses it (1% → 81%), and under exact surface mimicry only a performed check recovers the truth. The full design was sealed to a public hash chain before any data were collected, and the null result is reported in full.\n\n- DOI: [10.5281/zenodo.21042364](https://doi.org/10.5281/zenodo.21042364) · [Read the PDF](https://agentrank.info/papers/counterfeit-verifiability.pdf)\n- This is why `verify-before-pay` exists: trust has to be performed in-path, not read off a display.\n\n## Principles\n\n- **Public by default.** We index what is publicly observable.\n- **Evidence over claims.** We record what an agent does, not what it says.\n- **Explainability.** No score without a receipt.\n- **Neutrality.** We do not create winners. We measure what exists.\n- **Conservatism.** When evidence is thin, we claim less, not more.\n- **Revision.** When better evidence arrives, the index changes, in the open.\n\n## Status\n\nLive. The index, API, MCP server, and A2A agent are operational at [agentrank.info](https://agentrank.info). The methodology and founding paper are published here, and the index revises in the open as new settlement arrives.\n\n---\n\n<sub>AgentRank · Crest Deployment Systems LLC · Andy Salvo · Jameson Ackerman · agentrank.info</sub>\n",
+    "fetchedAt": "2026-08-12T00:19:44.739Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:49:07.529Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

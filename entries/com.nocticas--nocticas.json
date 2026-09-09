@@ -1,0 +1,71 @@
+{
+  "id": "com.nocticas/nocticas",
+  "title": "Nocticas",
+  "description": "Browser QA agent that won't return a false green: verified PASS/FAIL + access-control probing.",
+  "summary": "Browser QA agent that won't return a false green: verified PASS/FAIL + access-control probing.",
+  "offersHint": "Browser QA agent that won't return a false green: verified PASS/FAIL + access-control probing. · Remote MCP (streamable-http) at https://app.nocticas.com/api/mcp · Requires headers: x-nocticas-key",
+  "version": "0.69.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://app.nocticas.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.nocticas.com/api/mcp",
+      "headers": [
+        {
+          "name": "x-nocticas-key",
+          "description": "Your Nocticas API key. Get a free 150-credit key (no card) at https://app.nocticas.com",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://nocticas.com",
+  "sourceUrl": "https://github.com/Low-Latency-Labs/nocticas-action",
+  "repository": {
+    "url": "https://github.com/Low-Latency-Labs/nocticas-action",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-24T10:04:51.600878Z",
+  "publishedAt": "2026-06-24T10:04:51.600878Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "x-nocticas-key"
+  ],
+  "headerDocs": [
+    {
+      "name": "x-nocticas-key",
+      "description": "Your Nocticas API key. Get a free 150-credit key (no card) at https://app.nocticas.com",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:56:03.395Z",
+    "sourceRepoAt": "2026-08-12T00:29:58.816Z",
+    "readmeAt": "2026-08-12T00:29:59.492Z",
+    "toolsAt": "2026-08-12T01:56:03.395Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Low-Latency-Labs/nocticas-action",
+    "checkedAt": "2026-08-12T00:29:58.816Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Low-Latency-Labs/nocticas-action/main/README.md",
+    "markdown": "# Nocticas E2E Gate — GitHub Action\n\nRun a **pinned Nocticas gate** against a target URL on every push/PR, and **fail the build on a red verdict**. The browser runs on Nocticas's servers — this Action is a thin client that starts the run, polls for the verdict, and maps it to an exit code. No false greens: a harness error is never treated as a pass.\n\n## Quickstart\n\n1. **Author + pin a flow** in Nocticas (agentic run → pin → export the deterministic step script as JSON).\n2. **Commit the gate** to your repo, e.g. `.nocticas/checkout-flow.json`.\n3. **Add your key** as a repo secret: `NOCTICAS_API_KEY`.\n4. **Add the workflow:**\n\n```yaml\n# .github/workflows/nocticas.yml\nname: Nocticas E2E gate\non: [pull_request, workflow_dispatch]\njobs:\n  verify:\n    runs-on: ubuntu-latest          # standard runner = free on public repos\n    steps:\n      - uses: actions/checkout@v4   # so the gate file is available\n      - uses: Low-Latency-Labs/nocticas-action@v1\n        with:\n          api-key: ${{ secrets.NOCTICAS_API_KEY }}\n          gate: .nocticas/checkout-flow.json\n          target: ${{ vars.PREVIEW_URL }}   # your deployed preview/staging URL\n```\n\nA red verdict fails the job → blocks the PR/merge.\n\n## Inputs\n\n| Input | Required | Default | Description |\n|--|--|--|--|\n| `api-key` | yes | — | Your Nocticas API key (store as a secret). |\n| `gate` | yes | — | Path to the pinned gate JSON (array of deterministic steps) in your repo. |\n| `target` | yes | — | URL to test (e.g. the PR's preview deploy). |\n| `api-base` | no | `https://app.nocticas.com/api` | Nocticas API base. |\n| `timeout-seconds` | no | `300` | Max wait for a verdict. |\n| `poll-seconds` | no | `3` | Poll interval. |\n| `fail-on-error` | no | `true` | Treat a harness `error` (not a test fail) as a build failure. An unverified run is never a pass. |\n\n## Outputs\n\n| Output | Description |\n|--|--|\n| `run-id` | The Nocticas run id (link it in your logs). |\n| `verdict` | `passed` \\| `failed` \\| `error` \\| `timeout`. |\n\n## The gate file\n\nA JSON **array of deterministic steps** — exactly what Nocticas produces when you *pin* a passing run. Example in [`examples/gate.example.json`](examples/gate.example.json). Keeping it in your repo means your E2E test is version-controlled alongside the code it guards.\n\n> **Don't commit real credentials.** Point the gate at a staging/preview target and use a dedicated test account; Nocticas's built-in test inbox handles OTP/magic-link logins so you don't need to embed secrets in the gate.\n\n## Cost\n\n- **Publishing this Action:** free (public repo, no paid plan).\n- **Running it (your customers):** free on public repos with standard runners; within the monthly free-minutes allowance on private repos. It's a single thin job — seconds of runner time.\n- **The browser run:** billed in Nocticas credits — and **deterministic/pinned runs are free within your monthly allowance**, so gating every push typically costs nothing in credits.\n\n## Other CI systems (the recipe)\n\nNot on GitHub? The same start → poll → exit logic is a portable script — see [`recipe.sh`](recipe.sh) and [`examples/gitlab-ci.example.yml`](examples/gitlab-ci.example.yml). The contract is just JSON over HTTP:\n\n```\nPOST {api-base}/runs   { \"mode\":\"deterministic\", \"target\": \"...\", \"script\": [ ...gate... ] }   → { \"id\": \"...\" }\nGET  {api-base}/runs/{id}                                                                       → { \"status\": \"passed|failed|error|...\" }\n```\nHeader: `x-nocticas-key: <key>`. Exit non-zero unless `status == \"passed\"`.\n",
+    "fetchedAt": "2026-08-12T00:29:59.492Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:56:03.395Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"Unauthorized — no x-nocticas-key header. If your MCP/HTTP config references ${NOCTICAS_API_KEY}, that env var is unset/empty in the client process, so the header resolved to nothing. Set it, or paste the key directly.\"}",
+  "toolsPreviewStatus": "auth_required"
+}

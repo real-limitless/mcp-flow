@@ -1,0 +1,58 @@
+{
+  "id": "io.github.nithishr/mcp-multi-poc-beta-script",
+  "title": "mcp-multi-poc-beta-script",
+  "description": "PoC Q5b: run a differently-named console script via a positional runtimeArgument.",
+  "summary": "PoC Q5b: run a differently-named console script via a positional runtimeArgument.",
+  "offersHint": "PoC Q5b: run a differently-named console script via a positional runtimeArgument. · Packages: pypi:mcp-multi-poc",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-multi-poc",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-multi-poc",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nithishr/mcp-registry-poc",
+  "repository": {
+    "url": "https://github.com/nithishr/mcp-registry-poc",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T18:23:22.151097Z",
+  "publishedAt": "2026-07-31T18:23:22.151097Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:48.800Z",
+    "sourceRepoAt": "2026-08-11T23:31:37.087Z",
+    "readmeAt": "2026-08-11T23:31:37.118Z",
+    "toolsAt": "2026-08-12T01:10:48.801Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nithishr/mcp-registry-poc",
+    "checkedAt": "2026-08-11T23:31:37.087Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nithishr/mcp-registry-poc/main/README.md",
+    "markdown": "# mcp-multi-poc\n\nPoC for serving **multiple MCP servers from a single PyPI package**, using\nsubcommands for server selection and optional extras for on-demand dependencies.\nStands in for the Couchbase MCP monorepo question (alpha = operational,\nbeta = analytics, tabulate = the analytics SDK — chosen because it is *outside*\nfastmcp's transitive dependency tree; httpx and pyyaml are not, and silently\ndefeat the extras guard).\n\n<!-- mcp-name: io.github.nithishr/mcp-multi-poc-alpha -->\n<!-- mcp-name: io.github.nithishr/mcp-multi-poc-beta -->\n<!-- mcp-name: io.github.nithishr/mcp-multi-poc-beta-script -->\n\n## What this PoC must answer\n\n| # | Question | Where it's tested |\n| --- | --- | --- |\n| 1 | Can two MCP registry entries point at the **same PyPI package**? | Publish both `server.alpha.json` and `server.beta.json` |\n| 2 | Does registry ownership validation accept **multiple `mcp-name` comments** in one package README? | The two HTML comments above |\n| 3 | Does the registry schema/validator accept **extras syntax in `identifier`** (`mcp-multi-poc[beta]`)? | `server.beta.json` — if rejected, fall back to plain identifier and record that extras can't be expressed |\n| 4 | Do clients run the **subcommand form** correctly from registry metadata (`uvx mcp-multi-poc alpha`)? | Install both servers from a client (Claude Desktop / MCP Inspector) |\n| 5 | Is there any schema-legal way to run a console script **named differently than the package** (`mcp-multi-poc-beta`)? | `server.beta-script.json`. 5a (failed): identifier = script name → 404, identifier must be a real PyPI package. 5b (current file): identifier = real package, script name smuggled as a **positional `runtimeArgument`** → `uvx --from 'mcp-multi-poc[beta]' mcp-multi-poc-beta mcp-multi-poc`; the appended identifier becomes a stray arg the server must ignore. If 5b also fails, fallback is a **shim package** per script |\n\n## Findings so far (2026-07-31)\n\n- **Q1 — multiple entries per PyPI package: YES.** `mcp-multi-poc-alpha` published\n  against the shared package.\n- **Q2 — multiple `mcp-name` comments in one README: YES** (alpha validated with\n  three comments present).\n- **Q3 — extras in `identifier`: NO, but expressible via `runtimeArguments`.**\n  Extras in the identifier fail the literal PyPI lookup —\n  `PyPI package 'mcp-multi-poc[beta]' not found (status: 404)`. Fallback\n  **works**: `mcp-multi-poc-beta` published successfully with plain\n  `identifier: mcp-multi-poc` + `runtimeArguments: --from \"mcp-multi-poc[beta]\"`\n  (live in the registry, verified via the `/v0/servers` API).\n- **Q5a — differently-named console script as identifier: NO (confirmed on\n  publish).** Same 404 mechanism (`'mcp-multi-poc-beta' not found`) — the\n  registry validates the identifier as a real PyPI package before anything else.\n- **Q5b — script name as positional `runtimeArgument`: YES, published.**\n  `io.github.nithishr/mcp-multi-poc-beta-script` is live (published\n  2026-07-31, after trimming `description` to the 100-char limit — the only\n  validation hiccup). Locally, `uvx --from 'mcp-multi-poc[beta]'\n  mcp-multi-poc-beta mcp-multi-poc` completes the MCP initialize handshake —\n  the trailing identifier is silently ignored because `main()` never parses\n  argv. Caveats: only safe when the entrypoint tolerates stray argv (click\n  needs `ignore_unknown_options` + `allow_extra_args` or a dummy optional\n  argument); depends on clients preserving `runtimeArguments` order — the\n  least-exercised metadata path; registry UIs show the identifier as the\n  runnable. For production script-per-server, prefer a **shim package** per\n  script (identifier == script name, no runtimeArguments at all).\n- **Registry validation limits discovered:** `description` ≤ 100 chars;\n  `identifier` must be a literal, existing PyPI package (extras rejected);\n  `runtimeArguments`/`packageArguments` contents are NOT validated.\n\n## Local smoke test (before publishing anything)\n\n```bash\ncd mcp-registry-poc\nuv venv && uv pip install -e .\nmcp-multi-poc alpha          # starts alpha on stdio (Ctrl+C to exit)\nmcp-multi-poc beta           # must FAIL with the friendly extras message\nuv pip install -e \".[beta]\"\nmcp-multi-poc beta           # now starts\nmcp-multi-poc                # bare command runs alpha (backward-compat check)\nmcp-multi-poc-beta           # Option 1 script works locally once extra installed\n```\n\nuvx behavior (after publishing to PyPI):\n\n```bash\nuvx mcp-multi-poc alpha                  # base only\nuvx \"mcp-multi-poc[beta]\" beta           # extras via uvx — key UX under test\nuvx --from \"mcp-multi-poc[beta]\" mcp-multi-poc-beta   # Option 1 fallback form\n```\n\n## Publish steps (manual, in order)\n\n1. If `mcp-multi-poc` is taken on PyPI, pick another name and rename consistently\n   (pyproject `name`, `[project.scripts]`, both server.json identifiers).\n3. Build and publish to **real PyPI** (registry validation fetches from pypi.org;\n   TestPyPI will not work): `uv build && uv publish`.\n4. Install mcp-publisher and log in:\n   `mcp-publisher login github` (interactive) — must match the `io.github.<username>` namespace.\n5. Publish the entries:\n   `mcp-publisher publish server.alpha.json`, `... server.beta.json`, and\n   `... server.beta-script.json` — the last one is *expected* to fail validation;\n   record the exact error (if the CLI expects the file at `./server.json`, copy\n   each into place first).\n6. Verify via the registry API:\n   `curl \"https://registry.modelcontextprotocol.io/v0/servers?search=mcp-multi-poc\"`\n7. Configure both servers in a client from the registry metadata and call\n   `echo` (alpha) and `make_table` (beta).\n8. Record results per question above, then deprecate/delete the PoC entries.\n\n## Q4 — testing the published entries from a client\n\nMost clients don't install directly from the official registry yet, so Q4\nsplits in two: (a) does the spec-mandated command construction\n(`uvx <runtimeArguments> <identifier> <packageArguments>`) produce a working\nserver, and (b) does a registry-consuming client reproduce that construction.\n\n1. **Fetch what was actually published** and check the `packages` block:\n   `curl \"https://registry.modelcontextprotocol.io/v0/servers?search=mcp-multi-poc\"`\n2. **MCP Inspector** — interactive tool calls against the hand-assembled command:\n   ```bash\n   npx @modelcontextprotocol/inspector uvx mcp-multi-poc alpha\n   npx @modelcontextprotocol/inspector uvx --from \"mcp-multi-poc[beta]\" mcp-multi-poc beta\n   ```\n3. **Claude Code** — same commands as stdio servers, then call `echo` / `make_table`:\n   ```bash\n   claude mcp add poc-alpha -- uvx mcp-multi-poc alpha\n   claude mcp add poc-beta -- uvx --from \"mcp-multi-poc[beta]\" mcp-multi-poc beta\n   ```\n   (For Claude Desktop, the equivalent `claude_desktop_config.json` entries:)\n   ```json\n   {\n     \"mcpServers\": {\n       \"poc-alpha\": { \"command\": \"uvx\", \"args\": [\"mcp-multi-poc\", \"alpha\"] },\n       \"poc-beta\":  { \"command\": \"uvx\", \"args\": [\"--from\", \"mcp-multi-poc[beta]\", \"mcp-multi-poc\", \"beta\"] }\n     }\n   }\n   ```\n4. **Registry-native install (the real (b) test)**: VS Code's MCP server\n   gallery is backed by the official registry — search for `mcp-multi-poc`\n   there and install; this exercises whether a client assembles\n   `runtimeArguments + identifier + packageArguments` on its own. Entries may\n   lag or be curated before appearing.\n\nSteps 2–3 only prove (a); only step 4 (or another registry-consuming client)\nproves (b), which is what the beta/beta-script entries actually depend on.\n",
+    "fetchedAt": "2026-08-11T23:31:37.118Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:48.801Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

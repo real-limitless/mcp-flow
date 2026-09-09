@@ -1,0 +1,105 @@
+{
+  "id": "io.github.mrsingh86/trimtab-ais",
+  "title": "trimtab-ais",
+  "description": "US tariff & trade truth: duty actually paid by origin/HS 2017+, HTS rulebook, CBP rulings. No key.",
+  "summary": "US tariff & trade truth: duty actually paid by origin/HS 2017+, HTS rulebook, CBP rulings. No key.",
+  "offersHint": "US tariff & trade truth: duty actually paid by origin/HS 2017+, HTS rulebook, CBP rulings. No key. · Remote MCP (streamable-http) at https://ais.trimtabist.com/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ais.trimtabist.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ais.trimtabist.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://trimtabist.com",
+  "sourceUrl": "https://github.com/mrsingh86/trimtab-ais",
+  "repository": {
+    "url": "https://github.com/mrsingh86/trimtab-ais",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T05:32:30.952481Z",
+  "publishedAt": "2026-08-09T05:32:30.952481Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:12:17.709Z",
+    "sourceRepoAt": "2026-08-11T23:33:11.878Z",
+    "readmeAt": "2026-08-11T23:33:12.427Z",
+    "toolsAt": "2026-08-11T23:33:12.655Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mrsingh86/trimtab-ais",
+    "checkedAt": "2026-08-11T23:33:11.878Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mrsingh86/trimtab-ais/main/README.md",
+    "markdown": "# Trimtab US Trade Ledger — MCP server for US tariff & trade data\n\n**What US importers actually paid at the border — free, no API key, no signup.**\nOfficial duty receipts by product and origin, monthly since 2017, reconciled monthly against the\nUS Treasury's own customs receipts (both books: assessed at entry and kept after refunds — May and\nJune 2026 ran negative). Plus the current HTS rulebook with Federal Register citations, CBP\nclassification rulings, HS code search, US containerised imports by origin × commodity × gateway\n(revision-tracked), and a frozen 2026 archive of own-recorded AIS ship movements. Every response\ncarries its method, its provenance, and its limits, so your agent can verify instead of trust.\n\nPublished by **[Trimtabist](https://trimtabist.com)** — the independent observatory for US trade.\n20 pre-registered ruled studies (nulls published), a public corrections log, and the whole\ncollection pipeline open at [trimtab-pipeline](https://github.com/mrsingh86/trimtab-pipeline).\n\n**Endpoint (streamable HTTP, no auth):**\n```\nhttps://trimtabist.com/mcp\n```\nOfficial MCP registry: `com.trimtabist/us-tariff-ledger` · 13 tools + an archive router ·\ndocs for agents: [trimtabist.com/llms.txt](https://trimtabist.com/llms.txt) ·\nconnect guides: [trimtabist.com/connect](https://trimtabist.com/connect)\n\n## Why\n\nCarrier tracking data doesn't mean what it says. The same event label can mean \"alongside the dock\"\nfor one carrier and \"waiting at anchor\" for another — a difference of hours to days, which is\nexactly the difference that decides a demurrage clock, a drayage appointment, or a customer\npromise. Meanwhile the carriers have been closing their doors to automated readers: several now\nblock AI crawlers *by name* in `robots.txt`, and not one of the top ten runs a public developer\nportal.\n\nSo the software now making shipping decisions is arguing from paperwork it cannot check. This\ninstrument offers the other half: **physics**. A ship is either moving or it isn't; it is either\nalongside a container terminal or it isn't. AIS says so, we record it continuously, and we publish\nwhat we see — including what we can't.\n\n## Add it to your agent\n\nClaude Code:\n\n```bash\nclaude mcp add --transport http trimtab-ais https://ais.trimtabist.com/mcp\n```\n\nClaude Desktop or any MCP client (HTTP transport):\n\n```json\n{ \"mcpServers\": { \"trimtab-ais\": { \"url\": \"https://ais.trimtabist.com/mcp\" } } }\n```\n\nClients that require stdio:\n\n```json\n{ \"mcpServers\": { \"trimtab-ais\": { \"command\": \"npx\", \"args\": [\"-y\", \"trimtab-ais\"] } } }\n```\n\n## Use it from code\n\n```bash\nnpm i trimtab-ais\n```\n\n```js\nimport { gatewayConditions, vesselStatus, hasVesselBerthed } from 'trimtab-ais';\n\nconst la = await gatewayConditions('us_la_longbeach');\n// → { gateways: [{ at_berth: { by_class: { container: 8, tanker: 3, ... } },\n//                  at_anchor: { ... }, container_terminals: { \"LA Pier 400 (APM)\": [...] } }],\n//     as_of, method, coverage, source, attribution }\n\nawait vesselStatus('MSC DARLENE');\n// → moored, container, 366 m, LA Terminal Island (Fenix/Everport), since 2026-07-26T14:47Z\n\nawait hasVesselBerthed('EVER MEGA', 72);\n// → { berthed: true, events: [{ at, gateway, terminal, queue_wait_min }] }\n```\n\nOr from the shell, with no install:\n\n```bash\nnpx trimtab-ais gateway us_savannah\nnpx trimtab-ais vessel \"ONE ORPHEUS\"\nnpx trimtab-ais berthed \"MSC DARLENE\" 48\n```\n\nOr straight over HTTPS — it is plain JSON-RPC:\n\n```bash\ncurl -X POST https://ais.trimtabist.com/mcp -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\n       \"params\":{\"name\":\"gateway_conditions\",\"arguments\":{\"gateway\":\"us_ny_nj\"}}}'\n```\n\n## The tools\n\n| Tool | Answers |\n|---|---|\n| `gateway_conditions` | What's happening at a gateway now — vessels at berth and at anchor, classified (container / bulk-general / tanker / service), with container terminals named |\n| `vessel_status` | Where a vessel is, what it's physically doing, which terminal, since when, declared destination |\n| `has_vessel_berthed` | Whether a vessel berthed within a lookback window — timestamp, terminal, anchorage wait if it queued |\n| `recent_events` | The event stream: arrivals, anchorings, berthings, departures, and semantic notes |\n\nUS Trade Ledger series tools (Census-recorded port trade + cross-checks):\n\n| Tool | Answers |\n|---|---|\n| `list_instruments` | Every instrument and data series, with provenance grade and trust state — start here |\n| `describe_series` | What one series measures: unit, source, method, citation, coverage |\n| `query_series` | The data: monthly US port trade by country & commodity, vessel events, ETA reliability |\n| `check_agreement` | Census customs records vs live AIS observation — where independent instruments disagree, one is wrong |\n| `search_series` | Find series by plain language: \"imports from india\", \"houston\", \"vessel arrivals\" |\n\nGateways: `us_la_longbeach` `us_ny_nj` `us_savannah` `us_houston` `us_charleston` `us_norfolk`\n`us_oakland` `us_seattle_tacoma`\n\n## What it covers — and what it doesn't\n\nAn instrument that hides its blind spots isn't an instrument.\n\n- **Covered:** the eight US container gateways above.\n- **Recorded but thin:** Chennai/Ennore/Kattupalli; JNPT, Mundra, Pipavav, Hazira, Vizhinjam,\n  Colombo — terrestrial receivers are sparse there, so coverage is partial to absent. Published, not\n  papered over.\n- **Not covered:** mid-ocean (terrestrial AIS only, no satellite), cargo (AIS sees ships, never\n  boxes), rates, schedules, or anything a carrier declares rather than does.\n- **Archive begins 26 July 2026,** with one disclosed gap (2026-07-26 17:20Z → 2026-07-27 12:16Z)\n  from the instrument's first day. Durations that began before recording started are lower bounds,\n  and say so.\n\n**[Read the method →](https://ais.trimtabist.com/method)** — sources, state-machine thresholds,\nhow container ships are distinguished from bulkers (AIS type codes can't), known limits, and the\ncorrection policy. Written so a stranger can reproduce the numbers, or prove them wrong.\n\n## Licence and citation\n\nData **CC BY 4.0**, code **Apache 2.0**. Use it commercially, build on it, redistribute it — with\nattribution:\n\n> Trimtab AIS (ais.trimtabist.com), built by Mrigank Singh\n\nNot for regulatory or safety-of-life reliance; no warranty. If you find it wrong,\n[tell me](mailto:mrigank@intoglo.com) — corrections are published, with the size of the error\nquantified.\n\n---\n\nBuilt and maintained by **[Mrigank Singh](https://mriganksingh.ai)**, who moves containers for a\nliving — co-founder & COO of Intoglo, an India→US freight forwarder. This is the live-observation layer of the\nTrimtab US Trade Ledger, which measures what trade data actually says versus what actually happens.\n",
+    "fetchedAt": "2026-08-11T23:33:12.427Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "tariff_story",
+      "description": "The complete tariff answer for one product from one origin, in a single call: what importers ACTUALLY paid at the border (measured from official duty receipts), the statutory MFN base rate beneath it, the trade-war measures that opened the gap with their Federal Register citations, the shape of the change over the window, and the CBP rulings count on the code. Accepts an HS code OR a plain-language product description — it resolves the code and reports its confidence. USE THIS FIRST for any \"what is the tariff on X from Y\" question; it replaces the hs_search + tariff_lookup + tariff_burden sequence and returns a stated answer rather than parts to assemble. Do NOT use it for trade volumes (trade_query), a country overview (origin_profile), or as customs advice. No API key required."
+    },
+    {
+      "name": "origin_profile",
+      "description": "One origin country, whole, in a single call: US containerised import volume and value through the 8 major gateways with the trend, the top commodity chapters, which gateways receive it, the effective tariff burden that origin actually pays at the national border, and the pre-registered studies that touch it. Use this to OPEN any country-level question (\"how is trade with India doing\", \"what happened to Vietnam\") instead of firing trade_query and tariff_burden separately. Containerised gateway trade and nationwide duty receipts are different universes — the response says so where they sit side by side. Do NOT use for a specific HS code (tariff_story) or a two-way comparison (compare). No API key required."
+    },
+    {
+      "name": "commodity_profile",
+      "description": "One HS chapter, whole, in a single call: US containerised import volume and value with the trend, the top supplying origins ranked by trade AND by duty actually paid on this chapter, the chapter-wide tariff rate 2017 vs now, and the studies that touch it. Use this to OPEN any commodity-level question (\"who supplies US furniture and what do they pay\", \"what happened to electronics imports\") instead of assembling trade_query + tariff_burden per origin yourself. Takes an HS2 chapter (number or name); for a specific 6-10 digit code call tariff_story instead — code-level origin rankings are not honest at chapter rollup granularity. No API key required."
+    },
+    {
+      "name": "compare",
+      "description": "Put two subjects on the same axis over the same months and compute the difference: two origin countries, two commodity chapters (or HS6 codes), or two US gateways, measured on trade weight, value, unit value, tariff burden or duty paid. Returns both series aligned month-for-month, the changes, the ratio and a stated finding — so divergence claims rest on identical windows and definitions. Use for \"is trade shifting from China to Vietnam\", \"do Indian goods pay more than Mexican goods\", \"is Houston growing faster than Savannah\". Both subjects must be the same kind; to compare more than two, call twice. burden_pct/duty_usd come from nationwide receipts and are not available for kind \"gateway\". No API key required."
+    },
+    {
+      "name": "month_in_review",
+      "description": "The month's pulse in one call: the national tariff bill against last month, last year and the all-time peak; the origins and chapters whose duty moved most; total containerised gateway imports with the trend; and the trade-war measures that took effect in the month, with Federal Register citations. Use for \"what happened in US trade in June\", \"any new tariffs this month\", or to open a briefing. Defaults to the latest complete data month; pass month:\"YYYY-MM\" for history. Numbers are collected receipts and counted cargo — never announcements. No API key required."
+    },
+    {
+      "name": "trade_query",
+      "description": "Query US containerised import trade directly: monthly weight (kg) and customs value (USD) through the 8 major US container gateways, filterable by origin country (e.g. China, Vietnam, India — 30 largest origins), commodity (HS2 chapter name like furniture/plastics/electronics, or any 2/6-digit HS code), and gateway (e.g. us_la_longbeach, savannah). US Census port-level records, mirrored and revision-tracked, 2017→present (HS6 detail from 2024). Ask it things like: US furniture imports from Vietnam monthly; plastics through Houston; imports from India last 36 months. No API key required."
+    },
+    {
+      "name": "tariff_burden",
+      "description": "What US importers ACTUALLY paid in tariffs, measured from official receipts — not the rulebook: monthly duty collected, dutiable value and consumption value by origin country and commodity (HS2 chapter name or 2/6-digit HS code), 2017→present, US national level. Returns both the effective rate on dutiable value and the overall burden, with caveats. Example: China effective tariff rate monthly; duty on furniture from Vietnam; what toys from China actually pay. Cross-checked against US Treasury receipts. No API key required."
+    },
+    {
+      "name": "tariff_lookup",
+      "description": "Raw tariff-schedule lookup for one HS code: the statutory MFN base rate from the current Harmonized Tariff Schedule, the Chapter-99 trade-war provisions that name a given origin (each with its Federal Register citation), and what was actually collected at the border on that code from official duty receipts. IMPORTANT — the measures this returns are matched by ORIGIN and SECTOR, not by your code: many are product-specific (EVs, syringes, solar, cranes) and do not apply to your goods. Never add their addon_pct values together, and never quote one as \"the tariff\" — the receipts_reality figure is the composed truth; quote that. Not customs advice. Example: tariff on 9401.61 from China. No API key required."
+    },
+    {
+      "name": "hs_search",
+      "description": "Find the HS/HTS code for a product by describing it in plain words — the entry point to every tariff question. Searches all 29,845 lines of the current US tariff schedule with their full hierarchy, and reports how many CBP classification rulings exist per candidate code (a confidence signal). Example: \"electric standing desk\", \"lithium battery pack\", \"frozen shrimp\". No API key required."
+    },
+    {
+      "name": "rulings_search",
+      "description": "Search US Customs (CBP) classification rulings — the case law of HS codes: how the border actually interprets what product belongs under which code. Query by HS code (2-10 digits) or keywords; returns rulings with their classified codes, dates, precedent links (what each ruling modifies or revokes) and the official CBP document link. Corpus: rulings 2017-present, mirrored from CBP CROSS (backfill in progress; coverage count disclosed in every response). No API key required."
+    },
+    {
+      "name": "event_studies",
+      "description": "Pre-registered event studies of every major shock to US containerized trade 2018–2026 (the Event Atlas): tariff waves and their front-running/payback, COVID collapse and boom, the LA/LB queue crisis and the hidden-queue mechanism, the 2022 freight collapse, the ILA strike at daily grain, the Red Sea null, and the AIS-vs-Census cross-check. Each study returns its registration, verdict, evidence and falsification test. Run against 7 years of NOAA AIS (174,440 vessel stays) and US Census port records. No API key required."
+    },
+    {
+      "name": "query_series",
+      "description": "Fetch the data of a series — monthly US port trade by country and commodity, vessel events, ETA reliability — as periods and values. Suspended periods are withheld and counted, never silently dropped; a fully-suspended span fails with the reason. Free, CC BY 4.0. No API key required."
+    },
+    {
+      "name": "ledger_meta",
+      "description": "Router to the ledger's meta and archive tools — call with {tool, arguments}. REGISTRY: list_instruments (every instrument + trust state), search_series (find a series by keywords), describe_series (grade, coverage, citation string for one slug), check_agreement (cross-instrument checks incl. the failed one that suspended the Indian series). FROZEN AIS ARCHIVE (2026-07-26 to 2026-08-06 only; live recording retired 2026-08-08 — cannot answer anything current): gateway_conditions (ships at berth/anchor as last observed), vessel_status, has_vessel_berthed, recent_events. GRADE RULE: series are OBSERVED / REPORTED / MODELLED — modelled quantities (TEU = gross tonnage ÷ 11) are never quotable as measurements; offer counted tonnes instead. Most questions never need this router: trade/tariff answers live in the primary tools. No API key required."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:33:12.655Z",
+  "toolsPreviewStatus": "ok"
+}

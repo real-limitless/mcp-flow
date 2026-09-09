@@ -1,0 +1,58 @@
+{
+  "id": "io.github.xelektron/token-enhancer",
+  "title": "Token Enhancer",
+  "description": "Cuts AI web-fetching costs up to 99.9% by stripping page junk before it reaches your LLM.",
+  "summary": "Cuts AI web-fetching costs up to 99.9% by stripping page junk before it reaches your LLM.",
+  "offersHint": "Cuts AI web-fetching costs up to 99.9% by stripping page junk before it reaches your LLM. · Packages: pypi:xelektron-token-enhancer",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "xelektron-token-enhancer",
+    "version": "0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "xelektron-token-enhancer",
+      "version": "0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/xelektron/token-enhancer",
+  "repository": {
+    "url": "https://github.com/xelektron/token-enhancer",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-03T09:41:10.476808Z",
+  "publishedAt": "2026-04-03T09:41:10.476808Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:38.955Z",
+    "sourceRepoAt": "2026-08-11T23:14:30.725Z",
+    "readmeAt": "2026-08-11T23:14:31.170Z",
+    "toolsAt": "2026-08-12T00:55:38.955Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/xelektron/token-enhancer",
+    "checkedAt": "2026-08-11T23:14:30.725Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/xelektron/token-enhancer/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.xelektron/token-enhancer -->\n# Token Enhancer\n\nA local proxy that strips web pages down to clean text before they enter your AI agent's context window.\n\n**One fetch of Yahoo Finance: 704,760 tokens → 2,625 tokens. 99.6% reduction.**\n\nNo API key. No LLM. No GPU. Just Python.\n\n## The Problem\n\nAI agents waste most of their token budget loading raw HTML pages into context. A single Yahoo Finance page is 704K tokens of navigation bars, ads, scripts, and junk. Your agent pays for all of it before any reasoning happens.\n\n## The Solution\n\nToken Enhancer sits between your agent and the web. It fetches the page, strips the noise, caches the result, and returns only clean data.\n\n| Source | Raw Tokens | After Proxy | Reduction |\n|--------|-----------|-------------|-----------|\n| Yahoo Finance (AAPL) | 704,760 | 2,625 | **99.6%** |\n| Wikipedia article | 154,440 | 19,479 | **87.4%** |\n| Hacker News | 8,662 | 859 | **90.1%** |\n| GitHub repo page | 171,234 | 6,976 | **95.9%** |\n\n## Install\n\n```bash\npip install xelektron-token-enhancer\n```\n\n## Quick Start (from source)\n```\ngit clone https://github.com/xelektron/token-enhancer.git\ncd token-enhancer\nchmod +x install.sh\n./install.sh\nsource .venv/bin/activate\npython3 test_all.py --live\n```\n\n## Usage\n\n### As a standalone proxy\n```\nsource .venv/bin/activate\npython3 proxy.py\n```\n\nThen in another terminal:\n```\ncurl -s http://localhost:8080/fetch \\\n  -H \"content-type: application/json\" \\\n  -d '{\"url\": \"https://finance.yahoo.com/quote/AAPL/\"}' \\\n  | python3 -m json.tool\n```\n\n### As an MCP Server (Claude Desktop, Cursor, OpenClaw)\n\nThis is the plug and play option. Your AI agent discovers the tools automatically and uses them on its own.\n\n```bash\npip install xelektron-token-enhancer\n```\n\n**Claude Desktop:** Add to your config file\n\nMac: `~/Library/Application Support/Claude/claude_desktop_config.json`\n\nWindows: `%APPDATA%\\Claude\\claude_desktop_config.json`\n```json\n{\n  \"mcpServers\": {\n    \"token-enhancer\": {\n      \"command\": \"python3\",\n      \"args\": [\"-m\", \"mcp_server\"],\n      \"env\": {\n        \"REQUESTS_CA_BUNDLE\": \"/etc/ssl/certs/ca-certificates.crt\"\n      }\n    }\n  }\n}\n```\n\n> On Linux hosts where SSL verification fails, the `env` block above overrides the default CA bundle. Remove it on macOS/Windows.\n\n**Cursor:** Add to `.cursor/mcp.json` in your project:\n```json\n{\n  \"mcpServers\": {\n    \"token-enhancer\": {\n      \"command\": \"python3\",\n      \"args\": [\"-m\", \"mcp_server\"]\n    }\n  }\n}\n```\n\nOnce connected, your agent gets three tools:\n\n`fetch_clean` fetches any URL and returns clean text (86 to 99% smaller)\n\n`fetch_clean_batch` fetches multiple URLs at once\n\n`refine_prompt` optional prompt cleanup, shows both versions so you decide\n\n### As a LangChain Tool\n```python\nfrom langchain.tools import tool\nimport requests\n\n@tool\ndef fetch_clean(url: str) -> str:\n    \"\"\"Fetch a URL and return clean text with HTML noise removed.\"\"\"\n    r = requests.post(\"http://localhost:8080/fetch\", json={\"url\": url})\n    return r.json()[\"content\"]\n```\n\nAdd `fetch_clean` to your agent's tool list. Start `python3 proxy.py` first.\n\n## Features\n\n**Data Proxy (Layer 2)**\nFetches any URL, strips HTML/JSON noise, returns clean text. Caches results so repeat fetches are instant. Handles HTML, JSON, and plain text.\n\n**Prompt Refiner (Layer 1, opt in)**\nStrips filler words and hedging while protecting tickers, dates, money values, negations, and conversation references. You see both versions and choose.\n\n**MCP Server**\nPlug into Claude Desktop, Cursor, OpenClaw, or any MCP client. Agent discovers the tools and uses them automatically.\n\n## API Endpoints (proxy mode)\n\n| Endpoint | Method | Description |\n|----------|--------|-------------|\n| `/fetch` | POST | Fetch URL, strip noise, return clean data |\n| `/fetch/batch` | POST | Fetch multiple URLs at once |\n| `/refine` | POST | Opt in prompt refinement |\n| `/stats` | GET | Session statistics |\n\n## Run Tests\n```\npython3 test_all.py           # Layer 1 only (offline)\npython3 test_all.py --live    # Layer 1 + Layer 2 (needs internet)\n```\n\n## Roadmap\n\n- [x] Layer 1: Prompt refiner\n- [x] Layer 2: Data proxy with caching\n- [x] MCP server integration\n- [x] LangChain tool example\n- [ ] Browser fallback (Playwright) for bot blocked sites\n- [ ] Authenticated session management\n- [ ] Layer 3: Output/history compression\n- [ ] CLI tool\n- [ ] Dashboard UI\n\n## Requirements\n\nPython 3.10+. No API keys. No GPU.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:14:31.170Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:38.955Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

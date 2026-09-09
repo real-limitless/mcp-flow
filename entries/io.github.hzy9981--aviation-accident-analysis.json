@@ -1,0 +1,59 @@
+{
+  "id": "io.github.hzy9981/aviation-accident-analysis",
+  "title": "Aviation Accident Analysis MCP",
+  "description": "Aviation accident report parsing and prompt generation service under the SHELL framework.",
+  "summary": "Aviation accident report parsing and prompt generation service under the SHELL framework.",
+  "offersHint": "Aviation accident report parsing and prompt generation service under the SHELL framework. · Packages: pypi:aviation-accident-analysis",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "aviation-accident-analysis",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "aviation-accident-analysis",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/hzy9981/aviation-accident-analysis",
+  "sourceUrl": "https://github.com/hzy9981/aviation-accident-analysis",
+  "repository": {
+    "url": "https://github.com/hzy9981/aviation-accident-analysis",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T01:12:51.985465Z",
+  "publishedAt": "2026-07-27T01:12:51.985465Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:22.456Z",
+    "sourceRepoAt": "2026-08-11T23:42:44.462Z",
+    "readmeAt": "2026-08-11T23:42:45.006Z",
+    "toolsAt": "2026-08-12T01:20:22.456Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/hzy9981/aviation-accident-analysis",
+    "checkedAt": "2026-08-11T23:42:44.462Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/hzy9981/aviation-accident-analysis/main/README.md",
+    "markdown": "# 航空事故致因抽取与知识图谱项目 (Aviation Accident Analysis)\n\n<!-- mcp-name: io.github.hzy9981/aviation-accident-analysis -->\n\n本项目基于 Microsoft GraphRAG 框架\n，旨在自动从航空事故报告中抽取实体与因果关系，并构建符合“人-机-环-管”框架的知识图谱。\n\n## 项目结构\n- `data/`: 原始数据与地标数据。\n- `input/`: GraphRAG 输入目录（清洗后的文本）。\n- `output/`: GraphRAG 输出结果（Parquet, GraphML 等）。\n- `prompts/`: 自定义的 GraphRAG 提取提示词。\n- `src/`: \n    - `ingest.py`: PDF/DOCX 解析与文本清洗。\n    - `evaluate.py`: 提取准确率与 F1 分数评测脚本。\n- `run.sh`: 一键运行脚本。\n- `settings.yaml`: GraphRAG 配置文件。\n\n## 环境要求\n- Python 3.10+\n- [uv](https://github.com/astral-sh/uv) (推荐)\n\n## 环境配置注意事项\n- 若遇到 LLM 连接错误，请检查 `settings.yaml` 中的 `api_base` 是否配置正确。在某些 Docker 或受限环境中，建议将 `localhost` 修改为 `127.0.0.1`。\n- 本项目已对 `prompts/extract_graph.txt` 中的抽取示例进行了优化，通过引入复杂场景示例，提升了在航空事故报告中的实体抽取表现。\n\n## Prompt 优化与评估记录 (2026-07-24)\n\n### 优化策略\n针对航空事故报告的复杂性，对 `prompts/extract_graph.txt` 进行了多轮手动迭代优化：\n1. **实体原子化**：强制拆分复杂短语（如“燃油管路破裂”拆分为实体“燃油管路”与关系“破裂导致”），提升知识图谱的结构化程度。\n2. **严格去噪**：建立了否定约束，排除通用职衔（如单独的“机长”）和指示代词（如“该部件”），提升精确率。\n3. **少样本增强**：集成了 `few_shot_data.csv` 中的高质量航空事故致因链示例，引导模型识别长程因果关系。\n4. **因果链强制构建**：明确 `[因素] -> [事件] -> [结果]` 的链条要求。\n\n### 评估结果 (Fuzzy Match)\n通过 `scripts/run_automated_evaluation.py` 运行自动化评估，对比 `data/ground_truth.json` 得到以下指标：\n\n| 指标 | 实体 (Entities) | 关系 (Relationships) |\n| :--- | :--- | :--- |\n| **精确率 (Precision)** | 0.4348 | 0.0556 |\n| **召回率 (Recall)** | 0.7143 | 0.0909 |\n| **F1 分数 (F1 Score)** | **0.5405** | 0.0690 |\n\n**结论**：实体抽取的精确率和 F1 分数相比基准版本有显著提升。关系抽取受限于本地模型的指令遵循能力，仍有优化空间。\n\n## MCP 服务 (Model Context Protocol)\n\n本项目提供了一个 MCP 服务，方便通过 MCP 客户端（如 Claude Desktop）直接调用文档解析与提示词生成功能。\n\n### 核心功能\n- **文档解析**：支持 PDF、DOCX、TXT 格式的自动解析与清洗。\n- **提示词注入**：将解析出的文档内容自动注入到指定的提示词模板中。\n\n### 启动方式\n```bash\nuv run mcp_server.py\n```\n\n### 可用工具\n1. `upload_and_generate_prompt`:\n   - 参数 `file_path`: 文档路径。\n   - 参数 `template_name`: `prompts/` 目录下的模板名（默认 `extract_entities`）。\n2. `list_available_templates`: 列出所有可用的提示词模板。\n\n### 🐳 一键启动 (Docker)\n\n如果你想快速启动整个分析环境（包含 Neo4j 数据库和 MCP 服务），可以使用 Docker Compose：\n\n```bash\ndocker-compose up -d\n```\n\n启动后：\n- **Neo4j 控制台**: [http://localhost:7474](http://localhost:7474) (默认账号: `neo4j`, 密码: `password`)\n- **MCP 服务**: 已在容器内运行，并自动连接到容器内的 Neo4j。\n\n## 运行流程\n1. 将事故报告（PDF/DOCX/TXT）放入 `data/input_reports`。\n2. 运行流水线：\n   ```bash\n   bash run.sh\n   ```\n\n## 使用 Ollama (本地 LLM)\n在 `settings.yaml` 中修改 `completion_models` 和 `embedding_models`：\n```yaml\ncompletion_models:\n  default_completion_model:\n    model_provider: openai\n    api_base: http://localhost:6006/v1\n    model: llama3 # 或其他模型\n    api_key: ollama # 占位符\n```\n注意：GraphRAG 对本地模型的支持取决于模型的遵循指令能力。\n\n## 提取 Schema (人-机-环-管)\n- **实体类型**: person (人), equipment (机), environment (环), organization (管), procedure, event, weather, violation.\n- **关系类型**: leads to, limited by, violates, not executed, belongs to.\n\n## Neo4j 知识图谱导入\n- 本项目支持将 GraphRAG 提取的实体与关系导入 Neo4j 图数据库。\n- 使用 `src/export_to_neo4j.py` 脚本完成导入。\n- 已配置 Docker 容器运行 Neo4j 实例，确保能够正常连接。\n",
+    "fetchedAt": "2026-08-11T23:42:45.006Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:22.456Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

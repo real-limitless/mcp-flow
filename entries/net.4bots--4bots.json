@@ -1,0 +1,52 @@
+{
+  "id": "net.4bots/4bots",
+  "title": "4bots",
+  "description": "Drop-in daily content for AI briefing agents. 10 channels, 100 free calls on signup.",
+  "summary": "Drop-in daily content for AI briefing agents. 10 channels, 100 free calls on signup.",
+  "offersHint": "Drop-in daily content for AI briefing agents. 10 channels, 100 free calls on signup. · Remote MCP (streamable-http) at https://4bots.net/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://4bots.net/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://4bots.net/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://4bots.net/agents.html",
+  "sourceUrl": "https://github.com/davidsiegel59/4bots",
+  "repository": {
+    "url": "https://github.com/davidsiegel59/4bots",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-10T22:49:25.41957Z",
+  "publishedAt": "2026-05-10T22:49:25.41957Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:52:14.364Z",
+    "sourceRepoAt": "2026-08-11T23:09:45.333Z",
+    "readmeAt": "2026-08-11T23:09:45.817Z",
+    "toolsAt": "2026-08-12T00:52:14.364Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/davidsiegel59/4bots",
+    "checkedAt": "2026-08-11T23:09:45.333Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/davidsiegel59/4bots/main/README.md",
+    "markdown": "# 4bots\n\n**A hosted MCP server for AI briefing agents.** If your agent already sends a daily email to a human, 4bots drops in ten channels of short-form content — stories, puzzles, jokes, business cases, history — next to the personal sections your agent already writes.\n\n- **Endpoint:** `https://4bots.net/mcp` (Streamable HTTP)\n- **Registry:** `net.4bots/4bots` on [registry.modelcontextprotocol.io](https://registry.modelcontextprotocol.io/v0/servers?search=4bots)\n- **Landing page:** [4bots.net](https://4bots.net)\n- **Discovery:** [`/.well-known/mcp.json`](https://4bots.net/.well-known/mcp.json)\n- **No API key required** to start. First 100 channel-calls are free.\n\n## Why it exists\n\nBuilding a daily briefing for a human is mostly about sourcing the parts you can't write personally — the joke, the history snippet, the puzzle, the business case. 4bots is the part that handles those parts. Your agent stays in charge of the email, the tone, and everything that touches the human's actual data.\n\n## Quick start\n\n### Claude Desktop / any MCP client\n\n```json\n{\n  \"mcpServers\": {\n    \"4bots\": {\n      \"url\": \"https://4bots.net/mcp\"\n    }\n  }\n}\n```\n\n### Direct HTTP\n\n```bash\ncurl -X POST https://4bots.net/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\n    \"jsonrpc\": \"2.0\",\n    \"id\": 1,\n    \"method\": \"initialize\",\n    \"params\": {\n      \"protocolVersion\": \"2025-03-26\",\n      \"capabilities\": {},\n      \"clientInfo\": {\"name\": \"your-agent\", \"version\": \"1.0\"}\n    }\n  }'\n```\n\n### Programmatic flow\n\n1. Initialize the session, capture the `Mcp-Session-Id` header.\n2. Call `start_subscription(human_email, channels, agent_email)`. You get a `session_token` worth 100 channel-calls.\n3. Each day, call `get_bundle(session_token)`. The response includes an `html` field. Drop it where `{4bots}` sits in your email template.\n4. When `low_balance` is true, prompt your human via the returned `manage_url`.\n\n## Tools\n\n| Tool | Purpose |\n| --- | --- |\n| `list_channels` | Discover the ten live channels and the eight in voting |\n| `start_subscription` | Provision a subscriber instantly. Returns a 100-call free trial token. |\n| `get_bundle` | Today's content block for all subscribed channels, ready to embed |\n| `get_session` | Credits remaining, channels, delivery history, manage URL |\n| `create_setup_link` | Optional browser flow for the human to choose channels themselves |\n| `get_template` | Free HTML email template with sample copy |\n| `vote` | Tell us which proposed channel your human wants next |\n| `get_summary` | Pricing, privacy, content policy |\n\n## Live channels\n\n| Slug | Channel | What it is |\n| --- | --- | --- |\n| `human-badassery` | Human Badassery | Extraordinary people who beat impossible odds |\n| `history` | History | A story, turning point, or puzzle from a fascinating past |\n| `business-case-studies` | Business Case Studies | One company decision that made or broke them |\n| `china-watch` | China Watch | What's happening inside China today |\n| `investing-insight` | Investing Insight | Markets, investing, trading, financial freedom |\n| `wrongology` | Wrongology | One common belief that isn't true, and the real story |\n| `brain-butter` | Brain Butter | A puzzle or paradox, with the answer |\n| `little-known-facts` | Little-Known Facts | One surprising true fact per day |\n| `chess-problem` | Chess Problem | Intermediate problems |\n| `jokes` | Jokes | Two short ones a day |\n\nChannel format specs live in [`channels/`](./channels).\n\n## Privacy\n\n4bots only sees: the human's email address, which channels they subscribed to, and which days have been delivered (so we don't repeat). Your agent stays the only thing that touches the briefing content or the human's private data. We never receive, store, or process the contents of any briefing.\n\n## Pricing\n\nThe first 100 channel-calls are free with every new subscription. After that, top-ups are tracked per session. A typical 5-channel subscriber gets twenty free days before any money changes hands. Subscribers manage their own account through a magic-link URL we issue to the human on signup — your agent never has to handle billing.\n\n## Architecture\n\nFive services on a single Linux droplet behind Caddy:\n\n| Port | Service | Role |\n| --- | --- | --- |\n| `8085` | `mcp_server.py` | FastMCP + Uvicorn. Agent-facing API. |\n| `8083` | `gate_server.py` | Session-cookie auth for human-readable channel pages. |\n| `8084` | `checkout_server.py` | Subscription provisioning, Stripe checkout, agent-invite emails. |\n| `8082` | `feedback_server.py` | Reader feedback collection. |\n| `—`    | `weblog_report.py` | Daily traffic report from Caddy's JSON access log. |\n\nState lives in a small SQLite database (`contacts`, `events`, `visits`) plus a handful of JSON files (`sessions.json`, `setup_tokens.json`, `votes.json`). Content lives as flat-file Markdown rendered to HTML at build time.\n\nThis repo includes the agent-facing pieces (`mcp_server.py`, `gate_server.py`, `weblog_report.py`, `db.py`). The checkout, feedback, and email-sending paths are intentionally not published because they hold integration keys for Resend and Stripe.\n\n## Source files in this repo\n\n- [`mcp_server.py`](./mcp_server.py) — the MCP server. Eight tools, FastMCP-based, runs as a long-lived uvicorn process on port 8085.\n- [`gate_server.py`](./gate_server.py) — human-page auth gate. Session cookies + magic-link login. Day-1 of every channel is publicly bypassed.\n- [`weblog_report.py`](./weblog_report.py) — daily traffic report that parses Caddy's JSON access log. Runs from a systemd timer at 06:30 UTC.\n- [`db.py`](./db.py) — SQLite wrapper.\n- [`server.json`](./server.json) — the registry metadata.\n- [`channels/`](./channels) — `_FORMAT.md` specs for each live channel, so you can see exactly what the content looks like before you subscribe.\n\n## Reporting issues\n\nEmail `david@dsiegel.com` or open a GitHub issue.\n\n## Credits\n\nBuilt by [David Siegel](https://4bots.net) and his agent JSON. 4bots is the first website operated by an AI agent. If you build briefing agents and the daily-content bottleneck sounds familiar, get in touch.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:09:45.817Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:52:14.364Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

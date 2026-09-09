@@ -1,0 +1,97 @@
+{
+  "id": "io.github.StructLabs-io/runitonai-mcp",
+  "title": "runitonai-mcp",
+  "description": "Read-only MCP connector serving the Run It on AI book; index and Implementation Blocks are free.",
+  "summary": "Read-only MCP connector serving the Run It on AI book; index and Implementation Blocks are free.",
+  "offersHint": "Read-only MCP connector serving the Run It on AI book; index and Implementation Blocks are free. · Remote MCP (streamable-http) at https://mcp.runitonai.com/mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.runitonai.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.runitonai.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://runitonai.com",
+  "sourceUrl": "https://github.com/StructLabs-io/runitonai-mcp",
+  "repository": {
+    "url": "https://github.com/StructLabs-io/runitonai-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T11:44:56.548291Z",
+  "publishedAt": "2026-07-31T11:44:56.548291Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:21.047Z",
+    "sourceRepoAt": "2026-08-12T00:02:14.315Z",
+    "readmeAt": "2026-08-12T00:02:14.877Z",
+    "toolsAt": "2026-08-12T00:02:14.978Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/StructLabs-io/runitonai-mcp",
+    "checkedAt": "2026-08-12T00:02:14.315Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/StructLabs-io/runitonai-mcp/main/README.md",
+    "markdown": "# Run It on AI — the companion server, in full\n\nThis repository is the complete source code of the server that powers the\n*Run It on AI* reading companion at `mcp.runitonai.com`. If you bought the\nbook and connected your AI to it, this is everything that runs on our side.\n\nWe publish it so you do not have to take our word for anything. The server\nis a few hundred lines of TypeScript. You (or your AI — paste any file into\nit and ask) can read exactly what it does and, just as importantly, what it\ncannot do.\n\n## The short version\n\n**What reaches our server when you use the companion:**\n\n- The name of the tool your AI called (for example \"fetch chapter 3\").\n- The chapter or exercise it asked for.\n- Your access code — the license key printed on your Gumroad receipt.\n\n**What never reaches us, because there is no code here that could receive,\nstore, or forward it:**\n\n- Your conversations with your AI.\n- Your files, documents, or anything on your machine.\n- Your name.\n- Your email. Search this repository for an email field: there is none.\n  No tool, no endpoint, no code path accepts one.\n- The picture your AI forms of you while you work. That stays inside your\n  AI, on your side.\n\n**Who talks to whom:** when you add the companion as a Claude connector,\nyour machine never contacts our server directly — Anthropic's cloud brokers\nthe connection. On ChatGPT, OpenAI's cloud does. We see tool calls, not you.\n\n## How access works\n\nYour credential is the **license key** on your Gumroad receipt (a code like\n`XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX`). It identifies a purchase, not a\nperson. The server checks it against Gumroad, caches a hash of it for a day,\nand rate-limits it. Refunded or disabled keys stop working. See\n[`src/license.ts`](src/license.ts) — the whole mechanism is one file.\n\nOnly chapter text needs the key. The companion's operating instructions\n(`activate`) and every Implementation Block — the book's working exercises —\nare served without any credential at all; the exercises are also published\nright here in [`implementation-blocks/`](implementation-blocks/).\n\n## Connect it\n\n**Claude (web or desktop) — the easy path.**\nSettings -> Connectors -> Add custom connector, then paste:\n\n```\nhttps://mcp.runitonai.com/mcp\n```\n\nStart a chat with: `Activate Run It on AI — my access code is <your license key>`.\n\n**ChatGPT.** Use the \"Run It on AI Companion\" GPT (link in the book), or\nbuild your own: create a Custom GPT and import\n`https://mcp.runitonai.com/openapi.yaml` as an Action.\n\n**Claude Code (terminal users).**\n\n```sh\nclaude mcp add --transport http runitonai-book https://mcp.runitonai.com/mcp\n```\n\n**Codex.** In `~/.codex/config.toml`:\n\n```toml\n[mcp_servers.runitonai_book]\nurl = \"https://mcp.runitonai.com/mcp\"\n```\n\n## What is in this repo\n\n| Path | What it is |\n|---|---|\n| `src/worker.ts` | The Cloudflare Worker: routing, transports, the Gumroad sync endpoint |\n| `src/license.ts` | License-key verification and caching (the access gate) |\n| `src/auth.ts` | Verification of legacy bearer tokens (nothing mints new ones) |\n| `src/rate_limit.ts` | Per-key rate limiting |\n| `src/mcp/` | MCP protocol plumbing (tool catalog, dispatch, transports) |\n| `src/tools/` | The tools your AI can call |\n| `openapi-v1.yaml` | The same surface described for ChatGPT Actions |\n| `implementation-blocks/` | Every Implementation Block from the book, as readable markdown |\n\nTwo data files ship as placeholders: `src/data/chapters.json` (the book's\nchapter text) and `src/data/skill.json` (the companion's operating\ninstructions). Both are generated from the book manuscript at deploy time.\nThe book's prose is the product, so it is not in the public repo — but the\ncode that serves it is all here, and the Implementation Blocks (the working\nexercises) are published in full in `implementation-blocks/`.\n\nNote for contributors: everything in this repo is generated from the\nprivate manuscript repo by a sync script, and a pre-commit hook there\nre-syncs it on every relevant change. The Implementation Blocks live in the\nbook's manuscript; the copies here are build artifacts — never edit them\nhere, they will be overwritten.\n\n## Run it yourself\n\n```sh\nnpm install\nnpm run typecheck\nnpm run dev        # local server on localhost:8787\n```\n\n`wrangler.toml` ships with placeholder KV namespace ids; point them at your\nown Cloudflare account if you want to self-host the shell.\n\n## License\n\nMIT — see [LICENSE](LICENSE). The book itself (chapters, companion\ninstructions) remains copyrighted content of StructLabs.io Pte Ltd and is\nnot part of this repository.\n",
+    "fetchedAt": "2026-08-12T00:02:14.877Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "activate",
+      "description": "Start here. Returns the Run It on AI companion's full operating instructions (engagement modes, routing, voice rules, tool usage). Call this FIRST — before any other tool — when the user says \"Activate Run It on AI\", mentions the Run It on AI ebook, or asks for help choosing/deploying AI in their business. No authentication."
+    },
+    {
+      "name": "list_book_index",
+      "description": "Discovery: every valid chapter_id with its title — front matter, all chapters, AND all appendices (e.g. appendix-b-online-reference) — plus Implementation Block names per chapter. Call this whenever unsure which chapter_id to use. No authentication."
+    },
+    {
+      "name": "lookup_chapter",
+      "description": "Fetch a full chapter or a named section by slug — works for appendices too. Buyer-gated: pass the reader's access_code (their Gumroad license key). Unsure of the slug? Call list_book_index first."
+    },
+    {
+      "name": "get_implementation_block",
+      "description": "Fetch a structured Implementation Block (reader_prompt, agent_notes, target_artifact) by chapter and name. Free to call — no access code needed; the Implementation Blocks are public (they also ship in the open-source server repo)."
+    },
+    {
+      "name": "find_section",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "find_playbook",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "get_playbook",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "report_telemetry",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "get_session_history",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "save_session_state",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    },
+    {
+      "name": "forget_session_history",
+      "description": "Stub — not implemented in Phase 1. See tool response 'phase' field."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:02:14.978Z",
+  "toolsPreviewStatus": "ok"
+}

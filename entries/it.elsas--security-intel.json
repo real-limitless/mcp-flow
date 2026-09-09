@@ -1,0 +1,52 @@
+{
+  "id": "it.elsas/security-intel",
+  "title": "security-intel",
+  "description": "Daily Ed25519-signed security intelligence for AI-agent stacks; CVEs & advisories, paid via x402.",
+  "summary": "Daily Ed25519-signed security intelligence for AI-agent stacks; CVEs & advisories, paid via x402.",
+  "offersHint": "Daily Ed25519-signed security intelligence for AI-agent stacks; CVEs & advisories, paid via x402. · Remote MCP (streamable-http) at https://elsas.it/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://elsas.it/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://elsas.it/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://elsas.it",
+  "sourceUrl": "https://github.com/romans-repos/elsas-verify",
+  "repository": {
+    "url": "https://github.com/romans-repos/elsas-verify",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-20T15:42:39.145857Z",
+  "publishedAt": "2026-06-20T15:42:39.145857Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:52:50.015Z",
+    "sourceRepoAt": "2026-08-11T23:10:50.176Z",
+    "readmeAt": "2026-08-11T23:10:50.683Z",
+    "toolsAt": "2026-08-12T00:52:50.015Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/romans-repos/elsas-verify",
+    "checkedAt": "2026-08-11T23:10:50.176Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/romans-repos/elsas-verify/main/README.md",
+    "markdown": "# elsas-verify\n\n**Independently verify the daily security-intelligence reports published by\n[elsas.it](https://elsas.it) — offline, with no trust in our servers and no\naccess to our keys.**\n\n[elsas.it](https://elsas.it) is signed security intelligence for **AI agents**,\nserved over MCP and paid per call with [x402](https://elsas.it/docs) (USDC on Base —\naccountless, your wallet is your identity). Two shapes:\n\n- **Atomic primitives** (high-frequency, sub-cent): `is_exploited` (is this CVE in\n  CISA-KEV? $0.001), `check_cve` (CVSS + KEV + EPSS, $0.01), `check_package` (OSV\n  verdict for one package@version, $0.002), `search_cves` ($0.01), `scan_dependencies`\n  (whole-lockfile OSV scan, pay-per-vuln, free when clean).\n- **Premium digest**: `get_today` — the daily curated, cross-validated report ($0.10).\n\n**Every response is Ed25519-signed** (SSHSIG, namespace `elsas-report`) — so you can\nprove it's authentic and untampered *without trusting our servers and without our\nkeys*. That's the differentiator: unsigned CVE APIs ask you to trust them; we let you\nverify. This repo is everything you need to do that offline.\n\n> **Don't trust us — verify.**\n\n---\n\n## Verify in 30 seconds\n\nRequirements: `openssh-client` (`ssh-keygen`) and `python3` — present on any\nLinux/macOS. No install, no network needed for the verification itself.\n\n```bash\ngit clone https://github.com/romans-repos/elsas-verify.git\ncd elsas-verify\n./verify-report.sh examples/sample-report.json allowed_signers\n```\n\nExpected output:\n\n```\nVALID: authentic & untampered\n  Signer:  elsas@elsas.it\n  Hash:    sha256:…\nGood \"elsas-report\" signature for elsas@elsas.it with ED25519 key SHA256:gLVNll72kb8Iyni2vNMR6oHGqVh0Ynz+lBMhbS+cSa4\n```\n\n## Verify a live report\n\n```bash\n# Fetch the current public sample + its detached signature\ncurl -s https://elsas.it/sample                          > report.json\ncurl -s https://elsas.it/.well-known/report.json.sig     > report.json.sig\n# Verify against the pinned key in this repo\n./verify-report.sh report.json allowed_signers\n```\n\nYou can also verify by hand with stock OpenSSH:\n\n```bash\nssh-keygen -Y verify \\\n  -f allowed_signers \\\n  -I elsas@elsas.it \\\n  -n elsas-report \\\n  -s report.json.sig < report.json\n```\n\n## Verify an atomic-tool verdict\n\nThe atomic tools return a JSON verdict with an embedded `_signature` block\n(`signed_payload` = the exact signed bytes; `signature` = an armored SSHSIG). Verify\nit offline — by shell, or with the drop-in library for your language:\n\n```bash\n# shell (ssh-keygen + python3 stdlib)\n./verify-verdict.sh examples/sample-verdict.json allowed_signers\n```\n\n```js\n// Node — zero dependencies (built-in crypto). npm i @elsas/verify\nimport { verifyVerdict } from '@elsas/verify';\nconst { ok, reason } = verifyVerdict(verdict);   // pinned elsas key, offline\nif (!ok) throw new Error(`unverified elsas verdict: ${reason}`);\n```\n\n```python\n# Python — pip install elsas-verify  (only dep: cryptography)\nfrom elsas_verify import verify_verdict\nok, info = verify_verdict(verdict)\nassert ok, info[\"reason\"]\n```\n\nEach verifier does two independent checks: (1) the verdict body matches the signed\nbytes (tamper-evidence), and (2) the SSHSIG verifies under the **pinned** elsas key\n(a signature by any other key is rejected). No network call is needed to verify.\n\n## Trust model\n\n- Signatures use **SSHSIG (Ed25519)** via `ssh-keygen -Y sign`. Verification is\n  offline and zero-trust: you hold the payload, you verify locally.\n- The **root of trust** is [`allowed_signers`](./allowed_signers) — our public\n  key, identity-pinned to `elsas@elsas.it`. A substituted signers file with a\n  different key is rejected by the `-I` flag.\n- Confirm the pinned key independently against the live copy:\n  ```bash\n  curl -s https://elsas.it/.well-known/allowed_signers\n  ```\n  Key fingerprint: `SHA256:gLVNll72kb8Iyni2vNMR6oHGqVh0Ynz+lBMhbS+cSa4`\n- Each report also carries a `_integrity.content_hash` (sha256 over the\n  canonical JSON) for tamper evidence — see [`SIGNATURE-VERIFY.md`](./SIGNATURE-VERIFY.md).\n\n## What's in here\n\n| File | Purpose |\n|---|---|\n| `verify-report.sh` | Dependency-free report verifier (ssh-keygen + python3 stdlib) |\n| `verify-verdict.sh` | Dependency-free **atomic-verdict** verifier |\n| `packages/node/` | `@elsas/verify` — zero-dep Node library + CLI |\n| `packages/python/` | `elsas-verify` — Python library + CLI (`pip install`) |\n| `allowed_signers` | Our public signing key — the root of trust |\n| `schemas/report-v4.json` | JSON schema of a report payload |\n| `examples/sample-report.json` (+ `.sig`) | A real, signed report to verify against |\n| `examples/sample-verdict.json` | A real, signed atomic-tool verdict to verify against |\n| `SIGNATURE-VERIFY.md` | The full verification recipe and trust details |\n\n## What's *not* here\n\nThis repo is the **verification surface only**. The curation pipeline, scoring\nprompts, relevance taxonomy, infrastructure and any operational configuration are\nintentionally not published — they are neither needed to verify a report nor\nuseful to a third party. Verifiability does not require disclosing how the\nsausage is made; it requires that the result is checkable. That's what this is.\n\n## License\n\nTooling in this repository is released under the [MIT License](./LICENSE).\nReport payloads themselves carry their own license terms inside the report\n(`_integrity._license_coverage`).\n\n---\n\nService: **https://elsas.it** · Docs: **https://elsas.it/docs** · Sample: **https://elsas.it/sample**\n",
+    "fetchedAt": "2026-08-11T23:10:50.683Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:52:50.015Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: ",
+  "toolsPreviewStatus": "unreachable"
+}

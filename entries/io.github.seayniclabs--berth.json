@@ -1,0 +1,58 @@
+{
+  "id": "io.github.seayniclabs/berth",
+  "title": "Berth",
+  "description": "Database management — query, schema inspection, migrations for PostgreSQL, MySQL, SQLite.",
+  "summary": "Database management — query, schema inspection, migrations for PostgreSQL, MySQL, SQLite.",
+  "offersHint": "Database management — query, schema inspection, migrations for PostgreSQL, MySQL, SQLite. · Packages: pypi:berth-mcp",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "berth-mcp",
+    "version": "0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "berth-mcp",
+      "version": "0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/seayniclabs/berth",
+  "repository": {
+    "url": "https://github.com/seayniclabs/berth",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-07T21:35:39.670325Z",
+  "publishedAt": "2026-04-07T21:35:39.670325Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:11.737Z",
+    "sourceRepoAt": "2026-08-11T23:22:09.593Z",
+    "readmeAt": "2026-08-11T23:22:10.216Z",
+    "toolsAt": "2026-08-12T01:02:11.738Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/seayniclabs/berth",
+    "checkedAt": "2026-08-11T23:22:09.593Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/seayniclabs/berth/main/README.md",
+    "markdown": "# Berth -- Database MCP Server\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-34D399.svg)](LICENSE)\n\nA secure berth for your data -- database access for AI tools.\n\nBerth is a [Model Context Protocol](https://modelcontextprotocol.io/) server that gives AI assistants safe, structured access to PostgreSQL, SQLite, and MySQL databases. It exposes 13 tools for inspecting schemas, running queries, managing data, generating migrations, and performing backups -- all governed by a 3-tier safety model that prevents accidental damage.\n\n---\n\n## Safety Model\n\nBerth enforces three operating modes that control what SQL is permitted:\n\n| Mode | Default | Allows | Blocks |\n|------|---------|--------|--------|\n| **read-only** | Yes | `SELECT`, `EXPLAIN` | All writes |\n| **write** | No | `INSERT`, `UPDATE`, `DELETE`, `CREATE` | `DROP`, `TRUNCATE`, `ALTER DROP`, `DELETE` without `WHERE` |\n| **admin** | No | Everything | Destructive ops require a confirmation token (60s expiry) |\n\nThe server starts in **read-only mode**. Write and admin modes must be explicitly enabled. Destructive operations in admin mode generate a one-time confirmation token that expires after 60 seconds -- the AI must echo the token back to confirm intent.\n\n---\n\n## Tools\n\n| Tool | Description | Key Parameters |\n|------|-------------|----------------|\n| `health` | Server health check | -- |\n| `db_connect` | Connect to a database | `dsn` (connection string) |\n| `db_query` | Execute a SELECT query (auto-adds LIMIT 1000) | `connection_id`, `sql` |\n| `db_execute` | Execute INSERT/UPDATE/DELETE (respects safety mode) | `connection_id`, `sql`, `confirmation_token` |\n| `db_schema` | List tables, views, and indexes | `connection_id` |\n| `db_describe` | Column details for a table | `connection_id`, `table` |\n| `db_relationships` | Foreign key relationships | `connection_id`, `table` (optional) |\n| `db_size` | Database and table sizes | `connection_id` |\n| `db_active_queries` | Currently running queries (PostgreSQL only) | `connection_id` |\n| `db_explain` | Run EXPLAIN ANALYZE on a query | `connection_id`, `sql` |\n| `generate_migration` | Generate migration SQL by comparing schemas | `connection_id` + `target_sql`, or `from_connection` + `to_connection` |\n| `db_backup` | Create a database backup | `connection_id`, `output_path` |\n| `db_restore` | Restore from backup (admin mode + confirmation token) | `connection_id`, `input_path`, `confirmation_token` |\n\n---\n\n## Schema Migrations\n\nThe `generate_migration` tool compares two schemas and produces dialect-aware SQL to migrate from one to the other. Two modes of operation:\n\n**Mode 1 — Live database vs. target DDL:**\n\nProvide `connection_id` (an active connection) and `target_sql` (CREATE TABLE statements describing the desired schema). Berth introspects the live database and diffs it against the parsed target.\n\n**Mode 2 — Two live databases:**\n\nProvide `from_connection` and `to_connection` (two active connection IDs). Berth introspects both and generates the migration to transform the source into the target.\n\n**What it generates:**\n\n- `CREATE TABLE` for new tables\n- `ALTER TABLE ADD COLUMN` for new columns\n- `ALTER TABLE ALTER COLUMN` / `MODIFY COLUMN` for type, nullability, and default changes\n- `CREATE INDEX` / `DROP INDEX` for index changes\n- `ADD CONSTRAINT` / `DROP CONSTRAINT` for foreign key changes\n- `DROP TABLE` and `DROP COLUMN` are commented out with warnings (safety first)\n\n**Dialect handling:**\n\n- **PostgreSQL** -- uses `ALTER COLUMN ... TYPE`, `SET/DROP NOT NULL`, `SET/DROP DEFAULT`\n- **MySQL** -- uses `MODIFY COLUMN` for all column changes, `DROP INDEX ... ON table`\n- **SQLite** -- warns about unsupported operations and includes the table rebuild pattern for changes that require it (ALTER COLUMN, DROP COLUMN on older versions, constraint changes)\n\n---\n\n## Supported Databases\n\n- **PostgreSQL** -- full support including `pg_stat_activity`, `EXPLAIN ANALYZE`, `pg_dump`/`psql` backup/restore\n- **SQLite** -- full support including PRAGMA introspection, `.backup`/`.restore` via `sqlite3` CLI\n- **MySQL** -- full support including `information_schema` introspection, `mysqldump`/`mysql` backup/restore\n\n---\n\n## Installation\n\nFrom PyPI:\n\n```bash\npip install berth-mcp\n```\n\nOr in an isolated environment:\n\n```bash\npipx install berth-mcp\n```\n\nMySQL support requires an optional dependency:\n\n```bash\npip install berth-mcp[mysql]\n```\n\nPostgreSQL (`asyncpg`) and SQLite (`aiosqlite`) drivers are included by default.\n\n---\n\n## Usage\n\nRun the server:\n\n```bash\nberth\n```\n\nBerth communicates over stdio using the MCP protocol. It is designed to be launched by an MCP client, not run standalone.\n\n### Claude Code\n\n```bash\nclaude mcp add berth -- berth\n```\n\n### Claude Desktop\n\nAdd to your `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"berth\": {\n      \"command\": \"berth\",\n      \"args\": []\n    }\n  }\n}\n```\n\nIf installed in a virtual environment, use the full path:\n\n```json\n{\n  \"mcpServers\": {\n    \"berth\": {\n      \"command\": \"/path/to/venv/bin/berth\",\n      \"args\": []\n    }\n  }\n}\n```\n\n---\n\n## Environment Variables\n\n| Variable | Default | Description |\n|----------|---------|-------------|\n| `BERTH_BACKUP_DIR` | Current working directory | Sandbox directory for backup and restore paths. All paths are validated to stay within this directory. |\n\n---\n\n## Security\n\n- **3-tier safety model** -- read-only by default, writes require explicit opt-in, destructive ops require confirmation tokens\n- **Confirmation tokens** -- one-time UUIDs with 60-second expiry for DROP, TRUNCATE, ALTER DROP, and full-table DELETE\n- **SQL injection protection** -- table names validated against `sqlite_master` before use in PRAGMA statements; parameterized queries used throughout\n- **Path traversal protection** -- backup/restore paths are resolved and validated to stay within `BERTH_BACKUP_DIR`; null bytes rejected\n- **Password masking** -- DSN passwords are masked in all display output and error messages\n\n---\n\n## Development\n\n```bash\ngit clone https://github.com/seayniclabs/berth.git\ncd berth\npython -m venv .venv && source .venv/bin/activate\npip install -e \".[test]\"\npython -m pytest tests/ -q\n```\n\nIntegration tests for PostgreSQL and MySQL require Docker:\n\n```bash\ndocker compose -f tests/docker-compose.test.yml up -d\npython -m pytest tests/ -q\ndocker compose -f tests/docker-compose.test.yml down\n```\n\n---\n\n## Using with a Gateway\n\nIf you're running multiple MCP servers, route them through a gateway like [`tbxark/mcp-proxy`](https://github.com/tbxark/mcp-proxy) to manage all child processes from a single persistent service. The proxy handles process lifecycle, centralized config, and crash recovery — each server still gets its own SSE endpoint but you manage everything from one config file instead of scattered Claude Code entries.\n\nFor a full walkthrough of how this works in practice, see [The Hidden Cost of a Loaded MCP Stack](https://charlieseay.com/blog/mcp-gateway-lazy-loading) on charlieseay.com.\n\n## License\n\n[MIT](LICENSE)\n\n<!-- mcp-name: io.github.seayniclabs/berth -->\n",
+    "fetchedAt": "2026-08-11T23:22:10.216Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:11.738Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.asqi-carter/ftx-mcp",
+  "title": "FTX MCP — FactoryTalk Optix MCP Server",
+  "description": "MCP server for FactoryTalk Optix: author, preview, and verify Studio changes via the emulator.",
+  "summary": "MCP server for FactoryTalk Optix: author, preview, and verify Studio changes via the emulator.",
+  "offersHint": "MCP server for FactoryTalk Optix: author, preview, and verify Studio changes via the emulator. · Packages: pypi:ftx-mcp",
+  "version": "1.0.5",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "ftx-mcp",
+    "version": "1.0.5",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "ftx-mcp",
+      "version": "1.0.5",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/asqi-carter/ftx-mcp",
+  "repository": {
+    "url": "https://github.com/asqi-carter/ftx-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T04:12:30.250668Z",
+  "publishedAt": "2026-07-29T04:12:30.250668Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:44.376Z",
+    "sourceRepoAt": "2026-08-11T23:56:01.920Z",
+    "readmeAt": "2026-08-11T23:56:02.732Z",
+    "toolsAt": "2026-08-12T01:29:44.376Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/asqi-carter/ftx-mcp",
+    "checkedAt": "2026-08-11T23:56:01.920Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/asqi-carter/ftx-mcp/main/README.md",
+    "markdown": "# ftx-mcp\n\n<!-- mcp-name: io.github.asqi-carter/ftx-mcp -->\n\n**Talk to your FactoryTalk Optix project.** ftx-mcp connects AI tools\n(Desktop, Cowork, Code — or any MCP client) to FactoryTalk Optix Studio on\nyour Windows machine, so you can build and change HMI screens by describing\nwhat you want:\n\n> *\"Add a header that says 'Hello Optix' to Screen 1 and show me.\"*\n>\n> *\"Bind that label's visibility to Model/PumpRunning.\"*\n>\n> *\"Looks right. Launch the emulator and validate it.\"*\n\nYour LLM authors the change directly into your open Studio project, runs the\nemulator, and looks at the rendered runtime to confirm it worked. It is a\ndevelopment and testing companion: shipping to hardware stays in Studio's own\nDeploy dialog, in your hands. Everything besides the LLM calls runs locally\non your machine. No cloud service, no API key; your LLM of choice provides\nthe intelligence.\n\n[**Blog Post**](https://asqi.org/resources/ftx-mcp-v1/)\n\n## Install (10 minutes)\n\nRequirements: Windows 11, FactoryTalk Optix Studio 1.7.x, and an MCP client\nlike Claude Cowork. Also: **Google Chrome** (the CDP verify loop; skip with\n`setup.ps1 -NoCdp`) and — for the Claude Desktop **Microsoft Store build**\nconnector path — **Node.js** (`winget install OpenJS.NodeJS.LTS`; the config\nuses `npx mcp-remote`). Setup auto-installs **Tesseract OCR** via winget for\nthe zero-vision-token text tools (skip with `-NoOcr`; everything else works\nwithout it) and **Pillow** into the venv for pixel diffing.\n\nRun `setup.ps1` from a **regular PowerShell window** — not a shell hosted\ninside a packaged app like the Store build of Claude Desktop, whose\n`%LOCALAPPDATA%` writes are virtualized (setup now detects this and refuses).\nIf you downloaded a ZIP instead of cloning, run\n`Get-ChildItem -Recurse | Unblock-File` first.\n\nIf `setup.ps1` (or any `bootstrap\\*.ps1`) fails to run at all with a script-\nexecution / \"running scripts is disabled\" error, your machine's execution\npolicy is blocking unsigned scripts. Unblock them for the current window only —\nno admin, no persistent policy change — then re-run:\n\n```powershell\nSet-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass\n```\n\n```powershell\ngit clone https://github.com/asqi-carter/ftx-mcp.git\ncd ftx-mcp\n.\\bootstrap\\setup.ps1                                  # install (does not start anything)\n.\\bootstrap\\services.ps1 start                         # start the service + cdp chrome\n.\\bootstrap\\services.ps1 status                        # verify health\nhttp://127.0.0.1:8765/ui                               # health dashboard\n```\n\n**Auth:** the default install is loopback-only with auth OFF — setup never\nprompts, and no token is needed on your own box. Binding to the LAN is the\none case that requires auth: install with `.\\bootstrap\\setup.ps1 -EnableAuth`\n(see [`docs/security.md`](docs/security.md)). If a UI/API unexpectedly asks\nfor a bearer token, a previous install enabled auth — re-run setup with\n`-NoAuth` to clear it.\n\nTo remove an install (or reset before a clean reinstall):\n`.\\bootstrap\\uninstall.ps1` stops and unregisters the scheduled tasks and\nreaps any leftover CDP chrome; add `-All` to also delete state (issued\ntokens, chrome profile, persisted auth choice) and the venv.\n\n## Start the Studio Bridge (5 minutes)\n\n1. **One-time bridge setup** (per project): in the Studio project tree,\n   right-click **NetLogic** → add a new **DesignTime NetLogic** named\n   `StudioMCPBridge`, double-click it to open the C# editor, and paste in\n   [`studio-bridge/StudioMCPBridge.cs`](studio-bridge/StudioMCPBridge.cs)\n   (make sure to rebuild in your code editor or save in Studio to trigger a rebuild)\n2. **Setup the Project** once per Studio session: right-click\n   **StudioMCPBridge** → **SetupProject** → This just adds a webui for validation access at localhost:8081\n3. **Start the bridge** once per Studio session: right-click\n   **StudioMCPBridge** → **StartBridge** → accept Studio's\n   one-time security prompt.\n4. **Verify bridge health**: Studio Output will show `listening on http://127.0.0.1:8768` (the bridge). The service dashboard at http://127.0.0.1:8765/ui shows bridge status too.\n\n## Cowork (5 minutes)\n\nRequirements: MCP server and bridge running. Claude desktop app downloaded.\n\n```powershell\ncd ftx-mcp                   # install + start the service\n.\\bootstrap\\setup-mcp-client.ps1 -WriteConfig          # adds as a connector to desktop app\n```\n\nRestart Claude Desktop (You might have to end task in task manager to fully restart), then ask Claude to **\"run optix_status(action='doctor')\"** — it\nreports anything missing, with a plain-English fix for each item.\nIn settings > connectors you can adjust the permissions for each of the tools\n\n## Claude Code (5 minutes)\n\nRequirements: MCP server healthy and claude accessible in cli\n\n```powershell\nclaude mcp add --transport http ftx-mcp http://127.0.0.1:8766/mcp\n```\n\nThen in Claude Code, run `/mcp` and confirm `ftx-mcp` shows as connected.\n\n## Visual Studio Code (5 minutes)\n\nCreate or open `.vscode/mcp.json` and add:\n\n```json\n{\n  \"servers\": {\n    \"ftx-mcp\": {\n      \"type\": \"http\",\n      \"url\": \"http://127.0.0.1:8766/mcp\"\n    }\n  }\n}\n```\n\n## Your first change\n\n1. Ask for a change, e.g. *\"Using the ftx mcp, Add a Start and stop button that toggles\n   Model/MotorRun on MainWindow, and verify it works with a label with the text of 'MOTOR RUNNING' that has visibility tied to MotorRun.\"*\n2. Watch it work: author → emulator preview → screenshot → and when it looks\n   right, you deploy it to your hardware from Studio as usual.\n\n## What it's capable of\n\n- **Author** widgets, properties, bindings, computed expressions, events,\n  translations, and multi-screen navigation — live in the open Studio project.\n- **Run** Studio's built-in emulator via F5 key and read the runtime log.\n- **Verify** by looking at the webui: screenshot, click\n  buttons and tabs, type into fields.\n- **Hand back to you to ship** when the preview looks right, you deploy\n  from Studio as usual. This distribution only runs the emulator.\n\nThe full tool list (28 tools by default — gate env vars can add more — plus\nthe same surface over plain HTTP for scripts and CI) is in\n[docs/tool-reference.md](docs/tool-reference.md).\n**Token economy:** screenshots cost ~1-2k vision tokens each; the OCR tool\nfamily (`optix_cdp_read_text`, `find_text`, `navigate`, `sweep`/`diff`) turns\nmost checks into free text reads — see the `optix-blind-authoring` and\n`optix-visual-regression` playbooks for the workflow (setup installs\ntesseract automatically; `-NoOcr` opts out).\n\nBundled **authoring playbooks** (navigation, bound controls, styles,\nexpressions) ship with the server itself — Claude discovers them via\n`optix_list_skills` / `optix_get_skill`, so every connected client gets\nthem with zero setup. (In Claude Code they also load natively as\n[skills](skills/).)\n\n## Security & safety posture\n\n- **Local only.** The service binds `127.0.0.1` and talks to nothing off the\n  machine. Optional bearer-token auth, enforced before any LAN bind.\n- **Read-only by default.** Every tool carries MCP `readOnlyHint` /\n  `destructiveHint` annotations (contract-pinned by tests) so your MCP host\n  can auto-approve reads and gate writes.\n- **Write gates, not hope.** Undeclared properties, array writes, duplicate\n  names, and unsafe re-parents are refused with typed errors; composite\n  operations roll back on failure. File-level edits are refused while Studio\n  has the project open.\n- **Audited.** Every model mutation appends a JSON line to a local audit\n  trail (`%LOCALAPPDATA%\\ftx-mcp\\logs\\audit.jsonl`) what, when,\n  outcome.\n- **Shipping stays in your hands.** Previewing never touches your runtime;\n  deploying to hardware happens from Studio, full stop. This distribution\n  does design time edits and testing via the emulator.\n\nThe full posture including the prompt-injection surface analysis is in\n[SECURITY.md](SECURITY.md).\n\n## Documentation\n\n| | |\n|---|---|\n| [Runbook](docs/runbook.md) | First session, step by step |\n| [Tool reference](docs/tool-reference.md) | Every MCP tool + the HTTP API |\n| [Architecture](docs/architecture.md) | How the pieces fit together |\n| [Troubleshooting](docs/troubleshooting.md) | Symptom-indexed fixes |\n| [Security](docs/security.md) | Auth, ports, what talks to what |\n\n## Compatibility\n\nTested with FactoryTalk Optix Studio 1.7.x on Windows 11, Python 3.12.\nOptix CLI behavior is not contract-stable across major versions — pin your\nStudio version in production.\n\n## License\n\n[MIT](LICENSE) · © 2026 ASQI · Not affiliated with or endorsed by Rockwell\nAutomation. FactoryTalk Optix is a trademark of Rockwell Automation, Inc.;\nthis project orchestrates locally installed Optix binaries without\nredistributing them. See [NOTICE](NOTICE).\n",
+    "fetchedAt": "2026-08-11T23:56:02.732Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:44.376Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

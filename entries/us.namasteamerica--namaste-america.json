@@ -1,0 +1,317 @@
+{
+  "id": "us.namasteamerica/namaste-america",
+  "title": "Namaste America",
+  "description": "Agent-first directory for Indians from India in the USA — restaurants, temples, events & more.",
+  "summary": "Agent-first directory for Indians from India in the USA — restaurants, temples, events & more.",
+  "offersHint": "Agent-first directory for Indians from India in the USA — restaurants, temples, events & more. · Remote MCP (streamable-http) at https://namasteamerica.us/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://namasteamerica.us/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://namasteamerica.us/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://namasteamerica.us/for-agents",
+  "sourceUrl": "https://github.com/manvigallc007-spec/indousmcp",
+  "repository": {
+    "url": "https://github.com/manvigallc007-spec/indousmcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-08T11:44:05.749395Z",
+  "publishedAt": "2026-07-08T11:44:05.749395Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:48:37.805Z",
+    "sourceRepoAt": "2026-08-11T23:05:35.225Z",
+    "readmeAt": "2026-08-11T23:05:35.824Z",
+    "toolsAt": "2026-08-11T23:05:35.918Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/manvigallc007-spec/indousmcp",
+    "checkedAt": "2026-08-11T23:05:35.225Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/manvigallc007-spec/indousmcp/main/README.md",
+    "markdown": "# Indian–American Diaspora MCP Server\n\nAgent-first, agent-only data layer for the Indian-American diaspora. **Phase 1: Indian\nrestaurants (USA).** This repo is the walking skeleton from the architecture blueprint:\n\n- **MCP server** exposing restaurant capabilities (`get_indian_restaurants`,\n  `get_restaurant_details`, `search_restaurants_by_text`, `find_unclaimed_restaurants`,\n  `draft_claim_outreach`, `submit_correction`), **temple** capabilities\n  (`get_indian_temples`, `get_temple_details`, `search_temples_by_text`) and **grocery**\n  capabilities (`get_indian_groceries`, `get_grocery_details`, `search_groceries_by_text`)\n  **professional** capabilities (`get_indian_professionals`, …), **salon** capabilities\n  (`get_indian_salons`, …), and a cross-vertical **`search_all`** that searches every vertical\n  at once (each result tagged with its `vertical`).\n- **Data pipeline**: scrape → raw → clean/enrich/score → approval queue → canonical table →\n  versioning.\n- **One real scraper**: OpenStreetMap Overpass (public, ODbL-licensed, no login, ToS-safe).\n- **Storage**: PostgreSQL (+ `pgvector` for future embedding search) via Docker Compose.\n\n## Connect (live MCP server)\n\nThe hosted server is **remote** (no install) over streamable‑HTTP:\n\n- **Endpoint:** `https://namasteamerica.us/mcp` (transport: `streamable-http`, auth: none, read‑only)\n- **Descriptor:** `https://namasteamerica.us/.well-known/mcp.json` · **Docs:** `https://namasteamerica.us/for-agents`\n\n```json\n{ \"mcpServers\": { \"namaste-america\": { \"type\": \"streamable-http\", \"url\": \"https://namasteamerica.us/mcp\" } } }\n```\n\n**Tools** (per vertical: restaurants, temples, groceries, professionals, salons, events, apparel,\nsweets, studios, services, community, legal, education, real estate, finance):\n`get_indian_<category>`, `search_<category>_by_text`, `get_<category>_details`, and a cross‑vertical\n**`search_all`**. Each result is JSON with address, geo, hours, contact, ratings, and languages.\n\n> Publishing to the official MCP registry: the manifest is [`server.json`](server.json) (namespace\n> `us.namasteamerica`, verified via DNS). Install the CLI (`mcp-publisher`), authenticate the domain\n> (`mcp-publisher login dns --domain namasteamerica.us`, then add the TXT record it prints), and run\n> `mcp-publisher publish`.\n\n## Architecture (Phase 1)\n\n```\n OSM Overpass ──▶ restaurant_raw ──▶ clean()+score() ──▶ approval_queue ──▶ restaurants\n   (scraper)        (JSONB)            (pipeline)         (high-risk only)   (canonical)\n                                                                                 │\n                                                                                 ▼\n                                                                        restaurant_versions\n                                                                                 │\n                                                                                 ▼\n                                                                     MCP tools (FastMCP)\n```\n\nLow-risk new inserts are auto-applied (configurable); updates to claimed/featured listings\nare routed to the human approval queue.\n\n## Quick start\n\nRequires Docker Desktop and Python 3.11+.\n\n```powershell\n# 1. Start Postgres (with pgvector)\ndocker compose up -d\n\n# 2. Create a virtualenv and install\npython -m venv .venv\n.\\.venv\\Scripts\\Activate.ps1\npip install -e .\n\n# 3. Configure env\ncopy .env.example .env   # default DATABASE_URL already points at the docker container\n\n# 4. Initialise the schema\npython -m indo_usa_mcp.cli init-db\n\n# 5. Scrape one metro from OpenStreetMap, then process raw -> canonical\npython -m indo_usa_mcp.cli scrape --metro bay_area\npython -m indo_usa_mcp.cli process\n\n# 6. Inspect\npython -m indo_usa_mcp.cli stats\n\n# 7. Run the MCP server (stdio transport)\npython -m indo_usa_mcp.server\n```\n\n## CLI\n\n| Command | Purpose |\n|---|---|\n| `init-db` | Apply SQL migrations (extensions, tables, indexes). |\n| `scrape --metro <name>` | Run the OSM scraper for a metro bbox into `restaurant_raw`. |\n| `process` | Clean/score unprocessed raw rows; auto-apply low-risk, queue high-risk. |\n| `approvals` | List pending approval-queue items. |\n| `approve <id>` / `reject <id>` | Resolve an approval item. |\n| `outreach [--limit N]` | Draft claim outreach for unclaimed restaurants (creates claim links + messages). |\n| `verify-claim <token>` | Owner-side: verify a claim token and take ownership. |\n| `agents` | List the registered autonomous agents. |\n| `agent <name>` | Run one agent now (audited in `agent_runs`). |\n| `agents-loop [--once]` | Run the scheduler (worker loop over due agents). |\n| `query [--city/--text/--lat --lng/--id/...]` | Call the MCP tool functions from the terminal. |\n| `seed` | Load fictional seed restaurants for local testing (no scrape needed). |\n| `enrich` | Backfill region/dietary cultural tags on under-tagged restaurants. |\n| `deactivate-stale [--days 60]` | Mark unclaimed listings not seen recently as inactive. |\n| `approval-digest` | Human-readable summary of the pending approval queue. |\n| `feedback --id N --field F --value V` | Submit a field correction (applied by the feedback agent). |\n| `scrape --metro usa` | Nationwide sweep (occasional; slower than a single metro). |\n| `feature --id N [--days 30 \\| --permanent]` | Mark a paid featured listing. |\n| `unfeature --id N` | Remove a featured listing. |\n| `backfill-embeddings [--all]` | (Re)compute embeddings for canonical rows. |\n| `stats` | Row counts and coverage summary. |\n\n## Monetization & delivery\n\n- **Featured listings** (`feature`/`unfeature`) — a paid tier; effectively-featured rows\n  (flagged and within their `featured_until` window) surface first in every tool result.\n- **Stripe checkout** (optional) — claimed owners get a \"Get Featured\" button → Stripe\n  Checkout → a signature-verified webhook (`/stripe/webhook`) auto-features them. Disabled\n  until `STRIPE_SECRET_KEY` is set (then it's pay-per-sale, no monthly fee). See DEPLOY.md.\n- **Outreach email delivery** — optional and zero-cost: set Gmail SMTP + an app password in\n  `.env` (see `.env.example`) and the Outreach Agent will auto-send claim emails to\n  restaurants that have a public email; otherwise it stays draft-only.\n- **Enrichment agent** — strengthens the cultural \"data moat\" by inferring region/dietary\n  tags from restaurant names (free, keyword-based).\n\nCoverage spans 15 metros (Bay Area, NYC/NJ, Dallas, Houston, Chicago, LA, Seattle, Atlanta,\nPhoenix, Austin, Boston, Philadelphia, Raleigh, Detroit, Central NJ) plus an on-demand\n**nationwide** sweep (`scrape --metro usa`).\n\nWhatsApp outreach is delivered as free **click-to-send `wa.me` links** (message pre-filled);\ntrue auto-send WhatsApp needs a paid API and is intentionally not used.\n\n## Trying it without a live scrape\n\n```powershell\npython -m indo_usa_mcp.cli init-db\npython -m indo_usa_mcp.cli seed     # 12 fictional restaurants across the 5 metros\npython -m indo_usa_mcp.cli stats\n```\n\nThen exercise the MCP tools (e.g. `get_indian_restaurants` near the Bay Area, or\n`search_restaurants_by_text \"vegetarian dosa\"`).\n\n## Search quality (for LLM agents)\n\nRecords are optimized for agent retrieval:\n- **Natural-language `description`** per record (e.g. *\"Saffron House is a Gujarati Indian\n  restaurant in Edison, NJ. Offers vegetarian, jain options. Price: $$.\"*) — generated from\n  the structured fields, returned to agents, and used as the text that gets embedded.\n- **Reverse-geocoded location** — missing `city`/`state` are filled offline from coordinates\n  (`reverse_geocoder`), so \"near me / in <city>\" queries work for every record.\n- **Keyword + attribute `tags`** (e.g. `biryani`, `dosa`, `halal`, `delivery`, `takeout`,\n  `outdoor-seating`, `wheelchair-accessible`, `wifi`, `cards-accepted`, `organic`) — derived\n  from names and rich OSM attributes; agents filter with `tag=...`, and they boost embedding\n  recall + appear in the description (\"Amenities: …\").\n- **`open_now`** — `opening_hours` are parsed into structured per-day intervals; each result\n  carries an `open_now` flag (true/false/null) and the tools accept an `open_now=true` filter,\n  enabling \"what's open near me right now\".\n- **Dedup-merge** — the admin Quality view lists duplicate groups with a one-click merge\n  (fills the keeper's empty fields, soft-deletes the rest).\n\n`search_*_by_text` ranks by embedding cosine distance (pgvector `<=>`), falling back to\ntrigram. Providers (`EMBEDDING_PROVIDER`):\n\n- **`hashing`** (default) — feature-hashing, zero extra deps; lexical.\n- **`fastembed`** (recommended, **prod default**) — real semantic embeddings via\n  `BAAI/bge-small-en-v1.5` (384-dim, ONNX, **no torch**). The Docker image includes it and the\n  prod compose defaults `EMBEDDING_PROVIDER=fastembed`; after deploying run\n  `python -m indo_usa_mcp.cli enhance-data` once to re-embed existing rows. Set\n  `EMBEDDING_PROVIDER=hashing` if the VPS is RAM-constrained.\n- **`sentence_transformers`** — `all-MiniLM-L6-v2` (heavier, pulls torch).\n- **`none`** — trigram only.\n\n`enhance-data` (re)generates descriptions, fills geocoding, and re-embeds existing rows —\nrun it after enabling a new embedder. New records get all of this automatically on ingest.\n\n## Outreach & claiming (blueprint §7)\n\n```powershell\n# Draft claim messages + single-use claim links for unclaimed restaurants\npython -m indo_usa_mcp.cli outreach --limit 10\n\n# Later, an owner verifies their claim token (normally via the claim web page)\npython -m indo_usa_mcp.cli verify-claim <token> --email owner@example.com\n```\n\nAfter claiming, owners get an **edit page** (`/manage?token=...`) to update their phone,\nhours, menu, price, dietary tags, etc. — changes go live immediately and are protected from\nscraper overwrites (scraper updates to claimed listings route to the approval queue).\n**Stale listings** not re-seen for 60 days are auto-deactivated (`is_active=false`) and\nreactivated if they reappear in a later scrape.\n\nThe Outreach Agent finds unclaimed restaurants (skipping anything with an open claim or\ncontacted within `OUTREACH_COOLDOWN_DAYS`), creates a single-use claim token + link, and\ndrafts an honest, opt-out-friendly message per restaurant. Messages are **not auto-sent** —\ndelivery needs channel integrations, and chains / featured / high-value targets are flagged\n`requires_human`. Once an owner verifies, `restaurants.is_claimed` flips to true and future\nscraper updates to that listing are routed to the approval queue. Agents can drive this via\nthe `find_unclaimed_restaurants` and `draft_claim_outreach` MCP tools.\n\n## Autonomous agents (blueprint §6)\n\nEach agent wraps a pipeline step, is idempotent, and writes a full audit row to\n`agent_runs` (errors captured, never half-written canonical data).\n\n| Agent | Does |\n|---|---|\n| `discovery` | Reports metro coverage and proposes scrape targets. |\n| `scraper` | Runs every scraper across every metro into `restaurant_raw`. |\n| `cleaner` | Processes raw → canonical via clean/score/approval. |\n| `outreach` | Drafts claim outreach for eligible unclaimed restaurants. |\n| `monitoring` | Detects anomalies (backlogs, scraper failures, stale data) → `agent_alerts`. |\n| `submission` | Submits the MCP to directories (manual stub for now). |\n\n```powershell\npython -m indo_usa_mcp.cli agents              # list agents\npython -m indo_usa_mcp.cli agent scraper       # run one, audited\npython -m indo_usa_mcp.cli agents-loop --once  # one scheduler pass (scrape→clean→monitor…)\npython -m indo_usa_mcp.agents.scheduler        # long-lived scheduler (VPS worker)\n```\n\n### Data sources\n\nTwo independent public scrapers feed the pipeline: `osm_overpass` (OpenStreetMap, ODbL)\nand `wikidata` (Wikidata SPARQL, CC0). Pick one with `scrape --source <name>`; the\nScraper Agent runs both.\n\n## Phase 2: Temples vertical\n\nAn independent vertical (Hindu/Sikh/Jain places of worship) sharing the same pipeline,\nagents, embeddings and deployment — per the blueprint's \"independent verticals, shared\ninfra\" principle. Own table (`temples`), own OSM scraper (`amenity=place_of_worship` +\n`religion`), own agents (`temple_scraper`, `temple_cleaner`), own MCP tools. Cultural\nenrichment infers **deity** (Venkateswara, Krishna, Lakshmi…) and **region** (Punjabi for\nSikh, Gujarati for Swaminarayan, Telugu for Venkateswara…) from the name.\n\n```powershell\npython -m indo_usa_mcp.cli temples-scrape --metro bay_area\npython -m indo_usa_mcp.cli temples-process\npython -m indo_usa_mcp.cli temples-stats\npython -m indo_usa_mcp.cli temples-query --religion hindu --city Fremont\npython -m indo_usa_mcp.cli temples-query --text \"swaminarayan gujarati mandir\"\n```\n\n## Phase 2: Groceries vertical\n\nSame recipe as temples — independent `groceries` table + OSM scraper (grocery-type shops\nwhose name signals Indian groceries: Patel, India, Apna, Swad, Masala…) + own agents\n(`grocery_scraper`, `grocery_cleaner`) + 3 MCP tools. Infers `store_type` and `region_tag`.\n\n```powershell\npython -m indo_usa_mcp.cli groceries-scrape --metro bay_area\npython -m indo_usa_mcp.cli groceries-process\npython -m indo_usa_mcp.cli groceries-query --city Fremont\npython -m indo_usa_mcp.cli groceries-query --text \"patel brothers indian grocery\"\n```\n\n## Admin dashboard, reporting & owner portal\n\nThe web app (`:8080`) now serves three audiences:\n\n- **Public/owner** — `/`, `/claim`, `/manage`, `/upgrade` (existing)\n- **Admin** (`/admin/*`, password-gated) — overview KPIs, cross-vertical **data control**\n  (browse/search/edit/feature/deactivate/soft-delete), **Geography** drill-down\n  (country → state → city, click to filter records), **Quality** control (records flagged for\n  missing region/contact/geo/city + duplicate groups, with a one-click city/state normalizer),\n  **approvals** & **feedback** queues, **agents** (last-run health, run-now, resolve alerts),\n  **Traffic** (every MCP tool call logged: by tool / agent-client / day, plus **most-shown\n  listings**), **payments**, and **reports**. Set `ADMIN_PASSWORD` to enable; blank disables it.\n- Owners see a **reach** number per listing in the portal (\"shown N times by AI assistants\",\n  from per-listing impression tracking) — a concrete hook for selling featured placement.\n- **Customer portal** (`/portal/*`) — owners sign in via **passwordless magic-link** email and\n  manage all their listings across verticals (edit, featured status, upgrade).\n\n**Daily report**: the `reporting` agent computes a health + growth snapshot nightly into\n`daily_reports`, shows it on `/admin/reports`, and emails it (via SMTP) to `REPORT_EMAIL`.\nRun on demand with `python -m indo_usa_mcp.cli report`.\n\n> Security: enable HTTPS (the Caddy `tls` profile) and set a strong `ADMIN_PASSWORD` +\n> random `SECRET_KEY` before exposing `/admin` publicly.\n\n## Phase 2: Professionals vertical (doctors/health)\n\nIndian-American healthcare professionals — doctors, dentists, clinics, pharmacies — found\nfrom OSM healthcare amenities + an Indian-name signal (surnames / Ayurveda). Same recipe as\nthe other verticals: own `professionals` table, scraper, agents (`professional_scraper`,\n`professional_cleaner`), 3 MCP tools, plus `profession_type`/`speciality` filters. Because\nname-matching is heuristic, each record carries a `confidence_score` and the admin Quality\nview helps curate false positives.\n\n```powershell\npython -m indo_usa_mcp.cli professionals-scrape --metro bay_area\npython -m indo_usa_mcp.cli professionals-process\npython -m indo_usa_mcp.cli professionals-query --type dentist --city \"San Jose\"\n```\n\n## Phase 2: Salons vertical (beauty / threading)\n\nIndian beauty salons — eyebrow threading, henna/mehndi, hair, bridal — from OSM\nhairdresser/beauty shops with a strong South-Asian service/name signal. Same recipe; tags\ncapture services (threading, henna, bridal…). Best OSM coverage of the verticals so far.\n\n```powershell\npython -m indo_usa_mcp.cli salons-scrape --metro bay_area\npython -m indo_usa_mcp.cli salons-process\npython -m indo_usa_mcp.cli salons-query --tag threading --city Sunnyvale\n```\n\n## Phase 2: Events vertical (automated, admin-approved)\n\nIndian-American community events (festivals, garba, concerts, puja). **Fully automated** —\nan agent **auto-discovers** iCal feeds by scanning the websites of orgs already in the\ndatabase (temples first) for calendar links, and agents ingest events from those feeds plus\nany in `EVENT_ICAL_FEEDS`. The\ncleaner **auto-approves high-confidence events and queues the rest** under *Admin → Events*\nfor one-click approval (no manual entry). **Past events are kept, not deleted** — they're\ndate-filtered out of upcoming results (`get_indian_events` returns upcoming by default;\n`include_past=true` for history) and an 18-month retention purges very old ones.\n\n```powershell\npython -m indo_usa_mcp.cli events-discover     # scan org websites for iCal feeds\npython -m indo_usa_mcp.cli events-scrape      # ingest configured + discovered iCal feeds\npython -m indo_usa_mcp.cli events-process     # auto-approve / queue for admin\npython -m indo_usa_mcp.cli events-approvals   # list pending\npython -m indo_usa_mcp.cli events-query --city Edison --category garba\n```\n\n## Connecting an MCP client\n\nPoint any MCP client (Claude Desktop, etc.) at:\n\n```json\n{\n  \"mcpServers\": {\n    \"indo-usa-diaspora\": {\n      \"command\": \"python\",\n      \"args\": [\"-m\", \"indo_usa_mcp.server\"],\n      \"env\": { \"DATABASE_URL\": \"postgresql://diaspora:diaspora@localhost:5433/diaspora\" }\n    }\n  }\n}\n```\n\n## Deployment (VPS, blueprint §10)\n\nThe full hosted stack — Postgres + MCP server (HTTP) + agent worker — is in\n[docker-compose.prod.yml](docker-compose.prod.yml):\n\n```powershell\n$env:POSTGRES_PASSWORD = \"choose-a-strong-password\"\ndocker compose -f docker-compose.prod.yml up -d --build\n```\n\n- **server** runs migrations (idempotent) then serves MCP over `streamable-http` on `:8000`.\n- **worker** runs the agent scheduler (scrape → clean → monitor …); it waits for the schema\n  before starting, so service start order doesn't matter.\n- **db** stays on the internal network (not published).\n\nPut a TLS-terminating reverse proxy (Caddy/nginx/Traefik) in front of `:8000` for HTTPS,\nand add a firewall + scheduled `pg_dump` backups. The MCP endpoint is `https://<host>/mcp`.\n\n## Checking it with MCP Inspector\n\nThe standard visual way to exercise the tools:\n\n```powershell\n# stdio (local)\nnpx @modelcontextprotocol/inspector .\\.venv\\Scripts\\python.exe -m indo_usa_mcp.server\n\n# or point the Inspector at a running HTTP server: http://localhost:8000/mcp\n```\n\n## Guardrails honoured\n\n- Public data only (OSM/ODbL), no login-required scraping, no personal data, rate-limited.\n- Confidence scoring, soft deletes, full version history.\n- Human approval for high-risk updates; `is_featured` is an explicit, visible flag.\n\n## Status / roadmap\n\nPhase 1 is implemented and runs end-to-end: schema + versioning + approval queue, the\npipeline, two scrapers (OSM + Wikidata), all 5 MCP tools, semantic (pgvector) search,\noutreach & claiming, six autonomous agents with a scheduler, seed fixtures, and a hosted\ndeployment stack. Remaining \"last mile\": real outreach channel delivery, a claim web page,\nthe Approval-Assistant + Feedback agents, monetization logic, and production hardening\n(HTTPS, backups). Each future vertical (temples, events, groceries…) gets its own\ntable/scrapers/tools but shares this infra.\n",
+    "fetchedAt": "2026-08-11T23:05:35.824Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_indian_restaurants",
+      "description": "Find Indian restaurants by location and/or filters.\n\n    Provide either a point (`lat`+`lng`, optionally `radius_miles`) or `city`/`state`.\n    Optional filters: `region_tag` (e.g. \"Gujarati\", \"South Indian\"), `dietary_tags`\n    (any of \"vegetarian\", \"vegan\", \"halal\", \"jain\"), `tag` (a keyword/dish like \"biryani\",\n    \"dosa\", \"catering\"), `open_now` (only places open at the current time), `featured_only`.\n    Use `offset` (e.g. offset=25 after a limit=25 page) to page further; the response's\n    `has_more` says whether another page exists.\n\n    Each record includes a `description`, `tags`, a `confidence_score` (0-1), an `is_featured`\n    flag, an `open_now` flag (true/false/null), and `distance_miles` when a point was supplied.\n    "
+    },
+    {
+      "name": "get_indian_movies_in_theaters",
+      "description": "List Indian-language movies currently playing in US theaters (Hindi, Telugu, Tamil,\n    Malayalam, Kannada, Punjabi, Bengali, Marathi, Gujarati).\n\n    Optional `language` filters to one (e.g. \"Telugu\"). Each movie includes `title`, `language`,\n    `poster_url`, `overview`, `release_date`, `genres`, and a `ticket_url` — a \"find showtimes / buy\n    tickets\" search link (per-theater showtimes are not available via a free source). Data from TMDB.\n    "
+    },
+    {
+      "name": "search_h1b_sponsors",
+      "description": "Search US employers that sponsor H-1B visas — the visa most Indians-from-India use to work in\n    the USA. Filter by employer name (`query`) and/or worksite `state` (2-letter). Ranked by number\n    of certified Labor Condition Applications. Each result has `certified` (count), `median_wage`,\n    `top_titles`, `top_states`, `top_cities`. Aggregated public figures from U.S. DOL disclosure data.\n    "
+    },
+    {
+      "name": "get_restaurant_details",
+      "description": "Fetch the full canonical record for one restaurant, plus its version history."
+    },
+    {
+      "name": "search_restaurants_by_text",
+      "description": "Free-text search over restaurant name/cuisine/region, ranked by relevance.\n\n    Optionally constrain to a `city`/`state`. Featured listings are surfaced first. Use `offset`\n    to page further (the response's `has_more` says whether another page exists).\n    "
+    },
+    {
+      "name": "submit_correction",
+      "description": "Propose a correction to a listing field (agents/users reporting bad data).\n\n    `vertical` is the category key (default 'restaurants'); `listing_id` is the id from that category's\n    get_/search_ tools. Correctable restaurant fields: phone, email, website, menu_url, address_full,\n    city, state, region_tag, price_range, cuisine_type, festival_specials. The correction is stored and\n    applied by the Feedback agent — automatically for unclaimed listings, or routed to a human for\n    claimed/featured ones. Identity fields (name, coordinates) are not correctable. Structured field\n    corrections currently apply to restaurants; for other categories use submit_review to flag issues\n    (or the owner portal). Returns {ok, feedback_id|error}.\n    "
+    },
+    {
+      "name": "submit_review",
+      "description": "Submit a community review (1-5 star rating + optional text) for a listing.\n\n    `vertical` is the category key (restaurants, temples, groceries, professionals, salons, apparel,\n    sweets, studios, services, community, legal, education, realestate, finance) and `listing_id` is\n    the id returned by that category's get_/search_ tools. Reviews are moderated: clean ones publish\n    immediately and spam/abusive ones are held for human review. Returns {'ok', 'id', 'status'}.\n    "
+    },
+    {
+      "name": "get_reviews",
+      "description": "Published community reviews for a listing (newest first) + its rolled-up community rating.\n\n    The community rating is first-party (visitor-submitted) and is separate from any web-harvested\n    `rating` returned by the get_/search_ tools. Each review includes the business owner's public reply\n    when they've responded. Returns {'community_rating', 'community_rating_count',\n    'reviews': [{rating, title, body, author, created_at, owner_reply, owner_reply_at}]}.\n    "
+    },
+    {
+      "name": "get_indian_temples",
+      "description": "Find Indian-American temples (Hindu/Sikh/Jain places of worship).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by\n    `religion` (\"hindu\", \"sikh\", \"jain\"), `denomination` (e.g. \"swaminarayan\"), `tag`, or\n    `open_now`. Records include description, deity, region, tags, hours and `open_now`.\n    "
+    },
+    {
+      "name": "get_temple_details",
+      "description": "Full canonical record for one temple, plus its version history."
+    },
+    {
+      "name": "search_temples_by_text",
+      "description": "Free-text/semantic search over temples (name/deity/denomination/region)."
+    },
+    {
+      "name": "get_indian_groceries",
+      "description": "Find Indian grocery stores (desi groceries / supermarkets).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Optional\n    `region_tag` (e.g. \"Gujarati\"), `tag` (e.g. \"spices\", \"halal\"), `open_now`. Records\n    include description, store type, tags, hours, region and `open_now`.\n    "
+    },
+    {
+      "name": "get_grocery_details",
+      "description": "Full canonical record for one grocery store, plus its version history."
+    },
+    {
+      "name": "search_groceries_by_text",
+      "description": "Free-text/semantic search over Indian grocery stores (name/region/store type)."
+    },
+    {
+      "name": "get_indian_professionals",
+      "description": "Find Indian-American healthcare professionals (doctors, dentists, clinics, pharmacies).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by\n    `profession_type` (\"doctors\", \"dentist\", \"clinic\", \"pharmacy\"), `speciality` (e.g.\n    \"pediatrics\", \"cardiology\", \"ayurveda\"), `tag`, or `open_now`. Note: these are matched\n    from public data via an Indian-name signal, so a `confidence_score` is included.\n    "
+    },
+    {
+      "name": "get_professional_details",
+      "description": "Full canonical record for one professional/practice, plus its version history."
+    },
+    {
+      "name": "search_professionals_by_text",
+      "description": "Free-text/semantic search over Indian-American healthcare professionals."
+    },
+    {
+      "name": "get_indian_salons",
+      "description": "Find Indian beauty salons (threading, henna/mehndi, hair, bridal).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by\n    `tag` (e.g. \"threading\", \"henna\", \"bridal\") or `open_now`. Records include description,\n    services (tags), hours and an `open_now` flag.\n    "
+    },
+    {
+      "name": "get_salon_details",
+      "description": "Full canonical record for one salon, plus its version history."
+    },
+    {
+      "name": "search_salons_by_text",
+      "description": "Free-text/semantic search over Indian beauty salons."
+    },
+    {
+      "name": "get_indian_events",
+      "description": "Find upcoming Indian-American community events (festivals, garba, concerts, puja).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by\n    `category` (\"festival\", \"garba\", \"concert\", \"puja\", …) or `tag` (\"diwali\", \"holi\", …).\n    Returns UPCOMING events by default (soonest first); set `include_past=true` for history.\n    Each event has `start_at`/`end_at`, venue, category and a description. Use `offset` to page\n    (the response's `has_more` says whether another page exists).\n    "
+    },
+    {
+      "name": "get_event_details",
+      "description": "Full canonical record for one event, plus its version history."
+    },
+    {
+      "name": "search_events_by_text",
+      "description": "Free-text/semantic search over Indian-American events (incl. past, for history). `offset` pages."
+    },
+    {
+      "name": "get_indian_apparel",
+      "description": "Find Indian apparel & jewelry stores (sarees, lehengas, ethnic wear, gold jewelers).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"saree\", \"bridal\", \"gold\", \"jewelry\", \"tailoring\") or `open_now`.\n    "
+    },
+    {
+      "name": "get_apparel_details",
+      "description": "Full canonical record for one apparel/jewelry store, plus its version history."
+    },
+    {
+      "name": "search_apparel_by_text",
+      "description": "Free-text/semantic search over Indian apparel & jewelry stores."
+    },
+    {
+      "name": "get_indian_sweets",
+      "description": "Find Indian sweets shops (mithai) & bakeries.\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"mithai\", \"jalebi\", \"bakery\", \"eggless\") or `open_now`.\n    "
+    },
+    {
+      "name": "get_sweets_details",
+      "description": "Full canonical record for one sweets shop / bakery, plus its version history."
+    },
+    {
+      "name": "search_sweets_by_text",
+      "description": "Free-text/semantic search over Indian sweets shops & bakeries."
+    },
+    {
+      "name": "get_indian_studios",
+      "description": "Find Indian yoga & cultural studios (yoga, classical dance, music, language classes).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"yoga\", \"bharatanatyam\", \"kathak\", \"tabla\", \"carnatic\") or `open_now`.\n    "
+    },
+    {
+      "name": "get_studio_details",
+      "description": "Full canonical record for one studio, plus its version history."
+    },
+    {
+      "name": "search_studios_by_text",
+      "description": "Free-text/semantic search over Indian yoga/dance/music studios."
+    },
+    {
+      "name": "get_indian_services",
+      "description": "Find Indian community services (money transfer/remittance, banks, immigration/visa,\n    travel agents, tax/insurance).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"money-transfer\", \"immigration\", \"travel\", \"tax\") or `open_now`.\n    "
+    },
+    {
+      "name": "get_service_details",
+      "description": "Full canonical record for one service business, plus its version history."
+    },
+    {
+      "name": "search_services_by_text",
+      "description": "Free-text/semantic search over Indian community services."
+    },
+    {
+      "name": "get_indian_community",
+      "description": "Find Indian community organizations & cultural associations (regional samaj/sangam,\n    cultural centers, Indo-American associations).\n\n    Provide a point (`lat`+`lng`) or `city`/`state`. Filter by `tag` (e.g. a region like\n    \"telugu\", \"gujarati\", or \"association\"/\"cultural_center\").\n    "
+    },
+    {
+      "name": "get_community_details",
+      "description": "Full canonical record for one community organization, plus its version history."
+    },
+    {
+      "name": "search_community_by_text",
+      "description": "Free-text/semantic search over Indian community organizations & associations."
+    },
+    {
+      "name": "get_indian_legal",
+      "description": "Find Indian-American immigration attorneys & law firms.\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"immigration\").\n    "
+    },
+    {
+      "name": "get_legal_details",
+      "description": "Full canonical record for one immigration/legal listing, plus its version history."
+    },
+    {
+      "name": "search_legal_by_text",
+      "description": "Free-text/semantic search over Indian-American immigration attorneys & law firms."
+    },
+    {
+      "name": "get_indian_education",
+      "description": "Find Indian-American education & tutoring (heritage/language schools, Bal Vihar, coaching).\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"language_school\", \"heritage\", \"tutoring\").\n    "
+    },
+    {
+      "name": "get_education_details",
+      "description": "Full canonical record for one education/tutoring listing, plus its version history."
+    },
+    {
+      "name": "search_education_by_text",
+      "description": "Free-text/semantic search over Indian-American education & tutoring."
+    },
+    {
+      "name": "get_indian_realestate",
+      "description": "Find Indian-American realtors & real-estate agencies.\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"agency\", \"mortgage\").\n    "
+    },
+    {
+      "name": "get_realestate_details",
+      "description": "Full canonical record for one real-estate listing, plus its version history."
+    },
+    {
+      "name": "search_realestate_by_text",
+      "description": "Free-text/semantic search over Indian-American realtors & real-estate agencies."
+    },
+    {
+      "name": "get_indian_finance",
+      "description": "Find Indian-American CPAs, tax preparers & financial advisors.\n\n    Provide a point (`lat`+`lng`, optional `radius_miles`) or `city`/`state`. Filter by `tag`\n    (e.g. \"cpa\", \"tax\", \"financial_advisor\").\n    "
+    },
+    {
+      "name": "get_finance_details",
+      "description": "Full canonical record for one finance/tax listing, plus its version history."
+    },
+    {
+      "name": "search_finance_by_text",
+      "description": "Free-text/semantic search over Indian-American CPAs, tax preparers & financial advisors."
+    },
+    {
+      "name": "search_all",
+      "description": "Search across ALL Indian-American verticals at once — restaurants, temples, groceries,\n    healthcare professionals, beauty salons, events, apparel & jewelry, sweets & bakeries,\n    yoga/dance studios, and community services.\n\n    Use for broad queries like \"Indian things near me in Edison NJ\" or \"vegetarian South\n    Indian\". Results are ranked by relevance: an exact name match ranks first, then by\n    keyword/semantic similarity, proximity (pass `lat`+`lng`) and freshness. Each result is\n    tagged with its `vertical`. Optionally constrain by `city`/`state`.\n    "
+    },
+    {
+      "name": "get_festival_dates",
+      "description": "Upcoming Indian & South-Asian festival dates for planning in the USA.\n\n    With no `query`, returns the next `limit` festivals soonest-first. With a `query` (e.g. \"Diwali\",\n    \"when is holi\"), returns the single soonest matching festival. Each item has name, date (ISO),\n    days_until, emoji and a greeting. IMPORTANT: many Hindu/Sikh/Jain/Muslim festivals follow lunar\n    calendars, so these dates are best-effort — always tell the user to confirm the exact date with\n    their local temple, gurdwara, mosque or a panchang. Returns {'results': [...], 'note': ...}.\n    "
+    },
+    {
+      "name": "search_knowledge",
+      "description": "Grounded answers from the Namaste America knowledge base — culture, festivals, visa/H-1B, tax,\n    banking, and newcomer/settling-in guides for Indians from India living in the USA.\n\n    Returns the top matching passages, each with the source document's title + url so you can cite it.\n    Optionally scope to a `vertical`. Use this for factual \"how/what/when\" questions rather than the\n    listing-search tools. Returns {'count', 'results': [{text, title, url, source_type, vertical}]}.\n    "
+    },
+    {
+      "name": "submit_listing",
+      "description": "Submit a new Indian-American business/listing for REVIEW — it does NOT go live automatically.\n\n    `vertical` is the category key (restaurants, temples, groceries, professionals, salons, apparel,\n    sweets, studios, services, community, legal, education, realestate, finance — not events, which are\n    agent-managed). The submission enters a human moderation queue and is published only after an admin\n    approves it. `name` is required; provide as much else as you can. Returns {'ok', 'id'} or\n    {'ok': False, 'error': 'bad_vertical'|'name_required'}.\n    "
+    },
+    {
+      "name": "get_movie_details",
+      "description": "Full details for one Indian movie (the id from get_indian_movies_in_theaters).\n\n    Returns the movie record (title, language, overview, release_date, genres, poster_url, ...) or\n    {'error': 'not_found'}. Movie data from TMDB; this product uses the TMDB API but is not endorsed or\n    certified by TMDB.\n    "
+    },
+    {
+      "name": "get_h1b_sponsor_details",
+      "description": "Full details for one H-1B sponsor (the id from search_h1b_sponsors).\n\n    Returns the sponsor record (employer, certified counts, wages, top titles/states/cities, ...) or\n    {'error': 'not_found'}. Aggregated from U.S. Department of Labor LCA disclosure data.\n    "
+    },
+    {
+      "name": "search_community_questions",
+      "description": "Search the Namaste America community Q&A — real questions Indians in the USA ask and answer\n    (\"Telugu-speaking pediatrician in Plano?\", \"best sweets for Diwali in Edison?\").\n\n    Returns published questions matching the query, most-answered first, each with a `slug` you can pass\n    to get_community_answers. A grounded, community-sourced complement to the listings + knowledge base.\n    Returns {'count', 'results': [{slug, title, city, state, vertical, answer_count}]}.\n    "
+    },
+    {
+      "name": "get_community_answers",
+      "description": "A community question + its published answers (Dost's AI answer first, then community answers by\n    upvotes). `slug` comes from search_community_questions. Returns the question with an `answers` list,\n    or {'error': 'not_found'}.\n    "
+    },
+    {
+      "name": "get_today_highlights",
+      "description": "What's happening in Indian America today, optionally for a city + languages — the upcoming\n    festival (+ approximate tithi), soonest events nearby, Indian movies in theaters, places newly added\n    in the city, a culture/immigration nugget, and trending community questions.\n\n    `languages` is a comma-separated list (e.g. \"Telugu,Hindi\"). Great for a daily briefing. Returns the\n    assembled feed; date fields are ISO. Lunar festival/tithi dates are approximate — tell users to\n    confirm locally.\n    "
+    },
+    {
+      "name": "get_offers",
+      "description": "Live offers & announcements posted by Indian-American business owners (e.g. \"20% off thalis this\n    week\", \"new weekend Garba class\"), optionally filtered by city/state/vertical.\n\n    Returns current, non-expired owner posts with the listing they belong to. Great for \"any deals near\n    me this week\". Returns {'count', 'results': [{title, body, kind, vertical, listing_id, name, city,\n    state, created_at, expires_at}]}.\n    "
+    },
+    {
+      "name": "ask_community_question",
+      "description": "Ask the Namaste America community a question on behalf of a signed-in member. `member_email` must\n    be the authenticated member's email (not free text) — it attributes the question and guards against\n    spam. Questions are moderated: clean ones publish immediately, others are held for review.\n\n    Returns {'ok', 'id', 'slug', 'status'} or {'ok': False, 'error'}.\n    "
+    },
+    {
+      "name": "save_place",
+      "description": "Save a listing to a signed-in member's list. `member_email` must be the authenticated member's\n    email. `vertical` + `listing_id` come from the get_/search_ tools. Returns {'ok', 'name'} or\n    {'ok': False, 'error'}.\n    "
+    },
+    {
+      "name": "unsave_place",
+      "description": "Remove a listing from a member's saved list. `member_email` must be the authenticated member's\n    email. Returns {'ok': True}.\n    "
+    },
+    {
+      "name": "list_saved_places",
+      "description": "A member's saved places (each joined to its live listing). `member_email` must be the\n    authenticated member's email. Returns {'count', 'results': [{vertical, id, name, city, state}]}.\n    "
+    },
+    {
+      "name": "follow_city",
+      "description": "Follow a city so the member is notified of new events there (e.g. \"Plano, TX\"). `member_email`\n    must be the authenticated member's email. Returns {'ok'} or {'ok': False, 'error'}.\n    "
+    },
+    {
+      "name": "list_follows",
+      "description": "What a member follows (cities + categories). `member_email` must be the authenticated member's\n    email. Returns {'count', 'results': [{kind, value}]}.\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:05:35.918Z",
+  "toolsPreviewStatus": "ok"
+}

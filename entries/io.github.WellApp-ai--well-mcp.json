@@ -1,0 +1,154 @@
+{
+  "id": "io.github.WellApp-ai/well-mcp",
+  "title": "Well",
+  "description": "Connect your AI to your Well financial data - invoices, companies, contacts.",
+  "summary": "Connect your AI to your Well financial data - invoices, companies, contacts.",
+  "offersHint": "Connect your AI to your Well financial data - invoices, companies, contacts. · Remote MCP (streamable-http) at https://api.wellapp.ai/v1/mcp",
+  "version": "0.2.1",
+  "status": "inactive",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.wellapp.ai/v1/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.wellapp.ai/v1/mcp"
+    }
+  ],
+  "flags": [
+    "remote",
+    "repo-offline"
+  ],
+  "homepage": "https://docs.wellapp.ai/mcp/introduction",
+  "sourceUrl": "https://github.com/WellApp-ai/well-mcp",
+  "repository": {
+    "url": "https://github.com/WellApp-ai/well-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-11T11:27:12.502612Z",
+  "publishedAt": "2026-02-11T11:27:12.502612Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:02.057Z",
+    "sourceRepoAt": "2026-08-12T00:00:12.257Z",
+    "readmeAt": "2026-08-12T01:33:02.057Z",
+    "toolsAt": "2026-08-12T00:00:12.639Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "not_found",
+    "url": "https://github.com/WellApp-ai/well-mcp",
+    "checkedAt": "2026-08-12T00:00:12.257Z",
+    "httpStatus": 404,
+    "error": "repository HTTP 404",
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "fetchedAt": "2026-08-12T01:33:02.057Z",
+    "error": "README.md not found on main/master"
+  },
+  "toolsPreview": [
+    {
+      "name": "well_get_schema",
+      "description": "Discover available data types and fields.\n\nUSAGE:\n- well_get_schema() → List ALL available roots, including the accounting graph (ledger_accounts, journals, journal_entries) plus account_balances, tax_rates, exchange_rates — query these for real financial statements (compte de résultat / balance sheet) instead of reconstructing them from raw invoices\n- well_get_schema({ root: \"invoices\" }) → List all available fields for invoices\n\nWORKFLOW:\n1. Call well_get_schema(root) to see available fields\n2. Pick the fields you need for your task (typically 5-15)\n3. Call well_query_records with those specific fields\n\nReturns fields with path, type, and (when documented) semantic context:\n- { path: \"invoices.grand_total\", type: \"numeric\", context: \"Total invoice amount incl. tax in the document currency...\", enrichment: \"AI extraction\" } → use _eq, _gt, _lt, etc.\n- { path: \"invoices.local_currency\", type: \"enum\" } → use ONLY _eq, _neq, _in, _nin, _is_null\n- { path: \"invoices.issuer.name\", type: \"text\" } → use _eq, _like, _ilike, etc.\n\n- \"context\" (when present) explains what the field MEANS in the domain and how it's used — read it to pick the right field and write correct filters.\n- \"enrichment\" (when present) is the value's provenance (e.g. \"Bank sync\", \"AI extraction\", \"System generated\", \"Derived\", \"Manual\").\nUse the type to choose the right whereClause operators in well_query_records.\nTo use in well_query_records, convert path to array:\n\"invoices.issuer.name\" → [\"invoices\", \"issuer\", \"name\"]"
+    },
+    {
+      "name": "well_query_records",
+      "description": "Query records from Well's database.\n\n⚠️ WORKFLOW:\n1. To SHOW the user a table of a record type, just omit `fields`. You never choose\n   columns for presentation: the table the user sees is ALWAYS the root's display\n   view in the Well web app's column order, trimmed on the widest roots to what fits\n   a chat-width table.\n2. To answer a targeted question, call well_get_schema(root) FIRST to discover\n   available fields, then name in `fields` ONLY the extra values you need (5-15\n   typically). They are ADDED to the display view in the payload you read — they do\n   not replace, reorder, or trim the columns the user sees.\n\nROOTS (read-only — all 33): companies, people, connectors, invoices, documents, transactions, accounts, payment_means, workspace_connectors, memberships, cards, checks, ledger_accounts, journals, journal_entries, tax_rates, exchange_rates, invoice_transactions, categories, account_balances, tasks, workspaces, invoice_payment_means, chat_conversations, blueprint_runs, workspace_connector_sync_logs, media, emails, phones, web_links, locations, invoice_items, billing_events\n(The accounting graph — ledger_accounts, journals, journal_entries — and balances/rates are read-only projections owned by the sync/posting pipelines; query them for financial context, you cannot create/update them here. Sub-resources like emails/phones/locations are usually richer when read via their parent company/person.)\n\nCONNECTED TOOLS: do NOT use this tool to show the user what they have connected — call well_list_connectors instead. It owns that job: connection status, and an install link for anything not connected yet. Query root \"workspace_connectors\" here only for genuine RECORD-level needs — reading sync timestamps, filtering connections, joining them with other roots. (\"connectors\" is the installable catalog; \"workspace_connector_sync_logs\" is per-sync history.)\n\nWell already syncs the providers' data into the roots above — invoices, transactions, accounts, the accounting graph. ALWAYS read it from here. well_invoke_connector_tool and a provider's own tools are for an ACTION the user explicitly asked to take on that provider (e.g. \"create this record in Attio\"), never a way to fetch data Well already holds.\n\nEXAMPLE - show the user their invoices (no `fields`, ever):\nwell_query_records({ root: \"invoices\", limit: 50 })\n\nEXAMPLE - answer \"how much is still owed on the unpaid invoices?\":\nwell_query_records({\n  root: \"invoices\",\n  fields: [[\"invoices\", \"balance_due\"]],\n  whereClause: { \"payment_status\": { \"_in\": [\"unpaid\", \"partial\"] } }\n})\n// balance_due arrives in the rows for you to total up; the user still sees the\n// standard invoices table, with its identity, counterparty and status columns.\n\n⚠️ RULES:\n- `fields` is ADDITIVE — it widens the data you receive, never the table the user sees\n- Omitting fields (default view) or naming a few extras both beat allFields\n- Field paths from schema: \"invoices.issuer.name\" → [\"invoices\", \"issuer\", \"name\"]\n- Default 50 records per request, max 500.\n\nONE CALL IS THE ANSWER — do not walk the root:\nEvery response already carries `totalCount` (ALL matches, not just this page) and\n`records_url` (the full web-app table, with your filter and sort already applied).\nSo a request to see a record type is ONE call: the user gets a table of the first\npage, the count tells them how many there are, and the link takes them to the rest.\n\"Show me all my invoices\" is answered by one call + the link — NOT by fetching 483\nrows into this conversation.\n- A non-null `nextCursor` is NOT a to-do. It means more rows exist, which\n  `totalCount` already told you and the link already covers.\n- Never paginate to compute a total, count, average or breakdown: aggregate over\n  the filtered set instead. Summing a paginated sample produces a wrong number.\n- Never paginate to \"be thorough\". Large roots will exhaust the output limit\n  mid-walk, and the user ends up with nothing legible.\n- Paginate ONLY for per-row work over every match that no aggregate can express,\n  and tell the user the cost before starting. Then: pass the returned\n  `nextCursor` as `cursor`; `nextCursor: null` is the last page.\n\nFILTERING (whereClause):\n- Uses Hasura-style operators on field names.\n- Safe operators (work on ALL field types): _eq, _neq, _in, _nin, _is_null\n- Numeric/date only: _gt, _gte, _lt, _lte\n- Text only: _like, _ilike\n- When unsure of a field's type, prefer _eq or _in (they always work).\n- Combine with _and, _or, _not\n- For relationship fields, use nested syntax: { \"issuer\": { \"name\": { \"_ilike\": \"%acme%\" } } }\nExamples:\n  { \"status\": { \"_eq\": \"unpaid\" } }\n  { \"grand_total\": { \"_gt\": 1000 } }\n  { \"local_currency\": { \"_eq\": \"EUR\" } }\n  { \"_and\": [{ \"status\": { \"_eq\": \"unpaid\" } }, { \"grand_total\": { \"_gte\": 500 } }] }\n  { \"issuer\": { \"name\": { \"_ilike\": \"%acme%\" } } }\n\nSORTING (orderBy):\n- Sort by any field: { field: \"grand_total\", direction: \"desc\" }\n- Default sort is by primary key ascending.\n\nReturns { rows, totalCount, nextCursor, success }."
+    },
+    {
+      "name": "well_create_company",
+      "description": "Create a new company in the current workspace.\n\nUse this tool when the user asks to create, add, or register a new company.\n\nREQUIRED: name\nOPTIONAL: description\n\nAfter creation, enrichment (logo, domain, industry, tax ID, description fill-in)\nruns asynchronously in the background. The new company is available immediately\nfor follow-up actions, but enriched fields may take a few seconds to populate —\nre-query after a brief delay to see them.\n\nReturns { success: true, company_id, name } on success, or { success: false, error } on failure."
+    },
+    {
+      "name": "well_create_person",
+      "description": "Create a new person (contact) in the current workspace.\n\nUse this tool when the user asks to add, create, or register a new contact,\nemployee, or person.\n\nREQUIRED: first_name\nOPTIONAL: last_name, job_title\n\nAfter creation, enrichment runs asynchronously in the background.\n\nReturns { success: true, person_id, full_name } on success, or\n{ success: false, error } on failure."
+    },
+    {
+      "name": "well_update_company",
+      "description": "Update an existing company in the current workspace.\n\nUse this tool when the user asks to change, fix, rename, or edit a company's\nfields.\n\nREQUIRED: company_id\nOPTIONAL (only include fields the user wants changed): name, description,\n  domain, registered_name, trade_name, tax_id_value, tax_id_type,\n  registry_country (ISO 3166-1 alpha-2, e.g. \"FR\"), business_type,\n  registered_value, registry_name, locale (ISO 639-1 two-letter language\n  code, e.g. \"en\", \"fr\" — not \"en_US\").\n\nNOT CHANGEABLE via this tool: emails, phones, locations, linked people, media.\nThose require dedicated tools (not yet available).\n\nReturns { success: true, company_id, name } on success, or\n{ success: false, error } on failure."
+    },
+    {
+      "name": "well_update_person",
+      "description": "Update an existing person (contact) in the current workspace.\n\nUse this tool when the user asks to change, fix, rename, or edit a person's\nfields.\n\nREQUIRED: person_id\nOPTIONAL (only include fields the user wants changed): first_name, last_name,\n  job_title.\n\nNOT CHANGEABLE via this tool: emails, phones, locations, linked companies,\nmedia. Those require dedicated tools (not yet available).\n\nReturns { success: true, person_id, full_name } on success, or\n{ success: false, error } on failure."
+    },
+    {
+      "name": "well_delete_company",
+      "description": "Delete a company from the current workspace (soft delete).\n\nUse this tool when the user asks to delete, remove, or archive a company.\n\nREQUIRED: company_id\n\nThis soft-deletes the company and its company_person relationships.\nLinked people records themselves are NOT deleted. Invoices and documents\nreferencing the company are preserved.\n\nReturns { success: true, company_id } on success, or\n{ success: false, error } on failure."
+    },
+    {
+      "name": "well_delete_person",
+      "description": "Delete a person (contact) from the current workspace (soft delete).\n\nUse this tool when the user asks to delete, remove, or archive a contact.\n\nREQUIRED: person_id\n\nThis soft-deletes the person and its company_person relationships.\nLinked companies themselves are NOT deleted. The authenticated user cannot\ndelete their own person record.\n\nReturns { success: true, person_id } on success, or\n{ success: false, error } on failure."
+    },
+    {
+      "name": "well_update_invoice",
+      "description": "Update an existing invoice in Well.\n\nCall well_get_schema(\"invoices\") to discover all available fields.\n\nREQUIRED: invoice_id\nOPTIONAL (only pass fields you want changed):\n  - reference_number, issue_date (ISO date), due_date (ISO date)\n  - status (draft | issued | paid | canceled)\n  - terms, description\n  - grand_total, items_total, tax_total (numbers)\n  - local_currency (ISO 4217 three-letter code, e.g. \"EUR\", \"USD\")\n  - document_type_code (UN/CEFACT 1001 code, e.g. \"380\")\n  - billing_context (e.g. subscription, one_time, project, ...)\n  - issuer_company_id / receiver_company_id (uuid to set, null to clear,\n    omit to leave unchanged)\n\nCannot change line items, payment_means, or document attachment via this tool."
+    },
+    {
+      "name": "well_delete_invoice",
+      "description": "Delete an invoice from Well (soft delete).\n\nREQUIRED: invoice_id\n\nSoft-deletes the invoice. Linked line items and payment_means rows are NOT\ncascade-deleted — they remain in the database, orphaned. The delete is\nreversible only at the database level."
+    },
+    {
+      "name": "well_add_contact_channel",
+      "description": "Add a contact channel to a company or person.\n\nWraps the resource-scoped REST endpoints (POST /v1/{companies,people}/:id/{emails,phones,web-links,locations}).\n\nchannel + the matching value field:\n  - email     → value.email\n  - phone     → value.e164_number   (E.164; a leading \"+\" is added if missing)\n  - web_link  → value.url           (+ optional value.platform, default \"website\")\n  - location  → value.city, value.country (+ optional address_line1/2, region, postal_code)\nvalue.label is optional (defaults to \"work\").\n\nNOTE: adding a phone is supported on a PERSON but NOT on a company (no endpoint) —\nthat combination returns a clear error. To READ existing channels, use\nwell_query_records on the parent (companies/people) or the channel root."
+    },
+    {
+      "name": "well_remove_contact_channel",
+      "description": "Remove a contact channel from a company or person.\n\nWraps the resource-scoped DELETE endpoints (DELETE /v1/{companies,people}/:id/{emails,phones,web-links,locations}/:channelId).\n\nPass channel_id = the UUID of the specific channel row to remove (NOT the parent).\nFind it by reading the parent with well_query_records and selecting the channel's id field."
+    },
+    {
+      "name": "well_get_entity",
+      "description": "Read ONE entity with its sub-resources nested in a single call.\n\nConvenience over well_get_schema + well_query_records: resolves the field paths\nfor you and returns the single record with its related data expanded.\n\ndepth (relation-nesting BOUNDARY, 1-3, default 1):\n  1 = the entity + its direct sub-resources (emails, phones, locations, …)\n  2 = + the sub-resources' related scalars\n  3 = the full level-3 graph (LARGER payload — use when you need the whole picture)\nStops at depth 3. Aggregates are excluded. Each child collection is\ncapped at 50 rows; for a full list or to page a large child\ncollection, use well_query_records on that child root instead."
+    },
+    {
+      "name": "well_list_connector_tools",
+      "description": "Discover the actions a connected provider exposes (e.g. \"what can I do with Attio?\").\n\nWORKFLOW:\n1. well_list_connectors() → pick the ENABLED provider (connection_status: \"enabled\") and read its workspace_connector_id directly off the row.\n2. well_list_connector_tools({ workspace_connector_id }) → the actions that provider offers (name + description + input schema).\n3. well_invoke_connector_tool({ workspace_connector_id, tool, args }) → run one, shaping args from the input schema returned here.\n\nUse this whenever you don't already know a connector's tool names — never guess them.\n\nEvery response also carries reconnect_url: a deep link to the connector's setup page in the web app. When success is false or status is \"need_reconnect\" (the provider's token is stale/revoked, so no tools come back), give the user reconnect_url so they can re-authenticate the connector. Surface it as a clickable link; never invent connector URLs."
+    },
+    {
+      "name": "well_invoke_connector_tool",
+      "description": "Run one tool on a connected provider's own MCP server (e.g. create a record in Attio), on behalf of this workspace's connection.\n\nUse this ONLY for an action the user explicitly asked to take on that provider. It is NOT a way to read financial data: Well already syncs invoices, transactions, accounts and the accounting graph from every connected provider — read those with well_query_records instead of calling a provider's own list/read tools.\n\nWORKFLOW:\n1. well_list_connectors() → pick the ENABLED provider (connection_status: \"enabled\") and read its workspace_connector_id directly off the row.\n2. well_list_connector_tools({ workspace_connector_id }) → the live tool names + input schemas that connection actually exposes right now.\n3. well_invoke_connector_tool({ workspace_connector_id, tool: \"<one of the names from step 2>\", args: { ... } }).\n\nOnly works on connectors that expose an MCP server (e.g. Attio, Notion, Linear) and whose connection is enabled. Returns the provider's tool result, or { success: false, error } if the tool failed / is not granted."
+    },
+    {
+      "name": "well_create_invoice_from_data",
+      "description": "Create an invoice in Well from data you extracted by reading an invoice (your own OCR) — you send the structured fields, not the file.\n\nWell persists the invoice + its line items + payment means using the same pipeline as uploaded documents. Fill every field you can read from the document:\n- issuer / receiver: { name (required), domain?, tax_id? }\n- reference_number, issue_date (YYYY-MM-DD), due_date? (YYYY-MM-DD), currency (ISO 4217)\n- totals?: { items_total?, tax_total?, grand_total }\n- line_items[]: { name, quantity?, unit_price, currency?, tax_rate? }\n- payment_means?[]: { type, iban?, bic?, scheme? }"
+    },
+    {
+      "name": "well_list_workspaces",
+      "description": "List the workspaces this connection is authorized to access.\n\nUse this FIRST when a single token may cover more than one workspace. Each entry has:\n- workspace_id: pass this as the workspace_id argument on other tools to target one workspace.\n- workspace_name: human-readable name (null if it can't be resolved).\n- is_primary: true for the token's default workspace (used when you omit workspace_id on a write).\n- identity: the company behind the workspace (registered name, trade name, registry number, country, website, currency, fiscal year start), so two similarly-named workspaces can be told apart. Every field is null when the workspace has no accounting settings yet. Tax identifiers are deliberately not included.\n\nWhen the token authorizes a single workspace you can omit workspace_id everywhere; when it authorizes several, read tools fan out across all of them unless you pass a workspace_id, and write tools require one."
+    },
+    {
+      "name": "well_list_connectors",
+      "description": "List the connectors a workspace can install, each with a one-click install deep link.\n\nUse this to answer \"what can I connect to Well?\" or \"how do I connect <provider>?\". Each entry has:\n- service_id: the connector's stable catalog id (e.g. \"stripe\"), used in the install link.\n- name, category_id, direction: what the connector is.\n- status: \"available\" connectors are connectable now; \"coming_soon\"/\"unavailable\"/\"maintenance\" are not.\n- is_matched / is_selected: whether this workspace's detected tools matched this connector / already picked it.\n- match_score: 0..1 confidence of that match; null when unmatched. A high score is a tool Well is confident the workspace already uses.\n- is_connected: this workspace already holds a live connection for the connector — offer a reconnect, not a first install.\n- connection_status: that live connection's state, or null when not connected. \"enabled\" is connected and syncing; \"processing\" means the grant is in and the FIRST sync is still running (connected — do not ask the user to connect it again); \"error\" is authenticated but its last real sync failed, which warrants a reconnect.\n- workspace_connector_id: the connected instance's id, or null when not connected. This is the id well_invoke_connector_tool and well_list_connector_tools need — resolve it HERE, never via well_query_records on workspace_connectors.\n- is_preselected: Well recommends connecting this one now (a high-confidence match that is not yet connected). The interactive picker pre-checks exactly these.\n- install_url: a one-click link that STARTS the connection in Well. It works from any state — it signs the user in if needed, creates their workspace if they have none, then runs the connector's own auth flow — and it covers banks too (a bank opens its bank-login flow pre-selected). Null only when the connector is not \"available\". Hand this to the user to get started in one click.\n\nThe default view returns the curated, matched-first connectors; pass q to name-search the full catalog (e.g. a specific bank). This is ALSO the tool that answers \"what have I connected?\" — read is_connected / connection_status / workspace_connector_id here rather than querying workspace_connectors records. Use well_list_connector_tools for a live connection's actions."
+    },
+    {
+      "name": "well_run_register_diff",
+      "description": "Diff a workspace's bank transactions against its accounting-register transactions (e.g. QuickBooks), and persist the result.\n\n- Every match — hard evidence (structured reference, IBAN, tax ID) or inference-only (memo/payee reading) — is raised as a review task with the candidate already attached (raised_for_review). Nothing links automatically; resolve with well_resolve_reconciliation_task once a human decides.\n- Bank transactions with no register counterpart come back as missing_in_register_ids, each also minted as a gap review task (gaps_proposed) — resolve one with well_resolve_register_diff_gap once a human names the two ledger accounts. gaps_already_proposed counts gaps re-surfaced from an earlier run that already have an open, unresolved proposal.\n- Bank transactions NOT confirmed absent from the register come back as contended_in_register_ids — never minted as a gap. Two cases land here: (1) a plausible match lost to a higher-confidence sibling transaction this run, so the register-side movement is already accounted for by the winner; (2) the matcher couldn't produce a trustworthy answer (an invalid model response or a provider failure), so absence was never confirmed. Re-run the diff later; a genuine gap or duplicate should resolve itself once the winner's review task is handled or the matcher succeeds.\n- Register entries no bank transaction explains come back as unexplained_in_register_ids.\n\nReturns { enabled: false, ... } with all counts 0 if the workspace's register-diff feature is off."
+    },
+    {
+      "name": "well_resolve_reconciliation_task",
+      "description": "Approve or reject one or more reconciliation review tasks (from well_run_register_diff or the in-app review queue).\n\n- approve: confirms the match — the link is flipped to active.\n- reject: dismisses the match — the candidate does not silently re-surface.\n\nEach task_id resolves independently; a failure on one (already resolved, not found) is returned in errors and does not block the rest of the batch."
+    },
+    {
+      "name": "well_resolve_register_diff_gap",
+      "description": "Post a well_run_register_diff gap (one of missing_in_register_ids' review tasks) into QuickBooks as a Purchase or Deposit.\n\nRequires the exact ledger_account_id (a UUID, not a name) for both:\n- bank_ledger_account_id: the bank/cash account the money moved through (e.g. Checking).\n- category_ledger_account_id: the expense or income category the gap books against.\n\nLook these up first with well_query_records({ root: \"ledger_accounts\", filters: [...] }) scoped to the register connector — never guess an id or match an account by substring/fuzzy name.\n\nFails with an error (not a silent no-op) if gap posting is disabled for this workspace, if either account doesn't belong to this gap's register connector, or if either account no longer resolves in QuickBooks."
+    },
+    {
+      "name": "well_get_investment_holdings",
+      "description": "Get the live holdings/positions (what's currently held and its value) for a connected Plaid investment account — brokerage, IRA, 401k, etc.\n\nWORKFLOW:\n1. well_list_connectors() → pick the ENABLED Plaid connector (connection_status: \"enabled\") and read its workspace_connector_id directly off the row.\n2. well_get_investment_holdings({ workspace_connector_id }) → the current holdings, fetched fresh from Plaid on every call (never stored/stale data).\n\nOnly works on Plaid connectors that support the investments product — not the MCP-transport connector-tool-passthrough tools (well_list_connector_tools / well_invoke_connector_tool), and not for investment transactions (buy/sell/dividend/fee), which are queryable as ordinary rows via well_query_records on the transactions root instead."
+    },
+    {
+      "name": "well_get_runway",
+      "description": "Get the workspace's current cash runway — cash on hand, trailing-3-month average burn, and months of cash left — the exact same computation and numbers the Well app's canvas KPI cards show. Use this instead of computing runway yourself from raw account/transaction reads.\n\nReturns `cash` (amount + currency), `avg_burn` (amount + currency + trailing_months), `months`, and a `status` discriminator:\n- \"ok\" — a finite months figure.\n- \"capped\" — runway exceeds 36 months; report as \">36 months\", not the raw number.\n- \"infinite\" — cash is positive and the workspace isn't burning (net inflow); there is no meaningful \"months\" figure.\n- \"insufficient_data\" — not enough connected cash/transaction data to compute; tell the user to connect a bank/accounting connector (well_list_connectors) instead of guessing.\n\n`partial: true` means some accounts or transactions were excluded from the computation (e.g. missing FX rate) — mention the exclusion counts and any `hints` if present rather than presenting the number as unconditionally complete.\n\nCall this directly — no other tool call is needed first (workspace is resolved from the caller's authorized token, same as every other well_* tool)."
+    },
+    {
+      "name": "well_get_cash_position",
+      "description": "Get the workspace's current cash position: total cash on hand right now, converted to the workspace base currency, plus a per-account breakdown — the exact same computation and numbers the Well app's canvas KPI card shows. Use this instead of summing account balances yourself.\n\nReturns `amount`/`currency` (the converted total), `accounts` (per-account contributions: native amount/currency, converted amount, the FX rate applied), and `as_of` (the FX-rate anchor date this snapshot is valid for).\n\n`unavailable: true` means `amount` is a placeholder, not a real measurement (e.g. no accounts connected yet) — say so plainly rather than presenting it as a real €0 balance. `partial: true` means one or more accounts were excluded from an otherwise real total (e.g. missing FX rate) — mention the exclusion count and any `hints` rather than presenting the number as unconditionally complete.\n\nThis is a snapshot only — no burn rate or runway is implied. Call `well_get_runway` instead for a forward-looking figure.\n\nCall this directly — no other tool call is needed first (workspace is resolved from the caller's authorized token, same as every other well_* tool)."
+    },
+    {
+      "name": "well_get_cost_structure",
+      "description": "Get the workspace's cost structure: outflow for the latest closed month, broken down by category — the exact same computation and numbers the Well app's canvas cost-structure donut chart shows. Use this instead of summing/grouping transactions yourself.\n\nReturns `entries` (an array of `{ category, amount, pct }`, sorted by amount descending) and `currency` (the workspace base currency). `amount` is a magnitude (outflow), not signed.\n\n`rung` names which grouping actually produced these categories — \"ledger_account\" (the workspace's own chart of accounts), \"category_normalized\" (Well's auto-categorization), \"transaction_type\" (a technical fallback bucket), or \"uncategorised\" (no rung qualified — either nothing covered the month, or a rung had the coverage but too few labelled rows). State it when you present the breakdown so the user knows whether they're looking at their own ledger's categories or Well's.\n\nIf `hints` are present (e.g. a coverage caveat about uncategorized spend), disclose them rather than presenting the breakdown as unconditionally complete.\n\nCall this directly — no other tool call is needed first (workspace is resolved from the caller's authorized token, same as every other well_* tool)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:00:12.639Z",
+  "toolsPreviewStatus": "ok"
+}

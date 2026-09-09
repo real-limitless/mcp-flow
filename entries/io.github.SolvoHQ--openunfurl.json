@@ -1,0 +1,56 @@
+{
+  "id": "io.github.SolvoHQ/openunfurl",
+  "title": "openunfurl",
+  "description": "Zero-signup anonymous link-unfurl API. One GET returns clean JSON metadata for any public URL.",
+  "summary": "Zero-signup anonymous link-unfurl API. One GET returns clean JSON metadata for any public URL.",
+  "offersHint": "Zero-signup anonymous link-unfurl API. One GET returns clean JSON metadata for any public URL. · Remote MCP (streamable-http) at https://openunfurl.vercel.app/api/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://openunfurl.vercel.app/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://openunfurl.vercel.app/api/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/SolvoHQ/openunfurl",
+  "repository": {
+    "url": "https://github.com/SolvoHQ/openunfurl",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-17T05:38:46.658185Z",
+  "publishedAt": "2026-05-17T05:38:46.658185Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:46.392Z",
+    "sourceRepoAt": "2026-08-12T00:02:25.933Z",
+    "readmeAt": "2026-08-12T00:02:26.393Z",
+    "toolsAt": "2026-08-12T00:02:26.706Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SolvoHQ/openunfurl",
+    "checkedAt": "2026-08-12T00:02:25.933Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SolvoHQ/openunfurl/master/README.md",
+    "markdown": "# OpenUnfurl\n\n**A zero-signup link-unfurl / link-preview API. No account, no API key — one GET request.**\n\nGive it any public URL, get back clean preview metadata (title, description,\nimage, siteName, favicon, Open Graph / Twitter Card, oembed) as JSON. Built so\nautonomous AI agents can use it as a tool — an agent has no human to do a signup.\n\nLive: **https://openunfurl.vercel.app**\n\n## Quick start\n\n```sh\ncurl \"https://openunfurl.vercel.app/api/unfurl?url=https://github.com\"\n```\n\nSample response:\n\n```json\n{\n  \"url\": \"https://github.com\",\n  \"resolvedUrl\": \"https://github.com/\",\n  \"title\": \"GitHub · Build and ship software on a single, collaborative platform\",\n  \"description\": \"Join the world's most widely adopted, AI-powered developer platform where millions of developers, businesses, and the largest open source community build software that advances humanity.\",\n  \"image\": \"https://github.githubassets.com/assets/campaign-social-031d6161fa10.png\",\n  \"siteName\": \"GitHub\",\n  \"type\": \"object\",\n  \"favicon\": \"https://github.githubassets.com/favicons/favicon.svg\",\n  \"oembed\": null,\n  \"fetchedAt\": \"2026-05-17T00:00:00.000Z\",\n  \"engine\": \"static-html-v0.1\",\n  \"note\": \"v0.1 parses static HTML only — no JS/SPA render\"\n}\n```\n\nAny missing field is `null`. Errors return JSON with an `error` key and an\nappropriate HTTP status (`400` bad/blocked/missing URL, `422` fetch failed,\n`429` rate limited, `405` wrong method).\n\n## JavaScript\n\n```js\nconst base = \"https://openunfurl.vercel.app\";\nconst r = await fetch(\n  base + \"/api/unfurl?url=\" + encodeURIComponent(\"https://example.com\")\n);\nconst meta = await r.json(); // { title, description, image, favicon, ... }\n```\n\n## Use as an MCP tool (AI agents / Claude / Cursor / LLM clients)\n\nOpenUnfurl is also a remote [MCP](https://modelcontextprotocol.io) server, so an\nagent can call it as a tool with **no signup, no API key, no OAuth**.\n\n- Endpoint: **`https://openunfurl.vercel.app/api/mcp`**\n- Transport: **Streamable HTTP, stateless** (POST JSON-RPC 2.0, single\n  `application/json` response — no sessions, no SSE)\n- Exposes exactly one tool: **`unfurl`** — input `{ \"url\": \"https://example.com\" }`,\n  returns the same preview JSON as the REST endpoint (also as `structuredContent`)\n\nDrop this into any MCP client config (Claude Desktop, Cursor, or any client that\nspeaks the Streamable HTTP transport):\n\n```json\n{ \"mcpServers\": { \"openunfurl\": { \"url\": \"https://openunfurl.vercel.app/api/mcp\" } } }\n```\n\nQuick smoke test:\n\n```sh\ncurl -s -X POST https://openunfurl.vercel.app/api/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"unfurl\",\"arguments\":{\"url\":\"https://example.com\"}}}'\n```\n\nOver MCP, an upstream error comes back as a tool result with `isError: true`.\n\n## Why\n\nManaged link-preview alternatives — Microlink, OpenGraph.io, LinkPreview.net,\nUnfurl.io, LinkPeek — all gate even their free tier behind a signup and/or an\nAPI key. OpenUnfurl does not: it's a single anonymous GET (or one MCP\n`tools/call`). That's especially useful to autonomous agents, which have no\nhuman in the loop to complete a signup or paste in a key.\n\n## Limitations\n\n- **v0.1 parses static HTML only** — no headless browser, no JS-rendered SPAs.\n  If a site renders its `<meta>` tags client-side you get the static fallback.\n- **Best-effort per-instance IP rate limit** — a soft abuse brake, not a\n  guarantee (serverless instances are ephemeral and not shared).\n- **SSRF-guarded** — rejects localhost / private / reserved IP ranges.\n- **MIT licensed and self-hostable** — see below.\n\n## Self-host — it's zero-dependency files\n\nThe entire API is two single zero-dependency Node serverless functions:\n[`api/unfurl.js`](api/unfurl.js) (REST) and [`api/mcp.js`](api/mcp.js) (remote\nMCP). No `npm install`, no `cheerio`/`jsdom`. Deploy the folder to Vercel\n(zero-config `/api` detection) or drop the handlers into any Node serverless\nruntime.\n\n```sh\ngit clone https://github.com/SolvoHQ/openunfurl\ncd openunfurl\nnpx vercel --prod\n```\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:02:26.393Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "unfurl",
+      "description": "Fetch clean link-preview metadata (title, description, image, siteName, favicon, oembed) for any public URL. No signup, no API key. Static-HTML parse only (no JS/SPA render)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:02:26.706Z",
+  "toolsPreviewStatus": "ok"
+}

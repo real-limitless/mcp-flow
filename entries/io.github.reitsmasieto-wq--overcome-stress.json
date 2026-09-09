@@ -1,0 +1,51 @@
+{
+  "id": "io.github.reitsmasieto-wq/overcome-stress",
+  "title": "overcome-stress",
+  "description": "Stress recovery protocols via Lightning payments: post-concussion, post-COVID, burnout",
+  "summary": "Stress recovery protocols via Lightning payments: post-concussion, post-COVID, burnout",
+  "offersHint": "Stress recovery protocols via Lightning payments: post-concussion, post-COVID, burnout · Remote MCP (streamable-http) at https://mcp.overcomestress.io/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.overcomestress.io/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.overcomestress.io/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/reitsmasieto-wq/overcome-stress-mcp",
+  "repository": {
+    "url": "https://github.com/reitsmasieto-wq/overcome-stress-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-18T20:05:47.505767Z",
+  "publishedAt": "2026-02-18T20:05:47.505767Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:30.239Z",
+    "sourceRepoAt": "2026-08-11T23:24:29.568Z",
+    "readmeAt": "2026-08-11T23:24:30.026Z",
+    "toolsAt": "2026-08-12T01:04:30.239Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/reitsmasieto-wq/overcome-stress-mcp",
+    "checkedAt": "2026-08-11T23:24:29.568Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/reitsmasieto-wq/overcome-stress-mcp/main/README.md",
+    "markdown": "# Overcome Stress — L402 Skill Server\n\n## Wat is dit?\n\nEen server die jouw 16 AI-agent skill blocks serveert achter Lightning Network paywalls via het L402 protocol. AI-agents betalen per query in sats — geen accounts, geen API-keys, geen signup.\n\n## Architectuur\n\n```\nAI-Agent → GET /api/skills/K01 → Server antwoordt: HTTP 402 + Lightning invoice (50 sats)\nAI-Agent → Betaalt invoice via Lightning → Ontvangt preimage\nAI-Agent → GET /api/skills/K01 + Authorization: L402 {macaroon}:{preimage}\nServer  → Verifieert betaling → Serveert volledige skill content\nSats    → Stromen naar jouw Lightning wallet\n```\n\n## Componenten\n\n| Service | Wat het doet |\n|---|---|\n| **API Server** | Python Flask app die skills serveert achter L402 paywall |\n| **LNbits** | Lightning payment backend — maakt invoices, checkt betalingen |\n| **Caddy** | Reverse proxy met automatische HTTPS (Let's Encrypt) |\n\n## Snelle Start (5 minuten)\n\n### Stap 1: Huur een VPS\n\nGoedkoopste optie: **Hetzner Cloud** (€4,51/maand voor CX22)\n- Ga naar https://www.hetzner.com/cloud\n- Kies Ubuntu 24.04, CX22 (2 vCPU, 4GB RAM)\n- Maak een SSH key aan of gebruik wachtwoord\n- Noteer het IP-adres\n\n### Stap 2: Upload bestanden naar de server\n\n```bash\n# Vanaf je computer (of gebruik FileZilla):\nscp -r skill-server/ root@JOUW-IP:/root/skill-server/\n```\n\n### Stap 3: SSH naar je server en deploy\n\n```bash\nssh root@JOUW-IP\ncd /root/skill-server\nchmod +x deploy.sh\n./deploy.sh\n```\n\n### Stap 4: LNbits configureren\n\n1. Open `http://JOUW-IP:5000` in je browser\n2. Maak een nieuwe wallet aan (\"OvercomeStress\")\n3. Klik op het sleutel-icoon rechtsboven\n4. Kopieer:\n   - **Admin key** → dit wordt `LNBITS_ADMIN_KEY`\n   - **Invoice/read key** → dit wordt `LNBITS_API_KEY`\n\n### Stap 5: API keys instellen\n\n```bash\nnano .env\n# Plak de keys bij LNBITS_API_KEY en LNBITS_ADMIN_KEY\n# Save: Ctrl+X → Y → Enter\n\ndocker compose restart api\n```\n\n### Stap 6: Testen\n\n```bash\n# Catalogus ophalen (gratis)\ncurl http://JOUW-IP:8402/api/catalog\n\n# Skill opvragen (krijgt 402 + invoice terug)\ncurl http://JOUW-IP:8402/api/skills/K01\n\n# Preview ophalen (gratis)\ncurl http://JOUW-IP:8402/api/skills/K01/preview\n```\n\n## Domein + HTTPS (optioneel maar aanbevolen)\n\n1. Koop een domein (bijv. `skills.overcomestress.com`)\n2. Zet een DNS A-record naar je server IP\n3. Pas de `Caddyfile` aan met je domein\n4. `docker compose restart caddy`\n5. Caddy regelt automatisch HTTPS via Let's Encrypt\n\n## API Endpoints\n\n| Endpoint | Auth | Prijs | Beschrijving |\n|---|---|---|---|\n| `GET /` | Nee | Gratis | Server info |\n| `GET /api/catalog` | Nee | Gratis | Volledige skill catalogus |\n| `GET /api/skills/{id}/preview` | Nee | Gratis | Eerste sectie van skill |\n| `GET /api/skills/{id}` | L402 | 50-100 sats | Volledige skill content |\n| `GET /api/trajectories/{id}` | L402 | 150 sats | Traject routering |\n| `GET /api/payment/{hash}/status` | Nee | Gratis | Betaalstatus check |\n| `GET /api/stats` | Nee | Gratis | Publieke statistieken |\n| `GET /health` | Nee | Gratis | Health check |\n\n## Pricing\n\n| Type | Aantal | Prijs/query |\n|---|---|---|\n| Knowledge (K01-K08) | 8 | 50 sats |\n| Intervention (I01-I07) | 7 | 75 sats |\n| Proprietary (I08) | 1 | 100 sats |\n| Trajectories (T01-T04) | 4 | 150 sats |\n\n## Lightning Backend Configureren\n\nLNbits start standaard met een **FakeWallet** (voor testen). Voor echte betalingen:\n\n### Optie A: Phoenixd (aanbevolen — sluit aan bij je Phoenix wallet)\n\n[Phoenixd](https://phoenix.acinq.co/server) is de server-versie van Phoenix Wallet.\n\n```bash\n# Installeer phoenixd op je server\n# Zie: https://phoenix.acinq.co/server\n\n# Pas docker-compose.yml aan:\n# Uncomment de PhoenixdWallet regels bij lnbits environment\n# Herstart: docker compose up -d\n```\n\n### Optie B: LND node\n\nAls je een LND node hebt of wilt draaien:\n\n```bash\n# Pas docker-compose.yml aan:\n# Uncomment de LndRestWallet regels bij lnbits environment\n# Vul je LND REST endpoint, cert, en macaroon in\n# Herstart: docker compose up -d\n```\n\n## Bestanden\n\n```\nskill-server/\n├── api/\n│   ├── server.py          # Hoofd API server met L402 protocol\n│   └── requirements.txt   # Python dependencies\n├── skills/                # De 16 skill markdown bestanden\n│   ├── K01_what_is_stress.md\n│   ├── K02_autonomic_nervous_system.md\n│   ├── ... (16 bestanden)\n│   └── I08_vergeetmuts_technique.md\n├── docker-compose.yml     # Service orchestratie\n├── Dockerfile             # API server container\n├── Caddyfile              # HTTPS reverse proxy config\n├── deploy.sh              # Deployment script\n├── .env.example           # Environment template\n└── README.md              # Dit bestand\n```\n\n## Monitoring\n\n```bash\n# Logs bekijken\ndocker compose logs -f api\ndocker compose logs -f lnbits\n\n# Status checken\ndocker compose ps\n\n# Herstarten\ndocker compose restart\n\n# Stoppen\ndocker compose down\n```\n\n## Kosten\n\n- VPS: €4,51-9/maand (Hetzner CX22/CX32)\n- Domein: €10-15/jaar\n- LNbits: gratis (open source)\n- Totaal: ~€70/jaar\n\n## Licentie\n\n© 2024-2026 Sieto Reitsma. Alle rechten voorbehouden.\nForgive and Forget Hood: © 2025 Dr. Paula Zeestraten-Bartholomeus, ReAttach Therapy International Foundation.\nCorpus Systemics® — Geregistreerd Handelsmerk, Benelux.\n",
+    "fetchedAt": "2026-08-11T23:24:30.026Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:30.239Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

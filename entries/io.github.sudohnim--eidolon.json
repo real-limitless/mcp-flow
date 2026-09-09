@@ -1,0 +1,44 @@
+{
+  "id": "io.github.sudohnim/eidolon",
+  "title": "eidolon",
+  "description": "Privacy-first OSINT scanner: breaches, credentials, Shodan, username sweep. Scored PDF report.",
+  "summary": "Privacy-first OSINT scanner: breaches, credentials, Shodan, username sweep. Scored PDF report.",
+  "offersHint": "Privacy-first OSINT scanner: breaches, credentials, Shodan, username sweep. Scored PDF report.",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/sudohnim/eidolon",
+  "repository": {
+    "url": "https://github.com/sudohnim/eidolon",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-26T03:11:26.688242Z",
+  "publishedAt": "2026-06-26T03:11:26.688242Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:08.010Z",
+    "sourceRepoAt": "2026-08-11T23:19:26.371Z",
+    "readmeAt": "2026-08-11T23:19:27.140Z",
+    "toolsAt": "2026-08-12T01:00:08.010Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sudohnim/eidolon",
+    "checkedAt": "2026-08-11T23:19:26.371Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sudohnim/eidolon/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"assets/logo.png\" alt=\"Eidolon\" width=\"160\">\n</p>\n\n# Eidolon\n\nEidolon is a privacy-first approach to finding and understanding your digital footprint. The stack uses OSINT tools to gather information based on your search parameters, then a **local** LLM compiles it into a report. The LLM runs on your machine, so no data ever reaches an external service or leaves your box — you own your data.\n\n## What it does\n\n- Aggregates ~25 OSINT sources — breaches, leaked credentials, data brokers, account enumeration, public records, phone/email intel, exposed hosts — into a single risk report.\n- Maps findings to **MITRE ATT&CK** so you see what an attacker could actually do with what's exposed.\n- Flags **AI-training exposure** (which platforms may train on your data, and how to opt out).\n- Risk scoring and the leaked-credential dossier are **deterministic** — built from scan state, not the LLM — so the report survives an LLM hiccup. The model only writes narrative.\n- Outputs Markdown, PDF, and JSON.\n\n## MCP-native\n\nEidolon runs as an [MCP](https://modelcontextprotocol.io) server, so you can drive it from any MCP client (Claude Desktop, Claude Code) — scan a target, list past scans, and read reports conversationally. It runs locally over stdio; your data never leaves the box.\n\nTools: `scan_target`, `scan_status`, `list_scans`, `get_report`, `reveal_credentials`. A scan takes minutes, so `scan_target` returns a `scan_id` immediately and runs in the background — poll `scan_status(scan_id)` until it reports `done`, then `get_report(scan_id)`. The leaked-credential dossier (plaintext passwords from breach dumps) is **redacted by default** and only returned when you explicitly call `reveal_credentials`.\n\n## Requirements\n\nEverything below is **optional** — Eidolon runs with whatever you give it and tells you, per source, what it couldn't check (no token) versus what it checked and found nothing.\n\n- Python 3.11+ and [uv](https://docs.astral.sh/uv/) (required)\n- [Ollama](https://ollama.com) for the local LLM narrative: `ollama pull llama3.1:8b` — if it's down, the report is still produced deterministically (just no written narrative).\n- A running [SpiderFoot](https://github.com/smicallef/spiderfoot) instance — skipped if unreachable.\n- API keys — see [`.env.example`](.env.example). Each unlocks one data source and **skips cleanly** if absent (the report says \"not checked — set X\"). A scan with no keys is sparse but still runs.\n\n**New here? Start with the [Setup & Configuration guide](docs/SETUP_CHECKLIST.md)** — which keys to get, what each one costs, and what it unlocks.\n\n## Quickstart\n\n```bash\ngit clone https://github.com/sudohnim/eidolon && cd eidolon\nuv sync\ncp .env.example .env        # fill in your keys\n\n# scan yourself from the CLI\nuv run eidolon --email you@example.com\n\n# or run the MCP server (stdio)\nuv run eidolon-mcp\n```\n\n### Use from Claude Desktop\n\n**Option 1 — from a local clone** (loads `.env` from `cwd`):\n\n```json\n{\n  \"mcpServers\": {\n    \"eidolon\": {\n      \"command\": \"uv\",\n      \"args\": [\"run\", \"eidolon-mcp\"],\n      \"cwd\": \"/absolute/path/to/eidolon\"\n    }\n  }\n}\n```\n\n**Option 2 — from PyPI via `uvx`** (recommended, no clone needed). Pass your keys in the `env` block:\n\n```json\n{\n  \"mcpServers\": {\n    \"eidolon\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"eidolon-osint\", \"eidolon-mcp\"],\n      \"env\": {\n        \"HIBP_API_KEY\": \"...\",\n        \"DEHASHED_API_KEY\": \"...\",\n        \"OLLAMA_HOST\": \"http://localhost:11434\"\n      }\n    }\n  }\n}\n```\n\n**Option 3 — straight from GitHub** (pre-release / latest commit):\n\n```json\n{\n  \"mcpServers\": {\n    \"eidolon\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"git+https://github.com/sudohnim/eidolon\", \"eidolon-mcp\"],\n      \"env\": {\n        \"HIBP_API_KEY\": \"...\",\n        \"DEHASHED_API_KEY\": \"...\",\n        \"OLLAMA_HOST\": \"http://localhost:11434\"\n      }\n    }\n  }\n}\n```\n\nAdd only the keys you have — the rest skip cleanly. Then ask Claude to \"scan my email\"; it calls `scan_target`, polls `scan_status`, and reads the report.\n\n## How it works\n\nA LangGraph pipeline: `intake → wave 1 scans → wave 2 scans → MITRE mapping → correlation → analysis → report`. Both the CLI and the MCP server call the same `run_scan()` core; reads go through a small repository layer. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the architecture and where it's headed (stateful history, continuous monitoring).\n\n## Intended use\n\nEidolon is for scanning **yourself**, or targets you are **explicitly authorized** to assess (authorized security testing, your own footprint). It surfaces real secrets, including plaintext passwords from breach dumps. **Do not use it to profile or surveil people without their consent.** You are responsible for complying with the terms of the data sources you configure and with applicable law.\n\n## License\n\n[AGPL-3.0](LICENSE). If you run a modified version as a network service, you must offer users its source.\n",
+    "fetchedAt": "2026-08-11T23:19:27.140Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:08.010Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

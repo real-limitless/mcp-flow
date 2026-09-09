@@ -1,0 +1,94 @@
+{
+  "id": "io.github.mharnett/ga4",
+  "title": "ga4",
+  "description": "Google Analytics 4 MCP: reports, realtime data, custom dimensions, data streams.",
+  "summary": "Google Analytics 4 MCP: reports, realtime data, custom dimensions, data streams.",
+  "offersHint": "Google Analytics 4 MCP: reports, realtime data, custom dimensions, data streams. · Packages: npm:mcp-ga4 · Env vars: GA4_PROPERTY_ID, GOOGLE_APPLICATION_CREDENTIALS",
+  "version": "2.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-ga4",
+    "version": "2.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GA4_PROPERTY_ID",
+        "description": "GA4 property ID (numeric)",
+        "required": true
+      },
+      {
+        "name": "GOOGLE_APPLICATION_CREDENTIALS",
+        "description": "Path to service account JSON credentials file",
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-ga4",
+      "version": "2.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GA4_PROPERTY_ID",
+          "description": "GA4 property ID (numeric)",
+          "required": true
+        },
+        {
+          "name": "GOOGLE_APPLICATION_CREDENTIALS",
+          "description": "Path to service account JSON credentials file",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GA4_PROPERTY_ID",
+      "description": "GA4 property ID (numeric)",
+      "required": true
+    },
+    {
+      "name": "GOOGLE_APPLICATION_CREDENTIALS",
+      "description": "Path to service account JSON credentials file",
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mharnett/mcp-ga4",
+  "repository": {
+    "url": "https://github.com/mharnett/mcp-ga4",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-08T23:39:47.556055Z",
+  "publishedAt": "2026-04-08T23:39:47.556055Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:21.645Z",
+    "sourceRepoAt": "2026-08-11T23:34:18.892Z",
+    "readmeAt": "2026-08-11T23:34:19.401Z",
+    "toolsAt": "2026-08-12T01:13:21.645Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mharnett/mcp-ga4",
+    "checkedAt": "2026-08-11T23:34:18.892Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mharnett/mcp-ga4/main/README.md",
+    "markdown": "# mcp-ga4\n\nMCP server for Google Analytics 4 -- run reports, realtime data, custom dimensions, and property management via Claude.\n\n## Features\n\n- 9 tools covering reporting, realtime data, custom dimensions/metrics, data streams, and feedback\n- Two configuration modes: single-property (env vars) and multi-client (config.json)\n- Supports both service account and OAuth credentials\n- Relative date support (today, yesterday, 7daysAgo, 30daysAgo, 90daysAgo)\n- Built on official Google SDKs with resilience patterns\n\n## Installation\n\n```bash\nnpm install mcp-ga4\n```\n\nOr clone the repository:\n\n```bash\ngit clone https://github.com/mharnett/mcp-ga4.git\ncd mcp-ga4\nnpm install\nnpm run build\n```\n\n## Authentication\n\n`mcp-ga4` supports **two** credential families. Selection is deterministic and\nhappens once, at startup: an explicit **keyfile / service account wins**, then\n**user OAuth**, and if **neither** is configured the server exits with a loud\nonboarding error naming both options. There is **no** machine-local credentials\npath baked into the code and **no** silent runtime failover -- the only\ncredential inputs are environment variables and (optionally) your own per-user\n`config.json`. (A later `403` therefore surfaces as the API error, not as a\nsilent switch to the other credential family.)\n\n> **Precedence:** when **both** families are configured, the **keyfile /\n> service account takes precedence** over user OAuth.\n\n### Option A: Service account (recommended for unattended / server use)\n\nUse this for any always-on or server deployment. Point\n`GOOGLE_APPLICATION_CREDENTIALS` (or `config.json` `credentials_file`) at a JSON\nkeyfile. The service account **must be granted access on the GA4 property**\n(Admin → Property Access Management → add the service-account email with at least\nViewer). No refresh token is involved -- the server hands the keyfile to the GA4\nSDKs directly:\n\n```bash\nGOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json\n```\n\nThe keyfile may be a real service-account key **or** an `authorized_user` OAuth\ntoken dump -- both are accepted via the `keyFile` option.\n\n### Option B: User OAuth (personal / interactive use)\n\nUse this if you want the server to act as a Google **user** (your own GA4\nlogin). You bring your own Google OAuth client and mint a refresh token once.\n\n1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),\n   create an **OAuth 2.0 Client ID** of type **Desktop app**. Enable the\n   **Google Analytics Data API** (and the **Admin API** if you use the\n   custom-dimension tools).\n2. Export your client credentials and run the token helper (uses PKCE, opens a\n   browser, prints the token to stdout):\n\n   ```bash\n   export GA4_CLIENT_ID=...            # from the Desktop-app client\n   export GA4_CLIENT_SECRET=...\n   node get-refresh-token.cjs          # or: npm run auth\n   ```\n\n   > Do **not** redirect this command's stdout to a shared log -- the refresh\n   > token is printed there by design.\n\n3. Copy the printed `GA4_REFRESH_TOKEN=...` into your environment. At runtime the\n   server reads these three env vars:\n\n   ```bash\n   GA4_CLIENT_ID=...\n   GA4_CLIENT_SECRET=...\n   GA4_REFRESH_TOKEN=...\n   ```\n\nThe scope requested is read from `config.json` `oauth.scope` (see below), so the\nhelper and the running server never disagree on what you granted.\n\n### Scopes (minimum grant)\n\nScopes live in `config.json` under `oauth.scope`. The committed default is:\n\n```\nhttps://www.googleapis.com/auth/analytics.readonly\nhttps://www.googleapis.com/auth/analytics.edit\n```\n\n`analytics.edit` is required because `ga4_create_custom_dimension` mutates the\nproperty via the Admin API. If you only need read access, override `oauth.scope`\nin your own `config.json` to `analytics.readonly` alone and re-run the helper.\n\n## Configuration\n\n**Security:** Never share your `.mcp.json` file or commit it to git -- it may contain API credentials. Add `.mcp.json` to your `.gitignore`.\n\n### Mode 1: Single Property (env vars)\n\nSet a property ID plus one of the auth families above:\n\n```bash\nGA4_PROPERTY_ID=123456789\n# then EITHER the OAuth trio (GA4_CLIENT_ID/SECRET/REFRESH_TOKEN)\n# OR a service account: GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json\n```\n\n### Mode 2: Multi-Client (config.json)\n\nCreate a `config.json` in the project root to map multiple GA4 properties to\nproject directories. The server auto-detects which property to use based on the\ncaller's working directory. Credentials come from the environment (Option A/B\nabove); `config.json` may optionally carry a `credentials_file` service-account\npath for a config-only SA setup.\n\n```json\n{\n  \"oauth\": {\n    \"scope\": \"https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/analytics.edit\"\n  },\n  \"clients\": {\n    \"client-a\": {\n      \"name\": \"Client A\",\n      \"folder\": \"/path/to/client-a/project\",\n      \"property_id\": \"123456789\"\n    },\n    \"client-b\": {\n      \"name\": \"Client B\",\n      \"folder\": \"/path/to/client-b/project\",\n      \"property_id\": \"987654321\"\n    }\n  }\n}\n```\n\n## Usage\n\n### Claude Code (.mcp.json)\n\nSingle-property mode:\n\n```json\n{\n  \"mcpServers\": {\n    \"ga4\": {\n      \"command\": \"npx\",\n      \"args\": [\"mcp-ga4\"],\n      \"env\": {\n        \"GA4_PROPERTY_ID\": \"123456789\",\n        \"GOOGLE_APPLICATION_CREDENTIALS\": \"/path/to/credentials.json\"\n      }\n    }\n  }\n}\n```\n\nMulti-client mode:\n\n```json\n{\n  \"mcpServers\": {\n    \"ga4\": {\n      \"command\": \"node\",\n      \"args\": [\"/path/to/mcp-ga4/dist/index.js\"]\n    }\n  }\n}\n```\n\n**Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows).\n\n## Common Query Patterns\n\n**Top pages:**\ndimensions=`pagePath`, metrics=`screenPageViews`, order_by=`screenPageViews`\n\n**Traffic sources:**\ndimensions=`sessionSource,sessionMedium`, metrics=`sessions,totalUsers`\n\n**Daily trend:**\ndimensions=`date`, metrics=`sessions,totalUsers`\n\n**Campaign performance:**\ndimensions=`sessionCampaignName`, metrics=`sessions,conversions`\n\n**Device breakdown:**\ndimensions=`deviceCategory`, metrics=`sessions,totalUsers`\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `ga4_get_client_context` | Returns the active GA4 property ID and client name |\n| `ga4_run_report` | Run a standard GA4 report with dimensions, metrics, date range, and filters |\n| `ga4_realtime_report` | Query realtime data (last 30 minutes) |\n| `ga4_list_custom_dimensions` | List all custom dimensions for the property |\n| `ga4_create_custom_dimension` | Create a new custom dimension |\n| `ga4_list_custom_metrics` | List all custom metrics for the property |\n| `ga4_list_data_streams` | List web/app data streams and their measurement IDs |\n| `ga4_send_feedback` | Submit feedback on a query result |\n| `ga4_suggest_improvement` | Suggest a new query pattern or improvement |\n\n## Date Formats\n\nUse `YYYY-MM-DD` for absolute dates, or these relative shortcuts:\n\n- `today`\n- `yesterday`\n- `7daysAgo`\n- `30daysAgo`\n- `90daysAgo`\n\n## Common Dimensions and Metrics\n\n**Dimensions:** date, dateHour, eventName, pagePath, pageTitle, sessionSource, sessionMedium, sessionCampaignName, country, city, deviceCategory, browser, operatingSystem, landingPage, pageReferrer, newVsReturning, firstUserSource, firstUserMedium, firstUserCampaignName\n\n**Metrics:** sessions, totalUsers, newUsers, activeUsers, screenPageViews, eventCount, conversions, engagedSessions, engagementRate, averageSessionDuration, bounceRate, sessionsPerUser, screenPageViewsPerSession, userEngagementDuration\n\n## Data Freshness\n\n- Standard reports: 24-48 hour delay\n- Realtime reports: last 30 minutes only\n\n## Architecture\n\nBuilt on:\n\n- `@google-analytics/data` -- GA4 Data API for reports\n- `@google-analytics/admin` -- GA4 Admin API for property management\n- `cockatiel` -- resilience (retry, circuit breaker)\n- `pino` -- structured logging\n\n## License\n\nMIT\n\n## Author\n\nBuilt by Mark Harnett / [drak-marketing](https://github.com/drak-marketing)\n",
+    "fetchedAt": "2026-08-11T23:34:19.401Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:21.645Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

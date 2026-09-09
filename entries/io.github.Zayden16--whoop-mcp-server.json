@@ -1,0 +1,44 @@
+{
+  "id": "io.github.Zayden16/whoop-mcp-server",
+  "title": "whoop-mcp-server",
+  "description": "MCP server for the official Whoop API v2: cycles, recovery, sleep, workouts, and profile data",
+  "summary": "MCP server for the official Whoop API v2: cycles, recovery, sleep, workouts, and profile data",
+  "offersHint": "MCP server for the official Whoop API v2: cycles, recovery, sleep, workouts, and profile data",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/Zayden16/whoop-mcp-server",
+  "repository": {
+    "url": "https://github.com/Zayden16/whoop-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-09T13:01:30.228106Z",
+  "publishedAt": "2026-07-09T13:01:30.228106Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:32:19.566Z",
+    "sourceRepoAt": "2026-08-11T23:59:23.814Z",
+    "readmeAt": "2026-08-11T23:59:24.350Z",
+    "toolsAt": "2026-08-12T01:32:19.566Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Zayden16/whoop-mcp-server",
+    "checkedAt": "2026-08-11T23:59:23.814Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Zayden16/whoop-mcp-server/master/README.md",
+    "markdown": "# whoop-mcp-server\n\n[![CI](https://github.com/Zayden16/whoop-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Zayden16/whoop-mcp-server/actions/workflows/ci.yml)\n[![Release](https://img.shields.io/github/v/release/Zayden16/whoop-mcp-server)](https://github.com/Zayden16/whoop-mcp-server/releases)\n[![Go Version](https://img.shields.io/github/go-mod/go-version/Zayden16/whoop-mcp-server)](go.mod)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\nMCP server for the official [Whoop API v2](https://developer.whoop.com), written in Go.\nExposes cycles, recovery, sleep, workouts, and profile data as MCP tools.\n\n## Tools\n\nAll tools return JSON. Record shapes are the unmodified [Whoop API v2](https://developer.whoop.com/api/) objects, so every field the API exposes is available to the model.\n\n| Tool | Inputs | Returns |\n|---|---|---|\n| `get_profile` | — | Single object: `user_id`, `email`, `first_name`, `last_name` |\n| `get_body_measurement` | — | Single object: `height_meter`, `weight_kilogram`, `max_heart_rate` |\n| `get_cycles` | `start_date`, `end_date`, `limit` (all optional) | Array of cycle records — one per physiological day: `start`/`end`, `score_state`, and `score` with day `strain`, `kilojoule`, `average_heart_rate`, `max_heart_rate` |\n| `get_latest_cycle` | — | Single cycle record (the current/most recent day) |\n| `get_recoveries` | `start_date`, `end_date`, `limit` (all optional) | Array of recovery records — one per sleep: `cycle_id`, `sleep_id`, and `score` with `recovery_score` (0–100), `resting_heart_rate`, `hrv_rmssd_milli`, `spo2_percentage`, `skin_temp_celsius` |\n| `get_recovery_for_cycle` | `cycle_id` (required) | Single recovery record for that cycle |\n| `get_sleep` | `start_date`, `end_date`, `limit` (all optional) | Array of sleep records: `start`/`end`, `nap` flag, and `score` with per-stage durations (light/SWS/REM/awake, in ms), `respiratory_rate`, `sleep_performance_percentage`, `sleep_efficiency_percentage`, sleep-need breakdown |\n| `get_workouts` | `start_date`, `end_date`, `limit` (all optional) | Array of workout records: `sport_name`, `start`/`end`, and `score` with workout `strain`, heart rates, `kilojoule`, `distance_meter`, `altitude_gain_meter`, time-in-zone durations (`zone_durations`, ms per HR zone) |\n| `get_average_strain` | `days` (optional, default 7) | Computed aggregate: `{days, cycles_counted, average_strain}` |\n| `check_auth_status` | — | `{authenticated: bool}` plus the profile on success or an `error` string on failure |\n\nNotes:\n\n- **Dates** are `YYYY-MM-DD`; `end_date` is inclusive (internally mapped to the start of the next day, per the API's exclusive `end` semantics).\n- **Collections** are date-descending (most recent first) and paginated transparently — the server follows `next_token` until `limit` records (default 25, max 100) are collected.\n- **Scores** are point-in-time per record, not time-series: one strain value per cycle, one recovery per sleep. For trends, fetch a range and let the model aggregate (or use `get_average_strain` for the built-in strain average).\n- A record's `score_state` can be `SCORED`, `PENDING_SCORE`, or `UNSCORABLE` — `score` is only present when `SCORED`.\n\n## Setup\n\n### 1. Create a Whoop developer app\n\nAt [developer.whoop.com](https://developer.whoop.com), create an app with:\n\n- **Redirect URI:** `http://localhost:8719/callback`\n- **Scopes:** `read:cycles`, `read:recovery`, `read:sleep`, `read:workout`, `read:profile`, `read:body_measurement`, `offline`\n\nNote the client ID and client secret.\n\n### 2. Install\n\nHomebrew:\n\n```sh\nbrew install zayden16/tap/whoop-mcp-server\n```\n\nOr download a prebuilt binary from [Releases](https://github.com/Zayden16/whoop-mcp-server/releases), or:\n\n```sh\ngo install github.com/Zayden16/whoop-mcp-server@latest\n```\n\nOr build from source:\n\n```sh\ngo build -o whoop-mcp-server .\n```\n\n### 3. Authorize (one time)\n\n```sh\nexport WHOOP_CLIENT_ID=...\nexport WHOOP_CLIENT_SECRET=...\n./whoop-mcp-server auth\n```\n\nOpens a browser for the OAuth flow; the token is saved to\n`~/Library/Application Support/whoop-mcp/token.json` (macOS) and refreshed\nautomatically thereafter (rotating refresh tokens).\n\n### 4. Register with Claude Code\n\n```sh\nclaude mcp add whoop --scope user \\\n  -e WHOOP_CLIENT_ID=... \\\n  -e WHOOP_CLIENT_SECRET=... \\\n  -- /path/to/whoop-mcp-server\n```\n\nOr for Claude Desktop, in `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"whoop\": {\n      \"command\": \"/path/to/whoop-mcp-server\",\n      \"env\": {\n        \"WHOOP_CLIENT_ID\": \"...\",\n        \"WHOOP_CLIENT_SECRET\": \"...\"\n      }\n    }\n  }\n}\n```\n\n## Example queries\n\n- \"What's my recovery score today?\"\n- \"Show my sleep for the past week\"\n- \"What's my average strain over the last 7 days?\"\n",
+    "fetchedAt": "2026-08-11T23:59:24.350Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:32:19.566Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

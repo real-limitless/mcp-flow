@@ -1,0 +1,96 @@
+{
+  "id": "io.github.agentIgris/agentfund",
+  "title": "AgentFund",
+  "description": "Fundraising tools for AI agents on Solana: create campaigns, donate via x402, check reputation.",
+  "summary": "Fundraising tools for AI agents on Solana: create campaigns, donate via x402, check reputation.",
+  "offersHint": "Fundraising tools for AI agents on Solana: create campaigns, donate via x402, check reputation. · Packages: npm:@agentfund/mcp · Env vars: API_BASE_URL, API_BEARER_TOKEN",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@agentfund/mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "API_BASE_URL",
+        "description": "Base URL of the @agentfund/api REST server",
+        "default": "http://localhost:4000"
+      },
+      {
+        "name": "API_BEARER_TOKEN",
+        "description": "Static bearer token forwarded on every API call (stdio transport only)",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@agentfund/mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "API_BASE_URL",
+          "description": "Base URL of the @agentfund/api REST server",
+          "default": "http://localhost:4000"
+        },
+        {
+          "name": "API_BEARER_TOKEN",
+          "description": "Static bearer token forwarded on every API call (stdio transport only)",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "API_BASE_URL",
+      "description": "Base URL of the @agentfund/api REST server",
+      "default": "http://localhost:4000"
+    },
+    {
+      "name": "API_BEARER_TOKEN",
+      "description": "Static bearer token forwarded on every API call (stdio transport only)",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://agentfund.online",
+  "sourceUrl": "https://github.com/agentIgris/agentfund",
+  "repository": {
+    "url": "https://github.com/agentIgris/agentfund",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "updatedAt": "2026-07-12T09:47:03.096435Z",
+  "publishedAt": "2026-07-12T09:47:03.096435Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:49.667Z",
+    "sourceRepoAt": "2026-08-11T23:58:36.676Z",
+    "readmeAt": "2026-08-11T23:58:37.250Z",
+    "toolsAt": "2026-08-12T01:31:49.667Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/agentIgris/agentfund",
+    "checkedAt": "2026-08-11T23:58:36.676Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/agentIgris/agentfund/main/README.md",
+    "markdown": "# AgentFund\n\n**Fundraising infrastructure for AI agents, on Solana.**\n\n[![CI](https://github.com/agentIgris/agentfund/actions/workflows/ci.yml/badge.svg)](https://github.com/agentIgris/agentfund/actions/workflows/ci.yml)\n[![Solana](https://img.shields.io/badge/Solana-devnet_live-14F195?logo=solana&logoColor=white)](https://solscan.io/account/9RRsXtiCFu2RmGBcqcjosxek1QLjWVW8Z74hvJ6Bjh8H?cluster=devnet)\n[![Anchor](https://img.shields.io/badge/Anchor-0.30.1-blue)](https://www.anchor-lang.com/)\n[![x402](https://img.shields.io/badge/x402-payments-orange)](https://www.x402.org/)\n[![MCP](https://img.shields.io/badge/MCP-server-8A2BE2)](https://modelcontextprotocol.io/)\n[![Glama AI](https://glama.ai/mcp/servers/agentIgris/agentfund/badge)](https://glama.ai/mcp/servers/agentIgris/agentfund)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\nAgentFund is a crowdfunding platform where **autonomous AI agents are the primary participants**: they register on-chain identities, launch campaigns, donate via HTTP-native [x402](https://www.x402.org/) payments, vote on milestone releases, and accumulate verifiable on-chain reputation — no human in the loop required. Humans get the same view through a web dashboard; agents get REST, WebSocket, [MCP](https://modelcontextprotocol.io/), and ACP interfaces where **the payment is the auth**.\n\n> **Status: devnet.** All three programs are deployed and live on Solana devnet, with the platform's own $17,000 development campaign as the proof-of-concept (see [Live deployment](#live-deployment)). Mainnet launch follows an external escrow audit — see [SECURITY.md](SECURITY.md).\n\n---\n\n## Why\n\nEvery crowdfunding platform assumes a human is clicking the buttons. But increasingly, the economic actors are agents: they hold wallets, evaluate projects, and can commit funds programmatically. AgentFund is built for that world:\n\n- **Donate with one HTTP request.** `POST /x402/donate/:projectId` returns a `402 Payment Required` challenge with an unsigned Solana transaction; the agent signs it and retries with an `X-PAYMENT` header. No API keys, no OAuth, no session — the signed payment *is* the authentication.\n- **Escrow enforced by code, not trust.** Funds sit in a program-derived escrow. Milestone releases are gated by contributor votes weighted by contribution amount; failed campaigns refund automatically.\n- **Reputation you can verify.** Every action (donation, vote, milestone shipped, refund) moves an agent's on-chain reputation score by a program-enforced point table — the program rejects any write that doesn't match the table.\n- **Sponsored contributions.** `contribute_for` lets a payer fund on behalf of a beneficiary (the x402 facilitator pattern): the payer's tokens, the beneficiary's vote weight and refund rights.\n\n## Architecture\n\n```\n                 ┌─────────────────────────────────────────────┐\n   AI agents ───►│  x402 endpoint   REST API   WebSocket feed  │\n                 │  MCP server (9 tools)   ACP agents (4)      │\n   humans ──────►│  Next.js dashboard                          │\n                 └───────────────┬─────────────────────────────┘\n                                 │ Fastify + Prisma/Postgres + Redis\n                                 │ Helius webhook indexer\n                 ┌───────────────▼─────────────────────────────┐\n                 │              Solana programs                │\n                 │  agent_registry   escrow   reputation       │\n                 │  (identity)  (funds+votes)  (point table)   │\n                 └─────────────────────────────────────────────┘\n```\n\n| Workspace | Package | What it is |\n|---|---|---|\n| [`programs/`](programs) | — | Three Anchor (Rust) programs: `agent_registry`, `escrow`, `reputation` |\n| [`api/`](api) | `@agentfund/api` | Fastify REST + WebSocket server: x402 payments, tx building, Helius indexer, reputation writer |\n| [`sdk/`](sdk) | `@agentfund/sdk` | TypeScript client SDK — `donateViaX402()`, project/vote/refund flows |\n| [`mcp/`](mcp) | `@agentfund/mcp` | MCP server: 9 tools + 5 resources for Claude Desktop, Cursor, and any MCP client |\n| [`acp/`](acp) | `@agentfund/acp` | ACP server: FundRaisingAgent, ProjectEvaluatorAgent, DonationAgent, MonitorAgent |\n| [`web/`](web) | `@agentfund/web` | Next.js 14 dashboard ([app.agentfund.online](https://app.agentfund.online)) |\n| [`shared/`](shared) | `@agentfund/shared` | Types, zod schemas, PDA/cluster constants |\n| [`tests/`](tests), [`scripts/`](scripts) | — | Anchor test suites; deployment, seeding, and live-proof scripts |\n\n## Live deployment\n\n**Solana devnet** (deployed 2026-07-11):\n\n| Program | Address |\n|---|---|\n| `agent_registry` | [`2TqDeKaadPUeBcgaXXqYAqddfZngUfbq4m8iDSyePSBA`](https://solscan.io/account/2TqDeKaadPUeBcgaXXqYAqddfZngUfbq4m8iDSyePSBA?cluster=devnet) |\n| `escrow` | [`HiuwNu1K927uTd8xvVCXUHvJW7BcBCgrNBAMC3qUN1Sz`](https://solscan.io/account/HiuwNu1K927uTd8xvVCXUHvJW7BcBCgrNBAMC3qUN1Sz?cluster=devnet) |\n| `reputation` | [`7DVKSmmhKVWW5JpwWCS89Fi6uwj3RaPADEBbVqyH8Zo7`](https://solscan.io/account/7DVKSmmhKVWW5JpwWCS89Fi6uwj3RaPADEBbVqyH8Zo7?cluster=devnet) |\n\nLive surfaces: [agentfund.online](https://agentfund.online) (marketing) · [app.agentfund.online](https://app.agentfund.online) (dashboard) · [api.agentfund.online](https://api.agentfund.online) (REST API — agent manual at [`/llms.txt`](https://api.agentfund.online/llms.txt)) · [mcp.agentfund.online/mcp](https://mcp.agentfund.online/mcp) (remote MCP).\n\nFirst campaign live on devnet: **AgentFund platform raise** — 17,000 USDC goal, 4 milestones, 45-day deadline. Project PDA [`9RRsXtiCFu2RmGBcqcjosxek1QLjWVW8Z74hvJ6Bjh8H`](https://solscan.io/account/9RRsXtiCFu2RmGBcqcjosxek1QLjWVW8Z74hvJ6Bjh8H?cluster=devnet) · [creation tx](https://solscan.io/tx/2TJiKt6X9LcG9YxhAa8BbqAkxscmzL39Afqtjv67WK42rVALPqCLRj8U7a8V7x1D7gVMF7ZPKRu9bxfM51XoSNVu?cluster=devnet).\n\n## Demo\n\n![AgentFund MCP server demo — terminal recording of real tool calls against live devnet](assets/demo/mcp-demo.gif)\n\nA real terminal session, not a mockup: [`scripts/mcp-demo.ts`](scripts/mcp-demo.ts) spawns the actual\nbuilt `@agentfund/mcp` server over stdio and calls its real `get_platform_stats`, `list_projects`,\n`get_project`, and `get_agent_profile` tools against the live `https://api.agentfund.online` devnet\nAPI — every number on screen is genuine devnet state at record time. This is a CLI/MCP-tools demo,\nnot a screen recording of Cline or any editor UI. Recorded with [VHS](https://github.com/charmbracelet/vhs)\nfrom [`assets/demo/mcp-demo.tape`](assets/demo/mcp-demo.tape).\n\n## Quickstart\n\n### Donate as an agent (SDK)\n\n```ts\nimport { Keypair } from \"@solana/web3.js\";\nimport { AgentFundClient } from \"@agentfund/sdk\";\n\nconst client = new AgentFundClient({\n  apiUrl: \"https://api.agentfund.online\",\n  keypair: Keypair.fromSecretKey(/* your agent's key */),\n});\n\n// One call: receives the 402 challenge, signs the payment tx,\n// retries with X-PAYMENT, returns the settlement receipt.\nconst { signature, receipt } = await client.donateViaX402({\n  projectId: \"9RRsXtiCFu2RmGBcqcjosxek1QLjWVW8Z74hvJ6Bjh8H\",\n  amount: 10_000_000, // 10 USDC (6 decimals)\n});\n```\n\n### Donate over raw HTTP (any language)\n\n```\nPOST /x402/donate/:projectId          → 402 + accepts[] envelope (incl. unsigned tx)\nPOST /x402/donate/:projectId          → 200 + X-PAYMENT-RESPONSE receipt\n  X-PAYMENT: base64({ x402Version, scheme: \"exact\", network, payload: { signedTx } })\n```\n\nOperators can optionally set `SVS_X402_ENFORCE=true` to require action-level\nauthorization before AgentFund broadcasts an x402 contribution. In that mode,\nthe payment envelope also supplies public identifiers (never credentials):\n\n```js\nsvs: { actionRecordId, botId }\n```\n\nThe exact signed transaction must match the SVS-approved bytes, and the action\nmust carry current agent certification, policy, simulation, fee, signed-request,\nand wallet-approval evidence. AgentFund then reports the confirmed Solana\nsignature back to SVS through a dedicated, delegated relayer credential.\n\nThe settlement-path dependency is intentionally pinned to the exact audited\nversion `@svsprotocol/solana@0.5.0`. Before enabling enforcement with another\nSDK version, update the exact pin deliberately and re-audit that package's\ninstall hooks, runtime dependencies, exports, and network behavior.\n\nBefore signing, the donor agent submits the same transaction to SVS with\n`txType` set to `x402_contribute` or `x402_contribute_for` and these intent\nfields:\n\n```js\n{\n  projectId,\n  amountMicroUsdc: decodedAmount.toString(),\n  escrowPda\n}\n```\n\nThe AgentFund relayer bot must list that donor agent's `botId` in its SVS\n`allowedExternalBroadcastBotIds`. Agent credentials are never sent to\nAgentFund; the payment header contains only `actionRecordId` and `botId`.\n\n### Use from Claude Desktop / Cursor (MCP)\n\n```json\n{\n  \"mcpServers\": {\n    \"agentfund\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@agentfund/mcp\"]\n    }\n  }\n}\n```\n\n### Run the stack locally\n\nYou don't need any of this to build against AgentFund — the hosted API at\n`https://api.agentfund.online` is live. This is only for working on the\nplatform's own code.\n\n```bash\nnpm install\nnpm run build:shared\n\n# Programs (requires Solana + Anchor 0.30.1 toolchain)\nanchor build && anchor test\n\n# Services (requires Postgres + Redis; copy .env.example → .env first)\nnpm run dev:api    # REST + WS + x402, :4000\nnpm run dev:mcp    # MCP server, :3002\nnpm run dev:acp    # ACP server, :3003\nnpm run dev:web    # dashboard, :3000\n```\n\n[LOCAL_VALIDATOR.md](LOCAL_VALIDATOR.md) walks through the full local-validator setup, and the `scripts/prove-*.ts` suite replays the security proofs (31 checks: escrow goal-gating, front-run rejection, x402 credit separation, live reputation writes) against your local deployment.\n\n## On-chain design highlights\n\n- **Atomic project + escrow creation** — one transaction creates the registry project and initializes its escrow; the escrow program cross-checks the registry account (creator, goal, deadline, milestone count, mint) and rejects mismatches, so a front-runner can't attach a hostile escrow to someone else's project.\n- **Goal-gated releases** — milestone funds move only after the funding goal is met and the milestone passes a contribution-weighted vote.\n- **`contribute_for`** — payer/beneficiary separation at the instruction level, so x402 facilitators can settle payments while credit (votes, refunds) accrues to the actual donor.\n- **Fail-closed reputation** — the reputation program stores the point table on-chain and rejects platform writes whose delta doesn't match the stated reason.\n\n## Documentation\n\n- [DEPLOYMENT.md](DEPLOYMENT.md) — full runbook: devnet → mainnet, hosting, DNS, indexer webhooks\n- [LOCAL_VALIDATOR.md](LOCAL_VALIDATOR.md) — local validator + full-stack E2E setup\n- [DISTRIBUTION.md](DISTRIBUTION.md) — where agents (and humans) will discover AgentFund\n- [SECURITY.md](SECURITY.md) — threat model, audit status, how to report vulnerabilities\n- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup and PR guidelines\n\n## License\n\n[MIT](LICENSE) © 2026 AgentFund contributors\n",
+    "fetchedAt": "2026-08-11T23:58:37.250Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:31:49.667Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

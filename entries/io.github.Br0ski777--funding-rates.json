@@ -1,0 +1,52 @@
+{
+  "id": "io.github.Br0ski777/funding-rates",
+  "title": "Perpetual Funding Rates API",
+  "description": "Perp funding rates across Binance, Bybit, OKX — open interest, sentiment. x402.",
+  "summary": "Perp funding rates across Binance, Bybit, OKX — open interest, sentiment. x402.",
+  "offersHint": "Perp funding rates across Binance, Bybit, OKX — open interest, sentiment. x402. · Remote MCP (sse) at https://funding-rates.api.klymax402.com/mcp",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "sse",
+  "endpointUrl": "https://funding-rates.api.klymax402.com/mcp",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://funding-rates.api.klymax402.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://github.com/Br0ski777/funding-rates-x402",
+  "sourceUrl": "https://github.com/Br0ski777/funding-rates-x402",
+  "repository": {
+    "url": "https://github.com/Br0ski777/funding-rates-x402",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-16T13:32:23.271098Z",
+  "publishedAt": "2026-05-16T13:32:23.271098Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:08.706Z",
+    "sourceRepoAt": "2026-08-12T00:16:11.117Z",
+    "readmeAt": "2026-08-12T00:16:11.608Z",
+    "toolsAt": "2026-08-12T01:46:08.706Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Br0ski777/funding-rates-x402",
+    "checkedAt": "2026-08-12T00:16:11.117Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Br0ski777/funding-rates-x402/main/README.md",
+    "markdown": "# Perpetual Funding Rates API\n\n[![MCP Server](https://img.shields.io/badge/MCP-server-blue)](https://funding-rates.api.klymax402.com/mcp)\n[![x402](https://img.shields.io/badge/payments-x402-6E56CF)](https://x402.org)\n[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)\n\nPerpetual funding rates across Binance, Bybit and OKX. Scan every USDT perp ranked by funding in a single call, or query one asset with open interest and predicted next rate. Pay-per-call via [x402](https://x402.org) (USDC on Base L2) -- no API key, no signup, no rate-limit wall.\n\nPart of the [klymax402](https://klymax402.com) marketplace -- 100 x402 micropayment APIs for AI agents, one wallet, USDC on Base.\n\n## Quickstart -- MCP\n\nAdd to your MCP client config (Claude Desktop, Cursor, ElizaOS, etc.):\n\n```json\n{\n  \"mcpServers\": {\n    \"funding-rates\": {\n      \"url\": \"https://funding-rates.api.klymax402.com/mcp\"\n    }\n  }\n}\n```\n\n## Quickstart -- HTTP (x402)\n\n```bash\n# Whole market, biggest funding first\ncurl -X POST \"https://funding-rates.api.klymax402.com/api/rates\"   -H \"Content-Type: application/json\" -d '{\"sort\":\"abs\",\"limit\":20,\"minVenues\":2}'\n# -> 402 Payment Required, with an x402 payment challenge in the response body\n```\n\nAny x402-aware client ([`@x402/fetch`](https://www.npmjs.com/package/@x402/fetch), [`x402-agent-tools`](https://www.npmjs.com/package/x402-agent-tools), ATXP) handles the 402 -> sign -> retry cycle automatically.\n\n## Tools\n\n| Tool | Method | Path | Price | Description |\n|---|---|---|---|---|\n| `perp_get_funding_rates` | GET | `/api/rates` | $0.001 | Scan funding rates across all perp markets, or query a single asset |\n| `perp_get_funding_rates` | POST | `/api/rates` | $0.001 | Scan funding rates across all perp markets, or query a single asset (POST variant) |\n\n### `perp_get_funding_rates`\n\nTwo modes on the same route, at the same price.\n\n**Market scan** -- omit `symbol` and every USDT perp on Binance and Bybit comes back ranked by funding, so an agent finds an opportunity in one paid call instead of probing symbol by symbol.\n\n**Single symbol** -- pass `symbol` and Binance, Bybit and OKX come back side by side for that asset, with open interest, mark price, next funding time and a sentiment read.\n\n**Parameters**\n\n| Name | Type | Required | Description |\n|---|---|---|---|\n| `symbol` | string | no | Token symbol (e.g. BTC, ETH, SOL). Omit to scan the whole market. |\n| `sort` | string | no | Scan only: `abs` (default), `highest`, `lowest`, `spread`. |\n| `limit` | number | no | Scan only: markets to return. Default 50, max 1000. |\n| `minVenues` | number | no | Scan only: set to 2 to keep only markets listed on both venues. |\n\n**Returns (scan)**\n\n- `markets` -- ranked list, each with `symbol`, per-venue `fundingRate` and `annualizedRate`\n- `avgRate` / `annualizedRate` -- mean funding across venues, annualized as `rate * 3 * 365`\n- `direction` -- `short opportunity` when funding is positive, `long opportunity` when negative\n- `spread` / `spreadAnnualized` -- gap between the cheapest and dearest venue\n- `longVenue` / `shortVenue` -- where to take each leg of the cross-venue carry\n\n**Returns (single symbol)**\n\n- `rates` -- array per exchange with funding rate, annualized rate, next funding time\n- `summary` -- average, min, max, spread, sentiment, total open interest, mark price\n\nExample response (scan):\n\n```json\n{\"scan\":true,\"totalMarkets\":600,\"venues\":[\"Binance\",\"Bybit\"],\"sort\":\"abs\",\"markets\":[{\"symbol\":\"PEPE\",\"venueCount\":2,\"venues\":{\"Binance\":{\"fundingRate\":0.0005,\"annualizedRate\":54.75},\"Bybit\":{\"fundingRate\":0.0003,\"annualizedRate\":32.85}},\"avgRate\":0.0004,\"annualizedRate\":43.8,\"direction\":\"short opportunity (longs pay shorts)\",\"spread\":0.0002,\"spreadAnnualized\":21.9,\"longVenue\":\"Bybit\",\"shortVenue\":\"Binance\"}]}\n```\n\n**When to use**: finding carry and basis trades, timing perp entries, monitoring funding costs on open positions.\n\n**Not for**: spot prices (use `dex_get_swap_quote`), yields (use `defi_find_best_yields`), Hyperliquid-specific rates (use `hyperliquid_get_funding_rates`).\n\n**Note**: market scans cover Binance and Bybit. OKX has no bulk funding-rate endpoint, so it is included only when you query a single symbol.\n\n## Example agent prompts\n\n- \"Which perps have the most extreme funding right now?\"\n- \"Find the biggest cross-venue funding spread I can carry\"\n- \"What is the funding rate for ETH across Binance, Bybit and OKX?\"\n\n## Payment\n\n- Protocol: [x402](https://x402.org) -- HTTP-native pay-per-call, no signup, no API key\n- Network: Base L2 (`eip155:8453`)\n- Asset: USDC\n- Facilitator: Coinbase CDP (primary), PayAI (fallback)\n- Also reachable via [ATXP](https://atxp.ai) (OAuth-wrapped x402, RFC 9728 protected-resource metadata)\n\n## Part of klymax402\n\n100 x402 micropayment APIs for AI agents -- one wallet, USDC on Base, zero signup.\n\n- Catalog: https://klymax402.com/llms.txt\n- Full API reference: https://klymax402.com/llms-full.txt\n- Live stats: https://klymax402.com/stats\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:16:11.608Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:08.706Z",
+  "toolsPreviewError": "SSE error: Non-200 status code (404)",
+  "toolsPreviewStatus": "unreachable"
+}

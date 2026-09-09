@@ -1,0 +1,58 @@
+{
+  "id": "io.github.whazeted/paraglide-messages-mcp",
+  "title": "paraglide-messages-mcp",
+  "description": "Validated, sub-agent per-locale translation of Paraglide JS / inlang message-format projects.",
+  "summary": "Validated, sub-agent per-locale translation of Paraglide JS / inlang message-format projects.",
+  "offersHint": "Validated, sub-agent per-locale translation of Paraglide JS / inlang message-format projects. · Packages: npm:paraglide-messages-mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "paraglide-messages-mcp",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "paraglide-messages-mcp",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/whazeted/paraglide-messages-mcp",
+  "repository": {
+    "url": "https://github.com/whazeted/paraglide-messages-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-18T10:23:44.69989Z",
+  "publishedAt": "2026-06-18T10:23:44.69989Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:08.281Z",
+    "sourceRepoAt": "2026-08-11T23:15:00.433Z",
+    "readmeAt": "2026-08-11T23:15:01.188Z",
+    "toolsAt": "2026-08-12T00:56:08.281Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/whazeted/paraglide-messages-mcp",
+    "checkedAt": "2026-08-11T23:15:00.433Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/whazeted/paraglide-messages-mcp/main/README.md",
+    "markdown": "# paraglide-messages-mcp\n\n[![npm](https://img.shields.io/npm/v/paraglide-messages-mcp)](https://www.npmjs.com/package/paraglide-messages-mcp)\n[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n[![node >= 20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)\n\nAn MCP server that turns AI agents into a parallel translation team for\n[Paraglide JS](https://inlang.com/m/gerre34r/library-inlang-paraglideJs) /\n[inlang](https://inlang.com) `messages/{locale}.json` files.\n\nThe agent calling the tools **is** the translator. The server makes that\nsafe and fast:\n\n- **Validated writes** — every translation is checked against the source\n  (placeholders, markup, plural variants) before anything lands on disk;\n  bad items are rejected individually, never the whole batch.\n- **One agent per locale, in parallel** — the translate loop reads and\n  writes only the source and target locale's files, so subagents can\n  translate all locales concurrently without conflicts.\n- **Fast and offline** — direct JSON file access with a stat-validated\n  cache; tool calls cost milliseconds regardless of project size, and no\n  network is ever needed.\n- **Toolchain-invisible** — written files are byte-compatible with the\n  message-format plugin's own output, and external edits (editor, compiler,\n  git) are always picked up.\n\n## Quick start\n\nNo installation — add this to your `.mcp.json` (Claude Code) or\n`claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"paraglide\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"paraglide-messages-mcp\",\n        \"--project\",\n        \"./project.inlang\",\n        \"--translation-style\",\n        \"Concise product UI; informal address; keep brand terms untranslated.\"\n      ]\n    }\n  }\n}\n```\n\n`--project` is optional: the server finds `project.inlang` in the working\ndirectory (or a single `*.inlang` directory up to one level deep) by itself.\n`--translation-style` is optional but recommended: it gives agents the\nlinguistic brief to use for tone, formality, and terminology instead of\nderiving style from existing translations.\n\nThen ask your agent to translate — or use the `translate_project` prompt to\ntranslate every locale at once with one subagent per locale.\n\n## Tools\n\n| Tool | Purpose |\n| --- | --- |\n| `project_info` | Locales, base locale, `totalKeys` across all locales, `translatableKeys` from non-empty base messages, per-locale translated/missing counts, extra non-source keys, and the startup translation style brief when configured. |\n| `get_translation_batch` | Next batch of untranslated messages for a locale (default 50), with source text and required placeholders. Optionally autosaves the previous batch in the same call (pass `translations`), so the loop is one round-trip per batch and the final batch is saved by the call that reports `done`. |\n| `get_retranslation_batch` | Cursor-paged batch over *already-translated* messages too — refresh stale entries after source/terminology changes. Same optional autosave as `get_translation_batch`. |\n| `save_translations` | Validate and persist translations for one locale; per-item results — overwrites existing values. (The batch tools share this save core for their autosave.) |\n| `list_message_keys` | Keys only, filterable by prefix and status, paginated. |\n| `get_messages` | Full message content by keys or prefix. |\n| `search_messages` | Find messages by text or key substring. |\n| `delete_messages` / `rename_message` | Key management across all locales. |\n| `remove_orphan_messages` | Delete target-locale keys that are absent from the source locale (base locale by default), optionally scoped by locale or prefix. |\n| `add_locale` / `remove_locale` | Locale management in `settings.json`. |\n\n## Prompts\n\n| Prompt | Purpose |\n| --- | --- |\n| `translate_project` | Translate every locale: the main agent uses the startup translation style brief (or asks the user for one), then fans out one subagent per locale in parallel. |\n| `translate_locale` | Translate one locale via the batch loop. |\n| `translate_prefix` | Same, scoped to keys starting with a prefix. |\n| `retranslate` | Redo existing translations (stale copy, changed terminology) — by key prefix, every target locale by default, one subagent per locale. |\n| `review_locale` | Review existing translations against the base locale and fix problems. |\n\nRead-only state is also exposed as MCP resources\n(`paraglide://project/info`, `paraglide://locales/{locale}/missing`,\n`paraglide://messages/{locale}/{key}`), so clients can pin it as context\nwithout spending tool calls.\n\n## Agent skill\n\n`skill/paraglide-translation/` is an optional installable skill in the open\n[Agent Skills](https://agentskills.io) format. The skill simply points the agent to the MCP server.\n\n```sh\n# Codex, via the skills CLI\nnpx skills add whazeted/paraglide-messages-mcp --skill paraglide-translation -a codex\n\n# Or install from the skill folder URL directly\nnpx skills add https://github.com/whazeted/paraglide-messages-mcp/tree/main/skill/paraglide-translation -a codex\n```\n\nFor other skills-compatible agents, replace `codex` with that agent's\n`skills` CLI target name. You can list the skill before installing:\n\n```sh\nnpx skills add whazeted/paraglide-messages-mcp --list\n```\n\n## Compatibility\n\nRequires the standard Paraglide JS setup: the inlang **message format**\nplugin with a single message file per locale (any `pathPattern` location).\nOther inlang plugins (i18next, next-intl, ICU) and multi-file namespaces are\ndeliberately not supported — see [COMPATIBILITY.md](COMPATIBILITY.md) for\nthe exact criteria and reasoning.\n\n## Performance\n\nA full 10-locale translation run over a 5,000-message project costs ~3 s of\nserver time (M1 Max Mac Studio)— the pipeline is bounded by the agent's translation speed, not\nthe server.\n\n## Documentation\n- [DEVELOPMENT.md](DEVELOPMENT.md) — architecture, message format details,\n  validation rules, building, testing, benchmarking, releasing\n- [COMPATIBILITY.md](COMPATIBILITY.md) — supported project setups\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:15:01.188Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:08.281Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

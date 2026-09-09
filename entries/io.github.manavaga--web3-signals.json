@@ -1,0 +1,97 @@
+{
+  "id": "io.github.manavaga/web3-signals",
+  "title": "web3-signals",
+  "description": "Crypto signal intelligence: 20 assets, 6 dimensions, regime detection, portfolio optimizer",
+  "summary": "Crypto signal intelligence: 20 assets, 6 dimensions, regime detection, portfolio optimizer",
+  "offersHint": "Crypto signal intelligence: 20 assets, 6 dimensions, regime detection, portfolio optimizer · Remote MCP (streamable-http) at https://web3-signals-api-production.up.railway.app/mcp/stream",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://web3-signals-api-production.up.railway.app/mcp/stream",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://web3-signals-api-production.up.railway.app/mcp/sse"
+    },
+    {
+      "type": "streamable-http",
+      "url": "https://web3-signals-api-production.up.railway.app/mcp/stream"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/manavaga/web3-signals-mcp",
+  "repository": {
+    "url": "https://github.com/manavaga/web3-signals-mcp",
+    "source": "github",
+    "id": "1166098266"
+  },
+  "updatedAt": "2026-03-12T23:11:22.840457Z",
+  "publishedAt": "2026-03-12T23:11:22.840457Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:15:44.730Z",
+    "sourceRepoAt": "2026-08-11T23:36:41.687Z",
+    "readmeAt": "2026-08-11T23:36:42.211Z",
+    "toolsAt": "2026-08-11T23:36:42.318Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/manavaga/web3-signals-mcp",
+    "checkedAt": "2026-08-11T23:36:41.687Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/manavaga/web3-signals-mcp/main/README.md",
+    "markdown": "# Web3 Signals MCP\n\n> Multi-agent crypto signal intelligence. 20 assets, 5 data dimensions, scored 0–100, refreshed every 15 min.\n\n**Live API** — https://web3-signals-api-production.up.railway.app\n**Dashboard** — https://web3-signals-api-production.up.railway.app/dashboard\n**MCP endpoint** — `https://web3-signals-api-production.up.railway.app/mcp/sse`\n\n---\n\n## What it does\n\nFive independent data agents (whale flows, technicals, derivatives, narrative, market microstructure) each score every asset 0–100. A fusion engine combines them into a single composite signal with a directional label, momentum tracking, and an LLM-generated rationale. The system grades its own predictions at 24h and 48h horizons against actual price moves — no self-reported accuracy.\n\n## Why it's interesting\n\n- **Per-asset weight learning via IC analysis.** Each asset gets its own dimension weights, fitted from Spearman/Pearson/Kendall correlations between past dimension scores and forward returns. Different assets respond to different signals.\n- **Walk-forward backtesting with FDR correction.** Benjamini–Hochberg adjustment on indicator significance to avoid false discoveries when testing dozens of features.\n- **Platt-scaled probability calibration.** Raw scores → calibrated probabilities so \"75\" means a real 75% directional likelihood, not just a higher number than 70.\n- **x402 HTTP micropayments.** Paid endpoints settle $0.001 USDC on Base mainnet per call via Coinbase's CDP facilitator. Payment IS authentication — no API keys, no signup, no OAuth.\n- **MCP-native.** Exposes itself to Claude Desktop, Cursor, and any MCP-compatible client over SSE. AI agents can query it with natural language.\n- **Adaptive regime gating.** Abstain zone widens/narrows with the Fear & Greed index; bullish-bias contrarian boost is dampened in confirmed BTC downtrends.\n\n## Quick start\n\n### Hit the API directly\n```bash\ncurl https://web3-signals-api-production.up.railway.app/signal/BTC\n```\n(`/signal*` and `/performance/reputation` require an x402 payment header; everything else is free.)\n\n### Use over MCP (Claude Desktop / Cursor / Windsurf)\n```json\n{\n  \"mcpServers\": {\n    \"web3-signals\": {\n      \"url\": \"https://web3-signals-api-production.up.railway.app/mcp/sse\"\n    }\n  }\n}\n```\nThen prompt: *\"What's the BTC signal right now?\"* or *\"Show me top 3 buys.\"*\n\n### Run locally\n```bash\ngit clone https://github.com/manavaga/web3-signals-mcp.git\ncd web3-signals-mcp\ncp .env.example .env             # fill in REDDIT_CLIENT_ID, ANTHROPIC_API_KEY, etc.\npip install -r requirements.txt\npython -m api                    # API on :8000\npython -m orchestrator.runner --once   # one fusion cycle\n```\n\n## Project layout\n\n```\napi/                FastAPI server, dashboard, x402 middleware\nmcp_server/         MCP tool definitions (stdio + SSE)\nsignal_fusion/      Weighted fusion, Platt calibration, meta-learner\nwhale_agent/        On-chain flow tracking (Etherscan + exchange wallets)\ntechnical_agent/    RSI, MACD, MA, Bollinger (Binance)\nderivatives_agent/  Funding rate, OI, long/short ratio\nnarrative_agent/    Reddit, news, CoinGecko trending, LLM sentiment\nmarket_agent/       Price, volume, Fear & Greed\nshared/             Storage (Postgres / SQLite), base agent, profile loader\norchestrator/       15-minute agent scheduler + accuracy evaluator\ntools/              Backtesting, IC fitting, walk-forward, weight optimizer\n```\n\n## Stack\n\nPython 3.13 · FastAPI · PostgreSQL · pandas / numpy / scikit-learn · Anthropic Claude (LLM rationales) · Coinbase CDP x402 facilitator · Railway (deploy)\n\n## Performance evaluation\n\nSnapshots are saved on every fusion cycle. At 24h and 48h each directional call is graded against the actual price move (CoinGecko + Binance). Neutral signals are skipped (only directional calls count). Accuracy is `AVG(gradient_score) × 100` where gradient ∈ [0, 1] depending on whether the move was in the predicted direction and how large it was. See `/performance/reputation` for the live numbers.\n\n## Development notes\n\nThis codebase was built in pair-programming with Anthropic's Claude. Most commits have a `Co-Authored-By: Claude` trailer — kept intentionally to document the workflow. Architectural decisions, model choices (IC-based weighting, FDR correction, Platt scaling), and the production-readiness criteria (no-deploy-without-backtest hard rule, walk-forward embargoing) were human-driven; Claude was used for implementation, refactoring, and code review.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:36:42.211Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_market_briefing",
+      "description": "What should I buy or sell in crypto right now? Returns the top 3 buy and top 3 sell recommendations from 20 cryptocurrencies, plus market regime (trending/ranging), risk level, and momentum. Best starting point for portfolio decisions. Scores range 0-100: above 62 is a buy signal, below 38 is a sell signal."
+    },
+    {
+      "name": "get_crypto_price",
+      "description": "What is the current price of Bitcoin, Ethereum, or any major crypto? Returns the latest USD price, 24-hour price change percentage, trading volume, and market cap. Updated every 15 minutes from CoinGecko and Binance. Supports 20 assets: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOT, MATIC, LINK, UNI, ATOM, LTC, FIL, NEAR, APT, ARB, OP, INJ, SUI. Example: get_crypto_price('BTC')"
+    },
+    {
+      "name": "get_all_signals",
+      "description": "Get buy/sell signals for all 20 major cryptocurrencies including Bitcoin, Ethereum, Solana, and more. Returns a 0-100 composite score and direction (bullish/bearish/neutral) for each asset, plus portfolio summary with market regime and risk level. Updated every 15 minutes. For full dimension breakdown and AI insights, use the paid REST API."
+    },
+    {
+      "name": "get_asset_signal",
+      "description": "Is BTC bullish or bearish right now? Get a 0-100 buy/sell score for any cryptocurrency. Returns composite score, direction (bullish/bearish/neutral), signal label (STRONG BUY to STRONG SELL), and momentum. Supports: BTC, ETH, SOL, BNB, XRP, ADA, AVAX, DOT, MATIC, LINK, UNI, ATOM, LTC, FIL, NEAR, APT, ARB, OP, INJ, SUI. For the full 6-dimension breakdown with whale, technical, and derivatives analysis, use the paid REST API."
+    },
+    {
+      "name": "compare_assets",
+      "description": "Which crypto should I buy — BTC, ETH, or SOL? Compare 2-5 cryptocurrencies ranked by signal strength. Input: comma-separated tickers (e.g. 'BTC,ETH,SOL'). Returns ranked comparison with scores, direction, and verdict. Use for portfolio allocation decisions."
+    },
+    {
+      "name": "get_health",
+      "description": "Is AgentMarketSignal working? Check the real-time status of all 5 AI data pipelines (whale tracking, technical analysis, derivatives, narrative sentiment, market data) and the signal fusion engine. Returns last run times, durations, and any errors."
+    },
+    {
+      "name": "get_performance",
+      "description": "How accurate are these crypto signals? Returns 30-day rolling accuracy metrics showing how often buy/sell predictions were correct. Includes overall accuracy percentage, reputation score (0-100), and breakdowns by asset and timeframe (24h/48h)."
+    },
+    {
+      "name": "get_asset_performance",
+      "description": "How accurate are the signals for BTC specifically? Get per-asset accuracy metrics for any cryptocurrency. Returns 30-day rolling accuracy, total signals evaluated, and comparison to overall accuracy."
+    },
+    {
+      "name": "get_analytics",
+      "description": "Who is using AgentMarketSignal? See API usage statistics including total requests, unique clients, response times, breakdowns by endpoint and client type (AI agents, browsers, scripts). Useful for understanding adoption."
+    },
+    {
+      "name": "get_x402_stats",
+      "description": "How much revenue has AgentMarketSignal generated? View x402 micropayment analytics including total paid calls, revenue in USDC, payment conversion rate, and daily payment timeline."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:36:42.318Z",
+  "toolsPreviewStatus": "ok"
+}

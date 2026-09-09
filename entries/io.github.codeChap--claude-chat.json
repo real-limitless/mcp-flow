@@ -1,0 +1,45 @@
+{
+  "id": "io.github.codeChap/claude-chat",
+  "title": "claude-chat",
+  "description": "Anthropic Claude Messages API MCP server — chat, vision, web search, extended thinking",
+  "summary": "Anthropic Claude Messages API MCP server — chat, vision, web search, extended thinking",
+  "offersHint": "Anthropic Claude Messages API MCP server — chat, vision, web search, extended thinking",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/codeChap/mcp-server-claude-chat",
+  "repository": {
+    "url": "https://github.com/codeChap/mcp-server-claude-chat",
+    "source": "github",
+    "id": "1254171521"
+  },
+  "updatedAt": "2026-07-13T18:04:13.522413Z",
+  "publishedAt": "2026-07-13T18:04:13.522413Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:48.263Z",
+    "sourceRepoAt": "2026-08-11T23:52:23.310Z",
+    "readmeAt": "2026-08-11T23:52:23.849Z",
+    "toolsAt": "2026-08-12T01:26:48.263Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/codeChap/mcp-server-claude-chat",
+    "checkedAt": "2026-08-11T23:52:23.310Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/codeChap/mcp-server-claude-chat/main/README.md",
+    "markdown": "# mcp-server-claude-chat\n\nAn MCP (Model Context Protocol) server for the **Anthropic Claude** Messages API. Built in Rust, it exposes chat, vision, live web search, and model listing as MCP tools — so any MCP client (Claude Desktop, Claude Code, etc.) can consult Claude as a tool.\n\nCommunicates via stdio using JSON-RPC 2.0, like all the other MCP servers in this collection. Structurally it mirrors `mcp-server-grok-chat` / `mcp-server-gpt-chat`, adapted to Anthropic's API shape.\n\n## Subscription vs. API credits\n\nThis server uses the **Anthropic API with an API key (API credits)**. That is the only supported, terms-compliant way to drive Claude from a third-party tool.\n\nA Claude **Pro/Max subscription** (the kind that powers Claude Code and the Claude apps) is *not* usable here: that authentication is licensed for Anthropic's own first-party clients, and routing it through a custom server would violate Anthropic's Consumer Terms — the \"$200 of Claude usage from another service\" concern you raised. So: API key it is. (If you run an Anthropic-compatible gateway, point `base_url` at it — see Configuration.)\n\n## Tools\n\n| Tool | Description |\n|------|-------------|\n| `chat` | Send a message to Claude. Supports multi-turn history, a system prompt, model selection, and **extended thinking** via `thinking_budget`. |\n| `chat_with_vision` | Analyse an image given an image URL and a text prompt. |\n| `chat_with_search` | Chat with live **web search** — Claude searches server-side and answers with cited sources. |\n| `list_models` | List available Claude models and their IDs (cached for 5 minutes). |\n\n> Note: Anthropic has no embeddings endpoint (they recommend Voyage AI), so unlike the grok/gpt servers there is no `embedding` tool.\n\n### chat\n\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| `prompt` | string | yes | The user message to send |\n| `system_prompt` | string | no | System prompt to set context/behaviour |\n| `messages` | string | no | Conversation history as a JSON array of `{role, content}` objects (roles: `user`/`assistant` only — use `system_prompt` for system instructions) |\n| `model` | string | no | Model ID (default: server default, `claude-opus-4-8`). Call `list_models`. |\n| `temperature` | float | no | Sampling temperature (0.0–1.0). Ignored when `thinking_budget` is set. |\n| `max_tokens` | integer | no | Max tokens to generate (defaults to the server default) |\n| `thinking_budget` | integer | no | Enable extended thinking with this token budget (min 1024). Reasoning is returned in a `[thinking]` block; `max_tokens` is auto-raised above the budget. |\n\n### chat_with_vision\n\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| `prompt` | string | yes | Text prompt describing what to analyse |\n| `image_url` | string | yes | URL of the image (must be `http://` or `https://`) |\n| `model` | string | no | Vision-capable model ID (default: server default) |\n| `temperature` | float | no | Sampling temperature (0.0–1.0) |\n| `max_tokens` | integer | no | Max tokens to generate |\n\n### chat_with_search\n\n| Name | Type | Required | Description |\n|------|------|----------|-------------|\n| `prompt` | string | yes | The user message |\n| `system_prompt` | string | no | System prompt |\n| `model` | string | no | Model ID (default: server default) |\n| `temperature` | float | no | Sampling temperature (0.0–1.0) |\n| `max_tokens` | integer | no | Max tokens to generate |\n| `max_uses` | integer | no | Max web searches Claude may run for this request (default: 5) |\n\nWeb search is billed by Anthropic at **$10 per 1,000 searches** on top of token costs, and an org admin must enable web search in the Claude Console.\n\n### list_models\n\nNo parameters. Results cached for 5 minutes.\n\n## Prerequisites\n\n- Rust (edition 2024)\n- An Anthropic API key from [console.anthropic.com](https://console.anthropic.com/settings/keys)\n\n## Setup\n\n```bash\nmkdir -p ~/.config/mcp-server-claude-chat\ncp config.toml.example ~/.config/mcp-server-claude-chat/config.toml\n# then edit it and set api_key\n```\n\nConfig (`~/.config/mcp-server-claude-chat/config.toml`):\n\n```toml\napi_key = \"sk-ant-...\"\n\n# Optional:\n# base_url = \"https://api.anthropic.com/v1\"   # or a compatible gateway\n# default_model = \"claude-opus-4-8\"\n# default_max_tokens = 4096\n```\n\nThe server fails fast at startup if the config is missing or `api_key` is empty.\n\n## Build\n\n```bash\ncargo build --release   # produces target/release/claude-chat\ncargo build             # debug build\ncargo run               # run in dev mode\nRUST_LOG=debug cargo run\ncargo test              # unit tests (response formatting, validation, message building)\n```\n\n## MCP Configuration\n\nClaude Desktop (`~/.config/Claude/claude_desktop_config.json`) or any MCP client:\n\n```json\n{\n  \"mcpServers\": {\n    \"claude-chat\": {\n      \"command\": \"/media/codechap/4TB/develop/mcps/mcp-server-claude-chat/target/release/claude-chat\"\n    }\n  }\n}\n```\n\nClaude Code:\n\n```bash\nclaude mcp add claude-chat -- /media/codechap/4TB/develop/mcps/mcp-server-claude-chat/target/release/claude-chat\n```\n\n## Project Structure\n\n```\nsrc/\n  main.rs    - entry point, config loading, stdio transport setup\n  server.rs  - MCP tool definitions (chat, chat_with_vision, chat_with_search, list_models)\n  api.rs     - Anthropic HTTP client, Messages/Models types, response formatter\n  params.rs  - tool parameter types with serde + JSON Schema derives\n  config.rs  - TOML config loading\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:52:23.849Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:26:48.263Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

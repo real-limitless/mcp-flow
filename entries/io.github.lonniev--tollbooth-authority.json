@@ -1,0 +1,320 @@
+{
+  "id": "io.github.lonniev/tollbooth-authority",
+  "title": "tollbooth-authority",
+  "description": "Tollbooth Authority — Certified Purchase Order Service for DPYC operators",
+  "summary": "Tollbooth Authority — Certified Purchase Order Service for DPYC operators",
+  "offersHint": "Tollbooth Authority — Certified Purchase Order Service for DPYC operators · Remote MCP (streamable-http) at https://tollbooth-authority.fastmcp.app/mcp",
+  "version": "0.11.3",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://tollbooth-authority.fastmcp.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://tollbooth-authority.fastmcp.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/lonniev/tollbooth-authority",
+  "repository": {
+    "url": "https://github.com/lonniev/tollbooth-authority",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T18:14:12.851977Z",
+  "publishedAt": "2026-08-10T18:14:12.851977Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:33.845Z",
+    "sourceRepoAt": "2026-08-11T23:37:30.324Z",
+    "readmeAt": "2026-08-11T23:37:30.948Z",
+    "toolsAt": "2026-08-11T23:37:31.168Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonniev/tollbooth-authority",
+    "checkedAt": "2026-08-11T23:37:30.324Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonniev/tollbooth-authority/main/README.md",
+    "markdown": "# Tollbooth Authority\n\n<p align=\"center\">\n  <img src=\"https://raw.githubusercontent.com/lonniev/tollbooth-dpyc/main/docs/tollbooth-hero.png\" alt=\"Milo drives the Lightning Turnpike — Don't Pester Your Customer\" width=\"800\">\n</p>\n\n**The institution that built the infrastructure.**\n\n> *The metaphors in this project are drawn with admiration from* The Phantom Tollbooth *by Norton Juster, illustrated by Jules Feiffer (1961). Milo, Tock, the Tollbooth, Dictionopolis, and Digitopolis are creations of Mr. Juster's extraordinary imagination. We just built the payment infrastructure.*\n\n---\n\n## The Turnpike Authority\n\nEvery turnpike has an authority. Not the operators who run the booths, and not the drivers who pay the fares — but the institution that poured the concrete, erected the signs, and stamped the purchase orders.\n\nThe Tollbooth Authority is the Massachusetts Turnpike Authority of the Lightning economy. It doesn't operate any toll booths. It doesn't touch operator BTCPay stores. It never sees user payment data. What it does is simpler and more essential:\n\n- It **registers operators** who want to run toll booths on the turnpike.\n- It **collects a modest certification fee** — 2% of every fare, minimum 10 sats — paid in advance via Lightning.\n- It **stamps purchase orders** — Schnorr-signed Nostr event certificates (kind 30079) that prove an operator has paid their fee before collecting a fare.\n- It **never touches the fare itself**. The operator collects from the user directly.\n\nThe Authority's signature is the proof that the turnpike is legitimate. Without the stamp, the toll booth doesn't open.\n\n## Architecture\n\nAs of v0.9.0, this Authority is an ~80-line thin consumer of the [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) wheel. Every piece of generic Authority code — onboarding state machine, Schnorr certificate signer, replay tracker, Neon tenant provisioner, and the full 10-tool MCP surface — lives in the wheel's `tollbooth.authority` package. This repo's `server.py` supplies only actor-specific configuration: identity name, human-readable instructions, OperatorRuntime construction, and two `register_*_tools(mcp, runtime)` calls.\n\n```python\n# The entire server.py, distilled\nfrom fastmcp import FastMCP\nfrom tollbooth.authority import (\n    AUTHORITY_TOOL_REGISTRY,\n    OPERATOR_CREDENTIAL_TEMPLATE,\n    register_authority_tools,\n)\nfrom tollbooth.runtime import OperatorRuntime, register_standard_tools\nfrom tollbooth.tool_identity import STANDARD_IDENTITIES\n\nmcp = FastMCP(\"tollbooth-authority\", instructions=\"…\")\nruntime = OperatorRuntime(\n    tool_registry={**STANDARD_IDENTITIES, **AUTHORITY_TOOL_REGISTRY},\n    vault_source=\"env\",               # Authority arrives with its own Neon\n    purchase_mode=\"auto\",             # derive direct/certified from the registry chain\n    service_name=\"Tollbooth Authority\",\n    ots_enabled=True,\n    operator_credential_template=OPERATOR_CREDENTIAL_TEMPLATE,\n)\nregister_standard_tools(mcp, \"authority\", runtime, ...)\nregister_authority_tools(mcp, runtime)\n```\n\nRefactor history:\n\n- **v0.5.0** introduced `OperatorRuntime` and delegated standard tools to the wheel — ~1,900 lines → ~970.\n- **v0.19.0** required+verified proof on every tool that names it; the local `_verify_operator_proof` helper was promoted to wheel-side `tollbooth.identity_proof.require_proof`.\n- **v0.21.0** (wheel) promoted 6 supporting modules (onboarding, nostr_signing, replay, tenant_provisioner, role_migration, settings) from forked Authority code into `tollbooth.authority.*`.\n- **v0.22.0** (wheel) promoted the 10 Authority `@tool` definitions into `register_authority_tools(mcp, runtime)`.\n- **v0.9.0** (this release) deleted the eight now-redundant modules and slimmed server.py from ~970 lines to ~80. NorthAmerica and NewEngland followed suit in their own `0.4.0` releases.\n\n### Three-Party Protocol\n\nThe Tollbooth ecosystem is a three-party protocol spanning three repositories:\n\n| Repo | Role |\n|------|------|\n| **tollbooth-authority** (this repo) | The institution — fee collection, Schnorr signing, purchase order certification |\n| [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) | The booth — operator-side credit ledger, BTCPay client, tool gating |\n| [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) | The first city — reference MCP server powered by Tollbooth |\n\n### The Wider DPYC Federation\n\nThe three-party protocol above is the core, but the Authority certifies a wider federation of independent MCP services, all built on the same `tollbooth-dpyc` SDK:\n\n| Repo | Role |\n|------|------|\n| [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) | Shared SDK — crypto, vault, auth, pricing, audit |\n| [dpyc-community](https://github.com/lonniev/dpyc-community) | Governance registry — `members.json`, GOVERNANCE.md, CI validation |\n| [dpyc-oracle](https://github.com/lonniev/dpyc-oracle) | Free community concierge — membership, governance, onboarding answers |\n| [tollbooth-authority](https://github.com/lonniev/tollbooth-authority) | This repo — certification backbone, Schnorr certs, fee ledger |\n| [tollbooth-sample](https://github.com/lonniev/tollbooth-sample) | Reference template for new operators |\n| [tollbooth-pricing-studio](https://github.com/lonniev/tollbooth-pricing-studio) | Pricing editor — native iOS, Nostr DMs |\n| [cypher-mcp](https://github.com/lonniev/cypher-mcp) | Monetized graph answers — named Cypher over Neo4j/AuraDB |\n| [schwab-mcp](https://github.com/lonniev/schwab-mcp) | Charles Schwab brokerage data |\n| [thebrain-mcp](https://github.com/lonniev/thebrain-mcp) | TheBrain knowledge-graph access |\n| [excalibur-mcp](https://github.com/lonniev/excalibur-mcp) | X/Twitter posting |\n| [taxsort-mcp](https://github.com/lonniev/taxsort-mcp) | Tax sorting + classification |\n| [optionality-mcp](https://github.com/lonniev/optionality-mcp) | Options analytics |\n| [tollbooth-oauth2-collector](https://github.com/lonniev/tollbooth-oauth2-collector) | Shared OAuth2 callback collector (community Advocate) |\n| [tollbooth-shortlinks](https://github.com/lonniev/tollbooth-shortlinks) | URL shortener utility |\n\n### How It Works\n\n1. **Register.** An operator connects to the Authority via [Horizon MCP](https://www.fastmcp.cloud/) and calls `register_operator(npub=...)`. The Authority creates a ledger entry and provisions an isolated Neon schema for the operator.\n\n2. **Fund.** The operator calls `purchase_credits` with the number of sats they want to pre-fund. The Authority returns a Lightning invoice from its own BTCPay Server. The operator pays. After settlement, `check_payment` credits the balance.\n\n3. **Certify.** When a user wants to buy credits from an operator, the operator's server calls `certify_credits`. The Authority deducts the 2% ad valorem fee (via the `@runtime.paid_tool` decorator), signs a Schnorr-based Nostr event certificate, and returns it.\n\n4. **Verify.** The operator's [tollbooth-dpyc](https://github.com/lonniev/tollbooth-dpyc) library verifies the certificate using the Authority's Nostr npub. Only if the stamp is valid does the operator create a Lightning invoice for the user. No stamp, no fare.\n\n### Nostr Certificate Format (kind 30079)\n\nCertificates are Schnorr-signed Nostr events (NIP-33 parameterized replaceable events) rather than Ed25519 JWTs. Each certificate contains the operator npub in a `p` tag, the certified amount and protocol in `t`/`L` tags, an `expiration` tag, and the content field holds the structured claim data. Verification uses BIP-340 Schnorr signatures against the Authority's Nostr npub.\n\n### DPYC Registry Enforcement\n\nThe Authority checks the [dpyc-community `members.json`](https://github.com/lonniev/dpyc-community/blob/main/members.json) registry at certification time. Operators must have `\"status\": \"active\"` in the registry. The registry is HTTP-cached with a configurable TTL. Design is fail-closed: if the registry is unreachable, certification is denied.\n\n### Upstream Topology Is Registry Metadata\n\nParent Authority relationships live in the `dpyc-community` registry — each Authority's `upstream_authority_npub` points at its sponsor. Operator MCPs resolve their certifying Authority via `resolve_authority_service(operator_npub)` walking that registry chain; no per-Authority env var configures the upstream. The Authority's own `certify_credits` simply collects the ad valorem fee from its operator's pre-funded balance and signs the certificate — no per-transaction upstream call.\n\n### Ad Valorem Pricing\n\n`certify_credits` is registered as a `@runtime.paid_tool` with 2% ad valorem pricing on the `amount_sats` parameter (minimum 10 sats). The fee is debited by the decorator, and the cost is read from `runtime._last_debit_cost` — no double computation.\n\n### OTS Notarization\n\nOpenTimestamps notarization is enabled (`ots_enabled=True` on the runtime). Ledger state can be notarized and verified through the standard `notarize_ledger` and `get_notarization_proof` tools provided by the wheel.\n\n### Anti-Replay (ReplayTracker)\n\nEvery certificate includes a unique JTI (JWT ID). The Authority tracks seen JTIs in an in-memory ordered dict with TTL-based pruning. This prevents certificate replay attacks even if a certificate is intercepted before expiration.\n\n## MCP Tools\n\nAll tools are now wheel-defined and registered by the two `register_*_tools` calls in `server.py`. For the full canonical tables (Authority tools mounted by `register_authority_tools`, standard tools mounted by `register_standard_tools`) see the [`tollbooth-dpyc` README](https://github.com/lonniev/tollbooth-dpyc#authority-extension-tollboothauthority). The short version:\n\n- **Authority tools** (Schnorr cert signing, operator lifecycle, 3-step Authority onboarding, registry membership check) — `register_authority_tools(mcp, runtime)`. This set also includes the owner-side **deferred-adoption courtship** flow added in tollbooth-dpyc 0.45.x — `receive_adoption_request`, `list_adoption_requests`, `approve_adoption`, and `reject_adoption` (an operator requests adoption; the Authority owner reviews and approves or rejects) — plus `repair_operator_schema` (owner repair of a tenant's table ownership).\n- **~20 standard tools** (credit/payment, identity, secure courier, npub proof, pricing model, OpenTimestamps notarization, oracle delegation) — `register_standard_tools(mcp, \"authority\", runtime, ...)`.\n\nEvery tool that accepts `npub` requires a non-empty `proof` parameter and verifies it via `tollbooth.identity_proof.require_proof` (wheel v0.19.0+). No exceptions, no fallbacks.\n\n## Getting Started\n\n### Connecting via Horizon MCP\n\nThe Authority runs on [Horizon](https://www.fastmcp.cloud/). Any MCP client (Claude Desktop, Cursor, your own agent) can connect via Horizon:\n\n```\nhttps://www.fastmcp.cloud/server/lonniev/tollbooth-authority\n```\n\nAuthentication is automatic — Horizon OAuth identifies you as an operator. No API keys to manage.\n\n### First Connection Walkthrough\n\nOnce connected, walk through the bootstrap in order:\n\n1. **`register_operator(npub=\"npub1...\")`** — Creates your ledger entry and provisions a Neon schema. Returns your npub, balance, and Neon URL.\n2. **`purchase_credits(amount_sats=1000)`** — Returns a Lightning invoice. Pay it with any Lightning wallet.\n3. **`check_payment(invoice_id=\"...\")`** — Pass the invoice ID from step 2. Confirms settlement and credits your balance.\n4. **`check_balance`** — Verify your balance is funded.\n5. **`operator_status`** — See your registration, balance, vault backend, and the Authority's public key (you'll hardcode this in your tollbooth-dpyc integration).\n\n### Self-Hosting\n\nTo run your own Authority instance, set these environment variables:\n\n#### Required\n\n| Variable | Purpose | Example |\n|----------|---------|---------|\n| `NEON_DATABASE_URL` | Neon Postgres URL for persistent operator ledgers. The Authority IS the trust root -- it reads this from env (unlike certified operators, which bootstrap it from Authority via Nostr DM). At startup, the Authority injects `search_path=authority` into the connection string for per-schema isolation. | `postgresql://...` |\n| `TOLLBOOTH_NOSTR_OPERATOR_NSEC` | Nostr secret key (nsec) for Schnorr certificate signing and Secure Courier DMs | `nsec1...` |\n\n#### Credentials via Secure Courier (NOT env vars)\n\nBTCPay credentials are delivered via Secure Courier, not set as environment variables:\n\n| Credential | Description |\n|------------|-------------|\n| `btcpay_host` | Authority's BTCPay Server URL for fee collection |\n| `btcpay_api_key` | BTCPay API key with invoice + payout permissions |\n| `btcpay_store_id` | BTCPay store ID for the Authority's fee store |\n\n#### Optional\n\n| Variable | Purpose | Default |\n|----------|---------|---------|\n| `TOLLBOOTH_NOSTR_RELAYS` | Comma-separated relay URLs | built-in defaults |\n| `TOLLBOOTH_NOSTR_AUDIT_ENABLED` | Enable NIP-78 audit trail on vault writes | `false` |\n| `CERTIFICATE_TTL_SECONDS` | How long a signed certificate remains valid | `600` (10 min) |\n| `DPYC_ENFORCE_MEMBERSHIP` | Enable registry enforcement at certification time | `true` |\n| `DPYC_REGISTRY_CACHE_TTL_SECONDS` | How long to cache the DPYC community registry | `300` |\n\n#### Per-Operator Schema Isolation\n\nEach registered operator receives an isolated Neon schema (`op_{hash}`) with a dedicated Postgres LOGIN role. The Authority schema (`authority`) holds the Authority's own ledger. Operator schemas are provisioned automatically by `register_operator` and access is enforced via role-based grants -- no cross-operator data access is possible.\n\n#### Deprecated Alternatives\n\nLegacy deployments may still use `THEBRAIN_API_KEY`, `THEBRAIN_BRAIN_ID`, and `THEBRAIN_VAULT_THOUGHT_ID` environment variables for TheBrain-based vault storage. These are superseded by NeonVault and will be removed in a future release.\n\n## Development\n\n```bash\npython -m venv venv\nsource venv/bin/activate\npip install -e \".[dev]\"\npytest tests/ -q\n```\n\n## Key Generation\n\n### Nostr Signing Key (Schnorr certificates)\n\nThe Authority signs certificates with a Nostr nsec/npub keypair. Generate one using any Nostr key generator (e.g., `nak key generate`). The nsec goes in `TOLLBOOTH_NOSTR_OPERATOR_NSEC`; the npub is surfaced via `operator_status` for tollbooth-dpyc verification.\n\n### DPYC Identity (Nostr npub)\n\nEach Authority has a Nostr keypair that identifies it on the DPYC Certification Chain:\n\n```bash\npip install nostr-sdk\npython -c \"from nostr_sdk import Keys; k = Keys.generate(); print(f'npub: {k.public_key().to_bech32()}'); print(f'nsec (back up!): {k.secret_key().to_bech32()}')\"\n```\n\n## Further Reading\n\n[The Phantom Tollbooth on the Lightning Turnpike](https://stablecoin.myshopify.com/blogs/our-value/the-phantom-tollbooth-on-the-lightning-turnpike) — the full story of how we're monetizing the monetization of AI APIs, and then fading to the background.\n\n## License\n\nApache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE) for details.\n\n---\n\n*Because every turnpike needs an authority. Not to control the road — just to make sure the stamps are real and the fares are fair.*\n",
+    "fetchedAt": "2026-08-11T23:37:30.948Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "authority_check_balance",
+      "description": "Check a patron's credit balance at this operator.\n\nThis is the patron's spending balance — credits purchased via\nLightning for tool calls at this operator. For the operator's\nown balance at the Authority (needed to certify patron purchases),\nuse authority_check_balance instead.\n\nFree — no credits required. Proof of npub ownership is required\nto prevent anyone-with-the-registry from enumerating balances.\n\nArgs:\n    npub: The Nostr public key (npub1...) whose balance to check.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase."
+    },
+    {
+      "name": "authority_purchase_credits",
+      "description": "Buy credits via Bitcoin Lightning.\n\nCreates a Lightning invoice. Pay it with any Lightning wallet,\nthen call check_payment to confirm. Proof of npub ownership is\nrequired so credits land in the correct ledger.\n\nFree — no credits required to call.\n\nArgs:\n    npub: The Nostr public key (npub1...) the credits will fund.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    amount_sats: Satoshis to purchase (default 1000)."
+    },
+    {
+      "name": "authority_check_payment",
+      "description": "Check the payment status of a Lightning invoice.\n\nCall after paying the invoice from purchase_credits.\nFree — no credits required. Proof of npub ownership is required\nto prevent credit-grant front-running by an observer of the\ninvoice ID.\n\nArgs:\n    invoice_id: The invoice ID returned by purchase_credits.\n    npub: The Nostr public key (npub1...) that purchased the invoice.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase."
+    },
+    {
+      "name": "authority_restore_credits",
+      "description": "Credit a patron's ledger from a BTCPay-settled invoice.\n\n**RESTRICTED to the operator** — the operator owns the books and is\nthe only party who can issue a manual credit grant. Patrons who\nbelieve they paid but never got credits must escalate to the\noperator's support, who then invokes this tool on their behalf.\n\nUse cases: cold-start vault races during check_payment, ncred\ndelivery hiccups, patrons closing Top-Off sheets before settle,\nany infrastructure incident that left an invoice settled at BTCPay\nbut uncredited on the operator's ledger.\n\nIdempotent — if the invoice is already credited (in the patron's\n``credited_invoices``), returns success with credits_granted=0.\n\nArgs:\n    invoice_id: The BTCPay invoice ID to verify and credit.\n    patron_npub: The patron's npub whose ledger receives the grant.\n    dpop_token: A kind-27235 Nostr event signed by the OPERATOR's nsec\n        for this tool. Patron proofs are rejected."
+    },
+    {
+      "name": "authority_account_statement",
+      "description": "Generate a patron's account statement at this operator.\n\nReturns the patron's purchase history, active credit tranches,\nper-tool usage breakdown, and recent daily usage logs. This is\nthe patron's spending account — not the operator's Authority\ntax balance.\n\nFree — no credits consumed. Proof of npub ownership is required\nto prevent statement-scraping of arbitrary patrons.\n\nArgs:\n    npub: The patron's Nostr public key (npub1...).\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    days: Number of days of daily usage history to include (default 30)."
+    },
+    {
+      "name": "authority_account_statement_infographic",
+      "description": "Generate a visual SVG infographic of your account statement.\n\nReturns the same data as account_statement, rendered as a dark-themed\nSVG graphic with balance hero, metrics cards, health gauge, tranche\ntable, and tool usage breakdown. Costs 1 api_sat per call. Proof is\nverified by ``debit_or_deny`` before any cost is incurred.\n\nArgs:\n    npub: The Nostr public key (npub1...) whose statement to render.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    days: Number of days of daily usage history to include (default 30)."
+    },
+    {
+      "name": "authority_report_issue",
+      "description": "File a field report about this service as a GitHub issue on the operator's repo.\n\nFound a tool's metadata or response wrong or confusing? Report it where the tool\nlives. The **author of record is your npub** — no npub / no proof, no issue — and it\nis stamped into the issue so the report is attributed to you, not the operator. Costs\na small fee (a free write to an issue tracker would be abused). The report is PUBLIC\nand goes to the maintainers' normal triage; nothing is verified here.\n\nReturns the filed issue's repo, number, and url. If this operator has not enabled\nfield reports, returns an \"issue reporting not configured\" situation and you are not\ncharged.\n\nArgs:\n    npub: Your Nostr public key (npub1...); the report's author of record.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    title: One-line summary of the problem.\n    body: The details — which tool, what was wrong, what you expected.\n    tool_name: Optional: the specific tool the report is about\n        (e.g. \"schwab_get_option_chain\")."
+    },
+    {
+      "name": "authority_service_status",
+      "description": "Check the health and configuration of this service. Free."
+    },
+    {
+      "name": "authority_get_operator_onboarding_status",
+      "description": "Report this operator's configuration readiness.\n\nShows which operator settings are configured, which are missing,\nand how to deliver each missing value. For patron-level credential\nstatus, use get_patron_onboarding_status instead. Free."
+    },
+    {
+      "name": "authority_get_patron_onboarding_status",
+      "description": "Report a patron's credential readiness for this operator.\n\nFor set-once services (eXcalibur, TheBrain), shows which patron\nsecrets are configured and which are missing. For dynamic/OAuth2\nservices (Schwab), reports that no patron credentials are needed.\nFree. Proof of npub ownership is required because credential\npresence is sensitive information about the patron's setup.\n\nArgs:\n    patron_npub: The patron's Nostr public key (npub1...).\n    dpop_token: A kind-27235 Nostr event signed by patron_npub for this tool."
+    },
+    {
+      "name": "authority_session_status",
+      "description": "Check operator readiness. Returns the operator lifecycle\nstate and clear guidance on what to do next. Free.\n\nLifecycle states:\n- ready: Operator is warm and fully operational — vault AND pricing\n  model verified. Proceed with tool calls.\n- warming_up: Operator is initializing (cold start). Try a tool call — it will warm up on demand.\n- misconfigured: Persistence rejected a query with a permanent SQL\n  error (permission denied, missing relation). Paid tools will fail\n  until the operator repairs the database — retrying does not help.\n- quota_exceeded: The persistence provider (Neon) answered HTTP 402 —\n  the operator's database has exhausted its compute/storage quota, so\n  the books are locked for billing. Paid tools fail; retrying does NOT\n  help. The operator's Authority must restore capacity (upgrade the\n  plan or wait for the quota reset). Free tools remain available.\n- not_registered: Operator has no Authority relationship yet. Call register_operator first.\n- no_identity: Operator nsec is not configured. Deployment issue.\n\nArgs:\n    patron_npub: Optional. If supplied, the response includes an\n        ``upstream_oauth`` block with the patron's stored OAuth\n        token expiry (runtime-derived from vault state) so a\n        client can refresh proactively rather than reactively\n        after a stale-token failure."
+    },
+    {
+      "name": "authority_request_credential_channel",
+      "description": "Open a Secure Courier channel for credential delivery.\n\nThis is the CREDENTIAL-DELIVERY flow — use it to hand over a service\nsecret (API keys, tokens). To merely prove you control an npub (the\nusual answer to a ``proof_required`` error), use ``request_npub_proof``\ninstead. Note: dynamic/OAuth2 services (e.g. Schwab) need NO couriered\nsecret — check ``service_status`` first.\n\nSends a welcome DM with a credential template. The recipient\nmust read the DM in their Nostr client, fill in the fields,\nand reply manually. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user what to do.\nWait for the user to confirm they have replied before calling\n``receive_credentials``. Do NOT poll or retry — each\n``receive_credentials`` call destructively drains the relay\nmailbox.\n\nArgs:\n    sender_npub: Required. The npub to send the template to.\n    service: Required. The credential service name (e.g.,\n        from get_operator_onboarding_status or get_patron_onboarding_status).\nFree."
+    },
+    {
+      "name": "authority_receive_credentials",
+      "description": "Pick up credentials from the Secure Courier.\n\nCompletes the CREDENTIAL-DELIVERY flow (the ownership-proof\ncounterpart is ``receive_npub_proof``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response you want with\n``(sender_npub, service, dpop_token)`` and the tool drains ONLY the\nrendezvous relay that channel was pinned to. Every popped DM with the\nwrong session phrase is deleted and its sender is NACK'd; the first DM\nwith the matching phrase is accepted (ACK'd) and the scan stops. If\nnone match, the queue is drained and a ``courier_not_found`` result is\nreturned. Do NOT poll, loop, or retry.\n\nIf a credential_card (ncred1...) is provided, it is redeemed directly\nwithout any relay access (dpop_token not required for that path). On\nsuccess, the payment processor client is reinitialized from the new\ncredentials — no server restart needed.\n\nArgs:\n    sender_npub: Required. The npub that sent the credentials.\n    service: Required. The credential service name (must match\n        the service used in request_credential_channel).\n    dpop_token: Required. The session phrase returned by\n        request_credential_channel for this exact channel.\n    credential_card: Optional. An ncred1... card to redeem directly\n        (bypasses the relay drain; dpop_token not needed).\nFree."
+    },
+    {
+      "name": "authority_forget_credentials",
+      "description": "Delete vaulted credentials for a specific service and npub.\n\nFor operator credentials, pass the operator's own npub. For patron\ncredentials, pass the patron's npub. Always requires proof of\nnpub ownership — a deletion is as destructive as a write.\n\nArgs:\n    service: The credential service to forget.\n    npub: The Nostr public key (npub1...) whose credentials to forget.\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\nFree."
+    },
+    {
+      "name": "authority_update_patron_credential",
+      "description": "Add or update a single patron credential field.\n\nMerges into existing stored credentials without affecting\nother fields. Useful for setting an account identifier\nafter OAuth, changing a default brain, etc. Free. Proof of\nnpub ownership is required — this is a write to the patron's\nsensitive credential vault.\n\nArgs:\n    npub: The patron's Nostr public key (npub1...).\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    field: The credential field name to set.\n    value: The value to store."
+    },
+    {
+      "name": "authority_update_operator_credential",
+      "description": "Add or update a single operator secret field.\n\nMerges into the operator's stored credentials without touching the\nothers — the field-level counterpart to re-delivering the whole\nbundle over Secure Courier. Use it to rotate one secret (a reissued\n``btcpay_api_key``, say) without restating the six you did not\nchange, where any field omitted from a courier reply is destroyed.\n\nThe value is never echoed back. RESTRICTED to the operator —\nrequires proof (nsec-signed kind-27235 or a cached dpop_token\nphrase); patron proofs are rejected.\n\nArgs:\n    field: The operator credential field to set. Must be declared\n        in the operator's credential template.\n    value: The value to store.\n    dpop_token: Operator proof for this tool."
+    },
+    {
+      "name": "authority_delete_patron_credential",
+      "description": "Remove a single patron credential field.\n\nDeletes one field from stored credentials without affecting\nother fields. Free. Proof of npub ownership is required —\nthis is a write to the patron's sensitive credential vault.\n\nArgs:\n    npub: The patron's Nostr public key (npub1...).\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase.\n    field: The credential field name to remove."
+    },
+    {
+      "name": "authority_get_patron_credential_fields",
+      "description": "List stored patron credential field names (not values).\n\nReturns the names of fields stored for a patron, plus each\nfield's ``delivered_at`` ISO-8601 timestamp when known (null\nfor secrets vaulted before timestamps were recorded). Values\nare never exposed — use this to verify which fields are\nconfigured and how old each one is. Free. Proof of npub\nownership is required: the list of configured fields is itself\nsensitive (reveals which integrations a patron has set up).\n\nArgs:\n    npub: The patron's Nostr public key (npub1...).\n    dpop_token: Raw JSON of a kind-27235 Nostr event signed by npub —\n        not base64, not NIP-98 'Authorization: Nostr <b64>' framing. Its\n        `u` tag must hold THIS tool's exact name (from tools/list), not\n        the endpoint URL; content:\"\", created_at within 60s of now, and a\n        random `nonce` tag recommended. Or a cached dpop_token phrase."
+    },
+    {
+      "name": "authority_request_npub_proof",
+      "description": "Request npub ownership proof from a patron via Nostr DM.\n\nThis is the npub-OWNERSHIP-PROOF flow — use it when a call returns\n``proof_required``. It proves the caller controls an npub; it does\nNOT deliver any service secret. To hand an operator its API keys or\nOAuth secrets, use ``request_credential_channel`` instead.\n\nSends a challenge DM that the patron must sign and reply to\nusing their Nostr client. **This is a human-in-the-loop flow.**\n\nAfter calling this tool, STOP and tell the user to check their\nNostr client and reply to the challenge. Wait for the user to\nconfirm they have replied before calling ``receive_npub_proof``.\nDo NOT poll or retry — each ``receive_npub_proof`` call\ndestructively drains the relay mailbox.\n\n**Returns** a ``dpop_token`` — the demonstrated-proof-of-possession\ntoken that the calling application MUST remember and pass as the\n``dpop_token`` parameter on every subsequent paid tool call. The MCP\ndoes not retain this value across restarts.\n\n**Lifecycle:** The cached proof expires after the patron's\nchosen duration. When it expires, call ``request_npub_proof``\nagain for a fresh challenge, then wait for the user, then\ncall ``receive_npub_proof``.\n\nFree.\n\nArgs:\n    patron_npub: Required. The patron's npub to request proof from.\n    reason: Optional. A human-readable purpose for the request\n        (\"I'm working on your request XYZ and need the Operator to do\n        ABC for you\"). Signed into the provenance attestation and shown\n        in the DM, so the recipient sees *why* they are being asked —\n        especially useful when the signer is unknown to them.\n    verify_at: Optional. A free-form statement of WHERE you (the\n        initiating agent) already showed this proof's one-time code to\n        the user — a URL, or \"your Claude.ai conversation\", \"the Grok\n        session\". The OAuth 2.0 Device Grant ``verification_uri``,\n        generalized: the user approves only if the code in the DM matches\n        the one you displayed there, so an unsolicited request they've\n        never seen is refused. Signed into the attestation."
+    },
+    {
+      "name": "authority_receive_npub_proof",
+      "description": "Receive npub ownership confirmation from a patron.\n\nCompletes the npub-OWNERSHIP-PROOF flow (the credential-delivery\ncounterpart is ``receive_credentials``).\n\n**Call this only after the user confirms they have replied.**\nDeterministic, one-shot retrieval: name the response with\n``(patron_npub, dpop_token)`` — the ``dpop_token`` being the value\nreturned by ``request_npub_proof``. The tool drains ONLY the pinned\nrendezvous relay that challenge was published on, stopping at the DM\nwhose phrase matches. Mismatched DMs are deleted and NACK'd (without\nrevealing the expected phrase). If called before the user replies,\ntheir message will never be found. Do NOT poll, loop, or retry.\n\nThe signed DM itself proves npub ownership (the patron's nsec\nsigned it). On success, returns the ``dpop_token`` — the same\ntoken. The calling application MUST remember it and pass it as the\n``dpop_token`` parameter on every subsequent paid tool call. The\nproof (a hash of the token) is stored in the vault keyed by that\nhash — the MCP never stores the raw token itself. Free.\n\nArgs:\n    patron_npub: Required. The patron's npub to receive proof from.\n    dpop_token: Required. The dpop_token returned by request_npub_proof."
+    },
+    {
+      "name": "authority_check_proof_status",
+      "description": "Check whether a previously-cached dpop_token is still valid.\n\nMirrors ``check_oauth_status`` for the npub-proof flow: a calling\nagent can ask \"will my next paid call accept this dpop_token?\"\nbefore burning credits on a guaranteed failure.\n\nFree, no side effects — does not evict the cache or touch relays.\n\nArgs:\n    patron_npub: Required. The patron's npub (npub1...).\n    dpop_token: Required. The dpop_token phrase returned by\n        ``request_npub_proof`` / ``receive_npub_proof``."
+    },
+    {
+      "name": "authority_oracle_how_to_join",
+      "description": "Get DPYC onboarding instructions from the Oracle. Free."
+    },
+    {
+      "name": "authority_oracle_get_tax_rate",
+      "description": "Get the current DPYC certification tax rate. Free."
+    },
+    {
+      "name": "authority_oracle_lookup_member",
+      "description": "Look up a DPYC community member by npub. Free."
+    },
+    {
+      "name": "authority_oracle_about",
+      "description": "Describe the DPYC ecosystem via the Oracle. Free."
+    },
+    {
+      "name": "authority_oracle_network_advisory",
+      "description": "Get active network advisories from the Oracle. Free."
+    },
+    {
+      "name": "authority_check_authority_balance",
+      "description": "Check this operator's tax balance at the Authority.\n\nReturns the sats available for certifying patron credit purchases.\nWhen this balance reaches zero, patron top-ups cannot be certified\nand the operator must call purchase_credits on the Authority.\n\nThis is the operator's own funding — not a patron balance. Free."
+    },
+    {
+      "name": "authority_get_pricing_model",
+      "description": "Get the active pricing model for this operator. Free.\n\nIf no model exists, self-initializes a scaffold with all\nregistered tools at 0 sats.  No economic data from code."
+    },
+    {
+      "name": "authority_set_pricing_model",
+      "description": "Set the active pricing model. RESTRICTED to operator.\n\nRequires a valid proof (Schnorr-signed kind-27235 event)\nproving the caller holds the operator's nsec."
+    },
+    {
+      "name": "authority_reset_pricing_model",
+      "description": "Erase all pricing models and restore a viable default.\n\nDeletes every stored model, then self-initializes a fresh one\nfrom the tool registry — all tools at 0 sats with proper UUIDs.\nReturns the new model.\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "authority_request_adoption",
+      "description": "Ask a chosen Authority to adopt this operator (deferred courtship).\n\nRESTRICTED to the operator — requires proof the caller controls this\noperator's npub. Resolves the Authority's MCP endpoint from the\ncommunity registry, mints an inline ownership proof with this\noperator's nsec, and delivers the request MCP-to-MCP. The Authority\nrecords it as pending; its owner approves on their own time. Poll\n``adoption_status`` for progress; the operator flips to ``ready``\nonce the Authority provisions it.\n\nArgs:\n    authority_npub: npub of the Authority to request adoption from.\n    dpop_token: operator-npub ownership proof (inline kind-27235 or cached token).\n    service_url: this operator's MCP endpoint (advertised to the Authority).\n    note: optional message for the Authority owner."
+    },
+    {
+      "name": "authority_adoption_status",
+      "description": "Check this operator's adoption-request status at a chosen Authority.\n\nFree. Polls the Authority MCP-to-MCP for the status of this operator's\nrequest (pending / approved / rejected / provisioned)."
+    },
+    {
+      "name": "authority_restore_neon_schema",
+      "description": "Re-run ``ensure_schema()`` on every NeonVault this operator uses.\n\nDiagnostic / recovery tool for the case where the Neon HTTP SQL API\nis returning persistent 4xx errors and the operator suspects the\nschema isn't there or grants are wrong. Idempotent — uses\n``CREATE TABLE IF NOT EXISTS`` so a successful re-run is harmless.\n\nReturns the per-step result. If any step raises, surfaces the Neon\nerror message inline (0.31.0 reads the SQL error body that earlier\nwheels swallowed behind ``raise_for_status``).\n\nRESTRICTED to operator — requires proof (nsec-signed)."
+    },
+    {
+      "name": "authority_list_canonical_identities",
+      "description": "Return canonical (tool_id, mcp_name, …) for every tool the wheel exposes.\n\nThe authoritative source for any client (Studio, agents, FE)\nthat needs to know how this MCP identifies its tools.\nReconcile uses this output to UUID-join against the stored\npricing model — no name-based UUID derivation, no guessing.\n\nIncludes both ToolIdentity-seeded tools and any UUID recorded by\n``@paid_tool`` that is missing from the registry. The latter appear\nwith ``registered: false`` (and in the top-level ``unregistered``\narray) so Reconcile can flag deploy drift instead of silently\nreporting clean when a live tool was never seeded (#174).\n\nIf the operator renames a function or rebrands a slug, the\nmcp_name in this output changes but tool_id stays. That's the\nwhole point of the canonical-UUID design.\n\nAlso diffs the live FastMCP wire surface against the registry.\nTools exposed on the wire but absent from the registry appear in\n``unregistered`` so Reconcile can flag deploy drift instead of\nsilently under-reporting (issue #175).\n\nFree, no side effects."
+    },
+    {
+      "name": "authority_get_nostr_profile",
+      "description": "Read an npub's public Nostr profile (NIP-01 kind-0 metadata).\n\nFree, no proof — the data is already public on relays. Returns the\nlatest metadata fields (name, display_name, about, picture, banner,\nnip05, website, lud16) or an empty profile if none is published."
+    },
+    {
+      "name": "authority_publish_nostr_profile",
+      "description": "Publish a CLIENT-SIGNED kind-0 profile to relays for an npub.\n\nThe wheel never holds a patron nsec. The frontend signs the kind-0\nmetadata event with the patron's session key or a NIP-07 extension and\npasses the signed event (JSON) here; the wheel verifies the signature\nmatches the npub, then relays it to public relays. The signature is the\nauthorization — no proof token, no key custody. Free.\n\nArgs:\n    npub: The patron's Nostr public key the event must be signed by.\n    signed_event: A JSON-encoded, client-signed kind-0 event."
+    },
+    {
+      "name": "authority_check_price",
+      "description": "Preview the effective cost of a tool call.\n\nShows the base cost and any constraint effects (discounts, free\ntrials, surge pricing). Free — no credits required.\n\nArgs:\n    tool_id: Either the tool's UUID (from the pricing model) or a\n        bare capability string (e.g. ``\"deal_scenario\"``). FE\n        callers usually have the capability name; this resolves\n        both so the FE doesn't need to derive UUIDs locally.\n    tool_kwargs: Optional JSON object with tool call parameters\n        for ad valorem / categorical-multiplier pricing preview\n        (e.g. '{\"amount_sats\": 5000}' or\n        '{\"difficulty\": \"sovereign\", \"mode\": \"live\"}')."
+    },
+    {
+      "name": "authority_list_constraint_types",
+      "description": "List all available constraint types and their parameter schemas.\n\nReturns the type, category, description, and parameter specs for\nevery constraint that can be used in a pricing pipeline.\nFree — no credits required."
+    },
+    {
+      "name": "authority_mint_coupon",
+      "description": "Create a new operator-owned discount coupon.\n\nArgs:\n    name: The catchy code patrons type to redeem\n        (operator-scoped uniqueness).\n    discount_percent: Percentage off the base price (0-100).\n    valid_from: ISO-8601 datetime when the coupon becomes active.\n    valid_until: ISO-8601 datetime when the coupon expires.\n    uses_per_patron: How many tool calls one patron can claim the\n        discount on (default 1; pass null/None for unlimited\n        within the window).\n    total_uses: Aggregate cap across all patrons (default None =\n        unlimited).\n\nReturns the new coupon row. RESTRICTED to operator — requires\nproof (nsec-signed kind-27235 or cached dpop_token token)."
+    },
+    {
+      "name": "authority_list_coupons",
+      "description": "List every coupon this operator has minted (newest first).\n\nEach row carries the current ``times_redeemed`` counter — the\nStudio renders a progress bar from this against ``total_uses``.\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "authority_update_coupon",
+      "description": "Patch a coupon's editable fields.\n\nPass only the fields you want to change.  To set a cap to\nunlimited (NULL in the schema), pass ``clear_uses_per_patron=true``\nor ``clear_total_uses=true``.  Renaming the code is allowed —\nexisting patron redemption rows survive (they key on coupon id).\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "authority_delete_coupon",
+      "description": "Delete a coupon.  Cascades to all patron redemptions.\n\nAny chain step referencing the deleted coupon_id becomes a\nno-op (the constraint returns neutral on unknown ids) — the\nStudio surfaces orphan references as warnings.\n\nRESTRICTED to operator — requires proof."
+    },
+    {
+      "name": "authority_redeem_coupon",
+      "description": "Claim a coupon by its name (the code the operator shared).\n\nLooks up the operator's coupon by ``code``, validates the window\nand total cap, and records a per-patron redemption row.\nSubsequent paid tool calls on this MCP auto-apply the discount\nuntil ``uses_per_patron`` is exhausted.\n\nFree — no credits required.  Requires proof of ``npub``.\nIdempotent: redeeming the same code twice returns the existing\nredemption."
+    },
+    {
+      "name": "authority_list_my_coupons",
+      "description": "List the coupons this patron has redeemed on this operator.\n\nReturns both active and exhausted redemptions with a per-row\n``status`` (``active`` / ``window_closed`` / ``patron_limit`` /\n``total_limit``).  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "authority_forget_coupon",
+      "description": "Remove a coupon from this patron's redemption list.\n\nCosmetic only — the coupon itself still exists at the operator,\nand the patron can re-redeem the same code later while the\nwindow allows.  Free — requires proof of ``npub``."
+    },
+    {
+      "name": "authority_notarize_ledger",
+      "description": "Build a Merkle tree of all patron balances and submit the root\nto Bitcoin via OpenTimestamps.\n\nOperator-only background task. Bitcoin confirmation takes 1-6 hours.\nFree — no credits required."
+    },
+    {
+      "name": "authority_get_notarization_proof",
+      "description": "Generate a Merkle inclusion proof that a patron's balance was\nincluded in a Bitcoin-notarized snapshot.\n\nArgs:\n    notarization_id: The notarization record ID.\n    npub: The patron's Nostr public key (npub1...)."
+    },
+    {
+      "name": "authority_list_notarizations",
+      "description": "List recent Bitcoin notarization records.\n\nArgs:\n    limit: Maximum records to return (default 20).\n    status: Optional filter (e.g., 'submitted', 'confirmed')."
+    },
+    {
+      "name": "authority_register_operator",
+      "description": "Provision an operator in the Authority ledger.\n\nCreates a ledger entry so the operator can purchase credits and\ncertify purchase orders. Idempotent — safe to call again.\n\nRequires TWO independent identity proofs:\n\n1. ``proof`` — Schnorr proof signed by the candidate operator's\n   ``npub``. Proves the requester really controls that npub. The\n   operator typically calls ``request_npub_proof`` /\n   ``receive_npub_proof`` against this Authority first to mint\n   a cached dpop_token.\n2. ``authority_proof`` — Schnorr proof signed by the Authority's\n   own npub. This is the Authority's human consent — only an\n   agent with the Authority's nsec on hand can produce it. Apps\n   generate this inline when the human admin clicks 'adopt';\n   otherwise an Authority-side proof can be minted the same way\n   an operator-side one is.\n\nNext step: Call purchase_credits to fund your credit balance."
+    },
+    {
+      "name": "authority_update_operator",
+      "description": "Update an existing Operator's community registry entry.\n\nRequires the same two proofs as ``register_operator``:\n\n- ``proof`` proves the caller controls the Operator's ``npub``.\n- ``authority_proof`` proves the Authority's human admin consents\n  to the change. Without the Authority proof, anyone with the\n  Operator's nsec could redirect their own ``service_url`` under\n  this Authority's signature without the Authority's awareness."
+    },
+    {
+      "name": "authority_deregister_operator",
+      "description": "Remove an Operator from the DPYC community registry.\n\nRequires the same two proofs as ``register_operator``:\n\n- ``proof`` proves the caller controls the Operator's ``npub``.\n- ``authority_proof`` proves the Authority's human admin consents\n  to the removal. Without the Authority proof, anyone who knew an\n  Operator's public npub and held its nsec could remove themselves\n  from this Authority's roster without the Authority noticing."
+    },
+    {
+      "name": "authority_get_operator_config",
+      "description": "Retrieve operator bootstrap configuration (Neon URL, schema).\n\nGated by Schnorr signature proving ownership of the requested npub."
+    },
+    {
+      "name": "authority_operator_status",
+      "description": "View registration status, balance summary, and the Authority's Nostr npub.\n\nWhen an explicit ``npub`` is provided, requires a Schnorr proof of\nownership — without it, anyone could enumerate balances by walking\nthe community registry. When ``npub`` is empty, falls back to the\nAuthority's own operator identity and skips the proof check (self-\ninspection is always allowed)."
+    },
+    {
+      "name": "authority_certify_credits",
+      "description": "Certify a purchase order: return a Schnorr-signed Nostr event certificate.\n\nThe paid_tool decorator handles the ad valorem fee debit and stores\nthe cost in runtime._last_debit_cost. No recomputation needed.\n\nCalled by operator MCP servers (not end users) when a patron purchases credits."
+    },
+    {
+      "name": "authority_check_dpyc_membership",
+      "description": "Look up an npub in the DPYC community registry."
+    },
+    {
+      "name": "authority_receive_adoption_request",
+      "description": "Inbound: record an operator's request to be adopted by this Authority.\n\nCalled MCP-to-MCP by the operator's ``request_adoption``. Verifies the\noperator controls ``operator_npub`` (inline Schnorr bound to the\nadoption sentinel — no relay round-trip), records a durable ``pending``\nrow, and fires a best-effort owner-notification DM. Does NOT provision —\nprovisioning waits for the owner's ``approve_adoption``."
+    },
+    {
+      "name": "authority_list_adoption_requests",
+      "description": "Owner queue: list pending operator-adoption requests.\n\nRestricted to the Authority owner (consent proof). This is the\nreview-on-your-own-time surface the Pricing Studio renders."
+    },
+    {
+      "name": "authority_receive_neon_402_alert",
+      "description": "Inbound: an operator reports its Neon store is 402-locked.\n\nCalled MCP-to-MCP by the operator's runtime the instant it catches a\nNeon HTTP 402 on its own database. Verifies the operator controls\n``npub`` (inline Schnorr bound to this tool's wire name), records a\ndurable latest-state row, and fires a best-effort owner-notification\nDM. This is how the Authority learns the store is dark BEFORE a patron\nfiles a complaint."
+    },
+    {
+      "name": "authority_list_neon_alerts",
+      "description": "Owner queue: operators that reported a Neon-402 (store locked).\n\nRestricted to the Authority owner. A companion to network_persistence_health:\nthis is the reactive list (operators that already went dark); the health\ntool adds the proactive per-project compute posture."
+    },
+    {
+      "name": "authority_network_persistence_health",
+      "description": "Owner view: the health of the DPYC economy's accounting store (Neon).\n\nRestricted to the Authority owner. Three layers, from most to least\nproactive:\n\n1. ``projects`` — if a Neon API key is configured (NEON_API_KEY), the\n   per-project compute-quota posture across the org: hours used, %,\n   reset date, and a status ladder (ok/warning/critical/exhausted) so a\n   project can be topped up BEFORE it 402s. ``configured=false`` when no\n   key is present (deliver one to enable the proactive watch).\n2. ``own_store`` — reactive self-detection: whether the Authority's OWN\n   database answers, or is itself 402-locked. Always available.\n3. ``operator_alerts`` — operators that reported a 402 (from\n   receive_neon_402_alert). Reactive, but immediate."
+    },
+    {
+      "name": "authority_approve_adoption",
+      "description": "Approve a pending request and provision the operator.\n\nThe deferred-courtship counterpart to register_operator: same\n``authority_proof`` consent, same provisioning effect\n(``_provision_operator``) — just supplied later, after review."
+    },
+    {
+      "name": "authority_reject_adoption",
+      "description": "Reject a pending operator-adoption request (owner consent)."
+    },
+    {
+      "name": "authority_repair_operator_schema",
+      "description": "Owner repair: reassign every table in an operator's tenant schema to\nthe operator's own role, then re-grant DML.\n\nFor tenants whose tables were created/owned by the provisioning role —\nthe operator role then cannot CREATE INDEX on them (\"must be owner\"),\nwhich aborts the whole vault bootstrap. Unlike register_operator this\ndoes NOT rotate the operator's DB password or re-send the bootstrap DM;\nit only fixes ownership + grants in place. Idempotent."
+    },
+    {
+      "name": "authority_get_adoption_status",
+      "description": "Read an operator's adoption-request status (free, no proof).\n\nStatus (pending/approved/rejected/provisioned) isn't sensitive — it's\nthe operator's own request — so the operator can poll it openly via\nits ``adoption_status`` tool."
+    },
+    {
+      "name": "authority_register_authority_npub",
+      "description": "Step 1/3 of Authority onboarding — send a Nostr DM challenge to the candidate."
+    },
+    {
+      "name": "authority_confirm_authority_claim",
+      "description": "Step 2/3 of Authority onboarding — verify candidate DM, escalate to parent Authority.\n\nThe parent Authority is resolved from THIS Authority's own entry in\ndpyc-community: whatever its ``upstream_authority_npub`` names. For\nLonnie-Authority and NorthAmerica that's Prime; for NewEngland it's\nNorthAmerica; chain depth is transparent."
+    },
+    {
+      "name": "authority_check_authority_approval",
+      "description": "Step 3/3 of Authority onboarding — check parent approval, activate Authority."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:31.168Z",
+  "toolsPreviewStatus": "ok"
+}

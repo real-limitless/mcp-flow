@@ -1,0 +1,121 @@
+{
+  "id": "com.tlsradar/tlsradar",
+  "title": "TLS Radar",
+  "description": "SSL/TLS scanning, free Let's Encrypt issuance, and certificate-expiry monitoring.",
+  "summary": "SSL/TLS scanning, free Let's Encrypt issuance, and certificate-expiry monitoring.",
+  "offersHint": "SSL/TLS scanning, free Let's Encrypt issuance, and certificate-expiry monitoring. · Remote MCP (streamable-http) at https://tlsradar.com/api/v1/mcp",
+  "version": "0.5.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://tlsradar.com/api/v1/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://tlsradar.com/api/v1/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://tlsradar.com/cli",
+  "sourceUrl": "https://github.com/TLS-Radar/tlsradar-claude-plugin",
+  "repository": {
+    "url": "https://github.com/TLS-Radar/tlsradar-claude-plugin",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-15T12:43:28.972853Z",
+  "publishedAt": "2026-06-15T12:43:28.972853Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:52:23.653Z",
+    "sourceRepoAt": "2026-08-12T00:25:00.162Z",
+    "readmeAt": "2026-08-12T00:25:00.683Z",
+    "toolsAt": "2026-08-12T00:25:01.081Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/TLS-Radar/tlsradar-claude-plugin",
+    "checkedAt": "2026-08-12T00:25:00.162Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/TLS-Radar/tlsradar-claude-plugin/main/README.md",
+    "markdown": "# TLS Radar plugin for Claude Code & Cowork\n\n[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)\n[![Claude Code plugin](https://img.shields.io/badge/Claude%20Code-plugin-7c3aed)](https://github.com/TLS-Radar/tlsradar-claude-plugin)\n[![smithery badge](https://smithery.ai/badge/slmusayev/tls-radar)](https://smithery.ai/servers/slmusayev/tls-radar)\n\nRun SSL/TLS scans, issue free Let's Encrypt certificates, and manage cert monitoring from inside Claude Code or Claude Cowork - through a single MCP server, with nothing to configure.\n\nIndependent monitoring from a vendor that doesn't sell certificates - built for the 90-day-cert era, where manual renewal tracking is already finished.\n\n![Installing the plugin and issuing a free cert with /tls-cert](docs/demo.gif)\n\n```\n# Public - no account, no setup\n/tls-scan example.com                       # free SSL/TLS scan\n/tls-cert mydomain.dev                      # free 90-day Let's Encrypt cert (private key stays local)\n/tls-renew mydomain.dev                     # renew a cert\n\n# Connect once for monitoring (OAuth via /mcp)\n/mcp                                        # built-in Claude Code OAuth flow\n/tls-monitor add api.foo.io                 # one or many: /tls-monitor add a.com b.com c.com\n/tls-monitor list\n/tls-monitor remove api.foo.io\n/tls-diagnose                               # health check (use when something's off)\n/tls-upgrade                                # open pricing page\n```\n\n> **See real output before installing:** [sample scan report](https://tlsradar.com/scan/7yeRj83mGGhcuhe5rSbXZg)\n\nOther actions - \"what's expiring soon,\" \"scan history for X,\" \"what plan am I on,\" \"export/import my monitors,\" \"invite a teammate\" - just ask in plain language; the plugin's skill routes them to the right tool. No slash command needed.\n\n## How it works\n\nClaude Code's MCP client talks to **one** remote server:\n\n- `tlsradar.com/api/v1/mcp`\n\nCertificate issuance is **proxied through that server** to the Let's Encrypt backend (Beacon), so there's a single connection and a single auth model - no second server, no token to paste into your shell.\n\n- **Public tools** (`scan`, `create_certificate`, `check_certificate_propagation`, `finalize_certificate`, `get_certificate_status`, `renew_certificate`) work with no account.\n- **Authenticated tools** (monitoring, plan info, export/import, team) use Claude Code's built-in OAuth 2.0 + PKCE. Run `/mcp` once, pick the `tlsradar` server, approve in the browser; the token is managed by Claude Code.\n\nWhen you run `/mcp`, Claude Code fetches `tlsradar.com/.well-known/oauth-authorization-server` (RFC 8414), dynamically registers as a public client (RFC 7591), opens the browser for consent (PKCE / RFC 7636), and includes the token on subsequent requests automatically.\n\n### Certificates keep your private key local\n\n`/tls-cert` generates the key + CSR on **your** machine (via a bundled, tested helper that writes the key with `0600` permissions and never overwrites an existing key - it backs it up) and sends only the CSR. The private key never leaves your computer and no passphrase is ever typed into the chat. Before presenting the issued certificate, the plugin verifies locally that the returned chain actually covers your domain. If you want a `.p12` bundle (e.g. for Windows/Java import), the plugin packages it locally too.\n\nAn interrupted issuance is resumable: the order state is saved to `~/.config/tlsradar/orders/<domain>.json`, so you can close the session mid-flow and later say \"finish my cert for example.com\" (or re-run `/tls-cert`) to pick up where you left off. `/tls-renew` reuses the saved email and challenge method from that file, with confirmation.\n\nYou choose how to prove control of the domain, and the plugin remembers your choice (in `~/.config/tlsradar/config.json`):\n\n- **`dns-01`** - you add a TXT record by hand (works anywhere).\n- **`dns-01-cloudflare` / `dns-01-route53`** - the plugin sets the TXT record for you via the provider API, reading your token from the local environment (`CLOUDFLARE_API_TOKEN`, or your configured `aws` CLI). Those credentials stay on your machine - they're never sent to TLS Radar or Beacon.\n- **`http-01`** - serve a file on `http://yourdomain` (port 80); issues the apex only.\n\nWhen a cert is issued, TLS Radar emails you about ongoing monitoring - the cert → monitoring handoff is fully automatic and server-side.\n\n### Works in Claude Code and Cowork\n\nThis is a standard plugin, so it runs in both **Claude Code** and **Claude Cowork**. Scanning, certificate issuance, and monitoring all work in either client: the tools come from one MCP server, and the certificate flow runs `openssl` plus a bundled helper script locally (both clients can run local commands and the bundled script via `${CLAUDE_PLUGIN_ROOT}`). Connecting for monitoring uses your client's built-in OAuth - `/mcp` in Claude Code, or the equivalent connect step in Cowork.\n\n### Use in Claude.ai (custom connector)\n\nYou don't need Claude Code to scan and monitor from Claude. TLS Radar is a standard **remote** MCP server, so you can add it as a **custom connector** in the Claude.ai apps (web, desktop, mobile) on any plan - Free included (Free allows one connector).\n\n1. Open **Settings → Connectors** (Team/Enterprise: **Organization settings → Connectors**, Owner only).\n2. Click **Add custom connector**.\n3. Paste the connector URL: `https://tlsradar.com/api/v1/mcp/connect`\n4. Save, then **sign in to TLS Radar** when the OAuth prompt appears (the connector is an authenticated surface - sign-in connects your account once, then scanning and monitoring both work).\n\nThen just ask in plain language - \"scan example.com\", \"what certs are expiring soon\", \"monitor api.foo.io\". There are no slash commands in Claude.ai; the tool descriptions route your request.\n\n> **No account? Use Claude Code instead.** The anonymous, no-signup scanning and free cert issuance live in the Claude Code plugin (below), which talks to the public `…/api/v1/mcp` endpoint. The Claude.ai connector requires a one-time sign-in because hosted connectors must authenticate.\n\n> **Certificate issuance stays a Claude Code / Cowork feature.** `/tls-cert` generates your private key locally with `openssl`, which the Claude.ai apps can't do (no local shell). In a connector you get scanning and monitoring; to issue a Let's Encrypt cert with the key staying on your machine, use the plugin in Claude Code/Cowork, or the web form at [beacon.tlsradar.com](https://beacon.tlsradar.com).\n\n## Install\n\nIn Claude Code, add the marketplace and install - two commands, no clone, no paths:\n\n```\n/plugin marketplace add TLS-Radar/tlsradar-claude-plugin\n/plugin install tlsradar@tlsradar\n```\n\n(Or browse it in the `/plugin` menu after adding the marketplace.) In **Claude Cowork**, add it from the plugin catalog (search \"TLS Radar\"). That's it - scanning and cert issuance work immediately. Run `/mcp` (or Cowork's connect step) when you want monitoring.\n\n<details>\n<summary>Manual install (no marketplace)</summary>\n\n```bash\ngit clone https://github.com/TLS-Radar/tlsradar-claude-plugin ~/.claude/plugins/tlsradar\n```\n</details>\n\n## Free plan limits\n\n- **1 monitor** included free\n- **1 alert per month**, delivered at 7 days before expiry\n- Unlimited free scans (rate-limited)\n- Free Let's Encrypt issuance\n- REST API access on every plan, including Free\n\nWhen you hit the monitor limit, the tool's response includes the recommended upgrade and a pricing URL.\n\n## Configuration\n\nNothing is required. Optional environment variables:\n\n- `TLSRADAR_BASE_URL` - override the TLS Radar URL (default `https://tlsradar.com`). Useful for staging/self-host.\n\n**Anonymous usage id.** The first time you run a scan or cert command, the plugin mints a random id at `~/.config/tlsradar/install_id` and passes it (as a `client_id` argument) so anonymous usage can be attributed to one install. It identifies an install, not a person. The plugin **runs no startup hook, does not modify your shell config, and sends no tracking header** - the id travels only as that argument, read from the local file.\n\n  **To opt out:** `rm ~/.config/tlsradar/install_id`. With the file gone, no id is sent.\n\n## Privacy & security\n\n- This plugin ships **no tokens or credentials** - there's nothing secret in this repo. See [`SECURITY.md`](./SECURITY.md).\n- The OAuth token is managed by Claude Code's MCP client, not by this plugin.\n- Certificate private keys are generated locally and never sent to any server.\n- DNS-provider credentials (`CLOUDFLARE_API_TOKEN`, AWS CLI) are read from your local environment and never sent to TLS Radar or Beacon.\n- An anonymous install id is sent for usage attribution, passed as a tool argument read from `~/.config/tlsradar/install_id` (see Configuration to opt out). The plugin modifies no shell files and sends no tracking header. It identifies an install, not a person.\n- To revoke access: `https://tlsradar.com/oauth/authorized_applications` or remove the MCP server in `/mcp`.\n- Access tokens expire in 2 hours; refresh tokens rotate on use, capped at 90 days.\n\n## Layout\n\n```\n.\n├── README.md                        # this file\n├── CLAUDE.md                        # architecture / funnel / contracts (humans + AI agents)\n├── CONTRIBUTING.md                  # dev loop + how to add commands\n├── CHANGELOG.md                     # version history\n├── SECURITY.md                      # reporting + why the plugin holds no secrets\n├── LICENSE                          # MIT\n├── .claude-plugin/plugin.json       # plugin manifest\n├── .claude-plugin/marketplace.json  # self-hosting marketplace entry\n├── .mcp.json                        # MCP server config (one remote URL)\n├── commands/                        # slash commands (how to add one: CONTRIBUTING.md)\n├── skills/                          # NL skill router (with its own README)\n├── tools/manifest.json              # single source of truth for tool names\n├── scripts/                         # CI guards + tested local helpers (DNS provider, cert CSR/chain)\n└── evals/                           # tool-routing evals (prompt → expected tool)\n```\n\n## Contributing\n\nStart with [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the dev loop (all checks are offline and run with `python3`). For architecture, the funnel, contract pitfalls, and the release process, read [`CLAUDE.md`](./CLAUDE.md) - useful for both humans and AI agents. Changes are tracked in [`CHANGELOG.md`](./CHANGELOG.md).\n\nSecurity reports: **security@tlsradar.com** (never a public issue) - see [`SECURITY.md`](./SECURITY.md).\n\n## License\n\n[MIT](./LICENSE) © TLS Radar\n",
+    "fetchedAt": "2026-08-12T00:25:00.683Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "scan_domain",
+      "description": "Run a free, anonymous SSL/TLS scan against a hostname and return certificate details. No account required."
+    },
+    {
+      "name": "create_certificate",
+      "description": "Start issuing a FREE 90-day Let's Encrypt certificate for a domain (no account required). Step 1 of 3.\nPick a validation method with `challenge`: \"dns-01\" (default; publish a TXT record; covers apex + www) or \"http-01\" (serve a file over HTTP on port 80; issues the exact domain only). dns-01 with a DNS-provider API token is the most automatable; http-01 suits a server you control on port 80.\nReturns an order_id plus either dns_records (dns-01) or http_files (http-01) to put in place. Next: poll `check_certificate_propagation` until all_found, then call `finalize_certificate`.\nStrongly prefer the CSR path at finalize (the private key never leaves the user's machine). Issuing automatically offers the user ongoing monitoring by email once it completes - don't add a monitor manually afterward.\n"
+    },
+    {
+      "name": "check_certificate_propagation",
+      "description": "Check whether the DNS TXT records for a certificate order have propagated (Cloudflare/Google/Quad9). Step 2 of issuance - poll until all_found is true, then call finalize_certificate. Returns per-record resolver results."
+    },
+    {
+      "name": "finalize_certificate",
+      "description": "Finalize and issue a certificate order in one call: validates the DNS challenges, waits for Let's Encrypt, and returns the issued cert. Step 3 of issuance - call after check_certificate_propagation reports all_found.\nSTRONGLY PREFER passing csr_pem (generate the key + CSR locally with openssl so the private key never leaves the machine). Returns leaf_pem/chain_pem/fullchain_pem. If you must, pass a passphrase instead to get a PKCS#12 bundle - but a CSR is safer.\nIf it replies \"still validating\", DNS hasn't fully propagated: re-check check_certificate_propagation and call again.\nNeeds a locally-generated CSR (csr_pem) - requires a local shell with openssl. On a surface without one (e.g. a Claude.ai custom connector) this can't complete; it returns guidance to finish in Claude Code/Cowork or the web form. Scanning and monitoring work everywhere.\nOn success the structuredContent carries a `handoff` object - relay `handoff.message` to the user and do NOT separately call add_monitor; the cert→monitoring handoff is automatic and server-side.\n"
+    },
+    {
+      "name": "get_certificate_status",
+      "description": "Return the current state of a certificate order (dns_pending, validating, ready, completed, failed) and per-authorization Let's Encrypt statuses. Use it to resume an interrupted issuance."
+    },
+    {
+      "name": "renew_certificate",
+      "description": "Renew a certificate by cloning a recent order (requires the original order_id; Beacon purges orders after ~24h). Returns a new order_id and fresh DNS TXT records - then poll check_certificate_propagation and call finalize_certificate. If you don't have an order_id (the usual case at 90-day renewal time), call create_certificate for the domain instead; that IS the renewal."
+    },
+    {
+      "name": "register_beacon_order",
+      "description": "OBSOLETE - do not call. The cert→monitoring handoff is server-side now (issue via create_certificate, which records the order itself). This tool is kept only so old plugin versions that still call it don't error; it remains idempotent and harmless."
+    },
+    {
+      "name": "get_account",
+      "description": "Return the current user's plan, limits, and usage so the client can render upgrade nudges proactively."
+    },
+    {
+      "name": "list_monitors",
+      "description": "List all certificates currently being monitored across the user's teams.\nIf the response's structuredContent includes a `nudge` object, the user is at their monitor cap - surface it casually ONCE (lead with `nudge.recommended_upgrade`, mention `nudge.also_available` in one closing line); don't force it if it doesn't fit the conversation.\n"
+    },
+    {
+      "name": "add_monitor",
+      "description": "Add a domain to ongoing certificate monitoring with expiry alerts. Requires authentication (the user runs /mcp once).\nIf the plan's monitor limit is reached, the response's structuredContent carries a limit-reached payload - when relaying it, LEAD with `recommended_upgrade` (typically Starter, $9.99/mo), mention `also_available` tiers in a single closing line, and offer removing an existing monitor as the free alternative. Don't dump a full tier comparison; that's choice paralysis at the moment of action.\n"
+    },
+    {
+      "name": "add_monitors",
+      "description": "Add multiple domains to monitoring in one call. Returns a per-domain status so the caller can show partial-success outcomes. Honors the same plan-limit checks as add_monitor."
+    },
+    {
+      "name": "remove_monitor",
+      "description": "Stop monitoring a domain. Accepts the domain name or the host_id returned by list_monitors."
+    },
+    {
+      "name": "list_expiring_certificates",
+      "description": "Return monitored certificates expiring within N days. Defaults to 30.\nIf the response's structuredContent includes a `nudge` object, the user is watching enough soon-to-expire certs to benefit from a higher tier - mention it casually ONCE (lead with `nudge.recommended_upgrade`); skip it if it doesn't fit.\n"
+    },
+    {
+      "name": "get_scan_history",
+      "description": "Return recent scan results for a domain the user monitors. Useful for spotting issuer changes, grade drops, or vulnerability appearances over time."
+    },
+    {
+      "name": "export_monitors",
+      "description": "Dump the user's monitors as a JSON structure suitable for backup, migration, or infrastructure-as-code workflows. Tokens and PII are NEVER included - only domain configuration."
+    },
+    {
+      "name": "import_monitors",
+      "description": "Create monitors from a JSON structure (typically produced by `export`). Skips domains the user is already monitoring; honors the plan's domain limit. Returns a per-domain status."
+    },
+    {
+      "name": "invite_team_member",
+      "description": "Invite a user to a team by email. Defaults to the user's current team. Honors the plan's seat limit (returns the same upgrade payload as add_monitor when the cap is hit)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:25:01.081Z",
+  "toolsPreviewStatus": "ok"
+}

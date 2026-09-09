@@ -1,0 +1,95 @@
+{
+  "id": "io.github.kaditang/402sentinel-mcp",
+  "title": "402sentinel-mcp",
+  "description": "x402 payment safety for AI agents: counterparty risk gate, payment firewall, compliance, RWA gate.",
+  "summary": "x402 payment safety for AI agents: counterparty risk gate, payment firewall, compliance, RWA gate.",
+  "offersHint": "x402 payment safety for AI agents: counterparty risk gate, payment firewall, compliance, RWA gate. · Packages: npm:@kaditang/402sentinel-mcp · Env vars: CLIENT_PRIVATE_KEY, SENTINEL_URL",
+  "version": "0.7.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@kaditang/402sentinel-mcp",
+    "version": "0.7.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "CLIENT_PRIVATE_KEY",
+        "description": "A Base wallet holding USDC on-chain (no gas needed) — pays per call, from $0.002.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "SENTINEL_URL",
+        "description": "Override the service base URL (default https://402sentinel.com)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@kaditang/402sentinel-mcp",
+      "version": "0.7.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "CLIENT_PRIVATE_KEY",
+          "description": "A Base wallet holding USDC on-chain (no gas needed) — pays per call, from $0.002.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "SENTINEL_URL",
+          "description": "Override the service base URL (default https://402sentinel.com)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CLIENT_PRIVATE_KEY",
+      "description": "A Base wallet holding USDC on-chain (no gas needed) — pays per call, from $0.002.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "SENTINEL_URL",
+      "description": "Override the service base URL (default https://402sentinel.com)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://402sentinel.com",
+  "sourceUrl": "https://github.com/kaditang/402sentinel-mcp",
+  "repository": {
+    "url": "https://github.com/kaditang/402sentinel-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-10T09:51:05.452509Z",
+  "publishedAt": "2026-06-10T09:51:05.452509Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:01.533Z",
+    "sourceRepoAt": "2026-08-11T23:39:42.578Z",
+    "readmeAt": "2026-08-11T23:39:43.310Z",
+    "toolsAt": "2026-08-12T01:18:01.533Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kaditang/402sentinel-mcp",
+    "checkedAt": "2026-08-11T23:39:42.578Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kaditang/402sentinel-mcp/master/README.md",
+    "markdown": "# 402sentinel-mcp\n\nMCP tools that let your AI agent **check an x402 counterparty's risk before it\npays** — and turn that risk into an enforceable wallet spending policy. Give it a\npayTo address, get back a 0–100 risk score + an `allow` / `review` / `block`\ndecision, scored from on-chain settlement behaviour on Base (address age,\nfacilitator-aware payer diversity, settlement maturity) + a delivery-outcome\nflywheel, with honest confidence/coverage.\n\nTools — vet the **seller**:\n- `assess_counterparty` ($0.002) — risk score + decision + a ready-to-apply `recommended_policy`\n- `assess_counterparty_deep` ($0.02) — same, scans more on-chain history\n- `recommend_policy` ($0.002) — decision + wallet-ready spending policy (caps, denylist, approval)\n- `report_outcome` (free) — after paying, report delivery to train the reliability flywheel\n\nTools — vet the **payment itself** (buyer-side):\n- `firewall` ($0.002) — should YOUR agent make THIS payment now? Catches fraudulent routing (payTo swapped vs the address you usually pay), drain velocity, overcharge, and injection-sourced instructions. `agent_id` + a wallet-ownership signature are attached automatically from your configured wallet — trusted routing history with no extra steps.\n- `firewall_record` (free) — seed your agent's payment history so the firewall has a behavioural baseline.\n- `firewall_outcome` (free) — after a verdict, report what actually happened (fraud / legit / …) so the firewall learns which signals are predictive and downweights noisy ones (safety signals stay deterministic).\n\nIt's a thin client for the hosted service at **https://402sentinel.com** — the\nscoring model and facilitator-identification logic live server-side (closed); this\npackage only forwards the request and pays for it, so it's open source.\n\n## Quickstart — gate a payment in 5 lines\n\nBefore your agent pays **any** x402 counterparty, ask the firewall; if it doesn't say\n`allow`, don't pay. No MCP needed — any x402 client works (here, Circle's):\n\n```ts\nimport { GatewayClient } from \"@circle-fin/x402-batching/client\";\nconst sentinel = new GatewayClient({ chain: \"base\", privateKey: process.env.AGENT_KEY });\n\nconst { data } = await sentinel.pay(\"https://402sentinel.com/api/firewall\", { method: \"POST\", body: {\n  payment: { payto_address: target, amount, resource_url },\n  context: { source: \"web_content\", untrusted_text: pageYouActedOn } } });   // pass what you scraped\n\nif (data.decision !== \"allow\") throw new Error(`402Sentinel ${data.decision}: ${data.recommended_action}`);\n// …safe to pay `target`.\n```\n\nThat one $0.002 call catches **fraudulent routing** (payTo swapped vs the address you\nusually pay), **prompt-injection payments** (a payTo that appeared in `untrusted_text`),\n**drains**, **overcharges**, and **sanctioned/illicit** counterparties.\n\n**In an MCP framework** (Claude, Cursor, …) instead, just add the server — your agent gets\nall 7 tools by name (see Configure below):\n\n```jsonc\n{ \"mcpServers\": { \"402sentinel\": { \"command\": \"402sentinel-mcp\", \"env\": { \"CLIENT_PRIVATE_KEY\": \"0x…\" } } } }\n```\n\n## Install\n\n```sh\nnpm i -g @kaditang/402sentinel-mcp\n```\n\n## Configure\n\nAdd to your MCP client (Claude Desktop, Cursor, etc.):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"402sentinel\": {\n      \"command\": \"402sentinel-mcp\",\n      \"env\": {\n        \"CLIENT_PRIVATE_KEY\": \"0x...  // a Base wallet with USDC in its Circle Gateway balance\"\n      }\n    }\n  }\n}\n```\n\nPaid calls cost from **$0.002** (shallow) to **$0.02** (deep), paid automatically\nin USDC via x402 (Circle Gateway, gas-free on Base) from the configured wallet.\n`report_outcome` is free. (`CLIENT_PRIVATE_KEY` is only needed for the paid tools.)\n\n## Use\n\nThe agent calls it before authorizing a payment:\n\n```\nassess_counterparty({\n  target: { payto_address: \"0x...\" },\n  payment_context: { amount: 10, asset: \"USDC\" },\n  policy: { block_at_score: 70, review_at_score: 40 }\n})\n→ { decision: \"review\", risk_score: 52, confidence: 0.41, coverage: {...},\n    dimensions: [...], recommendation: \"...\",\n    recommended_policy: { action: \"limit\", max_payment_usdc: 5, daily_cap_usdc: 15,\n                          add_to_denylist: false, require_human_approval: true } }\n```\n\n- `block` / `deny` → don't pay\n- `review` / `limit` → cap exposure / escrow (use `recommended_policy` for the caps)\n- `allow` → proceed\n\n`recommend_policy(...)` returns just the decision + `recommended_policy` — apply\n`max_payment_usdc` / `daily_cap_usdc` / `add_to_denylist` directly to your agent\nwallet's spending limits. After paying, call `report_outcome({ assessment_id,\noutcome })` to improve future scores.\n\n## Disclaimer\n\nAlgorithmic risk signal, informational only — **not advice, not an endorsement,\nand not an accusation** about any party. Scores are probabilistic estimates from\nlimited public on-chain data and heuristics, and may misclassify. Do your own due\ndiligence; don't rely on it as your sole basis to pay or refuse. See\nhttps://402sentinel.com/terms.\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:39:43.310Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:01.533Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

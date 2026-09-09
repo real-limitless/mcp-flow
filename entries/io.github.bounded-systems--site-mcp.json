@@ -1,0 +1,80 @@
+{
+  "id": "io.github.bounded-systems/site-mcp",
+  "title": "site-mcp",
+  "description": "Read-only MCP server over robertdelanghe.dev's Sigstore-verified static API (stdio).",
+  "summary": "Read-only MCP server over robertdelanghe.dev's Sigstore-verified static API (stdio).",
+  "offersHint": "Read-only MCP server over robertdelanghe.dev's Sigstore-verified static API (stdio). · Packages: npm:@bounded-systems/site-mcp · Env vars: SITE_MCP_SIGNATURE_MODE",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@bounded-systems/site-mcp",
+    "version": "0.2.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SITE_MCP_SIGNATURE_MODE",
+        "description": "Manifest Sigstore signature check: off | warn | require.",
+        "default": "off"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@bounded-systems/site-mcp",
+      "version": "0.2.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SITE_MCP_SIGNATURE_MODE",
+          "description": "Manifest Sigstore signature check: off | warn | require.",
+          "default": "off"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SITE_MCP_SIGNATURE_MODE",
+      "description": "Manifest Sigstore signature check: off | warn | require.",
+      "default": "off"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://robertdelanghe.dev",
+  "sourceUrl": "https://github.com/bounded-systems/site-mcp",
+  "repository": {
+    "url": "https://github.com/bounded-systems/site-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-29T02:02:43.314439Z",
+  "publishedAt": "2026-06-29T02:02:43.314439Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:31.052Z",
+    "sourceRepoAt": "2026-08-11T23:54:28.518Z",
+    "readmeAt": "2026-08-11T23:54:28.977Z",
+    "toolsAt": "2026-08-12T01:28:31.052Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bounded-systems/site-mcp",
+    "checkedAt": "2026-08-11T23:54:28.518Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bounded-systems/site-mcp/main/README.md",
+    "markdown": "# @bounded-systems/site-mcp\n\nA **local, read-only [MCP](https://modelcontextprotocol.io) server** (and a\nmatching CLI) over [robertdelanghe.dev](https://robertdelanghe.dev)'s **signed\nstatic API**.\n\nIt exposes the site's identity data — profile, writing, the GitHub corpus, the\nrésumé credential, the OpenAPI doc — to any MCP client (Claude Desktop, Claude\nCode, etc.), and **verifies every response byte-for-byte against the site's\nSigstore-signed `sha256` manifest** before handing it back. If the bytes a\nclient would receive don't match the signed manifest, it refuses to return them.\n\nIt runs **locally over stdio** — the client spawns it as a subprocess. There is\nno hosted server and no network listener, which preserves the site's\nstatic / no-attack-surface posture.\n\n## A thin implementation of a generic core\n\nThis package is now **thin**. All of the reusable machinery — the verifying\nfetch client, the `sha256` manifest + Sigstore checks, and the\n`VerbSpec → MCP (tools + resources)` / `VerbSpec → CLI` projection — lives in\n[`@bounded-systems/static-mcp`](https://github.com/bounded-systems/static-mcp).\nsite-mcp supplies only:\n\n- **the verbs** ([`src/verbs.ts`](./src/verbs.ts)) — `list_posts`, `get_post`,\n  `get_conformance`, each authored once as a [`@bounded-systems/verbspec`](https://jsr.io/@bounded-systems/verbspec)\n  `VerbSpec`;\n- **the resource catalog** ([`src/catalog.ts`](./src/catalog.ts)) — the\n  `site://…` resources;\n- **the config values** ([`src/config.ts`](./src/config.ts)) — the origin and\n  expected signer identity; and\n- **the entry** ([`src/index.ts`](./src/index.ts)) — which picks a surface and\n  hands the spec to the core.\n\n```\nsrc/verbs.ts ─┐\nsrc/catalog.ts ├─▶ buildSiteSpec(config) ─▶ @bounded-systems/static-mcp\nsrc/config.ts ─┘        serveVerifiedStaticMcp(spec, config)   (MCP, stdio)\n                        runStaticCli(spec, config, argv)        (CLI)\n```\n\n> **Two surfaces, one definition.** verbspec projects each verb to **both** an\n> MCP tool and a CLI subcommand. The exact same verb set backs `site-mcp`'s MCP\n> tools and its CLI commands — no second definition, no drift.\n\n## Install / run\n\nRequires Node ≥ 18.17. site-mcp's verbspec dependency is published to JSR, so\ninstalls resolve it through JSR's npm bridge — the included [`.npmrc`](./.npmrc)\nsets `@jsr:registry=https://npm.jsr.io`. (Consuming from a fresh environment, add\nthat one line to your npm config.)\n\n```bash\n# MCP server over stdio (what an MCP client launches):\nnpx -y @bounded-systems/site-mcp\n\n# CLI — the SAME verbs, printing the verified JSON:\nnpx -y @bounded-systems/site-mcp list_posts\nnpx -y @bounded-systems/site-mcp get_conformance\nnpx -y @bounded-systems/site-mcp get_post agent-authored-code-drift\n```\n\nThe MCP server logs a readiness line to **stderr** (stdout is the MCP channel):\n\n```\nsite-mcp ready (stdio) → https://robertdelanghe.dev; signature mode=off\n```\n\n## MCP client configuration\n\n```json\n{\n  \"mcpServers\": {\n    \"robertdelanghe\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@bounded-systems/site-mcp\"],\n      \"env\": { \"SITE_MCP_SIGNATURE_MODE\": \"warn\" }\n    }\n  }\n}\n```\n\n## Resources\n\n| Resource URI            | Endpoint                  | Contents |\n| ----------------------- | ------------------------- | -------- |\n| `site://profile`        | `profile.json`            | Headline, intro, label, links |\n| `site://posts`          | `posts.json`              | JSON Feed of writing (post list) |\n| `site://post/{slug}`    | `posts/{slug}.json`       | A single post (templated; `list` enumerates from the feed) |\n| `site://corpus`         | `corpus.json`             | GitHub corpus: stats + highlights |\n| `site://conformance`    | `conformance.json`        | Per-page DOM conformance report |\n| `site://resume-vc`      | `resume.vc.json`          | Résumé as a Verifiable Credential |\n| `site://openapi`        | `openapi.json`            | The OpenAPI 3.2 document for the API |\n\n## Tools / CLI commands (read-only)\n\nThe same three verbs, on both surfaces:\n\n| Tool / command   | Args            | Returns |\n| ---------------- | --------------- | ------- |\n| `list_posts`     | —               | The posts feed (slug, title, summary, tags) |\n| `get_post`       | `slug`          | A single post by slug |\n| `get_conformance`| —               | The conformance / accessibility report |\n\nResource reads and tool results carry a `_meta.verification` block (the\nmanifest-relative path, source URL, the verified `sha256`, and the manifest\nsignature status). The CLI prints the verified JSON; a verification failure exits\nnon-zero with nothing on stdout.\n\n## Verification / trust model\n\nThe site publishes a single signed manifest, `https://robertdelanghe.dev/site.sha256`\n(`sha256sum` format), and a Sigstore bundle over it, `site.sha256.sigstore.json`.\nThe core enforces:\n\n1. **Per-file hash check (always on).** Fetch the manifest once per process; for\n   every resource, fetch it, SHA-256 the received bytes, and require that digest\n   to equal the manifest entry. A tampered file, a stale CDN edge, or a MITM →\n   mismatch → `VerificationError` instead of a response. A path absent from the\n   manifest is likewise refused.\n2. **Manifest signature check (optional).** `SITE_MCP_SIGNATURE_MODE=warn|require`\n   verifies the Sigstore bundle against the deploy workflow identity\n   (`…/bdelanghe/site/.github/workflows/deploy.yml@refs/heads/main`).\n\n> **Sigstore backend / `@bounded-systems/verify`.** The optional manifest-signature\n> step is intended to delegate to [`@bounded-systems/verify`](https://jsr.io/@bounded-systems/verify),\n> the canonical in-process bundle verifier. As of `verify@0.1.0` that package\n> ships as a self-executing CLI with no exported function (importing it runs and\n> exits the process), so the core keeps a minimal, behaviorally-identical copy of\n> the check and the gap is filed upstream. See static-mcp's README.\n\n## Configuration\n\n| Variable                     | Default | Meaning |\n| ---------------------------- | ------- | ------- |\n| `SITE_MCP_BASE_URL`          | `https://robertdelanghe.dev` | Origin serving the site + API + manifest |\n| `SITE_MCP_SIGNATURE_MODE`    | `off`   | `off` \\| `warn` \\| `require` |\n| `SITE_MCP_SIGNER_IDENTITY`   | deploy workflow SAN | Expected Sigstore certificate identity |\n| `SITE_MCP_SIGNER_ISSUER`     | GitHub Actions OIDC | Expected Sigstore OIDC issuer |\n| `SITE_MCP_FETCH_TIMEOUT_MS`  | `15000` | Per-request fetch timeout |\n\n## Development\n\n```bash\nnpm install         # resolves @bounded-systems/static-mcp (npm) + verbspec (JSR bridge)\nnpm run build       # tsc → dist/\nnpm test            # node --test via tsx (server + CLI; no network)\nnpm run typecheck\n```\n\n## Publishing\n\n**One tag publishes the same version to three registries, mirrored.** Pushing a\n`v*` tag runs [`publish.yml`](./.github/workflows/publish.yml), which fans out to:\n\n| # | Registry | Identifier | Auth |\n| - | -------- | ---------- | ---- |\n| 1 | **npm** | `@bounded-systems/site-mcp` | trusted publishing (OIDC) + [provenance](https://docs.npmjs.com/generating-provenance-statements) |\n| 2 | **JSR** (mirror) | `@bounded-systems/site-mcp` | tokenless OIDC (`npx jsr publish`) |\n| 3 | **MCP Registry** | `io.github.bounded-systems/site-mcp` | GitHub-OIDC namespace auth (`mcp-publisher`) |\n\nThere are **no long-lived secrets** — every registry authenticates with the\njob's short-lived GitHub Actions OIDC token (`id-token: write`). npm needs\nnpm ≥ 11.5 (the workflow upgrades npm to guarantee this).\n\n> [!IMPORTANT]\n> **Versions must stay in sync.** The release version lives in **four** places\n> that must all match: `package.json`, `deno.json`, `server.json`, and the\n> `v<version>` git tag. The workflow's `verify` job hard-fails the whole release\n> on any mismatch, so npm and JSR can never drift apart. The MCP Registry also\n> requires `package.json` to carry `\"mcpName\": \"io.github.bounded-systems/site-mcp\"`\n> (it reads that field off the published npm package to prove ownership).\n\nThe MCP Registry job runs **after** the npm job, because the registry verifies\nownership by reading `mcpName` from the freshly-published npm package.\n\n### One-time setup (maintainer) — do these BEFORE the first tag\n\nThese three registry-side authorizations only need to happen once. Two of the\nthree (JSR, MCP Registry) are pure repo-link / OIDC — no tokens are minted.\n\n**(a) npm — Trusted Publisher** (on [npmjs.com](https://www.npmjs.com/))\n\n1. Sign in as an owner of the `@bounded-systems` scope.\n2. Open the package page for **`@bounded-systems/site-mcp`** → **Settings** →\n   **Trusted Publisher**. For a brand-new package you may need to publish `0.1.0`\n   once manually (or create the package), then switch to trusted publishing.\n3. Choose **GitHub Actions** and enter:\n   - **Organization / user:** `bounded-systems`\n   - **Repository:** `site-mcp`\n   - **Workflow filename:** `publish.yml`  ← (was `publish-npm.yml`)\n   - **Environment:** *(leave blank)*\n4. Save. No token is generated or stored anywhere. Ensure the package's\n   publishing-access policy allows automation/OIDC (trusted publishers satisfy 2FA).\n\n**(b) JSR — create + link the package** (on [jsr.io](https://jsr.io/))\n\n1. Sign in to jsr.io with GitHub and create the package **`@bounded-systems/site-mcp`**\n   under the `@bounded-systems` scope.\n2. Open the package's **Settings** tab → under **GitHub Repository** enter\n   `bounded-systems/site-mcp` and click **Link**. Linking the repo is what enables\n   **tokenless OIDC publishing** from this workflow (same idea as npm's trusted\n   publisher). No token is created.\n\n**(c) MCP Registry — nothing to pre-authorize**\n\nThe `io.github.bounded-systems/*` namespace is **auto-authorized via GitHub OIDC**:\nbecause this repo lives under `github.com/bounded-systems`, `mcp-publisher login\ngithub-oidc` proves ownership of the namespace from the Actions run itself.\nThere is **no** registry-side claim/consent/linking step to do in advance — the\nfirst `publish.yml` run authenticates and registers the server on its own.\n(Package-ownership of the npm entry is proven separately by the `mcpName` field;\nsee the note above.)\n\n### Cut a release (the single command)\n\n```bash\n# 1. Bump the version in ALL of: package.json, deno.json, server.json\n#    (and the package entry in server.json). Commit.\n# 2. Tag with the SAME version and push — this is the only command:\ngit tag v0.1.0 && git push origin v0.1.0\n```\n\nThat one `v*` tag triggers `publish.yml` → npm + JSR + MCP Registry, all at the\nsame version. You can also run it from the Actions tab via **workflow_dispatch**\n(which reuses the `package.json` version in place of a tag).\n\n### Local dry-runs (verify without publishing)\n\n```bash\nnpm pack --dry-run                                   # npm tarball contents\nnpx --yes jsr publish --dry-run --allow-slow-types   # JSR (or: deno publish --dry-run --allow-slow-types)\nmcp-publisher validate ./server.json                 # MCP Registry schema check\n```\n\n> site-mcp depends on `@bounded-systems/static-mcp`; **publish the core first**\n> (its own `v*` tag → JSR + npm), then cut site-mcp's tag.\n\n## License\n\nMIT — see [LICENSE](./LICENSE). The site data itself is published under CC BY 4.0.\n",
+    "fetchedAt": "2026-08-11T23:54:28.977Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:28:31.052Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

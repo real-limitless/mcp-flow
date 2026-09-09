@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-tax-observer",
+  "title": "Hive Tax Observer",
+  "description": "Read-only tax event observation for agent-to-agent transaction streams",
+  "summary": "Read-only tax event observation for agent-to-agent transaction streams",
+  "offersHint": "Read-only tax event observation for agent-to-agent transaction streams · Remote MCP (streamable-http) at https://hive-mcp-tax-observer.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-tax-observer.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-tax-observer.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-tax-observer",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-tax-observer",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:48:11.706854Z",
+  "publishedAt": "2026-04-28T23:48:11.706854Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:40.179Z",
+    "sourceRepoAt": "2026-08-11T23:20:04.927Z",
+    "readmeAt": "2026-08-11T23:20:05.416Z",
+    "toolsAt": "2026-08-12T01:00:40.179Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-tax-observer",
+    "checkedAt": "2026-08-11T23:20:04.927Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-tax-observer/master/README.md",
+    "markdown": "# Hive Tax Observer\n\n[![srotzin/hive-mcp-tax-observer MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-tax-observer/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-tax-observer)\n\n**Observational tax-event tracking for crypto transactions. Real on-chain rails. Not tax advice. Not tax filing.**\n\n> **Hive does not provide tax advice or filing services. This is observational transaction data only. Consult a licensed tax professional for compliance decisions.**\n\n`hive-mcp-tax-observer` is a Model Context Protocol (MCP) server that classifies a settled on-chain transaction\ninto one of four observational kinds — **sale**, **swap**, **income**, or **transfer** — and surfaces the\ncost-basis-relevant inputs (holder, asset, amount, counterparty, timestamp) your own basis tracker needs.\nReal reads against Base mainnet, Ethereum mainnet, and Solana mainnet via public RPC.\n\nWe do **not** compute cost basis. We do **not** file taxes. We do **not** generate 1099s or any tax forms.\nEvery response — including health, errors, and bulk responses — carries the observational disclaimer.\n\n---\n\n## What this is\n\n- **Protocol:** MCP 2024-11-05 over Streamable-HTTP / JSON-RPC 2.0\n- **Transport:** `POST /mcp`\n- **Discovery:** `GET /.well-known/mcp.json`\n- **Health:** `GET /health` (200, brand_color, disclaimer, enabled, supported_chains)\n- **Backend:** [`https://hivemorph.onrender.com`](https://hivemorph.onrender.com) — `/v1/tax/*`\n- **Brand:** Hive Civilization gold `#C08D23` (Pantone 1245 C)\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `tax.classify` | Classify a single tx_hash + chain as **sale**, **swap**, **income**, or **transfer**. Returns the cost-basis-relevant inputs and the disclaimer. |\n| `tax.bulk` | Classify an array of tx hashes (max 50) in a single call. Returns per-tx results plus a by-kind summary. |\n| `tax.today` | 24-hour rollup of classified events by kind, with a taxable-signal subtotal. Free. |\n\n## Backend endpoints\n\n| Method | Path | Purpose |\n|---|---|---|\n| `POST` | `/v1/tax/event` | Single tx classification |\n| `POST` | `/v1/tax/bulk` | Bulk tx classification (max 50) |\n| `GET` | `/v1/tax/today` | 24h rollup |\n| `GET` | `/v1/tax/health` | Service liveness |\n\n## Classification model\n\nEvery classification is **observational** and derived from on-chain data alone:\n\n| Kind | Signal |\n|---|---|\n| `sale` | Sender sent assets out with no offsetting inflow (likely disposition). |\n| `swap` | Sender both sent and received assets in the same tx (DEX-style). |\n| `income` | Sender received assets with no offsetting outflow. |\n| `transfer` | Same beneficial owner, no taxable inflow or outflow detected from this address. |\n\nA `taxable_signal: true` flag is set when the kind is one of `sale`, `swap`, or `income`.\n**This is not a tax determination.** It is a heuristic signal derived from the agent-supplied tx hash.\n\n## Run locally\n\n```bash\ngit clone https://github.com/srotzin/hive-mcp-tax-observer.git\ncd hive-mcp-tax-observer\nnpm install\nnpm start\n# server up on http://localhost:3000/mcp\ncurl http://localhost:3000/health\ncurl http://localhost:3000/.well-known/mcp.json\n```\n\n## Connect from an MCP client\n\n**Claude Desktop / Cursor / Manus** — add to your `mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"tax_observer\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-remote@latest\", \"https://hive-mcp-tax-observer.onrender.com/mcp\"]\n    }\n  }\n}\n```\n\n## Quickstart\n\n```bash\n# Classify a single Base transaction\ncurl -sX POST https://hive-mcp-tax-observer.onrender.com/v1/tax/event \\\n  -H 'content-type: application/json' \\\n  -d '{\"tx_hash\":\"0x...\",\"chain\":\"base\"}' | jq\n\n# 24h rollup (free)\ncurl -s https://hive-mcp-tax-observer.onrender.com/v1/tax/today | jq\n\n# Bulk\ncurl -sX POST https://hive-mcp-tax-observer.onrender.com/v1/tax/bulk \\\n  -H 'content-type: application/json' \\\n  -d '{\"chain\":\"base\",\"tx_hashes\":[\"0x...\",\"0x...\"]}' | jq\n```\n\n## What we do NOT do\n\n- We do **not** compute cost basis. We surface the inputs your basis tracker needs.\n- We do **not** file taxes, generate 1099s, or produce tax forms.\n- We do **not** make compliance determinations.\n- We do **not** provide tax advice. **Consult a licensed tax professional.**\n\n## Hive Civilization\n\nPart of the [Hive Civilization](https://www.thehiveryiq.com) — sovereign DID, USDC settlement, agent-to-agent rails.\n\nCategories: finance, tax, compliance, web3, agent-to-agent, observability.\n\n## License\n\nMIT (c) Steve Rotzin / Hive Civilization\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:05.416Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:40.179Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

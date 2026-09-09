@@ -1,0 +1,127 @@
+{
+  "id": "com.temsor/api",
+  "title": "Temsor API — Turkey & EU business data",
+  "description": "Turkey & EU business data: validation, sanctions screening, parsing, FX and fuel price history",
+  "summary": "Turkey & EU business data: validation, sanctions screening, parsing, FX and fuel price history",
+  "offersHint": "Turkey & EU business data: validation, sanctions screening, parsing, FX and fuel price history · Remote MCP (streamable-http) at https://api.temsor.com/mcp · Optional headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.temsor.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.temsor.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <API key>. Optional: without it, calls run on a narrow per-IP demo quota so the tools can be evaluated immediately.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://api.temsor.com/docs",
+  "updatedAt": "2026-07-26T17:11:05.303568Z",
+  "publishedAt": "2026-07-26T17:11:05.303568Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <API key>. Optional: without it, calls run on a narrow per-IP demo quota so the tools can be evaluated immediately.",
+      "secret": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:52:49.215Z",
+    "sourceRepoAt": "2026-08-12T00:25:36.985Z",
+    "readmeAt": "2026-08-12T01:52:49.215Z",
+    "toolsAt": "2026-08-12T00:25:36.985Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:25:36.985Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:52:49.215Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "email_verify",
+      "description": "Checks an e-mail address: syntax, whether the domain can actually receive mail, disposable and role-account detection, and typo correction.\n\nNo SMTP probing. Most competitors connect to the target server and try RCPT TO, which sounds thorough but produces a confident-looking number you cannot trust: most servers are catch-all, the big providers refuse to answer, and doing it in bulk gets the probing IP blacklisted. We report only what is provable — whether the domain has a mail exchanger, whether it is a known disposable service, whether the mailbox belongs to a role rather than a person, and whether the domain looks like a typo of a common one (gmial.com → gmail.com). Addresses are also normalised, so Gmail dots and +tags stop creating duplicate signups."
+    },
+    {
+      "name": "eu_vat_validate",
+      "description": "Validates an EU VAT number against the official VIES register, with per-country format checks and honest handling of upstream outages.\n\nVIES is free but unreliable: member-state services drop out individually and a failed lookup can easily be mistaken for a rejection. Treating an outage as \"invalid\" means charging VAT to a customer who should have been exempt — an error with a price tag. So this endpoint never returns `invalid` when the service could not answer; it returns `unknown` and names the reason, and reports whether that country's service is currently up. Format is checked locally first, so an obvious typo never becomes an upstream call. Results are cached for 24 hours. Note that most member states do not publish the company name; when they do, it is returned."
+    },
+    {
+      "name": "iban_validate",
+      "description": "Validates an IBAN from any of 70+ countries: checksum, country length and in-country account structure, and resolves the bank and branch codes.\n\nMost free libraries stop at the mod-97 checksum. That only says the digits are self-consistent — not that the number could exist in that country. This checks the country's BBAN structure too, so a wrong-length or wrong-shaped account is rejected before your payment file reaches the bank. When only the two check digits are wrong, the correct ones are computed and returned as a suggestion, because that is what people actually mistype. Turkish IBANs additionally resolve to the bank name."
+    },
+    {
+      "name": "mcp_index",
+      "description": "Searchable, dated archive of what every public MCP server actually exposes — tool definitions, daily change feed, and rug-pull detection.\n\nThe official MCP registry publishes a server’s name and address but not its tool surface; the only way to learn what a server exposes is to connect and call `tools/list`. This endpoint does that daily across every public remote server and keeps the result. Three things become answerable that the source cannot answer: tool-level search (the registry has none), uptime, and — the one that matters for security — what a tool’s description said yesterday. In MCP a tool description is part of the context handed to the model, so it is prompt text; if it changes after the user approved the server, the server has silently injected new instructions. Each indexed tool also carries a review score with the matched evidence, so the claim can be checked rather than trusted. Measurement boundary: only `initialize` and `tools/list` are ever called — never `tools/call`."
+    },
+    {
+      "name": "model_archive",
+      "description": "Dated archive of LLM prices, context windows, announced retirement dates and quiet delistings across 400+ models and 50+ providers.\n\nProviders overwrite their pricing pages and drop models from their catalogs without publishing what changed. This endpoint keeps a daily record, so three otherwise unanswerable questions become answerable: what a model cost on a given date (a contract and budget question), which models were quietly removed (a dependency-audit question), and when a retirement date was first announced and whether it later moved (a migration-planning question). Price points land in the shared time series, so a full range query is available through `series/history` under `model.price.<provider>/<model>.<input|output|cache_read>`. The archive can only accumulate forward — it cannot be reconstructed after the fact."
+    },
+    {
+      "name": "model_drift",
+      "description": "Independent daily record of what changed behind a provider endpoint: which alias resolved to which model, and when behaviour shifted.\n\nProviders update models behind stable endpoint names. This endpoint publishes an independent measurement: a fixed probe suite is sent daily at temperature 0, three repeats per probe, and the identity a provider declares in its own response (`modelVersion`, `system_fingerprint`, region) is recorded alongside. A change is only reported as drift when the repeats agree with each other and disagree with the previous run — same-day disagreement is noise, not drift. `aliases` answers \"what was actually behind `gemini-flash-latest` on that day\"; a question that cannot be answered retroactively."
+    },
+    {
+      "name": "phone_validate",
+      "description": "Validates and normalises a phone number to E.164, classifies the line type, and resolves the province for Turkish landlines.\n\nFor signup and checkout flows that need to store one canonical form and reject typos early. Turkish numbers are handled in depth: landline area codes resolve to a province, mobile and special ranges (toll-free 0800, fixed-rate 0850, premium 0900) are classified, and every accepted input comes back in both E.164 and national notation.\n\nOne thing this endpoint deliberately does not claim: the current mobile operator. Turkey has had number portability since 2008, so a 0532 number may well be on another network today. Competing APIs report the prefix owner as \"the operator\" and customers pick SMS routes on that basis. We return it as `originallyAllocatedTo` with the caveat attached, because a confident wrong answer costs more than an honest gap."
+    },
+    {
+      "name": "sanctions_screen",
+      "description": "Screens a name against six official sanctions lists — US OFAC, UN, EU, UK OFSI, Switzerland SECO and Canada — with transliteration-aware fuzzy matching.\n\nSix official lists are reduced to one schema, so a name is checked everywhere at once instead of six integrations. Cyrillic and Arabic names are transliterated, titles and corporate suffixes are stripped, and known spelling families are unified — \"Abd al-Rahman\", \"Abdul Rahman\" and \"Abdulrahman\" reach the same record. Every hit explains itself: which name matched, whether it was an alias the source flags as weak, and how the birth year and country compared. Supply `birthYear` whenever you have it; it removes most false positives. `asOf` screens against the lists as they stood on a past date, which is the question auditors actually ask — note that this is bounded by when our archive begins, reported in `coverage`."
+    },
+    {
+      "name": "series_history",
+      "description": "Returns the accumulated history of public data series with change statistics and a source receipt for every point.\n\nCurrently ingesting the Turkish Central Bank daily FX bulletin (`tcmb.usd`, `tcmb.eur`, …), normalised to one unit so JPY-style 100-unit quotes stop biting. Leave `seriesId` empty to list the catalogue. `fillGaps` carries the last value across weekends and holidays; `includeEvidence` attaches the source URL and content hash for every point, so a value can still be defended years later."
+    },
+    {
+      "name": "shipping_identify",
+      "description": "Identifies which carrier a tracking number belongs to, validates it where a checksum exists, and returns the canonical tracking link.\n\nBuilt for order systems that receive numbers from many carriers and have to route the customer to the right tracking page. Turkish carriers mostly use plain numeric ranges that overlap, so a single confident answer is often impossible — this returns a ranked candidate list instead of inventing certainty, because sending a customer to the wrong carrier's page makes them think the parcel is lost. Universal Postal Union (S10) numbers are fully verified: the mod-11 check digit is computed, the service type and origin country are decoded. For formats whose checksum we have not verified against the standard, the result says `not-verified` rather than guessing — a wrong rejection is worse than an honest unknown. Delivery status is deliberately out of scope: Turkish carriers require merchant credentials for that, and scraping their sites would be fragile and against their terms."
+    },
+    {
+      "name": "tr_address_parse",
+      "description": "Splits a free-form Turkish address into neighbourhood, street, building, floor, flat, district, province and postcode.\n\nHandles the abbreviation chaos (Mah./Mh., Cd./Cad., Sk./Sok., No:12/5, K:3 D:7), cross-checks the province against the postcode, repairs misspelled district names against a dictionary, and returns a confidence score. Anything it could not place is listed in `unparsed` — nothing is dropped silently. Built for shipping, checkout and CRM systems that receive Turkish addresses typed by humans."
+    },
+    {
+      "name": "tr_business_days",
+      "description": "Adds business days or counts them between two dates, accounting for Turkish public and religious holidays including half-day eves.\n\nRamadan and Sacrifice feasts follow the Hijri calendar and cannot be derived reliably by formula, so announced dates are read from a table; years without an official announcement are returned with `confirmed:false` rather than guessed silently. For delivery promises, SLA clocks, payment terms and shipping estimates."
+    },
+    {
+      "name": "tr_fuel_prices",
+      "description": "Petrol, diesel and heating-oil pump prices for all 81 Turkish provinces, including the price in force on any past date.\n\nThe distributor publishes today's pump price and a per-district history query, one district and one range at a time. This endpoint answers the question that actually costs money, in a single call: what was diesel in Ankara on 12 March? Pass `asOf` for the price in force on that day — if the distributor did not change prices that day, the previous price is carried forward and `effectiveFrom` says when it started, with `carriedForward: true`. Pass `from`/`to` to get the change events in a window, each with the percentage move. Every figure carries the source URL and a content hash of the page it was read from, so the number can still be defended in an audit years later. Leave `province` empty to list coverage."
+    },
+    {
+      "name": "tr_invoice_build",
+      "description": "Builds a UBL-TR e-Invoice or e-Archive XML document from plain JSON, computing every total and validating the parties.\n\nSelling into Türkiye means issuing a UBL-TR document whose element order is fixed by schema and whose totals must agree to the kuruş, or the integrator rejects it. This endpoint takes the invoice as ordinary JSON and returns the XML. Totals you send are ignored on purpose — line amounts, per-rate VAT subtotals and the payable amount are all recomputed here, because a rounding difference of one kuruş is the most common rejection. VKN and TCKN checksums are verified, and the amount is written out in Turkish words as invoices require. It does not sign the document and does not transmit it: the financial seal and the submission to the tax authority belong to your certificate and your integrator. What comes back is a document ready to enter that step."
+    },
+    {
+      "name": "tr_invoice_parse",
+      "description": "Turns a UBL-TR e-Invoice or e-Archive XML document into clean JSON: parties, line items, taxes and totals.\n\nWorks regardless of the namespace prefix the sender used (cbc:, cac:, ns0:), normalises single-line documents into arrays, and reports amount mismatches in `warnings` instead of returning quietly wrong totals. The job that costs accounting and expense software the most engineering time."
+    },
+    {
+      "name": "tr_money_to_words",
+      "description": "Writes a monetary amount out in Turkish words, the way invoices, cheques and promissory notes require.\n\nApplies the rules that trip up generic libraries: Turkish says \"bin\", never \"bir bin\"; the kuruş part is read separately; and both \"1.234,56\" and \"1,234.56\" are accepted and told apart automatically. A mandatory field on Turkish e-invoices, cheques and notes — with no off-the-shelf API until now."
+    },
+    {
+      "name": "tr_validate",
+      "description": "Validates Turkish national ID, tax number, IBAN, licence plate, IMEI and barcodes from one endpoint, with type auto-detection.\n\nGoes past a yes/no: resolves the bank behind an IBAN, the province behind a licence plate and the GS1 country prefix behind a barcode. Pure local computation — no upstream service is called, so latency is microseconds and the answer never changes for the same input."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:25:36.985Z",
+  "toolsPreviewStatus": "ok"
+}

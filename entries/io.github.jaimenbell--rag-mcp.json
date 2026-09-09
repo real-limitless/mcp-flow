@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jaimenbell/rag-mcp",
+  "title": "rag-mcp",
+  "description": "Minimal RAG-over-a-corpus MCP retrieval: search_knowledge returns cited chunks. Local embeddings.",
+  "summary": "Minimal RAG-over-a-corpus MCP retrieval: search_knowledge returns cited chunks. Local embeddings.",
+  "offersHint": "Minimal RAG-over-a-corpus MCP retrieval: search_knowledge returns cited chunks. Local embeddings. · Packages: pypi:jaimenbell-rag-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "jaimenbell-rag-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "jaimenbell-rag-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jaimenbell/rag-mcp",
+  "repository": {
+    "url": "https://github.com/jaimenbell/rag-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T12:37:44.97332Z",
+  "publishedAt": "2026-07-24T12:37:44.97332Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:32.550Z",
+    "sourceRepoAt": "2026-08-11T23:41:46.758Z",
+    "readmeAt": "2026-08-11T23:41:47.413Z",
+    "toolsAt": "2026-08-12T01:19:32.550Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jaimenbell/rag-mcp",
+    "checkedAt": "2026-08-11T23:41:46.758Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jaimenbell/rag-mcp/master/README.md",
+    "markdown": "# rag-mcp\n\n[![CI](https://github.com/jaimenbell/rag-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jaimenbell/rag-mcp/actions/workflows/ci.yml)\n\n> A minimal, honest **RAG-over-a-corpus MCP retrieval tool**. One tool,\n> `search_knowledge(query, k)`, that embeds a query, vector-searches a local corpus, and\n> returns passages **with citations** (source + heading + chunk index) so answers are traceable.\n\nBuilt to slot into the [mcp-factory](https://github.com/jaimenbell/mcp-factory) manifest model.\nFully local + **$0** (no paid embedding API).\n\n## Why it's safe to put in front of a real corpus\n- **Cited** - every hit carries `source` + `heading` + `chunk_index`.\n- **Auth-scoped** - results are confined to the configured corpus root; sources that escape it\n  (absolute paths, `..` traversal) are refused.\n- **Fail-soft** - a down or empty store returns a *structured error*, never an exception that\n  crashes the calling agent.\n- **Bounded** - `k` is clamped to `[1, 20]`; empty queries are rejected.\n- **Version-pinned** deps (`requirements.txt`).\n\n## Stack\n| Layer | Choice |\n|---|---|\n| Embeddings | local ONNX `all-MiniLM-L6-v2` (384-dim, CPU, $0) -- **default**. `bge-large-en-v1.5` (1024-dim, 512-token context) available opt-in via `RAG_MCP_EMBEDDER=bge`; see [CUTOVER.md](./CUTOVER.md). |\n| Vector store | ChromaDB embedded `PersistentClient` (zero-infra) |\n| Server | `mcp` Python SDK 2.x, stdio transport, protocol revision **2026-07-28** |\n\n## Protocol revision\nPinned to `mcp==2.0.0`, the first SDK release implementing MCP protocol revision\n**2026-07-28**. The server serves **both eras on the same stdio connection** -- the\nclient's first frame picks:\n\n| Client opens with | Negotiated revision | Notes |\n|---|---|---|\n| a per-request `_meta` envelope (or a `server/discover` probe) | `2026-07-28` | stateless per-request envelope; no `initialize` |\n| the classic `initialize` handshake | `2025-11-25` | handshake era caps here -- expected, not a downgrade |\n\n`2026-07-28` is **not reachable via the `initialize` handshake**; it is a \"modern\"\nrevision reached through `server/discover` or an inline `_meta` version stamp. Era\nselection is automatic and per-connection -- there is no server-side flag.\n\n`tests/test_protocol_version.py` asserts both paths end-to-end, so a dependency\nrollback that silently drops the server to an older revision fails CI instead of\npassing quietly.\n\n## Quick start\n```bash\npython -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt\n\n# Ingest a corpus (markdown). Incremental by default: only files whose content\n# changed since the last run are re-embedded.\npython -m rag_mcp.cli ingest path/to/docs --db ./store.chroma\n\n# Force a rebuild in place (ignore the manifest, re-embed everything)\npython -m rag_mcp.cli ingest path/to/docs --db ./store.chroma --full\n\n# One-off query (corpus root = the auth scope)\npython -m rag_mcp.cli query \"your question\" --db ./store.chroma --corpus path/to/docs -k 5\n\n# Run as an MCP server (stdio); configure via env first\n#   RAG_MCP_CORPUS_ROOT, RAG_MCP_DB_PATH, RAG_MCP_COLLECTION, RAG_MCP_EMBEDDER\npython run_server.py        # operational entrypoint (referenced by mcp.yaml)\npython -m rag_mcp           # same server, via the packaged console entry point\nrag-mcp                     # after `pip install jaimenbell-rag-mcp` -- console script\n```\n\n## Keeping the index fresh (incremental ingest)\nIngest is **incremental by default**. A manifest inside the store dir records a\nSHA-256 of each file's decoded text; a run re-embeds only what actually changed,\nand prunes what upsert alone never could (chunks of deleted/renamed notes, and\ntrailing chunks of notes that got shorter).\n\nMeasured on a live 2808-file / 26.6 MiB corpus (bge, CPU):\n\n| Run | Cost |\n|---|---|\n| tick with no changes | **~0.7s** (walk + read + hash everything) |\n| full re-embed | ~2h33m (50,109 chunks at ~5.5 chunks/sec) |\n\nThat is what makes a frequent schedule affordable: `reingest.bat` is meant to run\n**every 15 minutes** instead of once daily at 03:00, which had left a note written\nat 03:05 invisible to `search_knowledge` for nearly 24 hours.\n\nThe manifest is only trusted when the **run identity** matches -- embedder, embedding\ndimension, collection and chunking parameters. Change any of them and every file is\nre-embedded, so an embedder swap can never be silently half-applied. A missing,\ncorrupt, or mismatched manifest, or a manifest against an empty store, all degrade\nto a full rebuild; nothing degrades to a wrong skip.\n\n### Snapshot de-duplication\nThe manifest's skip is a **whole-file** hash, so it cannot see the duplication that\nactually hurts retrieval: a daily snapshot series (`fleet-health-2026-07-23.md` and\nfriends) repeats yesterday's paragraphs verbatim inside a file whose hash still\nchanged. Measured on the live vault, one `## RED Bots` status line took **five\ndistinct values across fifteen consecutive files** and crowded a top-10 with\nbyte-identical copies of itself, burying the document that explained it at rank 16.\n\nIngest therefore also de-duplicates at **chunk** level, but only within a dated\nseries and only against the *immediately preceding* snapshot. The first occurrence\nis always embedded and keeps its own date as its `source`; later verbatim repeats\nare not embedded, and instead extend the survivor's `repeat_dates` metadata, which\n`search_knowledge` returns as `snapshot_date` / `also_unchanged_on` /\n`snapshots_covered`. So \"what did this say on date X\" is still answerable -- that is\nwhy the series is de-duplicated rather than excluded. A value that changes and later\nreturns is kept, because it is a new fact rather than a repeat.\n\nScope is narrow and stated with the rule in `rag_mcp/snapshots.py`: filename ending\nin `-YYYY-MM-DD`, at least 3 such files sharing a directory and stem, byte-identical\nunder an identical heading. On the live corpus that is 316 of 2,814 files and\ncollapses 842 of 50,428 chunks (17.5% of series chunks, 1.67% corpus-wide) while\ntouching zero ordinary notes. Disable with `--no-snapshot-dedupe`.\n\n`--full` rebuilds in place (ignores the manifest, keeps the store); `--clean`\ndeletes the store first. Both still WRITE a manifest, so the next run is cheap.\n`reingest-clean.bat` (weekly) remains a belt-and-braces reset.\n\n## As an MCP server\nRegister via `mcp.yaml` (validated against mcp-factory's `Manifest` loader). The tool is\n`search_knowledge(query, k)`; it reads the store configured by the `RAG_MCP_*` env vars.\n\n## Tests\n```bash\npython -m pytest        # 149 passed\n```\n\n## Layout\n```\nrag_mcp/\n  chunking.py   heading-scoped, overlapping markdown chunks\n  store.py      VectorStore (Chroma) + Embedder protocol (MiniLM default + BgeEmbedder opt-in + offline HashEmbedder)\n  ingest.py     idempotent ingest pipeline with source/heading/chunk-index metadata; incremental by default\n  manifest.py   per-file content hashes -> skip unchanged files, prune stale chunks\n  search.py     search_knowledge: cited, auth-scoped, fail-soft, bounded\n  server.py     MCP stdio server exposing search_knowledge\n  config.py     env-driven Config\n  cli.py        ingest + query CLI\n  __main__.py   console entrypoint (`python -m rag_mcp` / `rag-mcp` script); fails loud on missing config\nrun_server.py   operational MCP entrypoint (referenced by mcp.yaml)\nmcp.yaml        manifest (mcp-factory model)\n```\n\n## Commercial support\n\nMaintained by [Jaimen Bell](https://jaimenbell.dev). For production MCP\nintegrations, custom servers, or agent-reliability work, see\n[jaimenbell.dev](https://jaimenbell.dev).\n\n<!-- MCP registry ownership marker -->\nmcp-name: io.github.jaimenbell/rag-mcp\n",
+    "fetchedAt": "2026-08-11T23:41:47.413Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:32.550Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

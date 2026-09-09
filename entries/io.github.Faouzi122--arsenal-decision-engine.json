@@ -1,0 +1,56 @@
+{
+  "id": "io.github.Faouzi122/arsenal-decision-engine",
+  "title": "Arsenal Decision Engine",
+  "description": "R_net LP risk evaluator for DeFAI agents. IL + Breakeven Corridor O(1). L402 Lightning paywall.",
+  "summary": "R_net LP risk evaluator for DeFAI agents. IL + Breakeven Corridor O(1). L402 Lightning paywall.",
+  "offersHint": "R_net LP risk evaluator for DeFAI agents. IL + Breakeven Corridor O(1). L402 Lightning paywall. · Remote MCP (streamable-http) at https://api.arsenal-quant.com/mcp",
+  "version": "2.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.arsenal-quant.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.arsenal-quant.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/Faouzi122/Arsenal-Quant-Project",
+  "repository": {
+    "url": "https://github.com/Faouzi122/Arsenal-Quant-Project",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-24T08:02:22.858449Z",
+  "publishedAt": "2026-07-24T08:02:22.858449Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:43:29.472Z",
+    "sourceRepoAt": "2026-08-12T00:12:59.156Z",
+    "readmeAt": "2026-08-12T00:12:59.707Z",
+    "toolsAt": "2026-08-12T00:13:00.317Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Faouzi122/Arsenal-Quant-Project",
+    "checkedAt": "2026-08-12T00:12:59.156Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Faouzi122/Arsenal-Quant-Project/master/README.md",
+    "markdown": "# Arsenal Decision Engine 🛡️\n**The Risk-Validation Layer for Autonomous AI Agents (DeFAI)**\n\n[![Arsenal-Quant-Project MCP server](https://glama.ai/mcp/servers/Faouzi122/Arsenal-Quant-Project/badges/card.svg)](https://glama.ai/mcp/servers/Faouzi122/Arsenal-Quant-Project)\n[![smithery badge](https://smithery.ai/badge/khelifa-faouzi16/arsenal-decision-engine)](https://smithery.ai/servers/khelifa-faouzi16/arsenal-decision-engine)\n\n> **Method and raw results are published** — [backtest script](./decision_engine/07_Backtest_Engine/run_empirical_backtest.py) · [result data](./decision_engine/07_Backtest_Engine/data/) (180 days of Binance ETH/USDC daily closes):\n> 🔬 **Breakeven Corridor** is a deterministic algebraic boundary (where IL = accumulated yield). Any position whose price ratio stays within `[lower_be, upper_be]` has R_net > 0 by mathematical definition — not a probabilistic model.\n> 📐 This engine **measures**; it does not forecast. No predictive-accuracy figure is claimed — read the published result files and judge the method for yourself.\n\n---\n\n## Mission\n\n**Transform DeFi uncertainty into deterministic, actionable risk metrics for autonomous agents.**\nWe do not run stateful trading bots or generate speculative prediction signals; we provide a stateless risk middleware layer that agents query before deploying or maintaining standard constant-product / full-range LP positions.\n\nBuilt for agents, priced for agents. Pay per decision via Lightning Network (L402).\n\n---\n\n## What This Engine Does\n\nBefore an autonomous agent deploys capital or adjusts a standard constant-product / full-range LP position (such as Uniswap V2 or full-range V3), it submits the pool parameters (APY, price ratio, days held) to our API. The engine computes the exact mathematical risk, the net return ($R_{net}$), and the dynamic **Breakeven Corridor** bounds.\n\n- **No LLMs. No hallucinations. Pure algebraic calculation.**\n- **Complexity:** $\\mathcal{O}(1)$ time and memory.\n- **Latency:** $< 15\\text{ms}$ local execution.\n\n### Two ways to call it\n\n**1. MCP JSON-RPC — the endpoint advertised on the MCP registry**\n```\nPOST https://api.arsenal-quant.com/mcp\n```\n```json\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\n \"params\":{\"name\":\"evaluate_pool\",\n           \"arguments\":{\"apy\":0.20,\"price_ratio\":0.85,\"days_held\":30}}}\n```\nStandard MCP handshake: `initialize` → `tools/list` → `tools/call`. Available over\nstreamable HTTP and stdio.\n\n**2. REST convenience route — no MCP client required**\n```\nGET https://api.arsenal-quant.com/mcp/evaluate?apy=0.20&price_ratio=0.85&days_held=30\n```\nBoth routes run the same calculation and the same quota. Note that\n`/mcp/evaluate` is **GET-only**: a `POST` to that path returns `405 Allow: GET`,\nbecause JSON-RPC belongs on `/mcp`.\n\n### Engine Response (JSON Contract)\n```json\n{\n  \"impermanent_loss_pct\": 0.3292,\n  \"accumulated_yield_pct\": 1.6438,\n  \"r_net_pct\": 1.3146,\n  \"il_to_yield_ratio\": 0.2,\n  \"risk_level\": \"LOW\",\n  \"breakeven_corridor\": {\n    \"lower_ratio\": 0.6941,\n    \"upper_ratio\": 1.4407,\n    \"interpretation\": \"Position remains profitable if price ratio stays within [0.6941, 1.4407]\"\n  },\n  \"inputs\": {\n    \"apy\": 0.2,\n    \"price_ratio\": 0.85,\n    \"days_held\": 30\n  },\n  \"source\": \"Arsenal Decision Engine v2.0\",\n  \"oracle_signature\": \"<HMAC-SHA256 hex — illustrative placeholder, yours will differ>\",\n  \"layer\": \"FREE\"\n}\n```\n`layer` reports how the call was served: `FREE` while inside the free quota,\n`PREMIUM` once an L402 payment has been verified. The call shown above is\nserved as `FREE`.\n\n---\n\n## Access and Pricing\n\n- **Free tier — `evaluate_pool`:** **100 calls per IP per day, custom parameters\n  included.** No Lightning wallet is needed to use the engine.\n- **Beyond the free quota:** an L402 Lightning micro-payment. The amount is set by\n  server configuration and is currently **150 sats** per evaluation. Read it from\n  the `WWW-Authenticate` header or from `error.data.price_sats` in the 402 response\n  rather than hard-coding it.\n- **`GET /mcp/audit/latest`:** 3 free calls per IP per hour, then L402 — this\n  route is what keeps the Lightning rail live and demonstrable.\n\n---\n\n## Python Integration Example\n\n```python\nimport urllib.request\nimport urllib.error\nimport json\nimport re\nimport os\n\nAPI_URL = \"https://api.arsenal-quant.com/mcp/evaluate?apy=0.20&price_ratio=0.85&days_held=30\"\nLNBITS_URL = \"https://demo.lnbits.com\"\n\n# LNbits requires a wallet key with send permission to pay an invoice.\n# Use a DEDICATED wallet funded with a small working balance, and never the key\n# of a wallet holding significant funds. Keep it in the environment, never in code.\nLNBITS_PAYMENT_KEY = os.getenv(\"LNBITS_PAYMENT_KEY\")\n\ndef query_risk_oracle():\n    req = urllib.request.Request(API_URL, method=\"GET\")\n    req.add_header(\"x-agent-id\", \"autonomous-lp-bot\")\n\n    try:\n        with urllib.request.urlopen(req) as resp:\n            return json.loads(resp.read().decode('utf-8'))\n    except urllib.error.HTTPError as e:\n        if e.code == 402:\n            auth_header = e.headers.get(\"WWW-Authenticate\")\n            macaroon = re.search(r'token=\"([^\"]+)\"', auth_header).group(1)\n            invoice = re.search(r'invoice=\"([^\"]+)\"', auth_header).group(1)\n\n            pay_req = urllib.request.Request(\n                f\"{LNBITS_URL}/api/v1/payments\",\n                data=json.dumps({\"out\": True, \"bolt11\": invoice}).encode(),\n                headers={\"X-Api-Key\": LNBITS_PAYMENT_KEY, \"Content-Type\": \"application/json\"}\n            )\n            with urllib.request.urlopen(pay_req) as pay_resp:\n                preimage = json.loads(pay_resp.read().decode())[\"preimage\"]\n\n            retry_req = urllib.request.Request(API_URL, method=\"GET\")\n            retry_req.add_header(\"Authorization\", f\"L402 {macaroon}:{preimage}\")\n            retry_req.add_header(\"x-agent-id\", \"autonomous-lp-bot\")\n\n            with urllib.request.urlopen(retry_req) as final_resp:\n                return json.loads(final_resp.read().decode('utf-8'))\n        else:\n            raise\n\nif __name__ == \"__main__\":\n    evaluation = query_risk_oracle()\n    print(f\"Risk Level     : {evaluation['risk_level']}\")\n    print(f\"R_net          : {evaluation['r_net_pct']:+.4f}%\")\n    print(f\"Breakeven      : [{evaluation['breakeven_corridor']['lower_ratio']}, {evaluation['breakeven_corridor']['upper_ratio']}]\")\n```\n\n---\n\n## Developer Integration\n- Integration cookbook & MCP guides: [`COOKBOOK.md`](./decision_engine/08_SDK_Wrappers/COOKBOOK.md)\n- MCP auto-discovery card: `https://api.arsenal-quant.com/.well-known/mcp/server-card.json`\n\n## Why pay per call?\n\nThis engine does not prevent losses, and it makes no claim about how much money it\nsaves you. What it does is compute — deterministically, in $\\mathcal{O}(1)$, with an\nHMAC signature over the result — whether a position sits above or below its\nbreakeven boundary. What you pay for is a reproducible, auditable number your agent\ncan act on, priced per call so it can be budgeted like any other input.\n",
+    "fetchedAt": "2026-08-12T00:12:59.707Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "evaluate_pool",
+      "description": "Evaluate LP position risk and calculate R_net & breakeven corridor."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:13:00.317Z",
+  "toolsPreviewStatus": "ok"
+}

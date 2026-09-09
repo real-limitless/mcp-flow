@@ -1,0 +1,63 @@
+{
+  "id": "io.github.Shreyas-Profile/browser-mcp",
+  "title": "browser-mcp",
+  "description": "Hosted real Google Chrome MCP with per-user persistent state. Navigate, click, type, screenshot.",
+  "summary": "Hosted real Google Chrome MCP with per-user persistent state. Navigate, click, type, screenshot.",
+  "offersHint": "Hosted real Google Chrome MCP with per-user persistent state. Navigate, click, type, screenshot. · Remote MCP (streamable-http) at https://browser.regiq.in/api/mcp · Optional headers: Authorization",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://browser.regiq.in/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://browser.regiq.in/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <apiKey> — get yours at https://browser.regiq.in after sign-in."
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/globalion/browser-mcp",
+  "repository": {
+    "url": "https://github.com/globalion/browser-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-16T17:32:07.42766Z",
+  "publishedAt": "2026-07-16T17:32:07.42766Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <apiKey> — get yours at https://browser.regiq.in after sign-in."
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:52.574Z",
+    "sourceRepoAt": "2026-08-12T00:02:45.725Z",
+    "readmeAt": "2026-08-12T00:02:46.410Z",
+    "toolsAt": "2026-08-12T01:34:52.575Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/globalion/browser-mcp",
+    "checkedAt": "2026-08-12T00:02:45.725Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/globalion/browser-mcp/main/README.md",
+    "markdown": "# browser-mcp\n\n> Built by [**Shreyas**](https://github.com/Shreyas-Profile) · Shipped by [**Globalion**](https://github.com/globalion)\n\n**Hosted Chrome as an MCP skill.** Give any MCP-compatible agent (Claude Desktop, Cursor, custom scripts) a real Chromium browser to drive — navigate, click, type, snapshot, read pages, take screenshots. Human-like behaviour, per-user isolated sessions, encrypted credential storage so login-gated sites work without leaking passwords to the LLM.\n\n- **Real Chromium** on our server via Playwright. Not headless-only tricks — full browser context.\n- **Stealth defaults** — patches the most common bot-detection tells (navigator.webdriver, plugins, chrome runtime). Not bulletproof against heavy defences like Cloudflare Turnstile; v0.2 adds proxies + CAPTCHA solving.\n- **Per-user isolation** — separate BrowserContext per user, so cookies + localStorage don't leak between accounts.\n- **Encrypted credentials** — AES-256-GCM at rest. `use_credentials` types the password into the page server-side; the LLM never sees it.\n- **No LLM in our stack** — your agent is the brain. We just drive the browser.\n\nHosted at **[browser.regiq.in](https://browser.regiq.in)**.\n\n## Use it\n\n1. Visit https://browser.regiq.in and sign in with Google or GitHub.\n2. Generate an MCP API key on the dashboard.\n3. Add to Claude Desktop's `claude_desktop_config.json`:\n\n    ```json\n    {\n      \"mcpServers\": {\n        \"browser\": {\n          \"url\": \"https://browser.regiq.in/api/mcp\",\n          \"headers\": {\n            \"Authorization\": \"Bearer YOUR_KEY_HERE\"\n          }\n        }\n      }\n    }\n    ```\n\n4. Restart Claude Desktop. Ask it: *\"open workit.info and search for placements in Cambridge.\"* Your agent will call the browser tools and drive the page.\n\n## Tools\n\n| Tool | Purpose |\n|------|---------|\n| `browser_new_session()` | Spin up a session; returns `sessionId`. 15 min idle timeout. |\n| `browser_close_session(sessionId)` | Clean up. |\n| `browser_navigate(sessionId, url)` | Go to URL, wait for DOMContentLoaded. |\n| `browser_snapshot(sessionId)` | Accessibility tree with per-element uids. |\n| `browser_click(sessionId, uid)` | Click element by uid. |\n| `browser_type(sessionId, uid, text)` | Fill input by uid. |\n| `browser_press_key(sessionId, key)` | Keyboard press: `Enter`, `Tab`, `Control+A`, etc. |\n| `browser_wait_for(sessionId, selector)` | Wait for CSS selector to appear. |\n| `browser_read_page(sessionId)` | Plain-text page content (20 KB cap). |\n| `browser_screenshot(sessionId)` | PNG as base64. |\n| `save_credentials(domain, username, password)` | Encrypt + store login for a site. |\n| `use_credentials(sessionId, domain, usernameSelector, passwordSelector)` | Type stored creds into a login form. Password never returned. |\n| `list_saved_credentials()` | See what's stored (domains + usernames only). |\n\n## Handling login-gated sites\n\nYour agent sees a login form. Flow:\n\n1. **Check for saved creds** — `list_saved_credentials()`.\n2. **If saved for this domain** — call `use_credentials(sessionId, \"workit.info\", \"input[name=email]\", \"input[type=password]\")`. Server decrypts + types. Then click the submit button.\n3. **If not saved** — tell the user: *\"I need your workit.info login to continue. Save it at https://browser.regiq.in/dashboard, then ask me again.\"*\n\nFor MVP the user has to save creds via the dashboard. v0.2 will let the agent request creds through a paired channel (e.g. via [telegram-mcp](https://github.com/globalion/telegram-mcp)).\n\n## Self-host\n\nYou'll need:\n- Docker + Compose\n- A Google or GitHub OAuth client\n- A public HTTPS domain (Cloudflare Tunnel or `ngrok http 3013`)\n- ~4 GB RAM (Playwright + Chromium)\n\n```bash\ngit clone https://github.com/globalion/browser-mcp\ncd browser-mcp\ncp .env.example .env\n# fill NEXTAUTH_SECRET, GOOGLE_/GITHUB_*, PUBLIC_BASE_URL,\n# and generate CRED_ENCRYPTION_KEY with `openssl rand -hex 32`\ndocker compose up -d\n# open http://localhost:3013\n```\n\n## Architecture\n\n```\nYour MCP agent  →  /api/mcp (Bearer auth)  →  In-memory session Map  →  Playwright BrowserContext\n                                                    ↕\n                                                Postgres (audit + credentials, AES-256-GCM)\n```\n\nSessions live in the container's memory. A restart kills all active sessions — users just call `browser_new_session` again. Contexts auto-close after 15 min idle to free RAM.\n\n## Bot avoidance — realistic expectations\n\nThe stealth init script strips `navigator.webdriver`, adds fake plugins, exposes `window.chrome.runtime`, and patches the notifications permission oddity. Combined with a real Chromium binary (not headless-only) and realistic viewport/UA/timezone, that gets past most public sites.\n\nSites with **serious** anti-bot (Cloudflare Turnstile, PerimeterX, DataDome) will still detect. To bypass those you need:\n- Residential proxies (~$50/mo services like Bright Data)\n- CAPTCHA solving (~$0.001/solve via 2captcha)\n- More elaborate fingerprint spoofing\n\nThat's v0.2 territory. For now, use `browser-mcp` on sites that aren't actively hunting bots.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:02:46.410Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:52.575Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Unauthorized — set Authorization: Bearer <key>\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

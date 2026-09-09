@@ -1,0 +1,44 @@
+{
+  "id": "io.github.withvibe/withvibe-roadmap",
+  "title": "withvibe-roadmap",
+  "description": "Per-env roadmap board for WithVibe — an MCP server the orchestrator drives to plan and track work.",
+  "summary": "Per-env roadmap board for WithVibe — an MCP server the orchestrator drives to plan and track work.",
+  "offersHint": "Per-env roadmap board for WithVibe — an MCP server the orchestrator drives to plan and track work.",
+  "version": "2.0.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/withvibe/withvibe-roadmap",
+  "repository": {
+    "url": "https://github.com/withvibe/withvibe-roadmap",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-09T01:21:44.471141Z",
+  "publishedAt": "2026-06-09T01:21:44.471141Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:05.414Z",
+    "sourceRepoAt": "2026-08-11T23:14:59.401Z",
+    "readmeAt": "2026-08-11T23:14:59.882Z",
+    "toolsAt": "2026-08-12T00:56:05.414Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/withvibe/withvibe-roadmap",
+    "checkedAt": "2026-08-11T23:14:59.401Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/withvibe/withvibe-roadmap/main/README.md",
+    "markdown": "# WithVibe Roadmap Plugin\n\n> A per-env implementation roadmap board for [WithVibe](https://withvibe.dev) — Postgres-backed, with an MCP server the AI orchestrator drives directly.\n\nMulti-phase features drift. Plans change mid-flight. After a few sessions you lose track of what shipped, what's pending, and which step you're actually on. This plugin gives the AI a structured place to keep that state — and the user a live view of it.\n\n```\nFeature: Auth rewrite                          ▓▓▓▓░░░░░░ 4/11 tasks\nyou are here →  API layer  ›  Wire DTO validation\n\n[x] Phase 1: Schema (done)\n[~] Phase 2: API layer (in progress)\n    [x] Endpoint scaffolding\n    [x] Auth guard\n    [~] Wire DTO validation     ← active\n    [ ] Error envelope\n[ ] Phase 3: Web\n[ ] Phase 4: QA\n\n— Plan changes —\n2026-05-28  AI added Phase 4 (QA) — reason: integration tests not in original scope\n2026-05-29  user removed \"Add caching\" — reason: deferred to follow-up\n```\n\n## What's in the box\n\n- **Hierarchical roadmap** — feature → phase → task, with `pending / in_progress / done / blocked / deferred / canceled` statuses.\n- **\"You are here\" marker** — exactly one task is active at a time; the banner is the recovery anchor when you context-switch back.\n- **Plan-change log** — every add/remove/rename/status-change records an actor (`ai` or `user`) and an optional reason. The trail makes drift visible.\n- **MCP tools** the AI orchestrator uses without prompting: `propose_plan`, `set_active_task`, `complete_task`, `add_note`, `update_task`, `log_change`, …\n- **Live UI** — htmx-based, polls a tiny version endpoint so the iframe updates within ~4s of any AI change without scroll jumps.\n- **Persistent** — uses WithVibe's `shared-postgres` plugin storage, so state survives container restarts.\n\n## Architecture\n\n```\nmanifest.yaml ──→ WithVibe spawns one container per env\n       ↓\n   server.js (express)\n   ├── /health         platform health probe\n   ├── /mcp            AI orchestrator's MCP endpoint  ─→ mcp.js\n   ├── /ui             dark-themed htmx UI             ─→ ui.js\n   └── /ui/version     cheap freshness check (drives live updates)\n                ↓\n              db.js (pg)\n                ↓\n          shared-postgres\n          per-env schema\n          plan / phase / task / plan_event\n```\n\n- **Scope: `env`** — one container per (env, plugin). Each env gets its own roadmap, its own Postgres schema, its own port.\n- **Storage**: `shared-postgres` — the platform provisions a dedicated role + schema in the `withvibe_plugins` database and injects `DATABASE_URL` + `PGSCHEMA` at spawn. The plugin role can't reach the main `withvibe` DB.\n- **State surface**: four tables in [db.js](db.js) — `plan` (singleton), `phase`, `task`, `plan_event` (change log).\n\n## MCP tools\n\nAll tools return the full updated plan in the trailing text so the AI never holds stale state.\n\n| Tool | Purpose |\n|---|---|\n| `get_plan` | Read the full roadmap + active marker + last 20 events. |\n| `propose_plan` | Replace the whole roadmap (initial planning or a major re-plan). |\n| `add_phase` / `add_task` | Append work mid-flight; `reason` recorded. |\n| `set_active_task` | Mark the \"you are here\" anchor before starting work. |\n| `complete_task` | Mark done with a 1-line outcome; auto-closes the phase if every task is done. |\n| `update_task` / `update_phase` | Edit title/description/status (blocked, deferred, canceled) with reason. |\n| `add_note` | Append a markdown note — decisions, things tried, references. |\n| `log_change` | Narrate a plan-level decision without mutating data. |\n\nSee [mcp.js](mcp.js) for the full schemas.\n\n## Build\n\n```bash\ndocker build -t local/roadmap:2.0 .\n```\n\nThe image is multi-arch-friendly via Node 20 Alpine, ~150 MB, no native build steps.\n\n## Install in WithVibe\n\n1. Workspace admin → **Plugins** → **Install plugin**.\n2. Paste the contents of [manifest.yaml](manifest.yaml) into the editor.\n3. The platform pulls / locates the image and registers the plugin.\n4. Open any env → the **Roadmap** tab appears in the plugin panel.\n\nTo update after rebuilding the image, hit **Update** on the plugin row in the admin list — running instances are stopped so the next env start picks up the new image.\n\n## Manifest\n\nThe manifest is the entire install input. The fields that matter for this plugin:\n\n```yaml\nid: withvibe.roadmap          # URL + tool prefix; reverse-DNS-ish\nname: Roadmap                 # display name in the env's plugin panel\nversion: 2.0.0\nicon: list-todo               # Lucide icon\nimage: local/roadmap:2.0    # OCI ref\n\nscope: env                    # one container per env\nstorage:\n  kind: shared-postgres       # platform-managed Postgres role + schema\n\nui:\n  path: /ui                   # iframe entry point\n  websocket: false\n\nmcp:\n  enabled: true\n  path: /mcp                  # MCP endpoint the AI auto-discovers\n```\n\n## Local development\n\n```bash\n# Build\ndocker build -t local/roadmap:2.0 .\n\n# Run standalone (requires a Postgres reachable via DATABASE_URL)\ndocker run --rm -p 8080:8080 \\\n  -e DATABASE_URL=\"postgres://user:pass@host.docker.internal:5432/withvibe_plugins\" \\\n  -e PGSCHEMA=\"roadmap_dev\" \\\n  local/roadmap:2.0\n\n# Then open http://localhost:8080/ui\n```\n\nWhen developing against a real WithVibe install, hit **Update** in the admin Plugins page after each rebuild — that stops running instances so the next env start picks up the new image.\n\n## Repository layout\n\n```\nmanifest.yaml   WithVibe plugin manifest\nDockerfile      builds the runtime image\npackage.json    npm deps (express, pg, @modelcontextprotocol/sdk, zod)\nserver.js       express entry, HTTP + MCP routes\ndb.js           pg pool, schema init, query helpers\nmcp.js          MCP tool registrations\nui.js           htmx UI rendering + dark-themed CSS\n```\n\n## Contributing\n\nIssues and PRs welcome. Keep changes focused and document the *why* in commits.\n\n## License\n\n[Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.\n",
+    "fetchedAt": "2026-08-11T23:14:59.882Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:05.414Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

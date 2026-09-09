@@ -1,0 +1,58 @@
+{
+  "id": "io.github.rlawogh1005/green-mcp",
+  "title": "green-mcp",
+  "description": "Measure a program's CPU energy and LLM tokens, then refactor it cheaper. Measure, never estimate.",
+  "summary": "Measure a program's CPU energy and LLM tokens, then refactor it cheaper. Measure, never estimate.",
+  "offersHint": "Measure a program's CPU energy and LLM tokens, then refactor it cheaper. Measure, never estimate. · Packages: pypi:green-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "green-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "green-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/rlawogh1005/green-mcp",
+  "repository": {
+    "url": "https://github.com/rlawogh1005/green-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T05:48:45.678267Z",
+  "publishedAt": "2026-07-27T05:48:45.678267Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:03:52.151Z",
+    "sourceRepoAt": "2026-08-11T23:23:50.897Z",
+    "readmeAt": "2026-08-11T23:23:51.636Z",
+    "toolsAt": "2026-08-12T01:03:52.151Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rlawogh1005/green-mcp",
+    "checkedAt": "2026-08-11T23:23:50.897Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rlawogh1005/green-mcp/main/README.md",
+    "markdown": "# Green Agent\n\n<!-- mcp-name: io.github.rlawogh1005/green-mcp -->\n\nA pluggable **MCP server** that measures two efficiency axes of a program and refactors it to be\ncheaper while preserving behavior:\n\n- **CPU energy** — joules the code actually consumes, from real hardware telemetry\n  (AMD uProf / Linux RAPL / macOS powermetrics), chosen automatically for the host.\n- **LLM tokens** — the token usage of a program that calls LLMs (input/output/cache/reasoning),\n  measured provider-neutrally and non-blockingly.\n\nDefining principle: **measure, never estimate.** Every claim is a measurement with the command, the\nnumber, and its run-to-run uncertainty — or it's labeled an estimate. The comparison verdict is a\nreal statistical test (Welch's t with the idle-baseline uncertainty folded in), not a heuristic.\n\n## Quick start\n\n```sh\npipx install green-mcp        # provides the `green-mcp` command (stdlib + mcp only)\n```\n\nMount it in your IDE (configs in [`deploy/`](deploy/)):\n\n| IDE | File |\n|---|---|\n| Claude Code | `.mcp.json` |\n| Cursor | `.cursor/mcp.json` |\n| OpenAI Codex | `~/.codex/config.toml` (`codex mcp add green -- green-mcp`) |\n| Google Antigravity | `~/.gemini/config/mcp_config.json` |\n\nThen ask your agent to measure or compare energy/tokens of a command. See\n[`deploy/README.md`](deploy/README.md) for the full mount + harness guide.\n\n## Tools\n\n`measure_energy` · `compare_energy` · `measure_tokens` · `compare_tokens` ·\n`verify_equivalence` · `energy_backend_info`\n\n## Requirements (what each part needs to actually work)\n\n**No server to host.** green-mcp is not a web service — your IDE launches it as a local stdio\nsubprocess. There's no cloud, no account, and no LLM key needed for the measurement server itself.\n\n| To run the server | Python 3.10+, `pip install green-mcp`. That's it — tools mount immediately. |\n|---|---|\n\n**Energy axis** — needs a power-sensor backend on the host (the largest prerequisite):\n\n- **Windows + AMD** → install **AMD uProf** separately (driver-based; admin to install). Not bundled.\n- **Linux** → reads `/sys/class/powercap` (RAPL); no extra install, but `energy_uj` is root-only on\n  some distros.\n- **macOS** → uses the built-in `powermetrics`, which requires **root / passwordless sudo**.\n- **No reachable sensor** (a VM, a container, a locked-down machine) → energy tools report\n  `energy_available: false` and refuse to estimate. **Energy generally does NOT work in Docker/CI** —\n  containers and VMs have no power-sensor passthrough. Use the token axis there.\n- The measured command runs **locally** (arbitrary commands → use in a trusted environment only).\n\n**Token axis** — no special hardware, works anywhere, **but**:\n\n- The target program must read its LLM endpoint from an **env var** (`ANTHROPIC_BASE_URL`,\n  `OPENAI_BASE_URL`, …) so we can route it through the counting proxy. A hardcoded endpoint won't be\n  measured (reports 0 calls).\n- Measuring runs the target's **real LLM calls** — the proxy forwards to the real provider, so the\n  target's API key is billed as usual, and network access to the provider is required.\n\n**Bundled agent** (optional) — `pip install green-mcp[agent]` adds the Claude Agent SDK and needs\n**Anthropic credentials**. The MCP server alone needs none.\n\n## Honest scope\n\n- Energy is **CPU package energy** (+DRAM on RAPL) — not carbon, not whole-system.\n- Numbers from **different backends are not comparable**.\n- Only the **AMD/uProf** backend is validated for repeatability on real hardware; Linux/macOS are\n  written and unit-tested but unverified on metal, and no backend is yet cross-validated against a\n  wall power meter. The token measurer **is** validated against a live provider (NVIDIA NIM,\n  OpenAI-compatible: 5 real calls, streaming and non-streaming, matching the provider's own usage\n  records exactly) — but the Anthropic-shaped `usage` path and rate-limit behavior are still only\n  exercised against a local fake upstream. These gaps are tracked, not hidden.\n\n## Development\n\n```sh\npython -m venv .venv && .venv/Scripts/pip install -e \".[dev]\"\n.venv/Scripts/python -m pytest -q          # unit tests\n.venv/Scripts/python -m pytest -m integration   # real-hardware (needs AMD uProf)\n```\n\nArchitecture and decisions live in [`North Star.md`](North%20Star.md), [`Green.md`](Green.md),\nand `docs/`. Licensed under [MIT](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:23:51.636Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:03:52.151Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

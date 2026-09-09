@@ -1,0 +1,58 @@
+{
+  "id": "io.github.hermai-ai/hermai-cli",
+  "title": "hermai-cli",
+  "description": "Hermai MCP server — look up, submit, and classify website API schemas from any MCP client.",
+  "summary": "Hermai MCP server — look up, submit, and classify website API schemas from any MCP client.",
+  "offersHint": "Hermai MCP server — look up, submit, and classify website API schemas from any MCP client. · Packages: npm:hermai-cli",
+  "version": "0.3.0",
+  "status": "deprecated",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "hermai-cli",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "hermai-cli",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/hermai-ai/hermai-cli",
+  "repository": {
+    "url": "https://github.com/hermai-ai/hermai-cli",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-24T23:55:30.667431Z",
+  "publishedAt": "2026-05-24T20:36:49.012426Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:44.194Z",
+    "sourceRepoAt": "2026-08-11T23:43:24.056Z",
+    "readmeAt": "2026-08-11T23:43:24.519Z",
+    "toolsAt": "2026-08-12T01:20:44.194Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/hermai-ai/hermai-cli",
+    "checkedAt": "2026-08-11T23:43:24.056Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/hermai-ai/hermai-cli/master/README.md",
+    "markdown": "# hermai-cli\n\n**English** · [繁體中文](./README.zh-Hant.md) · [简体中文](./README.zh-Hans.md)\n\n> Discover, contribute, and call structured website APIs from your terminal.\n\n`hermai` is the open-source CLI for the [Hermai registry](https://hermai.ai) — a community catalog of website API schemas for AI agents. Probe a site to document its endpoints, push the schema to the catalog, or pull an existing schema and call it — including authenticated writes with per-request signing.\n\n### Install\n\n```bash\n# macOS and Linux via Homebrew\nbrew install hermai-ai/hermai/hermai\n\n# Anywhere Node is installed (no Go toolchain needed)\nnpm install -g hermai-cli      # or: npx hermai-cli --help\n\n# Go developers\ngo install github.com/hermai-ai/hermai-cli/cmd/hermai@latest\n\n# Prebuilt binaries for every OS × arch\n# https://github.com/hermai-ai/hermai-cli/releases/latest\n```\n\nAlready installed? Upgrade in place without re-running any of the above:\n\n```bash\nhermai update\n```\n\n## Agent skill\n\nRunning in Claude Code, Codex, Cursor, or another agent? Install the Hermai skill so the agent knows how to use this CLI:\n\n```bash\nnpx skills add hermai-ai/hermai-skills --skill hermai\n```\n\nOne skill covers both audiences. When a user asks for data from a site, the agent pulls the schema and calls it. When a user wants to add a new site, the skill's contributor references (loaded on demand via progressive disclosure) walk the agent through discovery, schema authoring, and push.\n\nRepo: [hermai-ai/hermai-skills](https://github.com/hermai-ai/hermai-skills).\n\n## Call a site as an API\n\n```bash\n# Pull a schema (API key required, GitHub sign-in at hermai.ai/dashboard)\nhermai registry login\nhermai registry pull x.com --intent \"drafting a post from my agent\"\n\n# Read endpoints: call them directly with curl / fetch / any HTTP client.\n# Authenticated writes: `hermai action` handles sessions + signing for you.\nhermai action x.com CreateDraftTweet --arg text=\"drafted by hermai\"\n```\n\n`hermai action` loads the schema, resolves the user's session (cookies from disk, or pulled from an installed browser on first run), runs any schema-declared bootstrap JS to compute per-session state, runs any per-request signer JS, fires via a Chrome-TLS fingerprinted HTTP client, and rotates `Set-Cookie` back on 2xx responses. Works against sites that require per-request signing (X's `x-client-transaction-id`, TikTok's `X-Bogus`) without opening a browser.\n\nUseful flags:\n- `--dry-run` — print the fully-signed request, don't hit the network\n- `--schema <file>` — use a local schema JSON instead of the registry cache\n- `--arg key=value` — repeatable, fills `{{var}}` placeholders in the schema's URL/body templates\n\n## Registry\n\n```bash\nhermai registry login                         # GitHub OAuth, stores API key\nhermai registry list                          # browse the catalog\nhermai registry pull <site> --intent \"...\"    # download a schema\nhermai registry push schema.json              # contribute a schema\n```\n\n## Discovery toolkit\n\nDeterministic subcommands for composing a new schema. No LLM key — each prints JSON the next step can consume.\n\n```bash\nhermai detect <url>                          # platform + anti-bot classification\nhermai wellknown <domain>                    # robots, sitemap, RSS, GraphQL\nhermai probe --body <url> | hermai extract   # 13 named embedded-data patterns plus\n                                             # any <script type=\"application/json\" id=\"X\">\nhermai probe --body <pdf-url> | hermai extract --state IL --url <pdf-url> --report-month 2026-02\nhermai enforcement --state IL <root-url>     # discover Illinois IDFPR PDFs and emit cited actions\nhermai intercept <url>                       # capture XHR in a browser\nhermai introspect <graphql-url>              # GraphQL schema\nhermai replay request.json                   # replay a captured request\nhermai session bootstrap <site>              # warm a fresh browser session\nhermai session import <site>                 # import cookies from your current browser\n```\n\n### Capturing authenticated write endpoints\n\nMost interesting APIs are gated behind cookies. To capture a write flow (add-to-cart, save-draft, submit-review) without logging in a second time, combine headful intercept with session injection:\n\n```bash\n# 1. Pull cookies from the browser you're already signed in with\nhermai session import example.com\n\n# 2. Open a visible Chrome, pre-loaded with those cookies, and capture what you click\nhermai intercept https://example.com/product/123 \\\n  --headful --session example.com \\\n  --timeout 120s --wait 100s --ndjson > capture.ndjson\n\n# 3. Grep/jq the captured JSON for the XHR of interest\ngrep -F 'CreateOrder' capture.ndjson | jq '.request.body'\n```\n\nThe request body goes straight into your schema's `body_template` with `{{var}}` placeholders for user-varying fields. **Capture, don't guess** — inventing body fields is the #1 cause of rejected write schemas.\n\n`hermai introspect` takes `--header name=value` (repeatable) for auth-gated GraphQL endpoints like Shopify Storefront or Estée Lauder's Stardust.\n\n### Import your existing browser session\n\nWhen a schema requires login (post a tweet, add to cart, RSVP), you can use\nthe session you already have in Chrome, Firefox, Safari, Edge, or Brave —\nno need to log in again:\n\n```bash\nhermai session import x.com\n# Reads cookies scoped to x.com from your installed browsers,\n# saves them to ~/.hermai/sessions/x.com/cookies.json\n```\n\nThe first run surfaces an OS-level authorization prompt (macOS Keychain,\nWindows DPAPI, Linux libsecret) — Hermai can't read your cookies without\nyour explicit consent at the OS level. Reads are always scoped to the\nsingle domain you name; we never touch cookies for other sites.\n\nUse `--dry-run` to see the cookie names without writing values to disk:\n\n```bash\nhermai session import x.com --dry-run\n```\n\n## Local cache\n\n```bash\nhermai catalog <url>                          # summarize cached endpoints for a URL\nhermai schema <url>                           # show the cached schema JSON\nhermai cache list                             # list cached domains\nhermai init                                   # create ~/.hermai/config.yaml\nhermai doctor                                 # verify your setup\n```\n\n`hermai --help` for the full command list.\n\n## Docs\n\n- Concepts + schema spec — [docs.hermai.ai](https://docs.hermai.ai)\n- Hosted registry + dashboard — [hermai.ai](https://hermai.ai)\n- Skill reference: `hermai-ai/hermai-skills` — architecture, runtime, CLI, contributing\n\n## License\n\n[AGPL-3.0](LICENSE). Running a modified version as a hosted service requires publishing your changes.\n",
+    "fetchedAt": "2026-08-11T23:43:24.519Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:44.194Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

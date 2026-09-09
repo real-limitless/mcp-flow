@@ -1,0 +1,153 @@
+{
+  "id": "app.cnvs/whiteboard",
+  "title": "cnvs.app",
+  "description": "Real-time collaborative whiteboard — AI agents and humans edit the same board live over MCP.",
+  "summary": "Real-time collaborative whiteboard — AI agents and humans edit the same board live over MCP.",
+  "offersHint": "Real-time collaborative whiteboard — AI agents and humans edit the same board live over MCP. · Remote MCP (streamable-http) at https://cnvs.app/mcp",
+  "version": "1.0.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://cnvs.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://cnvs.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://cnvs.app",
+  "sourceUrl": "https://github.com/lksrz/cnvs-whiteboard-skills",
+  "repository": {
+    "url": "https://github.com/lksrz/cnvs-whiteboard-skills",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-15T18:01:23.940241Z",
+  "publishedAt": "2026-06-15T18:01:23.940241Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:42:26.960Z",
+    "sourceRepoAt": "2026-08-12T00:42:26.960Z",
+    "readmeAt": "2026-08-12T00:42:27.643Z",
+    "toolsAt": "2026-08-12T00:42:27.899Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lksrz/cnvs-whiteboard-skills",
+    "checkedAt": "2026-08-12T00:42:26.960Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lksrz/cnvs-whiteboard-skills/main/README.md",
+    "markdown": "# cnvs-whiteboard-skills\n\nAgent Skills + MCP server discovery for [**cnvs.app**](https://cnvs.app) — the free, no-signup real-time collaborative whiteboard. Any AI agent can read, write, draw, diagram, and subscribe to live human edits on a shared canvas, either through the hosted MCP server or the REST fallback.\n\nWorks with Claude Code, Claude Desktop, Cursor, OpenCode / OpenAI Codex, Aider (with MCP plugin), any other MCP-speaking client, and Hermes-family agents.\n\n## MCP Server\n\n**Endpoint**: `https://cnvs.app/mcp` (Streamable HTTP, protocol `2025-06-18`, no auth — the board ID is the access key).\n\n**Registered in the official [MCP Registry](https://registry.modelcontextprotocol.io)** as [`app.cnvs/whiteboard`](https://registry.modelcontextprotocol.io/v0/servers?search=cnvs).\n\n### Capabilities\n\n- **Tools** (10): `open_board`, `get_board`, `get_preview`, `add_text`, `add_link`, `add_image`, `draw_stroke`, `move`, `erase`, `wait_for_update`. All ten have 1:1 REST mirrors at `https://cnvs.app/api/boards/<id>/…` for runtimes that can't speak MCP.\n- **Resources** (2): `cnvs://board/{id}/state.json` (full snapshot, subscribable) and `cnvs://board/{id}/preview.svg` (visual render, subscribable).\n- **Subscriptions**: `resources/subscribe` supported with `notifications/resources/updated` pushed over SSE, debounced ~3 s after activity settles.\n- **Live machine-readable manifests**: [`/quotas.json`](https://cnvs.app/quotas.json), [`/openapi.json`](https://cnvs.app/openapi.json), [`/llms.txt`](https://cnvs.app/llms.txt), [`/.well-known/mcp.json`](https://cnvs.app/.well-known/mcp.json), [`/.well-known/mcp/server.json`](https://cnvs.app/.well-known/mcp/server.json).\n\n## Installation\n\n### Claude Desktop / Cursor / any MCP client\n\nOne-line config — add this to your client's `mcpServers` object:\n\n```json\n{\n  \"mcpServers\": {\n    \"cnvs\": {\n      \"type\": \"http\",\n      \"url\": \"https://cnvs.app/mcp\"\n    }\n  }\n}\n```\n\n### Claude Code CLI\n\n```bash\nclaude mcp add --transport http cnvs https://cnvs.app/mcp\n```\n\n### REST-only (no MCP client)\n\n```bash\n# Create a board\ncurl -X POST https://cnvs.app/api/boards\n\n# Add text\ncurl -X POST https://cnvs.app/api/boards/<id>/texts \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"x\":100,\"y\":200,\"content\":\"# Hello\",\"author\":\"ai:myagent\"}'\n\n# Long-poll for live changes\ncurl \"https://cnvs.app/api/boards/<id>/wait?timeout_ms=25000\"\n```\n\nFull REST reference: [`/llms.txt`](https://cnvs.app/llms.txt), [`/openapi.json`](https://cnvs.app/openapi.json).\n\n## Skills included\n\nTwo related Agent Skills live in this repo, published under the [agentskills.io](https://agentskills.io/specification) open standard so they work in any compatible runtime. Install them into `~/.claude/skills/` to teach the agent how to use the MCP server well (preview-before-JSON, REST-over-MCP for writes, author-tag conventions, subscription-then-react loop).\n\n### [`cnvs-whiteboard/`](./cnvs-whiteboard/SKILL.md) — PRIMARY\n\nTeaches an AI agent how to collaborate on a cnvs.app board in real time:\n\n- Read the shared canvas state\n- Draw / diagram / flowchart / annotate — add, update, move, and delete text, links, sticky notes, strokes, images, and Mermaid diagrams (flowcharts, sequence / class / ER diagrams, mind maps, gantt charts, concept maps)\n- Render the SVG preview when the board contains drawings\n- Subscribe to live human edits via MCP, react via REST\n\nActivates on any cnvs.app board reference (URL `https://cnvs.app/#<id>`, `cnvs://board/<id>/...`, or a bare board ID) or phrases like \"collaborate on / draw / diagram / annotate / watch a shared whiteboard or canvas.\"\n\n### [`mcp-listen/`](./mcp-listen/SKILL.md) — HELPER (v0.3.0)\n\nPush-to-model pump for Streamable-HTTP MCP servers with `capabilities.resources.subscribe: true`. Opens a session, subscribes to the resource URIs the caller hands over, and emits one JSON line per `notifications/resources/updated` event on stdout — designed to be wrapped by Claude Code's `Monitor` tool so every server push becomes an in-chat notification (no polling, no log tailing).\n\n**Helper-only activation since v0.3.** Triggers only when the caller — a user or another skill — has supplied **both** an MCP server URL and at least one resource URI. Does NOT auto-activate from generic phrasing like \"watch this file\" or \"stay in the loop\". `cnvs-whiteboard` is the canonical caller and delegates its push channel here.\n\n**Output split since v0.3.** Only the actionable `resource_updated` event reaches stdout by default. Connection / subscription / heartbeat / transient-error events go to stderr so a wrapping `Monitor` doesn't fire on the listener's own bookkeeping. Pass `--verbose` (or `-v`) to merge everything onto stdout for debugging or single-channel logging (legacy v0.2 behavior).\n\n**Registry status.** Intentionally *not* listed in centralised skill registries yet. Current registry pipelines (e.g. `majiayu000/claude-skill-registry-core` as of 2026-05-03) archive only `SKILL.md` + generated metadata; they do not mirror bundled `scripts/**` or `package.json`, so an entry for `mcp-listen` would publish a broken skill. It will be (re-)submitted once core registries support directory-style skill archival with bundled-file mirroring and security scanning — see PR [`majiayu000/claude-skill-registry-core#40`](https://github.com/majiayu000/claude-skill-registry-core/pull/40) for the directory-archive primitive that just landed and the open question on bundled-script scanning. Until then, install it via `curl` from `cnvs.app` (below) or `git clone` this repo.\n\n### Install the skills\n\n```bash\n# cnvs-whiteboard (SKILL.md only — no deps)\nmkdir -p ~/.claude/skills/cnvs-whiteboard && cd ~/.claude/skills/cnvs-whiteboard\ncurl -O https://cnvs.app/cnvs-whiteboard/SKILL.md\n\n# mcp-listen (SKILL.md + scripts/ + npm install)\nmkdir -p ~/.claude/skills/mcp-listen && cd ~/.claude/skills/mcp-listen\ncurl -O https://cnvs.app/mcp-listen/SKILL.md \\\n     -O https://cnvs.app/mcp-listen/package.json \\\n     --create-dirs -o scripts/listen.mjs https://cnvs.app/mcp-listen/scripts/listen.mjs\nnpm install\n```\n\nAlternatively `git clone` this repo and `cp -r .claude/skills/* ~/.claude/skills/` — the `.claude/skills/` directory contains symlinks into `cnvs-whiteboard/` and `mcp-listen/` for Claude Code's expected layout.\n\n## Spec compliance\n\nBoth skills follow the [agentskills.io spec](https://agentskills.io/specification):\n\n- `name` matches the containing directory name\n- `description` under 1024 characters, imperative phrasing, explicit trigger keywords\n- `scripts/` subdirectory for bundled code (mcp-listen)\n- `license: MIT`, `compatibility` field declared, cross-references in each skill's \"Related skills\" section to prevent activation overlap\n\n## Why two skills\n\nEarlier versions had a single page (`/skill-cnvs.md` on cnvs.app — now a legacy redirect). Splitting into two coherent units follows the spec's \"design coherent units\" best practice:\n\n- `cnvs-whiteboard` owns the cnvs.app-specific workflow (read / write / render / gotchas).\n- `mcp-listen` owns the generic push-to-model pattern (usable against any MCP server).\n\nCross-references keep them pairing cleanly: `cnvs-whiteboard` mentions `mcp-listen` as its delegated push channel; `mcp-listen` mentions `cnvs-whiteboard` as the companion for cnvs-specific work. No activation overlap in practice.\n\n## Canonical sources\n\nSkills are **also** served live at:\n\n- [`https://cnvs.app/cnvs-whiteboard/SKILL.md`](https://cnvs.app/cnvs-whiteboard/SKILL.md)\n- [`https://cnvs.app/mcp-listen/SKILL.md`](https://cnvs.app/mcp-listen/SKILL.md)\n- [`https://cnvs.app/mcp-listen/scripts/listen.mjs`](https://cnvs.app/mcp-listen/scripts/listen.mjs)\n- [`https://cnvs.app/mcp-listen/package.json`](https://cnvs.app/mcp-listen/package.json)\n\nThe cnvs.app URLs are the canonical install targets for curl-based installers; this GitHub repo is the reference for aggregators that crawl public sources (skills.sh, etc.) and for users who prefer git clone.\n\n## Discovery surfaces\n\n### Live\n\n- **Official MCP Registry**: `app.cnvs/whiteboard` — [browse](https://registry.modelcontextprotocol.io/v0/servers?search=cnvs)\n- **cnvs.app `/.well-known/mcp.json`** — links both skills\n- **cnvs.app `/.well-known/mcp/server.json`** — MCP Registry entry with publisher-provided `_meta.skills[]`\n- **cnvs.app `/llms.txt`** — LLM-friendly full reference\n- **[`majiayu000/claude-skill-registry-core`](https://github.com/majiayu000/claude-skill-registry-core)** — `cnvs-whiteboard` listed (PR [#31](https://github.com/majiayu000/claude-skill-registry-core/pull/31) merged 2026-05-04). `mcp-listen` intentionally held back; see *Registry status* on the `mcp-listen/` section above.\n- **Lobehub** (used by Hermes agent) — both skills imported; MCP server submitted\n\n### Planned / under consideration\n\nNotes for future expansion of distribution. Not active yet — kept here so the next maintenance window doesn't have to re-discover the landscape.\n\n- **[`majiayu000/claude-skill-registry-core`](https://github.com/majiayu000/claude-skill-registry-core)** — re-submit `mcp-listen` as a separate PR now that PR [#40](https://github.com/majiayu000/claude-skill-registry-core/pull/40) (directory archives + bundled-script security scanning) is merged. `scripts/listen.mjs` is even hardcoded into their test assertions, so the pipeline already exercises our exact case.\n- **[`daymade/claude-code-skills`](https://github.com/daymade/claude-code-skills)** (vendored model) — fork, copy `cnvs-whiteboard/` and `mcp-listen/` directly into their tree (their layout already expects `scripts/`/`references/`/`assets/`), update `marketplace.json`, single PR for both skills. No bundled-files concern because the files are copied in.\n- **[`VoltAgent/awesome-agent-skills`](https://github.com/VoltAgent/awesome-agent-skills)** (curated awesome-list, 20k ⭐) — markdown link, ≤10-word description. Their CONTRIBUTING explicitly excludes brand-new skills (\"give your skill time to mature and gain users before submitting\"); revisit once there's documented external usage.\n- **[`sickn33/antigravity-awesome-skills`](https://github.com/sickn33/antigravity-awesome-skills)** (36k ⭐) — manual path: fork, add `skills/<name>/SKILL.md`, run `npm run validate`. Their `<!-- registry-sync: ... -->` header in README suggests automated pull from upstream registries, so a successful entry on `majiayu000/claude-skill-registry-core` *may* propagate here without a separate PR — confirm before submitting twice.\n- **[`agentskills/agentskills`](https://github.com/agentskills/agentskills)** (17.8k ⭐, the spec org behind agentskills.io) — investigate whether they accept reference implementations; `mcp-listen` as a worked example of MCP `resources/subscribe` consumption could fit there.\n- **`vercel-labs/agent-skills`** / **`vercel-labs/skills`** — almost certainly curated, but read CONTRIBUTING before ruling out.\n\nSkipped intentionally: `anthropics/skills` (curated, no community PRs); personal collections under ~100 ⭐; language-specific lists unless a relevant audience emerges.\n\n## License\n\nMIT. See [LICENSE](./LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:42:27.643Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "open_board",
+      "description": "ALWAYS call this first when given a board URL or ID. Resolves the canonical board id and auto-creates the board row if it does not exist yet. Returns a summary (item counts, authors). After this, call BOTH `get_preview` and `get_board` before editing so you can see the layout visually AND know the exact ids/coordinates — do not skip `get_preview`, otherwise you will place new items blindly on top of existing ones."
+    },
+    {
+      "name": "create_board",
+      "description": "Create a fresh board in ONE call — optionally pre-filled with content, auto-laid-out, and/or PIN-locked at create time. Mirrors the extended `POST /api/boards` REST body exactly (same server-side implementation). With no arguments it returns a blank draw board; `mode: 'todo'` (+ optional `template`) seeds a kanban board. `content` imports initial items atomically: everything is validated FIRST and the board is created only if every item passes — on any invalid item you get a structured error naming its kind + index and NOTHING is created. `autolayout: true` (draw mode) fills in x/y for texts/images that omit them (deterministic masonry grid; explicit coordinates are never touched). `lock: 'write'|'all'` locks the board atomically with creation and returns the plaintext `access_key` ONCE — there is no recovery. The response's `imported` counts confirm what was created, `ids` returns the server-minted item ids per kind in the order you supplied them (index i of `ids.texts` is the id created for `content.texts[i]`; `ids.columns` is empty when the columns came from the template seed, and lanes have no id — they are keyed by board + lane index), and `embed_url` (the `?embed=1#<id>` iframe view) is returned for any board readable without a key — it is omitted for `lock:'all'` boards, whose embed frame can't read the board anonymously. Prefer this over open_board + N per-item calls when you are building a whole board from scratch."
+    },
+    {
+      "name": "get_board",
+      "description": "Full structured JSON state of a board: texts (id, x, y, content, color, width, postit, author), strokes (id, points, color, author), images (id, x, y, width, height, dataUrl, thumbDataUrl, author; heavy base64 >8 kB elided to dataUrl:null, tiny images inlined). Use this for EXACT ids/coordinates/content (needed for `move`, `erase`, editing a text by id). For visual layout (where is empty space? what overlaps?) call `get_preview` instead — it's much cheaper for spatial reasoning than a huge JSON dump."
+    },
+    {
+      "name": "get_preview",
+      "description": "Compact schematic SVG render of the board (typically a few kB even for dense boards). Returns both an image/svg+xml content block (you can SEE it) and the raw SVG text. CALL THIS any time you need to understand where things are — before placing new items, before deciding whether the canvas is crowded, before picking a free region. AI-authored items get a purple border so you can tell which contributions were yours. For precise text content prefer `get_board`."
+    },
+    {
+      "name": "add_text",
+      "description": "Create a NEW text node, or update an existing one (pass the same `id` to overwrite content/position in place — preferred over creating a duplicate). Supports cnvs markup (Markdown-ish) and Mermaid diagrams in the content. When using Mermaid, the ENTIRE content of this text node must be a single Mermaid diagram (one ```mermaid fenced block and nothing else — no heading, no prose before or after). If you need prose + a diagram, create two separate text nodes. `postit: true` renders as a yellow sticky; `diagram: true` renders as a framed box (2px border in the text colour, centred text) — the two are mutually exclusive. Coordinates are in board-world pixels, +x right, +y DOWN; pick a spot that does not overlap existing items (check `get_preview` first). Default width auto-fits content up to ~320 px; pass `width` for explicit wrapping (160–4096). Keep content under 100 000 chars."
+    },
+    {
+      "name": "add_link",
+      "description": "Drop a URL capsule onto the board — rendered as a clickable pill showing the hostname. Use this instead of `add_text` when the node is just a link; the capsule styling signals clickability to humans. Same coordinate rules as `add_text` (+x right, +y down)."
+    },
+    {
+      "name": "add_image",
+      "description": "Place a raster or SVG image on the board at (x, y) with explicit width/height in board pixels. `data_url` MUST be a `data:image/(png|jpeg|gif|webp|svg+xml);base64,...` string ≤ ~900 kB; hosted URLs are not accepted. Strongly recommended: also pass a tiny `thumb_data_url` (≤8 kB JPEG/PNG/WebP, ~64 px on the long edge) — it is embedded into the SVG preview so OTHER AI viewers (and you, on later `get_preview` calls) can actually see the image instead of a placeholder box."
+    },
+    {
+      "name": "draw_stroke",
+      "description": "Draw a freehand stroke on the board. Use for arrows, underlines, connector lines, annotations, or simple shapes — a straight line needs two points, a rough circle wants ~20. Stroke width is fixed at 3 px; `color` is a NAME, not hex (case-insensitive): 'auto'/''/'black'/omitted for theme-aware ink, or 'red', 'blue', 'green', 'orange', 'yellow', 'pink', 'purple', 'maroon', 'brown', 'gray', 'lightgray', 'teal', 'sage', 'sky', 'lavender' — anything else (including a literal hex like '#ff0000') silently clamps to auto. Accepts three equivalent point formats — pick whichever your MCP client serialises cleanly: nested `[[x,y],[x,y],...]`, flat `[x1,y1,x2,y2,...]`, or a JSON string of either. Some clients (Claude Code as of 2026-04) drop nested arrays during tool-call serialisation, so prefer the flat form or the JSON-string form when in doubt. To delete a stroke later, use `erase` with `kind: 'line'` and the id returned here."
+    },
+    {
+      "name": "move",
+      "description": "Reposition an existing item to a new (x, y) without retyping its content. Works for every item kind: `text` and `link` set the top-left to (x, y); `line` translates every point so the stroke's bounding box top-left lands at (x, y); `image` sets the top-left like text. `kind` defaults to `text` for backward compat with older callers. Find the id + kind via `get_board`. Prefer `move` over re-creating an item when only the location changes — it preserves the id, content, author and avoids a round-trip of base64 bytes for images."
+    },
+    {
+      "name": "erase",
+      "description": "Delete a single item by id. `kind` MUST match the item type: 'text' for text nodes, 'line' for freehand strokes, 'image' for images — the wrong kind silently targets the wrong table and is a common mistake. Get the id + type from `get_board` (texts[], lines[], images[]). There is no bulk/erase-all tool: loop if you need to delete multiple items."
+    },
+    {
+      "name": "wait_for_update",
+      "description": "Long-poll: blocks until the next edit lands on this board, then returns. \n\nWHEN TO CALL THIS: if your MCP client does NOT surface `notifications/resources/updated` events from `resources/subscribe` back to the model (most chat clients do not — they receive the SSE event but don't inject it into your context), this tool is how you 'wait for the human' inside a single turn. Typical flow: you draw / write what you were asked to, then instead of ending your turn you call `wait_for_update(board_id)`. When the human adds, moves, or erases something, the call returns and you refresh with `get_preview` / `get_board` and continue the collaboration. Great for turn-based interactions (games like tic-tac-toe, brainstorming where you respond to each sticky the user drops, sketch-and-feedback loops, etc.). If your client DOES deliver resource notifications natively, prefer `resources/subscribe` — it's cheaper and has no timeout ceiling.\n\nBEHAVIOUR: resolves ~3 s after the edit burst settles (same debounce as the push notifications — this is intentional so drags and long strokes collapse into one wake-up). Returns `{ updated: true, timedOut: false }` on a real edit, or `{ updated: false, timedOut: true }` if nothing happened within `timeout_ms`. On timeout, just call it again to keep waiting; chaining calls is cheap. `timeout_ms` is clamped to [1000, 55000]; default 25000 (leaves headroom under typical 60 s proxy timeouts)."
+    },
+    {
+      "name": "set_board_mode",
+      "description": "Choose whether this board is a freeform whiteboard ('draw', the default) or a kanban task board ('todo'). Mode is switchable WHENEVER the board is empty of real content: drawings (text/strokes/images) and tasks. Empty or seeded columns DON'T count (switching to 'draw' clears them), so a cleared board can be switched again, and you can flip draw<->todo freely until the first stroke/text/image or task lands. Setting 'todo' auto-seeds three starter columns (To do / In progress / Done). Returns `{ mode, columns }`. Use the task/column tools (`create_task`, `create_column`, …) once the board is in 'todo' mode."
+    },
+    {
+      "name": "create_column",
+      "description": "Add a kanban column (swimlane) to a 'todo' board. Generates and returns a stable column id. `sort` is a float ordering key (ascending); omit to default to 0. `lane` is an integer row index for multi-row layouts (defaults to 0). `color` is an optional title color ('red' / 'blue' / 'green', or 'auto' / omit for default). To rename, reorder, recolor or move between lanes later use `update_column`."
+    },
+    {
+      "name": "update_column",
+      "description": "Rename, reorder, recolor or move an existing kanban column. Requires the column `id` (from `list_tasks`). Pass `title`, `sort`, `lane` and/or `color` to change them."
+    },
+    {
+      "name": "delete_column",
+      "description": "Delete a kanban column by id. Tasks in the column are removed with it. Get the id from `list_tasks`."
+    },
+    {
+      "name": "create_task",
+      "description": "Create a task (card) in a column on a 'todo' board. Generates and returns a stable task id. `column_id` must reference an existing column (see `list_tasks`). `description` is free-form prose stored on the card; `priority` is one of 'H' | 'M' | 'L' (omit for none); `due_date` is an ISO 8601 date string; `assignee` is free text (name / initials / email). `sort` is a float ordering key within the column (ascending), defaulting to 0."
+    },
+    {
+      "name": "update_task",
+      "description": "Update an existing task by `id` (from `list_tasks`). Pass only the fields you want to change: `name`, `description`, `due_date`, `priority` ('H'|'M'|'L'), `assignee`, `done` (true once completed), `column_id` (to reassign), `sort`. To move a card between columns while setting its order, `move_task` is the dedicated tool."
+    },
+    {
+      "name": "move_task",
+      "description": "Move a task to a column at a given sort position — the kanban drag-and-drop primitive. `column_id` is the destination column and `sort` its float order key (ascending) within that column."
+    },
+    {
+      "name": "delete_task",
+      "description": "Delete a task (card) by id. Get the id from `list_tasks`."
+    },
+    {
+      "name": "list_tasks",
+      "description": "Read the full kanban state of a 'todo' board: `{ mode, columns, tasks }`, both ordered by their `sort` key (ascending). Each task carries its hot fields (name, due_date, priority, assignee, done, column_id, sort) plus an opaque `content` JSON string (holds the description). Use this to get exact column/task ids before updating, moving or deleting."
+    },
+    {
+      "name": "set_lane",
+      "description": "Set (or clear) the title of a kanban row (lane). Lanes group columns into horizontal swimlanes; a lane is identified by its integer `lane` index (the same index columns carry). Pass a `title` to name the row, or an empty string to clear it. Read current lane titles + the shared column width via `list_tasks`."
+    },
+    {
+      "name": "set_column_width",
+      "description": "Set the shared kanban column width in pixels for a 'todo' board (all columns share one width). Clamped to [200, 480]. Read the current value as `colWidth` from `list_tasks`."
+    },
+    {
+      "name": "create_tasks",
+      "description": "Bulk-create multiple task cards in one call — far cheaper than calling `create_task` N times. Pass `tasks`: an array of task objects, each with `column_id` (required) + the same fields `create_task` accepts (`name`, `description`, `due_date`, `priority`, `assignee`, `done`, `sort`). Returns the array of created ids in order. Stops at the first invalid item and reports its index; items before it are still created (not transactional)."
+    },
+    {
+      "name": "query_tasks",
+      "description": "Read tasks from a 'todo' board with server-side filtering — handy for 'what's overdue?' / 'what's assigned to X?' without pulling the whole board. All filters are optional and AND together: `assignee` (exact match), `priority` ('H'|'M'|'L'), `done` (boolean), `overdue` (true → due_date strictly before today, not done), `due_before` / `due_after` (ISO date window on due_date). Returns `{ boardId, mode, tasks }` — tasks ordered by sort, each with the same fields as `list_tasks`."
+    },
+    {
+      "name": "export_tasks",
+      "description": "Export a 'todo' board's columns + tasks as a single text document. `format` is 'markdown' (a checklist grouped by column, the default) or 'csv' (one row per task with column/name/priority/assignee/due_date/done). Returns the rendered text. Same data as the GET /api/boards/<id>/tasks.md and tasks.csv REST endpoints."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:42:27.899Z",
+  "toolsPreviewStatus": "ok"
+}

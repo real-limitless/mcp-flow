@@ -1,0 +1,59 @@
+{
+  "id": "io.github.malkreide/swiss-housing-mcp",
+  "title": "swiss-housing-mcp",
+  "description": "Swiss Register of Buildings and Dwellings (GWR/RegBL): EGID/EWID lookup, geocoding, housing stats",
+  "summary": "Swiss Register of Buildings and Dwellings (GWR/RegBL): EGID/EWID lookup, geocoding, housing stats",
+  "offersHint": "Swiss Register of Buildings and Dwellings (GWR/RegBL): EGID/EWID lookup, geocoding, housing stats · Packages: pypi:swiss-housing-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "swiss-housing-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "swiss-housing-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/malkreide/swiss-housing-mcp",
+  "sourceUrl": "https://github.com/malkreide/swiss-housing-mcp",
+  "repository": {
+    "url": "https://github.com/malkreide/swiss-housing-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T14:31:32.46218Z",
+  "publishedAt": "2026-07-27T14:31:32.46218Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:15:48.177Z",
+    "sourceRepoAt": "2026-08-11T23:36:52.832Z",
+    "readmeAt": "2026-08-11T23:36:53.383Z",
+    "toolsAt": "2026-08-12T01:15:48.177Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/malkreide/swiss-housing-mcp",
+    "checkedAt": "2026-08-11T23:36:52.832Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/malkreide/swiss-housing-mcp/main/README.md",
+    "markdown": "# swiss-housing-mcp\n\n> Part of the [Swiss Public Data MCP Portfolio](https://github.com/malkreide/swiss-public-data-mcp) — open-source MCP servers connecting AI agents to Swiss public data. **Private project, independent of any employer or institutional affiliation.**\n\n[![Version](https://img.shields.io/badge/version-0.1.0-blue)](CHANGELOG.md)\n[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)\n[![Python](https://img.shields.io/badge/python-3.10+-blue)](pyproject.toml)\n[![MCP](https://img.shields.io/badge/MCP-server-8A2BE2)](https://modelcontextprotocol.io/)\n\n> MCP server for the Swiss Federal Register of Buildings and Dwellings (GWR/RegBL) — buildings, dwellings, and the construction pipeline\n\n[🇩🇪 Deutsche Version](README.de.md)\n\n---\n\n## 🎯 Anchor Demo Query\n\n> *«How many dwellings were newly built in the City of Zurich since 2020, how many with 4+ rooms — and how many are currently under construction?»*\n\nVerified against the live dump on 2026-07-24: **16'164 new dwellings** since 2020 (27.4% with 4+ rooms — the family-housing proxy), and **7'287 dwellings currently under construction**. Dwellings under construction today are households in 1–3 years: the early indicator for school-space planning.\n\n### Demo\n\n![Demo: Claude using new_construction and construction_pipeline](docs/assets/demo.svg)\n\n---\n\n## Overview\n\nThe GWR/RegBL is to buildings what Zefix is to companies: not one data source among many, but the **federal register** whose identifiers (EGID for buildings, EWID for dwellings) serve as join keys across Swiss administrative data. This server exposes the register's public extract through MCP tools — building lookups, address geocoding, per-municipality construction statistics, sub-municipal bounding-box analysis, and the planning/construction pipeline.\n\n`address_to_egid` is the plug that makes other data sources EGID-capable: address in, federal identifier and LV95 coordinates out.\n\n## Architecture decision\n\nThis server uses **Architecture B (Hybrid: Dump-first, API-fallback)**.\n\nRationale (verified live on 2026-07-24):\n\n- The public cantonal dump (`public.madd.bfs.admin.ch/{canton}.zip`) is refreshed **daily** (~05:30 CET) and ships a ready-made `data.sqlite` with tables `building` (399'830 rows for ZH), `entrance`, `dwelling` (894'631 rows for ZH), and `code`. No CSV parsing, no auth.\n- `api3.geo.admin.ch` (find / identify / SearchServer) works reliably without authentication for single-entity lookups and geocoding, but does not scale to area-wide aggregations (result limits).\n- A MADD REST endpoint probed at `/api/buildings/{egid}` returned 404; it is excluded until path and auth status are clarified — no blocker, since all Phase-1 tools work without it.\n\nConsequences:\n\n- Cantonal dumps are cached on disk with a 24 h TTL (configurable via `SWISS_HOUSING_DUMP_TTL_HOURS`).\n- Aggregations and spatial queries run as read-only SQL against the cached SQLite; single lookups and geocoding hit the live API.\n- Every response carries `source` (attribution) and `provenance` (`daily_dump` | `live_api` | `cached`).\n\n### Live probe findings (2026-07-24)\n\n| Endpoint | HTTP | Status | Note |\n|---|---|---|---|\n| `api3.geo.admin.ch …/find` (EGID lookup) | 200 | ✅ works | full attribute set, no auth |\n| `api3.geo.admin.ch …/identify` (coordinates) | 200 | ✅ works | 77 attributes incl. EGID/EWID |\n| `…/SearchServer` (address → EGID) | 200 | ✅ works | `featureId` = `{EGID}_{EDID}`; axis swap: `y`=east, `x`=north |\n| `public.madd.bfs.admin.ch/zh.zip` | 200 | ✅ works | 121 MB, daily refresh, contains `data.sqlite` |\n| `madd.bfs.admin.ch/api/buildings/{egid}` | 404 | ❌ excluded | path/auth unclear |\n| Invalid EGID on find | 200 | ⚠️ soft error | empty `results` array — not an HTTP error |\n\n## Features\n\n- **`lookup_building(egid)`** — single building by federal identifier (live API)\n- **`address_to_egid(address)`** — geocode any Swiss address to EGID/EDID + LV95\n- **`lookup_dwellings(egid)`** — all dwellings of a building with rooms, area, floor\n- **`new_construction(municipality_bfs, since_year)`** — yearly new construction incl. 4+ room family-housing share\n- **`construction_pipeline(municipality_bfs)`** — projected / approved / under construction\n- **`buildings_in_bbox(e_min, n_min, e_max, n_max)`** — sub-municipal analysis (e.g. school districts)\n- **`municipality_housing_stats(municipality_bfs)`** — housing stock and room-size mix\n- **`explain_code(attribute, code)`** — decode GWR codes via the official DE/FR/IT code table\n- **`dump_status()`** — cache freshness, graceful-degradation entry point\n\n## Prerequisites\n\n- Python 3.10+\n- ~130 MB disk per cached cantonal dump (ZH)\n- No API keys — Phase 1 is authentication-free\n\n## Installation\n\n```bash\nuvx swiss-housing-mcp        # once published on PyPI\n\n# or from source\npip install -e .\n```\n\n## Usage / Quickstart\n\n**Claude Desktop** (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"swiss-housing\": {\n      \"command\": \"uvx\",\n      \"args\": [\"swiss-housing-mcp\"]\n    }\n  }\n}\n```\n\n**Cloud (Render/Railway):**\n\n```bash\nSWISS_HOUSING_TRANSPORT=streamable-http PORT=8000 swiss-housing-mcp\n```\n\n## Configuration\n\n| Variable | Default | Purpose |\n|---|---|---|\n| `SWISS_HOUSING_TRANSPORT` | `stdio` | `stdio` \\| `streamable-http` \\| `sse` |\n| `SWISS_HOUSING_CACHE` | `~/.cache/swiss-housing-mcp` | Dump cache directory |\n| `SWISS_HOUSING_DUMP_TTL_HOURS` | `24` | Dump freshness window |\n\n## Testing\n\n```bash\nPYTHONPATH=src pytest tests/ -m \"not live\"   # CI-safe\nPYTHONPATH=src pytest tests/ -m live         # against real upstream\n```\n\n## Project Structure\n\n```\nswiss-housing-mcp/\n├── src/swiss_housing_mcp/\n│   ├── server.py      # FastMCP tools (9)\n│   ├── gwr.py         # Dump store + geo.admin.ch client + retry\n│   ├── models.py      # Pydantic v2 envelopes (source + provenance)\n│   └── __main__.py    # Dual-transport entry point\n├── tests/             # respx-mocked + @pytest.mark.live\n└── .github/workflows/ # CI + OIDC PyPI publish\n```\n\n## Known Limitations\n\n- The public extract omits person-related and some sensitive attributes of the full GWR; official data deliveries to authorities go through the BFS/MADD channel.\n- Coordinates are building reference points (LV95), not footprint polygons — polygon joins (e.g. exact school-district boundaries) need external geometries; `buildings_in_bbox` covers the rectangular approximation.\n- `GBAUJ` (construction year) is missing for a share of older buildings; period codes (`GBAUP`) exist as fallback but are not yet exposed.\n- Municipality→canton resolution is seeded for common cases; pass `canton` explicitly for others.\n- Housing-market indices (IMPI, construction price index, vacancy rate) deliberately live in `swiss-statistics-mcp` — this server is the register layer, not the statistics layer.\n\n## Changelog\n\nSee [CHANGELOG.md](CHANGELOG.md)\n\n## Contributing\n\nContributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) ([Deutsch](CONTRIBUTING.de.md)).\n\n## Security\n\nRead-only, no PII, no authentication — a public federal register accessed through\na fixed set of endpoints. See [SECURITY.md](SECURITY.md) ([Deutsch](SECURITY.de.md))\nfor the full posture and how to report a vulnerability.\n\n## License\n\nMIT License — see [LICENSE](LICENSE). Data: GWR/RegBL, Swiss Federal Statistical Office (BFS), open government data with attribution.\n\n## Author\n\n**Hayal Oezkan** · [github.com/malkreide](https://github.com/malkreide)\n\n## Credits & Related Projects\n\n- Data: [Federal Statistical Office — GWR/RegBL](https://www.housing-stat.ch/), [geo.admin.ch](https://api3.geo.admin.ch/)\n- Portfolio siblings: [`swiss-statistics-mcp`](https://github.com/malkreide/swiss-statistics-mcp) (indices, STAT-TAB), [`zurich-opendata-mcp`](https://github.com/malkreide/zurich-opendata-mcp) (city-level data)\n\n\n<!-- mcp-name: io.github.malkreide/swiss-housing-mcp -->\n",
+    "fetchedAt": "2026-08-11T23:36:53.383Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:15:48.177Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

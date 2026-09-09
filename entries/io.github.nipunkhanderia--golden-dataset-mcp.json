@@ -1,0 +1,58 @@
+{
+  "id": "io.github.nipunkhanderia/golden-dataset-mcp",
+  "title": "golden-dataset-mcp",
+  "description": "Version-controlled golden datasets and RAG evaluation, no API key needed.",
+  "summary": "Version-controlled golden datasets and RAG evaluation, no API key needed.",
+  "offersHint": "Version-controlled golden datasets and RAG evaluation, no API key needed. · Packages: pypi:golden-dataset-mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "golden-dataset-mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "golden-dataset-mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nipunkhanderia/golden-dataset-mcp",
+  "repository": {
+    "url": "https://github.com/nipunkhanderia/golden-dataset-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-20T18:36:39.542377Z",
+  "publishedAt": "2026-06-20T18:36:39.542377Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:11:00.910Z",
+    "sourceRepoAt": "2026-08-11T23:31:48.216Z",
+    "readmeAt": "2026-08-11T23:31:48.728Z",
+    "toolsAt": "2026-08-12T01:11:00.910Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nipunkhanderia/golden-dataset-mcp",
+    "checkedAt": "2026-08-11T23:31:48.216Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nipunkhanderia/golden-dataset-mcp/main/README.md",
+    "markdown": "mcp-name: io.github.nipunkhanderia/golden-dataset-mcp\n\n# golden-dataset-mcp\n\nAn [MCP](https://modelcontextprotocol.io) server wrapping [`golden-dataset-studio`](https://pypi.org/project/golden-dataset-studio/) — version-controlled golden dataset management and semantic evaluation for RAG/LLM pipelines.\n\nThis is a thin protocol layer over the existing `golden_dataset` library (`DatasetStore`, `Evaluator`). It does not reimplement any logic — it exposes the library's existing Python API as MCP tools so an agent (Claude Desktop, Claude Code, or any MCP client) can manage golden datasets conversationally.\n\n**No LLM API key required.** Evaluation uses TF-IDF cosine similarity (scikit-learn), not an LLM call.\n\n## Why a separate package from `golden-dataset-studio`?\n\n`golden-dataset-studio` is a CLI tool — designed for a human typing `golden add`, `golden commit`, etc. in a terminal. `golden-dataset-mcp` exposes the same underlying operations as MCP tools so an LLM agent can drive them programmatically, e.g. as part of an automated RAG evaluation pipeline. Keeping them as separate PyPI packages means CLI users aren't forced to pull in `fastmcp` as a dependency, and MCP users get a clean, protocol-focused package.\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `init_dataset` | Initialise a new dataset at a given path |\n| `add_entry` | Add a question/answer pair to the working tree |\n| `update_entry` | Edit fields of an existing working-tree entry |\n| `delete_entry` | Remove an entry from the working tree |\n| `list_entries` | List working-tree or committed-version entries |\n| `commit_version` | Snapshot the working tree as a new immutable version |\n| `diff_versions` | Show entries added/removed/changed between two versions |\n| `evaluate_answers` | Score actual answers against a version via TF-IDF cosine similarity |\n| `dataset_status` | Show current version, working tree size, and version history |\n\n## Design: every tool takes an explicit `dataset_path`\n\nUnlike the CLI (which operates on the current working directory), every tool here requires an explicit `dataset_path` parameter. This keeps the server fully stateless between calls — no hidden \"current dataset\" session state to lose track of, and safe for one server instance to manage multiple datasets or serve multiple concurrent clients.\n\n## Installation\n\n```bash\npip install golden-dataset-mcp\n```\n\nThis pulls in `golden-dataset-studio` and `scikit-learn` automatically as dependencies.\n\n## Usage with Claude Desktop / Claude Code\n\n```json\n{\n  \"mcpServers\": {\n    \"golden-dataset\": {\n      \"command\": \"golden-dataset-mcp\"\n    }\n  }\n}\n```\n\nNo environment variables needed — no API key, no config.\n\n## Example flow\n\n```\n1. init_dataset(dataset_path=\"./my-rag-eval\", name=\"support-bot-eval\")\n2. add_entry(dataset_path=\"./my-rag-eval\", question=\"...\", answer=\"...\")\n   [repeat for each golden Q&A pair]\n3. commit_version(dataset_path=\"./my-rag-eval\", description=\"initial 50 questions\")\n4. [run your RAG pipeline, collect actual answers]\n5. evaluate_answers(dataset_path=\"./my-rag-eval\", actual_answers=[...])\n   -> avg_semantic_similarity, per-entry scores, pass/fail\n```\n\nAs your RAG pipeline changes over time, `commit_version` again after edits and use `diff_versions` to see exactly what changed in your golden set between releases.\n\n## Relationship to the underlying library\n\n| | `golden-dataset-studio` | `golden-dataset-mcp` |\n|---|---|---|\n| **Interface** | CLI (`golden ...`) | MCP tools |\n| **Driven by** | A human typing commands | An LLM agent / MCP client |\n| **Path handling** | Current working directory | Explicit `dataset_path` per call |\n| **Dependency direction** | — | Depends on `golden-dataset-studio` |\n\nIf you want the human-driven CLI, use `golden-dataset-studio` directly. If you want an agent to drive it, use this package.\n\n## Development\n\n```bash\ngit clone https://github.com/nipunkhanderia/golden-dataset-mcp\ncd golden-dataset-mcp\npip install -e \".[dev]\"\npytest -v\n```\n\nValidate the MCP-facing contract:\n\n```bash\nnpx @modelcontextprotocol/inspector golden-dataset-mcp\n```\n\n## Limitations\n\n- `evaluate_answers` uses TF-IDF cosine similarity, which captures lexical overlap better than deep semantic meaning. For embedding-based or RAGAS-style metrics, call the underlying library's `Evaluator.ragas_evaluate()` directly (requires `pip install \"golden-dataset-studio[ragas]\"` — not exposed as an MCP tool in this version).\n- **Very short or stop-word-only answers will raise an error.** scikit-learn's TF-IDF vectorizer raises `ValueError: empty vocabulary` on inputs like a bare `\"4\"` or `\"the a an\"`. Avoid single-token golden answers, or expect `evaluate_answers` to fail on them.\n- All state is filesystem-backed JSON/JSONL under `<dataset_path>/.golden_dataset/`; this server does no remote storage or syncing.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:31:48.728Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:11:00.910Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

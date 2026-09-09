@@ -1,0 +1,58 @@
+{
+  "id": "io.github.sidney/web-to-markdown-mcp",
+  "title": "web-to-markdown-mcp",
+  "description": "MCP server fetches URL through a real Chromium browser, returns main content as clean Markdown",
+  "summary": "MCP server fetches URL through a real Chromium browser, returns main content as clean Markdown",
+  "offersHint": "MCP server fetches URL through a real Chromium browser, returns main content as clean Markdown · Packages: pypi:web-to-markdown-mcp",
+  "version": "0.6.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "web-to-markdown-mcp",
+    "version": "0.6.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "web-to-markdown-mcp",
+      "version": "0.6.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sidney/web-to-markdown-mcp",
+  "repository": {
+    "url": "https://github.com/sidney/web-to-markdown-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-27T14:26:25.337466Z",
+  "publishedAt": "2026-04-27T14:26:25.337466Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:18.503Z",
+    "sourceRepoAt": "2026-08-11T23:21:07.897Z",
+    "readmeAt": "2026-08-11T23:21:08.823Z",
+    "toolsAt": "2026-08-12T01:01:18.503Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sidney/web-to-markdown-mcp",
+    "checkedAt": "2026-08-11T23:21:07.897Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sidney/web-to-markdown-mcp/main/README.md",
+    "markdown": "# web-to-markdown-mcp\n<!-- mcp-name: io.github.sidney/web-to-markdown-mcp -->\n\nAn [MCP](https://modelcontextprotocol.io) server that fetches a URL and returns the main content as clean Markdown. Uses plain HTTP when possible and real Chromium when needed.\n\n## Why\n\nMost MCP web-fetch tools either:\n\n- use plain HTTP, which fails on JS-required pages and gets blocked by Cloudflare bot detection on many sites; or\n- use a real browser but return raw HTML or accessibility-tree snapshots, which are noisy and token-heavy when you just want to read the article.\n\nThis server uses a three-tier strategy, using the fastest approach that works for each URL:\n\n1. **Native markdown fast-path.** Every request first tries a plain HTTP GET with an `Accept: text/markdown` header. Servers that support content negotiation — such as Cloudflare-hosted sites with [Markdown for Agents](https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/) enabled — respond with `Content-Type: text/markdown`, and the body is returned immediately with no browser overhead.\n\n2. **Plain HTTP + extraction.** If the server returns HTML, [trafilatura](https://trafilatura.readthedocs.io) extracts the article body as clean Markdown directly from the static response. Heuristics detect JS shells — pages that return only a \"JavaScript required\" stub in the static HTML — and fall through to tier 3 for those.\n\n3. **Headless browser.** When tiers 1 and 2 yield nothing usable, [patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright) (a Playwright fork with anti-detection patches) drives real Chromium and trafilatura extracts the rendered content. A single headless browser instance is kept alive across calls — it launches lazily on the first browser-tier fetch and stays running for the session, so subsequent fetches pay only navigation time rather than Chromium startup cost (~2–5 s).\n\nFor sites that block even headless patchright (aggressive bot detection), pass `headless=False`. This uses a visible Chromium window — slower and visually intrusive, but clears most remaining challenges. A headed browser is launched and closed for each fetch that needs it; it is not kept persistent since headed fetches are an infrequent escape hatch rather than the common case.\n\nAfter browser navigation, the server polls the DOM and runs trafilatura, returning as soon as two consecutive polls produce the same extraction. This means it returns within a few hundred milliseconds for typical pages — rather than waiting for analytics, ads, and other late-loading resources to finish — and gives slow SPAs and bot-challenge clearance time to settle without timing out prematurely.\n\nFor a typical article, expect roughly 80% fewer tokens than the raw HTML and roughly 90% fewer than a full accessibility-tree snapshot.\n\n## Installation\n\nRequires Python 3.10+ and a one-time Chromium download (~300 MB).\n\n```bash\n# Run directly with uv (no install step)\nuvx web-to-markdown-mcp\n\n# Or install with pip\npip install web-to-markdown-mcp\n\n# One-time browser download\npatchright install chromium\n```\n\n## MCP client configuration\n\n### Claude Desktop\n\nEdit your config file:\n\n- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`\n- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"web-to-markdown\": {\n      \"command\": \"uvx\",\n      \"args\": [\"web-to-markdown-mcp\"]\n    }\n  }\n}\n```\n\nRestart Claude Desktop.\n\n### LM Studio\n\nEdit `~/.lmstudio/mcp.json` (Developer tab → Edit mcp.json) — same JSON block as above. Then enable **Allow calling servers from mcp.json** in the Developer tab's Server Settings. The server appears in the Integrations tab of any new chat.\n\n### Cursor / Windsurf / VS Code\n\nSame JSON block, in each client's MCP config location.\n\n### Claude Code\n\n```bash\nclaude mcp add web-to-markdown -- uvx web-to-markdown-mcp\n```\n\n## Usage\n\nThe server exposes a single tool:\n\n### `fetch_url_as_markdown`\n\n| Parameter            | Type   | Default              | Description                                                                              |\n|----------------------|--------|----------------------|------------------------------------------------------------------------------------------|\n| `url`                | string | required             | The URL to fetch                                                                         |\n| `wait_until`         | string | `\"domcontentloaded\"` | When navigation completes: `\"load\"`, `\"domcontentloaded\"`, `\"networkidle\"`, `\"commit\"`   |\n| `timeout_ms`         | int    | `60000`              | Navigation-step timeout in milliseconds                                                  |\n| `headless`           | bool   | `true`               | `false` uses a visible browser window — slower but clears more bot detection             |\n| `poll_budget_ms`     | int    | `5000`               | Max time after navigation to wait for content stabilization                              |\n| `poll_interval_ms`   | int    | `250`                | How often to re-attempt extraction during polling                                        |\n\n**Returns** Markdown as a string, or a string beginning with `\"ERROR:\"` on expected failures (timeout, no extractable content, navigation error).\n\n**Example call** (from any MCP client's tool-use UI):\n\n```\nfetch_url_as_markdown(url=\"https://example.com/long-article\")\n```\n\n`wait_until` choice:\n\n- `\"domcontentloaded\"` (default) — returns when the DOM is built; content-stabilization polling handles the rest\n- `\"load\"` — waits for all subresources (images, scripts, stylesheets); rarely needed since polling runs after this\n- `\"networkidle\"` — waits for network to quiet; sometimes hangs on pages with persistent background connections\n- `\"commit\"` — returns as soon as the response starts; rarely useful\n\n**When to bump `poll_budget_ms`:** the 5-second default is fine for typical pages but may return a partial extraction on slow SPAs that render content over many seconds, and may time out before a bot-detection challenge clears in headed mode. For headed-mode fetches of bot-protected sites, 10000-30000 is a reasonable budget.\n\n## Limitations\n\n- **First browser-tier fetch per session.** The headless browser launches lazily on the first fetch that needs it (~2–5 s). Subsequent browser-tier fetches in the same session reuse the running instance and pay only navigation time.\n- **Bot detection on hard sites.** patchright headless clears default Cloudflare configurations on many sites, but pages running aggressive Bot Fight Mode, Turnstile interactive challenges, or commercial bot-management products (PerimeterX, DataDome, Kasada) — and Cloudflare's own marketing site — still detect headless Chromium. Pass `headless=False` to use a visible browser window, which clears most of these. The cost is a Chromium window flashing on screen for a couple of seconds per fetch.\n- **Headed-mode bot challenges need a generous polling budget.** When using `headless=False` on bot-protected sites, the challenge can take 5-15 seconds to clear. Set `poll_budget_ms` to 10000-15000 for these cases — the 5000 default may return prematurely while the challenge is still resolving.\n- **Headed mode requires a display.** `headless=False` fails on servers without a graphical environment (cloud VMs, containers, CI). Use a virtual display like Xvfb if you need headed mode in those environments.\n- **Datacenter IPs.** Cloudflare's harder challenges still block requests from datacenter IPs (Oracle Cloud, AWS, etc.) regardless of browser fingerprint or headed/headless mode. Best results come from running this on a residential connection.\n- **Slow SPA rendering.** For pages that progressively render content over many seconds, bump `poll_budget_ms`. The default returns the most-recent extraction at budget expiry, which on a still-rendering SPA may be partial.\n- **Auth-walled content.** This server uses a clean browser context with no cookies or stored auth. Logged-in pages won't work.\n\n## Comparison with related tools\n\n- **[`@playwright/mcp`](https://github.com/microsoft/playwright-mcp)** (Microsoft) — general-purpose interactive browser automation: navigate, click, fill forms, run JS, take accessibility snapshots. Use it when you need to *interact* with a page. Use this server when you need to *read* a page.\n- **`mcp-server-fetch`** and similar HTTP-based servers — also try plain HTTP first, so for static sites the behaviour is similar. The difference is JS-rendered pages and bot-protected sites: those tools don't have a browser fallback, so they fail where this server succeeds.\n- **LM Studio Hub plugins** like `vadimfedenko/visit-website-reworked` and `npacker/web-tools` — same idea inside LM Studio's plugin system. This server runs in any MCP client.\n\n## Roadmap\n\n- [x] Persistent headless browser instance to amortize cold start\n- [x] `Accept: text/markdown` fast path for [Cloudflare's Markdown for Agents](https://blog.cloudflare.com/introducing-markdown-for-agents/)\n- [ ] Optional `selector` parameter to scope extraction\n- [ ] Optional viewport, user-agent, and locale overrides\n- [ ] Optional persistent browser context for sticky cookies / WAF trust\n- [ ] `channel=\"chrome\"` option to use installed Google Chrome instead of bundled Chromium (further stealth for the hardest sites)\n\n## Contributing\n\nIssues and PRs welcome. For substantive changes, please open an issue first to discuss the approach.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:21:08.823Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:18.503Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

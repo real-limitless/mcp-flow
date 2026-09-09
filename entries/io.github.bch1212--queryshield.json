@@ -1,0 +1,94 @@
+{
+  "id": "io.github.bch1212/queryshield",
+  "title": "queryshield",
+  "description": "Secure SQL proxy for AI agents — NL→SQL, AST safety, per-agent RLS, audit log.",
+  "summary": "Secure SQL proxy for AI agents — NL→SQL, AST safety, per-agent RLS, audit log.",
+  "offersHint": "Secure SQL proxy for AI agents — NL→SQL, AST safety, per-agent RLS, audit log. · Packages: pypi:queryshield-mcp · Env vars: QUERYSHIELD_API_KEY, QUERYSHIELD_BASE_URL",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "queryshield-mcp",
+    "version": "1.0.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "QUERYSHIELD_API_KEY",
+        "description": "Agent API key issued by QueryShield.",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "QUERYSHIELD_BASE_URL",
+        "description": "Override the default endpoint."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "queryshield-mcp",
+      "version": "1.0.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "QUERYSHIELD_API_KEY",
+          "description": "Agent API key issued by QueryShield.",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "QUERYSHIELD_BASE_URL",
+          "description": "Override the default endpoint."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "QUERYSHIELD_API_KEY",
+      "description": "Agent API key issued by QueryShield.",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "QUERYSHIELD_BASE_URL",
+      "description": "Override the default endpoint."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/bch1212/queryshield",
+  "repository": {
+    "url": "https://github.com/bch1212/queryshield",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-04T16:14:37.263645Z",
+  "publishedAt": "2026-05-04T16:14:37.263645Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:15.610Z",
+    "sourceRepoAt": "2026-08-11T23:55:29.748Z",
+    "readmeAt": "2026-08-11T23:55:30.308Z",
+    "toolsAt": "2026-08-12T01:29:15.610Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bch1212/queryshield",
+    "checkedAt": "2026-08-11T23:55:29.748Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bch1212/queryshield/main/README.md",
+    "markdown": "# QueryShield\n\n[![tests](https://github.com/bch1212/queryshield/actions/workflows/test.yml/badge.svg)](https://github.com/bch1212/queryshield/actions/workflows/test.yml)\n\nSecure SQL proxy between AI agents and enterprise databases.\n\nAgents call a single endpoint in plain English (or structured SQL). QueryShield:\n\n1. Translates natural language → SQL via Claude with prompt caching.\n2. Validates every query at the AST level — only `SELECT` is allowed, no\n   stacked statements, no forbidden functions, LIMIT required.\n3. Applies per-agent row-level security: schema/table whitelists and\n   `WHERE` clause injection.\n4. Executes against the customer DB and returns rows.\n5. Logs every attempt to an append-only audit table — metadata only,\n   never row contents.\n\nAgents never see connection strings.\n\n---\n\n## Quickstart\n\n```bash\npip install -r requirements.txt\ncp .env.example .env\n# Set ANTHROPIC_API_KEY, DATABASE_URL, VAULT_KEY (see below)\n\npython -m queryshield.start\n```\n\nGenerate a Fernet key for `VAULT_KEY` once and never lose it:\n\n```bash\npython -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n```\n\n---\n\n## End-to-end flow (curl)\n\n```bash\n# 1) Boot a tenant. Returns the admin API key — copy it.\ncurl -X POST localhost:8000/v1/tenants?name=Acme\n\n# 2) Register the customer DB. Connection string is encrypted at rest.\ncurl -X POST localhost:8000/v1/databases \\\n  -H 'X-Admin-Key: qs_...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"alias\": \"prod\",\n    \"db_type\": \"postgresql\",\n    \"connection_string\": \"postgresql://reader:secret@db.acme.internal:5432/app\",\n    \"allowed_tables\": [\"users\", \"orders\"]\n  }'\n\n# 3) Provision a scoped agent (different from admin) for your AI app.\ncurl -X POST localhost:8000/v1/agents \\\n  -H 'X-Admin-Key: qs_...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{ \"name\": \"reporting\", \"tenant_id\": \"<tenant>\" }'\n\n# 4) Set the agent's RLS policy.\ncurl -X POST localhost:8000/v1/policies \\\n  -H 'X-Admin-Key: qs_...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"agent_id\": \"<agent>\",\n    \"database_alias\": \"prod\",\n    \"allowed_tables\": [\"users\", \"orders\"],\n    \"row_filters\": { \"users\": \"tenant_id = 42\" }\n  }'\n\n# 5) The agent queries.\ncurl -X POST localhost:8000/v1/query \\\n  -H 'X-API-Key: qs_...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\n    \"database_alias\": \"prod\",\n    \"query\": \"how many active users do we have?\",\n    \"mode\": \"nl\",\n    \"max_rows\": 10\n  }'\n```\n\n---\n\n## MCP integration\n\n**Listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/v0/servers?search=queryshield) as `io.github.bch1212/queryshield`.**\n\nInstall the client:\n\n```bash\npip install queryshield-mcp\n```\n\nThen drop this into your Claude Desktop / Cursor / agent config:\n\n```json\n{\n  \"queryshield\": {\n    \"command\": \"queryshield-mcp\",\n    \"env\": { \"QUERYSHIELD_API_KEY\": \"qs_...\" }\n  }\n}\n```\n\nSource for the standalone PyPI package lives in `packages/queryshield-mcp/`.\n\nFor MCP directory evaluators such as Glama, the repository root also includes a slim `Dockerfile` that launches the published `queryshield-mcp` stdio server for tool introspection. The container does not need `QUERYSHIELD_API_KEY` for MCP initialization/tool discovery; the key is only required when a discovered tool is actually invoked against a QueryShield API tenant.\n\n## MCP integration (legacy)\n\nDrop this into any MCP-aware client (Claude Desktop, Cursor, custom agents):\n\n```json\n{\n  \"queryshield\": {\n    \"command\": \"python\",\n    \"args\": [\"-m\", \"queryshield.mcp_server\"],\n    \"env\": {\n      \"QUERYSHIELD_API_KEY\": \"qs_...\",\n      \"QUERYSHIELD_BASE_URL\": \"https://api.queryshield.io\"\n    }\n  }\n}\n```\n\nTools exposed:\n\n- `query_database(database_alias, question, max_rows)` — natural-language\n- `query_database_sql(database_alias, sql, max_rows)` — pre-built SELECT\n- `get_audit_log(limit)` — recent attempts for the calling agent\n\n---\n\n## Security model\n\n| Threat                                         | Defense                                    |\n| ---------------------------------------------- | ------------------------------------------ |\n| Agent crafts a `DROP TABLE`                    | sqlglot AST refuses non-SELECT             |\n| Agent sneaks `;` and a second statement        | parser rejects `len(statements) > 1`       |\n| Agent uses `pg_sleep`, `xp_cmdshell`, ...      | function deny-list at the AST node level   |\n| Agent reads tables outside its scope           | RLS schema + table whitelist               |\n| Agent reads other tenants' rows                | `row_filters` injected via AST `.where()`  |\n| Connection string leaks via stack traces       | Fernet-encrypted, never returned in any API |\n| Audit log becomes the data exfil vector        | only metadata is stored — never rows        |\n| `VAULT_KEY` rotation                           | re-encrypt rows under new key (script-driven) |\n\n`safety.py` is the single most important module. Every additional check\nthat lands there should ship with a test in `tests/test_safety.py`.\n\n---\n\n## Pricing\n\n| Tier        | Monthly | Databases | Queries / month | Notes                  |\n| ----------- | ------- | --------- | --------------- | ---------------------- |\n| Starter     | $500    | 3         | 1,000,000       |                        |\n| Pro         | $1,500  | 10        | 10,000,000      | audit export           |\n| Enterprise  | $3,500  | unlimited | unlimited       | SSO, SIEM webhook      |\n\nTargets `$32.5K MRR @ 15 customers (10 Pro + 5 Enterprise)`.\n\n---\n\n## Deploy\n\nThe repo is Railway-ready. `python -m queryshield.start` is the entrypoint\n(reads `PORT` via `os.getenv`, since Railway exec's the start command without\na shell). Provision Postgres + (optionally) Redis from Railway's marketplace\nand the rest is env vars.\n\n```\nrailway up\n```\n\n`/health` is the liveness check. `/ready` returns 503 if the control-plane\nDB is unreachable.\n\n---\n\n## Tests\n\n```bash\npip install pytest\npython -m pytest tests/\n```\n\n42 tests cover:\n\n- AST safety (24 cases — direct DDL, comments, encoded keywords, multiple\n  statements, forbidden functions, missing LIMIT)\n- RLS engine (6 cases — whitelist enforcement, WHERE injection, conjunction\n  with existing predicates)\n- Proxy end-to-end against a SQLite \"customer DB\" (5 cases — happy path,\n  blocked DML, RLS row filtering, table whitelist, cache hit)\n- HTTP integration via FastAPI TestClient (7 cases — full provisioning →\n  query flow, scoped agent with RLS, auth failures)\n\n<!-- auto-deploy verification: 2026-05-04T16:20:07Z -->\n",
+    "fetchedAt": "2026-08-11T23:55:30.308Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:29:15.610Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

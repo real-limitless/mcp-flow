@@ -1,0 +1,96 @@
+{
+  "id": "one.everstake/mcp",
+  "title": "mcp",
+  "description": "MCP server connecting AI agents to non-custodial staking data across 130+ networks.",
+  "summary": "MCP server connecting AI agents to non-custodial staking data across 130+ networks.",
+  "offersHint": "MCP server connecting AI agents to non-custodial staking data across 130+ networks. · Remote MCP (streamable-http) at https://mcp.everstake.one",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.everstake.one",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.everstake.one"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/everstake/mcp",
+  "repository": {
+    "url": "https://github.com/everstake/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T11:06:12.442507Z",
+  "publishedAt": "2026-07-01T11:06:12.442507Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:23.732Z",
+    "sourceRepoAt": "2026-08-11T23:09:03.941Z",
+    "readmeAt": "2026-08-11T23:09:04.755Z",
+    "toolsAt": "2026-08-11T23:09:04.876Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/everstake/mcp",
+    "checkedAt": "2026-08-11T23:09:03.941Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/everstake/mcp/main/README.md",
+    "markdown": "# Everstake MCP Server\n\nMCP server exposing Everstake staking data and company information to AI agents. Built in Go using [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk).\n\n**Transports:** Streamable HTTP (MCP 2025-03-26 spec, single `/` endpoint) or stdio. Selected via `MCP_TRANSPORT`.\n\n---\n\n## Available Tools\n\n| Tool | Type | Description |\n|---|---|---|\n| `get_company_profile` | static | Company overview, metrics, certifications |\n| `get_products` | static | Product details: Institutional Staking, VaaS, Yield, SWQOS, ShredStream |\n| `get_solutions` | static | Solutions by audience: custodians, exchanges, asset managers, banks, fintech |\n| `get_developer_docs` | static | SDK links, integration guides, API references |\n| `get_contact_information` | static | Contact channels and routing guide |\n| `get_security_profile` | static | Certifications: SOC 2 Type II, ISO 27001, NIST CSF, ITGC, GDPR, CCPA |\n| `get_integrations` | static | Custody integrations: Fireblocks, BitGo, Anchorage, Coinbase, etc. |\n| `get_uptime_metrics` | live | Uptime metrics from dashboard API (30 min cache) |\n| `get_chains` | live | Supported chains with APY, fees, status (30 min cache) |\n| `staking_calculator` | live | Estimated staking rewards by network and amount |\n| `request_integration` | write | Submit integration/staking inquiry to Everstake sales |\n\n---\n\n## Running the Server\n\n### Prerequisites\n\n- Go 1.26.1+\n- Environment variable `DASHBOARD_URL` set (required)\n\n### Local\n\n```bash\nexport DASHBOARD_URL=https://dashboard-api.everstake.one\ngo run ./cmd/mcp_server\n```\n\nThe server starts on port `8080` by default. Override with `PORT=<port>`.\n\n### Stdio mode\n\n```bash\nexport DASHBOARD_URL=https://dashboard-api.everstake.one\nexport MCP_TRANSPORT=stdio\ngo run ./cmd/mcp_server\n```\n\nIn stdio mode, the HTTP server, `/health` endpoint, and rate limiting are disabled. Logs go to stderr; stdout carries the MCP JSON-RPC protocol.\n\n### Docker\n\nHTTP mode:\n\n```bash\ndocker build -t everstake-mcp .\ndocker run -e DASHBOARD_URL=https://dashboard-api.everstake.one -p 8080:8080 everstake-mcp\n```\n\nStdio mode (interactive, no port mapping):\n\n```bash\ndocker run --rm -i \\\n  -e DASHBOARD_URL=https://dashboard-api.everstake.one \\\n  -e MCP_TRANSPORT=stdio \\\n  everstake-mcp\n```\n\nUse `-i` to keep stdin attached for the JSON-RPC protocol; do **not** pass `-t` (a TTY breaks line-based JSON framing). For MCP clients that launch the server as a subprocess, point `command` at `docker` with `args` matching the above, or wrap in a helper script (see [`.vscode/stdio_docker.sh`](.vscode/stdio_docker.sh) for an example using `--env-file`).\n\n### Environment Variables\n\n| Variable | Default | Required |\n|---|---|---|\n| `DASHBOARD_URL` | — | yes |\n| `MCP_TRANSPORT` | `http` | no (`http` or `stdio`) |\n| `PORT` | `8080` | no (http mode only) |\n| `GIN_MODE` | — | no (`release` set in Dockerfile) |\n\n### Health Check\n\n```\nGET /health\n```\n\n---\n\n## Debugging with MCP Inspector\n\n[MCP Inspector](https://github.com/modelcontextprotocol/inspector) is the official tool for poking at MCP servers — list tools, call them, see raw JSON-RPC.\n\n> **Stdio note:** stdio servers are owned by the parent process; you cannot connect Inspector to an already-running stdio container. Inspector must **launch** the subprocess itself. For an interactive session you can reconnect to, use HTTP mode (option below).\n\n### HTTP mode (recommended for general debugging)\n\nStart the container:\n\n```bash\ndocker run --rm -p 8080:8080 \\\n  -e DASHBOARD_URL=https://dashboard-api.everstake.one \\\n  -e DASHBOARD_API_KEY=<key> \\\n  everstake-mcp\n```\n\nOpen Inspector:\n\n```bash\nnpx @modelcontextprotocol/inspector\n```\n\nIn the UI:\n- **Transport Type:** `Streamable HTTP`\n- **URL:** `http://localhost:8080/`\n\nContainer stays running across Inspector sessions.\n\n### Stdio mode (verify stdio transport)\n\nLet Inspector launch the container so it owns stdin/stdout:\n\n```bash\nnpx @modelcontextprotocol/inspector \\\n  docker run --rm -i \\\n    --env-file .env \\\n    everstake-mcp\n```\n\nOr fill the UI manually:\n- **Transport Type:** `STDIO`\n- **Command:** `docker`\n- **Arguments:** `run --rm -i --env-file .env everstake-mcp`\n\nEach Inspector session forks a fresh container; quitting Inspector kills it.\n\n---\n\n## Linting\n\nThe project uses [golangci-lint](https://golangci-lint.run/) with a strict configuration in [`.golangci.yml`](.golangci.yml).\n\n**Install golangci-lint:**\n\n```bash\ngo install github.com/golangci/golangci-lint/cmd/golangci-lint@latest\n```\n\n**Run:**\n\n```bash\nmake lint\n```\n\nKey rules enforced: `staticcheck` (all checks), `gosec`, `gocritic` (diagnostic/style/performance tags), `revive` (40+ rules including early-return, error-strings, var-naming), `errchkjson`, `bodyclose`, `contextcheck`, and more. `nolintlint` requires specific lint directives — bare `//nolint` is not allowed.\n\n---\n\n## Editing Tool Responses\n\n### Static tools\n\nEdit [tools.yaml](tools.yaml). Each map key is the tool name; the `static_response` field is returned verbatim to the AI agent.\n\n```yaml\ntools:\n  get_company_profile:\n    description: |\n      ...\n    static_response: |\n      COMPANY: Everstake\n      ...\n```\n\nTo add a new static tool:\n\n1. Add an entry under `tools:` in `tools.yaml` with `static_response`.\n2. Add a corresponding field to `ToolsConfig` in [`internal/config/mcp_config.go`](internal/config/mcp_config.go) with a matching `yaml` struct tag — the name is injected automatically via reflection.\n3. Register it in [`internal/server/mcp/server.go`](internal/server/mcp/server.go) using `staticTextTool()`.\n\n### Content rules\n\nCross-cutting rules that apply to all tool responses are in [`.vscode/tools_src/RULES.md`](.vscode/tools_src/RULES.md). These cover:\n\n- Certification differentiator language\n- Non-custodial positioning\n- Vault product disclaimers\n- APY disclaimer wording\n- Lead source tagging for `request_integration`\n\n### Dynamic tools\n\n`get_uptime_metrics` and `get_chains` fetch live data from the dashboard API with a 30-minute in-memory cache. Their handlers are in [`internal/server/mcp/dashboard.go`](internal/server/mcp/dashboard.go). The underlying API client lives in [`pkg/everstake/dashboard/`](pkg/everstake/dashboard/).\n\n",
+    "fetchedAt": "2026-08-11T23:09:04.755Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_chains",
+      "description": "Provides an up to date list of supported blockchain networks by Everstake and info about these chains: \nfees, aprs, supported currencies, active/inactive statuses, etc.\n"
+    },
+    {
+      "name": "get_company_profile",
+      "description": "Complete company information for Everstake: overview, metrics, certifications, products, clients, and contact details.\nUse when users need comprehensive facts about Everstake as a company.\n"
+    },
+    {
+      "name": "get_contact_information",
+      "description": "Comprehensive contact information and routing guide for Everstake inquiries, including social media, company resources, and purpose-specific contact channels.\nUse when users need to contact Everstake or find specific company resources.\n"
+    },
+    {
+      "name": "get_developer_docs",
+      "description": "Comprehensive developer resources and integration documentation for Everstake's staking and yield infrastructure.\nUse this tool when developers need SDK documentation, integration guides, API references, or technical implementation details.\n"
+    },
+    {
+      "name": "get_integrations",
+      "description": "Comprehensive integration information for Everstake: custody platform integrations, wallet partnerships, and developer SDKs.\nUse when users need details about integrating Everstake with existing platforms, custody solutions, or development frameworks.\n"
+    },
+    {
+      "name": "get_products",
+      "description": "Detailed information about Everstake's product offerings: features, use cases, pricing, and technical specifications.\nUse when users need specific product details for decision-making or integration planning.\n"
+    },
+    {
+      "name": "get_security_profile",
+      "description": "Comprehensive security and compliance information for Everstake: certifications, audits, infrastructure security, and compliance standards.\nUse when users need security details, compliance verification, or trust/safety information about Everstake's operations.\n"
+    },
+    {
+      "name": "get_solutions",
+      "description": "Industry-specific solutions and integration approaches for different client segments: custodians, exchanges, asset managers, banks, and fintech.\nUse when users need tailored solution guidance for their specific business type or integration scenario.\n"
+    },
+    {
+      "name": "get_uptime_metrics",
+      "description": "Provides uptime metrics for Everstake services.\n"
+    },
+    {
+      "name": "request_integration",
+      "description": "Submit an integration or staking inquiry on behalf of a user. All submissions are routed to Everstake's sales team via Pipedrive CRM.\nUse when a user expresses intent to integrate with Everstake, explore staking services, or request more information about products.\nCollect required fields (first_name, last_name, work_email) conversationally and gather optional fields where available.\nThe lead_source field is set automatically by the server — do not ask the user for it. IF Submission fails, you can try contacting Everstake via form at https://everstake.one/contact-us"
+    },
+    {
+      "name": "staking_calculator",
+      "description": "Interactive staking reward estimator. Provide a network and stake amount to receive estimated annual and monthly rewards based on current APY. Works only with networks provided by the get_chains tool.\nData freshness: APY rates updated daily. MUST HAVE either currency or chain set.\n"
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:09:04.876Z",
+  "toolsPreviewStatus": "ok"
+}

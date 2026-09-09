@@ -1,0 +1,51 @@
+{
+  "id": "io.github.iusmuchandra/hiresignal",
+  "title": "hiresignal",
+  "description": "Hiring-intent signals for B2B sales/GTM: turn live job postings into buying signals.",
+  "summary": "Hiring-intent signals for B2B sales/GTM: turn live job postings into buying signals.",
+  "offersHint": "Hiring-intent signals for B2B sales/GTM: turn live job postings into buying signals. · Remote MCP (sse) at https://hiresignal-mcp-production-d4d9.up.railway.app/sse",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "sse",
+  "endpointUrl": "https://hiresignal-mcp-production-d4d9.up.railway.app/sse",
+  "remotes": [
+    {
+      "type": "sse",
+      "url": "https://hiresignal-mcp-production-d4d9.up.railway.app/sse"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/iusmuchandra/hiresignal-mcp",
+  "repository": {
+    "url": "https://github.com/iusmuchandra/hiresignal-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T19:54:38.107336Z",
+  "publishedAt": "2026-07-01T19:54:38.107336Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:41.974Z",
+    "sourceRepoAt": "2026-08-11T23:42:02.481Z",
+    "readmeAt": "2026-08-11T23:42:03.025Z",
+    "toolsAt": "2026-08-12T01:19:41.974Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/iusmuchandra/hiresignal-mcp",
+    "checkedAt": "2026-08-11T23:42:02.481Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/iusmuchandra/hiresignal-mcp/main/README.md",
+    "markdown": "# HireSignal — Hiring-Intent Signals for B2B Sales\n\n**Turn live job postings into buying signals your AI agent can call.**\n\n![HireSignal live demo — three tool calls against the hosted server](marketing/demo.gif)\n\n*Live demo against the hosted instance — run it yourself with `node scripts/demo.mjs`.*\n\nWhen a company posts for a VP Sales, RevOps Manager, or Data Security Analyst, it's telling you it has a pain and an approved budget — typically **60–90 days before** it starts researching vendors. HireSignal is an MCP server that surfaces those hiring signals so your sales/GTM agent can find in-market accounts, score them, and time outreach.\n\nPlug it into Claude, Cursor, Cline, or Windsurf and ask:\n\n- \"Which fintechs posted a RevOps or Sales Ops role in the last 7 days?\" *(→ in-market for CRM/sales tooling)*\n- \"Is Stripe scaling or freezing its data team right now?\" *(→ account expansion = budget unlocking)*\n- \"Compare hiring momentum across these 5 target accounts.\"\n- \"Which companies started hiring for Snowflake this month?\" *(→ buying signal for adjacent data tooling)*\n\nAlso works for recruiting intel, comp benchmarking, and market research — but it's built sales-first.\n\nThe server speaks the **Model Context Protocol** over **SSE** so it can be hosted remotely (Railway, Fly, anywhere with HTTPS).\n\n## Try it instantly (hosted demo)\n\nA live instance is running with a shared, rate-limited demo key. Point any MCP client at:\n\n```\nURL:    https://hiresignal-mcp-production-d4d9.up.railway.app/sse\nHeader: Authorization: Bearer hs_demo_0b25932234553fd38b571f12c1439bfd\n```\n\n> The demo key is heavily rate-limited and shares a small monthly data quota — expect `QUOTA_EXHAUSTED` during busy periods. For a dedicated key with higher limits, get in touch.\n\n## Tools\n\n| Tool | What it does |\n| --- | --- |\n| `search_jobs` | Find live postings matching a role/skill in a location and recency window. |\n| `company_hiring_velocity` | Total roles + 7d / 30d adds + department mix + growing/stable/shrinking signal for one company. |\n| `skill_demand_pulse` | Week-over-week demand trend for a skill, with avg disclosed salary and top hiring companies. |\n| `market_salary_estimate` | p25 / median / p75 for a job title + location + seniority, plus remote premium. |\n| `industry_hiring_heatmap` | Per-department open-role counts and % change for an industry vertical. |\n| `competitor_talent_intel` | Compare up to 5 companies side by side on open roles, top titles, and growth signal. |\n| `job_alert_check` | Poll for new postings since N hours ago. Designed for cron / agent loops. |\n| `get_server_status` | Health snapshot: version, uptime, configured providers, **corpus stats**, cache size. |\n\n## First-party corpus (the data moat)\n\nFor a curated set of high-value accounts, HireSignal doesn't resell aggregated data — it\nscrapes each company's **own ATS** (Greenhouse / Ashby / Lever / Workday) directly and stores a\n**time-series** of every posting in a local SQLite file. That makes `company_hiring_velocity`\na real signal (roles **added and closed** over time, with the company's actual posted dates),\nreturns `data_source: \"first_party_ats\"`, costs nothing per query, and — because the value is\nthe *accumulating history* — is the one thing a competitor can't backfill.\n\n```bash\nnpm run build && npm run ingest     # ~50 companies, ~12k open roles, ~$0\n```\n\nThe server can keep this fresh itself (set `INGEST_INTERVAL_HOURS` + a persistent\n`HIRESIGNAL_CORPUS_PATH`). Companies outside the corpus transparently fall back to the\naggregator. Full design, schema, and how to add companies: **[CORPUS.md](./CORPUS.md)**.\n\n## Configuration\n\nSet these environment variables on the server (Railway → Variables, or `.env` locally):\n\n```bash\nSERPAPI_KEY=...               # https://serpapi.com — used by search_jobs, job_alert_check\nJSEARCH_RAPIDAPI_KEY=...      # https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch\nHIRESIGNAL_API_KEYS=k1,k2     # comma-separated allowlist of client keys\nPORT=3000                     # default\n\n# First-party corpus (optional but recommended — see CORPUS.md)\nHIRESIGNAL_CORPUS_PATH=./data/corpus.db   # SQLite corpus location (use a volume in prod)\nINGEST_INTERVAL_HOURS=6                    # if set, server self-ingests on boot + interval\n```\n\nA data source must be available: either an **ingested corpus** (`npm run ingest`) or a provider\nkey. `get_server_status` reports `\"ok\"` when the corpus is active *or* a key is set, and\n`\"degraded\"` when there is neither.\n\n`HIRESIGNAL_API_KEYS` accepts one or more comma-separated keys (or use `HIRESIGNAL_API_KEY` for a single key). If neither is set the server runs in **open mode** — it logs a startup warning and accepts unauthenticated calls, which is convenient for local dev but **must not** be used in any deployment exposed to the network.\n\n## Run locally\n\n```bash\nnpm install\ncp .env.example .env   # fill in keys\nnpm run dev            # tsx watch\n# → http://localhost:3000/sse\n# → http://localhost:3000/health\n```\n\nProduction build:\n\n```bash\nnpm run build\nnpm start\n```\n\n## Deploy to Railway\n\n```bash\nnpm install -g @railway/cli\nrailway login\nrailway init\nrailway up\n# then set SERPAPI_KEY and JSEARCH_RAPIDAPI_KEY in the Railway dashboard\n```\n\n`railway.json` wires up Nixpacks, the `npm ci && npm run build` step, and `/health` for health checks.\n\n## Connecting from MCP clients\n\n### Claude Desktop\n\nClaude Desktop's stable config supports stdio MCP servers natively and remote (SSE) servers via the [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) bridge. Edit `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"hiresignal\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"https://your-hiresignal.up.railway.app/sse\",\n        \"--header\",\n        \"Authorization: Bearer YOUR_HIRESIGNAL_API_KEY\"\n      ]\n    }\n  }\n}\n```\n\nRestart Claude Desktop. The 8 HireSignal tools will appear in the tools menu.\n\n### Cursor\n\nOpen Cursor → Settings → MCP → \"Add new MCP server\":\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"hiresignal\": {\n      \"url\": \"https://your-hiresignal.up.railway.app/sse\",\n      \"headers\": {\n        \"Authorization\": \"Bearer YOUR_HIRESIGNAL_API_KEY\"\n      }\n    }\n  }\n}\n```\n\n### Cline / Windsurf\n\nBoth support remote SSE MCP servers. Point them at `https://your-hiresignal.up.railway.app/sse` with the same `Authorization: Bearer …` header.\n\n### Local stdio fallback\n\nMost clients only need the SSE URL above. If a client requires stdio, point it at the `mcp-remote` bridge as in the Claude Desktop example.\n\n## How auth and limits work\n\n- **API key**: the server reads it from `Authorization: Bearer …`, `x-api-key`, or `?api_key=…` (prefer the header — query params end up in proxy/access logs). The presented key is SHA-256 digested and compared in constant time against the digests of every key in `HIRESIGNAL_API_KEYS`. Unknown or missing keys get a `401` with `{\"code\": \"AUTH_FAILED\"}`. Only the first 16 hex chars of the digest are logged, never the key itself. The `/messages` POST endpoint re-checks the key on every call and rejects it if the session was opened under a different key, so a leaked `sessionId` is not enough to take over a session.\n- **Rate limit**: 30 tool calls per API key per minute (token bucket, in-memory). On overflow, tools return `{ \"code\": \"RATE_LIMITED\", \"retry_after_seconds\": N }`.\n- **Cache**: job search results are cached for 15 minutes per `(query, location, date_posted)` tuple to protect upstream quota. `job_alert_check` always bypasses the cache.\n- **Quota errors**: when an upstream returns 429 or signals quota exhaustion, the tool returns `{ \"code\": \"QUOTA_EXHAUSTED\", \"retry_after_seconds\": N, \"hint\": \"hiresignal.io/pricing\" }`.\n\n## Testing\n\n```bash\nnpm test         # vitest run with mocked upstream APIs\nnpm run typecheck\n```\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:42:03.025Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:41.974Z",
+  "toolsPreviewError": "SSE error: Non-200 status code (404)",
+  "toolsPreviewStatus": "unreachable"
+}

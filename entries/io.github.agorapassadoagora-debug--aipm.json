@@ -1,0 +1,76 @@
+{
+  "id": "io.github.agorapassadoagora-debug/aipm",
+  "title": "AI Process Manager (AIPM)",
+  "description": "Structured Windows state for AI agents: processes, windows, UI trees. No screenshots.",
+  "summary": "Structured Windows state for AI agents: processes, windows, UI trees. No screenshots.",
+  "offersHint": "Structured Windows state for AI agents: processes, windows, UI trees. No screenshots. · Packages: npm:aipm-mcp-server · Env vars: AIPM_API",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "aipm-mcp-server",
+    "version": "0.5.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "AIPM_API",
+        "description": "AI Process Manager HTTP base URL (default: http://127.0.0.1:9147)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "aipm-mcp-server",
+      "version": "0.5.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "AIPM_API",
+          "description": "AI Process Manager HTTP base URL (default: http://127.0.0.1:9147)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "AIPM_API",
+      "description": "AI Process Manager HTTP base URL (default: http://127.0.0.1:9147)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/aipm-engine/AIPM",
+  "repository": {
+    "url": "https://github.com/aipm-engine/AIPM",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-30T18:12:46.100914Z",
+  "publishedAt": "2026-07-30T18:12:46.100914Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:44.696Z",
+    "sourceRepoAt": "2026-08-11T23:58:26.539Z",
+    "readmeAt": "2026-08-11T23:58:27.106Z",
+    "toolsAt": "2026-08-12T01:31:44.696Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aipm-engine/AIPM",
+    "checkedAt": "2026-08-11T23:58:26.539Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aipm-engine/AIPM/main/README.md",
+    "markdown": "# AI Process Manager — MCP Server\n\n**Structured Windows state for AI agents — no screenshots.**\n\nThis MCP server exposes the [AI Process Manager](https://github.com/agorapassadoagora-debug/AIPM) local HTTP API as tools for Claude Desktop, Cursor, and any MCP client. Instead of capturing pixels (~2,765 tokens per 1080p screenshot), agents read **JSON and text** (~15–150 tokens per query) from processes, windows, consoles, and UI Automation trees.\n\n> **Requires:** AIProcessManager.exe running on Windows (system tray). Node.js ≥ 14. Zero npm dependencies.\n\n<!-- mcp-name: io.github.agorapassadoagora-debug/AIPM -->\n\n## Why this exists\n\nComputer-use agents often \"look\" at the desktop via screenshots. That is slow (3–5 s), expensive in tokens, and sends pixel data through the model. AIPM answers structured questions on loopback:\n\n| Question | Screenshot | AIPM tool |\n|----------|------------|-----------|\n| Is the render still running? | ~2,765 tokens | `check_process` → ~15 tokens |\n| What's the console output? | screenshot + OCR | `read_window` → ~30 tokens |\n| Did the export finish? | poll + screenshots | `wait_for(file_stable=...)` → one call |\n\nMeasured on a real machine: **~94–98% fewer perception tokens per action** vs screenshots.\n\n## Quick start\n\n### 1. Start the backend\nEnsure `AIProcessManager.exe` is running in your system tray.\n\n### 2. Configure your MCP client\n\n**Claude Desktop** — `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"ai-process-manager\": {\n      \"command\": \"node\",\n      \"args\": [\"C:\\\\path\\\\to\\\\ai-process-manager\\\\mcp\\\\server.js\"]\n    }\n  }\n}\n```\n\nCursor and other stdio MCP clients take the same `command` / `args` pair. Optional env var\n`AIPM_API` overrides the API base URL (default: read from\n`%LOCALAPPDATA%\\AIProcessManager\\endpoint.txt`, else `http://127.0.0.1:9147`).\n\n### 3. Restart the MCP client\nTools appear as `ai-process-manager`. Call `health_check` first.\n\n## Tools (20)\n\nRead tools are annotated `readOnlyHint: true` — clients may auto-approve them. Action tools\nare `readOnlyHint: false` and refuse to run unless the user opts in (see [Privacy](#privacy)).\n\n| Tool | Title | Endpoint |\n|---|---|---|\n| `health_check` | Check AI Process Manager status | `GET /` |\n| `check_process` | Check if a process is running | `GET /processes` |\n| `list_processes` | List running processes | `GET /processes` |\n| `list_windows` | List open windows | `GET /windows` |\n| `get_system_status` | Get system status (CPU, RAM, GPU, disk) | `GET /system` |\n| `get_taskbar` | Show taskbar apps | `GET /taskbar` |\n| `read_window` | Read text from a window | `GET /window/text` |\n| `get_ui_tree` | Get a window's UI element tree | `GET /ui/tree` |\n| `ui_find` | Find interactive UI elements | `GET /ui/find` |\n| `wait_for` | Wait until a condition is met | `GET /wait` |\n| `get_recent_events` | List recent PC events | `GET /events/history` |\n| `check_file` | Check a file or folder | `GET /filesystem/watch` |\n| `get_app_knowledge` | Get learned recipes for an app | `GET /knowledge/app` |\n| `get_economy_stats` | Get token economy statistics | `GET /analytics/summary` |\n| `get_audit_log` | View API audit log | `GET /audit` |\n\n**Action tier — opt-in, off by default:**\n\n| Tool | Title | Endpoint |\n|---|---|---|\n| `ui_invoke` | Click a UI element | `POST /ui/invoke` |\n| `ui_set_value` | Set the value of a UI field | `POST /ui/set_value` |\n| `focus_window` | Bring a window to the foreground | `POST /ui/focus` |\n\n**Local telemetry (writes to the local store, metadata only):**\n\n| Tool | Title | Endpoint |\n|---|---|---|\n| `report_task_outcome` | Report task outcome (telemetry) | `POST /telemetry/task` |\n| `report_action_outcome` | Report UI action outcome (telemetry) | `POST /telemetry/action` |\n\n### Reading deep UI trees (Chromium/Electron)\n\n`get_ui_tree` defaults to `depth=4`, which is enough for native Win32 apps. Chromium/Electron\napps (VS Code, Slack, Discord, Claude Desktop, Teams) bury content under ~10 levels of\n`Pane`/`Group` wrappers — at low depth the response is only empty panes. Ask for `depth=15-20`\nthere (max 30) and cap cost with `max_nodes` (default 200, max 1000): **`max_nodes` is the cost\nbrake, not `depth`.** When the response has `truncated: true`, the tree was cut — repeat with a\nhigher `depth`/`max_nodes` before concluding anything about the window.\n\n## Privacy\n\n**Nothing leaves the machine. There is no remote telemetry, no cloud service, and no account.**\n\n### Network\n- The backend listens on the **loopback interface only** (`127.0.0.1:9147`) — not on `0.0.0.0`,\n  so nothing on the LAN can reach it.\n- Every request must carry a `Host` header of `localhost` or `127.0.0.1`; anything else is\n  rejected with `403 forbidden_host` (anti DNS-rebinding, so a web page you visit cannot drive\n  the API).\n- This MCP server makes exactly one kind of outbound call: HTTP to that local address. It sends\n  a `User-Agent` of `mcp:<your MCP client name>` so the local audit log shows which agent asked.\n\n### Read-only by default\n- 15 of the 20 tools are plain `GET` reads, annotated `readOnlyHint: true`.\n- The 3 action tools (`ui_invoke`, `ui_set_value`, `focus_window`) return `403 action_denied`\n  until the user does **both**: enable *Agent actions* in the tray menu, and add the target\n  process to a per-app allowlist. Neither is on by default, and the setting is per app —\n  allowing Notepad does not allow the browser.\n\n### What the telemetry stores — metadata only\nRecorded: app/process name, element role (`Button`, `Edit`…), the element name **the agent\nasked for**, the action (`invoke`/`set_value`/`focus`), success or failure, duration in ms, and a\nfailure reason. Two mechanical invariants make \"metadata only\" verifiable rather than a promise:\n\n1. **An action record stores what the agent requested, not what the app displayed.** The role and\n   name come from the agent's own `role=`/`name_contains=` arguments. The name of the element\n   actually resolved on screen is never written, so what the tool *saw* never becomes telemetry.\n2. **The failure reason is a closed vocabulary** (`elemento_nao_encontrado`, `ui_timeout`,\n   `erro_uia`, `outro`, …). Any other string is stored as `outro`. An exception message — which\n   could carry a file path or on-screen text — therefore cannot reach the disk.\n\n**Never stored:** screen contents, window text read by `read_window`, the text typed by\n`ui_set_value` (`value=`), file contents, keystrokes, screenshots. The passively learned UI shape\n(`ui_shape`) holds only counts, UIA role names, depth and booleans: `exposes_text` says *whether*\ntext exists, `named_controls` says *how many* elements have a name — never the text itself.\n\n**Masking:** before any request is recorded, `value=` and `api_key=` are replaced with `***`, so\nneither `get_audit_log` nor the on-disk query log can reveal typed text or a secret.\n\n**One honest nuance:** the audit/query log stores the request line, so *other* query arguments\nstay readable — e.g. `check_file(path=D:/videos/out.mp4)` is logged as that path, and\n`check_process(title_contains=...)` keeps that fragment. It is a local log of what the agent\nasked for. Only `value=` and `api_key=` are masked.\n\n### Where the data lives, and how to delete it\nEverything is under `%LOCALAPPDATA%\\AIProcessManager\\`:\n\n| Path | Contents |\n|---|---|\n| `db\\*.jsonl`, `db\\rollup.json` | telemetry: tasks, actions, queries, UI shapes, counters |\n| `ledger.jsonl` | tamper-evident hash-chained log of reported/executed actions (metadata only) |\n| `actions.cfg` | whether the action tier is on + the per-app allowlist |\n| `log.txt`, `endpoint.txt` | app log and the API address currently in use |\n\nTo erase: quit the app from the tray, then delete the folder (or just `db\\` to reset learning and\nthe economy counters; deleting `actions.cfg` turns the action tier back off). Nothing is written\nanywhere else, and the `/audit` ring buffer lives in memory only — it disappears when the app\ncloses. You can inspect everything the store holds with `get_audit_log`, `get_economy_stats`, and\n`GET /analytics/actions`.\n\n## Troubleshooting\n\n| Symptom | Meaning | Fix |\n|---|---|---|\n| `connection_refused` | AIProcessManager.exe is not running | Start it from the Start menu (green tray icon) |\n| `action_denied` | Action tier off, or app not in the allowlist | Tray menu → *Agent actions*, then allow that app |\n| `api_paused` | The user paused the API from the tray | Tray menu → *Resume API* |\n| Empty `Pane` tree | `depth` too low for a Chromium/Electron app | Retry `get_ui_tree` with `depth=17` |\n\nEvery error payload carries a `next_action` field with the same guidance.\n## Coverage (measured, honest)\n\n| Stack | Read state | Semantic actions |\n|-------|-----------|------------------|\n| Win32 / WinForms / WPF / UWP | ✅ full | ✅ |\n| **Delphi VCL** (legacy business apps) | ✅ full | ✅ |\n| Console (cmd, PowerShell, Windows Terminal) | ✅ text | — |\n| **Chromium / Electron** (Chrome, Cursor, Claude Desktop) | ✅ after waking the a11y tree | ✅ |\n| Electron on the legacy MSAA bridge (e.g. Discord) | ⚠️ wakes, but ~120 ms/node — too slow today | ⚠️ |\n| Java Swing | ⚠️ needs the Java Access Bridge | roadmap |\n\nWe publish what does **not** work yet on purpose — you should know the edges before relying on it.\n\n> **Behaviour note:** the first read of a Chromium/Electron window asks it to activate its accessibility\n> tree — the same standard request a screen reader makes. That app then keeps computing accessibility\n> data (a CPU cost in *that* app) and does not go back to sleep on its own. Native Win32 apps are\n> unaffected.\n\n## Free vs paid\n\n- **Free & open (MIT):** this MCP server.\n- **Free (closed):** the `AIProcessManager.exe` backend — the sensor. Yours to run at no cost.\n- **Paid:** **AIPM Pilot**, the autonomous computer-use agent that drives apps end-to-end using AIPM's\n  structured perception. See [promoflix.site](https://promoflix.site).\n\n## Support the project\n\nIf AIPM saves you tokens, consider [sponsoring](https://github.com/sponsors/agorapassadoagora-debug).\n\n## License\n\n[MIT](LICENSE) for the MCP server. The backend and AIPM Pilot are separate products.\n",
+    "fetchedAt": "2026-08-11T23:58:27.106Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:31:44.696Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

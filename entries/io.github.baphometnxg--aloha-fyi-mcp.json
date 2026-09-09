@@ -1,0 +1,77 @@
+{
+  "id": "io.github.baphometnxg/aloha-fyi-mcp",
+  "title": "aloha.fyi Hawaii",
+  "description": "Hawaii MCP: tours, events, weather, restaurants, and day-plan itineraries across 4 islands.",
+  "summary": "Hawaii MCP: tours, events, weather, restaurants, and day-plan itineraries across 4 islands.",
+  "offersHint": "Hawaii MCP: tours, events, weather, restaurants, and day-plan itineraries across 4 islands. · Remote MCP (streamable-http) at https://mcp-server-nani-v3-20.up.railway.app/mcp",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp-server-nani-v3-20.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp-server-nani-v3-20.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://aloha.fyi",
+  "sourceUrl": "https://github.com/baphometnxg/aloha-fyi-mcp",
+  "repository": {
+    "url": "https://github.com/baphometnxg/aloha-fyi-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-12T08:04:46.554751Z",
+  "publishedAt": "2026-04-12T08:04:46.554751Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:29:23.126Z",
+    "sourceRepoAt": "2026-08-11T23:55:36.571Z",
+    "readmeAt": "2026-08-11T23:55:37.156Z",
+    "toolsAt": "2026-08-11T23:55:37.348Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/baphometnxg/aloha-fyi-mcp",
+    "checkedAt": "2026-08-11T23:55:36.571Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/baphometnxg/aloha-fyi-mcp/main/README.md",
+    "markdown": "# aloha.fyi MCP Server 🌺\n\n**The first dedicated Hawaii tourism MCP server.** Hawaii tours, events, and deals for AI assistants — now with **AAAK** structured-response support so consumer agents can parse results without re-parsing prose.\n\nWhen someone asks Claude, ChatGPT, or any AI \"what should I do in Hawaii?\" — this MCP server returns real, bookable data:\n\n- **2,583 bookable experiences** from Viator, GetYourGuide, Klook, and Groupon\n- **579 events** across Oahu, Maui, Big Island, and Kauai\n- **540+ curated restaurants** in Waikiki and across Oahu\n- **Live weather** for all four islands (OpenMeteo)\n- **Day-plan itineraries** with morning / lunch / afternoon / dinner picks\n- **Affiliate tracking** on every booking link\n- **Real MCP protocol** — Streamable HTTP, stateless, spec version `2025-03-26`\n- **AAAK v0.1** — typed `structuredContent` envelope alongside human-readable text. See [`docs/aaak-spec.md`](./docs/aaak-spec.md).\n\nPowered by [aloha.fyi](https://aloha.fyi) — Hawaii's AI concierge.\n\n> **Note on canonical source.** This repository is the public-facing mirror of the production `mcp-server` directory inside [`baphometnxg/Nani-V3`](https://github.com/baphometnxg/Nani-V3). Production deploys are driven from there; this repo is kept in sync as a standalone reference for community use and for anyone who wants to self-host. File issues here or upstream — both work.\n\n---\n\n## Hosted endpoint\n\nProduction MCP server (no install, no setup):\n\n```\nhttps://mcp-server-nani-v3-20.up.railway.app/mcp\n```\n\n- Transport: Streamable HTTP (stateless)\n- Protocol version: `2025-03-26`\n- Auth: none (public, read-only)\n- Health: [GET /health](https://mcp-server-nani-v3-20.up.railway.app/health) — returns `aaak: { protocol, enabled, allowlist_size }` so deploy state is observable\n- Discovery: [GET /.well-known/mcp/server.json](https://mcp-server-nani-v3-20.up.railway.app/.well-known/mcp/server.json)\n\n---\n\n## AAAK — structured response contract\n\nBy default, MCP tool results come back as a prose blob — agents that want to consume the data programmatically have to re-parse markdown to recover prices, booking URLs, islands, etc. AAAK fixes that.\n\nWhen AAAK is enabled (and the calling client is on the allowlist), every tool result includes a typed `structuredContent` field carrying the data in machine-parseable form, and the marketing trailer is dropped from `text` to save tokens. When AAAK is off, the wire format is byte-equivalent to v1.0.0 — no surprises for clients that don't opt in.\n\n**Lossless invariants — preserved on every revenue-bearing row:**\n- `booking_url` (affiliate revenue)\n- `source` (compliance + attribution)\n- `price_cents` (the only numeric field user decisions hinge on)\n- `island` (every recommendation is island-scoped)\n\n**Example (search_hawaii_tours):**\n\n```jsonc\n{\n  \"ok\": true,\n  \"kind\": \"result\",\n  \"tool\": \"search_hawaii_tours\",\n  \"protocol\": \"aaak/0.1\",\n  \"query\": { \"query\": \"snorkeling\", \"island\": \"oahu\", \"limit\": 1 },\n  \"results\": [\n    {\n      \"title\": \"Hanauma Bay Snorkel\",\n      \"source\": \"viator\",\n      \"island\": \"oahu\",\n      \"area\": \"east_oahu\",\n      \"category\": \"tour\",\n      \"price_cents\": 8900,\n      \"rating\": 4.7,\n      \"review_count\": 2341,\n      \"description\": \"Guided snorkeling at Oahu's most famous reef...\",\n      \"booking_url\": \"https://aloha.fyi/r/aB3kT9pQz1\",\n      \"is_deal\": false\n    }\n  ],\n  \"meta\": { \"count\": 1, \"cached\": false, \"source_diversity\": 1 }\n}\n```\n\nFull spec: [`docs/aaak-spec.md`](./docs/aaak-spec.md). Generated JSON Schema: [`docs/aaak.schema.json`](./docs/aaak.schema.json).\n\n**Verification scripts** for self-hosters and contributors:\n\n```bash\nnpm run aaak:test    # 12 hand-written conformance fixtures\nnpm run aaak:smoke   # 9 adapter-output validations\nnpm run aaak:gate    # ~70 env-gate / trailer / allowlist invariants\nnpm run aaak:verify -- --expect=aaak --ua=claude-code/1.0   # live probe\n```\n\n---\n\n## Connect to Claude Desktop\n\nAdd to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n\n```json\n{\n  \"mcpServers\": {\n    \"aloha-fyi-hawaii\": {\n      \"url\": \"https://mcp-server-nani-v3-20.up.railway.app/mcp\"\n    }\n  }\n}\n```\n\nRestart Claude Desktop. You should see the three Hawaii tools appear in the tool picker. Try:\n\n> Find me snorkeling tours in Oahu under $100\n\n> What events are happening in Honolulu this weekend?\n\n> Plan a family adventure day on the Big Island — cheapest options\n\n---\n\n## Connect to any MCP-compatible client\n\nAny client that supports Streamable HTTP MCP can point directly at:\n\n```\nhttps://mcp-server-nani-v3-20.up.railway.app/mcp\n```\n\nNo API key, no OAuth, no signup.\n\n### Manual protocol test\n\n```bash\ncurl -X POST https://mcp-server-nani-v3-20.up.railway.app/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl\",\"version\":\"1.0\"}}}'\n```\n\n---\n\n## Tools\n\n### `search_hawaii_tours`\nSearch 2,583 bookable Hawaii tours and activities by keyword, island, price range. Returns tours from Viator, GetYourGuide, Klook, and Groupon with affiliate booking links.\n\n| Param | Type | Description |\n|---|---|---|\n| `query` | string (required) | e.g. \"snorkeling\", \"helicopter tour\", \"family luau\" |\n| `island` | `oahu` \\| `maui` \\| `big_island` \\| `kauai` \\| `any` | Defaults to `any` |\n| `max_price_dollars` | number | Maximum price per person in USD |\n| `source` | `viator` \\| `gyg` \\| `klook` \\| `groupon` \\| `any` | Filter by booking platform |\n| `limit` | number | Results (max 20, default 5) |\n\n### `get_hawaii_deals`\nFind budget deals and discounts. Returns Groupon deals and low-price options sorted cheapest first.\n\n| Param | Type | Description |\n|---|---|---|\n| `activity` | string (required) | e.g. \"snorkeling\", \"helicopter\", \"luau\" |\n| `max_price_dollars` | number | Default 100 |\n| `limit` | number | Results (max 20, default 5) |\n\n### `search_hawaii_events`\nFind upcoming events, concerts, festivals, and nightlife across all Hawaiian islands. 579+ events from 70+ venues, updated weekly.\n\n| Param | Type | Description |\n|---|---|---|\n| `query` | string | e.g. \"live music\", \"luau\", \"concert\" |\n| `island` | `oahu` \\| `maui` \\| `big_island` \\| `kauai` \\| `any` | Defaults to `any` |\n| `days_ahead` | number | How many days ahead to search (default 7) |\n\n---\n\n## Run it yourself\n\n```bash\ngit clone https://github.com/baphometnxg/aloha-fyi-mcp.git\ncd aloha-fyi-mcp\nnpm install\nnpx tsc\nDATABASE_URL=\"postgresql://...\" PORT=9624 node dist/http.js\n```\n\nRequires:\n- Node.js 20+\n- `DATABASE_URL` env var (PostgreSQL with an `experiences` table — schema in `schema.sql`)\n\n---\n\n## Privacy\n\nNo PII is collected by the MCP server. Stateless mode — no sessions, no cross-request profiles. Standard request metadata is logged for abuse prevention only.\n\nFull privacy policy: [aloha.fyi/privacy](https://www.aloha.fyi/privacy)\n\n---\n\n## About\n\nBuilt by [Michael Crain](https://aloha.fyi) — Hawaii resident, cinematographer, and founder of aloha.fyi.\n\n**aloha.fyi** is an AI-powered multilingual tourism concierge for Hawaii's visitor industry. The concierge agent \"Nani\" speaks 5 languages (English, Japanese, Korean, Chinese, Spanish) and has access to 2,583 bookable experiences across 6 affiliate networks.\n\nThis MCP server exposes a subset of that capability to any AI assistant that speaks the Model Context Protocol.\n\n- **Website**: https://aloha.fyi\n- **Contact**: alohatours@proton.me\n- **License**: MIT\n\n---\n\n*Built with aloha. Powered by AI. Rooted in Hawaiian culture.* 🌺\n",
+    "fetchedAt": "2026-08-11T23:55:37.156Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search_hawaii_tours",
+      "description": "Search 1,500+ bookable Hawaii tours and activities by keyword, island, price range. Returns tours from Viator, GetYourGuide, Klook, and Groupon with affiliate booking links. Use this when users ask about Hawaii tours, activities, or things to do."
+    },
+    {
+      "name": "get_hawaii_deals",
+      "description": "Find budget deals and discounts for Hawaii activities. Returns Groupon deals and low-price options sorted cheapest first. Use when users want affordable Hawaii experiences or budget travel tips."
+    },
+    {
+      "name": "search_hawaii_events",
+      "description": "Find upcoming events, concerts, festivals, and nightlife across the Hawaiian islands, refreshed weekly from venue and promoter calendars. Use when users ask what's happening in Hawaii or want entertainment options."
+    },
+    {
+      "name": "get_hawaii_weather",
+      "description": "Current weather, forecast, and surf/wind conditions for any Hawaiian island. Use this when users ask 'what's the weather in Maui this week' or 'is it good surf conditions on the North Shore today'. Returns temperature, precipitation, wind speed, UV index, and a 3-day forecast."
+    },
+    {
+      "name": "find_hawaii_restaurants",
+      "description": "Find restaurants, coffee shops, poke bars, ramen, bakeries, and food trucks in Waikiki and across Oahu. 450+ curated spots across fine dining, casual, local plates, and specialty categories. Use when users ask 'where should I eat in Waikiki', 'best poke on Oahu', 'where to grab coffee', or 'cheap eats near me'."
+    },
+    {
+      "name": "plan_hawaii_day",
+      "description": "Build a same-day or trip itinerary for a Hawaiian island. Returns a morning activity, lunch spot, afternoon activity, and dinner spot — picked from our live catalog of tours, food, and experiences. Use when users ask 'plan my day in Oahu', 'what should I do Saturday in Maui', or 'family itinerary for Kauai'."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:55:37.348Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,61 @@
+{
+  "id": "com.crosswire-api/crosswire-polymarket-kalshi-arbitrage",
+  "title": "Crosswire — Polymarket & Kalshi Arbitrage",
+  "description": "Cross-venue Polymarket+Kalshi arbitrage: resolution mismatch, void risk & settlement divergence.",
+  "summary": "Cross-venue Polymarket+Kalshi arbitrage: resolution mismatch, void risk & settlement divergence.",
+  "offersHint": "Cross-venue Polymarket+Kalshi arbitrage: resolution mismatch, void risk & settlement divergence. · Remote MCP (streamable-http) at https://api.crosswire-api.com/mcp",
+  "version": "0.6.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.crosswire-api.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.crosswire-api.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://crosswire-api.com",
+  "sourceUrl": "https://github.com/NicolasDuarte04/crosswire-mcp",
+  "repository": {
+    "url": "https://github.com/NicolasDuarte04/crosswire-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-21T16:50:22.811968Z",
+  "publishedAt": "2026-06-21T16:50:22.811968Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:36:32.603Z",
+    "sourceRepoAt": "2026-08-12T00:36:32.603Z",
+    "readmeAt": "2026-08-12T00:36:33.117Z",
+    "toolsAt": "2026-08-12T00:36:33.252Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/NicolasDuarte04/crosswire-mcp",
+    "checkedAt": "2026-08-12T00:36:32.603Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/NicolasDuarte04/crosswire-mcp/main/README.md",
+    "markdown": "# Crosswire — MCP server\n\n**Pre-trade resolution-risk firewall for cross-venue prediction-market arbitrage.**\nBefore executing a two-leg **Polymarket** + **Kalshi** position, Crosswire flags **resolution\nmismatch**, **void risk**, and **settlement divergence** — void-rule asymmetry, settlement-scope\ndifferences (90-minute vs extra-time), settlement-source and -timing gaps, stale data, and thin\nliquidity between Polymarket and Kalshi FIFA World Cup 2026 markets — so automated trading agents\ndon't get blown up by markets that look identical but settle differently. Verdict:\n**safe / caution / block**.\n\nIt does not predict outcomes and it does not execute trades. It answers one question:\n**if I buy this contract on one venue and sell its twin on the other, do they actually settle\non the same thing?** When they don't, it names the exact clause that breaks the hedge.\n\n## Remote MCP endpoint\n\n```\nhttps://api.crosswire-api.com/mcp\n```\n\n- Transport: **streamable HTTP**\n- The MCP tools are **free — no API key, no signup**\n- Website: [crosswire-api.com](https://crosswire-api.com) · Status & track record: [api.crosswire-api.com](https://api.crosswire-api.com/)\n\n### Connect\n\nGeneric MCP client config (`mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"crosswire\": {\n      \"url\": \"https://api.crosswire-api.com/mcp\"\n    }\n  }\n}\n```\n\nClaude Code:\n\n```bash\nclaude mcp add --transport http crosswire https://api.crosswire-api.com/mcp\n```\n\n## Tools\n\n### `check_resolution_risk`\n\nPre-trade safety check for a cross-venue pair. Returns a machine-readable verdict —\n`execution_verdict: safe / caution / block` — inside a full Fungibility & Settlement Audit\nObject (FSAO) with structured findings, top-level divergence flags, venue rule overrides,\nfee-adjusted spread, and verdict reasons.\n\nIdentify the pair by **either**:\n\n1. `canonical_event_id` — a pair id from `list_covered_events`,\n   e.g. `\"wc26:match:MEX-RSA:2026-06-11:result#home\"` (`#home` / `#draw` / `#away` selects the outcome leg), **or**\n2. `market_a` + `market_b` — one Polymarket `conditionId` (`0x…` hex) and one Kalshi ticker\n   (e.g. `KXWCGAME-26JUN11MEXRSA-MEX`), order-insensitive. `outcome` on a ref is optional —\n   matching uses only `(venue, market_id)`.\n\nOptional: `notional_usd` (enables the thin-liquidity check at your trade size).\n\nIf the pair is not covered, the tool returns a non-error coverage reply (`covered: false`)\nnaming the covered matches and the coverage cutoff instead of an FSAO.\n\n**Example — real production audit** (World Cup opener, Mexico vs South Africa, home leg):\n\nRequest:\n\n```json\n{\n  \"canonical_event_id\": \"wc26:match:MEX-RSA:2026-06-11:result#home\"\n}\n```\n\nResponse (abridged with `…`):\n\n```json\n{\n  \"audit_id\": \"aud_01KTW2Y7S3Q3JFYJK863FJB66X\",\n  \"canonical_event_id\": \"wc26:match:MEX-RSA:2026-06-11:result#home\",\n  \"leg_a\": { \"venue\": \"polymarket\", \"market_id\": \"0x4cd77d45…10ff\", \"outcome\": \"Yes\" },\n  \"leg_b\": { \"venue\": \"kalshi\", \"market_id\": \"KXWCGAME-26JUN11MEXRSA-MEX\", \"outcome\": \"yes\" },\n  \"matching_confidence\": 0.98,\n  \"semantically_fungible\": false,\n  \"scope_divergence_flag\": false,\n  \"void_rule_divergence_flag\": true,\n  \"settlement_source_divergence_flag\": true,\n  \"settlement_timing_divergence_flag\": true,\n  \"polymarket_rule_override\": \"If the game is canceled entirely, with no make-up game, this market will resolve \\\"No\\\". …\",\n  \"kalshi_rule_override\": \"If the game is cancelled or rescheduled to over two weeks away, the market will resolve to a fair price …\",\n  \"findings\": [\n    { \"code\": \"void_rule\", \"severity\": \"fatal\",\n      \"detail\": \"Void conditions differ … A core void asymmetry can void one leg while the other settles.\",\n      \"affects_fungibility\": true },\n    { \"code\": \"settlement_source\", \"severity\": \"warn\",\n      \"detail\": \"fifa.com (UMA-adjudicated) vs Kalshi internal …\" },\n    { \"code\": \"settlement_timing\", \"severity\": \"warn\",\n      \"detail\": \"2h statistics fallback vs unspecified …\" }\n  ],\n  \"fee_adjusted_true_spread\": 0.0009,\n  \"snapshot_age_seconds\": 61,\n  \"execution_verdict\": \"block\",\n  \"verdict_reasons\": [ \"void_rule: Void conditions differ …\", \"…\" ],\n  \"ruleset_sha\": \"…\"\n}\n```\n\nThat `block` is the product working as intended: a canceled match pays the Polymarket leg\n$0 while Kalshi resolves the same position to \"a fair price\" — the hedge breaks exactly when\nyou need it.\n\n### `list_covered_events`\n\nFree discovery of everything `check_resolution_risk` can audit: the covered canonical events,\ntheir per-outcome pair ids (`…#home` / `#draw` / `#away`), the Polymarket conditionIds and\nKalshi tickers with outcome labels for each pair, match dates, the frozen `ruleset_sha`\npinning the identity graph, the coverage kickoff cutoff, and snapshot freshness. Takes no\narguments. Use a returned `pair_id` (or a pair's two market ids) as input to\n`check_resolution_risk`.\n\n## Verdict semantics\n\n| Verdict | Meaning | Agent action |\n|---|---|---|\n| `safe` | No fatal findings, data fresh. The two contracts settle on the same thing. | Proceed; your stack decides. |\n| `caution` | Non-fatal divergence or degraded data (e.g. stale snapshot, thin liquidity, source/timing gaps). | Proceed only if your strategy tolerates the named finding. |\n| `block` | A fatal divergence (void-rule asymmetry, scope mismatch, granularity mismatch…) can settle the legs differently. | Do not execute the pair as a hedge. |\n\nEvery FSAO carries the findings that produced the verdict — the audit is explainable,\nappend-only logged server-side, and reproducible from\n`{ruleset_sha, snapshot_ts, canonical_event_id}`.\n\n## Coverage\n\nFIFA World Cup 2026 match markets listed on both Polymarket and Kalshi, expanding in batches\nthroughout the tournament. **Current coverage is always live** — query `list_covered_events`,\nor [`/v1/events`](https://api.crosswire-api.com/v1/events) and\n[`/v1/health`](https://api.crosswire-api.com/v1/health) on the REST API. Listings here are\nintentionally coverage-generic; the endpoint is the source of truth.\n\n## Pricing & keys\n\nThe MCP tools are **free at launch** — no key. The keyed REST API\n(`POST /v1/audit`, same FSAO) issues free opening-weekend keys by mail:\n[nicolasduartejaraba@gmail.com](mailto:nicolasduartejaraba@gmail.com?subject=Crosswire%20API%20key).\n\n## What we never do\n\n- **No outcome prediction.** No model probabilities are exposed.\n- **No execution.** No order routing or placement. The gate returns a verdict; your stack decides.\n- **No custody.** No customer keys, funds, or settlement.\n- **No strategy harvesting.** The API sees only the two market references being audited and an optional notional.\n\nCrosswire is an advisory data service. Nothing it returns is financial advice.\n\n## License\n\n[MIT](LICENSE) — covers this repository (listing metadata and documentation). The Crosswire\nservice itself is proprietary.\n",
+    "fetchedAt": "2026-08-12T00:36:33.117Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_resolution_risk",
+      "description": "Pre-trade safety check for cross-venue event markets (crypto\noracle-divergence pairs, metered; World Cup football, free). Flags\nresolution mismatches, void-rule divergence, scope differences\n(e.g. 90-minute vs extra-time; matched vs differing strike),\nsettlement-source and -timing gaps, stale data, and thin liquidity\nbetween the two Polymarket and Kalshi legs BEFORE you execute both.\nReturns a machine-readable verdict — execution_verdict:\nsafe / caution / block — inside a full Fungibility & Settlement Audit Object\n(FSAO) with structured findings, top-level divergence flags, venue\nrule overrides, fee-adjusted spread, and verdict reasons. Identify the\npair by EITHER canonical_event_id (a live pair id from\nlist_covered_events — the metered 'crypto:' inventory rolls daily, so\nfetch a current id there rather than reusing an old one; the free 'wc26:'\nWorld Cup pairs are stable) OR market_a + market_b (one Polymarket\nconditionId + one Kalshi ticker, order-insensitive). If the pair is not\ncovered, returns a non-error\ncoverage reply (covered: false) naming the covered inventories (free\nWorld Cup football + metered crypto pairs) and the coverage cutoff\ninstead of an FSAO."
+    },
+    {
+      "name": "list_covered_events",
+      "description": "Free discovery of everything check_resolution_risk can audit across\nboth inventories — the free World Cup football pairs and the metered\ncrypto oracle-divergence pairs (the 'crypto:' namespace is the paid\nsurface: $0.02 USDC per call after 3 free calls/day). Returns the\ncovered canonical events, their per-outcome pair ids (…#home / #draw /\n#away for football), the Polymarket conditionIds and Kalshi tickers\nwith outcome labels for each pair, match dates, the frozen ruleset_sha\npinning the identity graph, the coverage kickoff cutoff, and snapshot\nfreshness. Use a returned pair_id (or a pair's two market ids) as input\nto check_resolution_risk."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:36:33.252Z",
+  "toolsPreviewStatus": "ok"
+}

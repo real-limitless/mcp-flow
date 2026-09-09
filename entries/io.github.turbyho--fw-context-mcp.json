@@ -1,0 +1,58 @@
+{
+  "id": "io.github.turbyho/fw-context-mcp",
+  "title": "fw-context-mcp",
+  "description": "Build-aware code intelligence for embedded C/C++ firmware — libclang, FTS5, call graphs, 33 tools",
+  "summary": "Build-aware code intelligence for embedded C/C++ firmware — libclang, FTS5, call graphs, 33 tools",
+  "offersHint": "Build-aware code intelligence for embedded C/C++ firmware — libclang, FTS5, call graphs, 33 tools · Packages: pypi:fw-context-mcp",
+  "version": "0.23.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "fw-context-mcp",
+    "version": "0.23.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "fw-context-mcp",
+      "version": "0.23.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/turbyho/fw-context-mcp",
+  "repository": {
+    "url": "https://github.com/turbyho/fw-context-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-16T18:16:57.965719Z",
+  "publishedAt": "2026-07-16T18:16:57.965719Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:20.026Z",
+    "sourceRepoAt": "2026-08-11T23:17:47.121Z",
+    "readmeAt": "2026-08-11T23:17:47.715Z",
+    "toolsAt": "2026-08-12T00:58:20.026Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/turbyho/fw-context-mcp",
+    "checkedAt": "2026-08-11T23:17:47.121Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/turbyho/fw-context-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.turbyho/fw-context-mcp -->\n\n# fw-context\n\n**Build-aware code intelligence for AI coding agents working on embedded C and C++ firmware.**\n\nfw-context builds a persistent semantic index from `compile_commands.json` and the libclang AST, then exposes it to coding agents through MCP. Instead of reconstructing your firmware through repeated file reads and text searches, the agent can query the program structure produced by the active build configuration.\n\nIt helps agents answer questions such as:\n\n- Which implementation is active in this build?\n- Who calls this function, directly or indirectly?\n- Where is this callback registered?\n- Which function-pointer assignments can reach this call site?\n- Which code is excluded by preprocessing?\n- What will be affected if this API changes?\n- How does execution flow from an ISR to application code?\n\nThe goal is not to give the model more source code. It is to give it the **smallest useful, build-aware context** needed for the current task.\n\n## Results from a real firmware review\n\nIn the included [firmware review case study](docs/examples/firmware-review/), fw-context was used on an nRF52/Mbed OS project containing approximately 67,000 lines of C and C++:\n\n- 115 changed files reviewed by 8 parallel subagents\n- 19 findings across memory safety, concurrency, API use and dead code\n- 9 findings that depended on semantic relationships not available from ordinary text search alone\n- approximately 54,000 context tokens used by fw-context queries\n- an estimated 5.8 million tokens for the equivalent broad `grep` and file-reading workflow\n\nThe case study includes the review output, methodology and per-tool token analysis so the claims can be inspected rather than treated as a black-box benchmark.\n\n## Quick start\n\n### Prerequisites\n\n- Python 3.11 or newer\n- libclang\n- a project that can produce `compile_commands.json`\n- an MCP-capable coding agent such as Claude Code or OpenCode\n\nOllama is optional. It is used only for local semantic enrichment and symbol explanations; the core compiler-derived index does not require it.\n\n### Install via pip (recommended)\n\n```bash\npip install fw-context-mcp\n```\n\n### Install the current source version\n\n```bash\ngit clone https://github.com/turbyho/fw-context-mcp.git ~/.fw-context/src\ncd ~/.fw-context/src\nmake install\n```\n\nRegister fw-context with the supported coding agents detected in your project:\n\n```bash\nfw-context init\n```\n\nBuild and index the firmware:\n\n```bash\ncd /path/to/your/firmware\nfw-context index --build\n```\n\nThen restart the coding agent and ask it questions about the project. The index is persistent and incremental; after the initial run, changed translation units are reprocessed instead of rebuilding the entire index.\n\nSee the [Quick Start](docs/README.md) and [Installation Guide](docs/installation.md) for platform-specific setup and supported build systems.\n\n## What fw-context changes\n\nWithout a semantic project index, an AI coding agent usually starts by opening files, searching for names, following includes and trying to infer relationships that are implicit in the build. In embedded firmware this reconstruction is often the dominant part of the task.\n\nThat approach can fail in predictable ways:\n\n- reviewing source files that are not part of the active build\n- following the wrong preprocessor branch\n- missing callback registrations and indirect calls\n- selecting an inactive driver or platform implementation\n- treating declarations found by text search as reachable code\n- consuming large amounts of context on vendor code and unrelated files\n\nfw-context moves much of that reconstruction into a reusable compiler-derived index. The agent can request exact symbol bodies, callers, callees, references, active macros, callback relationships, inheritance edges and other targeted information without reading whole source trees.\n\n## Why embedded firmware is different\n\nIn many application-level projects, the source files visible in the repository are reasonably close to the program being executed. Embedded C and C++ projects often have a much larger gap between the source tree and the resulting program.\n\nThe active firmware depends on factors such as:\n\n- compiler flags and preprocessor definitions\n- target, board and product configuration\n- include paths and generated headers\n- Kconfig and Devicetree selections\n- selected driver and HAL implementations\n- templates, inheritance and virtual dispatch\n- callbacks, interrupt handlers and function pointers\n- vendor SDK and RTOS configuration\n\nA repository may therefore contain several plausible implementations of the same subsystem while only one is compiled for the selected target. An agent can reason convincingly about the wrong implementation unless it first reconstructs the build context correctly.\n\n## How it works\n\nfw-context indexes the project through the same compilation database used by build tooling and language servers.\n\n```mermaid\nflowchart LR\n    CCJ[compile_commands.json] & SRC[(source files)] --> LIBCLANG[libclang<br/>AST parser]\n    LIBCLANG --> SYMBOLS[symbols<br/>name, kind, USR<br/>signature, source body<br/>docstring, tokens] & FILES[files<br/>path, language<br/>ifdef-filtered content<br/>project/SDK sources] & REFS[refs &amp; call graph<br/>fp_assignments<br/>indirect_call_sites] & INHERIT[inheritance<br/>&amp; overrides<br/>virtual dispatch] & MACROS[macros<br/>raw &amp; expanded values<br/>FTS5 searchable] & ENRICH[optional enrichment<br/>embeddings &amp; summaries<br/>hotspot cache]\n    SYMBOLS & FILES & REFS & INHERIT & MACROS & ENRICH --> MCP[MCP server<br/>35 tools]\n    MCP --> LLM[AI coding agent]\n```\n\nThe index contains:\n\n- symbol definitions, signatures, source extents and documentation\n- references, direct call edges and recursive caller paths\n- function-pointer assignments and indirect call sites\n- callback registrations and invocation relationships\n- active, preprocessor-filtered file content\n- raw and expanded macro values\n- inheritance, overrides and virtual-dispatch relationships\n- translation-unit and project/vendor metadata\n- optional embeddings and LLM-generated summaries\n\nThe MCP server exposes this information as compact high-level queries optimized for repeated use by an AI agent.\n\n## Typical use cases\n\n- build-aware review of firmware commits\n- tracing execution across ISRs, work queues, tasks and callbacks\n- locating all callers and references of an API\n- identifying the implementation selected by the current build\n- impact analysis before changing a function signature or data type\n- navigating unfamiliar firmware without reading complete files\n- finding dead-code candidates and unreferenced symbols\n- separating project code from SDK and vendor code\n- reducing irrelevant source text sent to the model\n\nfw-context supports Zephyr, PlatformIO, Mbed OS, Arduino, ESP-IDF, generic CMake, Makefile-based projects and custom builds that can provide a compilation database. Additional setup paths are documented for Keil, IAR, STM32CubeIDE and TI Code Composer Studio.\n\n## Why not just use clangd or another LSP?\n\nclangd already uses compilation commands and is excellent at editor-oriented tasks such as diagnostics, completion, go-to-definition and reference lookup. fw-context does not replace it.\n\nfw-context targets a different interface and workload:\n\n- persistent project-wide data prepared for repeated agent queries\n- MCP tools that return compact, structured semantic context\n- recursive caller and impact-analysis queries\n- callback and function-pointer relationship modelling\n- active source content suitable for targeted retrieval\n- project/vendor classification and firmware-specific workflows\n- optional cached enrichment shared across repeated analyses\n\nUse clangd for interactive editing. Use fw-context when an AI agent needs structured, reusable context for reviewing, understanding or navigating the built firmware.\n\n## Documentation\n\n- [Quick Start](docs/README.md)\n- [Installation](docs/installation.md)\n- [Configuration](docs/configuration.md)\n- [MCP tool reference](docs/tools.md)\n- [MCP server notes](README-MCP.md)\n- [Firmware review case study](docs/examples/firmware-review/)\n\n## Project maturity\n\nfw-context is functional and is used on real embedded C and C++ projects, but its interfaces and indexing behaviour are still evolving. Bug reports, incorrect results, unsupported build configurations and reproducible edge cases are particularly valuable.\n\nThe project is local-first: source code and the compiler-derived index remain on the developer's machine unless optional external services are explicitly configured.\n\n## Background\n\nThe project grew from a recurring failure mode in AI-assisted firmware work: coding agents frequently spent more effort reconstructing the active program than reasoning about the engineering question itself.\n\nFor the longer explanation, read:\n[Why AI Coding Agents Keep Making the Same Mistakes When Analyzing Embedded Firmware](https://medium.com/@turbyho/why-ai-coding-agents-keep-making-the-same-mistakes-when-analyzing-embedded-firmware-6c0d8ff1a636)\n\n---\n\n**The compiler has already reconstructed your program. Let your coding agent use it.**\n",
+    "fetchedAt": "2026-08-11T23:17:47.715Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:20.026Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

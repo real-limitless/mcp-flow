@@ -1,0 +1,58 @@
+{
+  "id": "io.github.flsteven87/llm-wiki-mcp",
+  "title": "llm-wiki-mcp",
+  "description": "MCP server for Karpathy-style LLM wikis: persistent markdown your agent grows over time.",
+  "summary": "MCP server for Karpathy-style LLM wikis: persistent markdown your agent grows over time.",
+  "offersHint": "MCP server for Karpathy-style LLM wikis: persistent markdown your agent grows over time. · Packages: pypi:llm-wiki-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "llm-wiki-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "llm-wiki-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/flsteven87/llm-wiki-mcp",
+  "repository": {
+    "url": "https://github.com/flsteven87/llm-wiki-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-08T10:37:32.705677Z",
+  "publishedAt": "2026-04-08T10:37:32.705677Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:32.290Z",
+    "sourceRepoAt": "2026-08-11T23:46:07.491Z",
+    "readmeAt": "2026-08-11T23:46:07.987Z",
+    "toolsAt": "2026-08-12T01:22:32.290Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/flsteven87/llm-wiki-mcp",
+    "checkedAt": "2026-08-11T23:46:07.491Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/flsteven87/llm-wiki-mcp/master/README.md",
+    "markdown": "# llm-wiki-mcp\n\nPersistent markdown wiki for your AI agent, built on [Karpathy's LLM wiki gist](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). Four MCP tools (`wiki_read`, `wiki_write_page`, `wiki_log_append`, `wiki_inventory`) plus four Claude Code skills (`wiki-init`, `wiki-ingest`, `wiki-query`, `wiki-lint`). stdio transport, local filesystem.\n\nThe server handles the boring layer LLMs keep getting wrong: atomic writes, etag conflict checks, append-only log integrity, path containment. The skills give the agent a workflow to follow. The wiki schema lives in your own `wiki/CLAUDE.md` and grows with your domain. There is no Layer 3 schema validation in the server.\n\n> Status: alpha (v0.1.1). Local backend only. MIT licensed.\n\n## Quick start\n\nRequires Python 3.11+ and [uv](https://docs.astral.sh/uv/).\n\nPick an absolute path for the wiki folder. The server creates `pages/` and `log.md` under it on first run if they don't exist:\n\n```bash\nuvx llm-wiki-mcp --wiki-root /absolute/path/to/wiki\n```\n\nWire it into your MCP client.\n\n**Claude Code:**\n\n```bash\nclaude mcp add llm-wiki -- uvx llm-wiki-mcp --wiki-root /absolute/path/to/wiki\n```\n\n**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS) or **Cursor** (`~/.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"llm-wiki\": {\n      \"command\": \"uvx\",\n      \"args\": [\"llm-wiki-mcp\", \"--wiki-root\", \"/absolute/path/to/wiki\"]\n    }\n  }\n}\n```\n\nRestart the client. Four tools should appear: `wiki_read`, `wiki_write_page`, `wiki_log_append`, `wiki_inventory`.\n\n## Claude Code skills\n\nClaude Code users can install the bundled workflow skills as a plugin:\n\n```bash\nclaude plugin marketplace add https://github.com/flsteven87/llm-wiki-mcp\nclaude plugin install llm-wiki-skills@llm-wiki-mcp\n```\n\nEach skill reads `wiki/CLAUDE.md` for the active schema on every run, so you can evolve the schema without re-installing anything. Ask the agent things like:\n\n| Skill | What to ask | Needs MCP server? |\n|---|---|---|\n| `wiki-init` | \"Create an LLM wiki for AI safety research at `~/wikis/ai-safety`.\" | No |\n| `wiki-ingest` | \"Ingest https://arxiv.org/abs/2310.12345 into the wiki.\" | Yes |\n| `wiki-query` | \"What does the wiki say about steering vectors?\" | Yes |\n| `wiki-lint` | \"Run a wiki health check.\" | Yes |\n\n`wiki-init` is a one-shot scaffolder; the other three are Karpathy's three operations.\n\nOther MCP clients (Claude Desktop, Cursor) get the four tools but not the skills. The agent has to derive the workflow from tool descriptions alone, which works for one-off reads and writes but tends to skip the bookkeeping (log entries, backlink audits) the skills make explicit.\n\n## The four tools\n\n| Tool | Annotations | Purpose |\n|---|---|---|\n| `wiki_read` | read-only, idempotent | Read one page. Returns body, parsed frontmatter, outgoing links, etag. |\n| `wiki_write_page` | destructive, idempotent | Atomic create or update with etag CAS. Pass `etag=null` to create, the read etag to update. |\n| `wiki_log_append` | not idempotent | Append one entry to `log.md` in Karpathy's `## [YYYY-MM-DD] op \\| Title` format. |\n| `wiki_inventory` | read-only, idempotent | Snapshot the whole graph: pages, frontmatter, link edges, log entries, plus an optional plain-text mention scan for backlink audits. |\n\n`index.md` and `raw/` are intentionally not exposed as tools. The index is LLM-curated content edited via the host's `Read`/`Write`. The raw layer is immutable from the server's perspective.\n\n## Wiki layout\n\n`wiki-init` scaffolds a project that looks like this:\n\n```\nyour-project/\n├── raw/                    Immutable source files (papers, articles, transcripts)\n│   └── ...\n└── wiki/                   ← --wiki-root points here\n    ├── pages/              Markdown pages, one per topic\n    ├── log.md              Append-only session log\n    ├── index.md            LLM-curated browse page\n    └── CLAUDE.md           Schema doc the LLM reads on every operation\n```\n\n`--wiki-root` points at the curated `wiki/` folder, not the parent project folder containing `raw/`. Easy to get wrong on first install; the troubleshooting section below covers the error you'll see.\n\n## Design boundary\n\nThe server enforces mechanics, not content shape:\n\n- **Atomic writes.** `tmp-file + fsync + rename` for pages. `O_APPEND` single-write for log entries.\n- **Optimistic concurrency.** Every page has an etag (`sha256(body) || mtime_ns`). Updates supply the etag they read; a mismatch raises `WikiConflictError`, and the agent re-reads, merges, and retries.\n- **Path containment.** Slugs are regex-validated. Resolved paths are checked against the realpath of the root, blocking the CVE-2025-53109 symlink-escape class.\n- **Format-locked log line.** `## [YYYY-MM-DD] operation | Title`. Operation names are free strings; only characters that would break the line shape are rejected.\n\nThe server does not validate frontmatter shape, page categories, or link targets. That layer lives in your `wiki/CLAUDE.md` schema doc and grows with the LLM. Karpathy's gist is deliberately silent on content shape; baking a schema into the server would defeat the point.\n\n## Python API\n\nIf you want to wrap the MCP server with your own storage backend (SQLite, Notion, GDrive, a test fake), implement the `WikiStorage` Protocol and pass an instance to `build_server`:\n\n```python\nfrom llm_wiki_mcp import WikiStorage, PageRead, LogEntry\nfrom llm_wiki_mcp.server import build_server\n\nclass MyStorage:  # satisfies the WikiStorage Protocol\n    async def read_page(self, slug: str) -> PageRead: ...\n    async def write_page(self, slug, body, expected_etag=None) -> str: ...\n    async def list_pages(self) -> list[str]: ...\n    async def append_log(self, entry: LogEntry) -> None: ...\n    async def read_log(self) -> str: ...\n    async def write_raw_file(self, name, data) -> None: ...  # usually raises\n\nserver = build_server(storage=MyStorage())\nserver.run()\n```\n\n`build_server` is the composition root. The CLI `main()` is a thin caller that constructs `LocalFilesystemStorage` from `--wiki-root` and hands it in.\n\nThe bundled Claude Code skills ship as package data under `llm_wiki_mcp/skills/` and load via `importlib.resources` if you want to wire them into a non-Claude-Code agent. Typed domain errors (`WikiConflictError`, `WikiNotFoundError`, `WikiPermissionError`, `WikiPathError`, `WikiSchemaViolationError`) are importable from the package root for catching at your own boundary.\n\n## Troubleshooting\n\n**`llm-wiki-mcp: command not found`** after `uv tool install`. `uv` puts the binary in `~/.local/bin` (or `%USERPROFILE%\\.local\\bin` on Windows). Add it to `PATH`, or use `uvx llm-wiki-mcp ...` to invoke without a persistent shim.\n\n**`wiki_*` tools don't appear after editing the client config.** Restart the MCP client. Claude Desktop, Claude Code, and Cursor only re-read `mcpServers` at startup.\n\n**`WikiPathError: path escapes wiki root`.** You pointed `--wiki-root` at the project folder containing `raw/` instead of the curated `wiki/` folder inside it. `/Users/me/wikis/ai-safety/wiki` is correct; `/Users/me/wikis/ai-safety` is not.\n\n**Skills not loading in Claude Code.** Run `claude plugin list`. If `llm-wiki-skills` is missing, rerun the marketplace commands in the [Claude Code skills](#claude-code-skills) section.\n\n## Development\n\n```bash\ngit clone https://github.com/flsteven87/llm-wiki-mcp\ncd llm-wiki-mcp\nuv sync --extra dev\nuv run pytest\nuv run ruff check .\nuv run pyright src/llm_wiki_mcp\n```\n\n## License\n\nMIT. See [LICENSE](https://github.com/flsteven87/llm-wiki-mcp/blob/master/LICENSE).\n\n<!-- mcp-name: io.github.flsteven87/llm-wiki-mcp -->\n\n",
+    "fetchedAt": "2026-08-11T23:46:07.987Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:32.290Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

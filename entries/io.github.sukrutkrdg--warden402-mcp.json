@@ -1,0 +1,76 @@
+{
+  "id": "io.github.sukrutkrdg/warden402-mcp",
+  "title": "warden402-mcp",
+  "description": "Pre-execution safety for AI agents on Base. Guard a token, tx or address: block/review/clear.",
+  "summary": "Pre-execution safety for AI agents on Base. Guard a token, tx or address: block/review/clear.",
+  "offersHint": "Pre-execution safety for AI agents on Base. Guard a token, tx or address: block/review/clear. · Packages: npm:warden402-mcp · Env vars: WARDEN_API_URL",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "warden402-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WARDEN_API_URL",
+        "description": "Override the Warden API base (default https://warden402.xyz/api)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "warden402-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WARDEN_API_URL",
+          "description": "Override the Warden API base (default https://warden402.xyz/api)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WARDEN_API_URL",
+      "description": "Override the Warden API base (default https://warden402.xyz/api)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sukrutkrdg/warden402.xyz",
+  "repository": {
+    "url": "https://github.com/sukrutkrdg/warden402.xyz",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T14:30:39.392594Z",
+  "publishedAt": "2026-07-01T14:30:39.392594Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:53.947Z",
+    "sourceRepoAt": "2026-08-11T23:19:26.446Z",
+    "readmeAt": "2026-08-11T23:19:26.899Z",
+    "toolsAt": "2026-08-12T00:59:53.947Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sukrutkrdg/warden402.xyz",
+    "checkedAt": "2026-08-11T23:19:26.446Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sukrutkrdg/warden402.xyz/main/README.md",
+    "markdown": "# Warden — `warden402.xyz`\n\n**The pre-execution security & trust layer for agents transacting on Base.**\n\nGive Warden a token, a pending transaction, or an address → get a single decision:\n**`block` · `review` · `clear`** with reasons, a risk score, and a plain-language summary.\n\nWarden uses the [x402 Bazaar](https://402.com.tr) as its intelligence backend and builds\n**judgment**, a **provable track record**, and (next) a **firewall** on top.\n\n## Why\n\nx402 infrastructure is ahead of demand; the missing layer is **trust**. The marketplace\nvertical is crowded (Coinbase Bazaar + dozens of clones), but *pre-execution security* is\nwide open. Warden owns that vertical.\n\n## What's in here\n\n| Path | What |\n|------|------|\n| `web/` | **The website** (warden402.xyz) — landing + live demo + track-record. Runs the guard **in-process**, so it deploys as a single Vercel project. |\n| `src/` | Standalone **Hono Guard API** (same logic) — for agents/SDK/MCP and a persistent-ledger host. |\n| `sdk/` | `@warden402/sdk` — client + `enforce`/`assertSafe` gate + LangChain tools. |\n| `mcp/` | `warden402-mcp` — stdio MCP server exposing `guard_token` / `guard_tx` / `guard_address`. |\n| `scripts/` | `smoke.ts` (offline decision tests), `probe.ts` (calibration), `recheck.ts` (outcome re-checker). |\n\n## The decision contract (immutable spine)\n\nEvery endpoint returns a `Verdict` (`src/schema/verdict.ts`). Principles:\n\n1. **The LLM never touches the verdict.** `decision` and `riskScore` come from deterministic\n   rules; the LLM only writes `summary`. Auditable.\n2. **Fails safe.** If a Bazaar signal can't be fetched it becomes `unknown` → `degraded:true`\n   → the verdict is `review` at worst, never a false `clear`.\n3. **Every verdict is snapshotted** (`verdictId` + signal evidence) → the track-record moat.\n\n### Decision rules\n- Hard rule: `honeypot` or `sanctions` fail → **block** (regardless of score).\n- Weighted-average risk ≥ 70 → **block**; degraded → **review**.\n- Any single `fail` (e.g. liquidity collapse) floors the decision at **review** (can't be\n  diluted by the average). 2+ `warn`s → **review**. Else **clear**.\n\n## Endpoints\n\n| Endpoint | What it checks |\n|----------|----------------|\n| `GET /guard/token?address=` | honeypot, taxes, liquidity, holder concentration, OFAC |\n| `POST /guard/tx` `{from,to,calldata}` | decodes calldata (unlimited approve / setApprovalForAll), sanctions + contract risk on the counterparty |\n| `GET /guard/address?address=` | sanctions, contract risk, age/activity |\n| `GET /track-record` | public trust stats (decision mix, hit-rate, rugs caught/missed) |\n\n(The website exposes the same via `/api/guard`.)\n\n## Run locally\n\n```bash\n# Single-project site (recommended) — runs guard in-process\ncd web && npm install\ncp .env.example .env.local   # set BAZAAR_INTERNAL_SECRET\nnpm run dev                  # http://localhost:3000\n\n# Or the standalone Hono API\nnpm install\ncp .env.example .env         # set BAZAAR_INTERNAL_SECRET\nnpm run smoke                # offline decision tests\nnpm run dev                  # http://localhost:8787\n```\n\n## Production topology\n\n- **`web/` is the production API + site.** Deployed as a single Vercel project\n  (Root Directory = `web`). It runs the guard/firewall **in-process**, so the\n  endpoints agents actually call (`/api/guard`, `/api/firewall`) are live here.\n  Hot path is **edge-friendly**: KV store (no `fs`) + per-IP rate limiting.\n  Persistence turns on when `KV_REST_API_URL` / `KV_REST_API_TOKEN` are set.\n- **`src/` (Hono API) is an optional Node host** — for teams that want a\n  persistent-disk ledger or the x402 payment layer. Not required; not deployed by\n  default. The `src/` modules are the canonical logic; a **drift-guard test**\n  (`tests/drift.test.ts`) proves the web copy stays identical.\n- **Drift is impossible to ship silently:** `npm test` fails if the two diverge.\n\n## Deploy\n\nSee **[DEPLOY.md](./DEPLOY.md)**. TL;DR: new Vercel project, **Root Directory = `web`**,\nset `BAZAAR_INTERNAL_SECRET` (+ optional `KV_REST_API_URL`/`KV_REST_API_TOKEN` for\npersistent track-record), deploy. Done.\n\n## Bazaar internal-auth\n\nWarden calls Bazaar **without paying** x402 (so our own products don't bill themselves) via\nthe `X-Warden-Internal` header. Bazaar must have a matching `WARDEN_INTERNAL_SECRET`. Until\nset, all signals come back `unknown` and verdicts stay safely at `review`.\n\n## Roadmap\n\n1. ✅ Guard MVP (`/guard/token`) + verdict contract\n2. ✅ `/guard/tx` (pre-sign) + `/guard/address` + track-record + re-checker\n3. ✅ SDK / MCP / website\n4. ⏳ x402 payment layer (free tier → 402) + MCP Registry / Agentic.Market listing\n5. ⏳ **Firewall / policy gateway** — sits in front of an agent's x402 + onchain calls:\n   spend caps, allow/deny by trust score, anomaly + injection-drain detection, audit log.\n   B2B, Cloudflare Worker edge. The north star.\n",
+    "fetchedAt": "2026-08-11T23:19:26.899Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:53.947Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

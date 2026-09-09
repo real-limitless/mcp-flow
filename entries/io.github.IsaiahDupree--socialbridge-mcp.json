@@ -1,0 +1,94 @@
+{
+  "id": "io.github.IsaiahDupree/socialbridge-mcp",
+  "title": "socialbridge-mcp",
+  "description": "Unified social-media data across 10 networks: profiles, posts, search, comments, cross-search.",
+  "summary": "Unified social-media data across 10 networks: profiles, posts, search, comments, cross-search.",
+  "offersHint": "Unified social-media data across 10 networks: profiles, posts, search, comments, cross-search. · Remote MCP (streamable-http) at https://socialbridge-mcp.vercel.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://socialbridge-mcp.vercel.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://socialbridge-mcp.vercel.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://socialbridge-mcp.vercel.app",
+  "sourceUrl": "https://github.com/IsaiahDupree/socialbridge-mcp",
+  "repository": {
+    "url": "https://github.com/IsaiahDupree/socialbridge-mcp",
+    "source": "github",
+    "id": "1318902057"
+  },
+  "updatedAt": "2026-08-01T02:34:05.916049Z",
+  "publishedAt": "2026-08-01T02:34:05.916049Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:30.884Z",
+    "sourceRepoAt": "2026-08-12T00:09:55.862Z",
+    "readmeAt": "2026-08-12T00:09:56.331Z",
+    "toolsAt": "2026-08-12T00:09:56.524Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/IsaiahDupree/socialbridge-mcp",
+    "checkedAt": "2026-08-12T00:09:55.862Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/IsaiahDupree/socialbridge-mcp/master/README.md",
+    "markdown": "# socialbridge-mcp\n\nA remote **MCP (Model Context Protocol)** connector for [SocialBridge API](https://social-api-olive.vercel.app) — unified social-media data behind one `/v1` contract across nine networks (Instagram, TikTok, YouTube, Twitter/X, Reddit, Facebook, Pinterest, Snapchat, Threads; LinkedIn is registered but quarantined). Every network exposes the same four operations — `profile`, `posts`, `search`, `comments` — returning one flat schema (`Profile` / `Post` / `Comment`) tagged with `platform`, plus a cross-platform superset (`search_all`) and a few platform-specific extras.\n\n**Live:** `https://socialbridge-mcp.vercel.app/mcp` — 10 tools. Since the upstream SocialBridge deployment is metered (RapidAPI/Apify) and gates every `/v1/*` route behind a RapidAPI proxy-secret guard, this connector authenticates its own outbound calls with that same secret (`SOCIALBRIDGE_MCP_PROXY_SECRET`, sent as the `X-RapidAPI-Proxy-Secret` header) and applies a soft per-IP rate limit (`SOCIALBRIDGE_MCP_RATE_LIMIT`, default 30 tool-calls/hour, in-memory) so the free MCP tier stays a discovery channel rather than an unmetered bypass of the paid listing — see `lib/ratelimit.js`.\n\n## What this is, and why it's a separate connector\n\nSocialBridge API is a plain REST API. Any HTTP client can already call it directly. This repo exists because **MCP clients (Claude, ChatGPT, and other MCP-aware agents) don't consume arbitrary REST APIs — they consume MCP tools.** `socialbridge-mcp` is a thin adapter layer that:\n\n- Exposes each SocialBridge endpoint as a discoverable, typed MCP **tool** (name, description, zod input schema, annotations) that an LLM can reason about and call directly.\n- Speaks the MCP **streamable-HTTP** transport at a single `/mcp` endpoint, so it registers as a connector in Claude, ChatGPT, or any other MCP client with one URL.\n- Does nothing else. Every tool call is a pass-through `fetch` to SocialBridge, and the JSON response is handed back verbatim as the tool result.\n\n## Authentication: None on the MCP side (deliberate)\n\nSocialBridge's data has no per-user dimension — it's public social-media metadata (profiles, posts, search results, comments). There is nothing to gate per-caller, so this connector ships with no OAuth, no login, no Supabase, no billing, no demo-vs-real split — every caller gets the same real, live data. `api/mcp.js` builds a fresh, stateless `McpServer` per request.\n\n> The connector still authenticates its own **outbound** calls to the metered upstream (see below) — that is a server-to-server detail invisible to MCP callers, not per-caller auth.\n\n## Tools\n\nOne tool per real SocialBridge `/v1` route (from `social-api/openapi.yaml` + `src/routes.js`):\n\n| Tool | SocialBridge endpoint | Description |\n|---|---|---|\n| `social_profile` | `GET /v1/{platform}/profile` | One account profile as the unified `Profile` schema. |\n| `social_posts` | `GET /v1/{platform}/posts` | An account's recent posts as the unified `Post[]`. |\n| `social_search` | `GET /v1/{platform}/search` | Search one network for posts (unified `Post[]`). |\n| `social_comments` | `GET /v1/{platform}/comments` | Comments/replies on a post (unified `Comment[]`). |\n| `search_all` | `GET /v1/search/all` | Fan one query across every network in parallel, merged. |\n| `reddit_history` | `GET /v1/reddit/history` | Keyless Reddit full-history pull (Arctic Shift). |\n| `facebook_ads` | `GET /v1/facebook/ads` | Meta Ad Library records as the unified `Ad[]` (gated). |\n| `youtube_transcript` | `GET /v1/youtube/transcript` | Caption-language list / cue segments for a video. |\n| `threads_post` | `GET /v1/threads/post` | A single thread by shortcode or URL, with replies. |\n| `snapchat_spotlight` | `GET /v1/snapchat/spotlight` | A creator's public Spotlight feed (unified `Post[]`). |\n\n`platform` is an enum of `instagram, tiktok, youtube, twitter, reddit, facebook, pinterest, snapchat, threads, linkedin`. Keyless platforms return real data with no setup; gated platforms return an honest `credentials_required` and LinkedIn returns `platform_disabled` — nothing is ever faked.\n\nAll 10 tools are read-only and annotated `{ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true }`.\n\n## Environment variables\n\n| Var | Default | Purpose |\n|---|---|---|\n| `SOCIALBRIDGE_MCP_API_BASE_URL` | `https://social-api-olive.vercel.app` | Upstream SocialBridge base URL (override for local/self-hosted testing). |\n| `SOCIALBRIDGE_MCP_PROXY_SECRET` | _(unset)_ | RapidAPI proxy secret, sent outbound as `X-RapidAPI-Proxy-Secret` to pass the upstream `/v1/*` guard. Without it the upstream returns `403` and tools surface it honestly. |\n| `SOCIALBRIDGE_MCP_RATE_LIMIT` | `30` | Soft per-IP cap on `tools/call` per hour (in-memory, per serverless instance). |\n\nThis is a **free discovery tier** over the metered SocialBridge API — heavy users should go through the paid RapidAPI/Apify listings.\n\n## How it wraps social-api\n\nEach tool handler does a plain `fetch(\\`${SOCIALBRIDGE_MCP_API_BASE_URL}${path}\\`, ...)` (with the `X-RapidAPI-Proxy-Secret` header when configured) against the real SocialBridge REST API and returns the parsed JSON as MCP tool-result content:\n\n```js\n{ content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }\n```\n\nUpstream HTTP errors (4xx/5xx) are caught and surfaced as a typed MCP error result via an `asError` helper rather than crashing the request.\n\n## Local development\n\n```bash\nnpm install\nnode local-server.js &                       # serves /mcp and /health on :3900\nSOCIALBRIDGE_MCP_PROXY_SECRET=... npm run smoke   # real end-to-end smoke test\n```\n",
+    "fetchedAt": "2026-08-12T00:09:56.331Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "social_profile",
+      "description": "Fetch one account profile from any supported network as the unified Profile schema (id, username, displayName, bio, url, followers, following, postCount, verified, avatarUrl, externalUrl), tagged with its platform. Keyless on Instagram, TikTok, YouTube, Pinterest, Snapchat, and Threads. Twitter/X, Reddit, and Facebook need operator-side credentials (returns credentials_required until set); LinkedIn is quarantined (platform_disabled)."
+    },
+    {
+      "name": "social_posts",
+      "description": "An account's recent posts / videos / tweets / threads / pins as the unified Post[] schema (id, url, author, text, createdAt, like/comment/share/view counts, mediaType, mediaUrls, hashtags), tagged with its platform. Keyless on Instagram, TikTok, YouTube, Pinterest, Snapchat, and Threads. Twitter/X, Reddit, and Facebook need operator-side credentials; LinkedIn is quarantined. For a keyless Reddit history pull use reddit_history."
+    },
+    {
+      "name": "social_search",
+      "description": "Search a single network for posts matching a query, returned as the unified Post[] schema and tagged with its platform. Keyless on TikTok, YouTube, and Pinterest. Instagram, Twitter/X, Reddit, and Facebook need operator-side credentials (returns credentials_required until set). Snapchat and Threads do not support keyless search (returns not_supported); LinkedIn is quarantined. To fan one query across every network at once, use search_all."
+    },
+    {
+      "name": "social_comments",
+      "description": "Comments / replies on one post as the unified Comment[] schema, tagged with its platform. Provide url OR postId. Keyless on TikTok, YouTube, and Threads (and a single tweet via syndication on Twitter/X). Instagram, Reddit, and Facebook need operator-side credentials; Snapchat comments are not supported keyless; LinkedIn is quarantined."
+    },
+    {
+      "name": "search_all",
+      "description": "The wedge no incumbent offers: fan one search query out across the requested platforms (default: all keyless, non-disabled) in parallel, merge the unified Post[], and tag each result with its platform. Gated / disabled / unsupported / throttled engines are listed under \"skipped\" with an honest reason — the call still returns whatever came back."
+    },
+    {
+      "name": "reddit_history",
+      "description": "Keyless full-history pull via Arctic Shift — a user's or subreddit's posts, or a keyword search across Reddit history, returned as the unified Post[]. Provide at least one of username, subreddit, or q. Optional before/after bound the window by epoch-seconds or ISO timestamp."
+    },
+    {
+      "name": "facebook_ads",
+      "description": "Meta (Facebook/Instagram) Ad Library records as the unified Ad[] (id, pageName, adCreativeBody, adSnapshotUrl, startDate, currency, spend + impression ranges). Provide q OR pageId. GATED — needs operator-side FACEBOOK_ACCESS_TOKEN (with ads_read); returns credentials_required until set."
+    },
+    {
+      "name": "youtube_transcript",
+      "description": "Available caption-language list (and cue segments where retrievable) for a YouTube video. Provide url OR videoId. Keyless. NOTE: actual cue text is BotGuard-gated keyless, so it is reported honestly (available:false, empty segments) rather than fabricated."
+    },
+    {
+      "name": "threads_post",
+      "description": "Fetch a single thread by shortcode or URL, including its replies, as the unified Post (with replies). Provide code OR url. Keyless."
+    },
+    {
+      "name": "snapchat_spotlight",
+      "description": "A creator's public Snapchat Spotlight feed as the unified Post[] with real view/comment/share counts. Keyless."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:09:56.524Z",
+  "toolsPreviewStatus": "ok"
+}

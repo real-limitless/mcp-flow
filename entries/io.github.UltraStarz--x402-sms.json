@@ -1,0 +1,82 @@
+{
+  "id": "io.github.UltraStarz/x402-sms",
+  "title": "x402-sms",
+  "description": "Pay-per-call MCP server. $0.03 USDC sends one transactional SMS to a US phone number via x402.",
+  "summary": "Pay-per-call MCP server. $0.03 USDC sends one transactional SMS to a US phone number via x402.",
+  "offersHint": "Pay-per-call MCP server. $0.03 USDC sends one transactional SMS to a US phone number via x402. · Packages: npm:x402-sms-mcp · Env vars: BUYER_PRIVATE_KEY",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "x402-sms-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "BUYER_PRIVATE_KEY",
+        "description": "Ethereum private key for the buyer wallet that pays the per-call USDC fee.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "x402-sms-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "BUYER_PRIVATE_KEY",
+          "description": "Ethereum private key for the buyer wallet that pays the per-call USDC fee.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "BUYER_PRIVATE_KEY",
+      "description": "Ethereum private key for the buyer wallet that pays the per-call USDC fee.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/UltraStarz/x402-sms-mcp",
+  "repository": {
+    "url": "https://github.com/UltraStarz/x402-sms-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-15T08:45:29.634913Z",
+  "publishedAt": "2026-05-15T08:45:29.634913Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:33:31.680Z",
+    "sourceRepoAt": "2026-08-12T00:00:54.995Z",
+    "readmeAt": "2026-08-12T00:00:55.684Z",
+    "toolsAt": "2026-08-12T01:33:31.680Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/UltraStarz/x402-sms-mcp",
+    "checkedAt": "2026-08-12T00:00:54.995Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/UltraStarz/x402-sms-mcp/main/README.md",
+    "markdown": "# x402-sms-mcp\n\nA paid MCP server that lets AI agents send SMS messages to US phone numbers.\n\nEach `send_sms` tool call:\n1. Sends a transactional SMS via a verified toll-free number\n2. Auto-appends `Reply STOP to opt out` if the body doesn't include opt-out language\n3. Costs **$0.03 USDC** per message, paid automatically from the configured wallet via [x402](https://x402.org)\n\nNo API keys. No Twilio account. The agent pays the toll, the message goes out.\n\n> **Status (2026-05-22): Public beta on Base Sepolia (testnet).** The seller's toll-free number is undergoing Twilio TFV approval (submitted 2026-05-14, still in queue). During this window `/send` calls short-circuit to a `503 delivery_pending_tfv_approval` response **before** the buyer wallet signs anything, so no USDC is moved. The day Twilio approves the number, delivery flips on; pricing flips to Base mainnet shortly after.\n\n## Install in Claude Desktop / Cursor / Windsurf\n\nAdd this to your MCP config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n\n```json\n{\n  \"mcpServers\": {\n    \"x402-sms\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"x402-sms-mcp\"],\n      \"env\": {\n        \"BUYER_PRIVATE_KEY\": \"0xYOUR_PRIVATE_KEY\"\n      }\n    }\n  }\n}\n```\n\nRestart your MCP client. A `send_sms` tool will appear.\n\n## What you need\n\nA wallet on **Base Sepolia** (testnet) funded with:\n\n- A small amount of ETH for gas (free from <https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet>)\n- USDC for payments (free from <https://faucet.circle.com>, select Base Sepolia)\n\nGenerate a throwaway key:\n\n```bash\nnode -e \"const {generatePrivateKey,privateKeyToAccount}=require('viem/accounts');const k=generatePrivateKey();console.log('PRIVATE_KEY=',k);console.log('ADDRESS=',privateKeyToAccount(k).address)\"\n```\n\nUse the printed address to claim from faucets, then put the printed key into your MCP config.\n\n## Try it\n\nIn Claude Desktop, ask:\n\n> Text my cell at +15551234567 when this long-running task finishes. The recipient (me) consents to receive this message.\n\nClaude will call `send_sms` with `opt_in_attestation: true`. You'll get back a Twilio SID + the on-chain settlement hash. The transfer is visible at <https://sepolia.basescan.org>.\n\n## Compliance — please read\n\nThis MCP wraps a **regulated SMS gateway**. The operator (you) is responsible for ensuring every recipient has consented to receive messages before invoking `send_sms`. The `opt_in_attestation: true` argument is your legal attestation under TCPA and CTIA short-code/long-code rules.\n\nDo NOT use this MCP to:\n- Send marketing or promotional content\n- Text strangers, scraped lists, or anyone who hasn't opted in\n- Send to non-US numbers (the seller currently rejects non-`+1` E.164)\n- Send anything related to S.H.A.F.T.-C (Sex, Hate, Alcohol, Firearms, Tobacco, Cannabis)\n\nThe seller-side automatically:\n- Appends `Reply STOP to opt out` to every message\n- Honors carrier-level STOP/HELP keyword handling\n- Logs each send for audit purposes\n\nIf you have any doubt about consent, **do not call this tool.**\n\n## Configuration\n\n| Env var             | Required | Default                                                              |\n| ------------------- | -------- | -------------------------------------------------------------------- |\n| `BUYER_PRIVATE_KEY` | yes      | —                                                                    |\n| `SMS_URL`           | no       | `https://x402-sms-server-production.up.railway.app/send`             |\n\nTo point the MCP server at your own seller deployment, override `SMS_URL`.\n\n## Errors you might see\n\nThe MCP surfaces three distinct error shapes so the model can explain what happened to the user and decide whether to retry.\n\n| Cause                                                                   | What you'll see in chat                                                                                | Was payment taken? |\n| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | :----------------: |\n| Seller's toll-free number still in TFV review (`HTTP 503`)              | \"SMS not sent — service is in pre-launch wait\" + the seller's submitted date and retry guidance         |        no          |\n| Buyer wallet exceeded per-minute/hour/day rate limit (`HTTP 429`)        | \"SMS not sent — this buyer wallet hit the per-X rate limit\" + `retry_after_seconds`                     |        no          |\n| Twilio-side rejection (e.g. invalid number `21211`, opted-out `21610`)  | Friendly hint mapped from the Twilio error code + the full response body                                |   yes (the send tried) |\n\nFor the full mapping of Twilio error codes the MCP recognizes, see `TWILIO_HINTS` in `src/index.ts`.\n\n## How it works\n\n```\nClaude Desktop ──tool call──> MCP server (this package, on your machine)\n                              │\n                              │ x402 payment (USDC, Base Sepolia)\n                              │ + to/message/opt_in_attestation\n                              ▼\n                              Public seller (Hono + Twilio on Railway)\n                              │\n                              │ Twilio dispatch\n                              ▼\n                              SMS lands on recipient's phone\n                              │\n                              │ Twilio SID + status\n                              ▼\n                              MCP server ──tool result──> Claude Desktop\n```\n\nThe MCP server doesn't talk to Twilio directly. It signs an x402 payment with the buyer's wallet, sends the payment + message details to the seller endpoint, and the seller's verified toll-free number dispatches the SMS. Your private key never leaves your machine. The seller never sees it.\n\n## Roadmap\n\n- **Now (2026-05-22):** Base Sepolia testnet, TFV pending. Payment flow verified end-to-end; deliveries gated on Twilio approval.\n- **Once TFV clears:** Real US SMS delivery, testnet pricing held while we collect early traffic.\n- **A few weeks out:** A2P 10DLC Brand approval → higher per-day throughput tier.\n- **Mainnet flip:** Production launch, USDC settles on Base mainnet; Solana facilitator on roadmap after.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:00:55.684Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:33:31.680Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.alx1p/luma-mcp",
+  "title": "Luma Events",
+  "description": "Discover events from Luma — search by category, city, distance, and keywords with calendar export",
+  "summary": "Discover events from Luma — search by category, city, distance, and keywords with calendar export",
+  "offersHint": "Discover events from Luma — search by category, city, distance, and keywords with calendar export · Packages: pypi:luma-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "luma-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "luma-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/alx1p/luma-cal-mcp",
+  "repository": {
+    "url": "https://github.com/alx1p/luma-cal-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-23T00:04:21.265832Z",
+  "publishedAt": "2026-03-23T00:04:21.265832Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:30:43.754Z",
+    "sourceRepoAt": "2026-08-11T23:57:09.414Z",
+    "readmeAt": "2026-08-11T23:57:09.874Z",
+    "toolsAt": "2026-08-12T01:30:43.754Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/alx1p/luma-cal-mcp",
+    "checkedAt": "2026-08-11T23:57:09.414Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/alx1p/luma-cal-mcp/main/README.md",
+    "markdown": "# Luma Events MCP Server\n\n<!-- mcp-name: io.github.alx1p/luma-mcp -->\n\nA [FastMCP](https://gofastmcp.com) server that discovers events from [Luma](https://luma.com) — combining the Discover feed and subscribed calendars — with distance filtering and ICS export. No API key required for basic discovery.\n\n## How it works\n\nLuma's Discover API has two endpoints that behave very differently:\n\n- **Category search** (e.g. AI, Tech, Food) — returns hundreds of events with rich tagging, but only for your home region. Great depth, geographically locked.\n- **City search** (e.g. Paris, London, Tokyo) — returns a curated set of ~20–40 top/featured events for that city. Broad coverage, smaller set.\n\nThis MCP uses both via two search modes:\n\n- **Home mode** (default, no `city` param) — searches your preferred categories via the Category API. Deep, rich results filtered by address and distance.\n- **Travel mode** (pass a `city`) — fetches the curated top events for that city via the Place API.\n\nOn first run, the server returns popular events near you (geo-biased by IP), then walks you through setting up categories, address, and login for progressively richer results.\n\n## Tools\n\n| Tool | What it does |\n|------|-------------|\n| `search_events` | **Home mode**: search by category with address/distance filtering. **Travel mode**: curated events for a specific city. |\n| `set_preferences` | Save default categories (list), address, and max distance. Persists in SQLite across restarts. |\n| `get_event` | Fetch full details for a single event by API id or `lu.ma` URL. |\n| `export_event_ics` | Generate an ICS string for any event — paste into Apple Calendar, Google Calendar, Outlook, etc. |\n\n## Setup\n\n### Prerequisites\n\n- Python 3.10+\n- [uv](https://docs.astral.sh/uv/) (recommended) or pip\n\n### Install\n\n```bash\ngit clone <this-repo>\ncd \"Luma Cal MCP\"\nuv venv .venv --python 3.12\nsource .venv/bin/activate\nuv pip install -e .\n```\n\n### Subscribed calendars (optional)\n\nTo access events from calendars you follow on Luma, install the optional auth dependencies:\n\n```bash\nuv pip install -e \".[auth]\"\nplaywright install chromium\n```\n\n### First run\n\nOn first use, the raw Discover feed returns hundreds of popular events near you (geo-biased by IP). The server then walks you through setup one prompt at a time to narrow results:\n\n1. **Address** — asks for your location and preferred search radius, which dramatically reduces the result set to events near you.\n2. **Categories** — asks which topics interest you (from: tech, ai, food, arts, climate, fitness, wellness, crypto) for focused discovery.\n3. **Login** — asks whether to log in for subscribed calendars.\n\nEach prompt appears after returning results, so you see events immediately. After you configure a preference, the search reruns automatically and the next prompt appears. You can respond \"not now\" (prompt reappears next time) or \"never\" (permanently dismissed).\n\n### Configure\n\nUse `set_preferences` to save defaults that persist across restarts:\n\n```\nset_preferences(address=\"3180 18th St, San Francisco\", max_distance_miles=15)\nset_preferences(categories=[\"ai\", \"tech\"])\n```\n\n### Run\n\n```bash\n# stdio transport (for Cursor, Claude Desktop, etc.)\nfastmcp run src/luma_mcp/server.py\n\n# or directly\npython -m luma_mcp.server\n```\n\n## Authentication\n\nSubscribed calendars require a Luma session cookie. The server handles this automatically via an inline login flow.\n\n**How it works:**\n\n1. **First call** — after results, the server prompts for login. The agent asks you in chat.\n2. **Login** — the agent calls `search_events` with `login=true`. A Chromium browser opens to `lu.ma/signin`; log in normally. The session cookie is stored in the local SQLite DB.\n3. **Decline** — the agent calls `search_events` with `skip_login_days=N` to defer (0 = ask next time, -1 = never).\n4. **Returning user, cookie expired** — the browser opens automatically for re-authentication.\n5. **Validation** — the stored cookie is validated against Luma's API every 24 hours.\n\n## New Event Tracking\n\nThe server maintains a local SQLite database (`~/.luma-mcp/events.db` by default) that records the first time each event is seen. This enables two filters on `search_events`:\n\n- **`added_within_days`** — only return events first seen within the last N days.\n- **`new_only`** — only return events that have never been seen before.\n\nEvery result also includes `first_seen_at` (ISO timestamp) and `is_new` (boolean).\n\n## Cursor MCP Configuration\n\nAdd to your Cursor MCP settings (`.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"luma-events\": {\n      \"command\": \"uv\",\n      \"args\": [\n        \"run\",\n        \"--directory\", \"/path/to/Luma Cal MCP\",\n        \"fastmcp\", \"run\", \"src/luma_mcp/server.py\"\n      ],\n      \"env\": {\n        \"PYTHONPATH\": \"/path/to/Luma Cal MCP/src\"\n      }\n    }\n  }\n}\n```\n\n## Data Sources\n\n| Source | Auth | Coverage |\n|--------|------|----------|\n| **Discover** (`api.lu.ma`) | None required | Public events by city and category — same feed as [luma.com/discover](https://luma.com/discover) |\n| **Subscribed calendars** (`api.lu.ma`) | Browser login (auto-managed) | Events from calendars you follow on Luma |\n\nWithout logging in, the server still works — Discover is fully available with no authentication.\n\n## Distance Filtering\n\nSet a home address via `set_preferences(address=\"...\")` with `max_distance_miles`. In home mode, events beyond the radius are excluded. Events without location data are included by default (with `distance_miles: null`). In travel mode, distance filtering uses the city center at 25 miles automatically.\n\nGeocoding uses [Nominatim](https://nominatim.org/) (free, OpenStreetMap) by default. For higher volume, set `GEOCODING_PROVIDER=google` or `mapbox` with the corresponding `GEOCODING_API_KEY` in your environment.\n\n## Event Times\n\nEvent times (`start_at`, `end_at`) are returned in the user's system timezone. The `timezone` field from Luma is included in every result for reference.\n\n## Limitations\n\n- **RSVP is browser-only.** `get_event` returns the RSVP URL; there's no headless registration path. Use `export_event_ics` to add events to your calendar.\n- **Web endpoints are undocumented.** The Discover and subscribed-calendars feeds use Luma's internal API (`api.lu.ma`), which can change without notice. Breakage is isolated to `luma_web_client.py`.\n",
+    "fetchedAt": "2026-08-11T23:57:09.874Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:30:43.754Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

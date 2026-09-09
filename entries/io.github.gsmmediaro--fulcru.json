@@ -1,0 +1,71 @@
+{
+  "id": "io.github.gsmmediaro/fulcru",
+  "title": "Fulcru",
+  "description": "Find where ChatGPT names your competitor, write the page that closes the gap, measure it.",
+  "summary": "Find where ChatGPT names your competitor, write the page that closes the gap, measure it.",
+  "offersHint": "Find where ChatGPT names your competitor, write the page that closes the gap, measure it. · Remote MCP (streamable-http) at https://api.fulcru.app/mcp · Requires headers: Authorization",
+  "version": "2.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.fulcru.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.fulcru.app/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token from the Integrations page at fulcru.app (format: `Bearer <token>`). The server also speaks OAuth 2.1 with dynamic client registration, so a client that follows the 401 challenge can authorize instead of pasting a token.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://fulcru.app",
+  "sourceUrl": "https://github.com/gsmmediaro/fulcru",
+  "repository": {
+    "url": "https://github.com/gsmmediaro/fulcru",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T11:59:07.183685Z",
+  "publishedAt": "2026-07-27T11:59:07.183685Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token from the Integrations page at fulcru.app (format: `Bearer <token>`). The server also speaks OAuth 2.1 with dynamic client registration, so a client that follows the 401 challenge can authorize instead of pasting a token.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:21:16.180Z",
+    "sourceRepoAt": "2026-08-11T23:44:08.754Z",
+    "readmeAt": "2026-08-11T23:44:09.287Z",
+    "toolsAt": "2026-08-12T01:21:16.181Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/gsmmediaro/fulcru",
+    "checkedAt": "2026-08-11T23:44:08.754Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/gsmmediaro/fulcru/master/README.md",
+    "markdown": "# fulcru\n\n**Get named by AI search engines.**\n\nWhen someone asks ChatGPT \"what's the best CRM for a small team\", the answer names\ntwo or three products. Those get the customer. Everyone else is invisible.\n\n`fulcru` finds the questions where an AI assistant names a competitor instead of\nyou, writes the page that closes the gap, and measures what publishing it did. It\nruns as a CLI, an MCP server, and an agent skill, so a human or an agent can run\nthe whole loop.\n\nThis repo is the open, self-hostable agent surface. The measurement engine is the\nhosted [Fulcru](https://fulcru.app) service; everything here is a thin client that\ntalks to it with your token.\n\nWe run it on ourselves and publish the result, whichever way it goes. Today it\nscores us **0 out of 34 prompts**: [we sell AI visibility and we score zero on our\nown product](https://www.fulcru.app/guides/scored-zero-on-our-own-tool), with the\nfull run and the source data.\n\n```bash\nnpm install -g fulcru\nexport FULCRU_TOKEN=pk_...        # Settings -> Integrations at fulcru.app\n```\n\nOr run it in Docker, with nothing installed on the host:\n\n```bash\ndocker build -t fulcru .\ndocker run --rm -e FULCRU_TOKEN=pk_... fulcru gaps\n```\n\nNo secrets are baked into the image; the token is passed at run time. Verified on\n`node:20-alpine`, 2026-07-27.\n\n## The loop\n\n```bash\n$ fulcru gaps\n  0%  k57jc...  best AI visibility tracker for a SaaS startup -> AI names Profound, Peec AI\n  0%  k57bw...  how do I know if ChatGPT recommends my brand -> AI names Otterly AI\n 33%  k57xz...  tools to track brand mentions in Perplexity -> AI names Semrush\n\nWrite the top one:  fulcru write k57jc...\n\n$ fulcru write k57jc... > page.md     # the drafted article, grounded in what AI cites\n$ fulcru publish k57jc... https://mysite.com/blog/ai-visibility-trackers\nPublished. Baseline: AI names you in 0% of 9 measured answers.\n\n$ fulcru delta\n    0% ->  44%  +44pts  Best AI Visibility Trackers, Compared\n```\n\nThat last line is the whole point.\n\n## Commands\n\n| Command | What it does |\n|---|---|\n| `fulcru gaps [n]` | Questions where AI names a competitor and not you, worst first |\n| `fulcru write <promptId>` | Writes the page that closes one gap; Markdown to stdout |\n| `fulcru publish <pageId> <url>` | Marks it live and snapshots the baseline to measure from |\n| `fulcru delta` | What your published pages actually did |\n| `fulcru report [section]` | `overview`, `competitors`, `sources`, `mentions`, `prompts` |\n\nAdd `--json` to any command for the raw payload.\n\n## Built for agents\n\nOutput is terse lines, not JSON blobs, because the caller is usually an LLM and\nits context is the scarce resource. `fulcru gaps` costs an agent about 50 tokens;\nthe same data as raw API JSON costs about 800. `fulcru write` sends the Markdown\nto stdout and everything else to stderr, so `fulcru write <id> > page.md` gives a\nclean file.\n\n## MCP\n\nTwo ways to wire the five Fulcru tools into an agent.\n\n**Remote (hosted).** Point any MCP client at the hosted endpoint with your token:\n\n```json\n{\n  \"mcpServers\": {\n    \"fulcru\": {\n      \"url\": \"https://little-orca-977.convex.site/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer pk_...\" }\n    }\n  }\n}\n```\n\n**Local (stdio).** For hosts that prefer a subprocess, this package ships a stdio\nMCP server that proxies to the hosted endpoint:\n\n```json\n{\n  \"mcpServers\": {\n    \"fulcru\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"-p\", \"fulcru\", \"fulcru-mcp\"],\n      \"env\": { \"FULCRU_TOKEN\": \"pk_...\" }\n    }\n  }\n}\n```\n\nThe `-p` is not decoration. This package ships two commands, and without it npx\nruns the one named after the package, which is the CLI: the host gets a usage\nscreen instead of an MCP server.\n\nTools: `fulcru_gaps`, `fulcru_write_page`, `fulcru_publish_page`, `fulcru_delta`,\n`fulcru_visibility`.\n\nBoth speak protocol revision `2026-07-28` and the older handshake-based\nrevisions, and pick per request from what the client sends. A client on the new\nrevision gets `server/discover`, per-request `_meta`, and a cacheable tool list;\none still sending `initialize` is served exactly as before. Nothing needs\nconfiguring either way.\n\n## Skill\n\nThe [`skills/fulcru`](skills/fulcru/SKILL.md) skill runs the whole playbook using\nnothing but web access — audit a domain, find the gaps, write the page, re-measure\n— with no account and no token. Install it into an agent that supports skills:\n\n```bash\n# Claude / OpenClaw\nnpx skills add gsmmediaro/fulcru\n\n# Hermes\nhermes skills install gsmmediaro/fulcru\n```\n\nHermes scans third-party skills before installing and prints the verdict, so you\ncan see what you are agreeing to run. If you would rather track this repo as a\nsource and pick up updates, tap it instead:\n\n```bash\nhermes skills tap add gsmmediaro/fulcru\nhermes skills install fulcru\n```\n\nThe CLI and MCP above are what you use when you want it measured **continuously**\nacross every engine, with the before/after delta tracked for you.\n\n## Configuration\n\n| Env var | Required | Default | Purpose |\n|---|---|---|---|\n| `FULCRU_TOKEN` | for the CLI + local MCP | — | Your account token (Settings -> Integrations) |\n| `FULCRU_ENDPOINT` | no | `https://little-orca-977.convex.site/mcp` | Point at a self-hosted or custom-domain endpoint |\n\nNo secrets are baked into this repo. The token is read from the environment only.\n\n## Self-hosting\n\nThe skill needs nothing. The CLI and MCP need a Fulcru account for the continuous,\nmeasured loop; point `FULCRU_ENDPOINT` at your own instance if you run one.\n\nA Docker image is provided:\n\n```bash\ndocker build -t fulcru .\ndocker run --rm -e FULCRU_TOKEN=pk_... fulcru gaps\n```\n\n## Contributing\n\nIssues and PRs welcome. The tool logic lives in the hosted service; this repo is\nthe CLI, the stdio MCP proxy, and the skill. If AI names a competitor instead of\nyou, open an issue with the question — that is exactly the gap this is built to\nclose.\n\nIf this is useful, a ⭐ genuinely helps.\n\n## License\n\nAGPL-3.0-or-later. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:44:09.287Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:21:16.181Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Unauthorized: authentication required\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

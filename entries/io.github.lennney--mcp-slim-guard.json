@@ -1,0 +1,58 @@
+{
+  "id": "io.github.lennney/mcp-slim-guard",
+  "title": "mcp-slim-guard",
+  "description": "76% fewer MCP tokens in our standard benchmark. Same upstream call. Exact recovery.",
+  "summary": "76% fewer MCP tokens in our standard benchmark. Same upstream call. Exact recovery.",
+  "offersHint": "76% fewer MCP tokens in our standard benchmark. Same upstream call. Exact recovery. · Packages: npm:mcp-slim-guard",
+  "version": "0.1.1-alpha.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-slim-guard",
+    "version": "0.1.1-alpha.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-slim-guard",
+      "version": "0.1.1-alpha.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/lennney/mcp-slim-guard",
+  "repository": {
+    "url": "https://github.com/lennney/mcp-slim-guard",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-31T08:34:44.910963Z",
+  "publishedAt": "2026-07-31T08:34:44.910963Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:54.988Z",
+    "sourceRepoAt": "2026-08-11T23:38:03.337Z",
+    "readmeAt": "2026-08-11T23:38:03.891Z",
+    "toolsAt": "2026-08-12T01:16:54.989Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lennney/mcp-slim-guard",
+    "checkedAt": "2026-08-11T23:38:03.337Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lennney/mcp-slim-guard/main/README.md",
+    "markdown": "# MCP Slim Guard\n\nMCP Slim Guard gives a host one deliberate way to reach authorized upstream\ntools. It keeps input schemas intact, validates calls before the upstream is\ninvoked, and can recover an oversized result exactly without repeating that\ninvocation.\n\n## Choose a mode\n\n| Mode    | What the host sees                                                                                                 | Best fit                                                         |\n| ------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |\n| Native  | Authorized original tool names and full schemas, plus `read_result`                                                | Hosts that work well with a normal MCP catalog, including Codex  |\n| Compact | `find_tool`, `call_tool`, and `read_result`; discovery returns each match's full original schema                   | A small, predictable host surface                                |\n| Extreme | The Compact tool surface and schemas; only sufficiently large results receive a shorter recoverable first delivery | Context-sensitive hosts where a smaller first result is valuable |\n\nCompact is the default for `start`. Native is the default installation plan for\nCodex. Compact is the default for Claude Code; Claude Code supports Compact and\nExtreme installation plans, not Native.\n\nAll modes apply the same allow/deny authorization. Compact and Extreme return at\nmost three discovery matches, each with the original required fields, enums, and\nnested schema. A call is validated against that original schema before the\nupstream server is contacted.\n\n## Quick start\n\n```bash\nnpm install -g mcp-slim-guard@0.2.0-alpha.1\ncd /path/to/project-with-mcp-config\nmcp-slim-guard init\nmcp-slim-guard validate\n\n# Run the default Compact mode.\nmcp-slim-guard start\n```\n\n`init` writes `mcp-slim-guard.yml` with version `2`. The file contains upstream\nand security settings only. Select a mode in the host command, not in YAML.\n\n```bash\n# Inspect a host-specific plan without changing host files.\nmcp-slim-guard plan --host codex\nmcp-slim-guard plan --host claude-code --mode extreme\n\n# Verify the configured runtime without changing Host configuration or calling a business Tool.\nmcp-slim-guard verify --host codex\n\n# Apply a reviewed plan.\nmcp-slim-guard install --host codex --mode native\n```\n\n## Host entries\n\nFor Codex, use Native when you want the normal authorized MCP catalog:\n\n```toml\n[mcp_servers.slim_guard]\ncommand = \"mcp-slim-guard\"\nargs = [\"start\", \"--mode\", \"native\"]\ncwd = \"/absolute/path/to/project\"\n```\n\nFor Claude Code, use Compact by default:\n\n```json\n{\n  \"mcpServers\": {\n    \"slim-guard\": {\n      \"command\": \"mcp-slim-guard\",\n      \"args\": [\"start\", \"--mode\", \"compact\"],\n      \"cwd\": \"/absolute/path/to/project\"\n    }\n  }\n}\n```\n\nSee [host setup](docs/host-setup.md) for the full configuration and verification\nsteps.\n\n## Configuration\n\n```yaml\nversion: 2\ntools:\n  allow:\n    - \"upstream_*\"\n  deny:\n    - \"*_delete_*\"\nssrf:\n  mode: block\n  block_private_ips: true\n  allow_domains: []\n  block_domains: []\nrate_limit:\n  default: \"60/min\"\ninjection_detection:\n  enabled: true\n  sensitivity: medium\n  mode: block\naudit:\n  output: file\n  filePath: mcp-slim-guard-audit.log\nservers:\n  upstream:\n    command: npx\n    args: [\"-y\", \"@your/mcp-server\"]\n```\n\nVersion 1 configuration is intentionally unsupported. The removed `compressor`\nsection is rejected rather than migrated automatically.\n\n## Repair an invalid call\n\nIf arguments do not match an authorized tool's original schema, Slim Guard\nreturns a normal MCP tool error with `structuredContent` that identifies the\nschema failure and confirms that the upstream tool was not invoked. Correct the\narguments and retry; submitted argument values are not echoed in that error.\n\n## Result recovery\n\nWhen a response needs recoverable delivery, the first response includes a\n`result_ref`. Use `read_result` with `query` to locate up to three bounded local\nfragments, or omit `query` and follow `next_cursor` to recover the exact snapshot.\nBoth paths use the same immutable capture and never invoke the upstream tool again.\nDo not combine `query` with `cursor`. Native and Compact use the standard delivery\nboundary. Extreme uses a smaller boundary only when the initial delivered response\nis at least half the size of the exact response; otherwise it passes the exact\nresponse through unchanged.\n\n## Evidence and checks\n\nThe repository includes a 24-task mode comparison, result-recovery fixtures,\nand a 100-tool / 8,000-row stress fixture. Run the current artifacts with:\n\n```bash\nnpm run build\nnpm run bench:task\nnpm run bench:compression\nnpm run bench:stress\nnpm run bench:compression:verify\n```\n\nTheir reports are mode-specific and are generated locally; do not treat older\nalpha benchmark figures as claims for this product line.\n\n## Development\n\n```bash\nnpm run build\nnpm run typecheck\nnpm run lint\nnpm test\nnpm run verify:package-boundary\nnpm run smoke:package\n```\n\nThis project is an alpha. Review authorization patterns and upstream settings\nbefore using it with privileged tools.\n",
+    "fetchedAt": "2026-08-11T23:38:03.891Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:54.989Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

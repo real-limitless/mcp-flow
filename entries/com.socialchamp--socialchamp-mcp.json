@@ -1,0 +1,52 @@
+{
+  "id": "com.socialchamp/socialchamp-mcp",
+  "title": "Social Champ",
+  "description": "Connect AI agents to Social Champ: manage channels, posts, AI content, queue, and approvals.",
+  "summary": "Connect AI agents to Social Champ: manage channels, posts, AI content, queue, and approvals.",
+  "offersHint": "Connect AI agents to Social Champ: manage channels, posts, AI content, queue, and approvals. · Remote MCP (streamable-http) at https://mcp.socialchamp.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.socialchamp.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.socialchamp.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://developers.socialchamp.com",
+  "sourceUrl": "https://github.com/SocialChamp/socialchamp-mcp",
+  "repository": {
+    "url": "https://github.com/SocialChamp/socialchamp-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-27T10:02:18.114539Z",
+  "publishedAt": "2026-06-27T10:02:18.114539Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:53:44.932Z",
+    "sourceRepoAt": "2026-08-12T00:26:35.406Z",
+    "readmeAt": "2026-08-12T00:26:36.051Z",
+    "toolsAt": "2026-08-12T01:53:44.932Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SocialChamp/socialchamp-mcp",
+    "checkedAt": "2026-08-12T00:26:35.406Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SocialChamp/socialchamp-mcp/main/README.md",
+    "markdown": "# Social Champ MCP server\n\nA Model Context Protocol (MCP) server for the [Social Champ](https://developers.socialchamp.com)\nplatform. It exposes the full Social Champ tool catalog to MCP-compatible AI\nclients such as Claude Desktop, Claude Code, and Cursor: scheduling and managing\nposts, managing connected channels and workspaces, labels, queues, recycling,\nshareable calendars, agency approval workflows, and the AI content wizard.\n\n## Tools\n\nThis server mirrors the live Social Champ MCP tool catalog. Channels are\nconnected social profiles; workspaces group channels and shareable calendars.\nThe tool definitions are generated from `tools.schema.json`, a snapshot of the\nlive server's catalog, so the full set of tools, argument names, and\ndescriptions stays in parity with the hosted server.\n\nTools are grouped by domain:\n\n- Posts: create, update, delete, bulk schedule, browse, reorder the queue, set Instagram first comment.\n- Channels: list, filter, fetch one, location search.\n- Workspaces: list.\n- Calendars: view options, in-app URL, shareable calendar create, list, update, delete.\n- Queue: pause, resume, clear.\n- Labels: list, create, apply, remove, bulk apply.\n- Recycling: list collections, recycle a post.\n- Agency workflows: list pending approvals, approve, reject, remind approvers, bulk delete.\n- AI wizard: generate a post, suggest hashtags, rewrite, generate images.\n\nEach tool is annotated with `ToolAnnotations` so clients can apply the right\nconfirmation behavior. Read-only tools carry `readOnlyHint=True`; destructive\ntools (`delete_post`, `delete_shareable_calendar`, `bulk_delete`, `queue_clear`)\ncarry `destructiveHint=True`. Agency tools require the caller token to also\ncarry the `manage_team` scope; this is noted in each tool's description.\n\nFor the full per-tool list with required arguments and scopes, see\n`tools.schema.json` here, or `api/mcp/IMPLEMENTED.md` in the auth repo.\n\n## Requirements\n\n- Python 3.10 or newer.\n- A Social Champ API key or OAuth2 access token. Both are sent as a Bearer token.\n  OAuth2 scopes used by the published tools are `read_profile` and `manage_post`.\n\n## Install\n\nWith [uv](https://docs.astral.sh/uv/):\n\n```bash\nuv pip install socialchamp-mcp\n```\n\nWith pip:\n\n```bash\npip install socialchamp-mcp\n```\n\nFrom source:\n\n```bash\ngit clone https://github.com/socialchamp/socialchamp-mcp.git\ncd socialchamp-mcp\npip install -e \".[dev]\"\n```\n\n## Configuration\n\nSet configuration through environment variables.\n\n| Variable | Required | Default | Purpose |\n| --- | --- | --- | --- |\n| `SOCIALCHAMP_API_KEY` | yes | none | Bearer token: a Social Champ API key or OAuth2 access token |\n| `SOCIALCHAMP_API_BASE_URL` | no | `https://mcp.socialchamp.com/mcp` | Override the hosted MCP endpoint (for example a local test server) |\n| `SOCIALCHAMP_TIMEOUT` | no | `30` | Request timeout in seconds |\n| `SOCIALCHAMP_TRANSPORT` | no | `stdio` | `stdio`, `sse`, or `streamable-http` |\n| `SOCIALCHAMP_MCP_PROTOCOL_VERSION` | no | `2025-06-18` | MCP protocol version sent on initialize |\n\nCopy `.env.example` to `.env` for local use. Never commit `.env`.\n\n## MCP client setup\n\n### Claude Desktop\n\nAdd the server to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"socialchamp\": {\n      \"command\": \"socialchamp-mcp\",\n      \"env\": {\n        \"SOCIALCHAMP_API_KEY\": \"your-api-key\"\n      }\n    }\n  }\n}\n```\n\nIf the console script is not on your PATH, use `\"command\": \"python\"` with\n`\"args\": [\"-m\", \"socialchamp_mcp\"]`.\n\n### Claude Code\n\n```bash\nclaude mcp add socialchamp --env SOCIALCHAMP_API_KEY=your-api-key -- socialchamp-mcp\n```\n\n## Running over HTTP\n\nThe default transport is stdio, which is what Claude Desktop and Claude Code\nuse. To run over HTTP instead, set `SOCIALCHAMP_TRANSPORT`:\n\n```bash\nSOCIALCHAMP_TRANSPORT=streamable-http SOCIALCHAMP_API_KEY=your-api-key socialchamp-mcp\n```\n\n`sse` is also supported. Point your client at the resulting HTTP endpoint.\n\n## Mapping to the real API\n\nThe tools forward to the hosted Social Champ MCP server over JSON-RPC. The live\ntools are implemented in the auth backend (`api/mcp/handlers.ts`) and reach\nchamp through internal service routes that an external API key cannot call\ndirectly, so the only surface a user's token can reach for the full catalog is\nthe hosted MCP server. `src/socialchamp_mcp/client.py` is the only file that\nmakes HTTP calls: it speaks JSON-RPC 2.0 (`initialize`, `tools/list`,\n`tools/call`) to the endpoint in `SOCIALCHAMP_API_BASE_URL`.\n\n`src/socialchamp_mcp/server.py` is generated from `tools.schema.json`, a\nsnapshot of the live server's `api/mcp/tools.ts`. To refresh after the live\ncatalog changes:\n\n1. Re-export the snapshot from the auth repo into `tools.schema.json` (the live\n   `tools.ts` array, as JSON).\n2. Run `python scripts/generate_server.py`.\n\nThe base URL and Bearer authentication are confirmed from the Social Champ\n[authentication guide](https://developers.socialchamp.com/docs/authentication).\n\n## Project structure\n\n```\nsocialchamp-mcp/\n├── tools.schema.json        # snapshot of the live tool catalog (source for codegen)\n├── scripts/\n│   └── generate_server.py   # regenerates server.py from tools.schema.json\n├── src/\n│   └── socialchamp_mcp/\n│       ├── __init__.py\n│       ├── __main__.py      # python -m socialchamp_mcp\n│       ├── config.py        # settings from the environment\n│       ├── client.py        # the only file that makes HTTP calls (JSON-RPC)\n│       └── server.py        # GENERATED: FastMCP instance and tool definitions\n└── tests/\n    └── test_server.py\n```\n\n## Adding a tool\n\nTools are generated, not hand-written. Add the tool to the live `api/mcp/tools.ts`\nin the auth repo, refresh `tools.schema.json`, then run\n`python scripts/generate_server.py`. The generator maps each tool to a\n`@mcp.tool` function that forwards to `call_tool`, picks a `ToolAnnotations`\npreset (`READ`, `WRITE`, `UPDATE`, `DESTRUCTIVE`), and writes the docstring from\nthe tool description. Update the classification sets in `scripts/generate_server.py`\nwhen adding a destructive or read-only tool.\n\nSee `CONTRIBUTING.md` for the full checklist.\n\n## Development\n\n```bash\npip install -e \".[dev]\"\npytest\n```\n\nTo confirm the server starts over stdio:\n\n```bash\nSOCIALCHAMP_API_KEY=dummy SOCIALCHAMP_TIMEOUT=5 socialchamp-mcp\n```\n\nIt waits for input on stdin rather than exiting. Stop it with Ctrl+C.\n\n## Security\n\n- The API key is read from the environment and sent as a Bearer token. It is\n  never logged or written to disk by this server.\n- Keep your key in `.env` or your client's secret store. Never commit it. The\n  `.gitignore` excludes `.env`.\n- Tools are annotated read-only, write, or destructive. Destructive tools\n  (`delete_post`, `delete_shareable_calendar`, `bulk_delete`, `queue_clear`)\n  carry `destructiveHint=True` so clients can confirm before running them.\n- Agency tools require the caller token to carry the `manage_team` scope. Tokens\n  without it cannot invoke them.\n- Scope your token to only the permissions the tools need. If a token is\n  exposed, rotate it in your Social Champ account.\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:26:36.051Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:53:44.932Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32001,\"message\":\"Missing or invalid Authorization header.\"}}",
+  "toolsPreviewStatus": "auth_required"
+}

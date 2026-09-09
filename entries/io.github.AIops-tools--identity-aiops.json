@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/identity-aiops",
+  "title": "Identity AIops",
+  "description": "Governed Keycloak + authentik identity ops: users, events, clients, MFA, RCA. 29 tools.",
+  "summary": "Governed Keycloak + authentik identity ops: users, events, clients, MFA, RCA. 29 tools.",
+  "offersHint": "Governed Keycloak + authentik identity ops: users, events, clients, MFA, RCA. 29 tools. · Packages: pypi:identity-aiops",
+  "version": "0.7.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "identity-aiops",
+    "version": "0.7.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "identity-aiops",
+      "version": "0.7.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Identity-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Identity-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:49:53.524839Z",
+  "publishedAt": "2026-08-10T06:49:53.524839Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.571Z",
+    "sourceRepoAt": "2026-08-12T00:18:04.679Z",
+    "readmeAt": "2026-08-12T00:18:05.200Z",
+    "toolsAt": "2026-08-12T01:47:49.571Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Identity-AIops",
+    "checkedAt": "2026-08-12T00:18:04.679Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Identity-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/identity-aiops -->\n\n# Identity AIops\n\n**Governed AI-ops for self-hosted identity providers — Keycloak + authentik.**\n\n`identity-aiops` gives AI agents (and the humans supervising them) a safe,\naudited way to operate the identity plane of self-built and small/mid-size\ninfrastructure: who can sign in, what failed and why, which OAuth clients are\nmisconfigured, and who still has no second factor. It is built for teams\nrunning their own Keycloak or authentik who want agent-driven identity\noperations **with receipts** — every tool call is audited, and writes carry\nrisk-tier labels with dry-run previews and undo tokens.\n\n> **Verification status**: modelled on the public Keycloak admin REST API and\n> authentik API v3 and exercised against mocked responses; there is no recorded\n> end-to-end run against a live instance yet. `identity-aiops doctor` is the\n> fastest live check — see [`docs/VERIFICATION.md`](docs/VERIFICATION.md).\n\n## What it does\n\n| Area | Tools |\n|------|-------|\n| Realm / system | overview, realm settings (brute-force protection, password/OTP policy), identity providers |\n| Users | list/search, detail, count, sessions, credentials (MFA surface), groups, members, lockout status |\n| Events | authentication events, admin/config-change events |\n| Clients | list, detail, per-client sessions, session stats |\n| **Flagship RCA** | `login_failure_rca` — brute-force (spray/targeted) vs misconfigured client vs expired-credential storm vs lockout storm; `stale_access_audit` — dormant users, never-logged-in accounts, service accounts used interactively, orphaned sessions; `client_misconfig_audit` — wildcard/http redirect URIs, public clients with secrets, implicit flow, missing PKCE, password grant (ranked risk); `mfa_coverage_analysis` — coverage %, gap list |\n| Governed writes | `disable_user` / `enable_user` (undo pair), `revoke_user_sessions`, `require_password_reset` (undo clears the flag), `update_client_redirect_uris` (undo replays the prior list), `rotate_client_secret` (masked priorState) |\n\n29 MCP tools: 21 reads (including the 4 analyses) + 6 governed writes + 2 undo\ntools (`undo_list`, `undo_apply`). The\nsame tools work on both platforms — a per-target `platform` field selects the\nAPI shape (auth flow + resource paths).\n\n## Supported platforms\n\n| Platform | API | Auth |\n|----------|-----|------|\n| **keycloak** | Admin REST API (`/admin/realms/{realm}/...`) | OAuth2 client-credentials grant against `/realms/{realm}/protocol/openid-connect/token`; short-lived token auto-refreshed on 401 |\n| **authentik** | API v3 (`/api/v3/...`) | Long-lived API token (Bearer) |\n\nPlatform notes: `require_password_reset`, `rotate_client_secret`,\n`client_sessions`, `client_session_stats`, and `user_lockout_status` are\nKeycloak-shaped (authentik has no equivalent endpoint — the tools return a\nteaching error there). authentik contributes the global session list used by\nthe stale-access audit's orphaned-session check.\n\nMissing a platform (Authelia, Zitadel, Ory...), an endpoint, or an analysis\nyou need? **缺功能提 issue/PR 欢迎留言** — open an issue or PR at\nhttps://github.com/AIops-tools/Identity-AIops, feature requests welcome.\n\n## What this tool does, and does not, decide\n\nIt delivers identity-provider operations — reads and writes — accurately and\nrecords every one of them. It does **not** decide whether a write is allowed to\nhappen. That is the agent's judgement, or the permission of the account you\nconnect it with: give the Keycloak service account (or authentik token) only\nthe roles you want the agent to have — `view-users` / `view-events` /\n`view-clients` and no `manage-*` — and the writes fail at the server, the place\nthat actually owns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in\n`~/.identity-aiops/audit.db`, and reversible writes still capture their\nbefore-state (fetched, never guessed) and record a replayable inverse.\n\n> Each tool declares a `risk_level`, carried into the audit row as a descriptive\n> tier — so a reviewer can see at a glance that a row was, say, a high-risk\n> secret rotation. It is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/identity-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool now enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Quick start\n\n```bash\nuv tool install identity-aiops        # or: pipx install identity-aiops\n\nidentity-aiops init      # wizard: target + realm + credential (encrypted)\nidentity-aiops doctor    # token acquisition + user-count probe per target\nidentity-aiops overview  # one-shot estate summary\n```\n\nFor Keycloak, create a **confidential client** with *Service accounts roles*\nenabled and grant its service account the realm-management roles you want the\nagent to have (start with `view-users`, `view-events`, `view-clients`; add\n`manage-users` / `manage-clients` only if you want the governed writes). For\nauthentik, create an API token for a (least-privileged) admin user.\n\nCLI surface: `users` (list/show/sessions/credentials + disable/enable/\nrevoke-sessions/require-reset), `clients` (list/show + set-redirect-uris/\nrotate-secret), `events`, `overview`, `doctor`, `secret`, `init`, `mcp`.\nWrite commands take `--dry-run` and always double-confirm; execution is\ndelegated to the governed MCP twins so CLI writes land in the audit log too.\n\n## MCP configuration\n\n```json\n{\n  \"mcpServers\": {\n    \"identity-aiops\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"identity-aiops\", \"identity-aiops-mcp\"],\n      \"env\": {\n        \"IDENTITY_AIOPS_MASTER_PASSWORD\": \"<master password for secrets.enc>\"\n      }\n    }\n  }\n}\n```\n\n> **env-block caveat**: MCP clients launch the server with a minimal\n> environment — variables from your shell profile are NOT inherited. Anything\n> the server needs (`IDENTITY_AIOPS_MASTER_PASSWORD`, an alternate\n> `IDENTITY_AIOPS_HOME`, `IDENTITY_AUDIT_APPROVED_BY` to attribute writes on the\n> audit trail) must be set in the `env` block above.\n\n## Governance\n\nEvery MCP tool runs through the vendored governance harness\n(`identity_aiops/governance/`, zero external dependencies):\n\n- **Audit** — every call (including errors) lands in\n  `~/.identity-aiops/audit.db` with params, status, and risk level, plus any\n  optional approver/rationale annotation. It records; it does not authorize.\n- **Budget** — per-session call/time budgets and a runaway breaker\n  (`IDENTITY_MAX_TOOL_CALLS`, `IDENTITY_MAX_TOOL_SECONDS`,\n  `IDENTITY_RUNAWAY_MAX`) — a safety backstop, not an authorization gate.\n- **Risk tier** — reads are `low`; containment/hygiene writes (`disable_user`,\n  `revoke_user_sessions`, `require_password_reset`) are `medium`;\n  access-granting or boundary-replacing writes (`enable_user`,\n  `update_client_redirect_uris`, `rotate_client_secret`) are `high`. The tier\n  is a descriptive label carried onto the audit row, not a gate — whether a\n  write runs is the agent's judgement or the connecting account's permissions.\n  `IDENTITY_AUDIT_APPROVED_BY` / `IDENTITY_AUDIT_RATIONALE` are optional\n  annotations recorded when set, never required.\n- **Undo** — reversible writes capture the REAL prior state (fetched before\n  mutating, never guessed) and record a replayable inverse descriptor in\n  `~/.identity-aiops/undo.db`. Irreversible writes (`revoke_user_sessions`,\n  `rotate_client_secret`) record priorState only — the secret is stored\n  **masked**, never in clear.\n- **Sanitize** — every string an IdP returns is folded through an\n  injection-safe normaliser (bounded length, control characters stripped)\n  before an agent sees it.\n- **Secrets** — credentials live Fernet-encrypted (scrypt-derived key) in\n  `~/.identity-aiops/secrets.enc`, never plaintext on disk; a legacy\n  `IDENTITY_<TARGET>_SECRET` env var is honoured as fallback and\n  `identity-aiops secret migrate` moves it in. TLS verification defaults ON.\n\n## Configuration\n\n`~/.identity-aiops/config.yaml` (created by `init`):\n\n```yaml\ntargets:\n  - name: sso1\n    platform: keycloak\n    base_url: https://sso.example.com\n    realm: master\n    username: identity-aiops-agent   # the confidential client's client_id\n    verify_ssl: true\n  - name: ak1\n    platform: authentik\n    base_url: https://auth.example.com\n    verify_ssl: true\n```\n\nSet `IDENTITY_AIOPS_HOME` to relocate all state (config, secrets, audit,\nundo). `IDENTITY_AIOPS_CONFIG` points the MCP server at an alternate\nconfig file.\n\n## Development\n\n```bash\nuv sync\nuv run pytest -q\nuv run ruff check .\n```\n\nMIT License. Part of the [AIops-tools](https://github.com/AIops-tools) line —\ngoverned AI-ops tooling for self-hosted infrastructure.\n",
+    "fetchedAt": "2026-08-12T00:18:05.200Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.571Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

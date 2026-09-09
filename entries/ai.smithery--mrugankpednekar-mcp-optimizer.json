@@ -1,0 +1,65 @@
+{
+  "id": "ai.smithery/mrugankpednekar-mcp-optimizer",
+  "title": "mrugankpednekar-mcp-optimizer",
+  "description": "Optimize crew and workforce schedules, resource allocation, and routing with linear and mixed-inte…",
+  "summary": "Optimize crew and workforce schedules, resource allocation, and routing with linear and mixed-inte…",
+  "offersHint": "Optimize crew and workforce schedules, resource allocation, and routing with linear and mixed-inte… · Remote MCP (streamable-http) at https://server.smithery.ai/@mrugankpednekar/mcp-optimizer/mcp · Optional headers: Authorization",
+  "version": "1.16.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://server.smithery.ai/@mrugankpednekar/mcp-optimizer/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://server.smithery.ai/@mrugankpednekar/mcp-optimizer/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token for Smithery authentication",
+          "valueTemplate": "Bearer {smithery_api_key}"
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/mrugankpednekar/mcp-optimizer",
+  "repository": {
+    "url": "https://github.com/mrugankpednekar/mcp-optimizer",
+    "source": "github"
+  },
+  "updatedAt": "2025-10-07T21:15:31.815401Z",
+  "publishedAt": "2025-10-07T21:15:31.815401Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token for Smithery authentication",
+      "valueTemplate": "Bearer {smithery_api_key}"
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:44:11.069Z",
+    "sourceRepoAt": "2026-08-12T00:44:11.069Z",
+    "readmeAt": "2026-08-12T00:44:11.756Z",
+    "toolsAt": "2026-08-12T00:44:11.930Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mrugankpednekar/mcp-optimizer",
+    "checkedAt": "2026-08-12T00:44:11.069Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mrugankpednekar/mcp-optimizer/main/README.md",
+    "markdown": "# Crew Optimizer\n\nCrew Optimizer rebuilds the original optimisation project around the [CrewAI](https://github.com/joaomdmoura/crewai) ecosystem. It provides reusable CrewAI tools and agents capable of solving linear programs via SciPy's HiGHS backend, exploring mixed-integer models with a lightweight branch-and-bound search (or OR-Tools fallback), translating natural language prompts into LP JSON, and diagnosing infeasibility. You can embed the tools inside your own crews or call them programmatically through the `OptimizerCrew` convenience wrapper, or serve them over the MCP protocol for clients such as Smithery.\n\n## Installation\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npip install -e .[mip]\n```\n\nThis installs Crew Optimizer together with optional OR-Tools support for MILP solving. Add `pytest`, `ruff`, or other dev tools as needed (`pip install pytest`).\n\n## Quick Usage\n\n```python\nfrom crew_optimizer import OptimizerCrew\n\ncrew = OptimizerCrew(verbose=False)\n\nlp_model = {\n    \"name\": \"diet-toy\",\n    \"sense\": \"min\",\n    \"objective\": {\n        \"terms\": [\n            {\"var\": \"x\", \"coef\": 3},\n            {\"var\": \"y\", \"coef\": 2},\n        ],\n        \"constant\": 0,\n    },\n    \"variables\": [\n        {\"name\": \"x\", \"lb\": 0},\n        {\"name\": \"y\", \"lb\": 0},\n    ],\n    \"constraints\": [\n        {\n            \"name\": \"c1\",\n            \"lhs\": {\n                \"terms\": [\n                    {\"var\": \"x\", \"coef\": 1},\n                    {\"var\": \"y\", \"coef\": 2},\n                ],\n                \"constant\": 0,\n            },\n            \"cmp\": \">=\",\n            \"rhs\": 8,\n        },\n        {\n            \"name\": \"c2\",\n            \"lhs\": {\n                \"terms\": [\n                    {\"var\": \"x\", \"coef\": 3},\n                    {\"var\": \"y\", \"coef\": 1},\n                ],\n                \"constant\": 0,\n            },\n            \"cmp\": \">=\",\n            \"rhs\": 6,\n        },\n    ],\n}\n\nsolution = crew.solve_lp(lp_model)\nprint(solution)\n```\n\nTo integrate with a wider multi-agent workflow, call `crew.build_crew()` to obtain a `Crew` populated with the LP, MILP, and parser agents. Provide model inputs through CrewAI’s shared context as usual.\n\n## MCP / Smithery Hosting\n\nCrew Optimizer ships an MCP server (`python -m crew_optimizer.server`) that wraps the same solvers. The repository already contains a Smithery manifest (`smithery.json`) and build config (`smithery.yaml`).\n\n1. Push the repository to GitHub.\n2. In Smithery, choose **Publish an MCP Server**, connect GitHub, and select the repo.\n3. Smithery installs the package (`pip install .`) and launches `mcp http src/crew_optimizer/server.py --port 3333` using the bundled startup script.\n4. The server exposes the following tools:\n   - `solve_linear_program`\n   - `solve_mixed_integer_program`\n   - `parse_natural_language`\n   - `diagnose_infeasibility`\n   - `solve_word_problem_with_data` - Solve optimization problems using data from files\n\nFor local testing:\n\n```bash\nmcp http src/crew_optimizer/server.py --port 3333 --cors \"*\"\n```\n\n## Testing\n\nInstall test dependencies (`pip install pytest`) and run:\n\n```bash\npython -m pytest\n```\n\nThe suite covers the LP solver, MILP branch-and-bound, and the NL parser.\n\n## Solving Word Problems with Data Files\n\nThe MCP server includes a `solve_word_problem_with_data` tool that can parse data files (CSV, JSON, Excel) and use them to solve optimization word problems. This is particularly useful when you have data in files and want to formulate and solve optimization problems based on that data.\n\n### Example Usage\n\n```python\n# Example: Solve a production planning problem with data from a CSV file\ncsv_data = \"\"\"product,cost,capacity,demand\nWidget,10,100,50\nGadget,15,80,60\nThing,12,120,40\"\"\"\n\nproblem = \"\"\"\nMinimize total cost subject to:\n- Production of each product cannot exceed capacity\n- Production must meet demand\n- All production quantities are non-negative\n\"\"\"\n\n# The tool will parse the CSV, extract the cost, capacity, and demand values,\n# and formulate the optimization problem automatically.\n```\n\nThe tool supports:\n- **CSV/TSV files**: Automatically detects and parses comma or tab-separated values\n- **JSON files**: Parses JSON arrays or objects\n- **Excel files**: Requires `pandas` and `openpyxl` (install with `pip install crew-optimizer[excel]`)\n- **Auto-detection**: Automatically detects file format if not specified\n\nThe parsed data is incorporated into the problem description, allowing the natural language parser to extract values and formulate constraints and objective functions based on the actual data.\n\n## Licence\n\nDistributed under the MIT Licence. See `LICENSE` for details.\n",
+    "fetchedAt": "2026-08-12T00:44:11.756Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:44:11.930Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Server not found",
+  "toolsPreviewStatus": "unreachable"
+}

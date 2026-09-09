@@ -1,0 +1,89 @@
+{
+  "id": "io.github.ihint/merchant-context",
+  "title": "Merchant Context",
+  "description": "Resolve sourced merchant facts and safe actions before an agent acts.",
+  "summary": "Resolve sourced merchant facts and safe actions before an agent acts.",
+  "offersHint": "Resolve sourced merchant facts and safe actions before an agent acts. · Remote MCP (streamable-http) at https://api.merchant.atomandbits.com/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.merchant.atomandbits.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.merchant.atomandbits.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://merchant.atomandbits.com",
+  "sourceUrl": "https://github.com/ihint/merchant-context",
+  "repository": {
+    "url": "https://github.com/ihint/merchant-context",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T17:44:19.157963Z",
+  "publishedAt": "2026-08-11T17:44:19.157963Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:09.159Z",
+    "sourceRepoAt": "2026-08-11T23:42:33.901Z",
+    "readmeAt": "2026-08-11T23:42:34.414Z",
+    "toolsAt": "2026-08-11T23:42:34.679Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ihint/merchant-context",
+    "checkedAt": "2026-08-11T23:42:33.901Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ihint/merchant-context/main/README.md",
+    "markdown": "# Merchant Context\n\nMerchant Context is an open merchant preflight for agent builders.\n\nIt starts with a practical question:\n\n> Can an agent tell what you sell, who it is for, what it costs, which rules apply, and what action comes next without guessing?\n\nThis repo contains:\n\n- a [merchant publishing checklist](CHECKLIST.md);\n- a [draft merchant-context schema](schema/merchant-context.schema.json);\n- a [worked SaaS example](examples/saas.json); and\n- a [map of the main commerce and discovery standards](docs/protocol-map.md).\n\n## Canonical sources\n\n- Product and machine brief: https://merchant.atomandbits.com/llms.txt\n- Version 0.1 schema: https://merchant.atomandbits.com/schema/merchant-context-v0.1.json\n- UCP discovery: https://merchant.atomandbits.com/.well-known/ucp\n- Open source and history: https://github.com/ihint/merchant-context\n\nThe domain schema and [`schema/merchant-context.schema.json`](schema/merchant-context.schema.json)\nmust stay semantically equal. Versioned releases preserve old contracts.\n\n## Status\n\nThis is an early public draft from [Atom & Bits](https://atomandbits.com). It is not a new payment or checkout protocol. It does not certify ACP, UCP, MCP, A2A, x402, or Web Bot Auth support.\n\nThe UCP profile declares no services, checkout capabilities, or payment handlers. It gives agents an explicit discovery response without claiming operations that do not exist.\n\nThe goal is to give merchants one testable context layer that can map to those systems as they mature.\n\nNo outside adoption is claimed from internal tests, registry views, repository activity, or self-funded payments.\n\n## Agent endpoints\n\n- MCP: `https://api.merchant.atomandbits.com/mcp`\n- Free MCP tool: `resolve_merchant`\n- Free HTTP: `POST https://api.merchant.atomandbits.com/v1/resolve`\n- Paid MCP tool: `refresh_merchant`\n- Paid HTTP x402: `POST https://api.merchant.atomandbits.com/v1/refresh`\n- Price: $0.01 USDC on Base\n- First verified settlement: [Base transaction `0x2f0f…57af`](https://basescan.org/tx/0x2f0fcf185021b68c827d5668f5d55481ca9d1f768b5e77b9d300e12b604f57af)\n\nThe first paid call settled on 2026-08-04 and returned a live inspection of\n`https://merchant.atomandbits.com`.\n\n## Quick start\n\n1. Work through [CHECKLIST.md](CHECKLIST.md).\n2. Copy [examples/saas.json](examples/saas.json).\n3. Replace every sample value with a fact from your own site or system.\n4. Keep prices, stock, policies, and action URLs current.\n5. Run `python3 scripts/validate.py` before publishing.\n\n## Add it to an agent\n\nThe remote MCP endpoint works with clients that support Streamable HTTP:\n\n```text\nhttps://api.merchant.atomandbits.com/mcp\n```\n\nStart with `resolve_merchant`.\n\nIt is free.\n\nA cache hit makes no merchant fetch and no paid inspection call.\n\nSee the [agent integration guide](docs/agent-integration.md) for Codex, Claude Code,\nGemini CLI, Cursor, and the OpenAI Responses API.\n\nAgents that support the open Agent Skills format can use\n[`skills/merchant-context`](skills/merchant-context/SKILL.md).\n\n## Design rules\n\n- Facts beat slogans.\n- A URL is not an API.\n- Agents must not infer price, stock, policy, or authority.\n- Each claim should name its source and update time.\n- A purchase or other high-impact action should state when human approval is required.\n- Existing standards win. Map to them instead of inventing a private dialect.\n\n## Agent service\n\nThe [`worker`](worker) directory contains the hosted MCP service under test. It exposes:\n\n- `resolve_merchant`, a free sourced merchant record with freshness, unknowns, safe actions, and attribution;\n- `search_merchants`, a neutral search over cached sourced records;\n- `compare_offers`, a sourced comparison that keeps unknown values;\n- `get_safe_actions`, a merchant-owned action handoff with approval and recovery rules;\n- `preflight`, the reusable resolution and action gate;\n- `check_merchant`, a free merchant-site diagnostic;\n- `refresh_merchant`, a $0.01 x402 fresh inspection that needs explicit approval;\n- `inspect_merchant`, a first-release compatibility alias for paid refresh;\n- direct HTTP routes under `/v1`; and\n- `/.well-known/merchant-context`, a public service record for agents and registries.\n\nThe inspector accepts public HTTPS origins only. It blocks local and IP targets, checks each\nredirect, caps response size and time, and returns no page body. The payment path records hashes,\nnot wallet addresses or signed payment tokens.\n\nRun its local checks:\n\n```sh\ncd worker\nnpm install\nnpm test\nnpm run typecheck\nnpx wrangler deploy --dry-run\n```\n\n## Contributing\n\nIssues, examples, and corrections are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.\n\n## License\n\nMIT. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:42:34.414Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_service_info",
+      "description": "Describe the Merchant Context service, price, and inspection checks."
+    },
+    {
+      "name": "check_merchant",
+      "description": "Run a free merchant-site diagnostic. Agents should use resolve_merchant before relying on merchant facts or actions."
+    },
+    {
+      "name": "resolve_merchant",
+      "description": "Resolve cached merchant identity, sourced facts, offers, terms, freshness, and safe actions for free. Call this before relying on merchant facts or starting an action."
+    },
+    {
+      "name": "search_merchants",
+      "description": "Search cached merchant records by sourced offer, place, price, timing, policy, action support, and freshness. Payment and adoption never change order."
+    },
+    {
+      "name": "compare_offers",
+      "description": "Compare only sourced offer fields from two or more merchants. Unknown values stay unknown and payment never changes order."
+    },
+    {
+      "name": "get_safe_actions",
+      "description": "Return current merchant-owned action URLs, exact inputs, authority, confirmation, expiry, retry rules, recovery, and attribution."
+    },
+    {
+      "name": "preflight",
+      "description": "Resolve one merchant, evaluate sourced intent constraints, select a safe action, state approval, and return attribution."
+    },
+    {
+      "name": "refresh_merchant",
+      "description": "Pay for a fresh merchant inspection and cache refresh. Show the price and get explicit human approval first."
+    },
+    {
+      "name": "inspect_merchant",
+      "description": "Compatibility alias for refresh_merchant. Show the price and get explicit human approval first."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:42:34.679Z",
+  "toolsPreviewStatus": "ok"
+}

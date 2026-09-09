@@ -1,0 +1,82 @@
+{
+  "id": "io.github.AIWerk/mcp-server-wise",
+  "title": "mcp-server-wise",
+  "description": "Wise Personal API: profiles, balances, multi-currency rates, transfers, recipients (read-only).",
+  "summary": "Wise Personal API: profiles, balances, multi-currency rates, transfers, recipients (read-only).",
+  "offersHint": "Wise Personal API: profiles, balances, multi-currency rates, transfers, recipients (read-only). · Packages: npm:@aiwerk/mcp-server-wise · Env vars: WISE_API_TOKEN",
+  "version": "0.1.7",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@aiwerk/mcp-server-wise",
+    "version": "0.1.7",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WISE_API_TOKEN",
+        "description": "Wise Personal API token. Create one in Wise Settings > API tokens.",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@aiwerk/mcp-server-wise",
+      "version": "0.1.7",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WISE_API_TOKEN",
+          "description": "Wise Personal API token. Create one in Wise Settings > API tokens.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WISE_API_TOKEN",
+      "description": "Wise Personal API token. Create one in Wise Settings > API tokens.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIWerk/mcp-server-wise",
+  "repository": {
+    "url": "https://github.com/AIWerk/mcp-server-wise",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-24T00:24:29.127594Z",
+  "publishedAt": "2026-06-24T00:24:29.127594Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:52.391Z",
+    "sourceRepoAt": "2026-08-12T00:18:04.683Z",
+    "readmeAt": "2026-08-12T00:18:05.138Z",
+    "toolsAt": "2026-08-12T01:47:52.391Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIWerk/mcp-server-wise",
+    "checkedAt": "2026-08-12T00:18:04.683Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIWerk/mcp-server-wise/master/README.md",
+    "markdown": "# @aiwerk/mcp-server-wise\n\nWise (TransferWise) Personal API MCP server. Read-only: profiles, balances, rates, transfers, recipients.\n\n## Tools (v0.1.4, 11 read-only)\n\n- `wise_list_profiles`, `wise_get_profile`\n- `wise_list_balances`, `wise_get_balance`\n- `wise_get_exchange_rate`, `wise_get_exchange_rate_history`\n- `wise_list_transfers`, `wise_get_transfer`\n- `wise_list_recipients`, `wise_get_recipient`, `wise_get_account_requirements`\n\nWrite tools (create/fund/cancel transfer, create/delete recipient, create quote) are intentionally **not in v0.1.x** — they require idempotency + SCA state-machine handling, planned for v0.2.0.\n\n## Configuration\n\n| Env var | Required | Default | Purpose |\n|---|---|---|---|\n| `WISE_API_TOKEN` | yes | — | Personal API token from https://wise.com/settings/api-tokens |\n| `WISE_API_BASE_URL` | no | `https://api.wise.com` | Sandbox override: `https://api.sandbox.transferwise.tech` |\n| `WISE_API_TIMEOUT_MS` | no | `30000` | Per-request timeout |\n| `WISE_API_ALLOW_UNSAFE_BASE_URL` | no | — | **Dangerous override** — see below |\n\n### Base URL safety\n\n`WISE_API_BASE_URL` is locked down by default:\n\n- Must use `https://`\n- Host must be on the allowlist: `api.wise.com` or `api.sandbox.transferwise.tech`\n\nViolation throws `WiseConfigError` before any Bearer token leaves the machine. This prevents token exfiltration via a misconfigured env, a bad CI value, or a malicious override.\n\n> **Dangerous override:** set `WISE_API_ALLOW_UNSAFE_BASE_URL=1` to bypass both checks (allow `http://` and arbitrary hosts). Only use for local testing against a mock server. **Never enable this in production or with a real Wise token.** The token will be sent to whatever host you configure.\n\n## Install\n\nTwo ways to run this server — pick the one that fits.\n\n### Option 1 — Hosted (zero setup)\n\nNo local runtime, no env vars on your machine — your Wise token is AES-256-GCM encrypted server-side via HashiCorp Vault.\n\n1. Sign up at **[aiwerkmcp.com](https://aiwerkmcp.com)**.\n2. Install **Wise** from the catalog and paste your `WISE_API_TOKEN`.\n3. Point your MCP client (Claude.ai, Cursor, Hermes, …) at your hosted endpoint:\n   ```\n   https://bridge.aiwerk.ch/u/<your-user-id>/mcp\n   ```\n   with your Bearer token.\n\nAll 11 read-only tools appear. Install other AIWerk recipes from the same bridge.\n\n### Option 2 — Self-hosted (npx)\n\nRun directly — you manage the token:\n\n```bash\nWISE_API_TOKEN=xxx npx @aiwerk/mcp-server-wise\n```\n\nOr install globally:\n\n```bash\nnpm install -g @aiwerk/mcp-server-wise\nWISE_API_TOKEN=xxx mcp-server-wise\n```\n\n## Error taxonomy\n\nErrors surface as MCP `isError: true` responses with distinct prefixes:\n\n- `Timeout: …` — request exceeded `WISE_API_TIMEOUT_MS` (wraps `AbortController`)\n- `Network error: …` — fetch rejected (DNS, connection reset, etc.)\n- `Configuration error: …` — missing token or invalid base URL\n- `Wise API error <status> …` — HTTP 4xx/5xx response from Wise\n\n## Typical flow\n\n1. `wise_list_profiles` → pick `profileId`\n2. `wise_list_balances({profileId})` → see available currencies / amounts\n3. `wise_get_exchange_rate({source, target})` → check rate\n4. `wise_list_transfers({profileId, status})` → history / status lookup\n\n## Build / dev notes\n\n- `src/version.ts` is **generated** from `package.json` by `scripts/gen-version.mjs` (runs as `prebuild` / `predev` / `pretest`). The file IS committed so a fresh clone compiles immediately.\n- The generator is idempotent: it only writes when the version actually changes. So `npm run build` on an in-sync tree leaves the working copy clean.\n- Bumping `package.json`'s version and running any of `build` / `dev` / `test` is enough to propagate — no separate manual step on `src/version.ts`.\n\n## About AIWerk MCP\n\nPart of the **[AIWerk MCP platform](https://aiwerkmcp.com)** — curated, signed MCP recipes served either as npm packages for self-hosting or through our multi-tenant hosted bridge (`bridge.aiwerk.ch`).\n\nOther AIWerk MCP servers:\n\n- [@aiwerk/mcp-server-cal](https://github.com/AIWerk/mcp-server-cal) — Cal.com scheduling\n- [@aiwerk/mcp-server-imap](https://github.com/AIWerk/mcp-server-imap) — IMAP/SMTP email, provider-agnostic\n- [@aiwerk/mcp-server-clawhub](https://github.com/AIWerk/mcp-server-clawhub) — ClawHub skill catalog\n\nBrowse the full catalog (20+ recipes including GitHub, Linear, Notion, Stripe, …) at [aiwerkmcp.com](https://aiwerkmcp.com).\n\n## Licence\n\nMIT © 2026 AIWerk\n",
+    "fetchedAt": "2026-08-12T00:18:05.138Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:52.391Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

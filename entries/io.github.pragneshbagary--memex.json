@@ -1,0 +1,58 @@
+{
+  "id": "io.github.pragneshbagary/memex",
+  "title": "memex",
+  "description": "Persistent session memory for Claude Code. Local SQLite, no LLMs, no network.",
+  "summary": "Persistent session memory for Claude Code. Local SQLite, no LLMs, no network.",
+  "offersHint": "Persistent session memory for Claude Code. Local SQLite, no LLMs, no network. · Packages: pypi:mcp-memex",
+  "version": "0.1.9",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-memex",
+    "version": "0.1.9",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-memex",
+      "version": "0.1.9",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/pragneshbagary/memex",
+  "repository": {
+    "url": "https://github.com/pragneshbagary/memex",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-25T06:45:38.382081Z",
+  "publishedAt": "2026-06-25T06:45:38.382081Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:05:25.159Z",
+    "sourceRepoAt": "2026-08-11T23:25:40.006Z",
+    "readmeAt": "2026-08-11T23:25:40.465Z",
+    "toolsAt": "2026-08-12T01:05:25.159Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/pragneshbagary/memex",
+    "checkedAt": "2026-08-11T23:25:40.006Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/pragneshbagary/memex/main/README.md",
+    "markdown": "# memex\n\nEvery Claude Code session starts without knowing what you built last time - which files you changed, what decisions you made, what broke. You re-explain. Claude re-reads. You start over.\n\n**memex keeps a structured log of every session. Claude reads it at the start of the next one.**\n\nNo cloud. No LLM extraction. No cost per save. Just local SQLite and one command to install.\n\n## Install\n\n```bash\n# with uv\nuvx mcp-memex install\n\n# with pip\npip install mcp-memex\nmemex install\n```\n\nRestart Claude Code. That's it.\n\n## What gets saved\n\nEach entry has structure - not a blob of text:\n\n```python\nmem_save(\n    task=\"Replaced JWT auth with session cookies\",\n    files=[\"src/auth.py\", \"src/middleware.py\"],\n    decisions=[\"Session cookies over JWT - simpler, no token refresh needed\"],\n    warnings=[\"Redis required - app won't start without REDIS_URL set\"],\n    tags=[\"auth\", \"sessions\"]\n)\n```\n\nClaude calls `mem_save` when it finishes something meaningful. You can also just tell it: *\"save what we just did.\"*\n\n## What Claude sees at session start\n\n```\n=== memex: session context (db: my_project.db) ===\n\n--- Recent (2) ---\n[1] #4 - 2026-06-14T10:32\n  Task      : Replaced JWT auth with session cookies\n  Files     : src/auth.py, src/middleware.py\n  Decision  : Session cookies over JWT - simpler, no token refresh needed\n  Warning   : Redis required - app won't start without REDIS_URL set\n  Tags      : auth, sessions\n\n[2] #3 - 2026-06-13T15:10\n  Task      : Added rate limiting to /api/login\n  Files     : src/middleware.py\n  Warning   : Rate limiter is in-memory per process - resets on restart\n  Tags      : auth, rate-limiting\n```\n\nClaude calls `mem_load` automatically at the start of every session. It returns the most recent entries plus any entries that match what you're working on - by keyword and by file path.\n\n## Browse from the terminal\n\nYou don't need to be inside Claude to look at your history:\n\n```bash\nmemex status                     # entry count, DB size, top tags\nmemex list                       # recent entries for this project\nmemex list --tag auth            # filter by tag\nmemex list --since 7d            # entries from the last 7 days\nmemex list --since 2026-06-01 --until 2026-06-15  # date range\nmemex search \"rate limit\"        # full-text search\nmemex version                    # print installed version\n```\n\n## Export to markdown\n\nTurn your history into portable, human-browsable notes - one `.md` file per\nentry, with `[[wikilinks]]` connecting related entries and files, plus tags as\n`#hashtags`. Works in Obsidian or any tool that understands `[[links]]`:\n\n```bash\nmemex export ./my-project-notes/\n```\n\nEntries that share a tag or a touched file are cross-linked under a **Related**\nsection, so you can navigate your project history as a graph.\n\n## Six MCP tools\n\n| Tool | What it does |\n|------|--------------|\n| `mem_load` | Called at session start - returns recent + relevant entries |\n| `mem_save` | Saves a structured entry after meaningful work |\n| `mem_update` | Patches specific fields of an existing entry (keeps id and timestamp) |\n| `mem_search` | Full-text search across all entries |\n| `mem_list` | Lists entries, optionally filtered by tag |\n| `mem_delete` | Removes a stale entry by id |\n\n## Why not just CLAUDE.md?\n\n`CLAUDE.md` is for static project documentation - architecture, conventions, how to run tests. It doesn't change much and it isn't session-aware.\n\nmemex captures what's changing session to session: what you built yesterday, the decision you made this morning, the warning you discovered an hour ago. It's the difference between *\"here's the project\"* and *\"here's what happened last time.\"*\n\n`memex install` writes Claude's instructions into `.claude/CLAUDE.local.md` - a file Claude Code loads automatically without touching your project's own `CLAUDE.md`.\n\n## Memory is scoped per project\n\nEach project gets its own SQLite database at `~/.memex/<project>.db` based on the working directory. Sessions from different projects never mix.\n\n## Configuration\n\nSet these in the MCP `env` block in `~/.claude.json` if you need to override defaults:\n\n| Variable | Default | Description |\n|----------|---------|-------------|\n| `MEMEX_DIR` | `~/.memex` | Where DBs are stored |\n| `MEMEX_GLOBAL` | `0` | Set to `1` to share one DB across all projects |\n| `MEMEX_RECENT` | `5` | Max recent entries loaded per session |\n| `MEMEX_MATCHED` | `5` | Max FTS-matched entries loaded per session |\n\n## Uninstall\n\n```bash\nmemex remove\npip uninstall mcp-memex\n```\n\nMemory DBs are kept at `~/.memex/` - delete that directory manually if you want to wipe everything.\n\n## Requirements\n\n- Python 3.10+\n- `mcp` package (installed automatically)\n- SQLite with FTS5 (standard since Python 3.8)\n- Claude Code CLI\n\n## License\n\nMIT\n\n<!-- mcp-name: io.github.pragneshbagary/memex -->\n",
+    "fetchedAt": "2026-08-11T23:25:40.465Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:05:25.159Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

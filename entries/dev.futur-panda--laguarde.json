@@ -1,0 +1,59 @@
+{
+  "id": "dev.futur-panda/laguarde",
+  "title": "Laguarde",
+  "description": "Self-hostable policy control plane for AI coding agents.",
+  "summary": "Self-hostable policy control plane for AI coding agents.",
+  "offersHint": "Self-hostable policy control plane for AI coding agents. · Packages: npm:laguarde-mcp",
+  "version": "0.3.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "laguarde-mcp",
+    "version": "0.3.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "laguarde-mcp",
+      "version": "0.3.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://www.futur-panda.dev/laguarde/docs",
+  "sourceUrl": "https://github.com/FuturPanda/laguarde",
+  "repository": {
+    "url": "https://github.com/FuturPanda/laguarde",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-26T19:46:31.425822Z",
+  "publishedAt": "2026-07-26T19:46:31.425822Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:48.338Z",
+    "sourceRepoAt": "2026-08-12T00:22:48.031Z",
+    "readmeAt": "2026-08-12T00:22:48.573Z",
+    "toolsAt": "2026-08-12T01:50:48.338Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/FuturPanda/laguarde",
+    "checkedAt": "2026-08-12T00:22:48.031Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/FuturPanda/laguarde/main/README.md",
+    "markdown": "# Laguarde\n\n[![skills.sh](https://skills.sh/b/FuturPanda/laguarde)](https://skills.sh/FuturPanda/laguarde)\n\n**Laguarde is a self-hostable policy control plane for AI coding agents.**\n\nIt gives a team one persistent place to define engineering practices, evaluate\nagent actions, ratify recurring developer preferences, and retain the exact\npolicy revisions behind important decisions.\n\nLaguarde runs locally for one developer or behind a team URL. Agents interact\nwith the same server through standard MCP; humans use the dashboard and REST\nAPI.\n\n## What the prototype proves\n\n- Four policy categories: code rules, general guardrails, project\n  initialization recipes, and PR review guidelines.\n- Four decisions: `allowed`, `limited`, `approval`, and `forbidden`.\n- Context-specific policy bundles with immutable revision identifiers.\n- One local daemon with a persistent registry of projects and Git origins.\n- Fail-safe action evaluation: an unmatched action is `limited`, not silently\n  allowed.\n- Human approval for dependency, migration, deletion, and authentication\n  actions.\n- SQLite decision records plus human-readable Markdown evidence.\n- Developer feedback convergence: a human may merge any proposal immediately;\n  three observations promote it as a stronger candidate.\n- A dashboard for policy CRUD, decision evaluation/review, and feedback\n  ratification.\n\n## Quick start\n\nFor a local MCP installation, use Node.js 24 or newer:\n\n```bash\nnpx -y --package laguarde-mcp@0.3.2 laguarde-daemon ensure\nnpx -y --package laguarde-mcp@0.3.2 laguarde-daemon register --cwd .\n```\n\nThe first command reuses the healthy local daemon or starts it once. The second\nregisters the current Git repository and prints its project-specific MCP URL.\nAll local projects share the daemon, dashboard, SQLite database, and audit\nhistory while remaining separately identifiable.\n\nConceptual MCP configuration:\n\n```json\n{\n  \"mcpServers\": {\n    \"laguarde\": {\n      \"type\": \"http\",\n      \"url\": \"http://127.0.0.1:3000/mcp/projects/RETURNED_PROJECT_ID\"\n    }\n  }\n}\n```\n\nFor repository development, install [Bun](https://bun.sh/) and run:\n\n```bash\nbun install\nbun run build\nbun run start\n```\n\nProject HTTP MCP endpoints live under\n`http://localhost:3000/mcp/projects/:projectId`, and agent-facing discovery is\navailable at <http://localhost:3000/llms.txt>.\n\nOnboarding surfaces:\n\n- human guide: `http://localhost:3000/guide`;\n- agent self-setup contract: `http://localhost:3000/install` (`text/plain`).\n\nTo onboard a capable agent, send it the `/install` URL and explicitly ask it to\nconnect Laguarde for the current project. The contract tells it how to verify\nthe server, make a minimal native MCP configuration change, discover the tools,\nand load the registered project's policy bundle.\n\n### Agent policy-gate skill\n\nInstall the optional fail-closed skill from this repository with:\n\n```bash\nnpx skills add https://github.com/FuturPanda/laguarde --skill laguarde-policy-gate\n```\n\nThe skill requires a cooperative agent to load the project-bound Laguarde\npolicy bundle, evaluate and record every material action, and stop when policy\nis unavailable, limited, approval-required, or forbidden. It does not replace\na sandbox or host-level execution hook.\n\nFor S3/CloudFront onboarding, generate the two static upload objects with:\n\n```bash\nbun run export:onboarding\n```\n\nSee [`docs/s3-onboarding.md`](docs/s3-onboarding.md).\n\nMCP Registry publication is automated through GitHub Actions after a one-time\nDNS authentication setup. See\n[`docs/registry-publishing.md`](docs/registry-publishing.md).\n\nThe daemon's first start creates `~/.laguarde/laguarde.db`, seeds global policy,\nand adds ten policies. Set `LAGUARDE_DATA_DIR`, or the more specific\n`LAGUARDE_DB_PATH` and `LAGUARDE_EVIDENCE_DIR`, to place persistent data\nelsewhere.\n\n## Agent workflow\n\n1. `get_policy_bundle` retrieves the current policies and their revision IDs.\n2. `evaluate_action` previews the boundary decision for an exact intended\n   action.\n3. `record_decision` re-evaluates and persists that action as evidence.\n4. The agent proceeds only when allowed, narrows a limited request, waits for\n   approval, or stops when forbidden.\n5. `list_preference_proposals` and `propose_preference` turn reusable developer\n   corrections into a human review queue.\n\nSee [usage instructions](docs/usage.md) for tool inputs and concrete calls.\n\n## Architecture\n\n```mermaid\nflowchart LR\n  A[Agent / IDE] -->|MCP| M[Laguarde server]\n  H[Human dashboard] -->|REST| M\n  M --> J[Project registry]\n  M --> P[Policy evaluation]\n  P --> D[(SQLite)]\n  P --> E[Markdown evidence]\n  F[Developer feedback] --> Q[Proposal convergence]\n  Q -->|review at any time| H\n  Q -.->|3 observations promote priority| Q\n  H -->|ratify| R[Immutable policy revision]\n  R --> D\n```\n\nThe published CLI uses Node.js, TypeScript, Express, SQLite, and the standard\nMCP SDK. Bun remains the repository's development and test runner. Policy types\nshare one revisioned model, while category-specific configuration is stored in\n`fields`.\n\n## Important enforcement boundary\n\nMCP connectivity makes policies discoverable and decisions auditable, but it\ndoes not technically prevent an uncooperative agent from using tools outside\nLaguarde. Hard enforcement requires Laguarde decisions to be wired into an\nexecution hook, command proxy, sandbox, filesystem permissions, or CI gate.\n\nThis prototype is therefore an enforceable **decision service**, but only an\nadvisory boundary until the host agent or execution environment uses it as a\nmandatory gate.\n\n## Repository guide\n\n- [`src/`](src/) — policy engine, persistence, REST API, and MCP tools.\n- [`public/`](public/) — human dashboard.\n- [`llms.txt`](llms.txt) — agent-facing discovery and operating contract.\n- [`examples/`](examples/) — bootstrap, control-boundary, and feedback demos.\n- [`docs/`](docs/) — installation, usage, decisions, and current limits.\n- [`test/`](test/) — executable behavior specification.\n\n## Verification\n\n```bash\nbun test\nbun run typecheck\nbun run build\n```\n\n## Next engineering milestones\n\n1. Add authenticated organization/team/project hierarchy and explicit policy\n   precedence.\n2. Add an execution adapter that verifies approval immediately before an agent\n   tool call.\n3. Bind approvals to an exact action digest and expiry.\n4. Add database migrations and production persistence adapters.\n5. Add static code/diff inspection rather than relying only on declared action\n   metadata.\n",
+    "fetchedAt": "2026-08-12T00:22:48.573Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:50:48.338Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,72 @@
+{
+  "id": "io.github.kushaim/ftthelper-mcp",
+  "title": "Fantasy Tabletop Helper",
+  "description": "Read-only access to your tabletop campaigns: codex, sessions, and session notes.",
+  "summary": "Read-only access to your tabletop campaigns: codex, sessions, and session notes.",
+  "offersHint": "Read-only access to your tabletop campaigns: codex, sessions, and session notes. · Remote MCP (streamable-http) at https://www.fantasytabletophelper.com/api/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://www.fantasytabletophelper.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://www.fantasytabletophelper.com/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Personal access token from Account > AI Tool Access on the site. Include the 'Bearer ' prefix.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.fantasytabletophelper.com",
+  "sourceUrl": "https://github.com/kushaim/ftthelper-mcp",
+  "repository": {
+    "url": "https://github.com/kushaim/ftthelper-mcp",
+    "source": "github",
+    "id": "1322495152"
+  },
+  "updatedAt": "2026-08-04T07:14:49.392864Z",
+  "publishedAt": "2026-08-04T07:14:49.392864Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Personal access token from Account > AI Tool Access on the site. Include the 'Bearer ' prefix.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:18.312Z",
+    "sourceRepoAt": "2026-08-11T23:38:32.736Z",
+    "readmeAt": "2026-08-11T23:38:33.357Z",
+    "toolsAt": "2026-08-12T01:17:18.312Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kushaim/ftthelper-mcp",
+    "checkedAt": "2026-08-11T23:38:32.736Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kushaim/ftthelper-mcp/main/README.md",
+    "markdown": "# Fantasy Tabletop Helper — MCP server\n\nConnect Claude Desktop, Cursor, Codex, or any MCP-capable client to your\ntabletop campaigns, and ask questions about your own world in plain language.\n\n> *\"Which NPCs in Westruun belong to a religion, and which of them have my party\n> already met?\"*\n\nThis repository holds the connection docs and example client configs. The server\nitself is hosted — it runs inside [fantasytabletophelper.com](https://fantasytabletophelper.com),\nso there is nothing to install, clone, or keep running.\n\n- **Endpoint:** `https://www.fantasytabletophelper.com/api/mcp` — keep the `www.`, see [below](#keep-the-www)\n- **Transport:** stateless Streamable HTTP, POST only\n- **Access:** read-only, Hero plan\n- **Source:** closed. The app is a commercial product; this repo is the client-side half.\n\n---\n\n## Read-only, and scoped to you\n\nEvery tool is read-only. Nothing an AI client does over this connection can\ncreate, edit, or delete anything in your campaign.\n\nMore importantly, the server queries the database **as you**, not as an\nadministrator. Your row-level security policies are what decide the answer, so\nthe MCP surface can only ever show what the website would show you when logged\nin:\n\n| | Who sees it |\n|---|---|\n| Party notes | Campaign members |\n| DM-only notes | The DM of that campaign, or whoever wrote them |\n| Private notes | Only their author |\n| Codex entries | Members of that campaign; non-canon entries only for the DM |\n\nIf you are a player, pointing an AI client at your campaign cannot surface your\nDM's secrets. That is enforced in the database, not in application code.\n\n## Tools\n\n| Tool | Returns |\n|---|---|\n| `list_campaigns` | Your campaigns, and your role in each |\n| `get_campaign` | One campaign's details |\n| `list_sessions` | Sessions, most recently played first |\n| `search_codex` | NPCs, locations, items, lore, religions, cultures, groups |\n| `get_subject` | One codex entry in full, with its relationships |\n| `get_session_notes` | Notes from a single session |\n\nFactions and guilds are stored as `kind: \"group\"` — there is no separate\n`faction` kind.\n\n---\n\n## Setup\n\n### 1. Create a token\n\nOn the site, go to **Account → AI Tool Access** (`/account/mcp`), name the token\nafter the tool you are connecting, and press **Create token**.\n\nThe token appears once, beginning `ftth_mcp_`. **Copy it then.** Only a hash is\nstored, so it cannot be shown again. If you lose one, revoke it and make another.\n\n### 2. Configure your client\n\nReady-to-edit files are in [`examples/`](examples). Claude Desktop, for\ninstance:\n\n```json\n{\n  \"mcpServers\": {\n    \"ftthelper\": {\n      \"url\": \"https://www.fantasytabletophelper.com/api/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer ftth_mcp_YOUR_TOKEN_HERE\" }\n    }\n  }\n}\n```\n\nRestart the client. `ftthelper` should appear in its tool list.\n\n#### Keep the `www.`\n\nIt is not cosmetic. The bare domain redirects to `www`, and HTTP clients drop the\n`Authorization` header whenever a redirect changes origin — sensibly, since they\ncannot know the new host deserves your credentials. Point a client at\n`https://fantasytabletophelper.com/api/mcp` and the token is stripped in transit,\nso the server sees an anonymous request and answers `401 Invalid or missing MCP\ntoken` for a perfectly good token.\n\n### 3. Ask it something\n\n> \"List my campaigns, then find every religion in the Westruun one.\"\n\n---\n\n## Revoking a token\n\nPress **Revoke** next to it on **Account → AI Tool Access**. It takes effect on\nthat client's next request. Revoke any token you have pasted somewhere you no\nlonger control.\n\n## Troubleshooting\n\n| Symptom | Cause |\n|---|---|\n| `404` | Wrong path, or the server is switched off on this deployment. |\n| `401` **on a token you just made** | Almost always the URL: the bare domain instead of `www.`, which strips the token. Check that before suspecting the token. |\n| `401` | Token is wrong, revoked, or expired. Make a new one. |\n| `503` | We could not open a session for your account. Usually transient; retry. |\n| `403` | Your plan is not Hero. |\n| `405` on a GET | Expected. The server is POST-only; your client should be using POST. |\n| Connects, but every tool call returns an error | A server-side configuration problem. Contact support — the server logs these. |\n| A tool returns an empty list | Usually genuine: you have no campaigns yet, or the search matched nothing. |\n\nThe last two rows are worth keeping apart. An empty list is an answer; an error\nis a fault.\n\n## Licence\n\nDocs and example configs: [MIT](LICENSE). The hosted service has its own\n[terms](https://fantasytabletophelper.com/terms).\n",
+    "fetchedAt": "2026-08-11T23:38:33.357Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:18.312Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"Invalid or missing MCP token\"}",
+  "toolsPreviewStatus": "unreachable"
+}

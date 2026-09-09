@@ -1,0 +1,59 @@
+{
+  "id": "ing.3dpack/container-loading",
+  "title": "3DPACK.ING — Container & Truck Load Planning",
+  "description": "Plain-English shipment input for freight & logistics: containers your cargo fits, 3D load plan.",
+  "summary": "Plain-English shipment input for freight & logistics: containers your cargo fits, 3D load plan.",
+  "offersHint": "Plain-English shipment input for freight & logistics: containers your cargo fits, 3D load plan. · Packages: npm:@3dpacking/mcp-server",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@3dpacking/mcp-server",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@3dpacking/mcp-server",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://3dpack.ing",
+  "sourceUrl": "https://github.com/OnurGumus/3dpacking-mcp",
+  "repository": {
+    "url": "https://github.com/OnurGumus/3dpacking-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T11:43:37.031376Z",
+  "publishedAt": "2026-08-02T11:43:37.031376Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:49:05.175Z",
+    "sourceRepoAt": "2026-08-12T00:19:44.252Z",
+    "readmeAt": "2026-08-12T00:19:44.808Z",
+    "toolsAt": "2026-08-12T01:49:05.175Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/OnurGumus/3dpacking-mcp",
+    "checkedAt": "2026-08-12T00:19:44.252Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/OnurGumus/3dpacking-mcp/master/README.md",
+    "markdown": "# 3DPACK.ING MCP server\n\nContainer and truck load planning for AI assistants. Describe a shipment in plain\nEnglish; get back the containers it fits in, how full each one is, what did not fit,\nand a link to an interactive 3D load plan.\n\nBacked by the [3DPACK.ING](https://3dpack.ing) solver — the same one behind the web\nplanner. Asked \"will 500 cartons fit in a 40-foot\", an assistant without this will do\narithmetic on volumes, which ignores stacking rules, orientation and weight limits and\noverstates what fits by a wide margin on real cargo.\n\n## Install\n\nClaude Desktop — add to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"3dpacking\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@3dpacking/mcp-server\"]\n    }\n  }\n}\n```\n\nClaude Code:\n\n```bash\nclaude mcp add 3dpacking -- npx -y @3dpacking/mcp-server\n```\n\nIt works immediately, with no account — the first call runs against a shared demo\naccount on the free plan. For your own limits, sign up at\n<https://3dpack.ing/login> and add:\n\n```json\n{\n  \"mcpServers\": {\n    \"3dpacking\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@3dpacking/mcp-server\"],\n      \"env\": {\n        \"THREEDPACKING_API_KEY\": \"your-key\",\n        \"THREEDPACKING_USERNAME\": \"your-username\"\n      }\n    }\n  }\n}\n```\n\nBoth must be set together — the API rejects a key without a username.\n\n## The tool\n\n**`pack_shipment`** — one required argument, `prompt`, describing the cargo in plain\nEnglish, and an optional `speed` of `fast`, `normal` or `thorough`.\n\nThings it understands:\n\n```\nPack 50 boxes of 60x40x30 cm into a 20ft container\nLoad 100 fragile items 80x60x40cm, max stack 3, into a 40ft high cube\nShip mixed pallets: 10x euro pallets, 15x US pallets, best container mix\nShip 24 pcs 200.3x120.2x100.2 cm (non-tiltable), optimal mix of 40ft and 20ft\n```\n\nWhat comes back:\n\n```\nEverything fits: 1 container.\n\nContainer 1 (589.3 x 235 x 239 cm internal)\n  items: 50\n  of which: 50x Boxes\n  used: volume 10.9%\n  5 empty gaps left\n\nInteractive 3D load plan: https://3dpack.ing/app?g=6c4b9488-...\n```\n\n## Notes on the shaping\n\nThe API returns the geometry of every unfilled cuboid in every container, with\ncoordinates. That is what the 3D viewer needs and it is most of the payload on a real\nshipment. Spending a model's context on the coordinates of empty space, when the link\nopens a picture of exactly that, is a poor trade — so the summary keeps the *count* of\ngaps and drops the geometry. On a small pack that is 791 bytes down to 341; on a large\none it is the difference between a usable answer and a flooded context.\n\nA plan limit is not reported as an error. The API returns HTTP 500 for\n`NotSubscribed`, the same status it uses for a solver crash; left alone, an assistant\nreads that as \"the service is broken\" and tells the user to try again later, when what\nactually happened is that they asked for a Pro feature. This server sorts the two\napart and relays the offer.\n\nAnything that answers with non-JSON — a proxy, a VPN, a corporate egress allowlist —\nis reported as a network problem naming what actually replied, rather than as a\npacking failure. Only one of those is something the user can fix.\n\n## Environment\n\n| Variable | Purpose |\n|---|---|\n| `THREEDPACKING_API_KEY` | Your API key. Falls back to the shared demo account. |\n| `THREEDPACKING_USERNAME` | The account the key belongs to. Required with the key. |\n| `THREEDPACKING_ENDPOINT` | Override the endpoint — staging, self-hosted, or a stub. |\n\n## Development\n\n```bash\nnpm install\nnpm run smoke     # calls the live solver with demo credentials and checks the shape\n```\n\n`smoke.js` is deliberately not mocked for the live checks. The thing that will break\nthis package is 3dpack.ing changing the shape of its answer, and no amount of mocking\ncatches that. Run it before publishing. To exercise the success path without spending\na calculation, point `THREEDPACKING_ENDPOINT` at a stub.\n\n## Licence\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:19:44.808Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:49:05.175Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

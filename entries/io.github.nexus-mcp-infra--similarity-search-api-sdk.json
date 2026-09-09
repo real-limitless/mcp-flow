@@ -1,0 +1,64 @@
+{
+  "id": "io.github.nexus-mcp-infra/similarity-search-api-sdk",
+  "title": "similarity-search-api-sdk",
+  "description": "Stateless NMI + cosine fusion with entropy-driven alpha calibration",
+  "summary": "Stateless NMI + cosine fusion with entropy-driven alpha calibration",
+  "offersHint": "Stateless NMI + cosine fusion with entropy-driven alpha calibration · Remote MCP (streamable-http) at https://similarity-search-api-production.up.railway.app/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://similarity-search-api-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://similarity-search-api-production.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/nexus-mcp-infra/similarity-search-api-sdk",
+  "repository": {
+    "url": "https://github.com/nexus-mcp-infra/similarity-search-api-sdk",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-17T19:52:19.177023Z",
+  "publishedAt": "2026-07-17T19:52:19.177023Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:11:28.522Z",
+    "sourceRepoAt": "2026-08-11T23:32:20.942Z",
+    "readmeAt": "2026-08-11T23:32:21.546Z",
+    "toolsAt": "2026-08-11T23:32:21.661Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nexus-mcp-infra/similarity-search-api-sdk",
+    "checkedAt": "2026-08-11T23:32:20.942Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nexus-mcp-infra/similarity-search-api-sdk/main/README.md",
+    "markdown": "# Similarity Search API\n\nStateless similarity search over pre-computed vectors — NMI (normalized mutual information) + cosine fusion, with an entropy-calibrated blending weight computed per request. No vector database, no index to maintain, no infrastructure to run.\n\nAvailable both as a plain HTTP API and as an MCP server (5 tools) for AI agents.\n\n---\n\n## Important: this operates on vectors, not raw text\n\nThis API does **not** embed text for you. `query` and `corpus` entries are pre-computed numeric vectors (e.g. from your own embedding model). If you need text-to-vector embedding first, run that upstream and pass the resulting vectors here.\n\n---\n\n## Base URL\nhttps://similarity-search-api-production.up.railway.app\n\n## Authentication\n\nAll business endpoints require an `X-API-Key` header:\nX-API-Key: <your key>\n\n`/health` requires no authentication.\n\n## Pricing\n\nTwo ways to pay, same endpoints:\n\n- **x402 (pay-per-call, USDC on Base)** — currently on **Base Sepolia testnet**, $0.01/call, no account or API key required beyond the x402 payment flow itself. A request without payment gets `402 Payment Required` with the payment details in the `payment-required` response header.\n- **Stripe (metered billing)** — for callers provisioned with an API key and a Stripe customer on the account.\n\n---\n\n## Endpoints\n\n### `POST /similarity/search`\nRank a corpus against a query vector using the composite score.\n\n```json\n{\n  \"query\": { \"id\": \"q1\", \"vector\": [0.12, -0.4, 0.91, \"...\"] },\n  \"corpus\": [\n    { \"id\": \"doc1\", \"vector\": [0.10, -0.35, 0.88, \"...\"] },\n    { \"id\": \"doc2\", \"vector\": [0.55, 0.02, -0.14, \"...\"] }\n  ],\n  \"top_k\": 10,\n  \"nmi_bins\": 10,\n  \"alpha_override\": null\n}\n```\n\nAll vectors in `query` and `corpus` must share the same dimensionality (2-4096 dims). `top_k` up to 1000. `alpha_override` (optional) pins the cosine/NMI blend weight instead of calibrating it from corpus entropy.\n\nResponse:\n```json\n{\n  \"results\": [\n    { \"id\": \"doc1\", \"composite_score\": 0.91, \"cosine_similarity\": 0.89, \"nmi_score\": 0.94, \"rank\": 1 }\n  ],\n  \"calibrated_alpha\": 0.73,\n  \"corpus_entropy\": 3.85,\n  \"query_id\": \"q1\",\n  \"corpus_size\": 2,\n  \"latency_ms\": 43,\n  \"request_fingerprint\": \"...\"\n}\n```\n\n### `POST /similarity/calibrate-alpha/v1`\nCompute the entropy-calibrated alpha for a corpus without running a full search - useful for inspecting/debugging calibration behavior before committing to a search call.\n\n### `POST /similarity/batch-score`\nScore up to 10,000 `(vector_a, vector_b)` pairs with a fixed `alpha` - no corpus/entropy overhead.\n\n```json\n{\n  \"pairs\": [[[0.1, 0.2], [0.15, 0.19]]],\n  \"alpha\": 0.5,\n  \"nmi_bins\": 10\n}\n```\n\n### `GET /health`\nLiveness probe. No auth required. Not billed (excluded from both Stripe and x402).\n\n> Note: `POST /similarity/calibrate-alpha` (without `/v1`) is a deprecated alias kept for backward compatibility - use `/similarity/calibrate-alpha/v1`.\n\n---\n\n## MCP tools\n\nConnect an MCP-compatible client (Claude, Cursor, etc.) to the streamable HTTP endpoint at:\nhttps://similarity-search-api-production.up.railway.app/mcp\n\nExposes 5 tools: `rank_items_by_nmi_cosine_fusion`, `estimate_corpus_entropy_profile`, `score_pair_nmi_cosine`, `find_outlier_vectors_by_nmi_deficit`, `calibrate_alpha_from_query_entropy`.\n\n---\n\n## The scoring method\ncomposite_score = alpha * cosine(query, doc) + (1 - alpha) * NMI_normalized(query, doc)\n\n`alpha` is calibrated per-request from the Shannon entropy of the submitted corpus (unless you pass `alpha_override`) - high-entropy (dispersed) corpora lean toward cosine; low-entropy (dense/narrow) corpora lean toward NMI, which captures statistical dependence that cosine's geometric angle misses.\n\n---\n\n## Limits\n\n- Corpus size: up to 500,000 items per request\n- Vector dimensionality: 2-4,096\n- `batch-score` pairs: up to 10,000 per request\n",
+    "fetchedAt": "2026-08-11T23:32:21.546Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "nexus_similarity_search_api_rank_items_by_nmi_cosine_fusion",
+      "description": "Ranks a corpus of items against a query vector using a calibrated fusion score (alpha * cosine + (1-alpha) * NMI_normalizado), where alpha is auto-derived from the corpus's marginal entropy unless overridden. Results are identified by their 0-indexed position in corpus_vectors (this tool does not accept explicit item IDs). Use this when you need semantically-calibrated similarity over a stateless corpus of up to 500k items without a vector database. Do NOT use for purely geometric nearest-neighbor search where NMI overhead is unnecessary, nor for corpora larger than 500k items per call. Requires a valid api_key (same as X-API-Key) and an x402 payment."
+    },
+    {
+      "name": "nexus_similarity_search_api_estimate_corpus_entropy_profile",
+      "description": "Computes the aggregate entropy-calibrated alpha for a corpus without running a full search -- useful to inspect before committing to a large rank_items_by_nmi_cosine_fusion call. Returns a single aggregate corpus_entropy value, NOT a per-dimension breakdown -- the real logic only exposes the mean marginal entropy across dimensions, not H(X_d) per individual dimension. Do NOT use expecting per-dimension granularity. Requires a valid api_key (same as X-API-Key) and an x402 payment."
+    },
+    {
+      "name": "nexus_similarity_search_api_score_pair_nmi_cosine",
+      "description": "Computes the NMI-cosine fusion score for exactly one (query, target) vector pair at a fixed alpha. Use for explainability, debugging, or unit-level validation of fusion scores before running full corpus ranking. Unlike corpus-level ranking, alpha is NOT auto-calibrated for a single pair -- the real logic requires a fixed alpha (default 0.5); pass alpha explicitly for a specific blend. Do NOT use in a loop to score many pairs; batch them into rank_items_by_nmi_cosine_fusion instead. Requires a valid api_key (same as X-API-Key) and an x402 payment."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:32:21.661Z",
+  "toolsPreviewStatus": "ok"
+}

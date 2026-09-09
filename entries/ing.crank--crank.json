@@ -1,0 +1,762 @@
+{
+  "id": "ing.crank/crank",
+  "title": "Crank Protocol",
+  "description": "Non-custodial DeFi tools for AI agents on Solana: swaps, perps, lending, staking, equities.",
+  "summary": "Non-custodial DeFi tools for AI agents on Solana: swaps, perps, lending, staking, equities.",
+  "offersHint": "Non-custodial DeFi tools for AI agents on Solana: swaps, perps, lending, staking, equities. · Remote MCP (streamable-http) at https://mcp.crank.ing/mcp",
+  "version": "1.0.0",
+  "status": "inactive",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.crank.ing/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.crank.ing/mcp"
+    }
+  ],
+  "flags": [
+    "remote",
+    "repo-offline"
+  ],
+  "homepage": "https://crank.ing",
+  "sourceUrl": "https://github.com/engaij/crank",
+  "repository": {
+    "url": "https://github.com/engaij/crank",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T04:24:39.088932Z",
+  "publishedAt": "2026-07-27T04:24:39.088932Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:49:05.261Z",
+    "sourceRepoAt": "2026-08-12T00:19:55.966Z",
+    "readmeAt": "2026-08-12T01:49:05.261Z",
+    "toolsAt": "2026-08-12T00:19:56.977Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "not_found",
+    "url": "https://github.com/engaij/crank",
+    "checkedAt": "2026-08-12T00:19:55.966Z",
+    "httpStatus": 404,
+    "error": "repository HTTP 404",
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "fetchedAt": "2026-08-12T01:49:05.261Z",
+    "error": "README.md not found on main/master"
+  },
+  "toolsPreview": [
+    {
+      "name": "jupiter_swap",
+      "description": "Execute a token swap via Jupiter (non-custodial).\n\nWithout signed_transaction: returns an UNSIGNED base64 transaction for your\nwallet to sign + broadcast. With signed_transaction: broadcasts the\ncaller-signed tx and returns tx_signature. amount is in base units of\ninput_token. Includes the Crank technology service fee when a referral fee\naccount is configured -- collected ON-CHAIN via Jupiter's platformFeeBps\n(MB#13601), deducted from swap output. Swaps are NOT additionally gated by\nx402 (ENG-1521ec28: that would double-charge the same fee), so\npayment_header stays a no-op here (jupiter_swap is not in x402 PAID_TOOLS).\npay_in_crank is NO LONGER a no-op (ENG-5a051af4): the on-chain rate is now\nderived from this wallet's volume tier and $CRANK staker / pay-in-$CRANK /\nCrank Score discounts, so a discounted wallet is quoted a lower\nplatformFeeBps -- the same schedule x402 applies to perps/lend/stake.\n\nSECURITY: the output_token is run through multi-layer authenticity\nverification before any tx is built; an unverified/suspicious/fake token is\nblocked (UNVERIFIED_TOKEN). Set allow_unverified=true to trade an unverified\ntoken at your own risk (hard scam signals are never overridable).\n\n``venue_hint`` (ENG-fc290438/ENG-00ebde90, MB#18215) is ADVISORY, never\nrequired -- spot routes via Jupiter aggregation (the only spot venue\ntoday); an unknown hint raises, omitting it is unchanged from before.\n\nWorkflow: EXECUTE step -- deploy the directional/allocation leg after the risk\nphase capped the size. Non-custodial. Get a price first with get_quotes.\nSee get_trading_workflow.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying the SAME call (build or broadcast) with the same key + same args\nreplays the original result instead of re-executing -- guards against a\ntimeout-then-retry double-swap. Reuse the SAME key across the build call\nand its signed_transaction broadcast retry (they dedupe independently);\na NEW key means a genuinely new swap.\n\n``verify`` (ENG-df8afe93, default True): when broadcasting\n(signed_transaction supplied), await on-chain confirmation and re-read\nthe output_token balance -- the response gains a ``verification`` block\n({confirmed, slot, post_state, expected_vs_actual}). Gate follow-on\ndecisions on ``verification.confirmed``, never on tx_signature alone.\nSet False to skip for latency-sensitive callers. Verify any prior\nsignature later with the standalone ``verify_transaction`` tool."
+    },
+    {
+      "name": "verify_transaction",
+      "description": "Verify any prior transaction signature on demand (FREE read).\n\nPost-trade verification (ENG-df8afe93, harness spec MB#18289 R13): awaits\non-chain confirmation of ``tx_signature`` at ``commitment`` level (up to\n``timeout_s``) and, when a state hint is supplied, re-reads the relevant\nstate to compare against what was expected:\n\n  - ``mint`` (+ ``wallet_address``): re-reads that SPL/SOL token balance.\n  - ``market`` (+ ``wallet_address``): re-reads the Drift perp position.\n  - ``protocol`` (+ ``wallet_address``, optional ``market`` /\n    ``marginfi_account``): re-reads the lending obligation health.\n\nReturns ``{confirmed, slot, commitment, post_state, expected_vs_actual,\nretry_guidance}``. ``confirmed`` is False (never True) on a timeout --\nNEVER treat an unconfirmed/timed-out result as success; ``retry_guidance``\nnames the next step. Use this after signing + broadcasting a transaction\nyourself (place_perp_order, lend_deposit/borrow/repay, and every other\nunsigned-tx tool never broadcast server-side) to confirm it actually\nlanded before treating the position/balance as changed."
+    },
+    {
+      "name": "get_quotes",
+      "description": "Read-only Jupiter quote for a token pair (no execution).\n\namount is in base units of input_token. Returns routes, price impact, fees,\nand estimated output. ``venue_hint`` (ENG-fc290438/ENG-00ebde90, MB#18215)\nis ADVISORY, never required -- see jupiter_swap.\n\nPass ``wallet_address`` (optional, ENG-5a051af4) to preview the DISCOUNTED\ntechnology service fee that wallet will actually pay -- its volume tier plus\n$CRANK staker / ``pay_in_crank`` / Crank Score discounts. Omit it for the\nbase rate. This stays a free read either way."
+    },
+    {
+      "name": "get_balances",
+      "description": "Wallet token balances (SOL + all SPL tokens) with USD valuations.\n\nWorkflow: ORIENT step -- the starting read for any flow. See get_trading_workflow."
+    },
+    {
+      "name": "portfolio_snapshot",
+      "description": "Full portfolio summary: positions, total value, allocation %, 24h change.\n\nPersisted as a PortfolioSnapshot for historical tracking.\n\nWorkflow: ORIENT step -- the denominator for position sizing. Call before\nintelligence/risk so sizes are net of current holdings. See get_trading_workflow."
+    },
+    {
+      "name": "set_alert",
+      "description": "Create a price/position alert checked every 60s by Celery beat.\n\nalert_type: price_above | price_below | position_change. token is a mint\naddress. Optional webhook_url is POSTed when the alert fires.\n\nFree (no technology service fee) -- a control-plane write, moves no funds\nand has no transaction notional (ENG-4a5e0443).\n\nWorkflow: MONITOR step -- arm after executing so a tripped level loops you back\nto the risk/execute phase. See get_trading_workflow."
+    },
+    {
+      "name": "set_ooda_consent",
+      "description": "Opt in/out of the wake-on-condition worker (ENG-8c57afc3).\n\nDefault OFF. When opted in, a triggered alert may run a metered\nbackground check (Haiku triage, escalating to Sonnet only if worth a\ncloser look) and propose one action. daily_wake_budget (default 10, 1-500)\nhard-caps metered wakes per day. The worker never executes -- every\nproposal is approved in your own wallet. See get_ooda_status for wake\nhistory including skipped wakes.\n\nUsage-vs-fee-revenue kill threshold (ENG-574a0e66/ENG-d7bc9d28): wakes\nauto-suspend if inference spend over kill_window_days (default 30 days)\nexceeds kill_threshold_ratio (default \"0.5\") of attributed fee revenue.\nkill_threshold_enabled lets you disable the check for this wallet;\nkill_threshold_ratio is a decimal string. All three are optional -- omit\nto leave the existing/default value untouched. See get_ooda_status for\nwhether/why a wallet was auto-killed (kill_switched_at, kill_reason).\n\nWorkflow: consent step -- run once (or to change budget/kill config)\nbefore wakes can fire; check get_ooda_status afterward to confirm state."
+    },
+    {
+      "name": "get_ooda_status",
+      "description": "Wake-on-condition consent + usage status (ENG-8c57afc3).\n\nReturns opted_in, daily_wake_budget, wakes_used_today, skips_today, and\nrecent_wakes -- including SKIPPED_BUDGET / SKIPPED_SPEND_CAP rows, so a\nskipped wake is exactly as visible as a completed one, never silent.\nAlso returns the usage-vs-fee-revenue kill threshold config and state\n(ENG-574a0e66/ENG-d7bc9d28): kill_threshold_enabled, kill_threshold_ratio,\nkill_window_days, and -- if this wallet was auto-killed -- kill_switched_at\nand kill_reason, so a wallet can see why wakes stopped.\n\nWorkflow: status/observe step -- check this to see whether the background\nworker is watching, and what it did (or skipped) recently."
+    },
+    {
+      "name": "list_alerts",
+      "description": "List a wallet's alerts -- what is currently armed. Free read.\n\nCovers both price/position alerts (set_alert) and health-factor liquidation\nalerts (set_liquidation_alert) -- one table, told apart by alert_type.\nDefault shows only ARMED alerts (active, not yet triggered) -- exactly the\nset the Celery evaluators will act on. include_triggered=True adds already-\ntripped and deactivated alerts (recent history). limit caps at 200.\n\nWorkflow: MONITOR step -- read before arming another alert so you do not\nduplicate a level that is already watched. Pairs with set_alert. See\nget_trading_workflow."
+    },
+    {
+      "name": "token_info",
+      "description": "Token metadata, price, liquidity, volume, holder count.\n\nProvide token_address (mint) or a known symbol. Merges Helius (metadata)\nwith Birdeye (market data).\n\nFree (no technology service fee) -- a read with no transaction notional\n(ENG-4a5e0443)."
+    },
+    {
+      "name": "verify_token",
+      "description": "Multi-layer authenticity check for a token mint (read-only, no execution).\n\nRuns the same five-layer verification the swap/trade tools enforce before\nbuilding a transaction: registry allow-list, Jupiter verified list, Metaplex\nmetadata authority, minimum liquidity, and token age + holder count. Returns\nverification_status (verified | unverified | suspicious | blocked), the\nreasons, non-blocking warnings, and the per-layer findings. Call this before\nswapping into an unfamiliar token (ENG-a39caa6d)."
+    },
+    {
+      "name": "get_transaction_history",
+      "description": "Recent transactions for a wallet, parsed + human-readable (limit 1-100)."
+    },
+    {
+      "name": "backtest_strategy",
+      "description": "Backtest a strategy on historical Solana OHLCV before deploying capital.\n\nstrategy_type is one of the 17 Crank strategy types (dca, momentum,\nrebalance, stoploss, protect, snipe, sentiment, vault, yield_farm, hedge,\nequity_dca, perp_grid, copy_wallet, market_make, arb, basis_trade,\ncomposite). asset is a token mint; timeframe one of 1m/5m/15m/1h/4h/1d;\nstart_date/end_date are ISO-8601. params tunes the strategy (e.g.\n{\"fast\":5,\"slow\":20} for momentum). For strategy_type=\"composite\" pass the\nsignal-rule ``definition`` (see compose_strategy); the response includes a\nper-stream signal_coverage honesty report -- streams with partial persisted\nhistory are flagged, never silently zero-filled.\nslippage_model: \"fixed\" (slippage_bps haircut) or \"jupiter_replay\" (realised\nprice-impact from the recorded quote corpus). Returns performance metrics\n(Sharpe/Sortino/Calmar, max drawdown, win rate, profit factor, VaR/CVaR),\nfinal equity, and trade + signal counts. Read-only simulation -- no fee, no\non-chain action.\n\nWorkflow: SIMULATE step -- validate a strategy on history before risking\ncapital; run twice (e.g. auto vs long_only) to compare. Poor Sharpe/deep\ndrawdown -> retune or fall back to the yield leg. Feeds get_risk_assessment ->\nthe strategy_*_create tools. See get_trading_workflow."
+    },
+    {
+      "name": "get_ml_signal",
+      "description": "ML ensemble directional forecast for a Solana asset (read-only).\n\nTrains the ported Bybit ensemble (XGBoost + RandomForest + NeuralNet +\nGradientBoost + a candle flow proxy) walk-forward on the last\nlookback_candles of OHLCV, then returns the blended P(up move) for the latest\ncandle: score in [0,1], confidence (distance from 0.5), direction\n(long/short/neutral via buy_threshold/sell_threshold), per-model\ncontributions and top feature importances. asset is a token mint; timeframe\none of 1m/5m/15m/1h/4h/1d; horizon is the forward-return label horizon in\ncandles. On spot, 'short' = exit-to-flat (no native short). Heuristic\nforecast from price history only -- not financial advice. No wallet, no fee,\nno on-chain action.\n\nWorkflow: INTELLIGENCE step -- a directional forecast that complements\ndetect_regime; low confidence -> cut size or stay flat. See get_trading_workflow."
+    },
+    {
+      "name": "detect_regime",
+      "description": "Detect the current market regime for a Solana asset (read-only, deterministic).\n\nClassifies the latest candle of recent OHLCV as bull / bear / range /\nvolatile and returns a RegimeSignal: regime, confidence, trend_strength,\nvolatility_percentile, a SUGGESTED direction (long/short/neutral) and\nposition-size fraction (0-1), plus the raw ADX / +DI / -DI / SMA-slope /\nvolume readings for transparency. asset is a token mint; timeframe one of\n1m/5m/15m/1h/4h/1d. A description + suggestion only -- not financial advice,\nnot a trade instruction (DYOR). No wallet, no fee, no on-chain action.\n\nWorkflow: INTELLIGENCE step -- pair with get_market_briefing (macro) +\nget_ml_signal (forecast); feeds strategy choice + direction_mode at backtest +\ncreate time. bear + allow_short -> consider a short. See get_trading_workflow."
+    },
+    {
+      "name": "get_risk_assessment",
+      "description": "Combined regime + risk-guard calculation for a strategy on an asset (read-only).\n\nFolds the detected market regime together with the safe-default risk guards\n(position / exposure / single-loss / drawdown / daily-loss limits) into one\ndeterministic output: a rules-based direction, a conviction-weighted position\nsize already capped to the position guard (in both percent-of-equity and USD\nnotional against ``equity``), a per-regime action note, and the full guard\nset. strategy_type is one of the 16 Crank strategy types; asset is a token\nmint; timeframe one of 1m/5m/15m/1h/4h/1d. A mechanical, non-personalised\ncalculation you choose whether to act on (DYOR) -- not financial advice, not\na recommendation, and not a managed account. No wallet, no fee.\n\nWorkflow: RISK step -- after backtest_strategy, before execution. The returned\nsuggested_size_usd caps the order in the execute phase; do NOT exceed it. Check\nasset_classification first (equity -> per-execution confirm). See get_trading_workflow."
+    },
+    {
+      "name": "get_indicators",
+      "description": "Full standard technical-indicator set for one asset/timeframe (read-only).\n\nComputes sma, ema, macd, adx (+DI/-DI), rsi, stochastic (%K/%D), roc,\nbollinger (mid/upper/lower/width/%B), atr, keltner, realised_vol, vwap,\nvolume_ratio and volume_profile (POC / value area / high-volume-node\nliquidity bands with 0-1 depth scores) from recent OHLCV via the canonical\nbackend/indicators library. asset is a token mint; timeframe one of\n1m/5m/15m/1h/4h/1d; indicators selects a subset (empty = all); lookback\ncandles capped at 500; params overrides per indicator, e.g.\n{\"rsi\": {\"period\": 21}}; include_series=true adds per-bar series (last 200\npoints). Readings are None while history is warming up. Computed readings\nonly -- not financial advice, not a trade instruction (DYOR). No wallet,\nno fee, no on-chain action.\n\nWorkflow: INTELLIGENCE step -- raw indicator readings underlying\ndetect_regime; pair with get_ml_signal (forecast) + get_signals (persisted\ncross-source signals). See get_trading_workflow."
+    },
+    {
+      "name": "sr_detect_levels",
+      "description": "Multi-timeframe support/resistance zones + liquidity bands (read-only).\n\nDetects S/R zones per timeframe from recent OHLCV (swing highs/lows, floor\npivots, Fibonacci retracement, volume-profile clusters, optional manual\nlevels), merges them across timeframes with a confluence multiplier, and\nweights zone strength by overlapping candle-volume liquidity-band depth.\nasset is a token mint; timeframes default [\"1h\",\"4h\",\"1d\"]; lookback\ncandles per timeframe (capped at 500); sources subset of swing / pivot /\nfibonacci / volume_profile / price_impact / manual; sensitivity 0-1 (higher\n= more zones); zone_width_bps sets the band half-width; manual_levels adds\ncaller-supplied override prices. Returns zones (supports / resistances /\npivots with price, band, strength, touches, sources, timeframes) plus\nliquidity_bands. Computed reference levels only -- not financial advice,\nnot a trade instruction (DYOR). No wallet, no fee, no on-chain action.\n\nWorkflow: INTELLIGENCE step -- the level picture behind sr_backtest +\nsr_configure_strategy; pair with get_indicators + detect_regime. See\nget_trading_workflow."
+    },
+    {
+      "name": "sr_configure_strategy",
+      "description": "Attach an S/R config block to YOUR OWN strategy (ownership-checked).\n\nPersists an `sr` param block (SRConfig knobs: sensitivity, sources,\nlookback, swing_window, zone_width_bps, merge_tolerance_bps, min_touches,\nmin_strength, max_zones_per_side, manual_levels, liquidity_weight_k) onto\nthe caller's own strategy params. The strategy must belong to\nwallet_address -- configuring someone else's strategy is refused.\nStrategies without an `sr` block behave exactly as before (back-compat).\nUser/agent-owned configuration only: you own and control the strategy; the\nplatform never exercises discretion (DYOR). No key handling, no fee.\n\nWorkflow: DECIDE step -- after sr_detect_levels + sr_backtest confirm the\nlevel picture, store the tuned config on the strategy. See\nget_trading_workflow."
+    },
+    {
+      "name": "sr_backtest",
+      "description": "Backtest a strategy with an S/R config block (read-only simulation).\n\nRuns the existing backtest engine with strategy_type (default\n\"support_resistance\": bounce-long off detected support, exit on a support\nbreak or resistance-fail; on spot a SHORT signal is exit-to-flat) and\nmerges the validated sr_config into params[\"sr\"]. asset is a token mint;\ntimeframe one of 1m/5m/15m/1h/4h/1d; start_date/end_date ISO-8601. Returns\nthe standard performance metrics plus persisted SUPPORT_RESISTANCE signals\ncarrying zone metadata. Read-only simulation -- no fee, no on-chain action,\nnot financial advice (DYOR).\n\nWorkflow: SIMULATE step -- validate an S/R setup on history before risking\ncapital; feeds get_risk_assessment -> sr_configure_strategy. See\nget_trading_workflow."
+    },
+    {
+      "name": "asset_classification",
+      "description": "Classify a token: crypto / equity / wrapped_major / lst / stablecoin.\n\nProvide token_address (mint) or a known symbol. Tokenized securities\n(xStocks, Ondo) classify as 'equity', which subjects strategies to the SEC\nframework guardrails (neutral tools, per-execution confirmation for\ndiscretionary types). Registry-authoritative with a static + symbol\nfallback. Factual classification only -- not a recommendation.\n\nWorkflow: RISK/COMPLIANCE step -- classify before executing; 'equity' forces\ngeo-gating + per-execution confirm. Pairs with get_disclaimers. See\nget_trading_workflow."
+    },
+    {
+      "name": "get_disclaimers",
+      "description": "Compliance disclaimers for an asset class (SEC framework).\n\nPass asset_classification (crypto/equity/wrapped_major/lst/stablecoin), or a\ntoken_address/symbol to classify first. Equity adds a securities-specific\nnon-registration / not-advice notice. Full text: crank.ing/disclosures."
+    },
+    {
+      "name": "perp_open_long",
+      "description": "Open a leveraged LONG perp position on Drift (non-custodial).\n\nReturns an UNSIGNED base64 transaction for your wallet to sign + broadcast,\nplus entry/liquidation/margin estimates. market e.g. SOL-PERP. size_usd is\nnotional USD; leverage up to the market max. TP/SL are informational in the\nbuild — place them as trigger orders after the position opens. The fee is\ncharged on size_usd notional past the daily free tier (x402 payment_header).\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-opening the position.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nre-call this tool with the SIGNED base64 tx and Crank broadcasts it, then\nawaits on-chain confirmation and re-reads the perp position -- the response\ncarries a real ``verification`` block ({confirmed, slot, post_state,\nexpected_vs_actual}). Gate follow-on decisions on ``verification.confirmed``,\nnever on tx_signature alone. verify=false skips only the confirmation wait."
+    },
+    {
+      "name": "perp_open_short",
+      "description": "Open a leveraged SHORT perp position on Drift (non-custodial).\n\nSame envelope as perp_open_long, opposite direction. ``idempotency_key``\n(ENG-7ded4fb8, optional) and ``signed_transaction``/``verify``\n(ENG-dc70e40b, two-phase execution): see perp_open_long."
+    },
+    {
+      "name": "perp_close",
+      "description": "Close a perp position, full or partial (non-custodial).\n\nclose_pct in (0, 100]. Returns an UNSIGNED base64 tx to sign + broadcast,\nplus exit price + realized P&L estimate (incl funding). Past the daily free\ntier an x402 payment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-closing the position.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee perp_open_long -- re-call with the signed tx and Crank broadcasts it,\nconfirms it on-chain, and re-reads the position."
+    },
+    {
+      "name": "perp_modify",
+      "description": "Modify an existing open Drift ORDER by order_id (non-custodial).\n\nAdjusts trigger price (TP/SL). new_leverage / add_collateral require a\nseparate collateral deposit/withdraw and are recorded for tracking. Returns\nan UNSIGNED base64 tx to sign + broadcast. Past the daily free tier an x402\npayment_header is required.\n\n``idempotency_key`` (ENG-ac7961aa, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-modifying the order."
+    },
+    {
+      "name": "perp_positions",
+      "description": "List open perp positions for a wallet with live P&L.\n\nEach: market, side, size, entry/mark price, unrealized P&L (incl funding),\nliquidation price."
+    },
+    {
+      "name": "perp_markets",
+      "description": "Available Drift perp markets with price, open interest, funding, max leverage."
+    },
+    {
+      "name": "perp_funding_rates",
+      "description": "Current funding for a perp market (rate, period, last funding timestamp).\n\nmarket e.g. SOL-PERP. period is informational (1h/8h/24h)."
+    },
+    {
+      "name": "place_perp_order",
+      "description": "Open a leveraged perp position on the best/selected venue (non-custodial).\n\nside is \"long\" | \"short\". market e.g. SOL-PERP; size_usd is notional USD.\nvenue optional -- defaults to the configured primary (Jupiter Perps), with\nhealth failover to the fallback for new orders. Returns an UNSIGNED tx\n(Tier A) or a signing payload (Tier B) for your wallet to sign + broadcast,\nplus venue_name / custody_tier / settlement_token. Tier B (venue-custodied)\nvenues require acknowledge_tier_b=true after reviewing custody_disclosure.\nFee charged on size_usd notional past the daily free tier (x402).\n\nWorkflow: EXECUTE step (leveraged directional leg) -- after get_venue_health /\nget_venue_risk_score clear the venue and get_risk_assessment caps the size.\nMonitor via perp_positions. See get_trading_workflow.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-opening the order.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nre-call this tool with the SIGNED payload and Crank relays it by custody\ntier -- Tier A to Solana RPC, then awaits on-chain confirmation and\nre-reads the position on the executing venue; Tier B to the venue's own\nsubmit endpoint, which returns a venue order id (reported as\nvenue-acknowledged, since it is not an on-chain signature). Gate follow-on\ndecisions on ``verification.confirmed``, never on tx_signature alone."
+    },
+    {
+      "name": "close_perp_position",
+      "description": "Close a perp position (full/partial) on its venue (non-custodial).\n\nposition_id is venue-native (for Drift it is the market symbol). close_pct in\n(0, 100]. Returns an UNSIGNED tx / signing payload to sign + broadcast.\n\n``idempotency_key`` (ENG-ac7961aa, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-closing the position.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee place_perp_order -- re-call with the signed payload and Crank relays it\nby custody tier and verifies the result."
+    },
+    {
+      "name": "cancel_perp_order",
+      "description": "Cancel a resting perp order on its venue (non-custodial).\n\n``idempotency_key`` (ENG-ac7961aa, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-cancelling the order.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee place_perp_order. A cancel moves no position, so confirming the\nsignature landed IS the verification -- no state re-read is declared."
+    },
+    {
+      "name": "perp_positions_all",
+      "description": "Open perp positions for a wallet. venue=None aggregates across venues.\n\nEach position carries its venue + custody_tier."
+    },
+    {
+      "name": "perp_markets_all",
+      "description": "Perp markets across venues (venue=None aggregates all routable venues)."
+    },
+    {
+      "name": "perp_funding_rates_all",
+      "description": "Normalized funding/borrow rates across venues (venue=None aggregates)."
+    },
+    {
+      "name": "get_venue_status",
+      "description": "Health + capabilities of every perps venue, plus routing config.\n\nReports primary/fallback venue, which venues are routable, per-venue health\n(operational/degraded/down/disabled), and capability flags incl custody tier."
+    },
+    {
+      "name": "go_live_status",
+      "description": "Live go-live posture + S1-S6 runbook stage readout (ENG-88a87e5d).\n\nThe single documented gated config surface (MB#20378 D2, follow-up to\nENG-b936ca31): renders the ENTIRE go-live flip state -- cluster, RPC host\n(bare hostname, never an api key or query string), paper-trading + soft-\nlaunch guards, both technology-service-fee rails (x402 + Jupiter swap fee),\nMoonPay environment, and multi-venue perps posture -- read fresh from\nconfig on every call (an admin can flip an env var and the very next call\nreflects it, no redeploy needed). ``stages`` is an ordered S1-S6 readout of\nthe go-live runbook derived purely from that posture, each\n``{stage, label, satisfied, blocking}`` -- the primary verification\ninstrument for every runbook stage (verify-runtime-behaviour-not-config).\n\nFREE read, never gated (never in x402 PAID_TOOLS): booleans/counts/hosts\nonly, no secret ever leaves this tool."
+    },
+    {
+      "name": "verify_treasury_settlement_status",
+      "description": "On-chain proof the treasury actually received settled x402 USDC (ENG-fb2a9462).\n\nWires ``services.x402_settlement.verify_treasury_settlement`` (ENG-1be912ac\nreal on-chain proof: treasury USDC ATA balance read as the primary signal,\nplus settle-tx signature confirmation) up to an MCP tool -- the follow-up\nto ENG-b936ca31/MB#20378, which intentionally split the on-chain proof\nlogic from this wiring to avoid file collisions across parallel sessions.\n\n``signatures`` is optional: when omitted, this tool pulls recent settled\n``X402PaymentRecord.tx_signature`` values itself (via\n``django_bridge.recent_x402_signatures``, same window shape as\n``reconcile_x402_settlement``) over the last ``since_iso`` window (or all\ntime), capped at ``signature_limit`` to bound RPC round trips -- so a\ncaller does not have to hand-assemble signatures to get a real proof.\nPass an explicit ``signatures`` list to check specific settle-tx hashes\ninstead (bypasses the DB lookup entirely).\n\n``verified`` is True only when every checked signature confirms on-chain\nAND (if ``expected_usd`` is given) the treasury balance covers it -- see\nthe service docstring for the full non-falsely-asserting contract. Raises\nCONFIG_ERROR if no treasury wallet is configured, UPSTREAM_ERROR\n(retryable) on an RPC failure -- never a silent ``verified=False``.\n\nFREE read (never gated, never in x402 PAID_TOOLS): public addresses/\nsignatures/balances only, never a key (hard rule 1)."
+    },
+    {
+      "name": "lend_deposit",
+      "description": "Deposit assets to earn yield on Kamino or Marginfi (non-custodial).\n\nReturns an UNSIGNED base64 tx to sign + broadcast, plus supply APY. amount\nis in base units of token. protocol: kamino | marginfi. Marginfi needs\nmarginfi_account (create via the sidecar). Past the daily free tier an x402\npayment_header is required. The deposited token is authenticity-verified\nfirst; set allow_unverified=true to supply an unverified token at own risk.\n\nWorkflow: EXECUTE step (yield leg) -- supply idle stables/tokens after\ncomparing get_lending_rates; monitor with get_health_factor. See\nget_trading_workflow.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-depositing.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nre-call this tool with the SIGNED base64 tx and Crank broadcasts it, then\nawaits on-chain confirmation and re-reads BOTH the deposited token's\nbalance and the obligation's health -- the response carries a real\n``verification`` block ({confirmed, slot, post_state, expected_vs_actual}).\nGate follow-on borrowing on ``verification.confirmed``, never on\ntx_signature alone. verify=false skips only the confirmation wait."
+    },
+    {
+      "name": "lend_borrow",
+      "description": "Borrow against deposited collateral (non-custodial).\n\nReturns an UNSIGNED base64 tx + current health factor (pre-borrow estimate).\namount in base units of borrow_token. Deposit collateral first. Past the\ndaily free tier an x402 payment_header is required. The borrowed token is\nauthenticity-verified first; set allow_unverified=true to borrow an unverified\ntoken at your own risk.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-borrowing.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee lend_deposit -- re-call with the signed tx and Crank broadcasts it,\nconfirms it on-chain, and re-reads the borrowed balance + obligation health."
+    },
+    {
+      "name": "lend_repay",
+      "description": "Repay borrowed amount (non-custodial). Returns an UNSIGNED base64 tx +\ncurrent health factor. amount in base units of token. Past the daily free\ntier an x402 payment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-repaying.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee lend_deposit -- re-call with the signed tx and Crank broadcasts it,\nconfirms it on-chain, and re-reads the repaid balance + obligation health."
+    },
+    {
+      "name": "get_lending_rates",
+      "description": "Compare supply/borrow rates across Kamino + Marginfi.\n\nEach row: protocol, token mint, symbol, supply/borrow APY %, TVL USD,\nutilization.\n\nWorkflow: YIELDS step -- the passive-return option for idle/low-conviction\ncapital (lending USDC removes price exposure). Pairs with get_lst_yields.\nSee get_trading_workflow."
+    },
+    {
+      "name": "get_health_factor",
+      "description": "Liquidation-risk monitor for a lending position.\n\nReturns health_factor (>1 safe, <1 liquidatable), collateral value, debt\nvalue, liquidation threshold. protocol: kamino | marginfi."
+    },
+    {
+      "name": "set_liquidation_alert",
+      "description": "Arm a liquidation alert: notify when a lending obligation's health factor\nfalls to or below threshold.\n\nprotocol: kamino | marginfi (marginfi_account required for marginfi).\nthreshold is the HF level (e.g. 1.2 warns before the <1.0 liquidation\npoint). Evaluated every 30s by Celery beat; webhook_url is POSTed on trip.\n\nWorkflow: MONITOR step -- arm after opening a leveraged/borrow position so a\ndeteriorating obligation loops you back to repay/de-risk. Pairs with\nget_health_factor. See get_trading_workflow."
+    },
+    {
+      "name": "flash_loan",
+      "description": "Marginfi flash loan for arbitrage (non-custodial, atomic).\n\ninstructions are JSON ix executed between borrow + repay legs. Returns a\nsingle UNSIGNED base64 tx that reverts unless repaid in-transaction. The\nborrowed token is authenticity-verified first; set allow_unverified=true to\nborrow an unverified mint at your own risk. Past the daily free tier an x402\npayment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-issuing the flash loan tx."
+    },
+    {
+      "name": "liquid_stake",
+      "description": "Stake SOL for a liquid-staking token (non-custodial).\n\namount in lamports. protocol: marinade | jito | blaze. Returns an UNSIGNED\nbase64 tx + the LST received + current APY. The technology service fee is\ncharged on the staked-SOL notional past the daily free tier (x402\npayment_header; set pay_in_crank for the $CRANK discount).\n\nWorkflow: EXECUTE step (yield leg) -- stake the idle slice after comparing\nget_lst_yields. Non-custodial. Monitor via portfolio_snapshot. See\nget_trading_workflow.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-staking.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nre-call this tool with the SIGNED base64 tx and Crank broadcasts it, then\nawaits on-chain confirmation and re-reads the LST + SOL balances -- the\nresponse carries a real ``verification`` block ({confirmed, slot,\npost_state, expected_vs_actual}). Gate follow-on decisions on\n``verification.confirmed``, never on tx_signature alone. verify=false skips\nonly the confirmation wait."
+    },
+    {
+      "name": "unstake_lst",
+      "description": "Unstake an LST back to SOL (non-custodial).\n\nlst_token is a mint (mSOL/jitoSOL/bSOL); amount in base units. mSOL routes\nvia Marinade, others via the Sanctum router. Returns an UNSIGNED base64 tx.\nThe technology service fee is charged on the unstaked-LST notional past the\ndaily free tier (x402 payment_header).\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-unstaking.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee liquid_stake -- re-call with the signed tx and Crank broadcasts it,\nconfirms it on-chain, and re-reads the LST + SOL balances."
+    },
+    {
+      "name": "get_lst_yields",
+      "description": "Compare APY across LST providers (Marinade/Jito/Blaze) with MEV-boost +\nvalidator-count descriptors.\n\nWorkflow: YIELDS step -- staking keeps SOL exposure + earns yield (vs lending,\nwhich removes price exposure). Best APY becomes the 'park it' leg of the\nallocation; execute via liquid_stake. See get_trading_workflow."
+    },
+    {
+      "name": "lst_swap",
+      "description": "Swap between two LSTs via the Sanctum router (non-custodial).\n\nfrom_lst/to_lst are mints; amount in base units. Returns an UNSIGNED base64\ntx + output amount. The technology service fee is charged on the input-LST\nnotional past the daily free tier (x402 payment_header). The acquired LST\n(to_lst) is authenticity-verified first; set allow_unverified=true to swap\ninto an unverified LST at your own risk.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-swapping.\n\n``signed_transaction`` / ``verify`` (ENG-dc70e40b, two-phase execution):\nsee liquid_stake -- re-call with the signed tx and Crank broadcasts it,\nconfirms it on-chain, and re-reads both LST balances."
+    },
+    {
+      "name": "short_open",
+      "description": "Open a lending-based short: deposit collateral -> borrow token -> sell.\n\nReturns an ORDERED STEP PLAN of UNSIGNED base64 txs to sign + broadcast in\nsequence, plus entry price + health factor + a short_id for tracking. All\namounts in base units. The shorted token is authenticity-verified first; set\nallow_unverified=true to short an unverified mint at your own risk. Past the\ndaily free tier an x402 payment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-opening the short."
+    },
+    {
+      "name": "short_close",
+      "description": "Close a tracked short: buy token -> repay loan -> withdraw collateral.\n\nReturns an ORDERED STEP PLAN + exit price. short_id from short_open. Past\nthe daily free tier an x402 payment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-closing the short."
+    },
+    {
+      "name": "short_status",
+      "description": "List open shorts for a wallet with entry price + health factor."
+    },
+    {
+      "name": "leverage_long",
+      "description": "Open a lending-based leveraged long by looping deposit -> borrow stable\n-> buy more -> redeposit.\n\nReturns an ORDERED STEP PLAN of UNSIGNED base64 txs, effective leverage, loop\ncount, health factor, and a position_id. amount in base units. The levered\ntoken is authenticity-verified first; set allow_unverified=true to lever an\nunverified mint at your own risk. Past the daily free tier an x402\npayment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-opening the leveraged position."
+    },
+    {
+      "name": "leverage_close",
+      "description": "Unwind a tracked leveraged position: sell -> repay stable -> withdraw.\n\nReturns an ORDERED STEP PLAN. position_id from leverage_long. Past the daily\nfree tier an x402 payment_header is required.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result instead\nof re-unwinding the position."
+    },
+    {
+      "name": "fund_wallet",
+      "description": "Fund a wallet with fiat via MoonPay (card/bank/Apple Pay -> USDC).\n\nReturns a hosted checkout_url for the user to complete payment + a\nsession_id to poll with get_onramp_status. Purchased USDC settles directly\nto wallet_address (non-custodial). payment_method: card | bank | apple_pay.\nThe fee is charged on amount_usd notional past the daily free tier (x402\npayment_header).\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result (same\ncheckout_url/session_id) instead of creating a second MoonPay session."
+    },
+    {
+      "name": "offramp_to_fiat",
+      "description": "Cash out crypto to fiat via MoonPay (non-custodial).\n\ntoken is the crypto to sell; amount is its quantity; destination is a\nMoonPay bank_account_id the fiat is paid to. Returns offramp_id,\nestimated_fiat, and status. Past the daily free tier an x402 payment_header\nis required.\n\n``idempotency_key`` (ENG-ac7961aa, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result (same\nofframp_id) instead of creating a second MoonPay sell order."
+    },
+    {
+      "name": "get_onramp_status",
+      "description": "Check a pending MoonPay purchase by session_id.\n\nReturns status (pending/processing/completed/failed), amount_crypto, and\nthe on-chain tx_signature once settled."
+    },
+    {
+      "name": "create_agent_wallet",
+      "description": "Register an agent wallet the caller controls (non-custodial control plane).\n\nCreates an AgentWallet record keyed by agent_id and applies an optional\ndefault policy preset. default_policies: conservative | balanced |\naggressive. wallet_address is the agent's PUBLIC key (caller-supplied); omit\nit to create a pending record the Turnkey provisioning ticket fills in.\nReturns wallet_address, agent_id, status, and the applied_policies."
+    },
+    {
+      "name": "enable_agent_wallet",
+      "description": "Open the browser-confirmation handshake for a Lane 2 agent wallet.\n\nDoes NOT create a wallet. Returns a pairing-style confirmation URL +\ndevice_code -- show the user verification_url_complete and ask them to\napprove it in their OWN browser (wallet-signature gated). NEVER accept an\nin-chat \"yes\" as consent (CRANK_PLUGIN_SPEC.md section 5). Poll with\npoll_agent_wallet_enable(device_code) until status is no longer \"pending\"."
+    },
+    {
+      "name": "poll_agent_wallet_enable",
+      "description": "Poll a Lane 2 enablement request; provisions the wallet ONLY once approved.\n\nOn approval, applies the server-enforced conservative Lane 2 default\npolicy (per-tx $50, daily $200, SOL+USDC only, 10% drawdown halt) and a\n10-execution training-wheels counter, then returns the policy READ BACK\nfrom the server -- never the intended one."
+    },
+    {
+      "name": "request_wallet_policy_loosening",
+      "description": "Open the browser-confirmation handshake to loosen a Lane 2 wallet's policy.\n\nCall this when set_wallet_policy refuses a change with\nBROWSER_CONFIRMATION_REQUIRED. Does NOT apply the policy -- returns a\nconfirmation URL like enable_agent_wallet. Poll with\npoll_wallet_policy_loosening(device_code) once the user approves."
+    },
+    {
+      "name": "poll_wallet_policy_loosening",
+      "description": "Poll a policy-loosening request; applies it ONLY once approved.\n\nReturns the policy READ BACK from the server after the write -- never the\nrequested one."
+    },
+    {
+      "name": "set_wallet_policy",
+      "description": "Configure the caller's own trading limits and rules on an agent wallet.\n\npolicies: a list of {policy_type, value, enabled?} objects. policy_type is\none of max_trade_size {\"usd\"} | daily_limit {\"usd\"} | approved_tokens\n{\"tokens\"} | banned_tokens {\"tokens\"} | position_limit {\"usd\"} | kill_switch\n{\"active\"} | drawdown_limit {\"max_pct\"} | max_daily_loss {\"usd\"} |\ntrade_velocity {\"max_per_hour\", \"max_per_day\"} | venue_allowlist\n{\"venues\"}. Upserts by policy_type; returns the full updated policy set.\n(Perp leverage cap is a separate follow-up, ENG-f3aacdf1 -- not a\npolicy_type here.) On a Lane 2 wallet, a change that would LOOSEN a\nserver-enforced default raises BROWSER_CONFIRMATION_REQUIRED -- call\nrequest_wallet_policy_loosening instead (ENG-45e5ea07)."
+    },
+    {
+      "name": "reconcile_turnkey_policy",
+      "description": "Diff the LIVE Turnkey enclave policy against Django's expected policy.\n\nFetches the enclave's active signing policy and re-derives the same\nexpected policy set_wallet_policy would push, then diffs them.\n``applicable: false`` for a self-custody wallet (no Turnkey signer).\n``repair=False`` (default) only REPORTS drift -- operator-triggered repair\nis safer than auto-repair given the security implications of a policy\nre-push. ``repair=True`` re-pushes the expected policy and, on success,\nstamps the drift-tracking timestamp."
+    },
+    {
+      "name": "list_turnkey_drift_backlog",
+      "description": "The known pre-ENG-5d4d7f01 Turnkey drift backlog.\n\nWallets with a Turnkey sub-org whose enclave policy has never been\nconfirmed synced (``turnkey_policy_synced_at`` NULL) -- provisioned\nbefore the re-push fix landed. Read-only triage list; drive\nreconcile_turnkey_policy(wallet_address, repair=True) per wallet."
+    },
+    {
+      "name": "kill_wallet",
+      "description": "Emergency freeze an agent wallet.\n\nSets status=killed so the policy gate refuses every subsequent value-bearing\naction. Returns confirmation + a frozen-positions count. (Turnkey scoped-key\nrevocation is handled by the deferred provisioning ticket.)"
+    },
+    {
+      "name": "wallet_status",
+      "description": "Current state, policy summary, recent activity, total volume, and tier."
+    },
+    {
+      "name": "set_permission_mode",
+      "description": "Change an agent wallet's session permission mode (non-custodial control plane).\n\nPorts Claude Code's plan/acceptEdits/bypassPermissions ladder to a wallet\nwith signing power. mode: observe (deny every mutating tool outright,\nPERMISSION_MODE_BLOCKED) | propose (mutating tools return a PROPOSAL\nenvelope -- proposal_id + params + summary -- instead of executing;\napprove within the TTL via approve_proposal) | auto_within_policy (execute\nimmediately, still capped by every configured WalletPolicy -- the pre-R9\ndefault). Also settable inline via set_wallet_policy's permission_mode\nparam. The transition is logged as an AgentTransaction audit row."
+    },
+    {
+      "name": "approve_proposal",
+      "description": "Approve a pending PROPOSAL within its TTL (non-custodial control plane).\n\nFlips a propose-mode proposal (see set_permission_mode) from pending to\napproved, making it executable. Bookkeeping only -- it does not itself\nre-dispatch the original tool call."
+    },
+    {
+      "name": "authorize_session_signer",
+      "description": "Authorize a delegated session signer for an agent wallet (non-custodial).\n\nsigner_pubkey is a keypair the USER creates and holds -- ONLY its PUBLIC\nkey ever crosses this call (hard rule 1). Once authorized, calls that\ncarry this signer_pubkey are trade-only: the gate rejects any transfer/\nwithdraw/close-account/authority-change instruction targeting a\ndestination outside the wallet's own accounts (docs/\nSESSION_SIGNER_DESIGN.md). capabilities: subset of swap|perp|lend|stake,\nempty/omitted = full default set. expires_at: optional ISO 8601 hard\nexpiry. Effective on the very next call using this signer_pubkey.\nOn a Lane 2 wallet this raises BROWSER_CONFIRMATION_REQUIRED -- call\nrequest_session_signer_authorization instead (ENG-b35851ed): minting a\nsigner is a trust grant and must be owner-approved in the browser, never\nin-chat."
+    },
+    {
+      "name": "request_session_signer_authorization",
+      "description": "Open the browser-confirmation handshake to authorize a session signer.\n\nCall this when authorize_session_signer refuses with\nBROWSER_CONFIRMATION_REQUIRED (Lane 2 wallet -- ENG-b35851ed). Does NOT\nauthorize the signer -- returns a confirmation URL like\nenable_agent_wallet; the wallet's OWNER must approve in their own browser\n(wallet-signature gated, never in-chat). Poll with\npoll_session_signer_authorization(device_code) once approved."
+    },
+    {
+      "name": "poll_session_signer_authorization",
+      "description": "Poll a signer-authorization request; authorizes ONLY once approved.\n\nReturns {\"status\": \"pending\"} while waiting, {\"status\": \"expired\"} for an\nunknown/expired code (never fabricates approval), or on approval binds the\nsigner through the same rails authorize_session_signer uses and returns\nthe created session_signer row."
+    },
+    {
+      "name": "revoke_session_signer",
+      "description": "Instantly revoke a delegated session signer (non-custodial control plane).\n\nSingle atomic DB UPDATE -- the gate resolves the row fresh on every call\nwith no cache, so this is enforced on the very next call using\nsigner_pubkey. No TTL/cache window (ENG-39ec13bf)."
+    },
+    {
+      "name": "list_session_signers",
+      "description": "List all delegated session signers (active + revoked) for a wallet."
+    },
+    {
+      "name": "crank_dependency_status",
+      "description": "Protocol dependency compatibility matrix — are we compatible right now?\n\nRead-only. Returns per-protocol RED/AMBER/GREEN status (drift, jupiter,\nkamino, marginfi, marinade, sanctum, raydium), our SDK pin vs latest, last\nhealth-probe result, on-chain program slot, next recommended action, and any\nauto-filed Engaij ticket — plus an overall headline. Maintained by the\nbackend dependency response engine; callable from the morning briefing,\ndispatch, or ad-hoc."
+    },
+    {
+      "name": "crank_prompt_health",
+      "description": "Dev Process Health — recurring CC friction this week vs resolved.\n\nRead-only. Returns the latest weekly close-report review snapshot\n(ENG-dc453c0d): a ``Prompt health: N recurring issues, M resolved this week``\nheadline plus per-issue week-over-week trend (``trending_down_after_fix``)\nfor a dashboard widget. Surfaced in the Monday morning briefing under \"Dev\nProcess Health\". ``available=False`` until the first weekly review runs."
+    },
+    {
+      "name": "register_integrator",
+      "description": "Register an agent integrator by its payout wallet -- lands PENDING.\n\nThe Jupiter-integrator self-serve onboarding step. The profile earns NOTHING\nuntil an admin approves it via ``set_integrator_share`` (anti-gaming\nwhitelist). Idempotent on ``wallet_address``. Returns the integrator stats."
+    },
+    {
+      "name": "register_referrer",
+      "description": "First-touch bind an onboarded agent wallet to an approved integrator.\n\nFirst-touch wins: a wallet already attributed to any integrator keeps that\nbinding. Requires the integrator be approved; rejects a self-referral."
+    },
+    {
+      "name": "set_integrator_share",
+      "description": "ADMIN-GATED: approve an integrator and set its fee-share (0-20%).\n\nValidates ``share_bps`` against the per-leg ceiling (integrator_max_share_bps)\nAND the combined stacking guard (referral + clone + integrator <=\nmax_total_share_bps, so Crank keeps >=40% of every net fee). A breach is\nREJECTED, never silently clamped. Setting a share on a PENDING integrator also\napproves it. Requires a valid ``admin_secret`` (CRANK_ADMIN_SECRET)."
+    },
+    {
+      "name": "get_integrator_stats",
+      "description": "Integrator dashboard: status, share, onboarded count, earnings breakdown.\n\nRead-only. Every figure is fee-share USD (technology service fees the\nonboarded agents paid), never PnL -- a fee-share, never a performance-share."
+    },
+    {
+      "name": "get_integrator_earnings",
+      "description": "Per-action + per-month integrator earnings (onboarding API). Read-only."
+    },
+    {
+      "name": "list_support_tickets",
+      "description": "List/filter Crank support tickets (newest first). Read-only.\n\nFilters (all optional): status (open|in_progress|waiting_on_user|resolved|\nclosed), priority (low|normal|high|urgent), category (billing|technical|\nfeature_request|general), search (matches ticket number/subject/requester\nemail+name/wallet). Returns {count, tickets[]}."
+    },
+    {
+      "name": "get_support_ticket",
+      "description": "Full support-ticket detail with the conversation thread. Read-only.\n\nticket_id: numeric id or human ticket number (e.g. CRK-AB2K9P)."
+    },
+    {
+      "name": "reply_to_ticket",
+      "description": "Reply to a support ticket — emails the requester (SendGrid) + threads it.\n\nRecords the outbound message and advances status (open/waiting ->\nin_progress, or waiting_on_user when set_waiting). The message is persisted\neven if email delivery fails; the returned ``email_sent`` reflects the\ndelivery attempt."
+    },
+    {
+      "name": "note_create",
+      "description": "Append an internal-only note to a support ticket (ENG-69d5785b).\n\nAgent-side context: records an internal SupportMessage (is_internal_note=True)\nthat is NEVER emailed to the requester, and leaves the ticket status\nunchanged. ticket_id: numeric id or human ticket number (e.g. CRK-AB2K9P)."
+    },
+    {
+      "name": "set_ticket_priority",
+      "description": "Set a support ticket's priority (ENG-69d5785b).\n\npriority: low|normal|high|urgent. Metadata-only -- no email, no status change."
+    },
+    {
+      "name": "update_ticket_status",
+      "description": "Set a support ticket's status.\n\nstatus: open|in_progress|waiting_on_user|resolved|closed. Stamps resolved_at\non transition into resolved/closed and clears it on reopen."
+    },
+    {
+      "name": "assign_ticket",
+      "description": "Assign a support ticket to a staff user (username or id). Empty -> unassign."
+    },
+    {
+      "name": "get_support_dashboard",
+      "description": "Support desk metrics: open count, avg response/resolution time, breakdowns.\n\nRead-only. Returns totals, open/resolved/unassigned counts, resolution rate,\navg first-response + resolution seconds, by-status/category/priority maps,\nand a 14-day created-ticket trend. Mirrors the backoffice dashboard."
+    },
+    {
+      "name": "get_venue_health",
+      "description": "Live safety/health read for one trading venue (read-only, non-custodial).\n\nReturns operational status (live/degraded/suspended), last monitoring\nheartbeat, on-chain program deploy slot, SDK compatibility headline, TVL +\nperps 24h volume (DeFiLlama, cached 5 min). venue is a slug e.g. \"drift\",\n\"jupiter\", \"pacifica\". Use BEFORE routing capital to a venue.\n\nWorkflow: RISK step (venue-safety gate) -- run before any perps/lending leg;\ndegraded/down reroutes or blocks the order. See get_trading_workflow."
+    },
+    {
+      "name": "get_venue_risk_score",
+      "description": "Composite venue risk score 0-100 (higher = safer), with breakdown.\n\nRead-only. Folds custody tier (A self-custodial / B venue-custodied),\nmultisig threshold, timelock, audit status, exploit history, TVL trend and\nprogram age into a transparent weighted score (score_breakdown returned so\nthe number is auditable). Factual assessment, not financial advice."
+    },
+    {
+      "name": "get_all_venues_status",
+      "description": "Dashboard overview of all configured venues for routing decisions.\n\nRead-only. One health record per active venue (status, deploy slot, TVL,\n24h volume, composite safety score) so an agent can pick a venue in a\nsingle call."
+    },
+    {
+      "name": "venue_risk_comparison",
+      "description": "Side-by-side risk comparison of two venues for a routing decision.\n\nRead-only. Returns each venue's full risk record, the safer venue, and the\ncomposite-score delta. e.g. compare \"jupiter\" vs \"pacifica\" before routing."
+    },
+    {
+      "name": "trade_equity",
+      "description": "Spot-trade a tokenized equity (xStocks / Ondo) via Jupiter, non-custodial.\n\nside: buy | sell. amount is in base units of the INPUT token (USDC 6dp for a\nbuy, the equity token for a sell). These are tokenized SECURITIES: the call\nis geo-gated (Reg S = no US persons; declare jurisdiction once via the\njurisdiction arg) and OFAC-screened, and requires per-execution confirmation\n-- WITHOUT confirm=true it returns a quote + disclaimer and does NOT execute\n(no autonomous equity execution). With confirm=true it returns an UNSIGNED\nbase64 tx to sign + broadcast; pass signed_transaction to broadcast a\ncaller-signed tx. Value-bearing: past the daily free tier an x402\npayment_header is required. ip = caller origin IP for the Reg S geo gate\n(US IP -> refused even with an attestation; an agent's Railway Singapore\negress resolves to SG and passes). ``venue_hint`` (ENG-fc290438/ENG-00ebde90,\nMB#18215) is ADVISORY, never required -- equity routes via the issuer\nregistry (one surface today); an unknown hint raises.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): see jupiter_swap -- same\nreplay-on-retry semantics, same key reused across build + broadcast.\n\n``verify`` (ENG-e932b287, extending ENG-df8afe93, default True): when\nbroadcasting (signed_transaction supplied), await on-chain confirmation\nand re-read the equity mint balance -- the response gains a\n``verification`` block ({confirmed, slot, post_state,\nexpected_vs_actual}). Gate follow-on decisions on\n``verification.confirmed``, never on tx_signature alone. Set False to\nskip for latency-sensitive callers. Verify any prior signature later\nwith the standalone ``verify_transaction`` tool."
+    },
+    {
+      "name": "equity_markets",
+      "description": "List available tokenized equities with issuer, regime, price, market hours.\n\nRead-only. Source: the admin-editable TokenRegistry. Each row carries issuer\n(xStocks/Ondo), regulatory_framework, geo_restrictions, and best-effort\nprice/volume/market-cap, plus NYSE status + the 24/7-on-Solana flag."
+    },
+    {
+      "name": "equity_quote",
+      "description": "Read-only Jupiter quote for a tokenized-equity trade (no execution).\n\namount is in base units of the INPUT token (USDC for buy, the equity for\nsell). Returns expected output, price impact, effective fee, slippage, and\nthe SEC disclaimer. ``venue_hint`` (ENG-fc290438/ENG-00ebde90, MB#18215) is\nADVISORY, never required -- see trade_equity."
+    },
+    {
+      "name": "equity_positions",
+      "description": "Tokenized-equity holdings for a wallet with live prices + market hours.\n\nRead-only. Filters balances to registered equity mints; each: symbol,\nquantity, current_price, current_value_usd, issuer, regulatory_framework\n(avg_cost / unrealized P&L null until cost-basis tracking lands)."
+    },
+    {
+      "name": "equity_corporate_events",
+      "description": "Earnings / dividend / split calendar for a tokenized equity.\n\nRead-only. The after-hours-agent feature: events an overnight strategy reacts\nto while the underlying trades 24/7 on Solana. Provider-backed; returns an\nhonest empty payload + SEC EDGAR link when no feed is configured."
+    },
+    {
+      "name": "equity_market_hours",
+      "description": "NYSE session status + the 24/7-on-Solana availability flag.\n\nRead-only. status: closed | pre_market | open | after_hours, with next\nopen/close. Highlights the structural advantage: tokenized equities trade\n24/7 on-chain regardless of NYSE hours."
+    },
+    {
+      "name": "get_token_classification",
+      "description": "Standardised tokenized-stock classification for a mint or symbol (ENG-b34b5493).\n\nRead-only. Returns every classification dimension -- backing_status\n(fully/treasury backed, synthetic, unknown), liquidity_tier (tier_1/2/3 /\nilliquid, from Jupiter price impact), issuer_verified (Metaplex authority\nmatch), market_data_quality (live/stale/none) -- plus the derived composite\nrisk (low/medium/high/blocked) and last_verified_at. FAIL-SAFE: a registered\nbut unscored token, an inactive token, or an unregistered token reports\ntradeable=false. trade_equity enforces this same composite risk."
+    },
+    {
+      "name": "register_agent",
+      "description": "Register/refresh an agent's discovery profile in the Crank registry.\n\ncapabilities is a subset of swap|perps|lending|staking|strategies|signals|\nequity|onramp; supported_protocols e.g. [\"mcp\",\"a2a\",\"x402\"]. Idempotent on\nwallet_address (a PUBLIC key -- non-custodial). This is how other agents find\nyou via the A2A Agent Card + Solana Agent Registry."
+    },
+    {
+      "name": "discover_agents",
+      "description": "Find registered agents, optionally filtered to one capability.\n\ncapability one of swap|perps|lending|staking|strategies|signals|equity|onramp\n(empty = all). Ranked by reputation then recency. Read-only, free."
+    },
+    {
+      "name": "get_agent_profile",
+      "description": "Read an agent's published profile + its referral stats (read-only, free)."
+    },
+    {
+      "name": "update_agent_profile",
+      "description": "Patch an agent profile's metadata (display_name, capabilities, endpoints).\n\nmetadata is a dict of writable fields; capabilities are validated if present."
+    },
+    {
+      "name": "publish_strategy",
+      "description": "Publish a cloneable strategy config to the marketplace (the flywheel).\n\nconfig_template is the parameter set others clone. anonymous=true omits the\nauthor. performance_summary is a factual metrics blob -- no return promises\nare stored or surfaced (hard rule 8). backtest_run_id attaches a verified\nbacktest (on-chain attestation hash + leaderboard ranking). Equity\n(tokenized-security) strategies are excluded (MB#13761). Read/control-plane,\nfree."
+    },
+    {
+      "name": "discover_strategies",
+      "description": "Browse published strategies (read-only, free). Crypto-only (MB#13761).\n\nstrategy_type filters to one of the 16 Crank strategy types (empty = all).\nsort ranks by clones|sharpe|return|sortino|win_rate|drawdown (default clones)."
+    },
+    {
+      "name": "get_leaderboard",
+      "description": "Top published strategies ranked by a verified backtest metric (free).\n\nCrypto-only -- equity templates excluded (MB#13761). sort in sharpe|return|\nsortino|win_rate|drawdown|clones (default sharpe). Each entry carries factual\nbacktest metrics + the on-chain attestation hash; no return promises (rule 8)."
+    },
+    {
+      "name": "clone_strategy",
+      "description": "Clone a published strategy config to a wallet (records attribution).\n\nReturns the config_template to deploy via the strategy create tools. The\nclone is attributed to the template author for the clone-creator fee share\n(15% of the tech fee on clone actions, MB#13669). Free to clone."
+    },
+    {
+      "name": "send_token_social",
+      "description": "Send tokens to an X handle via a claimable crank.ing link (non-custodial).\n\nLocks ``amount`` (base units) of ``token`` (mint) from ``sender_wallet`` into\nthe on-chain claim escrow against a fresh claim code, and returns an UNSIGNED\nbase64 transaction for the sender to sign + broadcast, plus the\ncrank.ing/{code} claim link and the claim_code (the bearer secret to embed in\nthe announcement tweet). Whoever presents the code claims the tokens and\nbinds ``referral`` on their first claim. ``expiry_days`` (optional, default 7,\nrange 1-90) sets the claim window; unclaimed tokens are returned to the sender\nafter expiry. Anti-abuse gated: sender account age, verified wallet,\nper-sender daily limit. platform: x.\n\n``idempotency_key`` (ENG-7ded4fb8, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result (same\nclaim_code/link) instead of locking a second escrow."
+    },
+    {
+      "name": "bulk_send_social",
+      "description": "Distribute one token to many X handles in one call (non-custodial, ENG-bfeacb2c).\n\n``recipients`` is a list of ``{recipient_handle, amount, message?}`` dicts\n(``recipient`` accepted as an alias; ``amount`` in base units; ``message`` an\noptional per-recipient note). Locks each amount of ``token`` (mint) from\n``sender_wallet`` into a fresh claim escrow and returns the ``create_claim``\ninstructions batched into as few UNSIGNED transactions as fit -- the sender\nsigns + broadcasts every returned tx. Each send carries its crank.ing claim\nlink, the bearer ``claim_code`` (returned once, embed per tweet), and the\n``transaction_index`` of the tx that funds it. Anti-abuse gated (account age,\nverified wallet, per-sender daily limit counting the whole batch). platform: x.\n\n``idempotency_key`` (ENG-ac7961aa, optional): a client-generated UUID.\nRetrying with the same key + same args replays the original result (same\nclaim_codes/links) instead of locking a second batch of escrows."
+    },
+    {
+      "name": "get_social_sends",
+      "description": "A wallet's social token sends (newest first; no claim-code secrets)."
+    },
+    {
+      "name": "claim_status",
+      "description": "Public status of a crank.ing claim code (status, amount, claimable, expiry)."
+    },
+    {
+      "name": "get_crank_score",
+      "description": "A wallet's Crank Score reputation breakdown (FREE read, ENG-95f335be).\n\nReturns total_score, per-activity components (trade / staking / strategy /\nsocial / claim), sybil_flagged + penalty_bps, and the score-gated perks it\nunlocks under ``gates``: fee_discount_bps (additional technology service fee\ndiscount), daily_send_limit (higher social-send cap), priority_access, and\nthe gate tier (0-3). Score accrues from on-platform activity; circular\nfunding between wallets is flagged + penalised. Well-formed zeros for an\nunscored wallet."
+    },
+    {
+      "name": "get_score",
+      "description": "User-facing Crank Score: rank, multiplier, metrics + quests (FREE, ENG-b0150c40).\n\nThe campaign-layer view on top of ``get_crank_score``. Returns total_score,\nleaderboard rank + percentile, the applied multiplier_bps (streak /\nearly-adopter / strategy-creator), the wallet's costly-action ``metrics``\n(fee_volume_usd, strategies_published, clones_spawned, referrals_activated,\nactive_days), and its live ``quests`` with progress. Points come ONLY from\ncostly actions (anti-farm). ``disclaimer``: score MAY inform a future token\ndistribution -- no fixed conversion ratio, no entitlement."
+    },
+    {
+      "name": "get_score_leaderboard",
+      "description": "Top-N Crank Score leaderboard (FREE read, ENG-b0150c40).\n\nRanked descending by total_score. ``limit`` caps at the admin-configured\nleaderboard_size. Each entry: rank, wallet_address, total_score, the\nbase/action/quest components, multiplier_bps, streak_days, percentile. Also\nreturns total_participants and the pre-token ``disclaimer``. (Distinct from\n``get_leaderboard``, which ranks strategy templates.)"
+    },
+    {
+      "name": "get_quests",
+      "description": "Live Crank Score quests + a wallet's progress (FREE read, ENG-b0150c40).\n\nTime-bounded, admin-configured campaigns (e.g. \"Trade $1000 this week = 500\npts\"). Each quest carries its tracked costly metric, target_value,\nreward_points, the active window, and -- when ``wallet_address`` is given --\nthe wallet's progress_value + completion state. Carries the ``disclaimer``."
+    },
+    {
+      "name": "check_claim_status",
+      "description": "Sender-facing claim status of a social send (FREE read, ENG-bfeacb2c).\n\nLook up by ``claim_id`` (the send id) OR ``recipient`` (X handle); optionally\nscope a recipient lookup to one ``sender_wallet``. Returns ``{\"sends\": [...]}``\neach with status (pending/claimed/expired/returned), claim_date, returned_at,\nrecipient_wallet, amount, claim_link, expiry_ts, and expires_in_seconds (a live\ncountdown, 0 once expired). Never exposes the claim-code secret."
+    },
+    {
+      "name": "get_usage_report",
+      "description": "An agent's own premium-feature spend report (FREE read).\n\nReturns per-feature {calls, spend_usd, cost_usd} plus totals from the\nFeatureUsage ledger. period: today | 7d | 30d | all (default 30d)."
+    },
+    {
+      "name": "get_market_briefing",
+      "description": "Crypto market briefing synthesised from free public sources (tiered).\n\nReturns a market briefing aggregated from free crypto data sources (Coin Bureau,\nDeFiLlama, the alternative.me Fear & Greed index) plus classified sentiment\nsignals: market summary, top movers / most-discussed assets, sentiment regime,\nthe Fear & Greed reading, and source attribution. assets is an optional list of\ntickers (e.g. [\"BTC\",\"SOL\"]); for paid tiers it declares the agent's holdings and\nfocuses the synthesis. detail_level: \"free\" returns the pre-generated daily Free\nbriefing (metered at $0, quota'd per day); \"pro\" ($0.25) and \"platinum\" ($0.50)\nreturn real-time Sonnet/Opus synthesis personalised to the wallet's portfolio +\nactive strategies. Paid tiers are covered by an active $CRANK-staker subscription\nor require a verified x402 payment_header (PAYMENT_REQUIRED otherwise). The billing\noutcome is in the response ``billing`` field. Not financial advice.\n\nWorkflow: INTELLIGENCE step (usually first) -- macro/sentiment context that\nframes detect_regime + the allocation. See get_trading_workflow."
+    },
+    {
+      "name": "get_source_accuracy",
+      "description": "Historical directional hit-rate of each intelligence source (free read).\n\nReturns per-source accuracy stats for the intelligence signal sources (Coin\nBureau / YouTube, RSS, Fear & Greed API, on-chain), so an agent can weight a\nsource's calls by how often its bullish/bearish reads have played out. Each\nsource carries a ``windows`` map over rolling 7d/30d/90d periods, each with\ntotal resolved calls, correct/incorrect counts, and accuracy_pct; sources with\nno resolved calls yet are omitted, and results are ranked by longest-window\naccuracy. windows optionally narrows the periods (subset of [7,30,90]);\nsource_type optionally filters by source kind (youtube, rss, api, on_chain).\nAccuracy = the directional call vs the realised Birdeye price over the\nprediction window. Past accuracy is not a guarantee. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- pair with get_market_briefing to discount or\ntrust a signal by its source's track record before sizing a position."
+    },
+    {
+      "name": "get_regulatory_updates",
+      "description": "Recent regulatory statements affecting Crank's scope (free read, ENG-43ba5e83).\n\nReturns SEC / CFTC / FinCEN press releases and rule proposals from a scheduled daily\nscan, LLM-classified for relevance to Crank: DeFi, crypto perps, tokenized equities,\nautonomous agent trading, and non-custodial custody. Each update carries the issuing\n``agency``, title, url, ``relevance`` (high/medium/low) + score, matched ``topics``,\nand a one-line factual ``summary``; results are ranked by relevance then recency.\nwindow_hours bounds the lookback (default 168 = 7 days, capped at 720 = 30 days);\nmin_relevance filters by floor (high/medium/low); agency optionally narrows to one\nbody (SEC, CFTC, FinCEN). Relevance is a compliance-triage signal, not legal advice.\nNot financial advice.\n\nWorkflow: INTELLIGENCE / COMPLIANCE step -- check the current regulatory posture\naround perps, tokenized equities, or agent trading before acting on a strategy."
+    },
+    {
+      "name": "get_technology_updates",
+      "description": "Recent technology / tooling developments relevant to Crank + Engaij (free read, ENG-565c74a9).\n\nReturns items from a scheduled scan of technology feeds (Anthropic, OpenAI, Coinbase\nDeveloper, Solana Foundation, Hacker News filtered, GitHub trending) plus flagged\nYouTube tech channels (full transcript ingested), LLM-classified for relevance to both\nCrank (Solana trading infra + DeFi frontend) and Engaij (the parent automation\nplatform). Each update carries ``category`` (sdk_release / api_change / competitor /\nregulatory / research / tooling), ``relevance_to_crank`` and ``relevance_to_engaij``\n(high/medium/low/none), a concrete ``application_recommendation`` (what to do about\nit), title, url, and a one-line ``summary``; results are ranked by relevance then\nrecency. window_hours bounds the lookback (default 168 = 7 days, capped at 720 = 30\ndays); min_relevance filters by floor (high/medium/low); category optionally narrows\nto one kind. A triage signal, not advice. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- scan for SDK / API releases, competitor moves, or\ntooling worth adopting before planning integration or strategy work."
+    },
+    {
+      "name": "get_consensus",
+      "description": "Multi-source consensus + contrarian read for one asset (PLATINUM premium).\n\nCross-references the classified intelligence signals for ``asset`` over the last\n``window_hours`` (default 24): how many independent sources agree on direction\n(consensus_score 0-1), the source breakdown (bullish/bearish/neutral), and the\naccuracy-weighted directional score (-1..+1) that blends each source's call by its\nhistorical hit-rate (get_source_accuracy). High agreement (>80%) is flagged as a\ncrowded, potentially contrarian condition; low agreement (<30%) as uncertain. This\nis a PLATINUM-tier feature: covered by a Platinum $CRANK-staker subscription, or\npay the per-call x402 fee with payment_header (PAYMENT_REQUIRED otherwise); the\nbilling outcome is in the response ``billing`` field. Descriptive signal only, not\na recommendation. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- pair with get_market_briefing + get_source_accuracy\nto gauge how crowded a directional read is before sizing."
+    },
+    {
+      "name": "get_contrarian_signals",
+      "description": "Contrarian (crowded) + uncertain assets across the window (PLATINUM premium).\n\nScans the classified intelligence signals over the last ``window_hours`` and returns\nassets where source agreement is very high -- a one-sided, crowded positioning\nflagged as a potential contrarian condition (with the side a contrarian would take)\n-- and assets where agreement is very low (uncertain). With ``asset`` set, returns\njust that asset's assessment. PLATINUM-tier: covered by a Platinum $CRANK-staker\nsubscription or a verified x402 payment_header (PAYMENT_REQUIRED otherwise); the\nbilling outcome is in ``billing``. Descriptive signal only, not a recommendation.\nNot financial advice.\n\nWorkflow: INTELLIGENCE step -- surface crowded trades to fade or uncertain assets to\navoid before committing to a regime/allocation."
+    },
+    {
+      "name": "get_signals",
+      "description": "Filtered, most-recent-first feed of structured market signals (free read).\n\nThe observed-signal data spine: squeeze / flow / technical / microstructure /\nbehavioral / liquidity / safety / whale / regime / macro / oracle / event /\ncomposite signals persisted by the collectors. ``subject`` matches a token\nsymbol/market or its stable ref (mint / market address); ``signal_type`` /\n``tier`` (a|b|c) / ``risk_level`` (none..critical) / ``min_score`` narrow the\nfeed. Unknown filter values are dropped, not errored. Descriptive observed\ndata only -- never a trade instruction. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- pair with get_market_briefing (macro) and\nget_token_risk_assessment (per-token safety roll-up) before sizing."
+    },
+    {
+      "name": "get_token_risk_assessment",
+      "description": "Per-token risk roll-up over recently observed safety signals (free read).\n\nFolds every non-expired signal for ``subject`` (symbol or mint) in the window\ninto the worst risk level seen, a 0..1 risk score, a per-level count\nbreakdown, and the contributing signals (worst-first). Complements -- does\nnot replace -- ``get_risk_assessment`` (regime + position-size guards for\ndeploying a strategy). Descriptive observed data only. Not financial advice.\n\nWorkflow: INTELLIGENCE / RISK step -- run before quoting or sizing an\nunfamiliar token; a critical safety signal is a hard skip condition."
+    },
+    {
+      "name": "get_market_regime",
+      "description": "Market-wide regime from the persisted regime/macro signal feed (free read).\n\nReturns the dominant regime, its confidence, a distribution across observed\nregimes, and the contributing signals. For a live per-asset regime computed\nfrom OHLCV, use ``detect_regime`` instead. Descriptive observed data only.\nNot financial advice.\n\nWorkflow: INTELLIGENCE step -- market-wide posture check before choosing a\nstrategy type or direction_mode; pair with detect_regime for the asset leg."
+    },
+    {
+      "name": "list_signal_catalog",
+      "description": "Catalog of every available signal stream (free read; ENG-5029a312).\n\nOne entry per signal source across all tiers -- on-chain collectors, free\nAPI sources, derived analyzers and external provider adapters -- with tier,\ncost-gate state (paid Tier-D gates are fail-closed and disabled by\ndefault), coverage window (earliest/latest persisted signal -- the honest\nbacktest window), effectiveness stats (graded evaluation count + correct\nrate) and a gameability class (social streams rank high -- they carry\nanti-gaming caps). Descriptive historical data only. Not financial advice.\n\nWorkflow: COMPOSE step -- enumerate streams before authoring a composite\nstrategy definition; pair with get_signals to inspect a stream's feed."
+    },
+    {
+      "name": "get_source_weights",
+      "description": "Source-effectiveness weight table (free read; ENG-bfb7ace4).\n\nPer (source, signal_type, regime): graded evaluation counts, the smoothed\neffectiveness weight (social sources hold a low prior until sufficiently\ngraded -- the anti-gaming cold start), the fleet Layer-2 multiplier from\nreleased k-anonymous insights, and the combined weighted value the\ncomposite effectiveness_weighted transform consumes. Historical grading\nstatistics only -- descriptive, never advice. Not financial advice.\n\nWorkflow: COMPOSE step -- read alongside list_signal_catalog to pick\nstreams with a real graded track record before authoring a definition."
+    },
+    {
+      "name": "get_cross_exchange",
+      "description": "Cross-venue snapshot for one asset (free read).\n\nPer-venue price/bid/ask/movement (5m/1h/24h change), the pairwise spread\nmatrix (bps), the widest current spread, and -- for wrapped-asset legs\n(BTC/ETH) only -- the Solana-DEX wrapped-asset premium vs the\nCEX-consensus reference price. Observed data, decision-support only --\nspreads ignore fees, slippage, and cross-venue/bridge transfer latency;\nnever an execution instruction. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- pair with get_arb_discrepancies for the\npersisted, already-debounced episode history."
+    },
+    {
+      "name": "get_arb_discrepancies",
+      "description": "Persisted cross-venue discrepancy episodes (free read).\n\nAlready-debounced ``cross_exchange`` signals (each required >= N\nconsecutive polls above the discrepancy threshold to exist at all),\nfiltered to ``spread_bps >= min_spread_bps`` and optionally to ``assets``,\nwithin ``window_hours``. One entry per episode: venue pair, spread,\nfirst/last seen, persistence, reference price. Observed data,\ndecision-support only -- ignores fees, slippage, and transfer latency;\nnever an execution instruction. Not financial advice.\n\nWorkflow: INTELLIGENCE step -- pair with get_cross_exchange for the\ncurrent live-ish read on a specific asset."
+    },
+    {
+      "name": "get_strategy_suggestions",
+      "description": "Signal-to-action suggestions from the synthesis engine (free read, G4).\n\nPer-asset directional observations aggregated hourly from the accuracy-\nweighted intelligence consensus (get_consensus math) plus the Fear & Greed\ncontext, each carrying a ready-to-use strategy config. PROPOSE flow: this\ntool never executes anything -- act on a suggestion by creating the strategy\nthrough the normal strategy tools (your wallet policy and the engine's risk\n/ conflict / guardrail gates still apply), or approve it in the app.\n``status`` filters proposed|approved|dismissed|executed|expired|all.\nInformational descriptions of observed data only. Not financial advice.\n\nWorkflow: INTELLIGENCE -> DECIDE step -- review suggestions, then pair with\nbacktest_strategy + get_risk_assessment before any create call."
+    },
+    {
+      "name": "get_ilo_adoption_status",
+      "description": "The ILO adoption gate -- one machine-checkable readiness read (free).\n\nAndrew's decision (MB#20076, ENG-5de0ede9): the ILO proceeds only once\nCrank has 1,000 active users, where an active user has at least 5 executed\nCrank transactions inside a rolling 7-day window. Signups do not count.\nReturns gate_met (active_users >= 1000), active_users, near_active_users,\nusers_with_any_tx and the pinned transaction definition. A transaction is\nan EXECUTED trade only -- a recorded swap (broadcast signature required),\na perp open, or a user-initiated perp close; reads, quotes, unexecuted\nintents, paper trades, liquidations and devnet activity never count.\n``cluster=devnet`` exposes the same metric for pre-launch observability;\nthe gate itself is the mainnet number. Aggregate counts only, no\nper-wallet data. Informational readiness metric; not a promise of any\nlaunch, outcome or timeline."
+    },
+    {
+      "name": "strategy_dca_create",
+      "description": "Create a dollar-cost-average strategy buying ``usd_per_buy`` of target each interval.\n\n``risk`` (optional) overrides the safe-default risk limits (ENG-b2c60329):\n``max_position_pct`` / ``max_portfolio_exposure_pct`` / ``max_single_loss_pct``\n/ ``max_drawdown_pct`` / ``max_daily_loss_pct`` (percent; <=0 disables a guard).\n\nDirection (ENG-bd44b1b7, optional, all deterministic signals -- DYOR): ``direction_mode``\n(auto | long_only | short_only | manual; default auto = follow the market\nregime, reducing exposure in a bear instead of accumulating), ``allow_short``\n(enable real shorts via the Drift perps venue), ``regime_override`` (force\nbull | bear | range | volatile instead of trusting detection).\n\nWorkflow: EXECUTE step -- stand up a recurring strategy after backtest_strategy\nvalidates it and get_risk_assessment sets the guards; track via strategy_status.\nAn agent wallet without a Turnkey signer = paper-trade (unsigned tx per tick).\nSee get_trading_workflow."
+    },
+    {
+      "name": "strategy_equity_dca_create",
+      "description": "Create an equity dollar-cost-average strategy (tokenized equities / xStocks).\n\nShares the DCA executor -- identical mechanics/config to\n``strategy_dca_create`` -- tagged ``equity_dca`` because ``target_token`` is\nexpected to be a tokenized-equity mint. SEC posture (ENG-6f4d3513): DCA is a\nMECHANICAL, user-configured strategy (not discretionary), so it stays\nautonomous even on a security target -- the per-execution confirmation gate\nonly applies to the discretionary types (momentum / sentiment). Equity\nclassification still drives geo-gating + disclaimers at execution; call\nasset_classification / get_disclaimers first.\n\n``risk`` / direction params: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_stoploss_create",
+      "description": "Create a stop-loss / take-profit / trailing-stop monitor on a held position.\n\n``position_amount`` is base units of ``target_token`` to liquidate on\ntrigger. At least one of ``stop_loss_pct`` / ``take_profit_pct`` / a trailing\nconfig should be set (fractions, e.g. 0.15 == 15%).\n\nDirection (ENG-bd44b1b7, optional, deterministic signal): ``direction_mode`` /\n``allow_short`` / ``regime_override`` -- see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_protect_create",
+      "description": "Create a downside-protection monitor on a held position.\n\nShares the stop-loss executor -- identical config/mechanics to\n``strategy_stoploss_create`` -- framed as a pure downside guard. At least\none of ``stop_loss_pct`` / ``take_profit_pct`` / ``trailing`` must be set."
+    },
+    {
+      "name": "strategy_hedge_create",
+      "description": "Create a hedge strategy -- an exit trigger that unwinds a held position.\n\nShares the stop-loss executor -- identical config/mechanics to\n``strategy_stoploss_create`` -- framed as an active risk-offset trigger: set\n``stop_loss_pct`` / ``trailing`` to shed exposure on an adverse move, or\n``take_profit_pct`` to lock in a favourable one. At least one of\n``stop_loss_pct`` / ``take_profit_pct`` / ``trailing`` must be set."
+    },
+    {
+      "name": "strategy_rebalance_create",
+      "description": "Create a portfolio-rebalance strategy toward ``target_allocation`` (mint->weight).\n\nDirection (ENG-bd44b1b7, optional, deterministic signal): ``direction_mode`` /\n``allow_short`` / ``regime_override`` -- see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_vault_create",
+      "description": "Create a vault strategy -- a target-allocation basket held via rebalancing.\n\nShares the rebalance executor -- identical config/mechanics to\n``strategy_rebalance_create`` (``target_allocation`` mint->weight,\n``drift_threshold_pct``) -- framed as a passive basket rather than an active\nrebalance loop. No external vault/LP deposit (hard rule 1): the\nnon-custodial swap pipeline only rotates spot holdings toward the target\nweights.\n\nDirection (ENG-bd44b1b7, optional, deterministic signal): ``direction_mode`` /\n``allow_short`` / ``regime_override`` -- see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_snipe_create",
+      "description": "Create a snipe/scalping strategy -- dip-buy with a fast take-profit/stop exit.\n\nFlat: buys ``usd_per_buy`` when price is ``entry_dip_pct`` below the close\n``lookback`` ticks ago. Holding: exits on a tight ``take_profit_pct`` OR\n``stop_loss_pct`` -- many small round-trips. Runs on a short interval\n(default 60s) since it reads a per-tick rolling price window that must\naccumulate ``lookback`` + 1 observations before it can enter.\n\n``risk`` / direction params: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_momentum_create",
+      "description": "Create a momentum strategy -- fast/slow SMA crossover entry/exit.\n\nBuys on a bullish cross (fast SMA > slow SMA), sells on a bearish cross.\nDISCRETIONARY (SEC framework, ENG-6f4d3513): the model interprets a signal\nand converts it to a trade, so targeting a tokenized SECURITY forces\nper-execution user confirmation before the scheduled dispatcher will run a\ntick (``strategies.tasks.execute_strategy`` requires ``user_confirmed=True``;\ncrypto targets stay fully autonomous). Call asset_classification first.\n\n``risk`` / direction params: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_sentiment_create",
+      "description": "Create a sentiment strategy -- trades an aggregate sentiment score.\n\nBuys when the score is >= ``bull_threshold`` (flat), sells when it is\n<= ``bear_threshold`` (holding); the neutral band holds. The score is\nsourced live from market intelligence each tick, or pinned via\n``sentiment_score``. DISCRETIONARY (SEC framework, ENG-6f4d3513): targeting\na tokenized SECURITY forces per-execution ``user_confirmed`` at execution\n(crypto stays fully autonomous). Call asset_classification first.\n\n``risk`` / direction params: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_yield_farm_create",
+      "description": "Create a yield-farm strategy -- maintains a target basket allocation.\n\nShares the rebalance executor (config identical to\n``strategy_rebalance_create``): depositing into an external yield protocol\n/ LP position has no faithful swap-pipeline analogue, so this models a\nyield farm as keeping a target allocation across the basket via converging\nrebalance swaps (hard rule 1: the non-custodial pipeline only rotates spot\nholdings, never deposits externally).\n\nDirection (ENG-bd44b1b7, optional, deterministic signal): ``direction_mode`` /\n``allow_short`` / ``regime_override`` -- see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_copy_wallet_create",
+      "description": "Create a copy-wallet strategy -- mirrors a tracked wallet's entries/exits.\n\n``tracked_wallet`` is the Solana address to mirror (its confirmed on-chain\nbuy/sell actions are sourced each tick); ``usd_per_buy`` is the default\nmirror size (scaled by ``size_multiplier``) applied when the tracked wallet\nbuys. APPROXIMATE: no full per-fill replication (every execution is flagged\n``approximate``).\n\n``risk`` / direction params: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_market_make_create",
+      "description": "Create a market-make strategy -- two-sided spread capture (APPROXIMATE).\n\nNo live order book -- SYNTHESISES a spread from realised volatility around\na rolling mid: a \"filled bid\" (price a half-spread below mid) buys, a\n\"filled ask\" (above mid) sells (up to held inventory). Market-neutral:\nPAUSES in a trending (bull/bear) regime instead of adapting direction (a\nmaker gets run over by a directional move) -- read directly inside the\nexecutor, so no direction params are exposed here.\n\n``risk``: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_arb_create",
+      "description": "Create an arb strategy -- cross-venue price-discrepancy convergence (APPROXIMATE).\n\nReads a live cross-venue spread each tick (task-sourced from the Jupiter\nquote corpus vs on-chain price) or falls back to a transparent PROXY\n(deviation below a short EMA) when unavailable. Enters when the spread\nclears ``entry_spread_pct`` and flat; exits when it reverts to\n``exit_spread_pct``. The simultaneous two-venue fill is collapsed to one\nleg (flagged ``approximate``). Market-neutral: no direction params exposed\n(regime is read directly, not adapted).\n\n``risk``: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_perp_grid_create",
+      "description": "Create a perp-grid strategy -- a ladder of perp LONGS accumulated on dips.\n\nRoutes through the multi-venue perps VENUE ADAPTER (hard rule 2; Jupiter\nPerps primary). Around a rolling center price (SMA, or an explicit\n``center_price``), each ``grid_spacing_pct`` move below center is one rung;\ncrossing a deeper rung opens a perp long sized ``usd_per_level`` at\n``leverage``. PAUSES new rungs in a trending (bull/bear) regime and closes\nthe ladder in a bear (stop the bleed); tightens spacing in range, widens\nwhen volatile. Only an asset with a mapped perp market (currently SOL) can\nopen -- see get_venue_status for routable markets. ``venue`` optional\n(defaults to the configured primary); a Tier B (custodied) venue needs\n``acknowledge_tier_b=true`` after reviewing its ``custody_disclosure``.\n\n``risk``: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_basis_trade_create",
+      "description": "Create a basis-trade strategy -- funding-harvest perp SHORT leg (APPROXIMATE).\n\nRoutes the perp leg through the multi-venue VENUE ADAPTER (hard rule 2). A\nlive delta-neutral basis trade is long spot + short perp harvesting\nfunding; this executor opens/manages only the perp SHORT leg (the spot\nlong that makes the book delta-neutral is held separately by the caller)\n-- flagged ``approximate`` + ``funding_not_modeled`` (funding PnL itself is\nnot simulated live). While funding is favourable (> ``min_funding``) and\nflat, opens the short sized ``usd_per_trade`` at ``leverage``; closes when\nfunding decays to <= ``min_funding``. Only an asset with a mapped perp\nmarket (currently SOL) can open. A Tier B (custodied) venue needs\n``acknowledge_tier_b=true``.\n\n``risk``: see ``strategy_dca_create``."
+    },
+    {
+      "name": "strategy_status",
+      "description": "Status + last execution of one strategy (scoped to the caller's wallet)."
+    },
+    {
+      "name": "strategy_modify",
+      "description": "Edit a running strategy's parameters IN PLACE -- no cancel + recreate.\n\nReact to a fresh signal by retuning the strategy you already own: the\nexecution history, cost-basis ledger and position state all survive, and\nthere is no window where the strategy is gone. The live executor picks the\nnew config up on its NEXT tick; a tick already in flight finishes against\nthe config it loaded (it writes only runtime state, never config, so the\ntwo can never clobber each other).\n\nScoped to the caller's own wallet (hard rule 1 -- non-custodial: this edits\na row the owner already controls; nothing here holds keys, signs or moves\nfunds).\n\nArgs (all optional -- supply at least one):\n  ``config_updates``: strategy-config keys to set, merged over the existing\n    config (e.g. ``{\"usd_per_buy\": 25, \"stop_loss_pct\": 0.08}``).\n  ``remove_keys``: config keys to drop back to the executor's default.\n  ``risk``: retune the risk limits -- ``max_position_pct`` /\n    ``max_portfolio_exposure_pct`` / ``max_single_loss_pct`` /\n    ``max_drawdown_pct`` / ``max_daily_loss_pct`` (percent; <=0 disables a\n    single guard).\n  ``direction_mode`` / ``allow_short`` / ``regime_override``: the direction\n    controls from the create tools (deterministic signals -- DYOR).\n  ``target_allocation``: new mint->weight basket (rebalance / vault /\n    yield_farm).\n  ``interval_seconds``: new tick interval, used from the next tick on.\n  ``reason``: free text recorded on the strategy's audit log.\n\nREFUSED (returns ``immutable_config_key``): ``target_token`` /\n``source_token`` / ``tracked_wallet`` / ``venue`` / composite\n``definition``. These define WHAT the strategy trades -- editing them in\nplace would desync the executor's position bookkeeping or strand an open\nperp leg on the venue it was opened against. Cancel and create a new\nstrategy for those. A STOPPED strategy is final and cannot be modified;\na paused one can (the edit does not resume it -- use strategy_resume).\n\nThe merged config is dry-run through the strategy's executor before it is\npersisted, so an invalid edit is rejected (``invalid_config``) rather than\nlatching the live strategy into ``error`` on its next tick."
+    },
+    {
+      "name": "strategy_cancel",
+      "description": "Stop a strategy (sets status=stopped; it will not be dispatched again)."
+    },
+    {
+      "name": "strategy_pause",
+      "description": "Manually pause a strategy (status=paused_manual; stops dispatch)."
+    },
+    {
+      "name": "strategy_resume",
+      "description": "Re-enable a paused strategy (manual re-enable after a drawdown pause).\n\nThe drawdown kill switch (ENG-b2c60329) latches a strategy to\n``paused_drawdown`` and requires this explicit owner action to resume; the\nequity high-water mark is reset so it does not immediately re-trip."
+    },
+    {
+      "name": "strategy_list",
+      "description": "List a wallet's strategies (newest first, capped)."
+    },
+    {
+      "name": "get_trading_workflow",
+      "description": "Map of how Crank's tools fit into one end-to-end trading flow (read this first).\n\nRead-only, free. Returns an ordered, machine-readable workflow: orient ->\nintelligence -> yields -> simulate (backtest) -> risk-size -> execute\n(non-custodial) -> monitor -> journal. Each step names the concrete\ntool(s) to call, their purpose, key inputs, how to use the output\ndownstream, and the decision points that branch the flow -- so an agent\nthat discovered Crank via tools/list can sequence the full tool surface\ninstead of guessing. Descriptive only (DYOR); only execute-phase tools are\nvalue-bearing.\n\nwallet_address (optional, PUBLIC key only -- non-custodial): when\ngiven, appends ``human_activity`` -- count + most-recent manual\noverride on this shared account in the last 72h (decision_type, asset,\nrationale summary, timestamp) plus an instruction to reconcile with it\nbefore acting. Human and agents act on ONE account: every human action\nis journaled (see journal_query source=\"human\") so it is never invisible\nto you. Absent/clean (``{\"count\": 0}``) when there is no override."
+    },
+    {
+      "name": "journal_append",
+      "description": "Record a decision in your private, wallet-scoped journal (free write).\n\nYour durable memory on Crank: rationale, intended action, and optional\nexpectations (e.g. {\"direction\": \"up\", \"horizon\": \"24h\"}) are stored as\none opaque body only you can read back; the system later attributes\nrealised P&L from on-chain-verified fills and marks prices at\n1h/24h/7d/30d horizons. idempotency_key makes replays safe (offline\nqueues / batch agents). Link evidence via signal_ids / suggestion_id /\nstrategy_id (your own strategies only). Autonomous strategy executions\nare journaled for you automatically -- use this to add the\nagent-authored layer on top.\n\nWorkflow: DECIDE step -- journal before (or as) you act; query it back\nwith journal_query / get_my_performance."
+    },
+    {
+      "name": "journal_query",
+      "description": "Read your own decision journal, most recent first (free read).\n\nWallet-scoped: only decisions journaled for wallet_address are ever\nreturned. Filters: window_hours (0 = all), decision_type, strategy_type,\nasset (mint/symbol as journaled), outcome_sign\n(positive|negative|zero on realised P&L), source (agent|system|human --\npass source=\"human\" to see only a manual override on this shared\naccount: human and agents act on ONE account, and every human action is\njournaled so agents can see and reconcile with it). Every returned row\ncarries its source. detail=concise returns id/type/timestamp/pnl rows\n(token-budget friendly); detail=full adds bodies, evidence refs, and\nfull outcome marks.\n\nWorkflow: ORIENT step -- recall what you decided (and what a human may\nhave overridden) before deciding again."
+    },
+    {
+      "name": "get_my_performance",
+      "description": "Your own realised performance, grouped (free read).\n\nAggregates your journaled non-paper outcomes: win rate, total/average\nrealised P&L (USD), and technology-service-fee drag, grouped by\nstrategy_type | asset | decision_type | hour_of_day over window_hours.\nIncludes a calibration score (your stated expectations vs the realised\n24h move) when you journal expectations. Historical performance data\nabout your own decisions -- descriptive only, not a recommendation.\n\nWorkflow: ORIENT step -- read this before sizing or creating strategies."
+    },
+    {
+      "name": "suggest_parameter_adjustment",
+      "description": "Historical parameter observations for one of YOUR strategies (free read).\n\nCompares the strategy's realised outcomes against your other strategies\nof the same type that ran different parameter values, and returns the\nobserved differences ranked by realised P&L -- historical performance\ndata only, never advice, and nothing is changed by this call (PROPOSE\nflow: acting on an observation is your call via the strategy tools,\nwhere every policy/risk gate still applies).\n\nWorkflow: ORIENT -> DECIDE step -- review observations, then adjust via\nstrategy tools if YOU decide to."
+    },
+    {
+      "name": "get_portfolio_charter",
+      "description": "Read the wallet's active portfolio charter -- the CRANK.md-equivalent mandate (free read).\n\nA user-authored document declaring objectives, risk_band, banned\ntokens, target_allocations, max_position_pct, rebalance cadence, and\nan escalation webhook -- loaded once per session instead of forgotten\nbetween calls (competitors return raw JSON per call and forget\neverything). has_charter is False when the wallet has not set one yet\n-- call set_portfolio_charter to create it. Descriptive framing only\n(\"objectives\"/\"parameters\", never return targets, hard rules 5-8).\n\nWorkflow: ORIENT step 0 -- read this FIRST, before get_balances /\nportfolio_snapshot, so every downstream decision is framed by it."
+    },
+    {
+      "name": "set_portfolio_charter",
+      "description": "Write a new version of the wallet's portfolio charter (free control-plane write).\n\nCreates a new active version -- the prior version stays in history,\nnever deleted (versioned mandate, not an in-place overwrite).\nrisk_band is one of conservative|balanced|aggressive. banned_tokens\nmerge into AgentWallet.evaluate_trade as an ADDITIONAL deny source\nalongside WalletPolicy.banned_tokens -- an active WalletPolicy always\nwins when it is the stricter rule; a charter can never loosen an\nexisting policy, and a conflict comes back in the response's\n`warnings` (logged server-side, never silently dropped).\ntarget_allocations is {token: percent}, must sum to <=100.\nobjectives/cadence are free-form parameters -- never phrase them as\nreturn promises (hard rules 5-8).\n\nWorkflow: ORIENT step 0 -- set once at the start of a relationship\nwith an agent/wallet; strategies read it on every execute_strategy\ntick (see get_trading_workflow)."
+    },
+    {
+      "name": "register_webhook",
+      "description": "Register (or reactivate) a lifecycle-event webhook for a wallet (free control-plane write).\n\nevent_types is a non-empty subset of: pre_trade (advisory only, never\nblocks a trade), post_trade, policy_violation, drawdown_warning,\nstrategy_executed. url is your https(s) receiving endpoint. secret is\nYOUR OWN HMAC-SHA256 signing secret (8-128 chars) -- Crank never sends\nor stores platform key material here (hard rule 1); you use it to\nverify the `X-Crank-Signature` header on every delivered event (see\ndocs/WEBHOOKS.md). Re-registering the same (wallet_address, url) pair\nupdates its event_types/secret and reactivates it if it was\nauto-disabled after repeated delivery failures."
+    },
+    {
+      "name": "list_webhooks",
+      "description": "List a wallet's webhook subscriptions (free read; secrets are never returned)."
+    },
+    {
+      "name": "delete_webhook",
+      "description": "Delete one of a wallet's webhook subscriptions (free control-plane write)."
+    },
+    {
+      "name": "get_collective_insights",
+      "description": "Fleet-wide collective insights, historical performance data (free read).\n\nFilters: asset (mint/symbol), strategy_type, insight_type (one of\nparam_performance/signal_effectiveness/timing/venue_quality/crowding/\nregime_conditional). Only ACTIVE, non-suppressed/non-expired insights\nare ever returned. Each insight carries n (contributing agents),\neffect_size, a confidence interval, k and epsilon_spent (privacy\nmetadata -- weigh a low-k or high-epsilon insight more cautiously),\ncrowding_index, and staleness (age vs half-life). detail=concise adds\na rendered human-readable statement; detail=full adds the raw\nstatement_template/params/signal_keys. Every response is historical\ncollective performance data aggregated across the Crank agent fleet --\ndescriptive only, never a recommendation or a promise of results.\n\nWorkflow: INTELLIGENCE step -- fleet-wide context alongside\nget_market_briefing / get_consensus before sizing or creating strategies."
+    },
+    {
+      "name": "get_strategy_leaderboard",
+      "description": "Anonymized fleet strategy-parameter leaderboard (free read).\n\nRanks param_performance collective insights by effect_size within\nwindow (24h|7d|30d|90d|all). NEVER identifies a wallet or cohort --\nrankings are anonymized param-bucket aggregates only, and any bucket\nwith fewer than 25 contributing cohorts (the k-anonymity granular\nfloor) is dropped before it ever reaches this response. Historical\ncollective performance data -- descriptive only, never a\nrecommendation or a promise of results.\n\nWorkflow: INTELLIGENCE step -- compare a strategy_type's own parameter\nchoices against fleet-wide observed outcomes before adjusting via\nsuggest_parameter_adjustment / the strategy tools."
+    },
+    {
+      "name": "get_signal_effectiveness",
+      "description": "Fleet action-conditioned signal effectiveness (free read).\n\nFilters: source_type (e.g. youtube/rss/api/on_chain), signal_type,\nwindow (24h|7d|30d|90d|all). Returns, per matching signal_effectiveness\ncollective insight, the fleet action taken, effect_size, confidence\ninterval, contributing-agent count n, k, crowding_index, and\nstaleness. Historical collective performance data aggregated across\nthe fleet -- descriptive only, never a recommendation or a promise of\nresults.\n\nWorkflow: INTELLIGENCE step -- weigh a signal by how the FLEET's\nactions on it have historically resolved, alongside your own\nget_source_accuracy / get_my_performance track record."
+    },
+    {
+      "name": "get_emerging_patterns",
+      "description": "k-anonymous emergent fleet behaviour motifs (free read).\n\nReturns ordered behaviour motifs -- sequences of (regime, signal_key,\naction, outcome_sign) steps -- that at least 10 DISTINCT agent cohorts\nexhibited and that map to NO existing strategy type in the standing\ntaxonomy. Each carries n_agents, k, a differentially-private aggregate\neffect_size with a confidence interval, epsilon_spent, and staleness.\nFilter with min_agents; limit caps the result count (max 100). No\nwallet address or cohort key is ever returned. Historical collective\nperformance data aggregated across the Crank agent fleet --\ndescriptive only, never a recommendation or a promise of results.\n\nWorkflow: INTELLIGENCE step -- see what the fleet is doing that no\nexisting strategy type describes, before designing a new strategy."
+    },
+    {
+      "name": "get_strategy_evolution_report",
+      "description": "Clone-marketplace live performance deltas + approvals (free read).\n\nPer published template: its live clone-fleet performance payload\n(average profit and loss in bps across M distinct cloning wallets over\nthe trailing 30 days, differentially private, self-clones excluded),\nthe change vs the previous refresh, and the approval trail for\ntemplates that came through the propose-and-approve governance path.\nA template without enough live clone history reports available=false\nwith a reason -- never a number computed from too few wallets. Draft\nproposals are never included. Historical data only -- descriptive,\nnever a recommendation or a promise of results.\n\nWorkflow: INTELLIGENCE step -- compare marketplace templates on\nOBSERVED live clone history before cloning one via clone_strategy."
+    },
+    {
+      "name": "propose_template_update",
+      "description": "Propose a DRAFT strategy template from an emerging pattern.\n\nPROPOSE-AND-APPROVE ONLY. Creates a draft template that is NOT\npublished, NOT verified and NOT eligible for cloning; an administrator\nmust explicitly approve it before it can appear in the marketplace.\nThis tool can never publish, verify, or modify an existing live\ntemplate, and never auto-applies anything. pattern_id comes from\nget_emerging_patterns; only an active (k-cleared, differentially\nprivate) pattern may be proposed. Descriptive historical observation\n-- not a recommendation, not financial advice, and not a promise of\nfuture results.\n\nWorkflow: PROPOSE step -- raise an observed emergent motif for human\nreview; approval and any publication remain a human decision."
+    },
+    {
+      "name": "get_my_contribution_score",
+      "description": "Your own hive contribution score for a monthly epoch (free read).\n\nWallet-scoped -- returns ONLY your wallet's own row, never another\nwallet's score and never a fleet ranking. ``epoch`` is \"YYYY-MM\" and\ndefaults to the most recently completed month.\n\nContribution quality = marginal_uplift (how much your journaled\ndecisions tightened the fleet's collective estimates) x outcome_quality\n(how well your stated expectations matched on-chain-verified outcomes)\nx novelty (how much your contributions differ from everything else in\nthe pool -- copies score near zero). ``flags`` explains a zero score,\ne.g. below the activation threshold or no on-chain-verified outcome.\n\nAny recognition of contribution quality from the Community Rewards Pool\nis discretionary, retroactive and effort-gated -- never a yield, a\nreturn, an earn-rate, or a promise of a future allocation.\n\nWorkflow: REVIEW step -- read alongside get_my_performance to see how\nyour journalling habits, not just your P&L, land with the network."
+    },
+    {
+      "name": "propose_allocation",
+      "description": "Ranked allocation plan: intent + balances + regime + yields + ML signals (free read).\n\nOne call composes the read-only surfaces an agent would otherwise\norchestrate by hand -- lending supply APYs, LST staking yields, the\nper-asset market regime, and the ML ensemble signal -- into a ranked,\nintent-shaped plan (conservative | balanced | aggressive). Each\ndirectional entry names the exact backtest_strategy args to validate\nit BEFORE deploying, plus the follow-up tool that would act on it.\nDescriptive analytics only -- never advice, never a promise of\nresults; nothing is executed.\n\nWorkflow: INTELLIGENCE/ANALYSIS step -- call after get_market_briefing\nand before backtest_strategy / get_risk_assessment / strategy_*_create."
+    },
+    {
+      "name": "compose_strategy",
+      "description": "Validate a composite definition -- returns the normalised definition +\nvalidation report. No persist; read = FREE per the fee schedule.\n\nChecks: schema, stream existence against the signal catalog, rule-tree\ndepth/size limits, required risk caps, and the anti-gaming rule (a social\nsentiment/trend_social stream may never be the sole entry trigger)."
+    },
+    {
+      "name": "strategy_composite_create",
+      "description": "Create a composite strategy from a validated definition.\n\nSame non-custodial create path as the other 16 strategy types: the wallet\nholds its own keys; a wallet without a Turnkey signer receives an unsigned\ntransaction per tick for the owner to sign. ``mode`` defaults to LIVE\n(recorded on the config; a paper mode annotation is informational until the\nmanaged-signing epic lands). Recommended: run compose_strategy +\nbacktest_strategy on the definition FIRST -- historical results are not\npredictive; DYOR."
+    },
+    {
+      "name": "create_execution_intent",
+      "description": "Create a propose-only execution intent; returns an approval URL to hand to the user.\n\nLane 1 (non-custodial default): builds the unsigned swap transaction\nserver-side, persists it as an intent, and returns\n{intent_id, approval_url}. NOTHING executes until the user opens the\napproval URL in their browser and signs with their own wallet. This\ntool never signs and never sees a key. amount is in input-token base\nunits. The quote includes the technology service fee. After the user\napproves, poll get_intent_status and report ONLY the persisted\non-chain state (CONFIRMED before any success claim)."
+    },
+    {
+      "name": "get_intent_status",
+      "description": "Read the persisted lifecycle state of an execution intent (free read).\n\nReturns the server-persisted state only -- CREATED, APPROVED,\nSUBMITTED, UNKNOWN, CONFIRMED, FAILED, or EXPIRED -- plus the\nsimulation summary and the on-chain signature once submitted. Never\ninfers: UNKNOWN means an unresolved send (may have landed); only\nCONFIRMED is a verified on-chain success (fail-closed reporting,\ndocs/CRANK_PLUGIN_SPEC.md section 6)."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:19:56.977Z",
+  "toolsPreviewStatus": "ok"
+}

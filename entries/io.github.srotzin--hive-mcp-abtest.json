@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-abtest",
+  "title": "Hive A/B Test",
+  "description": "A/B experiment runner for the A2A network with x402 micropayments on Base USDC.",
+  "summary": "A/B experiment runner for the A2A network with x402 micropayments on Base USDC.",
+  "offersHint": "A/B experiment runner for the A2A network with x402 micropayments on Base USDC. · Remote MCP (streamable-http) at https://hive-mcp-abtest.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-abtest.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-abtest.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-abtest",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-abtest",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-29T23:27:33.180731Z",
+  "publishedAt": "2026-04-29T23:27:33.180731Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:41.326Z",
+    "sourceRepoAt": "2026-08-11T23:20:13.239Z",
+    "readmeAt": "2026-08-11T23:20:13.674Z",
+    "toolsAt": "2026-08-12T01:00:41.327Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-abtest",
+    "checkedAt": "2026-08-11T23:20:13.239Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-abtest/main/README.md",
+    "markdown": "# hive-mcp-abtest\n\n[![srotzin/hive-mcp-abtest MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-abtest/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-abtest)\n\nA/B experiment runner for the A2A network. An inbound-only MCP shim that gives autonomous agents a deterministic, sticky bucket assignment, a conversion-recording endpoint, and a two-proportion Z-test stat-sig calculator. Pricing is per call via x402 on Base USDC.\n\n- `$0.001` per `abtest_assign`\n- `$0.005` per `abtest_record_conversion`\n- `abtest_results` is free and read-only\n\nThe shim does not run experiments on behalf of the caller. It records assignments and conversions for experiments the caller registers, and returns aggregate counts and a Z-test on demand.\n\n## How bucket assignment works\n\nBucket is `SHA-256(experiment_id + \"|\" + agent_did)`, with the first four bytes read as an unsigned 32-bit integer, modulo the sum of variant weights. The first call writes the result. Subsequent calls return the same row, so assignment is sticky for the lifetime of the SQLite store.\n\nA variant list is `[{ id, weight? }, ...]`. Weight defaults to `1` per variant. Pass `[{id:\"control\"},{id:\"treatment\",weight:3}]` for a 25/75 split.\n\n## Stat-sig calculator\n\nTwo-proportion Z-test with pooled variance over the first two registered variants. Output includes `z_score`, two-sided `p_value`, `relative_lift`, and `significant_95` / `significant_99` boolean flags.\n\n## MCP\n\n- Transport: Streamable HTTP, JSON-RPC 2.0\n- Protocol: `2024-11-05`\n- Endpoint: `POST /mcp`\n\nTools:\n\n| Tool | Tier | Price |\n|---|---|---|\n| `abtest_assign` | 3 | $0.001 |\n| `abtest_record_conversion` | 3 | $0.005 |\n| `abtest_results` | 0 | free |\n\n## REST\n\n| Method | Path | Purpose |\n|---|---|---|\n| GET | `/v1/abtest` | List experiments |\n| POST | `/v1/abtest` | Create or upsert experiment `{ id, name?, variants }` |\n| GET | `/v1/abtest/:id` | Get experiment |\n| PUT | `/v1/abtest/:id` | Update experiment |\n| DELETE | `/v1/abtest/:id` | Delete experiment |\n| POST | `/v1/abtest/assign` | `{ experiment_id, agent_did, variants? }` — $0.001 |\n| POST | `/v1/abtest/convert` | `{ experiment_id, agent_did, metric?, value? }` — $0.005 |\n| GET | `/v1/abtest/results` | `?experiment_id=...&metric=...` — Z-test included |\n| GET | `/v1/abtest/today` | UTC-day assignment + conversion counts |\n| GET | `/health` | Liveness, version, and DB check |\n\n## Storage\n\nSQLite at `/tmp/abtest.db` with three tables: `experiments`, `assignments`, `conversions`. Override with `DB_PATH`.\n\n## Environment\n\n| Variable | Default |\n|---|---|\n| `PORT` | `3000` |\n| `ENABLE` | `true` |\n| `WALLET_ADDRESS` | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` |\n| `PRICE_ASSIGN_USDC` | `0.001` |\n| `PRICE_CONVERT_USDC` | `0.005` |\n| `DB_PATH` | `/tmp/abtest.db` |\n| `X402_ENABLED` | `true` |\n\nSet `X402_ENABLED=false` to bypass payment gating in local development.\n\n## Quickstart\n\n```bash\nnpm install\nnpm start\n# in another shell\ncurl -s http://localhost:3000/health\ncurl -s -X POST http://localhost:3000/v1/abtest \\\n  -H 'content-type: application/json' \\\n  -d '{\"id\":\"prompt_v2\",\"name\":\"prompt v2\",\"variants\":[{\"id\":\"control\"},{\"id\":\"treatment\",\"weight\":3}]}'\ncurl -s -X POST http://localhost:3000/v1/abtest/assign \\\n  -H 'content-type: application/json' -H 'x-payment: {}' \\\n  -d '{\"experiment_id\":\"prompt_v2\",\"agent_did\":\"did:hive:demo:1\"}'\n```\n\nThe first call without a paid x402 envelope returns a `402` body with a fresh `nonce`. Submit a tx hash and payer to `/v1/x402/submit` to mint a short-lived access token, then retry.\n\n## License\n\nMIT. See `LICENSE`.\n\n## Author\n\nSteve Rotzin · steve@thehiveryiq.com · https://www.thehiveryiq.com\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:13.674Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:41.327Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

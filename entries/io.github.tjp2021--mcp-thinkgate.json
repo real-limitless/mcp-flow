@@ -1,0 +1,79 @@
+{
+  "id": "io.github.tjp2021/mcp-thinkgate",
+  "title": "mcp-thinkgate",
+  "description": "Auto-classifies prompt complexity and routes to the right Claude thinking mode. No API key needed.",
+  "summary": "Auto-classifies prompt complexity and routes to the right Claude thinking mode. No API key needed.",
+  "offersHint": "Auto-classifies prompt complexity and routes to the right Claude thinking mode. No API key needed. · Packages: npm:mcp-thinkgate · Env vars: ANTHROPIC_API_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "mcp-thinkgate",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "description": "Optional. Enables AI-powered classification via Haiku (more accurate). Falls back to rule-based classification if not provided. Get a key at https://console.anthropic.com",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "mcp-thinkgate",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Optional. Enables AI-powered classification via Haiku (more accurate). Falls back to rule-based classification if not provided. Get a key at https://console.anthropic.com",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "Optional. Enables AI-powered classification via Haiku (more accurate). Falls back to rule-based classification if not provided. Get a key at https://console.anthropic.com",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/tjp2021/mcp-thinkgate",
+  "repository": {
+    "url": "https://github.com/tjp2021/mcp-thinkgate",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-19T21:23:00.590212Z",
+  "publishedAt": "2026-02-19T21:23:00.590212Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:48.996Z",
+    "sourceRepoAt": "2026-08-11T23:18:11.428Z",
+    "readmeAt": "2026-08-11T23:18:11.911Z",
+    "toolsAt": "2026-08-12T00:58:48.996Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/tjp2021/mcp-thinkgate",
+    "checkedAt": "2026-08-11T23:18:11.428Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/tjp2021/mcp-thinkgate/main/README.md",
+    "markdown": "# ThinkGate\n\n[![CI](https://github.com/tjp2021/mcp-thinkgate/actions/workflows/ci.yml/badge.svg)](https://github.com/tjp2021/mcp-thinkgate/actions/workflows/ci.yml)\n\n**Automatic reasoning mode selection for Claude agents.**\n\n---\n\n## The problem\n\nYou built an AI agent. It handles everything — status checks, quick lookups, complex architecture questions, deep debugging sessions. But under the hood it runs every single message through the same model with the same thinking settings.\n\nThat means you're burning extended thinking tokens on \"what time is it in Tokyo?\" and getting shallow answers on \"help me design the entire auth system.\"\n\nYou could manually tag requests — `ULTRATHINK:` before the hard ones. But you forget. Your users definitely won't do it. And if you're building agents for other people, you can't train every end user to manage thinking modes.\n\n**ThinkGate fixes this at the infrastructure layer.** It sits between the incoming message and your model call, classifies the complexity in ~200ms, and returns exactly which model and thinking depth to use. Automatically. Every time.\n\n---\n\n## Who this is for\n\n- **Agent builders** running Claude on a mix of simple and complex tasks who are tired of one-size-fits-all model settings\n- **Teams running 24/7 agents** (WhatsApp bots, Slack assistants, Telegram agents) where message complexity varies wildly and cost/latency actually matters\n- **Anyone who's ever typed `ULTRATHINK` manually** and thought: this should just happen on its own\n\n---\n\n## How it works\n\n```\nIncoming message\n      ↓\n  Haiku call (~200ms, ~$0.0001)\n  \"How complex is this?\"\n      ↓\n  fast → no extended thinking\n  think → medium effort\n  ultrathink → max effort\n      ↓\n  Claude runs with the right settings\n```\n\nA cheap, fast Haiku call reads your prompt and decides which tier it needs. Then your main Claude call runs with the right effort level. You pay almost nothing for the classification, and save real money (and latency) on the 60%+ of messages that don't need extended reasoning.\n\nThe classifier is the IP here — not which model runs it. Three tiers. A system prompt trained on the boundary between \"this needs thinking\" and \"this doesn't.\" Works out of the box.\n\n---\n\n## Tiers\n\n| Tier         | Claude effort | When                                         |\n| ------------ | ------------- | -------------------------------------------- |\n| `fast`       | `none`        | Factual, conversational, simple edits        |\n| `think`      | `medium`      | Architecture, debugging, multi-step analysis |\n| `ultrathink` | `max` / `high`| System design, proofs, open-ended complexity |\n\n## Profiles (model mapping)\n\nSet `THINKGATE_PROFILE` or pass `{ profile }` to `classifyPrompt`:\n\n| Profile | fast | think | ultrathink |\n| ------- | ---- | ----- | ---------- |\n| `claude` (default) | `claude-haiku-4-5-...` | `claude-sonnet-4-6` | `claude-opus-4-6` |\n| `openrouter-cost` | `google/gemini-2.5-flash` | `anthropic/claude-sonnet-4.5` | `anthropic/claude-opus-4.6` |\n| `openrouter-balanced` | `anthropic/claude-haiku-4.5` | `anthropic/claude-sonnet-4.5` | `anthropic/claude-opus-4.6` |\n\nPer-tier overrides: `THINKGATE_FAST_MODEL`, `THINKGATE_THINK_MODEL`, `THINKGATE_ULTRA_MODEL`.\n\n**Cost note:** the MCP tool is advisory. Hosts must actually switch models.\nPi does this via `~/.pi/agent/extensions/thinkgate-router.ts` + `thinkgate.json`.\n\nRule mode (no API key) is free and preferred for auto-routing. Long checklist pastes no longer auto-upgrade to THINK.\n\n---\n\n## Use as an MCP tool (Claude Desktop / Claude Code)\n\nAdd to `~/.claude/settings.json` (Claude Code) or `~/Library/Application Support/Claude/claude_desktop_config.json` (Claude Desktop):\n\n```json\n{\n  \"mcpServers\": {\n    \"thinkgate\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"mcp-thinkgate\"],\n      \"env\": {\n        \"ANTHROPIC_API_KEY\": \"your-api-key-here\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude. Now you can ask it to classify before it answers:\n\n> \"Before responding, classify the complexity of this task: design a rate limiter for a public API\"\n\n```\nTier: think\nEffort: medium\nSuggested model: claude-sonnet-4-6\nConfidence: 92%\nWhy: Requires structured design reasoning and trade-off analysis, but has well-defined scope.\n```\n\n---\n\n## Use as a library (agent frameworks)\n\nInstall:\n\n```bash\nnpm install mcp-thinkgate\n```\n\nImport and use:\n\n```typescript\nimport { classifyPrompt, setLogLevel } from 'mcp-thinkgate';\n\n// Optional: silence logs (default level is 'info', writes to stderr)\nsetLogLevel('error');\n\nconst result = await classifyPrompt(userMessage, process.env.ANTHROPIC_API_KEY!);\n\n// result.tier       → 'fast' | 'think' | 'ultrathink'\n// result.effort     → 'none' | 'medium' | 'max'\n// result.confidence → 0.0 - 1.0\n// result.reasoning  → one sentence explanation\n\n// Works without an API key too (rule-based fallback):\nconst quickResult = await classifyPrompt(userMessage);\n```\n\n---\n\n## Reference implementation: TinyClaw\n\n[TinyClaw](https://github.com/tjp2021/tinyclaw) is an open-source multi-agent framework for Claude. ThinkGate is wired into its `invokeAgent()` function — every message is automatically classified before the Claude CLI runs, and `--effort` is set accordingly.\n\nThree lines added. Zero config required. Every agent in every team automatically gets the right thinking depth.\n\nSee the integration at [`src/lib/invoke.ts`](https://github.com/tjp2021/tinyclaw/blob/main/src/lib/invoke.ts).\n\n---\n\n## Requirements\n\n- Node.js 20+\n- Anthropic API key (optional — falls back to rule-based classification)\n\n## Local development\n\n```bash\ngit clone https://github.com/tjp2021/mcp-thinkgate\ncd mcp-thinkgate\nnpm install\nnpm test\nnpm run build\n```\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup, commands, and PR process.\n\n## Security\n\nSee [SECURITY.md](SECURITY.md) for vulnerability reporting.\n\n## License\n\nMIT — see [LICENSE](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:18:11.911Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:48.996Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-cdn",
+  "title": "Hive Cdn",
+  "description": "Edge content delivery for autonomous agents — signed manifests, A2A authentication",
+  "summary": "Edge content delivery for autonomous agents — signed manifests, A2A authentication",
+  "offersHint": "Edge content delivery for autonomous agents — signed manifests, A2A authentication · Remote MCP (streamable-http) at https://hive-mcp-cdn.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-cdn.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-cdn.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-cdn",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-cdn",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:47:18.904582Z",
+  "publishedAt": "2026-04-28T23:47:18.904582Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:44.131Z",
+    "sourceRepoAt": "2026-08-11T23:20:11.063Z",
+    "readmeAt": "2026-08-11T23:20:11.644Z",
+    "toolsAt": "2026-08-12T01:00:44.131Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-cdn",
+    "checkedAt": "2026-08-11T23:20:11.063Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-cdn/main/README.md",
+    "markdown": "# hive-mcp-cdn\n\n[![srotzin/hive-mcp-cdn MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-cdn/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-cdn)\n\n**Edge cache for A2A capabilities — Hive Civilization**\n\nA small, inbound-only MCP server that caches arbitrary objects (agent cards, capability manifests, signed envelopes, anything an A2A pipeline reads more than once). Two-tier storage with an in-memory LRU and a SQLite warm tier, ETag and If-None-Match support, a purge endpoint, and per-request and per-GB metering through x402.\n\n> Council provenance: Ad-hoc, user-promoted 2026-04-27.\n\n---\n\n## What this is\n\nMost A2A traffic is reads — the same agent card, the same capability list, the same signed proof — fanned out across a fleet that has no shared cache. `hive-mcp-cdn` is the missing edge cache. Agents put objects under a key and fetch them back through a cheap, ETag-aware GET.\n\n- **Protocol:** MCP 2024-11-05 over Streamable-HTTP / JSON-RPC 2.0\n- **Transport:** `POST /mcp`\n- **Discovery:** `GET /.well-known/mcp.json`\n- **Health:** `GET /health`\n- **Settlement:** USDC on Base L2\n- **Brand gold:** Pantone 1245 C / `#C08D23`\n- **Mode:** Inbound only. `ENABLE=true` default.\n\n## Pricing\n\n| Surface | Price | Charged on |\n|---|---|---|\n| Per request | $0.0002 USDC | Every `/v1/cdn/get`, hit or miss. |\n| Per GB egress | $0.05 USDC | Body bytes returned in `200` responses. `304` responses do not bill egress. |\n| Prepay bundle | $1.00 USDC | Buys an access token; reads draw from the prepaid balance until depletion. |\n\nSettlement on Base L2 USDC. The recipient is the `WALLET_ADDRESS` env var.\n\n## Tools\n\n| Tool | Tier | Description |\n|---|---|---|\n| `cdn_cache_get` | 2 ($0.0002/req + $0.05/GB) | Read a cached object by key. Honors `if_none_match`. |\n| `cdn_cache_put` | 0 (free) | Store under a key with optional `Cache-Control: max-age=...`. |\n| `cdn_purge` | 0 (free) | Purge a single key. Idempotent. |\n\n## REST endpoints\n\n| Method | Path | Purpose |\n|---|---|---|\n| `GET`  | `/v1/cdn/get?key=...`     | Read. Sends `ETag`, `Cache-Control`, `X-Cache`, `Age`. Honors `If-None-Match`. |\n| `POST` | `/v1/cdn/put`             | Write `{ key, body, content_type?, cache_control? }`. |\n| `POST` | `/v1/cdn/purge`           | Purge `{ key }`. |\n| `GET`  | `/v1/cdn/today`           | Daily counters: requests, hits, misses, bytes served, revenue. |\n| `POST` | `/v1/x402/proof/submit`   | Submit on-chain proof, mint access token. |\n| `GET`  | `/v1/x402/pricing`        | Pricing schedule. |\n| `GET`  | `/v1/x402/stats`          | Open nonces and active tokens. |\n| `GET`  | `/health`                 | Service health and cache stats. |\n| `GET`  | `/.well-known/mcp.json`   | MCP discovery descriptor. |\n| `GET`  | `/`                       | Landing page. |\n\n## Storage model\n\nTwo tiers, both managed by the shim:\n\n- **Hot (LRU):** an in-process `Map` with insertion-order recency. Bounded by `CDN_LRU_MAX_ENTRIES` and `CDN_LRU_MAX_BYTES`. Misses fall through to warm and promote on read.\n- **Warm (SQLite):** `better-sqlite3` at `CDN_DB_PATH` (default `/tmp/cdn.db`). One `cache` table with body, ETag, content type, size in bytes, created and expiry timestamps. A second `egress` table aggregates daily counters.\n\n`size_bytes` is tracked per row and is the basis for the egress meter. ETags are computed once at write time as the SHA-256 hex of the body, truncated to 32 chars and double-quoted.\n\n## x402 flow\n\nThe first call to `/v1/cdn/get` without a token returns:\n\n```json\n{\n  \"error\": \"payment_required\",\n  \"payment\": {\n    \"nonce\": \"<uuid>\",\n    \"amount_usd\": 1.0,\n    \"pricing\": {\n      \"per_request_usd\": 0.0002,\n      \"per_gb_egress_usd\": 0.05\n    },\n    \"accepts\": [{ \"chain\": \"base\", \"asset\": \"USDC\", \"recipient\": \"0x15184b...\" }],\n    \"expires_at\": 1777220000,\n    \"tier\": 2,\n    \"product\": \"cdn_prepaid_bundle\"\n  }\n}\n```\n\nSubmit proof to `/v1/x402/proof/submit`:\n\n```json\n{ \"nonce\": \"...\", \"payer\": \"0x...\", \"chain\": \"base\", \"tx_hash\": \"0x...\" }\n```\n\n…then call `/v1/cdn/get` with `X-Hive-Access: hive_<token>`. Each request decrements the prepaid balance by `per_request + (bytes / 1GB) * per_gb_egress`. The residual balance rides the `X-Hive-Balance-USD` response header.\n\n## Cache semantics\n\n- `Cache-Control: max-age=<s>` on `PUT` sets the TTL. Default `300` seconds. Capped at 7 days.\n- ETag is a strong validator (SHA-256 prefix in quotes).\n- `If-None-Match: <etag>` on `GET` returns `304 Not Modified` with no body and no egress charge.\n- Expired entries are dropped lazily on read and on a 60-second sweep.\n- A `PUT` over an existing key replaces the body, ETag, content type, TTL, and resets the hit counter.\n\n## Environment\n\n| Var | Default | Purpose |\n|---|---|---|\n| `PORT` | `3000` | HTTP port. |\n| `ENABLE` | `true` | Master switch. `false` runs `/health` only. |\n| `WALLET_ADDRESS` | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` | Recipient for x402 fees. |\n| `CDN_PRICE_PER_REQUEST_USD` | `0.0002` | Per-request fee. |\n| `CDN_PRICE_PER_GB_EGRESS_USD` | `0.05` | Per-GB egress fee. |\n| `CDN_PREPAY_BUNDLE_USD` | `1.0` | Default prepay bundle size. |\n| `CDN_DEFAULT_TTL_S` | `300` | Default TTL for objects without explicit `max-age`. |\n| `CDN_LRU_MAX_ENTRIES` | `1024` | Hot-tier entry cap. |\n| `CDN_LRU_MAX_BYTES` | `67108864` | Hot-tier byte cap (64 MiB). |\n| `CDN_MAX_OBJECT_BYTES` | `4194304` | Per-object size limit (4 MiB). |\n| `CDN_DB_PATH` | `/tmp/cdn.db` | SQLite warm-tier path. |\n\n## What this server will not do\n\n- Make outbound requests of any kind. The cache only holds what was put into it.\n- Resolve URLs, fetch origins, or revalidate against a backing store.\n- Enforce per-key access control. Treat keys as opaque namespaces and gate them upstream if you need privacy.\n- Persist beyond the SQLite file. On a fresh container with a new `/tmp`, the cache is empty.\n\n## License\n\nMIT.\n\n<!-- HIVE-GAMIFICATION-META-START -->\n## Hive Gamification\n\nThis MCP server is part of the Hive Civilization gamification surface (10-mechanic capability taxonomy).\n\n- Capability taxonomy: https://hive-gamification.onrender.com/.well-known/hive-gamification.json\n- Centrifuge dashboard: https://hive-gamification.onrender.com/.well-known/hive-centrifuge.json\n- Consolidated OpenAPI: https://hive-gamification.onrender.com/.well-known/openapi.json\n\n**Surface tags:** `gamification.spec.v1` · `gamification.surface.public` · `gamification.signal.read-only` · `gamification.settlement.real-rails`\n\nReal rails on Base L2 (USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`). Read-only signal layer. Brand gold `#C08D23`.\n<!-- HIVE-GAMIFICATION-META-END -->\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:11.644Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:44.131Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

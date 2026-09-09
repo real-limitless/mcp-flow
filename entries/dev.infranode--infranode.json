@@ -1,0 +1,100 @@
+{
+  "id": "dev.infranode/infranode",
+  "title": "InfraNode",
+  "description": "Keyless open data for 84 German cities: 12 lean read-only MCP tools covering 67 data types.",
+  "summary": "Keyless open data for 84 German cities: 12 lean read-only MCP tools covering 67 data types.",
+  "offersHint": "Keyless open data for 84 German cities: 12 lean read-only MCP tools covering 67 data types. · Remote MCP (streamable-http) at https://mcp.infranode.dev/mcp",
+  "version": "1.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.infranode.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.infranode.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/street1983nk/infranode",
+  "repository": {
+    "url": "https://github.com/street1983nk/infranode",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-06T08:06:38.302121Z",
+  "publishedAt": "2026-07-06T08:06:38.302121Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:50.620Z",
+    "sourceRepoAt": "2026-08-12T00:22:42.290Z",
+    "readmeAt": "2026-08-12T00:22:42.854Z",
+    "toolsAt": "2026-08-12T00:22:43.061Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/street1983nk/infranode",
+    "checkedAt": "2026-08-12T00:22:42.290Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/street1983nk/infranode/main/README.md",
+    "markdown": "# InfraNode\n\n[![GitHub stars](https://img.shields.io/github/stars/street1983nk/infranode?style=flat&logo=github)](https://github.com/street1983nk/infranode/stargazers)\n[![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](./LICENSE)\n[![Glama score](https://glama.ai/mcp/servers/street1983nk/infranode/badges/score.svg)](https://glama.ai/mcp/servers/street1983nk/infranode)\n[![MCP Registry](https://img.shields.io/badge/MCP_Registry-dev.infranode%2Finfranode-1f6feb)](https://registry.modelcontextprotocol.io)\n[![Smithery](https://img.shields.io/badge/Smithery-infranode-7c3aed)](https://smithery.ai/server/infranode/infranode)\n\n**The open-data REST API for Germany: a keyless HTTP API for German\npublic-infrastructure open data, also available as an MCP server.**\n\nGerman cities publish a lot of open data, but every source has its own format,\nfields and quirks, and several need portal registration. InfraNode normalizes\n~20 categories, weather (DWD), air quality (UBA), public transit (incl. realtime\ndepartures), traffic, electricity price (SMARD), land values (BORIS), parking,\ncharging, water levels, demographics, energy and more, for **84+ German cities**\nbehind **one** interface. **No API key, no account.** Every response uses one\ncanonical `{ data, meta }` envelope with per-record license and attribution. The\nsame data is also exposed as an MCP server (12 lean read-only tools covering 67\ndata types) for AI agents.\nStart with the one-call `get_city_overview`: it returns a catalog of every data\ntype available for a city plus a live highlights snapshot, so agents discover the\nfull breadth, not just weather. InfraNode is actively growing, with more data\ntypes and cities added regularly.\n\nSources include the Deutscher Wetterdienst (DWD), Umweltbundesamt (UBA),\nMobilithek/DELFI, GovData, OpenStreetMap, Bundesnetzagentur, KBA, DIVI and more.\n\n## See it in action\n\n[![InfraNode live overview for Cologne: current weather, official air quality, DWD warnings, live train departures with delays, roadworks and the full data-type catalog, all from one keyless call](https://infranode.dev/showcase/koeln-live-dashboard.png)](https://infranode.dev)\n\n*A single `get_city_overview(\"koeln\")` call: current weather, official air\nquality, DWD warnings, live train departures with delays, roadworks and the full\nper-city data catalog, from one keyless endpoint. Try any city live at\n[infranode.dev](https://infranode.dev).*\n\n## How it works\n\nOne shared HTTP client fans out to the upstream sources, each response is mapped\ninto the canonical schema, license-gated with its attribution and cached in Redis\n(with stale-on-error fallback), then served through both a REST API and an MCP\nserver. A failing upstream degrades to `source_status`, it never fails the call.\n\n```mermaid\nflowchart LR\n    subgraph SRC[\"25+ German open-data sources\"]\n        direction TB\n        S1[\"DWD, UBA<br/>weather, air\"]\n        S2[\"Mobilithek, DELFI, DB<br/>transit, realtime\"]\n        S3[\"SMARD, BNetzA, MaStR<br/>energy\"]\n        S4[\"BORIS, GovData, OSM,<br/>DIVI, KBA, ...\"]\n    end\n\n    subgraph CORE[\"InfraNode core\"]\n        direction TB\n        N[\"Normalize<br/>one canonical schema\"] --> L[\"License-gate<br/>per-record attribution\"] --> C[\"Redis cache<br/>stale-on-error fallback\"]\n    end\n\n    SRC --> CORE\n    CORE --> API[\"REST API<br/>infranode.dev/api/v1<br/>84 cities, keyless\"]\n    CORE --> MCP[\"MCP server<br/>mcp.infranode.dev<br/>12 read-only tools\"]\n    API --> APPS[\"Apps &amp; dashboards\"]\n    MCP --> AGENTS[\"AI agents<br/>Claude, ChatGPT\"]\n```\n\n> If InfraNode saves you a data integration, a star helps other developers find it.\n\n## Quickstart\n\nBase URL `https://infranode.dev/api/v1`. No key, no account, just call it:\n\n```bash\ncurl https://infranode.dev/api/v1/cities/koeln/weather\n```\n\n```jsonc\n{\n  \"data\": {\n    \"city_slug\": \"koeln\",\n    \"observed_at\": \"2026-06-18T13:00:00Z\",\n    \"source\": \"dwd\",\n    \"attribution\": { \"text\": \"Datenbasis: Deutscher Wetterdienst\", \"modified\": true },\n    \"payload\": { \"kind\": \"weather\", \"temperature_c\": 30.4, \"humidity\": 43.0, \"station_id\": \"02667\" }\n  },\n  \"meta\": { \"source_status\": \"ok\", \"cache_status\": \"hit\", \"correlation_id\": \"...\" }\n}\n```\n\nEvery response follows the same `{ data, meta }` envelope: each record carries\nits `attribution` (license + source), and `meta.source_status` tells you whether\nthe upstream source delivered data, so a dead source degrades gracefully instead\nof failing the call.\n\n> Tip: call `/api/v1/cities` first to discover valid city slugs (e.g. `koeln`,\n> `berlin`, `hamburg`), then call any city-scoped endpoint.\n\n[![Run in Postman](https://run.pstmn.io/button.svg)](https://god.gw.postman.com/run-collection/55901679-26601800-bf9d-4ddd-8413-5f273f18be4d)\n\nThe full interactive reference and per-city coverage live at\n[infranode.dev](https://infranode.dev). The\n[InfraNode API on the Postman API Network](https://www.postman.com/alster83-7133231/infranode/overview)\nmirrors every endpoint with real example responses, so you can try the\n[InfraNode API Postman collection](https://www.postman.com/alster83-7133231/infranode/collection/pft781f/infranode-api)\nin the browser without an API key.\n\n## Data (84 cities, 101 endpoints)\n\nEvery category below is a REST endpoint under `/api/v1/cities/{slug}/<key>`.\nOver MCP the same data comes through 12 lean tools: a few named ones\n(`get_city_overview`, `weather`, `air_quality`, `pois`, `compare`, live boards)\nplus one generic `get_city_resource(slug, resource=<key>)` for every other data\ntype (its `resource` enum lists all 67 keys).\n\n| Group | Data types (endpoint keys) |\n|-------|----------------------------|\n| **Discovery** | `list_cities`, `sources`, `compare` (one resource across many cities), `overview` (one-call catalog + live snapshot) |\n| **Weather & environment** | `weather`, `weather-warnings`, `civil-protection-warnings` (BBK NINA), `air-uba` (official), `air` (live), `pollen-uv`, `water-level`, `flood`, `fire-danger`, `bathing-water` |\n| **Mobility** | `transit`, live stop departures (`transit_departures` tool), `stations` (catalog), station boards by EVA (`station_board_departures`/`station_board_arrivals` tools, incl. local trains + disruptions), `station-departures`, `station-arrivals`, `traffic`, `road-events`, `webcams`, `charging`, `parking` (live occupancy), `sharing`, `fuel-prices`, `bike-counts` |\n| **City & people** | `base`, `geo`, `demographics`, `indicators`, `unemployment`, `tourism`, `construction`, `accidents`, `crime-stats`, `health`, `icu-live`, `holidays`, `election`, `events`, `pois`, playgrounds/markets/toilets and more OSM types |\n| **Economy & real estate** | `land-values`, `tax-rates` (trade/property tax multipliers per municipality), `business-registrations` (founding dynamics per district), `insolvencies` (insolvency filings per district: corporate and other debtors, annual), `public-tenders` (public procurement: running tenders and awarded contracts per city) |\n| **Energy & vehicles** | `power-load`, `power-price`, `energy`, `solar`, `solar-roofs`, `district-heating`, `vehicle-registrations` |\n\n## How it behaves\n\n- **Keyless & read-only.** No credentials, no writes, no user accounts.\n- **Canonical envelope.** `{ data, meta }` with per-source status and attribution.\n- **Graceful degradation.** A failing upstream returns `source_status`, not an error.\n- **Safe by design.** SSRF and injection gates validate every request; inputs are checked against fixed allowlists.\n\nSee [SECURITY.md](./SECURITY.md) for the security model.\n\n## Use it as an MCP server\n\nThe same API is exposed as a remote MCP server, so AI agents can call all 67\ndata types as tools. One line with Claude Code:\n\n```bash\nclaude mcp add --transport http infranode https://mcp.infranode.dev/mcp\n```\n\nAny other MCP client, point it at the remote endpoint (Streamable HTTP):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"infranode\": { \"url\": \"https://mcp.infranode.dev/mcp\" }\n  }\n}\n```\n\n- **Cursor / Windsurf:** add the block above to `~/.cursor/mcp.json` (or the app's MCP settings).\n- **VS Code:** `code --add-mcp '{\"name\":\"infranode\",\"url\":\"https://mcp.infranode.dev/mcp\"}'`\n- **Claude Desktop:** add the same `mcpServers` block to your `claude_desktop_config.json`.\n- **ChatGPT:** add a connector with the URL `https://mcp.infranode.dev/mcp`.\n\nAll tools are annotated `readOnlyHint: true` / `destructiveHint: false` /\n`idempotentHint: true`, so MCP clients can safely auto-allow them. The MCP layer\nalso ships ready-made **prompts** (`city_briefing`, `compare_air_quality`,\n`commute_check`) and **resources** (`infranode://cities`, `infranode://sources`).\nFull install guide, the complete tool manifest with example outputs, the\npermission model and an example transcript are in\n[docs/mcp-install.md](./docs/mcp-install.md). The registry manifest is\n[server.json](./server.json).\n\n## Use it in ChatGPT (Custom GPT action)\n\n**Ready-made GPT:** [German City Data (InfraNode)](https://chatgpt.com/g/g-6a48bf065e648191b062bc86256c1897-infranode-live-data-for-german-cities)\nis listed in the GPT Store (Research & Analysis) and works out of the box.\n\nTo build your own: InfraNode ships a curated OpenAPI spec for GPT\nactions: 23 of the most useful operations (ChatGPT allows at most 30 per\naction), keyless, all GET.\n\n1. In the [GPT editor](https://chatgpt.com/gpts/editor) open **Configure →\n   Actions → Create new action → Import from URL** and paste\n   `https://infranode.dev/actions/openapi.json`.\n2. Leave authentication at **None**; as privacy policy use\n   `https://infranode.dev/en/privacy/`.\n3. Tell the GPT in its instructions to start with `getCityOverview(slug)`,\n   resolve city names via `getCities`, and cite `data.attribution` (the data\n   licences require attribution).\n\nDetails and recommended instructions:\n[infranode.dev/en/chatgpt/](https://infranode.dev/en/chatgpt/). The spec is\ngenerated from `docs/openapi.yaml` by `scripts/build_actions_spec.py`.\n\n## Alternatives and how InfraNode compares\n\nOther MCP servers cover parts of the German or European data space. InfraNode is\nthe broadest for city-level open data, and the projects below often complement\neach other:\n\n- **[germany-mcp-server](https://github.com/AiAgentKarl/germany-mcp-server)** federal and government data (Autobahn, DWD, NINA, SMARD, Bundestag). Nationwide, no per-city breadth.\n- **[db-mcp-server](https://github.com/PaulvonBerg/db-mcp-server)** / db-timetable-mcp Deutsche Bahn rail timetables only.\n- **[mcp-server-public-transport](https://github.com/mirodn/mcp-server-public-transport)** public transport across Europe; in Germany it covers Berlin/Brandenburg (VBB).\n- **Single-city servers** (e.g. Munich, Berlin) cover one city each.\n\nInfraNode covers **84 German cities and 67 data types** behind one keyless, hosted\nendpoint, from environment and mobility to energy, economy and city life. Full\nside-by-side comparison:\n[infranode.dev/en/mcp-comparison](https://infranode.dev/en/mcp-comparison/).\n\n## Self-host (optional)\n\nYou don't need to, the hosted endpoint above is the fastest path. But the code\nis open. Run the API stack locally with Docker (Compose v2):\n\n```bash\ncp .env.example .env          # example config, contains NO real secrets\ndocker compose -f deploy/docker-compose.yml up\ncurl http://localhost/api/v1/health   # -> {\"status\":\"ok\",\"version\":\"1.0.0\",\"redis\":true}\n```\n\nTo run the MCP server itself locally over stdio (against the public API):\n\n```bash\nuv sync --group mcp\nINFRANODE_MCP_API_BASE=https://infranode.dev/api/v1 uv run python -m infranode.mcp.server\n```\n\nAll settings use the `INFRANODE_` env prefix (see `.env.example`); each data\nsource is toggled by its own `INFRANODE_ENABLE_*` flag. Real secrets are never\ncommitted, only `.env.example` is versioned and CI runs a gitleaks scan.\n\n## License: code and data are separate\n\n- **Code:** Apache-2.0 (see [LICENSE](./LICENSE)).\n- **Data:** the open data served through InfraNode keeps the licenses of its\n  upstream sources (e.g. ODbL for OpenStreetMap, DL-DE-BY for GovData, attribution\n  for DWD). These data licenses and attribution are tracked separately in\n  `DATA-LICENSES.md`. The Apache-2.0 license covers only the API source code, not\n  the passed-through data.\n\n## Contributing\n\nContributions are welcome. Setup, gate commands and the secret rule are in\n[CONTRIBUTING.md](./CONTRIBUTING.md). To add a new data source, start with the\ndeclarative source registry in `src/infranode/registry/source_specs.py` (one\n`SourceSpec` entry per upstream); CONTRIBUTING.md has the full checklist.\n",
+    "fetchedAt": "2026-08-12T00:22:42.854Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_city",
+      "description": "Get base data for a German city (population, area, coordinates).\n\nSourced from Wikidata. Read-only. Useful as a first lookup to confirm a city\nexists and get its core attributes. For a broader question about the city\n(what data is available at all) use ``get_city_overview`` instead.\n"
+    },
+    {
+      "name": "get_city_overview",
+      "description": "Get a ONE-CALL overview of everything InfraNode knows about a German city.\n\nStart here for any city question. Returns: the city's base data, a CATALOG of\nall 81 available data types (weather, air quality, public transit, trains,\ntraffic, charging, parking, solar, energy, demographics, taxes, accidents,\ntourism, heritage, trees, population density, playgrounds, post boxes and many\nmore), each with its coverage status and the exact tool to call next (for most\ndata types that is ``get_city_resource(slug, resource=<type>)``), plus a small\nlive highlights snapshot (current weather, air quality and train departures).\nData types not yet covered for this city show where they ARE available so you\ncan pivot. InfraNode keeps adding data and cities, so the catalog grows over\ntime. Read-only.\n"
+    },
+    {
+      "name": "get_city_resource",
+      "description": "Fetch ANY per-city data type by its key (generic accessor, 81 data types).\n\nOne tool for the whole breadth of InfraNode: live data (air, traffic, transit\nstops, parking, charging, water-level, flood, sharing, fuel-prices,\nwebcams, station-departures/-arrivals/stations, ...), statistics\n(demographics, unemployment, tourism, accidents, crime-stats, indicators,\nland-values, tax-rates, insolvencies, ...), multi-year TIME SERIES\n(``sustainability``: SDG indicators per municipality, one value per year from\n2006 to 2023, so trends can be answered without stitching snapshots),\ninfrastructure and environment\n(solar, solar-roofs, district-heating, energy, heritage, tree-cadastre,\nplaygrounds, public-toilets, markets, education, ...) and more. Discover the\nvalid keys and per-city coverage with ``get_city_overview(slug)`` or the\n``infranode://catalog`` resource; the ``resource`` enum lists every key.\nUncovered types return ``source_status=\"not_covered\"`` (plus where they ARE\navailable), never an error. Read-only.\n"
+    },
+    {
+      "name": "air_quality",
+      "description": "Get official air quality for a German city (PM10, NO2 and more).\n\nSourced from the Umweltbundesamt (UBA). Read-only. For live nearest-station\nhourly readings use ``get_city_resource(slug, resource='air')`` instead.\n"
+    },
+    {
+      "name": "weather",
+      "description": "Get current weather observations for a German city.\n\nSourced from the Deutscher Wetterdienst (DWD): temperature, wind,\nprecipitation and related fields. Read-only, current conditions only (not a\nforecast). For warnings use ``get_city_resource(slug,\nresource='weather-warnings')``. For a broader question about the city (not\njust weather) use ``get_city_overview`` instead, which already includes a\nlive weather highlight.\n"
+    },
+    {
+      "name": "pois",
+      "description": "Get points of interest in a German city, filtered by type.\n\nSourced from OpenStreetMap. Read-only.\n"
+    },
+    {
+      "name": "station_board_departures",
+      "description": "Get live departures for ANY railway station by its EVA number.\n\nCovers all train categories including local/regional (S/RB/RE) and long\ndistance, with real-time delays, cancellations and disruption messages. Get\nthe EVA from ``get_city_resource(slug, resource='stations')``. Read-only.\n"
+    },
+    {
+      "name": "station_board_arrivals",
+      "description": "Get live arrivals for ANY railway station by its EVA number.\n\nMirror of ``station_board_departures`` for arriving trains (all categories,\nreal-time delays, disruption messages). Get the EVA from\n``get_city_resource(slug, resource='stations')``. Read-only.\n"
+    },
+    {
+      "name": "transit_departures",
+      "description": "Get live public-transport departures with real-time delays for a stop.\n\nSourced from GTFS-RT/HVV/VGN. Unlike the static stop list\n(``get_city_resource(slug, resource='transit')``), this returns minute-fresh\ndepartures including delay for ONE stop. A ``stop_id`` is required: fetch the\ncity's transit stops first to discover valid stop IDs, then pass one here.\nRead-only.\n"
+    },
+    {
+      "name": "list_cities",
+      "description": "List all covered cities (slug, federal state, population, coverage).\n\nTakes no arguments. Call this first to discover valid city slugs before\ninvoking any city-scoped tool. Read-only.\n"
+    },
+    {
+      "name": "sources",
+      "description": "List all data sources with license, attribution and availability.\n\nTakes no arguments. Shows which upstream sources InfraNode bundles and\nwhether each is currently active. Read-only.\n"
+    },
+    {
+      "name": "compare",
+      "description": "Compare ONE resource across MULTIPLE cities in a single response.\n\nFans the resource out over the listed cities and returns a per-city\n``source_status`` (ok/disabled/no_data/error/not_found), so a missing or\nfailing city source does not spoil the whole answer. Read-only.\n"
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:22:43.061Z",
+  "toolsPreviewStatus": "ok"
+}

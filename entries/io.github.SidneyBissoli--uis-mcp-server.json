@@ -1,0 +1,64 @@
+{
+  "id": "io.github.SidneyBissoli/uis-mcp-server",
+  "title": "UNESCO UIS — Education, Science & Culture Statistics (provenance-first)",
+  "description": "UNESCO UIS statistics (education, science, culture) with full provenance and fixed releases.",
+  "summary": "UNESCO UIS statistics (education, science, culture) with full provenance and fixed releases.",
+  "offersHint": "UNESCO UIS statistics (education, science, culture) with full provenance and fixed releases. · Remote MCP (streamable-http) at https://uis.sidneybissoli.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://uis.sidneybissoli.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://uis.sidneybissoli.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/SidneyBissoli/uis-mcp-server",
+  "repository": {
+    "url": "https://github.com/SidneyBissoli/uis-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T02:42:59.20725Z",
+  "publishedAt": "2026-08-08T02:42:59.20725Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:55.230Z",
+    "sourceRepoAt": "2026-08-12T00:02:37.907Z",
+    "readmeAt": "2026-08-12T00:02:38.375Z",
+    "toolsAt": "2026-08-12T00:02:38.445Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SidneyBissoli/uis-mcp-server",
+    "checkedAt": "2026-08-12T00:02:37.907Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SidneyBissoli/uis-mcp-server/main/README.md",
+    "markdown": "# uis-mcp-server — servidor MCP provenance-first do UNESCO UIS\n\nServidor [MCP](https://modelcontextprotocol.io) (Streamable HTTP) para o **UNESCO\nUIS** (Instituto de Estatística da UNESCO — educação, ciência/P&D, cultura e\ncomunicação), hospedado em Cloudflare Workers. Fase 2 do projeto ilostat\n(`C:\\dev\\mcp\\ilostat\\roadmap.md`; medições da Data API em `ilostat/docs/06`).\nO ILOSTAT vive no servidor irmão **`ilo-mcp-server`** (decisão do decisor,\n07/08/2026: um servidor por fonte — segregação estrutural CC BY / CC BY-SA e\nconvenção de naming do mcp-builder; tools com prefixo de serviço `uis_`).\n\nProdução: **`https://uis.sidneybissoli.com`** (endpoint MCP em `/mcp`; padrão de\nURLs do portfólio). O hostname `uis-mcp-server.sidneybissoli.workers.dev` permanece\nservido como secundário.\n\n## Tools\n\n| Tool | O quê | Fonte |\n|---|---|---|\n| `uis_search_indicators` | busca ~5.060 indicadores (4 temas) com disponibilidade de dados; paginação por `offset` | catálogo em D1 (100% local) |\n| `uis_list_geo_units` | 462 códigos de país/região (NATIONAL/REGIONAL); paginação por `offset` | D1 (100% local) |\n| `uis_get_data` | registros por indicador/geo unit/anos, footnotes opcionais | 1 chamada à Data API por consulta (release fixada) |\n\nToda resposta carrega o **bloco de proveniência v1.0** (`@sbissoli/mcp-provenance`,\nmodos `concise`/`detailed` via parâmetro `provenance_mode`) nos três canais do\ncontrato: `structuredContent`, `_meta` namespaced (`com.sidneybissoli.uis/*`) e\nrodapé de texto.\n\n## Decisões vinculantes (mini-spike docs/06 + decisor, 07/08/2026)\n\n- **Release fixada em toda consulta de dados** (`version=` explícita, resolvida de\n  `/versions/default` com cache KV TTL 24 h) — pinagem reprodutível + aproveitamento\n  do cache CloudFront do upstream (keyed pela URL completa). A release é o\n  `data_vintage` (ex.: `20260507-91260335 (published 2026-05-08)`).\n- **Catálogo em D1** (`uis_indicators`/`uis_geounits`/`uis_meta`), seed via\n  `scripts/seed-uis-catalog.mjs` com `retrieved_at` REAL da extração — é o que a\n  proveniência do catálogo reporta (`served_from_cache: true`). A UIS aceita fetch\n  do Node (sem a patologia do gateway da OIT).\n- **Teto de 100k registros é do upstream** (HTTP 400 pedagógico com contagem exata —\n  repassado ao cliente). Teto próprio de **5.000 registros por resposta** (proteção\n  do contexto MCP): acima disso, erro pedagógico com a contagem real — **nunca\n  truncar silenciosamente** (dado parcial apresentado como completo viola o contrato\n  anti-alucinação). Máx. 25 indicadores/chamada. Reavaliar com uso real.\n- **Notices** = tipos de footnote + magnitude + qualifier com contagem; o texto\n  integral de cada footnote fica na linha (`include_footnotes: true`).\n- **Idioma do servidor: inglês; fuso: UTC** (persona internacional; dados da UIS são\n  publicados em inglês). `derived` é sempre `false` — o servidor não transforma nada.\n\n## Obrigações de licença (docs/02 do projeto ilostat)\n\n- UIS: **CC BY-SA 4.0** (Terms do Data Browser, que governam a Data API; `verified_at`\n  2026-08-04; confirmação manual do decisor 07/08/2026).\n- Atribuição obrigatória em toda resposta (campo `citation`), com **URL completa +\n  data de extração**:\n  `Source: UNESCO Institute for Statistics (UIS), <URL>, date of extraction <data>.`\n- Não implicar endosso/afiliação da UNESCO (landing declara \"not endorsed\"); por isso\n  o servidor chama `uis-mcp-server`, não \"unesco-mcp-server\".\n- Segregação CC BY / CC BY-SA em relação ao ILOSTAT: **estrutural** — servidores\n  distintos; os dois regimes nunca coabitam uma resposta nem um servidor.\n\n## Desenvolvimento\n\n```bash\nnpm install\nnpm run typecheck && npm test   # testes offline (tools, framework, evals-fixtures)\nnpm run dev                     # http://localhost:8787/mcp\n\n# Seed do catálogo (D1) — necessário antes do primeiro uso:\nnode scripts/seed-uis-catalog.mjs\nnpx wrangler d1 execute uis-catalog --local  --file=scripts/seed-uis-catalog.sql\nnpx wrangler d1 execute uis-catalog --remote --file=scripts/seed-uis-catalog.sql\n\nnpm run deploy\nnode scripts/smoke-mcp.mjs      # smoke do MCP em produção (initialize → 3 tools → erros)\n```\n\n## Refresh do seed (D1) — decisão da Sessão 07 (07/08/2026)\n\nEstratégia: **seed manual a cada data release da UIS; sem cron do Worker.** As\nconsultas de `uis_get_data` seguem a release *default* re-resolvida com KV TTL 24 h\n(quando a UIS publica release nova, os dados migram sozinhos em ≤24 h); o que fica\ndefasado é o catálogo em D1 (disponibilidade, contagens, anos por indicador),\nseedado da release corrente (`20260507-91260335`). A proveniência do catálogo expõe\no `retrieved_at` REAL do seed — staleness explícita, não silenciosa.\n\n- **Gatilho de re-seed**: release default ≠ release do seed (a UIS publica ~2–3\n  releases/ano; o smoke em produção imprime a release corrente da Data API —\n  divergência = re-seedar). Procedimento: os 3 comandos de seed em \"Desenvolvimento\".\n- **Cron rejeitado por ora**: 2–3 eventos/ano não justificam código/estado extra;\n  reavaliar na Fase 3 (pós-submissão), com tráfego real — mesma janela da\n  reavaliação dos tetos operacionais.\n\n## Evals\n\n`@sbissoli/mcp-evals`: 20 fixtures próprias em `evals/fixtures/queries.ts`, validadas\noffline em `npm test`. A rodada com modelo real (`npm run eval`) **custa API** — só\ncom decisão explícita (`ANTHROPIC_API_KEY`; sem a chave, sai 0 com instruções).\nRodada de 07/08/2026 (Sessão 07): **top-1 100% (20/20)** — `evals/results/`.\n\n**End-to-end (formato mcp-builder)**: 10 perguntas complexas com resposta única\nverificável em `evals/e2e/evaluation.xml`, respostas validadas manualmente contra a\nprodução (`evals/e2e/validacao-respostas.md`). Rodada de 07/08/2026 (Sonnet):\n**10/10 (100%)** — `evals/results/2026-08-07-e2e.md`. Harness:\n`fase0-insumos/mcp-builder-evaluation/evaluation.py -t http -u https://uis.sidneybissoli.com/mcp`\n(exige as correções de compatibilidade descritas no registro de resultados).\n\n## Rotas\n\n`/` landing · `/health` liveness · `/status` versão+deploy · `/metrics` uso agregado ·\n`/mcp` MCP Streamable HTTP. Auth Bearer opcional (`wrangler secret put API_KEY`);\nrate limit token-bucket por IP.\n\n## Privacidade\n\nPolítica de privacidade do serviço hospedado: [PRIVACY.md](PRIVACY.md).\n",
+    "fetchedAt": "2026-08-12T00:02:38.375Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "uis_search_indicators",
+      "description": "Search the UNESCO Institute for Statistics catalogue of ~5,000 indicators — education, science/R&D, culture and communication — by keywords in the name or code, optionally filtered by theme. Returns indicator codes to use with uis_get_data, plus each indicator's data availability (years, record count). Searches the catalogue only — it does not return statistical values (use uis_get_data); ILO labour statistics live in the sibling ILOSTAT MCP server."
+    },
+    {
+      "name": "uis_list_geo_units",
+      "description": "Valid geographic codes for uis_get_data: 462 geo units — countries (NATIONAL, ISO alpha-3 codes like BRA) and regional aggregates (REGIONAL). Filter by name/code and type. Does not return statistical values; these codes apply only to uis_get_data, not to other statistical servers."
+    },
+    {
+      "name": "uis_get_data",
+      "description": "Statistical records from the UNESCO Institute for Statistics Data API, filtered by indicator codes (from uis_search_indicators, up to 25), geo unit codes (from uis_list_geo_units) and year range. Set include_footnotes for per-record source notes. Returns raw UIS records only — it does not aggregate, convert or otherwise transform values; ILO labour statistics live in the sibling ILOSTAT MCP server. Broad queries are rejected with the record count — narrow by geo unit or years."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:02:38.445Z",
+  "toolsPreviewStatus": "ok"
+}

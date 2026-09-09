@@ -1,0 +1,59 @@
+{
+  "id": "io.github.nickgeorgeseo/gatehouse",
+  "title": "mcp-gatehouse",
+  "description": "Permission tiers, approval gates, and audit logging for MCP servers - the server is the gatekeeper",
+  "summary": "Permission tiers, approval gates, and audit logging for MCP servers - the server is the gatekeeper",
+  "offersHint": "Permission tiers, approval gates, and audit logging for MCP servers - the server is the gatekeeper · Packages: pypi:mcp-gatehouse",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "mcp-gatehouse",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "mcp-gatehouse",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://nickgeorgeai.com/mcp",
+  "sourceUrl": "https://github.com/nickgeorgeseo/mcp-gatehouse",
+  "repository": {
+    "url": "https://github.com/nickgeorgeseo/mcp-gatehouse",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-13T04:37:27.510742Z",
+  "publishedAt": "2026-07-13T04:37:27.510742Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:11:04.437Z",
+    "sourceRepoAt": "2026-08-11T23:32:13.680Z",
+    "readmeAt": "2026-08-11T23:32:14.136Z",
+    "toolsAt": "2026-08-12T01:11:04.437Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nickgeorgeseo/mcp-gatehouse",
+    "checkedAt": "2026-08-11T23:32:13.680Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nickgeorgeseo/mcp-gatehouse/main/README.md",
+    "markdown": "# mcp-gatehouse\n\n<!-- mcp-name: io.github.nickgeorgeseo/gatehouse -->\n\n[![CI](https://github.com/nickgeorgeseo/mcp-gatehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/nickgeorgeseo/mcp-gatehouse/actions/workflows/ci.yml)\n[![PyPI](https://img.shields.io/pypi/v/mcp-gatehouse)](https://pypi.org/project/mcp-gatehouse/)\n[![Python](https://img.shields.io/pypi/pyversions/mcp-gatehouse)](https://pypi.org/project/mcp-gatehouse/)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)\n[![mcp-gatehouse MCP server](https://glama.ai/mcp/servers/nickgeorgeseo/mcp-gatehouse/badges/score.svg)](https://glama.ai/mcp/servers/nickgeorgeseo/mcp-gatehouse)\n\n**Permission tiers, approval gates, and audit logging for MCP servers.**\nThe server is the gatekeeper: you decide what an AI can read, what it can\nwrite, and what's off-limits — and every action gets logged.\n\nMost MCP servers hand the model every tool at full strength and keep no\nrecord of what it did. That's fine for a demo. It's not fine the day an\nagent has write access to your CRM, your books, or your order system.\n`mcp-gatehouse` is the missing gate, enforced **inside** the server — no\nproxy, no external policy service, no dependencies beyond the official\n[`mcp` SDK](https://github.com/modelcontextprotocol/python-sdk).\n\n```\npip install mcp-gatehouse\n```\n\n## What you get\n\n| | |\n|---|---|\n| **Permission tiers** | Every tool is declared `READ`, `WRITE`, or `DESTRUCTIVE` — and the tier also emits honest spec `ToolAnnotations` (`readOnlyHint` / `destructiveHint`), which the wrapper won't let you override to lie. |\n| **Approval gates** | Tiers you choose require a sign-off before the tool runs. Your approver is any callable — a terminal prompt, a Slack ping, a ticket. **Fails closed:** a gated tool with no approver configured is denied, not waved through. |\n| **Audit log** | Append-only JSONL, one line per call — allowed, denied, or failed — with UTC timestamps and durations. The answer to \"what did the AI actually do?\" six months later. |\n| **Redaction** | Argument keys you name (`api_key`, `password`, `token`, … by default) are masked before they reach the log *or* the approver. |\n| **Denylist** | Block a tool outright, whatever its tier. |\n\n## Quickstart\n\n```python\nfrom mcp.server.fastmcp import FastMCP\nfrom mcp_gatehouse import AccessTier, AuditLog, Gatehouse, Policy\n\nmcp = FastMCP(\"order-desk\")\ngatehouse = Gatehouse(\n    mcp,\n    policy=Policy(approver=lambda req: input(f\"allow {req.tool}? [y/N] \") == \"y\"),\n    audit=AuditLog(path=\"audit.jsonl\"),\n)\n\n@gatehouse.tool(tier=AccessTier.READ)\ndef lookup_order(order_id: str) -> str:\n    \"\"\"Look up an order's status.\"\"\"\n    ...\n\n@gatehouse.tool(tier=AccessTier.DESTRUCTIVE)\ndef cancel_order(order_id: str) -> str:\n    \"\"\"Cancel an order. Runs only if the approver says yes.\"\"\"\n    ...\n\nmcp.run()\n```\n\nThat's the whole integration: build your `FastMCP` server exactly as the\nSDK docs show, but register tools through the gatehouse. Schema generation,\ntransports, and everything else work unchanged — the guard preserves the\nfunction's signature.\n\nUnder the default policy, `DESTRUCTIVE` requires approval and everything\nis audited. Gate writes too with one line:\n\n```python\nPolicy(require_approval=frozenset({AccessTier.WRITE, AccessTier.DESTRUCTIVE}), ...)\n```\n\nWhat the audit trail looks like:\n\n```json\n{\"ts\": \"2026-07-16T14:02:11+00:00\", \"tool\": \"lookup_order\", \"tier\": \"read\", \"outcome\": \"ok\", \"arguments\": {\"order_id\": \"4417\"}, \"duration_ms\": 0.42}\n{\"ts\": \"2026-07-16T14:02:38+00:00\", \"tool\": \"add_note\", \"tier\": \"write\", \"outcome\": \"ok\", \"arguments\": {\"order_id\": \"4417\", \"note\": \"call back\", \"api_key\": \"«redacted»\"}, \"duration_ms\": 1.08}\n{\"ts\": \"2026-07-16T14:03:05+00:00\", \"tool\": \"cancel_order\", \"tier\": \"destructive\", \"outcome\": \"denied\", \"reason\": \"approver refused\", \"arguments\": {\"order_id\": \"4417\"}}\n```\n\n## Try the demo\n\nThe package ships a runnable order-desk server with all three tiers wired\nup and a terminal-prompt approver:\n\n```\nmcp-gatehouse-demo\n```\n\nPoint any MCP client at it over stdio (Claude Desktop, etc.), ask the model\nto cancel an order, and watch the approval land in your terminal — and the\nverdict land in `audit.jsonl` either way. `examples/orders_server.py` is\nthe same server as a copyable template.\n\n## Design notes\n\n- **Enforcement lives inside the server**, at the tool boundary. A proxy\n  can't see your tools' semantics, and a policy service is one more thing\n  to deploy. A 40-person plant doesn't have a platform team; this is a few\n  small classes and a JSONL file.\n- **Fail closed.** Security defaults that quietly allow are worse than none.\n  That includes redaction: argument values the scrubber can't take apart\n  (arbitrary objects, bytes) are replaced with an opaque placeholder rather\n  than passed through, and exception *messages* stay out of the log —\n  only the exception type is recorded, because error text loves to embed\n  the very values you just redacted.\n- **The audit log records denials and errors**, not just successes — the\n  calls that *didn't* happen are half the story.\n- **A blocking terminal approver and the stdio transport don't mix** —\n  stdout/stdin are the protocol pipe. The demo's approver prompts on\n  `/dev/tty` for exactly that reason (and denies when no terminal exists).\n  Real deployments should approve out-of-band: Slack, a ticket, a queue.\n- **What this is not:** authentication, transport encryption, or a sandbox.\n  It's a gate inside your server, not a perimeter around it. See\n  [SECURITY.md](SECURITY.md).\n\n## Compatibility\n\nTargets the official [`mcp` Python SDK](https://github.com/modelcontextprotocol/python-sdk)\nv1.x (`mcp>=1.27,<2`) and Python 3.10+. When SDK v2 ships for the\n2026-07-28 spec revision, a v2-compatible release will follow — the\npublic API here (`Gatehouse`, `Policy`, `AuditLog`, `AccessTier`) will\nnot change.\n\n## Who built this\n\n[Nick George](https://nickgeorgeai.com) — I design and run MCP servers in\nproduction for a mid-market reverse logistics-tech company, and build them\nfor businesses at [nickgeorgeai.com](https://nickgeorgeai.com). This\nlibrary is the permission-and-audit discipline from those builds, extracted.\n\nIf you're an owner or operator wondering what MCP even is, start with the\nplain-English guide: [What is an MCP server?](https://nickgeorgeai.com/mcp)\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:32:14.136Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:11:04.437Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

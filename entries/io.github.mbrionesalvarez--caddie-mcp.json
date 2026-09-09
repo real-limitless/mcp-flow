@@ -1,0 +1,59 @@
+{
+  "id": "io.github.mbrionesalvarez/caddie-mcp",
+  "title": "caddie-mcp",
+  "description": "Your Garmin golf data in Claude: GPS shots, strokes gained, club distances, health context",
+  "summary": "Your Garmin golf data in Claude: GPS shots, strokes gained, club distances, health context",
+  "offersHint": "Your Garmin golf data in Claude: GPS shots, strokes gained, club distances, health context · Packages: pypi:caddie-mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "caddie-mcp",
+    "version": "1.0.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "caddie-mcp",
+      "version": "1.0.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/mbrionesalvarez/caddie-mcp",
+  "sourceUrl": "https://github.com/mbrionesalvarez/caddie-mcp",
+  "repository": {
+    "url": "https://github.com/mbrionesalvarez/caddie-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T17:12:44.01434Z",
+  "publishedAt": "2026-08-11T17:12:44.01434Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:12.386Z",
+    "sourceRepoAt": "2026-08-11T23:35:08.958Z",
+    "readmeAt": "2026-08-11T23:35:09.502Z",
+    "toolsAt": "2026-08-12T01:14:12.386Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mbrionesalvarez/caddie-mcp",
+    "checkedAt": "2026-08-11T23:35:08.958Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mbrionesalvarez/caddie-mcp/master/README.md",
+    "markdown": "# Caddie\n\n**The AI caddie that has actually seen every shot you've hit.**\n\nCaddie is an MCP server that connects Claude (or any MCP-capable LLM) to your\nGarmin golf data — every round, every GPS shot, strokes gained, real club\ndistances, plays-like yardages, and the sleep/recovery context behind each\nscore. Ask anything: *\"why do I blow up on par 5s?\"*, *\"map my drives at my\nhome course\"*, *\"does bad sleep actually cost me strokes?\"*\n\n- **Local-first and private**: your data syncs once into a DuckDB file on\n  your machine; credentials and health data never leave it.\n- **Unofficial**: Caddie uses the same private API as the Garmin Connect\n  app (via [python-garminconnect](https://github.com/cyberjunky/python-garminconnect)).\n  It reads your own account only — and it can break whenever Garmin changes\n  things, until the ecosystem catches up. Know that going in.\n- **Support**: best-effort, issues and PRs welcome. By the maker of OneClub.\n\n## How it works\n\n```\nGarmin Connect  ──sync──►  local DuckDB cache  ──MCP tools──►  your LLM\n```\n\nYour data is synced once into a local database (`~/.caddiemcp/golf.duckdb`)\nand every question is answered from the cache — fast, private, and kind to\nGarmin's servers. Credentials never leave your machine.\n\n## Setup\n\n**From source** (this directory):\n\n```bash\npython3 -m venv .venv && .venv/bin/pip install -e .\n.venv/bin/caddie-mcp login              # one-time; MFA supported\n.venv/bin/caddie-mcp sync --max-rounds 50\n```\n\nPrefer a browser to a terminal? `caddie-mcp login --web` opens a local\npage (127.0.0.1 only) with proper email/password/MFA fields — same token\nstore, friendlier surface.\n\n**From the built wheel** (no checkout needed — `dist/` ships both):\n\n```bash\npipx install ./dist/caddie_mcp-1.0.0-py3-none-any.whl   # or pip install\ncaddie-mcp login && caddie-mcp sync\n```\n\nOnce published to PyPI, this becomes `uvx caddie-mcp` / `pipx install caddie-mcp`.\n\n### Claude Desktop / Claude Code\n\nAdd to `claude_desktop_config.json` (or `.mcp.json` for Claude Code):\n\n```json\n{\n  \"mcpServers\": {\n    \"caddie-mcp\": {\n      \"command\": \"/ABSOLUTE/PATH/TO/caddie-mcp\",\n      \"args\": [\"serve\"]\n    }\n  }\n}\n```\n\nUse `which caddie-mcp` (pipx) or `/path/to/caddie-mcp/.venv/bin/caddie-mcp`\n(source install) for the command path. This repo's `.mcp.json` already wires\nit up for Claude Code sessions started in this folder.\n\n### Remote server (multi-user, HTTP)\n\nThe same server runs over streamable-HTTP with bearer-token auth and full\nper-user isolation — each user gets their own database and Garmin token\nstore under `~/.caddiemcp/users/<name>/` (or `$CADDIEMCP_HOME`).\n\n```bash\ncaddie-mcp user add marcos          # prints the access token (shown once)\ncaddie-mcp serve-http --host 0.0.0.0 --port 8724\n```\n\nUsers link their own Garmin account in a browser — no admin terminal\nneeded: send them `https://your-host/garmin/login`, where they enter their\naccess token plus Garmin credentials (two-step MFA supported); tokens land\nin their private server directory. Admin-assisted\n`caddie-mcp user login <name>` still works as a fallback.\n\nClients connect to `http://host:8724/mcp` with header\n`Authorization: Bearer <token>` — e.g. for Claude Code:\n\n```bash\nclaude mcp add --transport http golf http://host:8724/mcp \\\n  --header \"Authorization: Bearer <token>\"\n```\n\nDocker:\n\n```bash\npython -m build                     # wheel must exist in dist/\ndocker build -t caddie-mcp .\ndocker run -d -v caddie_data:/data -p 8724:8724 caddie-mcp\ndocker exec -it <container> caddie-mcp user add marcos\ndocker exec -it <container> caddie-mcp user login marcos\n```\n\nSecurity notes: tokens are 256-bit secrets stored only as SHA-256 hashes and\ncompared in constant time; rotate with `caddie-mcp user rotate-token <name>`.\nRun behind TLS (Caddy/nginx/Cloudflare Tunnel) — tokens travel in headers.\n`--no-auth` mode exists for localhost-only single-user use and refuses to\nbind to non-loopback addresses. `/health` is the only unauthenticated route.\nThe `/data` volume contains Garmin credentials — treat backups accordingly.\n\n### claude.ai custom connectors (OAuth)\n\nclaude.ai connects to remote MCP servers via OAuth (dynamic client\nregistration + PKCE), not bearer headers. Enable it with:\n\n```bash\ncaddie-mcp serve-http --host 0.0.0.0 --oauth \\\n  --public-url https://golf.example.com\n```\n\nThen add `https://golf.example.com/mcp` as a custom connector in claude.ai.\nOn first connect the user lands on a consent page and pastes their\ncaddie-mcp access token once; after that, OAuth tokens (1 h access +\nrotating refresh, stored hashed) keep the connection alive, scoped to that\nuser's data. Static bearer tokens keep working alongside OAuth. A real\ndomain with TLS is required — claude.ai will not talk to plain HTTP.\n\n### Background sync\n\nIn server mode, keep every linked user fresh automatically:\n\n```bash\ncaddie-mcp serve-http --host 0.0.0.0 --sync-every 6h\n```\n\nUsers are synced sequentially (incremental, with jitter and per-user error\nisolation) so the Garmin API never sees a thundering herd.\n\n### Claude Desktop Extension\n\n`python scripts/build_mcpb.py` produces `dist/caddie-mcp.mcpb` — a\ndouble-click install bundle for Claude Desktop that launches the published\npackage via `uvx`. Requires [uv](https://docs.astral.sh/uv/) on the machine\nand the package on PyPI; the one-time `uvx caddie-mcp login` still happens\nin a terminal (credentials never pass through the desktop app).\n\n### Publishing to PyPI (maintainer)\n\n```bash\n.venv/bin/python -m build          # sdist + wheel into dist/\npipx run twine upload dist/*       # needs a PyPI API token\n```\n\n### Data quality & repair\n\n`caddie-mcp repair` re-derives every computed field across the cache with no\nGarmin calls (club names, lie/shot-type normalization, GPS-to-pin distances,\nGIR/fairway inference). It runs automatically at the end of every sync, so\nyou only need it manually after upgrading the connector.\n\nKnown Garmin quirks handled: watches report `TEEBOX`/`TEE`/`UNKNOWN` enums;\nputts are often a per-hole count with no green shots; the end position of\ngreen-reaching shots is snapped to the pin (so post-shot proximity on green\nhits is honestly NULL, and strokes-gained putting uses a flagged estimate).\n\n## Tools\n\n| Tool | What it answers |\n|---|---|\n| `garmin_status` | Am I connected? How much is cached vs still on Garmin? |\n| `sync_garmin_data` | Pull rounds/shots/clubs from Garmin — chunked (25/call, reports `rounds_remaining`) so full multi-year histories load safely from chat |\n| `list_rounds` | \"Show my recent rounds\" — compact summaries |\n| `get_round` | One round in depth: scorecard, holes, shots |\n| `get_shots` | Shot-level GPS/club/lie data; `format=\"geojson\"` for maps |\n| `get_club_stats` | Real measured distances per club vs Garmin's estimates |\n| `get_strokes_gained` | Broadie strokes gained per round: off-tee / approach / short game / putting, vs your handicap level or scratch |\n| `get_performance_stats` | ~40 PGA-style stats (driving, GIR by distance, scrambling, putting, scoring) with optional handicap benchmarks |\n| `get_handicap` | WHS-style index, counting differentials, and trend |\n| `get_course_intel` | Per-hole difficulty and usual tee club at one course |\n| `get_health_context` | Sleep, HRV, Body Battery, readiness, and stress for a round's date |\n| `correlate_health_performance` | \"Do I score worse on bad sleep?\" — paired data + honest correlation |\n| `query_golf_data` | Any question, as read-only SQL over the cache |\n\nSync also fills `daily_health` (4 extra Garmin calls per round date):\nsleep score/duration, resting HR, HRV status, Body Battery range, training\nreadiness, stress, steps — **plus round-window enrichment** on each round:\nBody Battery at tee time and drain during play, average/max heart rate and\nstress *during the round*, and the round's weather (temperature, wind,\nhumidity, conditions) via its matched Garmin activity.\n\nWhen Garmin sends no dispersion data, shot miss offsets (dx/dy) are derived\nfrom GPS geometry: drives laterally vs the tee→pin line, approaches/chips\nrelative to the pin — powering miss-direction and miss-tendency stats on any\nwatch with shot GPS.\n\nEvery shot also gets **plays-like distance**: terrain elevations for shot\nand pin positions come from the free Open-Meteo elevation API (cached\nforever in the local DB), and `plays_like_yds` applies the standard 1:1\nuphill/downhill heuristic — so \"my 150-yd shots\" can be analyzed by what\nthey actually played as.\n\n**Prompts** (packaged workflows): `post_round_report`, `practice_plan`,\n`course_strategy`, `health_check_in`, `season_review`.\n\nResources: `schema://data-dictionary` (columns, units, enums),\n`docs://metric-definitions` (how every stat is computed), and\n`docs://getting-started` (recommended tool flow).\n\n## Conventions\n\n- Distances in **yards**, coordinates in **decimal degrees**, times in ISO 8601.\n- Lies: `tee | fairway | rough | sand | green | recovery | penalty`.\n- Shot types: `drive | approach | chip | putt | penalty`.\n- Unknown values are `NULL`, never fabricated — the last shot of a hole has no\n  measured end-distance, and tools say so.\n\n## Security notes\n\n- Garmin tokens live at `~/.garminconnect` (mode 0600) — treat like a password.\n- The SQL tool is read-only, single-statement, SELECT-only, and capped.\n- This is an unofficial connector for **your own** Garmin data.\n\n## Development\n\n```bash\n.venv/bin/python -m pytest tests/ -q\n```\n\n---\n\n`mcp-name: io.github.mbrionesalvarez/caddie-mcp`\n",
+    "fetchedAt": "2026-08-11T23:35:09.502Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:12.386Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

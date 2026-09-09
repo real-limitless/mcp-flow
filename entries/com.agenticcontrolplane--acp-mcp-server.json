@@ -1,0 +1,52 @@
+{
+  "id": "com.agenticcontrolplane/acp-mcp-server",
+  "title": "acp-mcp-server",
+  "description": "See, price, and control every tool call your AI agents make: policy checks, cost, and audit tools.",
+  "summary": "See, price, and control every tool call your AI agents make: policy checks, cost, and audit tools.",
+  "offersHint": "See, price, and control every tool call your AI agents make: policy checks, cost, and audit tools. · Remote MCP (streamable-http) at https://api.agenticcontrolplane.com/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.agenticcontrolplane.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.agenticcontrolplane.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://agenticcontrolplane.com",
+  "sourceUrl": "https://github.com/davidcrowe/acp-mcp-server",
+  "repository": {
+    "url": "https://github.com/davidcrowe/acp-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-28T17:25:19.52171Z",
+  "publishedAt": "2026-07-28T17:25:19.52171Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:16.440Z",
+    "sourceRepoAt": "2026-08-12T00:39:16.440Z",
+    "readmeAt": "2026-08-12T00:39:17.018Z",
+    "toolsAt": "2026-08-12T00:39:17.268Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/davidcrowe/acp-mcp-server",
+    "checkedAt": "2026-08-12T00:39:16.440Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/davidcrowe/acp-mcp-server/main/README.md",
+    "markdown": "# ACP Governance MCP Server\n\n> Model Context Protocol server that lets Claude, ChatGPT, Cursor, Lovable, and any MCP client check tool calls against [Agentic Control Plane](https://agenticcontrolplane.com) governance — policy decisions, rate limits, audit logs, identity attribution.\n\n**One sentence:** before your AI agent runs a sensitive tool, it asks ACP whether the call is allowed. ACP says yes, no, or asks for confirmation, and writes an audit row attributable to the human behind the agent.\n\n## What it exposes\n\nTwo tools, callable via MCP:\n\n| Tool | What it does |\n|---|---|\n| `acp_check` | Ask ACP whether a tool call should be allowed. Returns `allow` / `deny` / `ask` plus a reason. |\n| `acp_status` | Verify the connection and your workspace identity. |\n\nThat's the whole surface. Everything else — policies, audit logs, scope intersection, delegation chains — runs server-side at `api.agenticcontrolplane.com`. This MCP server is just the bridge.\n\n## Install (hosted — recommended)\n\nThe server is hosted at **`https://mcp.agenticcontrolplane.com/mcp`**. Add it as a connector in your MCP client:\n\n**Claude Desktop / Claude.ai connector:**\n```\nURL: https://mcp.agenticcontrolplane.com/mcp\nAuth: OAuth (sign in with Google through ACP)\n```\n\n**ChatGPT, Cursor, Lovable, Cline:**\nSame URL, same OAuth flow. Most clients have a one-click \"Add MCP Server\" UI.\n\n**Programmatic clients** (your own agent code):\n```http\nPOST https://mcp.agenticcontrolplane.com/mcp\nAuthorization: Bearer gsk_<your-acp-api-key>\nContent-Type: application/json\n```\n\nYou'll need an ACP workspace. The free tier is unlimited tool-call logging — sign up at [cloud.agenticcontrolplane.com/login](https://cloud.agenticcontrolplane.com/login).\n\n## Install (self-host)\n\nIf you want to run the bridge yourself — for air-gapped deployments, or to point at a self-hosted ACP gateway — clone and run:\n\n```bash\ngit clone https://github.com/davidcrowe/acp-mcp-server\ncd acp-mcp-server\nnpm install\nnpm run build\n\n# Point at the ACP API (default: https://api.agenticcontrolplane.com)\nexport ACP_API_BASE=https://your-acp-gateway.example.com\n\n# Optional: service-level API key for OAuth users (ChatGPT, Claude.ai)\n# whose JWTs aren't directly usable as ACP tokens\nexport ACP_SERVICE_KEY=gsk_workspace_...\n\nnpm start\n# → MCP endpoint: POST http://0.0.0.0:3000/mcp\n# → OAuth discovery: GET /.well-known/oauth-protected-resource\n```\n\nThe bridge speaks streamable-HTTP MCP and proxies to ACP's `/govern/tool-use` endpoint.\n\n## How it fits\n\n```\nyour AI client            this MCP server          ACP gateway\n─────────────            ─────────────────         ───────────\nClaude / ChatGPT  ──►  mcp.agenticcontrolplane  ──►  api.agenticcontrolplane\nCursor / Lovable    POST /mcp (acp_check)         POST /govern/tool-use\n                                                      ↓\n                                                   policy + audit + identity\n                                                      ↓\n                                                   allow / deny / ask\n```\n\nEvery call writes an audit row attributable to the human identity behind the OAuth session — so you get a complete log of every governed tool call across every MCP client your team uses, in one workspace.\n\n## Auth model\n\nThe server supports two authentication paths:\n\n1. **OAuth (recommended for human-driven clients)** — Claude.ai, ChatGPT, etc. complete an OAuth flow against ACP's identity provider; the resulting Auth0 JWT identifies the human. The bridge uses an `ACP_SERVICE_KEY` to authorize the underlying governance call on the human's behalf.\n2. **Bearer `gsk_` API key (recommended for programmatic clients)** — pass an ACP API key directly as `Authorization: Bearer gsk_...`. The key's identity is the ACP-side actor. Skip OAuth.\n\nOAuth discovery metadata is served at `/.well-known/oauth-protected-resource` per the MCP authorization spec.\n\n## Local development\n\n```bash\nnpm install\nnpm run dev        # tsx-based hot reload\n```\n\nTools are defined in `src/tools/tools.ts`. The MCP JSON-RPC handler is in `src/handlers/mcpHandler.ts`. The Express entry point and rate limits are in `src/server/expressServer.ts`.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n\n## Links\n\n- [ACP — full product](https://agenticcontrolplane.com)\n- [Sign up (free tier)](https://cloud.agenticcontrolplane.com/login)\n- [Governance benchmark](https://github.com/agentic-control-plane/agentgovbench)\n- [Issues / questions](https://github.com/davidcrowe/acp-mcp-server/issues)\n",
+    "fetchedAt": "2026-08-12T00:39:17.018Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:39:17.268Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"Missing Authorization header\"}",
+  "toolsPreviewStatus": "auth_required"
+}

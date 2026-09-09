@@ -1,0 +1,58 @@
+{
+  "id": "io.github.wesseltl/data-cleaner-agent",
+  "title": "data-cleaner-agent",
+  "description": "Clean messy CSVs: an LLM picks the steps, tested code does the work. Data untouched by the model.",
+  "summary": "Clean messy CSVs: an LLM picks the steps, tested code does the work. Data untouched by the model.",
+  "offersHint": "Clean messy CSVs: an LLM picks the steps, tested code does the work. Data untouched by the model. · Packages: pypi:agentic-csv-cleaner",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "agentic-csv-cleaner",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "agentic-csv-cleaner",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/wesseltl/data-cleaner-agent",
+  "repository": {
+    "url": "https://github.com/wesseltl/data-cleaner-agent",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T21:35:58.308963Z",
+  "publishedAt": "2026-08-09T21:35:58.308963Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:11.349Z",
+    "sourceRepoAt": "2026-08-11T23:15:11.049Z",
+    "readmeAt": "2026-08-11T23:15:11.568Z",
+    "toolsAt": "2026-08-12T00:56:11.349Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/wesseltl/data-cleaner-agent",
+    "checkedAt": "2026-08-11T23:15:11.049Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/wesseltl/data-cleaner-agent/master/README.md",
+    "markdown": "<!-- mcp-name: io.github.wesseltl/data-cleaner-agent -->\n\n# data-cleaner-agent\n\nClean a messy CSV with an agentic workflow. An LLM decides *which* cleaning steps the data needs, and\ntested Python functions do the actual work. **The model plans the cleanup, it never touches your data\nvalues**, so nothing gets hallucinated or silently rewritten.\n\nWorks offline out of the box (no API key). Can be driven by an LLM, and other AI agents can call it as\nan [MCP](https://modelcontextprotocol.io) tool.\n\n## Before / after\n\n```\nFull Name , Country, Signup Date, Amount Paid          full_name    country  signup_date  amount_paid\n Alice  ,Netherlands,2023-01-05,\"€1.200,50\"                Alice  Netherlands   2023-01-05       1200.5\nBob,nederland,05/01/2023,\"$900\"              ─────▶          Bob  Netherlands   2023-01-05        900.0\n Alice  ,NL,2023-01-05,\"€1.200,50\"                         Carol      Germany   2023-02-10       1000.0\nCarol , Germany ,2023-02-10,1000                             Dan      Belgium   2023-03-01        750.0\nDan,belgie,2023/03/01,\"€ 750,00\"\n```\n\nIn one pass it fixed the headers, trimmed whitespace, parsed three different date formats to ISO,\nturned `€1.200,50` / `$900` / `€ 750,00` into numbers, standardized the country names, and dropped the\nduplicate Alice row.\n\n## Install & run\n\n```bash\npip install agentic-csv-cleaner\n\nclean-csv messy.csv cleaned.csv       # clean a file\nclean-csv messy.csv                   # or just print the result\n```\n\nNo API key needed. The default planner is a set of offline heuristics.\n\n## The idea\n\nAn \"agentic workflow\" is just software with a few parts:\n\n```\n   look at the data   ->   planner picks the steps   ->   run the steps   ->   report\n                           (rules, or an LLM)             (tested code)\n```\n\nThe decision that makes it safe to trust:\n\n> **The planner decides *which* tool runs on *which* column. The tools do the transformation.**\n> A language model is good at judgment (\"this column looks like money\") and bad at being a reliable\n> calculator. So the LLM only ever *picks* operations from a fixed set. It never reads a value and\n> writes back a \"cleaned\" one, which is where LLM data-cleaning usually goes wrong.\n\n## Two planners, one loop\n\n| Planner | What it is | Needs |\n|---|---|---|\n| `RuleBasedPlanner` | Offline heuristics from a quick data profile. The default. | nothing |\n| `LLMPlanner` | Sends the profile + tool list to an LLM, gets back a JSON plan. | `pip install \"agentic-csv-cleaner[llm]\"` + `ANTHROPIC_API_KEY` |\n\nBoth return the same list of steps, so the loop is identical. You swap the brain, not the plumbing.\n\nThe log reports what each step actually did, including where a conversion could not produce a clean\nresult (unparseable numbers/dates, unmapped categories), so a clean parse is distinguishable from a\nconfident guess.\n\n## Use it from other code or agents\n\n```python\nfrom cleaner.api import clean_csv_text\n\nresult = clean_csv_text(open(\"messy.csv\").read())\nprint(result[\"cleaned_csv\"])\nprint(result[\"steps\"])\n```\n\n### As an MCP tool (Claude Desktop)\n\nOther AI agents can call the cleaner as a tool, so they clean a CSV properly instead of reformatting it\ntoken by token in the prompt. Three steps:\n\n**1. Install it**\n\n```bash\npip install \"agentic-csv-cleaner[mcp]\"\n```\n\n**2. Add it to your client's config** (Claude Desktop's config lives at\n`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, or\n`%APPDATA%\\Claude\\claude_desktop_config.json` on Windows):\n\n```json\n{\n  \"mcpServers\": {\n    \"csv-cleaner\": { \"command\": \"python\", \"args\": [\"-m\", \"cleaner.mcp_server\"] }\n  }\n}\n```\n\n**3. Restart Claude Desktop.** The agent now has a `clean_csv` tool that takes CSV text and returns the\ncleaned CSV plus a report of what it did.\n\n### Use it with other MCP clients\n\nThe same server works in any MCP client, only the config differs. The command is\n`python -m cleaner.mcp_server`.\n\n**Cursor** — `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (per project), hot-reloads:\n\n```json\n{ \"mcpServers\": { \"csv-cleaner\": { \"command\": \"python\", \"args\": [\"-m\", \"cleaner.mcp_server\"] } } }\n```\n\n**VS Code / GitHub Copilot** — `.vscode/mcp.json`. Note the different key (`servers`, not `mcpServers`)\nand the required `type`. Tools only run in Copilot **Agent mode**:\n\n```json\n{ \"servers\": { \"csv-cleaner\": { \"type\": \"stdio\", \"command\": \"python\", \"args\": [\"-m\", \"cleaner.mcp_server\"] } } }\n```\n\n**Windsurf** — `~/.codeium/windsurf/mcp_config.json` (create it if missing):\n\n```json\n{ \"mcpServers\": { \"csv-cleaner\": { \"command\": \"python\", \"args\": [\"-m\", \"cleaner.mcp_server\"] } } }\n```\n\n**Cline** — add it from the extension's MCP settings panel in VS Code.\n\n## Understanding the report\n\nThe tool doesn't just hand back tidy data, it tells you what each step actually did, including where it\ncouldn't get a clean result, so you can tell a clean parse from a confident guess:\n\n```\n- coerce_numeric(amount): all 4 value(s) parsed cleanly\n- standardize_dates(signup): 1/3 value(s) could not be parsed, set to null\n- standardize_categorical(country): 1 value(s) not in the mapping, left unchanged: ['MARS']\n```\n\nSo instead of silently dropping a value or leaving a wrong category, it surfaces it, and you know\nexactly which cells to double-check.\n\n## What's in the box\n\n`cleaner/tools.py` holds the transformations: `snake_case_headers`, `strip_whitespace`,\n`coerce_numeric`, `standardize_dates`, `standardize_categorical`, `drop_duplicate_rows`.\n\nTake `standardize_dates`. `2023-01-05` (year first, month in the middle) and `05/01/2023` (day first)\nneed opposite parsing rules, and one global setting corrupts one or the other, so the tool decides per\nvalue. Mixed dates are genuinely ambiguous, and this handles them explicitly instead of guessing.\n\n## Tests\n\n```bash\npython -m unittest discover -s tests\n```\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:15:11.568Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:11.349Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.aide-memory/aide-memory",
+  "title": "aide-memory",
+  "description": "Persistent memory layer for AI coding agents — your agent remembers what you taught it.",
+  "summary": "Persistent memory layer for AI coding agents — your agent remembers what you taught it.",
+  "offersHint": "Persistent memory layer for AI coding agents — your agent remembers what you taught it. · Packages: npm:aide-memory",
+  "version": "0.6.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "aide-memory",
+    "version": "0.6.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "aide-memory",
+      "version": "0.6.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/aide-memory/aide-memory",
+  "repository": {
+    "url": "https://github.com/aide-memory/aide-memory",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-22T23:21:32.550502Z",
+  "publishedAt": "2026-06-22T23:21:32.550502Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:33.958Z",
+    "sourceRepoAt": "2026-08-11T23:58:14.265Z",
+    "readmeAt": "2026-08-11T23:58:14.804Z",
+    "toolsAt": "2026-08-12T01:31:33.958Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aide-memory/aide-memory",
+    "checkedAt": "2026-08-11T23:58:14.265Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aide-memory/aide-memory/main/README.md",
+    "markdown": "# aide-memory\n\n**Auto-captured, auto-recalled, path-scoped memory for AI coding agents and teams.**\n\n**Website:** https://aide-memory.dev\n\n**Docs:** https://aide-memory.dev/docs\n\n**Install:** `npm install -g aide-memory && aide-memory init`\n\n---\n\n## The problem\n\nCoding with agents has made developers significantly more productive. But it's created a new kind of friction.\n\nYou explain how the feature you're building ties into the rest of the system, the way you like to structure your code, the patterns to follow in this area. The agent gets it. You ship great work together. Next session, it's a blank slate. You re-explain the same things.\n\nCritical decisions being made during conversations aren't being captured. Preferences, corrections, area knowledge, guidelines. So much valuable context doesn't persist, doesn't flow to the next session, to a different tool, or to a teammate's agent when they pick up work in the same area.\n\nRules files (CLAUDE.md, .cursorrules) help, but they have real limits:\n\n- **No unified convention or structure.** A team guideline, a personal preference, an area decision, and a stack fact all blur into one file. The whole file gets injected on every turn, even when most of it might not be relevant to the area the agent is working in.\n- **Corrections don't make it back.** What you teach the agent in conversation doesn't make it back into the rules file on its own.\n- **Tool-specific.** What you teach your agent in Claude Code doesn't carry to Cursor unless you copy the file over manually.\n- **Unscoped recall.** The whole file lands in context, or nothing does. There's no prompt for the agent to pull a relevant subset based on the file it just opened.\n\naide-memory fills these gaps. It sits alongside your rules files, not above or below. Rules files for static, always-on guidance. aide-memory for the dynamic, scoped knowledge that grows with the codebase.\n\n---\n\n## How it works\n\n### Capture happens automatically\n\nSix hooks fire across the session lifecycle, installed by `aide-memory init`:\n\n- **UserPromptSubmit**: detects corrections (\"no, use X instead\") and prompts the agent to store them scoped to the code area\n- **Stop**: periodic reflection (\"anything worth remembering?\") on a tunable schedule picks up decisions and findings\n- **SessionStart**: injects top preferences, guidelines, and priority-always memories so the agent starts with context\n- **PreToolUse**: before the agent reads or edits a file, checks if relevant memories exist for that path and prompts recall\n- **PostToolUse**: records what was recalled so re-reads don't re-prompt\n- **PreCompact**: clears session tracking before context compaction so post-compact reads re-prompt cleanly\n\n### Recall is scoped\n\nMemories attach to code areas via glob scopes (`src/components/dashboard/**`, `packages/api/**`). When the agent opens a file, aide-memory matches the path against stored scopes and surfaces what's relevant to that area.\n\nFour layers organize the knowledge:\n\n| Layer | What it captures | Example |\n|---|---|---|\n| **preferences** | How a contributor likes to work | \"Prefer modular component structure, separate concerns into smaller files\" |\n| **technical** | Facts not obvious from code | \"Dashboard data fetching uses React Query with stale-while-revalidate\" |\n| **area_context** | Decisions tied to code areas | \"Settings panel uses progressive disclosure; new sections follow the expand/collapse pattern\" |\n| **guidelines** | Team-wide principles | \"Mock external calls at the network boundary in tests, not at the function boundary\" |\n\nRecall ranks `area_context` first (most specific), then `technical`, then `preferences`, then `guidelines`. Scoped memories rank above project-wide ones.\n\n### Git-synced for teams\n\nMemories are JSON files under `.aide/memories/`. Commit, push, pull. A `post-checkout` git hook rebuilds the local cache after `git pull` so your teammate's agent picks up your context on their next file read. Personal preferences (`preferences/personal/`) are gitignored. Team conventions travel with the repo.\n\n### Cross-tool\n\nClaude Code and Cursor read the same `.aide/memories/` directory. A memory captured in one tool is available in the other. Codex, Copilot, and Windsurf get a rules template at launch; deeper integration may come based on user feedback.\n\n---\n\n## Quick start\n\n```bash\n# 1. Install and initialize\nnpm install -g aide-memory\naide-memory init\n\n# 2. Restart your editor so the MCP server registers\n#    Claude Code: start a fresh session\n#    Cursor: Cmd+Q, reopen, enable in Settings > MCP\n\n# 3. Store a memory\naide-memory remember \"Dashboard uses skeleton loading, not spinners\" \\\n  --layer area_context --scope \"src/components/dashboard/**\"\n\n# 4. Recall context for a path\naide-memory recall src/components/dashboard/\n\n# 5. Share with your team\ngit add .aide/memories/\ngit commit -m \"Capture dashboard conventions\"\ngit push\n```\n\nFull walkthrough: https://aide-memory.dev/docs/quick-start\n\n---\n\n## What's in the box\n\n- **7 MCP tools**: `aide_recall`, `aide_remember`, `aide_update`, `aide_forget`, `aide_search`, `aide_memories`, `aide_import`\n- **13 CLI commands**: `init`, `recall`, `remember`, `update`, `forget`, `search`, `list`, `stats`, `recall-log`, `config`, `sync`, `migrate`, `cleanup`\n- **6 hooks** wired into the editor at `init`\n- **4 typed memory layers** with personal/shared split for preferences\n- **FTS5 keyword search** plus optional semantic search via Transformers.js or Ollama\n\n---\n\n## Tunable\n\naide-memory ships with defaults you can adjust:\n\n- How often the agent gets prompted to reflect and store context\n- How specific a scope needs to be before a memory surfaces per-file vs session-start-only\n- How much context gets injected at session start\n- Which hooks are active (disable per-file blocking, turn off correction detection)\n- Personal vs shared preferences (gitignored or committed, configurable per-project)\n\n`aide-memory init` seeds `.aide/config.json` with all public settings. Full reference: https://aide-memory.dev/docs/configuration\n\n---\n\n## Privacy\n\nMemory content stays on your machine. Anonymized usage counts (event type, hashed machine ID, platform, Node version) ship to PostHog by default so we can see which features are used. Disable with `AIDE_TELEMETRY=off`.\n\n---\n\n## Editor support\n\n| Editor | Status |\n|---|---|\n| **Claude Code** | Reference adapter. Start a fresh session after `init` so the MCP server registers. |\n| **Cursor** | Full hook + MCP wiring. Cmd+Q and reopen after `init`, then toggle aide-memory ON in Settings > MCP. |\n| **Windsurf, Codex, Copilot** | Rules template at launch. Deeper integration may come based on user feedback. |\n\nPer-editor details: https://aide-memory.dev/docs/supported-editors\n\n---\n\n## Requirements\n\n- **Node.js 18 or later**\n- **npm or npx**\n\nNo Docker. No external databases. No API keys. No cloud accounts.\n\n---\n\n## License\n\nFree to use. See [LICENSE](LICENSE) for terms.\n\n---\n\n## Documentation\n\nFull docs: **https://aide-memory.dev**\n\n- [Quick Start](https://aide-memory.dev/docs/quick-start)\n- [Concepts](https://aide-memory.dev/docs/concepts)\n- [Configuration](https://aide-memory.dev/docs/configuration)\n- [Reference](https://aide-memory.dev/docs/reference)\n- [Hooks](https://aide-memory.dev/docs/hooks)\n- [Supported Editors](https://aide-memory.dev/docs/supported-editors)\n- [Comparison](https://aide-memory.dev/docs/comparison)\n- [FAQ](https://aide-memory.dev/docs/faq)\n",
+    "fetchedAt": "2026-08-11T23:58:14.804Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:31:33.958Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

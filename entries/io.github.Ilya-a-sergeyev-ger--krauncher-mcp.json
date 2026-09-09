@@ -1,0 +1,79 @@
+{
+  "id": "io.github.Ilya-a-sergeyev-ger/krauncher-mcp",
+  "title": "Krauncher analyzer",
+  "description": "How long a GPU job will run and cost, before running it — static code analysis, never executed.",
+  "summary": "How long a GPU job will run and cost, before running it — static code analysis, never executed.",
+  "offersHint": "How long a GPU job will run and cost, before running it — static code analysis, never executed. · Packages: pypi:krauncher-mcp · Env vars: KRAUNCHER_API_KEY",
+  "version": "0.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "krauncher-mcp",
+    "version": "0.4.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "KRAUNCHER_API_KEY",
+        "description": "Optional Krauncher API key (get one at https://krauncher.com). Without it the server calls the public analyzer keyless, under a per-IP daily quota; with it, your keyed account is used and the quota is skipped.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "krauncher-mcp",
+      "version": "0.4.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "KRAUNCHER_API_KEY",
+          "description": "Optional Krauncher API key (get one at https://krauncher.com). Without it the server calls the public analyzer keyless, under a per-IP daily quota; with it, your keyed account is used and the quota is skipped.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "KRAUNCHER_API_KEY",
+      "description": "Optional Krauncher API key (get one at https://krauncher.com). Without it the server calls the public analyzer keyless, under a per-IP daily quota; with it, your keyed account is used and the quota is skipped.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Ilya-a-sergeyev-ger/krauncher",
+  "repository": {
+    "url": "https://github.com/Ilya-a-sergeyev-ger/krauncher",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T19:50:17.269489Z",
+  "publishedAt": "2026-08-11T19:50:17.269489Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:40:48.191Z",
+    "sourceRepoAt": "2026-08-12T00:10:11.348Z",
+    "readmeAt": "2026-08-12T00:10:12.077Z",
+    "toolsAt": "2026-08-12T01:40:48.191Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Ilya-a-sergeyev-ger/krauncher",
+    "checkedAt": "2026-08-12T00:10:11.348Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Ilya-a-sergeyev-ger/krauncher/main/README.md",
+    "markdown": "# Krauncher\n\n**Run your training script on a remote GPU. Nothing more.**\n\nKrauncher is a minimal Python library for researchers who have a working\nlocal script and need a GPU — not a platform.\n\nWebsite & API keys: **[krauncher.com](https://krauncher.com)**\n\n---\n\n## Quickstart\n\n```bash\npip install krauncher\nexport CAS_API_KEY=\"cas_...\"        # krauncher.com → Account → API Keys\n```\n\nRequires Python 3.11+.\n\n```python\nimport asyncio\nfrom krauncher import KrauncherClient\n\nclient = KrauncherClient()           # reads CAS_API_KEY / CAS_BROKER_URL from env or .env\n\n@client.task(vram_gb=1, timeout=120)\ndef multiply(size: int):\n    import numpy as np               # imports go INSIDE the function\n    a, b = np.random.rand(size, size), np.random.rand(size, size)\n    return {\"mean\": float((a @ b).mean())}\n\nasync def main():\n    handle = await multiply(size=1000)   # submit → TaskHandle\n    print(\"task:\", handle.task_id)\n    result = await handle                # await the handle → TaskResult\n    print(\"output:\", result.output)\n    print(\"gpu:\", result.actual_gpu, \"·\", f\"{result.execution_time_sec:.1f}s\")\n\nasyncio.run(main())\n```\n\nThe decorated function becomes **async**: calling it submits the task and\nreturns a `TaskHandle`; awaiting the handle (or `await handle.wait(...)`)\nreturns a `TaskResult`.\n\n> **Using an LLM / coding agent?** Read **[AGENTS.md](AGENTS.md)** — a single\n> accurate reference of the API, parameters, result fields, errors and\n> constraints. Runnable examples live in **[tutorial/](tutorial/)**.\n\n---\n\n## The problem with serverless ML platforms\n\nServerless orchestration platforms are genuinely impressive pieces of\ninfrastructure. They handle container builds, secret management, artifact\nstorage, scheduling, persistent volumes, and team dashboards.\n\nThey also charge you for all of it — whether you use it or not.\n\nIf you're fine-tuning a small model, running ablations, or iterating on\na research experiment with a dataset under 2 GB, you're likely paying for\nan orchestration layer you don't need.\n\nKrauncher does less, on purpose. It runs your existing Python function on\na remote GPU, returns the result, and gets out of the way.\n\n---\n\n## What Krauncher is (and isn't)\n\n**Good fit:**\n- Fine-tuning, LoRA, small-scale experiments with training datasets up to ~2 GB\n- Researchers who already have a working local script\n- Anyone tired of rewriting their code to fit a platform's abstractions\n- Teams where \"infrastructure\" means one person and a credit card\n\n**Not the right tool if:**\n- You need managed versioned artifact storage\n- Your team requires persistent shared volumes across runs\n- Your dataset is hundreds of GBs with complex multi-node sharding\n- You want a UI dashboard for experiment tracking\n\n---\n\n## How it works\n\nAdd a decorator. Await your function. Get a result. Your existing code\ndoesn't change — no base images, no volume mounts, no platform imports.\n\n```python\nimport asyncio\nfrom krauncher import KrauncherClient\n\nclient = KrauncherClient()\n\n@client.task(gpu_name=\"RTX4090\", group_id=\"mistral-run\", timeout=3600)\ndef finetune():\n    from transformers import AutoModelForCausalLM, Trainer, TrainingArguments\n    from datasets import load_dataset\n\n    # Weights download to worker storage on first run (~15 GB for 7B);\n    # later runs in the same group_id reuse the cached weights.\n    model = AutoModelForCausalLM.from_pretrained(\"mistralai/Mistral-7B-v0.1\")\n    dataset = load_dataset(\"tatsu-lab/alpaca\", split=\"train[:2000]\")\n\n    # ... your training logic, unchanged from local ...\n\n    model.save_pretrained(\"/tmp/output\")\n    # Worker storage is ephemeral — sync checkpoints out before returning.\n    upload_to_s3(\"/tmp/output\", \"my-checkpoints/run-1\")\n    return {\"status\": \"done\", \"checkpoint\": \"s3://my-checkpoints/run-1\"}\n\nasync def main():\n    result = await finetune()        # submit and wait\n    print(result.output)\n\nasyncio.run(main())\n```\n\n> The decorated function is **async** — always call it from an `async`\n> context and `await` the handle (which submits and waits). See the\n> [Quickstart](#quickstart) for the canonical shape.\n\n### Choosing a GPU\n\n| Decorator argument          | Effect                                                        |\n|-----------------------------|--------------------------------------------------------------|\n| `vram_gb=24`                | Require at least 24 GB VRAM                                   |\n| `gpu_name=\"H100\"`           | Require a specific model (case-insensitive substring)        |\n| `gpu_arch=\"Ada\"`            | Require a GPU architecture                                    |\n| *(omit `vram_gb`)*          | **Auto-classify**: the analyzer inspects your code and picks the VRAM tier for you |\n\nLeaving `vram_gb` unset is the recommended default — Krauncher analyzes your\ncode statically and sizes the GPU automatically.\n\n---\n\n## Security model\n\nKrauncher doesn't store anything. Your API key and training code are\nencrypted on your machine before leaving it, and decrypted only inside the\nephemeral worker. The relay that routes your jobs cannot read the payload —\nit doesn't have the keys.\n\n| What                       | Visible to Krauncher |\n|----------------------------|----------------------|\n| Your storage credentials   | No                   |\n| Your training code         | No                   |\n| Your model weights/outputs | No                   |\n| Job timing and GPU type    | Yes                  |\n\nStorage keys are part of that: the S3 / HuggingFace credentials a task needs\n(`AWS_*`, `HF_TOKEN`) are read from your environment and travel sealed inside\nthe same payload as the code, straight to the worker. Set\n`CAS_SEND_CREDENTIALS=false` to attach none.\n\nThis isn't a feature we added. It's a consequence of not wanting to be in\nthe data custody business. E2E encryption is mandatory — there is no opt-out.\n\n---\n\n## Data locality\n\nTasks with the same `group_id` are routed to the same physical host, so\nwhatever your first run downloaded to local NVMe is still there for the next.\n\n```python\n@client.task(gpu_name=\"RTX4090\", group_id=\"my-experiment-v1\")\ndef train_epoch(epoch: int):\n    import os\n    cache_path = \"/tmp/dataset.bin\"\n    if not os.path.exists(cache_path):\n        download_from_s3(\"my-bucket\", \"dataset.bin\", cache_path)\n        # subsequent tasks in this group skip this step\n    run_training(cache_path, epoch=epoch)\n    return {\"epoch\": epoch, \"status\": \"complete\"}\n\nasync def main():\n    for epoch in range(10):\n        await train_epoch(epoch=epoch)\n```\n\nFor larger or registered datasets, use the **data bridge** (`data_urls=` /\n`data=`), which downloads into `/data` inside the sandbox — see\n[tutorial/06](tutorial/06_data_bridge.py) and\n[tutorial/15](tutorial/15_data_sources_s3.py).\n\n---\n\n## Beyond a single function\n\n- **Notebook / editor cells.** `await client.run_code(code, inputs={...},\n  outputs=[...])` runs a code *string* instead of a decorated function: named\n  local values go in, named variables come back (JSON-safe, 16 MB budget). This\n  is the primitive the `krauncher-jupyter` `%%krauncher` magic is built on. See\n  [tutorial/50](tutorial/50_run_code_values.py).\n- **Multi-phase runs.** `group = await client.group(task_a, task_b)` derives a\n  shared-requirements envelope (VRAM floor, GPU pins, disk) from the tasks and\n  keeps them on one warm worker; submit with `await group.submit(task, ...)`.\n  See [tutorial/52](tutorial/52_group_envelope.py).\n- **Files in, files out.** Pass `files={\"input.csv\": b\"...\"}` when calling the\n  task and set `artifacts=True` to get back what it wrote beside itself\n  (`result.artifacts`, `result.download(\"received\")`). Both directions ride the\n  encrypted payload — no storage to configure. See\n  [tutorial/54](tutorial/54_artifact_roundtrip.py).\n- **Price it before you run it.** Analysis and execution are separate phases:\n  `await client.estimate_code(code, ...)` returns the classification without\n  submitting, and `run_code(code, ..., classification=...)` then executes\n  without a second analysis. `CAS_ESTIMATE_ONLY=true` does the same for\n  decorated tasks; `POST /api/estimate` returns per-GPU predicted time and cost.\n\n---\n\n## Inspecting a finished task\n\nAfter a task completes, the broker keeps a structured record — the same one\nthe web UI renders on the task detail page.\n\n```python\ntask   = await client.get_task(task_id)         # what GET /tasks/{id} returns\nreport = await client.get_task_report(task_id)  # task + extended report\n```\n\n`get_task` returns status, timing breakdown (queue / download / pip / setup /\nexecution), classification, costs, GPU and worker specs, and the result.\n\n`get_task_report` adds an extended `report` field: peak/average GPU\nutilization, peak VRAM, the actual GPU's hardware specs, and an estimated\ntime/cost comparison across all known GPUs at the worker's measured host\ncapabilities. It is intended as feedback for an LLM author of the user\ncode — pure data, no interpretation.\n\n---\n\n## Examples\n\nNumbered, runnable tutorials in [`tutorial/`](tutorial/):\n\n| #   | File                              | Demonstrates                                  |\n|-----|-----------------------------------|-----------------------------------------------|\n| 01  | `01_remote_simple.py`             | Minimal submit + await                        |\n| 02  | `02_remote_with_deps.py`          | `pip=` dependencies in the sandbox            |\n| 03  | `03_error_handling.py`            | Catching `TaskError` / remote tracebacks      |\n| 04  | `04_timeout.py`                   | Execution timeout behaviour                   |\n| 05  | `05_task_groups.py`               | `group_id` host affinity                      |\n| 06  | `06_data_bridge.py`               | `data_urls=` downloads into `/data`           |\n| 09  | `09_streaming_logs.py`            | Live logs via `wait(on_log=...)`              |\n| 10  | `10_progress_bar.py`              | Progress reporting                            |\n| 11  | `11_e2e_encryption.py`            | End-to-end encryption                         |\n| 12  | `12_helper_functions.py`          | Shipping helper functions with the task       |\n| 13  | `13_bert_finetune.py`             | Real ML code → analyzer classification        |\n| 15  | `15_data_sources_s3.py`           | Registered S3 data sources                    |\n| 17  | `17_multiphase_training.py`       | Multi-phase training in one group             |\n| 18  | `18_resnet152_food101.py`         | ResNet-152 on Food-101                        |\n| 19  | `19_huggingface_dataset.py`       | HuggingFace dataset bridge                    |\n| 20  | `20_bert_imdb.py`                 | BERT fine-tuning on IMDB                       |\n| 21  | `21_qwen25_7b_lora_alpaca.py`     | Qwen2.5-7B LoRA fine-tuning                    |\n| 22  | `22_qwen25_7b_inference_gsm8k.py` | Qwen2.5-7B inference                           |\n| 23  | `23_gnn_node_classification_cora.py` | GCN node classification                    |\n| 30+ | `30_…`–`36_…`                     | LLM inference and batched inference           |\n| 50  | `50_run_code_values.py`           | `run_code` with named in/out values           |\n| 52  | `52_group_envelope.py`            | `client.group()` multi-phase envelope         |\n| 53  | `53_hf_native.py`                 | HuggingFace-native auto pre-fetch             |\n| 54  | `54_artifact_roundtrip.py`        | Files in / artifacts out                      |\n\n---\n\n## Install\n\n```bash\npip install krauncher\nexport CAS_API_KEY=\"your_api_key\"\n```\n\nRequires Python 3.11+.\n\n---\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:10:12.077Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:40:48.191Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

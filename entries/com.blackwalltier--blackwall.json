@@ -1,0 +1,95 @@
+{
+  "id": "com.blackwalltier/blackwall",
+  "title": "blackwall",
+  "description": "Pre-action risk gate: AI agents call before any irreversible action (money, SQL, delete).",
+  "summary": "Pre-action risk gate: AI agents call before any irreversible action (money, SQL, delete).",
+  "offersHint": "Pre-action risk gate: AI agents call before any irreversible action (money, SQL, delete). · Packages: npm:blackwall-mcp · Env vars: BLACKWALL_API_KEY, BLACKWALL_MODE",
+  "version": "1.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "blackwall-mcp",
+    "version": "1.4.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "BLACKWALL_API_KEY",
+        "description": "Your BLACK_WALL API key (bw_live_…) from https://blackwalltier.com/dashboard/keys",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "BLACKWALL_MODE",
+        "description": "observe (log only, never block) or enforce (default)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "blackwall-mcp",
+      "version": "1.4.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "BLACKWALL_API_KEY",
+          "description": "Your BLACK_WALL API key (bw_live_…) from https://blackwalltier.com/dashboard/keys",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "BLACKWALL_MODE",
+          "description": "observe (log only, never block) or enforce (default)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "BLACKWALL_API_KEY",
+      "description": "Your BLACK_WALL API key (bw_live_…) from https://blackwalltier.com/dashboard/keys",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "BLACKWALL_MODE",
+      "description": "observe (log only, never block) or enforce (default)."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://blackwalltier.com",
+  "sourceUrl": "https://github.com/bluetieroperations-create/blackwall-mcp",
+  "repository": {
+    "url": "https://github.com/bluetieroperations-create/blackwall-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-05T07:42:42.126675Z",
+  "publishedAt": "2026-07-05T07:42:42.126675Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:37:59.513Z",
+    "sourceRepoAt": "2026-08-12T00:37:59.513Z",
+    "readmeAt": "2026-08-12T00:38:00.048Z",
+    "toolsAt": "2026-08-12T00:38:00.296Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/bluetieroperations-create/blackwall-mcp",
+    "checkedAt": "2026-08-12T00:37:59.513Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/bluetieroperations-create/blackwall-mcp/main/README.md",
+    "markdown": "# blackwall-mcp\n\n[![Glama quality](https://glama.ai/mcp/servers/bluetieroperations-create/blackwall-mcp/badge)](https://glama.ai/mcp/servers/bluetieroperations-create/blackwall-mcp)\n\n**A guardrail for AI agents, as an MCP server.** Your agent calls one tool — `forecast` — before any irreversible action (send email, move money, run SQL, delete data, post content). It gets back a risk score (0–100), a reversibility class, a `GO` / `CAUTION` / `STOP` recommendation, and named red flags in a few seconds (~4-8s).\n\nWorks in any MCP host: **Claude Desktop, Claude Code, Cursor, Windsurf**, and any agent framework with MCP support.\n\n> The wall between your agent and disaster. A BLUETIER product.\n\n---\n\n## 1. Get an API key\n\nSign up free at **https://blackwalltier.com** → Dashboard → API keys → Create key.\nFree tier: ~100 forecasts/month, no card. Your key looks like `bw_live_…`.\n\n## 2. Add the server to your MCP host\n\n### Claude Desktop\n\nEdit `claude_desktop_config.json` (Settings → Developer → Edit Config):\n\n```json\n{\n  \"mcpServers\": {\n    \"blackwall\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"blackwall-mcp\"],\n      \"env\": { \"BLACKWALL_API_KEY\": \"bw_live_your_key_here\" }\n    }\n  }\n}\n```\n\nRestart Claude Desktop. You'll see a `forecast` tool available.\n\n### Cursor\n\n`Settings → MCP → Add new global MCP server`, then in `mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"blackwall\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"blackwall-mcp\"],\n      \"env\": { \"BLACKWALL_API_KEY\": \"bw_live_your_key_here\" }\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add blackwall -e BLACKWALL_API_KEY=bw_live_your_key_here -- npx -y blackwall-mcp\n```\n\n### Run locally (any host / testing)\n\n```bash\nBLACKWALL_API_KEY=bw_live_your_key_here npx -y blackwall-mcp\n```\n\n## 3. Use it\n\nOnce added, instruct your agent: *\"Before any irreversible action, call the `forecast` tool and stop if it returns STOP.\"* The model will call it automatically when it's about to do something risky.\n\n---\n\n## The `forecast` tool\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `action` | string | ✅ | The action type, e.g. `send_email`, `make_payment`, `run_sql`, `delete_file`, `post_content` |\n| `inputs` | object | ✅ | Concrete parameters: recipient, `amount_usd`, SQL `statement`, file path, message body, URL, etc. |\n| `context` | object | — | Optional: `{ agent_role, user_intent, environment }` |\n| `depth` | `standard` \\| `deep` | — | Analysis depth. `standard` is the default. |\n\n**Returns:** recommendation (`GO`/`CAUTION`/`STOP`), `risk_score` (0–100), `reversibility` (class + rollback cost), `gate` (proceed/confirm/human-required), `confidence`, `red_flags[]`, `predicted_result`, `alternative_actions[]`.\n\n### Example\n\nAgent about to run `DELETE FROM users;` (no WHERE clause) →\n\n```\n🛑 BLACK_WALL: STOP — risk 99/100\nRed flags:\n  • [CRITICAL] SQL_NO_WHERE — deletes the entire table, not one row\n  • [CRITICAL] INTENT_MISMATCH — intent was \"remove a single test row\"\n  • [CRITICAL] IRREVERSIBLE_NO_BACKUP — no recovery path\nGuidance: DO NOT take this action. Surface the red flags to the user.\n```\n\n---\n\n## Observe mode — try it with zero risk\n\nNot ready to let a guardrail block your agents? Start in **observe mode**. It scores and logs every action but **never tells the agent to stop** — your agents behave exactly as they do today. After a week, review your dashboard and see what it *would* have caught.\n\n```json\n{\n  \"mcpServers\": {\n    \"blackwall\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"blackwall-mcp\"],\n      \"env\": {\n        \"BLACKWALL_API_KEY\": \"bw_live_your_key_here\",\n        \"BLACKWALL_MODE\": \"observe\"\n      }\n    }\n  }\n}\n```\n\nThen see *\"what your agents almost did\"* in your dashboard. Flip `BLACKWALL_MODE` to `enforce` (or just remove it — enforce is the default) when you're ready to actually block.\n\n## Two tools\n\nThe server exposes **two MCP tools**:\n\n- **`forecast`** — pre-action risk check. Returns `GO` / `CAUTION` / `STOP`, risk score, named red flags, reversibility class, and a verifiable receipt.\n- **`observe`** — post-action outcome report. Tells BLACK_WALL what actually happened after the action ran (or after the agent obeyed a STOP verdict). Closes the loop so the system can track prediction accuracy over time. FREE — no tokens charged.\n\nWire your agent to call `forecast` before any irreversible action, then call `observe` afterwards with the `forecast_id` from the original response. `observe` accepts an `outcome_class` (`matched` / `over_scope` / `under_scope` / `no_op` / `diverged` / `aborted`) and optional `divergence_severity` and `details`. See the `forecast` example below; the same wiring applies to `observe`.\n\n## Use it in code — the `gate()` control (any JS/TS agent)\n\nRunning an agent in Node (LangChain, a custom loop, ElizaOS, a cron job)? You don't need an MCP host — call BLACK_WALL straight from the library, and let **`gate()`** make the check *impossible to skip*. One wrap forecasts the action, enforces the verdict (**fails closed** on `STOP` / unknown / unreachable), runs your side effect only when allowed, and reports the real outcome with `observe` automatically.\n\n```bash\nnpm i blackwall-mcp\n```\n\n```js\nimport { gate, BlackWallBlocked } from 'blackwall-mcp/lib/gate';\n\n// Wrap ANY risky action in a few lines. BLACKWALL_API_KEY lives in the env.\ntry {\n  const { result } = await gate(\n    { action: 'run_sql', inputs: { statement: sql }, context: { user_intent } },\n    () => db.query(sql),                        // your real side effect — only runs if allowed\n    { onCaution: (v) => confirmWithHuman(v) },  // CAUTION needs a yes; default = block\n  );\n  // ...use result\n} catch (e) {\n  if (e instanceof BlackWallBlocked) {\n    // STOP, unconfirmed CAUTION, or forecast unavailable → the action NEVER ran\n    console.error('Blocked:', e.reason, e.verdict?.red_flags);\n  } else throw e; // a real error thrown by your action\n}\n```\n\n**Fails closed by design.** If no verdict can be obtained (network / auth / timeout), the action does **not** run unless you explicitly pass `failOpen: true`. A risk gate that fails open is not a risk gate. The loop closes itself — `gate()` calls `observe` with the actual outcome (`matched` / `diverged` / `aborted`), so your forecasts sharpen over time.\n\nPrefer the lower-level pieces? They're exported too:\n\n```js\nimport { forecast, observe } from 'blackwall-mcp/lib';\n\nconst v = await forecast({ action: 'make_payment', inputs: { amount_usd: 50000 } });\nif (v.recommendation === 'STOP') throw new Error('halt');\n// ... take the action ...\nawait observe(v.id, { outcome_class: 'matched' });\n```\n\nRunnable demo: [`examples/gate-quickstart.mjs`](examples/gate-quickstart.mjs).\n\n## Decision receipts (cryptographic, verifiable offline)\n\nEvery `forecast` response now includes a `receipt` field — an Ed25519 signature over canonical SHA-256 hashes of the request + response. Anyone with the published public key can verify offline that BLACK_WALL signed off on a specific (request, response) pair, without trusting our servers.\n\n- Published keys: **https://blackwalltier.com/.well-known/blackwall-signing-keys.json** (stable, cacheable)\n- Stateless verify endpoint: **`POST https://blackwalltier.com/api/v1/receipts/verify`** with `{ envelope, request_body, response_body }`\n- Hashes only — BLACK_WALL never stores the raw request/response bodies, so receipts give cryptographic audit without payload exposure\n- Free-tier retention: 90 days. Paid: indefinite.\n\nThe MCP server surfaces the receipt id in its tool output so your agent can log it for later replay / audit.\n\n## Config reference\n\n| Env var | Required | Default | Notes |\n|---------|----------|---------|-------|\n| `BLACKWALL_API_KEY` | ✅ | — | `bw_live_…` from your dashboard |\n| `BLACKWALL_BASE_URL` | — | `https://blackwalltier.com` | |\n| `BLACKWALL_MODE` | — | `enforce` | `observe` = log only, never block |\n\n## Links\n\n- Site & docs: https://blackwalltier.com\n- Get a key: https://blackwalltier.com/dashboard/keys\n\nMIT licensed.\n",
+    "fetchedAt": "2026-08-12T00:38:00.048Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:38:00.296Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

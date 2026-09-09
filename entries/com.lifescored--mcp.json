@@ -1,0 +1,69 @@
+{
+  "id": "com.lifescored/mcp",
+  "title": "life. scored.",
+  "description": "Rebuilds the scores real systems run on you — credit, actuarial, lending — in the open, cited.",
+  "summary": "Rebuilds the scores real systems run on you — credit, actuarial, lending — in the open, cited.",
+  "offersHint": "Rebuilds the scores real systems run on you — credit, actuarial, lending — in the open, cited. · Remote MCP (streamable-http) at https://lifescored.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://lifescored.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://lifescored.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://lifescored.com",
+  "sourceUrl": "https://github.com/royashbrook/lifescored",
+  "repository": {
+    "url": "https://github.com/royashbrook/lifescored",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-17T03:00:31.567471Z",
+  "publishedAt": "2026-06-17T03:00:31.567471Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:31:45.668Z",
+    "sourceRepoAt": "2026-08-12T00:31:45.668Z",
+    "readmeAt": "2026-08-12T00:31:46.072Z",
+    "toolsAt": "2026-08-12T00:31:46.152Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/royashbrook/lifescored",
+    "checkedAt": "2026-08-12T00:31:45.668Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/royashbrook/lifescored/main/README.md",
+    "markdown": "# life. scored.\n\n[![deploy](https://github.com/royashbrook/lifescored/actions/workflows/deploy.yml/badge.svg)](https://github.com/royashbrook/lifescored/actions/workflows/deploy.yml)\n\n**You are already a number.**\n\nA credit score, an actuarial row, a callback probability — this app rebuilds those numbers in the open: every rule cited or flagged as a guess, every weight visible and editable. Transparency, not judgment.\n\n[check it out - lifescored.com](https://lifescored.com)\n\n## Stack\n\n- Svelte 5 + SvelteKit, prerendered static pages, deployed to Cloudflare Workers\n- One dynamic endpoint: `POST /api/narrative` — KV-cached Gemini narratives with a\n  deterministic local fallback (the app is fully functional with no API key at all)\n- All user data stays in the browser (localStorage + URL-fragment share links)\n- Traffic is measured with Cloudflare Web Analytics — cookieless and aggregate; it cannot see your inputs, which never leave your device anyway.\n\n## Develop\n\n    npm install\n    npm run dev      # app at localhost:5173 (narrative falls back to local composer)\n    npm test         # vitest suite: rulebook invariants, engine, codec, worker handler\n    npm run check    # svelte-check\n\n## Deploy (Cloudflare free tier)\n\nDeploys run automatically from GitHub Actions on every push to `main`\n([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)): the workflow\nruns the full test suite + typecheck, and only then builds and deploys.\n\n**One-time setup:**\n\nSecrets are kept in [hush](https://github.com/royashbrook/hush): stored once in your OS keychain,\nthen piped straight into the consumer — they never get pasted into a terminal, echoed, or printed.\nThis project's hush items use a `lifescored-` prefix so they group together in a keychain search.\n(No hush? Drop the `hush pipe … --` prefix and run the bare `npx wrangler` / `gh` command; hush just\nwraps it.) Local dev needs no secrets at all — the narrative falls back to a local composer.\n\n1. Create the KV namespace and paste its id into `wrangler.jsonc`:\n\n       npx wrangler kv namespace create NARRATIVE_KV\n\n2. Set the Gemini key as a Worker secret (persists across deploys; optional —\n   omit to run AI-free with the local narrative fallback):\n\n       hush set lifescored-gemini-key                                   # paste it once, hidden dialog\n       hush pipe lifescored-gemini-key -- npx wrangler secret put GEMINI_API_KEY\n\n3. Give GitHub Actions the deploy credentials\n   (Settings → Secrets and variables → Actions):\n\n       hush set lifescored-cloudflare-api-token                         # \"Edit Cloudflare Workers\" token\n       hush pipe lifescored-cloudflare-api-token -- gh secret set CLOUDFLARE_API_TOKEN\n       gh secret set CLOUDFLARE_ACCOUNT_ID --body \"<your-account-id>\"    # account id isn't secret\n\nPush to `main` and the action ships it. To deploy by hand instead:\n\n       npm run deploy\n\n## Deploy your own\n\nFork the repo, do the one-time setup above with your own Cloudflare account, and\npush. The app is fully functional with no Gemini key at all.\n\n## Editing the rulebook\n\nRules live in `src/lib/rulebook/<domain>.ts`. Each rule is declarative: logic,\nevidence tag (`SOURCED`/`SPECULATIVE`), citation with access date, a pure\n`position(inputs)` (the measured fact, normalized to a numeric position), declared\n`bounds` (negative floors only where the cited system itself subtracts; the wealth\nrules are uncapped above), and a `weightRationale` justifying its weight against\nthe 1.0× income baseline; the engine computes `points = round(position × weight)`.\nAdd a rule, and the UI, weight editor, share\ncodec, and about-page source list pick it up automatically. `npm test` enforces\nthe invariants (bounds, integer scores, citation present).\n\n## Use it from an agent (MCP or skill)\n\nThe whole rulebook + exact math is published so any agent can compute a score **on its own side** — nothing about a person is ever sent to lifescored.com.\n\n- **MCP server** — `com.lifescored/mcp` on the [official registry](https://registry.modelcontextprotocol.io); endpoint `https://lifescored.com/mcp` (stateless Streamable HTTP, no auth, accepts no personal data). Tools: `get_rulebook`, `get_input_schema`, `get_methodology`, `how_to_give_feedback`.\n- **Skill** — a drop-in [`skills/lifescored/`](skills/lifescored/SKILL.md) skill. Copy it into your agent's skills directory (e.g. `~/.claude/skills/`). It prefers the MCP and falls back to `rules.json`.\n- **Raw data** — [`https://lifescored.com/rules.json`](https://lifescored.com/rules.json) and [`/llms.txt`](https://lifescored.com/llms.txt).\n\n## Contributing\n\nEvery commit must reference a GitHub issue number, e.g. `feat: add presets (#2)` or `refs #5`. A `commit-msg` hook enforces this automatically — it is installed via `core.hooksPath` pointing to `.githooks/`, which activates on `npm install` (the `prepare` script runs `git config core.hooksPath .githooks`). Merge commits and reverts are exempt. To find or open an issue: `gh issue list` / `gh issue create`.\n\n## License\n\nMIT — see LICENSE.\n",
+    "fetchedAt": "2026-08-12T00:31:46.072Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_rulebook",
+      "description": "The complete life-score rulebook and exact math: every rule (weight, bounds, evidence, source, formula), the input schema (what to ask the user), and the engine constants. Use this to compute a score on your OWN side — nothing is sent back."
+    },
+    {
+      "name": "get_input_schema",
+      "description": "Just the fields to collect from the user, with types, ranges/allowed values, defaults, and plain-language help. Ask only for what you do not already know; missing fields fall back to their default."
+    },
+    {
+      "name": "get_methodology",
+      "description": "Plain-English explanation of how scoring works, the two governing principles, what is deliberately left out (protected characteristics, luck), and the privacy stance. Use to answer \"how does this work / is this fair\" questions."
+    },
+    {
+      "name": "how_to_give_feedback",
+      "description": "How to suggest a better weight, a fresh source, or a new rule via GitHub, so improvements from many people aggregate in the open."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:31:46.152Z",
+  "toolsPreviewStatus": "ok"
+}

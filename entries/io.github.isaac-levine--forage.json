@@ -1,0 +1,58 @@
+{
+  "id": "io.github.isaac-levine/forage",
+  "title": "forage",
+  "description": "Self-improving tool discovery for AI agents. Find, install, and use new MCP servers automatically.",
+  "summary": "Self-improving tool discovery for AI agents. Find, install, and use new MCP servers automatically.",
+  "offersHint": "Self-improving tool discovery for AI agents. Find, install, and use new MCP servers automatically. · Packages: npm:forage-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "forage-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "forage-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/isaac-levine/forage",
+  "repository": {
+    "url": "https://github.com/isaac-levine/forage",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-17T02:30:45.364825Z",
+  "publishedAt": "2026-02-17T02:30:45.364825Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:50.851Z",
+    "sourceRepoAt": "2026-08-11T23:42:07.562Z",
+    "readmeAt": "2026-08-11T23:42:08.091Z",
+    "toolsAt": "2026-08-12T01:19:50.851Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/isaac-levine/forage",
+    "checkedAt": "2026-08-11T23:42:07.562Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/isaac-levine/forage/main/README.md",
+    "markdown": "<div align=\"center\">\n\n# 🌿 Forage\n\n**Self-improving tool discovery for AI agents.**\n\nInstall one MCP server. Your agent finds the rest.\n\n[![npm version](https://img.shields.io/npm/v/forage-mcp.svg)](https://www.npmjs.com/package/forage-mcp)\n[![npm downloads](https://img.shields.io/npm/dm/forage-mcp.svg)](https://www.npmjs.com/package/forage-mcp)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\n[npm](https://www.npmjs.com/package/forage-mcp) · [GitHub](https://github.com/isaac-levine/forage) · [Contributing](CONTRIBUTING.md)\n\n</div>\n\n---\n\nForage is an MCP server that lets AI agents discover, install, and learn to use new tools — automatically. When an agent hits a wall, it forages for the right tool, installs it, and teaches itself how to use it. No restarts. No manual config. The agent gets permanently smarter.\n\n<!-- TODO: Add demo GIF here -->\n<!-- ![Forage demo](assets/demo.gif) -->\n\n## Why?\n\nAI coding agents are limited to whatever tools they're configured with at session start. Need to query a database? Deploy to Vercel? Search Slack? The agent apologizes and you manually install the right MCP server.\n\nForage closes that loop:\n\n```\nAgent encounters a task it can't do\n  → forage_search(\"query postgres database\")\n  → forage_install(\"@modelcontextprotocol/server-postgres\")\n  → Tools available IMMEDIATELY (no restart)\n  → forage_learn() saves instructions to CLAUDE.md\n  → Next session: auto-starts, agent already knows how to use it\n```\n\n## Quick Start\n\n**Claude Code**\n\n```bash\nclaude mcp add forage -- npx -y forage-mcp\n```\n\n**Cursor**\n\n```bash\nnpx forage-mcp init --client cursor\n```\n\nThat's it. Start a new session and Forage is ready.\n\n## Tools\n\n| Tool | Description |\n|---|---|\n| `forage_search` | Search for MCP servers across the [Official MCP Registry](https://registry.modelcontextprotocol.io), [Smithery](https://smithery.ai), and [npm](https://www.npmjs.com) |\n| `forage_evaluate` | Get details on a package — downloads, README, install command |\n| `forage_install` | Install and start an MCP server as a proxied subprocess (requires user approval) |\n| `forage_learn` | Write usage instructions to CLAUDE.md / AGENTS.md / .cursor/rules/ |\n| `forage_status` | List all installed and running tools |\n| `forage_uninstall` | Remove a tool and clean up rules |\n\n## How It Works\n\nForage is a **gateway/proxy** MCP server:\n\n1. **You install Forage once** — it's the only MCP server you configure manually\n2. **Forage discovers tools** — searches the Official MCP Registry, Smithery, and npm in parallel\n3. **Forage installs tools** — starts them as child processes, wraps their capabilities\n4. **No restart needed** — emits `list_changed` notifications so the agent picks up new tools instantly\n5. **Knowledge persists** — `forage_learn` writes to agent rule files, manifest auto-starts tools next session\n\n<details>\n<summary><strong>Architecture</strong></summary>\n\n```\n┌─────────────────────────────────────────────┐\n│  Claude Code / Cursor / Codex               │\n│                                             │\n│  \"I need to query a Postgres database\"      │\n└──────────────────┬──────────────────────────┘\n                   │ MCP\n                   ▼\n┌─────────────────────────────────────────────┐\n│  Forage MCP Server                          │\n│                                             │\n│  forage_search ─── Official Registry        │\n│  forage_install    Smithery                 │\n│  forage_learn      npm                      │\n│  forage_status                              │\n│                                             │\n│  ┌─────────────┐  ┌─────────────┐          │\n│  │ Postgres MCP│  │ GitHub MCP  │  ...      │\n│  │ (subprocess)│  │ (subprocess)│          │\n│  └─────────────┘  └─────────────┘          │\n└─────────────────────────────────────────────┘\n```\n\nWhen you install a tool through Forage:\n\n1. Forage runs `npx -y <package>` as a child process\n2. Connects to it via `StdioClientTransport` (MCP client)\n3. Discovers the child server's tools via `listTools`\n4. Re-registers each tool on the Forage server with a namespaced name (`foraged__<server>__<tool>`)\n5. Sends `tools/list_changed` notification — the agent sees new tools immediately\n6. When the agent calls a proxied tool, Forage forwards the call to the child server\n\n</details>\n\n<details>\n<summary><strong>Persistence</strong></summary>\n\nForage stores its state in `~/.forage/`:\n\n| File | Purpose |\n|---|---|\n| `manifest.json` | Installed tools, command/args, auto-start configuration |\n| `install-log.json` | Audit trail of all installs and uninstalls |\n| `cache/` | Cached registry search results |\n\nOn startup, Forage reads the manifest and auto-starts all previously installed servers. Your agent picks up right where it left off.\n\n</details>\n\n## CLI\n\nForage also includes a CLI for humans:\n\n```bash\nforage search \"postgres database\"    # Search registries\nforage list                          # List installed tools\nforage init                          # Set up for Claude Code\nforage init --client cursor          # Set up for Cursor\n```\n\n## Security\n\n> [!IMPORTANT]\n> Forage cannot install tools without explicit user approval. Every `forage_install` call requires `confirm: true`.\n\n- **Audit trail** — every install/uninstall is logged with timestamps to `~/.forage/install-log.json`\n- **No remote backend** — everything runs locally. Registry searches are read-only GET requests to public APIs.\n- **No secrets stored** — environment variables for child servers are passed at install time, not persisted.\n\n## Development\n\n```bash\ngit clone https://github.com/isaac-levine/forage.git\ncd forage\nnpm install\nnpm run build\n```\n\nTest locally with Claude Code:\n\n```bash\nclaude mcp add forage-dev -- node /path/to/forage/dist/server.js\n```\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md) for more details.\n\n## Roadmap\n\n### Features\n\n- [ ] `forage update` — check for newer versions of installed tools\n- [ ] Support for pip/cargo/brew packages (not just npm)\n- [ ] Smarter search ranking (weight by downloads, stars, description relevance)\n- [ ] Auto-configure environment variables from `.env` files\n- [ ] `forage doctor` — diagnose common setup issues\n\n### Distribution\n\n- [x] Publish to npm\n- [ ] Submit to the [Official MCP Registry](https://registry.modelcontextprotocol.io)\n- [ ] Submit to [Smithery](https://smithery.ai)\n- [ ] Submit to [mcp.so](https://mcp.so) and [glama.ai](https://glama.ai/mcp/servers)\n- [ ] Landing page at forage.dev\n\n### Community\n\n- [ ] Demo GIF / video in README\n- [ ] Write launch blog post\n- [ ] Post to r/ClaudeAI, r/LocalLLaMA, Hacker News (Show HN)\n- [ ] Share in MCP Discord / community channels\n- [ ] Write use-case guides (e.g. \"Add Postgres to Claude Code in 30 seconds\")\n- [ ] Add GitHub Discussions for Q&A and feature requests\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-11T23:42:08.091Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:19:50.851Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,59 @@
+{
+  "id": "io.github.slettmayer/geosphere-mcp-server",
+  "title": "GeoSphere Austria Weather",
+  "description": "Weather MCP server: GeoSphere Austria high-resolution data for Austria/Alps, Open-Meteo worldwide.",
+  "summary": "Weather MCP server: GeoSphere Austria high-resolution data for Austria/Alps, Open-Meteo worldwide.",
+  "offersHint": "Weather MCP server: GeoSphere Austria high-resolution data for Austria/Alps, Open-Meteo worldwide. · Packages: pypi:geosphere-mcp-server",
+  "version": "0.3.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "geosphere-mcp-server",
+    "version": "0.3.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "geosphere-mcp-server",
+      "version": "0.3.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/slettmayer/geosphere-mcp-server",
+  "sourceUrl": "https://github.com/slettmayer/geosphere-mcp-server",
+  "repository": {
+    "url": "https://github.com/slettmayer/geosphere-mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T13:54:16.97809Z",
+  "publishedAt": "2026-08-07T13:54:16.97809Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:05.765Z",
+    "sourceRepoAt": "2026-08-11T23:20:43.974Z",
+    "readmeAt": "2026-08-11T23:20:44.537Z",
+    "toolsAt": "2026-08-12T01:01:05.766Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/slettmayer/geosphere-mcp-server",
+    "checkedAt": "2026-08-11T23:20:43.974Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/slettmayer/geosphere-mcp-server/main/README.md",
+    "markdown": "# geosphere-mcp-server\n\n<!-- mcp-name: io.github.slettmayer/geosphere-mcp-server -->\n\n[![PyPI](https://img.shields.io/pypi/v/geosphere-mcp-server.svg)](https://pypi.org/project/geosphere-mcp-server/)\n[![Python](https://img.shields.io/pypi/pyversions/geosphere-mcp-server.svg)](https://pypi.org/project/geosphere-mcp-server/)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\nMCP server for weather: current conditions, hourly forecasts, and multi-day outlooks for **any location worldwide**, via the [Model Context Protocol](https://modelcontextprotocol.io).\n\nIn **Austria and the Alpine region** it serves high-resolution [GeoSphere Austria](https://www.geosphere.at) data — the AROME numerical forecast, the INCA analysis/nowcast, and the C-LAEF ensemble for precipitation probability. **Everywhere else** it falls back automatically to [Open-Meteo](https://open-meteo.com), so it is a drop-in worldwide weather source. Every response states which source produced it.\n\nOutput is compact emoji-markdown with metric units — built for smart-home and voice-assistant LLM pipelines where a terse, readable answer beats a JSON blob. Weather conditions are derived from physical parameters and reported with the Home Assistant condition vocabulary (`sunny`, `partlycloudy`, `rainy`, `snowy`, …).\n\n## Coverage\n\n| Where | `get_current_weather` | `get_hourly_forecast` | `get_daily_forecast` |\n|-------|-----------------------|-----------------------|----------------------|\n| Austria | GeoSphere INCA + nowcast + AROME | GeoSphere AROME (≤60 h) + C-LAEF probability | Open-Meteo (1–16 days) |\n| Alps (non-AT) | GeoSphere AROME only | GeoSphere AROME (≤60 h) + C-LAEF probability | Open-Meteo (1–16 days) |\n| Rest of world | Open-Meteo | Open-Meteo (≤48 h) | Open-Meteo (1–16 days) |\n\nCoverage is detected automatically: the server tries GeoSphere first and falls back to Open-Meteo when the point is outside the AROME grid — no bounding box to configure. The daily forecast always uses Open-Meteo (GeoSphere publishes no forecasts beyond ~60 h).\n\n## Installation\n\nPass **decimal latitude/longitude** to every tool. There is no geocoder in the server — the calling LLM geocodes city names to coordinates itself.\n\n### Claude Desktop\n\nAdd to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"geosphere\": {\n      \"command\": \"uvx\",\n      \"args\": [\"geosphere-mcp-server\"]\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add geosphere -- uvx geosphere-mcp-server\n```\n\n### From source (development)\n\n```json\n{\n  \"mcpServers\": {\n    \"geosphere\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"/path/to/geosphere-mcp-server\", \"geosphere-mcp-server\"]\n    }\n  }\n}\n```\n\n### Home Assistant\n\nIt is a standard stdio MCP server, so it runs anywhere an stdio MCP server can be hosted — including alongside Home Assistant's Assist pipeline (register it the same way as any other stdio MCP server). Give the voice agent the coordinates of the places it should answer for, or let it geocode names.\n\n## Tools\n\n### `get_current_weather`\n\nCurrent conditions for a point. GeoSphere (INCA/AROME) inside coverage, Open-Meteo elsewhere.\n\n| Parameter | Type | Default | Description |\n|-----------|------|---------|-------------|\n| `latitude` | float | required | Decimal latitude (e.g. `48.2208`) |\n| `longitude` | float | required | Decimal longitude (e.g. `16.3738`) |\n\n```\n# Current Weather at 48.2208, 16.3738\n\n🌡️ Temperature: 24.7°C (feels like 24.2°C)\n🌤️ Condition: partlycloudy\n💧 Humidity: 52%\n💨 Wind: 2.9 m/s from 135° (gusts 7 m/s)\n🌧️ Precipitation (last hour): 0 mm\n📊 Pressure: 1016 hPa\n☁️ Cloud cover: 30%\n🕐 Timezone: Europe/Vienna (CEST)\n📡 Source: GeoSphere (INCA + nowcast + AROME) — observed 15:20\n```\n\nOutside GeoSphere coverage the same tool answers from Open-Meteo (sunrise/sunset and the point's own timezone included):\n\n```\n# Current Weather at 38.7223, -9.1393\n\n🌡️ Temperature: 26.1°C (feels like 27.0°C)\n🌤️ Condition: cloudy\n💧 Humidity: 58%\n💨 Wind: 4.5 m/s from 315° (gusts 9 m/s)\n📊 Pressure: 1014 hPa\n☁️ Cloud cover: 90%\n🌅 Sunrise: 06:24\n🌇 Sunset: 20:52\n🕐 Timezone: Europe/Lisbon (WEST)\n📡 Source: Open-Meteo — observed 14:00\n```\n\n### `get_hourly_forecast`\n\nHour-by-hour forecast. GeoSphere AROME (with C-LAEF precipitation probability) up to ~60 h inside coverage; Open-Meteo up to 48 h elsewhere.\n\n| Parameter | Type | Default | Description |\n|-----------|------|---------|-------------|\n| `latitude` | float | required | Decimal latitude (e.g. `48.2208`) |\n| `longitude` | float | required | Decimal longitude (e.g. `16.3738`) |\n| `hours` | int | 24 | Forecast hours (clamped to 1–60 on GeoSphere, 1–48 on the fallback) |\n| `start` | string | now | Optional ISO 8601 start (e.g. `2026-07-22T15:00`); forecast begins at/after this instant |\n\n```\n# 3-Hour Forecast for 48.2208, 16.3738\n\nAROME model, reference 2026-07-22 12:00 CEST · Source: GeoSphere (AROME + C-LAEF ensemble)\n\nWed 2026-07-22\n  15:00: 24.7°C — partlycloudy, wind 3 m/s\n  16:00: 23.9°C — rainy, 1.2 mm (70% chance), wind 4 m/s\n  17:00: 22.5°C — cloudy, wind 3 m/s\n```\n\nThe hours are grouped under a day-divider header (`%a %Y-%m-%d` in the point's local timezone) that repeats whenever the local date changes, so a window crossing midnight stays unambiguous. Requesting more hours than the AROME horizon provides appends a note suggesting `get_daily_forecast` for days further ahead. Dry hours omit the precipitation and probability parts.\n\n### `get_daily_forecast`\n\nMulti-day outlook, always from Open-Meteo (worldwide, including Austria).\n\n| Parameter | Type | Default | Description |\n|-----------|------|---------|-------------|\n| `latitude` | float | required | Decimal latitude (e.g. `48.2208`) |\n| `longitude` | float | required | Decimal longitude (e.g. `16.3738`) |\n| `days` | int | 7 | Forecast days from today (clamped to 1–16). Ignored when `start_date`/`end_date` are given |\n| `start_date` | str | — | Optional first forecast day, ISO `YYYY-MM-DD` |\n| `end_date` | str | — | Optional last forecast day (inclusive), ISO `YYYY-MM-DD`; defaults to `start_date`. Span capped at 16 days |\n\nRequest either a count of days from today (`days`) or an explicit calendar range (`start_date`/`end_date`). The range is the reliable way to answer a named period — for \"the weekend\" or \"next Tuesday\", the caller resolves today's date, then passes the exact dates rather than converting the period into a day count.\n\n```\n# 3-Day Forecast for 48.2208, 16.3738\n\nSource: Open-Meteo (Europe/Vienna)\n\nWed 2026-07-22: 16–27°C — partlycloudy, wind up to 9 m/s\nThu 2026-07-23: 15–22°C — rainy, 4.2 mm (80% chance), wind up to 15 m/s\nFri 2026-07-24: 14–26°C — sunny, wind up to 8 m/s\n```\n\n## Data sources & attribution\n\n- **GeoSphere Austria Dataset API** — AROME forecast, INCA analysis/nowcast, C-LAEF ensemble. Data licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). © GeoSphere Austria.\n- **Open-Meteo** — worldwide forecast API. Data licensed under [CC-BY 4.0](https://creativecommons.org/licenses/by/4.0/). © Open-Meteo.\n\nBoth APIs are keyless and intended for **non-commercial** use. When you redistribute their data, keep the attribution.\n\n## Rate limits\n\nThe GeoSphere Dataset API allows **5 requests/second and 240 requests/hour**. Each current/hourly call issues a small burst of concurrent requests; on an HTTP 429 the server retries once (when the API asks for a short wait) and otherwise returns a rate-limit notice — `get_daily_forecast` keeps working through Open-Meteo in that case. Open-Meteo has its own generous free-tier limits.\n\n## Development\n\n```bash\n# Install dependencies (creates .venv from the locked versions)\nuv sync\n\n# Lint & format\nruff check .\nruff format .\n\n# Run unit tests\npytest -m \"not integration\"\n\n# Run integration tests (hits the live GeoSphere + Open-Meteo APIs)\npytest -m integration\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:20:44.537Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:05.766Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

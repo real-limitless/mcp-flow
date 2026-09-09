@@ -1,0 +1,58 @@
+{
+  "id": "io.github.tamas-fm/project-lore",
+  "title": "project-lore",
+  "description": "A local-first MCP server that routes development tasks to authoritative project documentation.",
+  "summary": "A local-first MCP server that routes development tasks to authoritative project documentation.",
+  "offersHint": "A local-first MCP server that routes development tasks to authoritative project documentation. · Packages: npm:project-lore-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "project-lore-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "project-lore-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/tamas-fm/project-lore-mcp",
+  "repository": {
+    "url": "https://github.com/tamas-fm/project-lore-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-25T15:55:04.892462Z",
+  "publishedAt": "2026-07-25T15:55:04.892462Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:42.848Z",
+    "sourceRepoAt": "2026-08-11T23:19:09.436Z",
+    "readmeAt": "2026-08-11T23:19:09.977Z",
+    "toolsAt": "2026-08-12T00:59:42.848Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/tamas-fm/project-lore-mcp",
+    "checkedAt": "2026-08-11T23:19:09.436Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/tamas-fm/project-lore-mcp/main/README.md",
+    "markdown": "# project-lore-mcp\n\nA local-first MCP server that routes coding agents to the smallest useful set\nof project documentation — decisions, intent, and constraints — with\nprovenance and freshness.\n\nCode-intelligence tools (such as codebase-memory-mcp) answer *where is this\nimplemented and what depends on it*. This project answers the complementary\nquestions: **why was it designed this way, which document governs this task,\nand is that knowledge still current?**\n\n## What it does\n\nPoint it at a repository (plus optional external documentation roots). It:\n\n1. discovers Markdown, text, HTML, YAML, JSON, Mermaid, and Claude\n   instruction files;\n2. classifies each document by kind and authority (instructions → canonical →\n   design → planning → historical → generated → proposed);\n3. extracts headings, sections, links, frontmatter, ADR status, and explicit\n   \"read first\" / \"supersedes\" / task-routing relationships — deterministically,\n   with recorded provenance (structural extraction applies to Markdown; other\n   formats receive plain-text indexing);\n4. stores a rebuildable local index in SQLite (FTS5), updated incrementally by\n   content hash;\n5. answers task and knowledge queries with **bounded excerpts and exact source\n   locations — never whole files**, flagging stale or superseded sources\n   instead of hiding them.\n\n## MCP tools\n\n| Tool | Purpose |\n| --- | --- |\n| `route_task` | Given a development task, return the ordered documents/sections to read first. Explicit manifest routes win over ranked search. |\n| `search_project_knowledge` | Full-text search over documentation, re-ranked by authority and status; freshness is shown per result. |\n| `get_document_context` | Sections + typed relationships of one document, without returning the whole file. |\n\n## Install and run\n\nRequires Node.js ≥ 22.\n\n```bash\nnpm install -g project-lore-mcp   # or npx -y project-lore-mcp (no install needed)\nproject-lore index --root /path/to/your/repo   # one-shot index + stats\nproject-lore serve --root /path/to/your/repo   # stdio MCP server\n```\n\n### Claude Code\n\nRun this once from inside the repository you want to index:\n\n```bash\n# Personal setup — stored in your local Claude Code config, not committed\nclaude mcp add project-lore --scope local -- \\\n  npx -y project-lore-mcp serve --root \"$PWD\"\n```\n\nFor teams, commit a shared configuration instead:\n\n```bash\n# Shared setup — writes .mcp.json into the repository\nclaude mcp add project-lore --scope project -- \\\n  npx -y project-lore-mcp serve --root .\n```\n\nThe project scope uses a relative root (`.`) so it works on any checkout.\nClaude Code will ask each user to approve project-scoped servers before\nrunning them.\n\n> **One repository, one configuration.** Project Lore's command contains a\n> fixed root path, so it always indexes one specific repository. Register it\n> separately per repository rather than globally.\n\nIt coexists with codebase-memory-mcp — configure both; they own different\nquestions. If your configuration references documentation outside the\nrepository, Claude Code must be granted filesystem access to those paths\n(add them as additional working directories or approve the permission\nprompts).\n\n### Try the example\n\n```bash\nnpm run index:example        # index examples/documented-project\nnpm run serve:example        # serve it over stdio\n```\n\n## Configuration\n\nOptional `project-lore.config.yaml` at the repository root:\n\n```yaml\nsources:\n  - id: repository\n    type: directory\n    path: .\n    authority: canonical\n  - id: design-handoff\n    type: directory\n    path: ../product-docs      # explicit opt-in external root\n    authority: design\nclassification:\n  rules:\n    - pattern: \"docs/legacy/**\"\n      authority: historical\n```\n\nSee [docs/configuration.md](docs/configuration.md) for the full reference and\n[docs/concepts.md](docs/concepts.md) for the authority model.\n\n## Design principles\n\n> Store and retrieve documented intent conservatively. Derive structure\n> automatically. Preserve provenance always.\n\n- **Local-only by default.** No network access, no telemetry, no uploads.\n  The index is regenerable and safe to delete (`.project-lore/`, gitignored).\n- **Deterministic before AI.** v1 uses no LLM and no embeddings. Every stored\n  relationship records how it was extracted; inferred data can never\n  masquerade as documented fact.\n- **Evidence, not instructions.** Retrieved excerpts are quoted, bounded, and\n  attributed. Document content is treated as untrusted data\n  (see [docs/provenance-and-trust.md](docs/provenance-and-trust.md)).\n\n## Project status\n\nv0.1.0 — first vertical slice. See [docs/architecture.md](docs/architecture.md),\nthe ADRs in [docs/adr/](docs/adr/), and [CONTRIBUTING.md](CONTRIBUTING.md).\n\nLicense: MIT.\n",
+    "fetchedAt": "2026-08-11T23:19:09.977Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:42.848Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

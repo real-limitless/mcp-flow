@@ -1,0 +1,69 @@
+{
+  "id": "io.github.vanshulgoyal101/mcp",
+  "title": "mcp",
+  "description": "Read any web page as clean Markdown for AI agents: fetch, search, metadata, links. SSRF-safe.",
+  "summary": "Read any web page as clean Markdown for AI agents: fetch, search, metadata, links. SSRF-safe.",
+  "offersHint": "Read any web page as clean Markdown for AI agents: fetch, search, metadata, links. SSRF-safe. · Remote MCP (streamable-http) at https://mcp.vanshul.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.vanshul.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.vanshul.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mcp.vanshul.com",
+  "sourceUrl": "https://github.com/vanshulgoyal101/mcp",
+  "repository": {
+    "url": "https://github.com/vanshulgoyal101/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-06T03:16:05.357543Z",
+  "publishedAt": "2026-08-06T03:16:05.357543Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:57:53.905Z",
+    "sourceRepoAt": "2026-08-11T23:17:18.478Z",
+    "readmeAt": "2026-08-11T23:17:18.949Z",
+    "toolsAt": "2026-08-12T00:57:53.905Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vanshulgoyal101/mcp",
+    "checkedAt": "2026-08-11T23:17:18.478Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vanshulgoyal101/mcp/main/README.md",
+    "markdown": "# mcp.vanshul.com\n\n[![MCP Registry](https://img.shields.io/badge/MCP_Registry-io.github.vanshulgoyal101%2Fmcp-34d399)](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.vanshulgoyal101/mcp)\n[![Endpoint](https://img.shields.io/badge/endpoint-mcp.vanshul.com%2Fmcp-34d399)](https://mcp.vanshul.com/mcp)\n\nA public **Model Context Protocol (MCP)** server, running as a Cloudflare\nWorker, that lets any AI agent read the live web as clean Markdown. It builds on\nthe same extraction pipeline as the sibling [`reader/`](../../reader) project\n(Mozilla Readability + Turndown), exposed over the MCP **Streamable HTTP**\ntransport so agentic clients can plug straight in.\n\n## Endpoint\n\n```\nPOST https://mcp.vanshul.com/mcp     # JSON-RPC 2.0 (MCP)\nGET  https://mcp.vanshul.com/health  # { ok: true, tools: [...] }\n```\n\n## Tools\n\n| Tool | Input | Returns |\n| --- | --- | --- |\n| `fetch_markdown` | `{ url, max_chars? }` | The page's main content as clean Markdown (optionally truncated to `max_chars`) |\n| `search_page` | `{ url, query, max_matches?, context_chars? }` | Only the passages matching `query`, each with its heading breadcrumb, ranked by relevance — token-efficient alternative to `fetch_markdown` |\n| `fetch_metadata` | `{ url }` | JSON: title, byline, siteName, excerpt, wordCount |\n| `extract_links` | `{ url, limit? }` | JSON: all outbound http(s) links + anchor text |\n\n## Connect from an MCP client\n\nRemote/HTTP-capable clients (Claude Desktop, Cursor, Continue, …):\n\n```json\n{\n  \"mcpServers\": {\n    \"web-reader\": { \"url\": \"https://mcp.vanshul.com/mcp\" }\n  }\n}\n```\n\nStdio-only clients can bridge with `mcp-remote`:\n\n```sh\nnpx mcp-remote https://mcp.vanshul.com/mcp\n```\n\n### Add it to your client\n\n- **Cursor** — Settings → MCP → Add new server, or drop this into `~/.cursor/mcp.json`:\n  ```json\n  { \"mcpServers\": { \"web-reader\": { \"url\": \"https://mcp.vanshul.com/mcp\" } } }\n  ```\n- **Claude Desktop** — add the same block to `claude_desktop_config.json` (Settings → Developer → Edit Config). If your version is stdio-only, use:\n  ```json\n  { \"mcpServers\": { \"web-reader\": { \"command\": \"npx\", \"args\": [\"mcp-remote\", \"https://mcp.vanshul.com/mcp\"] } } }\n  ```\n- **Continue / VS Code** — add `web-reader` with URL `https://mcp.vanshul.com/mcp` to your MCP servers config.\n\n## Try it with curl\n\n```sh\ncurl -s https://mcp.vanshul.com/mcp \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\n\ncurl -s https://mcp.vanshul.com/mcp \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\n       \"params\":{\"name\":\"fetch_markdown\",\"arguments\":{\"url\":\"https://example.com\"}}}'\n\n# Return only the passages matching a query (token-efficient):\ncurl -s https://mcp.vanshul.com/mcp \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\n       \"params\":{\"name\":\"search_page\",\"arguments\":{\"url\":\"https://example.com\",\"query\":\"more information\"}}}'\n```\n\n## Layout\n\n```\nmcp/\n├── src/\n│   ├── worker.ts     # entry: routes /mcp, /health, rate limit, CORS\n│   ├── mcp.ts        # JSON-RPC dispatch + tool definitions\n│   ├── extract.ts    # HTML -> Markdown / links (Readability + Turndown)\n│   ├── search.ts     # query-focused passage search over extracted Markdown\n│   ├── fetcher.ts    # fetch with timeout, size cap, re-validated redirects\n│   └── security.ts   # SSRF guard (block private/internal addresses)\n├── public/\n│   ├── index.html    # landing page (served for non-API paths)\n│   ├── og.png        # social share image (1200×630)\n│   ├── og.svg        # social image source\n│   ├── robots.txt\n│   └── sitemap.xml\n├── tests/            # vitest: security, extract, search, mcp dispatch, fetcher, worker\n├── wrangler.toml\n├── package.json\n├── tsconfig.json\n└── README.md\n```\n\n## Develop & deploy\n\n```sh\ncd mcp\nnpm install\nnpm run typecheck\nnpm test          # vitest — security, extraction, search, MCP dispatch, fetcher, worker\nnpm run dev        # local worker at http://localhost:8787  (POST /mcp)\nnpm run deploy     # wrangler deploy\n```\n\nAfter the first deploy, attach the custom domain `mcp.vanshul.com` in the\nCloudflare dashboard (Workers & Pages → this worker → Settings → Domains), or\nuncomment the `[[routes]]` block in `wrangler.toml`.\n\n## Security\n\n- **SSRF-safe:** only public `http(s)` URLs; localhost, private ranges, cloud\n  metadata and every redirect hop are blocked/re-validated.\n- **Bounded:** 10s fetch timeout, ~3 MB page cap, max 5 redirects, per-IP rate\n  limit.\n- **Stateless & private:** no page content is stored; extraction is\n  deterministic with no LLM in the loop.\n\n## MCP protocol\n\nImplements `initialize`, `ping`, `tools/list`, `tools/call` and notifications\n(protocol version `2025-06-18`). Tool failures are returned as\n`{ content, isError: true }` so the agent can read the message and recover;\nmalformed requests use standard JSON-RPC error codes.\n\n## Documentation\n\n- [docs/architecture.md](docs/architecture.md) — modules, request lifecycle, extraction pipeline, limits\n- [docs/tools.md](docs/tools.md) — full tool & JSON-RPC API reference with examples\n- [docs/security.md](docs/security.md) — SSRF threat model and mitigations\n- [docs/deployment.md](docs/deployment.md) — Cloudflare Worker + custom-domain deploy guide\n\n## License\n\n[MIT](./LICENSE) © Vanshul Goyal\n",
+    "fetchedAt": "2026-08-11T23:17:18.949Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:57:53.905Z",
+  "toolsPreviewStatus": "ok",
+  "toolsPreview": [
+    {
+      "name": "fetch_markdown",
+      "description": "Fetch a web page and return its main content as clean Markdown (nav, ads and boilerplate removed). Raw Markdown, plain-text and JSON endpoints are returned as-is. Use this to read an article, docs page or raw file."
+    },
+    {
+      "name": "fetch_metadata",
+      "description": "Fetch a web page and return its metadata as JSON: title, byline, site name, excerpt and word count (no full body)."
+    },
+    {
+      "name": "extract_links",
+      "description": "Fetch a web page and return all of its outbound http(s) links (with anchor text) as JSON. Useful for crawling or finding related pages."
+    },
+    {
+      "name": "search_page",
+      "description": "Fetch a web page and return only the passages that match a query, instead of the whole page. Each result includes its heading breadcrumb and is ranked by relevance. Use this to find a specific detail (e.g. pricing, a config option) while spending far fewer tokens than fetch_markdown."
+    }
+  ]
+}

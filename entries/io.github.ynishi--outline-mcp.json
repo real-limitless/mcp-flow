@@ -1,0 +1,56 @@
+{
+  "id": "io.github.ynishi/outline-mcp",
+  "title": "outline-mcp",
+  "description": "Tree-structured knowledge base as an MCP server",
+  "summary": "Tree-structured knowledge base as an MCP server",
+  "offersHint": "Tree-structured knowledge base as an MCP server · Packages: oci:ghcr.io/ynishi/outline-mcp:0.11.1",
+  "version": "0.11.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/ynishi/outline-mcp:0.11.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/ynishi/outline-mcp:0.11.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/ynishi/outline-mcp",
+  "repository": {
+    "url": "https://github.com/ynishi/outline-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-23T14:15:28.56645Z",
+  "publishedAt": "2026-07-23T14:15:28.56645Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:01.953Z",
+    "sourceRepoAt": "2026-08-11T23:13:42.245Z",
+    "readmeAt": "2026-08-11T23:13:42.710Z",
+    "toolsAt": "2026-08-12T00:55:01.953Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ynishi/outline-mcp",
+    "checkedAt": "2026-08-11T23:13:42.245Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ynishi/outline-mcp/main/README.md",
+    "markdown": "# outline-mcp\n\nTree-structured knowledge base as an [MCP](https://modelcontextprotocol.io/) server.\n\nLLM sessions are ephemeral. **outline-mcp** gives them a persistent, editable knowledge tree — sections and content nodes that can be browsed (`toc`), annotated with properties, and evolved across sessions. Nodes with `inject=true` are automatically included in session context.\n\n## Quick Start\n\n```bash\ncargo install --path .\n```\n\n### Claude Code (`~/.claude.json`)\n\n#### Native binary (after `cargo install`)\n\n```json\n{\n  \"mcpServers\": {\n    \"outline\": {\n      \"command\": \"outline-mcp\",\n      \"args\": [\"/path/to/your-book.json\"]\n    }\n  }\n}\n```\n\n#### Docker (no Rust toolchain required)\n\n```json\n{\n  \"mcpServers\": {\n    \"outline\": {\n      \"command\": \"docker\",\n      \"args\": [\n        \"run\", \"-i\", \"--rm\",\n        \"-v\", \"/path/to/data:/data\",\n        \"ghcr.io/ynishi/outline-mcp:latest\",\n        \"/data/your-book.json\"\n      ]\n    }\n  }\n}\n```\n\nIf the path argument is omitted, defaults to `outline-book.json` in the current directory.\n\n## Workflow\n\n```\nshelf  →  select_book  →  toc  →  node_create / node_update / node_move\n                                   node_batch_move / node_batch_update / node_query\n                                   checklist / import / init / gen_routing\n                                   snapshot_create / snapshot_list / snapshot_restore\n                                   node_history / dump\n```\n\n1. **`init`** — Create a new empty book\n2. **`node_create`** — Add sections and content nodes (with optional `properties`)\n3. **`toc`** — View the table of contents with numbered IDs (e.g. `1`, `2-3`). Supports `filter` by properties\n4. **`select_book`** — Select a book. Nodes with `inject=true` property have their body auto-appended (draft nodes excluded)\n5. **`checklist`** — Export a section (or the whole book) as a Markdown checklist with checkboxes\n6. **`node_update`** — Edit title, body, type, placeholder, properties, or status (`active`/`draft`) of a node\n7. **`node_move`** — Relocate or delete nodes (with descendants)\n8. **`node_batch_move`** — Move or delete multiple nodes in a single atomic call (requires UUID or UUID-prefix IDs)\n9. **`node_batch_update`** — Update title/body/type/properties/status on multiple nodes atomically\n10. **`node_query`** — Search nodes by property values, status (`active`/`draft`), or type (`section`/`content`); optionally include body in results\n11. **`import`** — Import a book from a previously exported JSON file\n12. **`gen_routing`** — Generate a Markdown routing table from nodes with `routing` property across all books\n13. **`snapshot_create`** / **`snapshot_list`** / **`snapshot_restore`** — Full book versioning (create, list, restore)\n14. **`node_history`** — View per-node change log with before/after diffs\n15. **`dump`** — Export full book as JSON file\n\n### Node IDs\n\n`toc` assigns human-friendly numbered IDs:\n\n```\n1. Coding Standards\n  1-1. Naming Conventions\n  1-2. Error Handling\n2. Testing\n  2-1. Unit Tests\n  2-2. Integration Tests\n```\n\nThese IDs (`1`, `1-2`, `2-1`, etc.) work in most tools. Full UUIDs and title substring matching are also supported as fallbacks.\n\n> **Note**: `node_batch_move` and `node_batch_update` require UUID or UUID-prefix IDs. Hierarchical toc IDs are intentionally rejected to prevent positional drift when the tree is modified mid-batch.\n\n### Node Properties\n\nNodes can have key-value properties for metadata:\n\n```\nnode_create  title=\"My Rule\"  properties={\"inject\": \"true\", \"scope\": \"rust\"}\n```\n\n- **`inject=true`** — Node body is automatically included in `select_book` output (context injection)\n- **`routing=<scene>`** — Marks the node for `gen_routing` output. Use `|` to assign multiple scenes (e.g. `routing=\"testing|TDD\"`)\n- **`routing_ref=<text>`** — Overrides the default `§ID Title` reference in the routing table (e.g. `routing_ref=\"select_book で全体参照\"`)\n- Properties with value `\"true\"` appear as tags in `toc`: `1. My Rule [inject]`\n- `toc` supports filtering: `filter={\"inject\": \"true\"}` shows only matching nodes\n- Properties are preserved in JSON export/import\n\n## Architecture\n\nThe repository is a Cargo workspace with two crates: an rmcp-independent SDK (`outline-mcp-core`) and the MCP server binary (`outline-mcp`).\n\n```\ncrates/\n├── outline-mcp-core/     # SDK crate (library, no rmcp dependency)\n│   └── src/\n│       ├── domain/       # Core model (TemplateBook, TemplateNode, NodeId)\n│       │   ├── model/    # Aggregate root + value objects\n│       │   ├── error.rs  # Domain errors\n│       │   └── repository.rs # BookRepository trait\n│       ├── application/  # Use cases\n│       │   ├── service.rs # BookService (CRUD)\n│       │   └── eject.rs  # EjectService (Markdown/JSON export & import)\n│       └── infra/        # Persistence\n│           ├── json_store.rs # JSON file repository (atomic write)\n│           ├── changelog_store.rs\n│           └── snapshot.rs\n└── outline-mcp/          # Binary crate (MCP server, depends on outline-mcp-core)\n    └── src/\n        ├── main.rs       # Entry point\n        └── interface/\n            └── mcp/      # MCP handlers (rmcp, stdio)\n```\n\nDownstream applications that want to embed the tree / snapshot / changelog logic without pulling `rmcp` can depend on `outline-mcp-core` directly:\n\n```toml\n[dependencies]\noutline-mcp-core = \"0.7\"\n```\n\n## Export Formats\n\n### Markdown (default)\n\n```markdown\n# My Runbook\n\n## Design\n\n- [ ] Define requirements\n  > requirements list: ___\n- [ ] API design\n  REST endpoints\n```\n\n### JSON\n\nTree-structured format that can be re-imported:\n\n```json\n{\n  \"title\": \"My Runbook\",\n  \"max_depth\": 4,\n  \"nodes\": [\n    {\n      \"title\": \"Design\",\n      \"node_type\": \"section\",\n      \"children\": [...]\n    }\n  ]\n}\n```\n\n## Upgrading\n\n### From 0.9.1 or earlier\n\nThe snapshot subsystem now persists to a per-book SQLite event log (`{shelf_dir}/{slug}.events.db`) in addition to the existing on-disk `.snap.{millis}.json` files. Existing installs must run the migrator once to fold pre-existing on-disk snapshots into the event log — until they do, those snapshots stay on disk but are not visible to `snapshot_list` / `snapshot_restore`.\n\n**1. Back up the shelf directory.** The migrator is idempotent and does not delete files, but the shelf directory is the source of truth for your books; a copy is cheap insurance.\n\n```\ncp -a <shelf-dir> <shelf-dir>.bak\n```\n\n**2. Run the migrator.**\n\n```\noutline-mcp migrate-snapshots --shelf <shelf-dir>\n```\n\nThe migrator scans every `{slug}.snap.{millis}.json` file under `<shelf-dir>`, imports each into `{shelf-dir}/{slug}.events.db` with its original timestamp preserved, and leaves the source `.json` file in place. Output looks like:\n\n```\n== rust ==\n  scanned:  3\n  imported: 3\n  skipped:  0\n  failed:   0\n```\n\nPass `--slug <slug>` to migrate one book at a time.\n\n**3. Verify (optional).** Re-running the migrator is a no-op — every file will report as `skipped`.\n\n### What the migrator does not do\n\n- It does not delete the source `.snap.*.json` files. Keep them for a while as a second layer of backup.\n- It will refuse a stream that already carries events from a different clock (e.g. a book that has been actively edited via `snapshot_create` between the upgrade and the migrator run). Run the migrator before doing new writes.\n- The startup warning that steers you here is emitted via `tracing::warn!` on `stderr`. MCP clients that swallow server stderr (Claude Code included) will not surface it — treat the migrator command as the canonical way to check.\n\n### Known limitations\n\n- Snapshots that were **post-hoc labeled** via `snapshot_tag` (as opposed to labeled at `snapshot_create` time) lose the \"time the label was attached\" value in their sidecar `.meta.json`'s internal `created_at` field. The label text itself is preserved, and `created_at` is never exposed through the MCP surface — this is an internal-metadata drift, not user-visible.\n\n## License\n\nLicensed under either of\n\n- [Apache License, Version 2.0](LICENSE-APACHE)\n- [MIT License](LICENSE-MIT)\n\nat your option.\n",
+    "fetchedAt": "2026-08-11T23:13:42.710Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:01.953Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

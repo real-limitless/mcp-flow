@@ -1,0 +1,95 @@
+{
+  "id": "ai.gateco/gateco",
+  "title": "Gateco",
+  "description": "Permission-aware retrieval for AI systems: policy-enforced access to organizational knowledge.",
+  "summary": "Permission-aware retrieval for AI systems: policy-enforced access to organizational knowledge.",
+  "offersHint": "Permission-aware retrieval for AI systems: policy-enforced access to organizational knowledge. · Packages: pypi:gateco · Env vars: GATECO_API_KEY, GATECO_BASE_URL",
+  "version": "1.8.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "gateco",
+    "version": "1.8.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GATECO_API_KEY",
+        "description": "Gateco API key (create one in the Gateco dashboard under Settings > API Keys)",
+        "secret": true,
+        "required": true
+      },
+      {
+        "name": "GATECO_BASE_URL",
+        "description": "Gateco API base URL. Defaults to https://api.gateco.ai; set only for self-hosted or staging deployments."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "gateco",
+      "version": "1.8.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GATECO_API_KEY",
+          "description": "Gateco API key (create one in the Gateco dashboard under Settings > API Keys)",
+          "secret": true,
+          "required": true
+        },
+        {
+          "name": "GATECO_BASE_URL",
+          "description": "Gateco API base URL. Defaults to https://api.gateco.ai; set only for self-hosted or staging deployments."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GATECO_API_KEY",
+      "description": "Gateco API key (create one in the Gateco dashboard under Settings > API Keys)",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "GATECO_BASE_URL",
+      "description": "Gateco API base URL. Defaults to https://api.gateco.ai; set only for self-hosted or staging deployments."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://www.gateco.ai",
+  "sourceUrl": "https://github.com/fortisil/gateco-sdk-python",
+  "repository": {
+    "url": "https://github.com/fortisil/gateco-sdk-python",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-04T16:21:31.744996Z",
+  "publishedAt": "2026-08-04T16:21:31.744996Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-14T05:45:21.936Z",
+    "sourceRepoAt": "2026-08-14T05:45:21.936Z",
+    "readmeAt": "2026-08-14T05:45:22.469Z",
+    "toolsAt": "2026-08-14T05:45:22.504Z",
+    "complete": true
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/fortisil/gateco-sdk-python/main/README.md",
+    "markdown": "# Gateco Python SDK\n\nOfficial Python client for the [Gateco](https://gateco.ai) API — permission-aware retrieval for AI systems.\n\n[![PyPI version](https://img.shields.io/pypi/v/gateco.svg)](https://pypi.org/project/gateco/)\n[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)\n[![GitHub](https://img.shields.io/badge/GitHub-gateco--sdk--python-blue)](https://github.com/fortisil/gateco-sdk-python)\n\n<!-- mcp-name: ai.gateco/gateco -->\n\n---\n\n## The problem it solves\n\nWithout Gateco, when an employee asks your AI assistant \"What is the CEO's salary?\",\nthe RAG pipeline returns the salary from a leaked HR document.\n\nWith Gateco:\n\n```python\nfrom gateco_sdk import GatecoClient\n\nclient = GatecoClient(api_key=\"gck_live_abc123...\")\n\nresult = client.retrievals.execute(\n    query=\"What is the CEO's salary?\",\n    principal_id=\"user_james_wu\",\n    connector_id=\"connector_hr_docs\",\n    search_mode=\"hybrid\",\n)\n\n# result.allowed_chunks → [] (denied — James Wu lacks HR classification access)\n# result.denied_count   → 1\n# result.decision       → \"DENIED\"\n# Your AI model never sees the salary data\n```\n\nGateco sits between your AI agent and your vector store. Every retrieval is evaluated against\nyour access policies before any content reaches the model.\n\n---\n\n## Installation\n\n```bash\npip install gateco\n```\n\nFor MCP server support (Claude Desktop, Cursor, etc.):\n\n```bash\npip install gateco[mcp]\n```\n\n---\n\n## Authentication\n\nGateco API keys use the format `gck_<env>_<random>` (e.g. `gck_live_abc123...`).\n\nGenerate keys via the dashboard or via `client.api_keys.create(name=\"my-service\")`.\n\n```python\nfrom gateco_sdk import AsyncGatecoClient, GatecoClient\n\n# Async client with API key\nclient = AsyncGatecoClient(\"https://api.gateco.ai\", api_key=\"gck_live_abc123...\")\n\n# Sync client with API key\nclient = GatecoClient(\"https://api.gateco.ai\", api_key=\"gck_live_abc123...\")\n\n# Or use email/password login (issues a short-lived JWT)\nclient = GatecoClient(\"https://api.gateco.ai\")\nclient.login(\"user@example.com\", \"password\")\n```\n\nThe API key is sent as the `X-API-Key` header on every request. Set it via the\n`GATECO_API_KEY` environment variable when using the CLI or MCP server.\n\n---\n\n## Quick Start\n\n### Async (recommended for production services)\n\n```python\nimport asyncio\nfrom gateco_sdk import AsyncGatecoClient\n\nasync def main():\n    async with AsyncGatecoClient(\n        \"https://api.gateco.ai\",\n        api_key=\"gck_live_abc123...\",\n    ) as client:\n\n        # Policy-gated retrieval — the core Gateco primitive\n        result = await client.retrievals.execute(\n            query=\"What is the CEO's salary?\",\n            principal_id=\"user_james_wu\",\n            connector_id=\"connector_hr_docs\",\n            search_mode=\"hybrid\",\n            alpha=0.7,   # 70% vector weight, 30% keyword\n            top_k=5,\n        )\n\n        # Allowed chunks are safe to pass to your LLM\n        for chunk in result.allowed_chunks:\n            print(f\"[ALLOWED] {chunk.resource_id} score={chunk.score}\")\n\n        # Denied chunks are redacted — only metadata is surfaced\n        print(f\"Denied: {result.denied_count} chunk(s)\")\n\nasyncio.run(main())\n```\n\n### Synchronous (scripts and notebooks)\n\n```python\nfrom gateco_sdk import GatecoClient\n\nwith GatecoClient(\"https://api.gateco.ai\", api_key=\"gck_live_abc123...\") as client:\n    result = client.retrievals.execute(\n        query=\"What is the CEO's salary?\",\n        principal_id=\"user_james_wu\",\n        connector_id=\"connector_hr_docs\",\n        search_mode=\"hybrid\",\n    )\n    print(result.decision)  # \"DENIED\"\n```\n\n---\n\n## Available Namespaces\n\nAll 19 namespaces are available on both `AsyncGatecoClient` (async) and `GatecoClient` (sync).\n\n| Namespace | Description |\n|-----------|-------------|\n| `client.answers` | Grounded answer synthesis with policy-filtered citations (Team+) |\n| `client.api_keys` | Create, list, delete, and rotate API keys |\n| `client.audit` | Audit log listing and CSV export |\n| `client.auth` | Login, signup, token refresh, logout |\n| `client.billing` | Plans, usage meters, invoices, subscription, Stripe checkout and portal |\n| `client.connectors` | Connector CRUD, connection testing, search/ingestion config, coverage, classification suggestions |\n| `client.dashboard` | Aggregated dashboard statistics with optional sparklines |\n| `client.data_catalog` | Gated resource listing and metadata updates |\n| `client.identity_providers` | Identity provider CRUD and sync (Okta, Azure Entra ID, AWS IAM, GCP) |\n| `client.ingest` | Single-document, batch, and file ingestion (Tier 1 connectors) |\n| `client.onboarding` | Onboarding status (6 computed steps) and checklist dismissal |\n| `client.pipelines` | Pipeline CRUD and run management |\n| `client.policies` | Policy CRUD, lifecycle (activate/archive), and templates |\n| `client.principals` | Principal listing, detail, and resolution by email or provider subject |\n| `client.relationships` | REBAC direct-relation CRUD — create, list, delete 1-hop tuples (Team+) |\n| `client.retroactive` | Retroactive vector registration for existing connectors |\n| `client.retrievals` | Permission-gated retrieval execution, policy filter, and history |\n| `client.simulator` | Dry-run, live-preview, and batch-preview access simulation (Growth+) |\n| `client.users` | Current user profile — `get_me()`, `update_me(name)` |\n\n---\n\n## Retrieval Search Modes\n\n```python\n# Vector search (default) — semantic similarity\nresult = await client.retrievals.execute(\n    query=\"quarterly earnings\", principal_id=\"...\", connector_id=\"...\",\n)\n\n# Keyword search — ranked full-text search (BM25)\nresult = await client.retrievals.execute(\n    query=\"quarterly earnings\", principal_id=\"...\", connector_id=\"...\",\n    search_mode=\"keyword\",\n)\n\n# Hybrid search — vector + keyword fused (RRF)\nresult = await client.retrievals.execute(\n    query=\"quarterly earnings\", principal_id=\"...\", connector_id=\"...\",\n    search_mode=\"hybrid\",\n    alpha=0.5,   # 1.0 = all-vector, 0.0 = all-keyword\n)\n\n# Grep — exact pattern matching\nresult = await client.retrievals.execute(\n    query=\"ERR-4021\", principal_id=\"...\", connector_id=\"...\",\n    search_mode=\"grep\",\n    pattern_type=\"regex\",\n    case_sensitive=False,\n)\n```\n\n---\n\n## API Key Management\n\n```python\n# Create a key — the plaintext is returned exactly once\nkey_info = await client.api_keys.create(name=\"prod-worker\")\nprint(key_info[\"key\"])    # gck_live_abc123...  (store this securely)\nprint(key_info[\"prefix\"]) # gck_live_abc\n\n# List keys (plaintext never returned after creation)\nkeys = await client.api_keys.list()\n\n# Rotate a key — old key is invalidated immediately\nnew_key = await client.api_keys.rotate(key_id=\"key-uuid-here\")\n\n# Delete a key\nawait client.api_keys.delete(key_id=\"key-uuid-here\")\n```\n\n---\n\n## Relationship-Based Access Control (REBAC)\n\n```python\n# Create a direct relation: Alice owns resource R\nrel = await client.relationships.create(\n    subject_principal_id=\"principal-uuid\",\n    relation_name=\"owner_of\",\n    object_resource_id=\"resource-uuid\",\n)\nprint(rel[\"id\"])\n\n# List relations for a principal\nrels = await client.relationships.list(\n    subject_id=\"principal-uuid\",\n    relation=\"owner_of\",\n)\n\n# Delete a relation (invalidates policy cache immediately)\nawait client.relationships.delete(relationship_id=rel[\"id\"])\n```\n\nUse `relation.<name>` as a policy condition field to gate access on the existence of a tuple:\n```python\n# Policy rule: allow access when principal has owner_of relation on the resource\nrule = {\"field\": \"relation.owner_of\", \"operator\": \"eq\", \"value\": True}\n```\n\n---\n\n## Onboarding Status\n\n```python\n# Check which onboarding steps are complete\nstatus = await client.onboarding.status()\nfor step in status[\"steps\"]:\n    print(f\"{step['name']:30s}  {step['status']}\")\n\n# Dismiss the checklist once the org is fully configured\nawait client.onboarding.dismiss()\n```\n\n---\n\n## Principal Resolution\n\n```python\n# Resolve a principal by email (read-only — never creates)\nprincipal = await client.principals.resolve(email=\"alice@company.com\")\n\n# Resolve by raw IDP-side user ID\nprincipal = await client.principals.resolve(provider_subject=\"okta-user-123\")\n\n# Scoped to a specific identity provider\nprincipal = await client.principals.resolve(\n    email=\"alice@company.com\",\n    identity_provider_id=\"idp-uuid-here\",\n)\n```\n\n---\n\n## Grounded Answer Synthesis (Team+)\n\n```python\nanswer = await client.answers.execute(\n    query=\"Summarise the Q4 revenue results.\",\n    principal_id=\"user_alice\",\n    connector_id=\"connector_finance_docs\",\n    search_mode=\"hybrid\",\n)\n\nprint(answer.answer_text)      # LLM-generated answer from allowed chunks only\nprint(answer.outcome)          # \"answered\" | \"no_access\" | \"insufficient_context\"\nfor citation in answer.citations:\n    print(f\"  [{citation.score:.2f}] {citation.resource_id}\")\n```\n\n---\n\n## Policy Creation\n\n```python\n# Create an RBAC policy\npolicy = await client.policies.create(\n    name=\"Engineering read-only\",\n    description=\"Allow engineering group to read internal resources\",\n    type=\"rbac\",\n    effect=\"allow\",\n    rules=[{\n        \"description\": \"Engineering group members\",\n        \"effect\": \"allow\",\n        \"conditions\": [{\"field\": \"principal.groups\", \"operator\": \"contains\", \"value\": \"engineering\"}],\n        \"priority\": 1,\n    }],\n    resource_selectors=[{\"field\": \"resource.classification\", \"op\": \"lte\", \"value\": \"internal\"}],\n)\n```\n\n**Policy validation rules:**\n- Condition fields must use `resource.`, `principal.`, or `relation.` prefix.\n  Bare field names (e.g., `\"classification\"`) are rejected with 422 — they silently\n  resolve against the principal rather than the resource.\n- Policies with empty `resource_selectors` require `apply_to_all_resources=True` in\n  the request body to opt into matching all resources explicitly.\n\n---\n\n## Retrieval Diagnostics\n\n```python\nresult = await client.retrievals.execute(\n    query=\"quarterly earnings\",\n    principal_id=\"user_alice\",\n    connector_id=\"connector_finance_docs\",\n    search_mode=\"hybrid\",\n)\n\n# All retrieval responses include diagnostics\nprint(result.diagnostics.outcome_detail)    # Human-readable explanation\nprint(result.diagnostics.candidates_fetched)  # How many candidates were checked\nprint(result.diagnostics.candidates_denied)   # How many were denied by policy\nprint(result.diagnostics.refill_rounds)       # How many refill rounds ran (0 = first pass sufficient)\n```\n\n---\n\n## Connector Preflight Check\n\n```python\n# Check if a connector is production-ready before using it in retrievals\npreflight = client.connectors.preflight(connector_id=\"...\")\nprint(preflight.ready_for_production)  # bool\nprint(preflight.recommendation)        # What to fix next\nfor check in preflight.checks:\n    print(f\"{check.name}: {'PASS' if check.passed else 'FAIL'} (blocking={check.blocking})\")\n```\n\n---\n\n## Dashboard Activation Metrics\n\n```python\n# Aggregated dashboard statistics\nstats = await client.dashboard.stats()\nprint(stats[\"total_retrievals\"])\nprint(stats[\"allowed_retrievals\"])\n\n# Activation funnel metrics\nactivation = client.dashboard.get_activation_stats()\nprint(activation.total_retrievals_30d)\nprint(activation.allowed_retrievals_30d)\nprint(activation.no_access_retrievals_30d)  # Retrievals where 0 results were authorized\nprint(activation.p95_latency_ms)            # End-to-end p95 latency\n```\n\n---\n\n## Pagination\n\nList endpoints return a `Page` object. Use `list_all()` for automatic async pagination:\n\n```python\nasync for connector in client.connectors.list_all():\n    print(connector.name)\n```\n\n---\n\n## Rate Limits\n\nThree endpoints enforce per-org-per-minute limits:\n\n| Endpoint | Limit |\n|----------|-------|\n| `POST /api/retrievals/execute` | 60/min |\n| `POST /api/answers/execute` | 20/min |\n| `POST /api/simulator/preview` | 10/min |\n\nExceeded limits raise `RateLimitError`. The SDK retries automatically with exponential backoff (configurable via `max_retries`). Limits are org-scoped and reset on process restart (in-memory implementation).\n\n---\n\n## Error Handling\n\n```python\nfrom gateco_sdk.errors import NotFoundError, RateLimitError, AuthenticationError\n\ntry:\n    conn = await client.connectors.get(\"nonexistent-id\")\nexcept NotFoundError:\n    print(\"Connector not found\")\nexcept RateLimitError as e:\n    print(f\"Rate limited — retry after {e.retry_after}s\")\nexcept AuthenticationError:\n    print(\"Invalid or expired credentials\")\n```\n\n---\n\n## MCP Server (Model Context Protocol)\n\nThe optional MCP server lets AI agents (Claude Desktop, Cursor, etc.) perform\npermission-aware retrieval without any custom code.\n\n```bash\npip install gateco[mcp]\n\n# Start the server\ngateco mcp serve\n\n# Or use the direct entry point (for MCP host configs)\ngateco-mcp\n```\n\n### Claude Desktop Configuration\n\n```json\n{\n  \"mcpServers\": {\n    \"gateco\": {\n      \"command\": \"gateco-mcp\",\n      \"env\": {\n        \"GATECO_API_KEY\": \"gck_live_abc123...\",\n        \"GATECO_BASE_URL\": \"https://api.gateco.ai\"\n      }\n    }\n  }\n}\n```\n\n### Available MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `gateco_retrieve` | Permission-aware retrieval (vector/keyword/hybrid/grep) |\n| `gateco_ask` | Grounded answer synthesis with search modes (Team+) |\n| `gateco_check_access` | Dry-run access simulation (Growth+) |\n| `gateco_list_connectors` | List connectors with readiness levels |\n| `gateco_list_principals` | List identity principals |\n| `gateco_resolve_principal` | Resolve a principal by email or provider subject |\n\nAll tools return markdown-formatted text. Denied content is never exposed — only denial\nreasons and counts are shown.\n\n---\n\n## Development\n\n```bash\npip install -e \".[dev]\"\npytest -v\n\n# Run MCP server tests\npytest tests/test_mcp/ -v\n\n# With coverage\npytest --cov=src/gateco_sdk\n```\n\n---\n\n## Links\n\n- [Documentation](https://gateco.ai/docs)\n- [Dashboard](https://app.gateco.ai)\n- [GitHub](https://github.com/fortisil/gateco-sdk-python)\n- [Bug Tracker](https://github.com/fortisil/gateco-sdk-python/issues)\n- [Support](mailto:support@gateco.ai)\n",
+    "fetchedAt": "2026-08-14T05:45:22.469Z"
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/fortisil/gateco-sdk-python",
+    "checkedAt": "2026-08-14T05:45:21.936Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "toolsPreviewAt": "2026-08-14T05:45:22.504Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

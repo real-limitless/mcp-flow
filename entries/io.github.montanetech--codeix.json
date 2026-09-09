@@ -1,0 +1,65 @@
+{
+  "id": "io.github.montanetech/codeix",
+  "title": "Codeix",
+  "description": "Fast semantic code search for AI agents — find symbols, references, and callers across any codebase",
+  "summary": "Fast semantic code search for AI agents — find symbols, references, and callers across any codebase",
+  "offersHint": "Fast semantic code search for AI agents — find symbols, references, and callers across any codebase · Packages: npm:codeix, pypi:codeix",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "codeix",
+    "version": "0.5.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "codeix",
+      "version": "0.5.0",
+      "transport": "stdio"
+    },
+    {
+      "kind": "pypi",
+      "package": "codeix",
+      "version": "0.5.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://codeix.dev",
+  "sourceUrl": "https://github.com/montanetech/codeix",
+  "repository": {
+    "url": "https://github.com/montanetech/codeix",
+    "source": "github"
+  },
+  "updatedAt": "2026-02-21T15:33:25.036881Z",
+  "publishedAt": "2026-02-21T15:33:25.036881Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:12:19.366Z",
+    "sourceRepoAt": "2026-08-11T23:33:27.608Z",
+    "readmeAt": "2026-08-11T23:33:28.087Z",
+    "toolsAt": "2026-08-12T01:12:19.366Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/montanetech/codeix",
+    "checkedAt": "2026-08-11T23:33:27.608Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/montanetech/codeix/main/README.md",
+    "markdown": "# codeix\n\n<!-- mcp-name: io.github.montanetech/codeix -->\n\n**[codeix.dev](https://codeix.dev)** · Fast semantic code search for AI agents — find symbols, references, and callers across any codebase.\n\n```\ncodeix                 # start MCP server, watch for changes\ncodeix build           # parse source files, write .codeindex\ncodeix -r ~/project build  # build from a specific directory\n```\n\n## Why\n\nAI coding agents spend most of their token budget *finding* code before they can *work on* it. They grep, read files, grep again, backtrack. On a large codebase the agent might burn thousands of tokens just locating the right function — or worse, miss it entirely and hallucinate.\n\n**Codeix gives the agent a pre-built map of your codebase.** One structured query returns the symbol name, file, line range, signature, and parent — no scanning, no guessing.\n\n### What existing tools get wrong\n\n| Problem | What happens today |\n|---|---|\n| **No structure** | `grep` finds text matches, not symbols. The agent can't distinguish a function definition from a comment mentioning it. |\n| **Slow re-parsing** | Python-based indexers re-parse everything on startup. On large codebases, you wait. |\n| **Not shareable** | Indexes are local caches — ephemeral, per-machine. A new developer or CI runner starts from scratch. |\n| **No composition** | Monorepo with 10 packages? Dependencies with useful APIs? No way to query across boundaries. |\n| **Prose is invisible** | TODOs, docstrings, error messages — searchable by grep but not *selectively*. You can't search only comments without also matching code. |\n\n### What codeix does differently\n\n- **Committed to git** — the index is a `.codeindex` directory you commit with your code. Clone the repo, the index is already there. No re-indexing.\n- **Shareable** — library authors can ship `.codeindex` in their npm/PyPI/crates.io package. Consumers get instant navigation of dependencies.\n- **Composable** — the MCP server auto-discovers dependency indexes and mounts them. Query your code and your dependencies in one place.\n- **Structured for LLMs** — symbols have kinds, signatures, parent relationships, and line ranges. The agent gets exactly what it needs in one tool call instead of piecing it together from raw text.\n- **Prose search** — `search --scope text` targets comments, docstrings, and string literals specifically. Find TODOs, find the error message a user reported, find what a function's docstring says — without noise from code.\n- **Fast** — builds in seconds, queries in milliseconds. Rust + tree-sitter + in-memory SQLite FTS5 under the hood.\n\n## The `.codeindex` format\n\nAn open, portable format for structured code indexing. Plain JSONL files you commit alongside your code — git-friendly diffs, human-readable with `grep` and `jq`, no binary blobs.\n\n```\n.codeindex/\n  index.json        # manifest: version, name, languages\n  files.jsonl       # one line per source file (path, lang, hash, line count)\n  symbols.jsonl     # one line per symbol (functions, classes, imports, with signatures)\n  texts.jsonl       # one line per comment, docstring, string literal\n```\n\nAny tool that can parse JSON can consume a `.codeindex`. Codeix builds it using [tree-sitter](https://tree-sitter.github.io/), and AI agents query it through [MCP](https://modelcontextprotocol.io/) (Model Context Protocol).\n\n**Example** — `symbols.jsonl`:\n```jsonl\n{\"file\":\"src/main.py\",\"name\":\"os\",\"kind\":\"import\",\"line\":[1,1]}\n{\"file\":\"src/main.py\",\"name\":\"Config\",\"kind\":\"class\",\"line\":[22,45]}\n{\"file\":\"src/main.py\",\"name\":\"Config.__init__\",\"kind\":\"method\",\"line\":[23,30],\"parent\":\"Config\",\"sig\":\"def __init__(self, path: str, debug: bool = False)\"}\n{\"file\":\"src/main.py\",\"name\":\"main\",\"kind\":\"function\",\"line\":[48,60],\"sig\":\"def main(args: list[str]) -> int\"}\n```\n\n## Ship your index with your package\n\nInclude `.codeindex` in your package and every developer who depends on you gets instant navigation of your API — no setup, no re-indexing.\n\nWorks with Git repos, npm, PyPI, and crates.io.\n\n## MCP tools\n\nSeven tools, zero setup. The agent queries immediately — no init, no config, no refresh.\n\n| Tool | What it does |\n|---|---|\n| `explore` | Explore project structure: metadata, subprojects, files grouped by directory |\n| `search` | Unified full-text search across symbols, files, and texts (FTS5, BM25-ranked) with scope/kind/path/project filters |\n| `get_file_symbols` | List all symbols in a file |\n| `get_children` | Get children of a class/module |\n| `get_callers` | Find all places that call or reference a symbol |\n| `get_callees` | Find all symbols that a function/method calls |\n| `flush_index` | Flush pending index changes to disk |\n\n## Project discovery\n\nLaunch `codeix` from any directory. It walks downward and treats every directory containing `.git/` as a separate project — each gets its own `.codeindex`.\n\nWorks uniformly for single repos, monorepos, sibling repos, and git submodules. No config needed.\n\n## Languages\n\nTree-sitter grammars, feature-gated at compile time:\n\n| Language | Feature flag | Default | Extensions |\n|---|---|---|---|\n| Python | `lang-python` | yes | `.py` `.pyi` `.pyw` |\n| Rust | `lang-rust` | yes | `.rs` |\n| JavaScript | `lang-javascript` | yes | `.js` `.mjs` `.cjs` `.jsx` |\n| TypeScript | `lang-typescript` | yes | `.ts` `.mts` `.cts` `.tsx` |\n| Go | `lang-go` | yes | `.go` |\n| Java | `lang-java` | yes | `.java` |\n| C | `lang-c` | yes | `.c` `.h` |\n| C++ | `lang-cpp` | yes | `.cpp` `.cc` `.cxx` `.hpp` `.hxx` |\n| Ruby | `lang-ruby` | yes | `.rb` `.rake` `.gemspec` |\n| C# | `lang-csharp` | yes | `.cs` |\n| Markdown | `lang-markdown` | yes | `.md` `.markdown` |\n\n### Markdown support\n\nMarkdown files are parsed for **headings** (both ATX `#` and Setext underline styles) which are indexed as `section` symbols with hierarchical parent-child relationships — enabling TOC extraction and document structure navigation.\n\nFenced code blocks are extracted as `code` text entries, parented to their containing section.\n\n### Embedded scripts\n\nHTML, Vue, Svelte, and Astro files are preprocessed to extract embedded `<script>` blocks, which are then parsed with the JavaScript or TypeScript grammar:\n\n| Format | Extensions | Script detection |\n|---|---|---|\n| HTML | `.html` `.htm` | `<script>` tags, with optional `lang=\"ts\"` |\n| Vue | `.vue` | `<script>` and `<script setup>`, with optional `lang=\"ts\"` |\n| Svelte | `.svelte` | `<script>`, with optional `lang=\"ts\"` |\n| Astro | `.astro` | `---` frontmatter (always TypeScript) + optional `<script>` tags |\n\nLine numbers in the index point to the original file, not the extracted script block.\n\n## Install\n\n```sh\n# npm / npx — run without installing\nnpx codeix\n\n# pip / uvx — run without installing\nuvx codeix\n\n# Rust\ncargo install codeix\n\n# Homebrew\nbrew install codeix\n\n# Or build from source\ngit clone https://github.com/montanetech/codeix.git\ncd codeix\ncargo build --release\n```\n\nAll channels install the same single binary. No runtime dependencies.\n\n## Usage\n\n```sh\n# Build the index for the current project\ncodeix build\n\n# Build from a specific directory (discovers all git repos below)\ncodeix -r ~/projects build\n\n# Start MCP server (default command, watches for changes)\ncodeix\n\n# Or explicitly\ncodeix serve\ncodeix serve --no-watch\n\n# Serve from a specific directory\ncodeix -r ~/projects serve\n```\n\n### MCP client configuration\n\nAdd to your MCP client config (e.g. Claude Desktop, Cursor):\n\n```json\n{\n  \"mcpServers\": {\n    \"codeix\": {\n      \"command\": \"codeix\"\n    }\n  }\n}\n```\n\n## Design principles\n\n- **Local only** — no network, no API keys, works offline and air-gapped\n- **Deterministic** — same source always produces the same index (clean diffs)\n- **Composable** — dependency indexes are auto-discovered and mounted at query time\n- **Minimal surface** — 7 query tools, zero management plumbing\n\n## Architecture\n\nSee [`docs/architecture.md`](docs/architecture.md) for the full set of architecture decision records.\n\n## License\n\nMIT OR Apache-2.0\n",
+    "fetchedAt": "2026-08-11T23:33:28.087Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:12:19.366Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

@@ -1,0 +1,111 @@
+{
+  "id": "io.github.machinegrade/validate",
+  "title": "validate",
+  "description": "Deterministic validation for AI-generated artifacts: JSON Schema, OpenAPI response, SQL syntax.",
+  "summary": "Deterministic validation for AI-generated artifacts: JSON Schema, OpenAPI response, SQL syntax.",
+  "offersHint": "Deterministic validation for AI-generated artifacts: JSON Schema, OpenAPI response, SQL syntax. · Remote MCP (streamable-http) at https://api.machinegrade.dev/mcp · Packages: npm:@machinegrade/validate · Env vars: SANDBOX_API_KEY, SANDBOX_URL",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.machinegrade.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.machinegrade.dev/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@machinegrade/validate",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "SANDBOX_URL",
+        "description": "Base URL of the validate API",
+        "default": "https://api.machinegrade.dev"
+      },
+      {
+        "name": "SANDBOX_API_KEY",
+        "description": "API key issued via POST https://api.machinegrade.dev/keys (free tier: 500 calls/month)",
+        "secret": true,
+        "required": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@machinegrade/validate",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "SANDBOX_URL",
+          "description": "Base URL of the validate API",
+          "default": "https://api.machinegrade.dev"
+        },
+        {
+          "name": "SANDBOX_API_KEY",
+          "description": "API key issued via POST https://api.machinegrade.dev/keys (free tier: 500 calls/month)",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "SANDBOX_API_KEY",
+      "description": "API key issued via POST https://api.machinegrade.dev/keys (free tier: 500 calls/month)",
+      "secret": true,
+      "required": true
+    },
+    {
+      "name": "SANDBOX_URL",
+      "description": "Base URL of the validate API",
+      "default": "https://api.machinegrade.dev"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://api.machinegrade.dev",
+  "sourceUrl": "https://github.com/machinegrade/validate",
+  "repository": {
+    "url": "https://github.com/machinegrade/validate",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-26T12:29:53.163795Z",
+  "publishedAt": "2026-07-26T12:29:53.163795Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:15:57.443Z",
+    "sourceRepoAt": "2026-08-11T23:36:59.739Z",
+    "readmeAt": "2026-08-11T23:37:00.304Z",
+    "toolsAt": "2026-08-11T23:37:00.485Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/machinegrade/validate",
+    "checkedAt": "2026-08-11T23:36:59.739Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/machinegrade/validate/main/README.md",
+    "markdown": "# machinegrade validate\n\nValidate AI-generated artifacts against a contract before you act on them:\n\n- **`json_schema`** — validate `artifact` against a JSON Schema (all errors collected).\n- **`openapi_response`** — validate a response body against the response schema for a given `path` + `method` + `status` in an OpenAPI spec.\n- **`sql`** — check a SQL string for syntax errors in a given dialect.\n\nEvery check returns a **verdict**, not an error: `{valid, errors, latency_ms}`,\nHTTP 200 whether the artifact is valid or not. Only genuinely wrong requests\n(bad key, unsupported type, malformed body, over your limit) get typed HTTP\nerrors.\n\nLive at **https://api.machinegrade.dev** — free tier, self-service key,\ntry it in 30 seconds (first example below). Built on Hono; the same\ncodebase runs on Cloudflare Workers (production) and plain Node (local\ndev), and is MIT-licensed if you'd rather self-host.\n\n## Why\n\nAgents that generate JSON, API responses, or SQL need a fast, cheap,\nmachine-checkable pass/fail before they ship the result — cheaper than a\nfull LLM-as-judge call, and deterministic.\n\n## Run it locally\n\n```bash\nnpm install\nnpm run dev\n# machinegrade validate listening on http://localhost:8787\n```\n\n## 3 runnable examples\n\n### 1. curl\n\n```bash\n# Get an API key (live service — works as-is)\ncurl -s -X POST https://api.machinegrade.dev/keys \\\n  -H 'content-type: application/json' \\\n  -d '{\"email\": \"you@example.com\"}'\n# => {\"key\":\"sk_...\"}\n\n# Validate a JSON artifact against a JSON Schema\ncurl -s -X POST https://api.machinegrade.dev/v1/validate \\\n  -H 'content-type: application/json' \\\n  -H 'X-Api-Key: sk_...' \\\n  -d '{\n    \"type\": \"json_schema\",\n    \"artifact\": {\"name\": \"Ada\", \"age\": 30},\n    \"contract\": {\n      \"schema\": {\n        \"type\": \"object\",\n        \"required\": [\"name\", \"age\"],\n        \"properties\": {\"name\": {\"type\": \"string\"}, \"age\": {\"type\": \"number\"}}\n      }\n    }\n  }'\n# => {\"valid\":true,\"errors\":[],\"latency_ms\":1}\n```\n\n### 2. Python (requests)\n\n```python\nimport requests\n\nbase = \"http://localhost:8787\"\n\nkey = requests.post(f\"{base}/keys\", json={\"email\": \"you@example.com\"}).json()[\"key\"]\n\nresp = requests.post(\n    f\"{base}/v1/validate\",\n    headers={\"X-Api-Key\": key},\n    json={\n        \"type\": \"sql\",\n        \"artifact\": \"SELECT id, name FROM users WHERE id = 1\",\n        \"contract\": {\"dialect\": \"mysql\"},\n    },\n)\nprint(resp.status_code, resp.headers.get(\"X-Calls-Remaining\"), resp.json())\n```\n\n### 3. MCP config snippet\n\n`mcp/server.ts` exposes a single tool, `validate`, that forwards to\n`POST /v1/validate`. Point an MCP-compatible client at it:\n\n```json\n{\n  \"mcpServers\": {\n    \"machinegrade-validate\": {\n      \"command\": \"npx\",\n      \"args\": [\"tsx\", \"mcp/server.ts\"],\n      \"cwd\": \"/path/to/validate\",\n      \"env\": {\n        \"SANDBOX_URL\": \"http://localhost:8787\",\n        \"SANDBOX_API_KEY\": \"sk_...\"\n      }\n    }\n  }\n}\n```\n\n## Connect remotely\n\nThe production service also exposes an MCP endpoint directly — no local\nprocess, no npm install — via streamable HTTP at:\n\n```\nPOST https://api.machinegrade.dev/mcp\n```\n\nIt's the same single `validate` tool as the stdio adapter above.\n`initialize` and `tools/list` work without a key (discovery is\nanonymous); `tools/call` requires `X-Api-Key` (issue one via `POST\n/keys`, same as the REST API — the free tier and limits are shared).\n\nWith Claude Code:\n\n```bash\nclaude mcp add --transport http validate https://api.machinegrade.dev/mcp --header \"X-Api-Key: sk_...\"\n```\n\nThe stdio adapter via npm (`@machinegrade/validate`, see above) remains\navailable for local/offline use or clients without HTTP transport\nsupport.\n\n## Claude Desktop: one-click install\n\nDownload the latest `.mcpb` bundle from\n[Releases](https://github.com/machinegrade/validate/releases/latest) and\ndouble-click it. Claude Desktop asks for an API key during install and stores it\nin the OS keychain (macOS Keychain, Windows Credential Manager) rather than in a\nconfig file — nothing lands in `claude_desktop_config.json`.\n\nIssue a free key (500 calls/month) first:\n\n```bash\ncurl -s -X POST https://api.machinegrade.dev/keys \\\n  -H 'content-type: application/json' \\\n  -d '{\"email\": \"you@example.com\"}'\n```\n\nThe bundle is a thin stdio client over the hosted API: ~34 KB, zero bundled\ndependencies. If you self-host, point the extension's **API base URL** setting at\nyour own deployment and the tool talks to that instead.\n\n## API\n\nSee [`public/openapi.yaml`](./public/openapi.yaml) for the full contract, or\n[`/v1/manifest`](http://localhost:8787/v1/manifest) for a machine-readable\nsummary (types, limits, pricing, error codes) once the service is running.\n[`/llms.txt`](./public/llms.txt) is a short pointer for LLM agents.\n\n| Endpoint | In | Out |\n|---|---|---|\n| `POST /keys` | `{email}` | `{key}` |\n| `POST /v1/validate` | header `X-Api-Key`, body `{type, artifact, contract?}` | verdict, header `X-Calls-Remaining` |\n| `GET /v1/manifest` | — | capability manifest |\n| `GET /stats` | header `X-Admin-Token` | funnel: keys_issued, active_callers, repeat_callers_7d, limit_hits, paid_requests |\n| `POST /v1/paid-request` | header `X-Api-Key` | records interest in paid access |\n| `GET /openapi.yaml`, `GET /llms.txt` | — | static docs |\n| `POST /mcp` | MCP streamable HTTP, header `X-Api-Key` for `tools/call` | see \"Connect remotely\" above |\n\n## Pricing\n\n- **Free tier:** 500 calls/month per key, 60 calls/minute rate limit.\n- **Paid tier:** EUR 0.002/call beyond the free tier — **opens soon**.\n  Request paid access via `POST /v1/paid-request` (requires `X-Api-Key`);\n  you'll be notified when it's live.\n\n## Errors\n\nEvery error is typed JSON — `{code, message, hint, docs_url}` — never a\nfree-form string:\n\n| Code | HTTP status | When |\n|---|---|---|\n| `INVALID_KEY` | 401 | `X-Api-Key` missing or unknown |\n| `LIMIT_EXCEEDED` | 402 | Free-tier monthly limit (500 calls) exceeded |\n| `UNSUPPORTED_TYPE` | 400 | `type` is not `json_schema`, `openapi_response`, or `sql` |\n| `MALFORMED_INPUT` | 400 | Request body doesn't match the documented shape |\n| `RATE_LIMITED` | 429 | More than 60 calls/minute for a key |\n\nA **verdict** (`{valid, errors, latency_ms}`) is never an error — an\ninvalid artifact is a normal, expected outcome and returns HTTP 200.\n\n## Sending the artifact\n\n`artifact` must be a JSON **value**, not a JSON-encoded string:\n\n```jsonc\n{\"type\": \"json_schema\", \"artifact\": {\"name\": \"Ada\"}, \"contract\": {\"schema\": {\"type\": \"object\"}}}   // correct\n{\"type\": \"json_schema\", \"artifact\": \"{\\\"name\\\": \\\"Ada\\\"}\", \"contract\": {\"schema\": {\"type\": \"object\"}}}  // wrong\n```\n\nFor `type: \"sql\"` the artifact *is* a string — the statement itself.\n\nBecause MCP callers stringify values often enough (and did so through Claude\nDesktop until the tool schema declared `artifact`'s types), the service\ntolerates the wrong form narrowly: if `artifact` is a string, the type is\n`json_schema` or `openapi_response`, and the contract's **top-level schema\ndeclares types that exclude `string`**, the string is JSON-decoded before\nvalidation and the verdict carries `\"decoded_from_string\": true`. The field is\nadditive; `{valid, errors, latency_ms}` is unchanged.\n\nIt deliberately does not decode otherwise, because a string artifact is often\nlegitimate:\n\n| Sent | Contract schema | Result |\n|---|---|---|\n| `\"42\"` | `{\"type\": \"number\"}` | decoded to `42`, `valid: true`, `decoded_from_string: true` |\n| `\"42\"` | `{\"type\": \"string\"}` | left alone, `valid: true` |\n| `\"{\\\"a\\\":1}\"` | `{\"type\": \"string\"}` | left alone, `valid: true` |\n| `\"{\\\"a\\\":1}\"` | `{\"required\": [\"a\"]}` | left alone — no top-level `type`, intent unknown |\n\n## Storage\n\n`src/storage.ts` defines a `Storage` interface with two implementations:\n\n- `MemoryStorage` — full in-memory implementation, used for `npm run dev`\n  and the test suite.\n- `D1Storage` — real Cloudflare D1 binding, backed by `schema.sql` (`keys`,\n  `events` tables). Used in production; the Workers entry point in\n  `src/index.ts` builds it from the `DB` binding on first request.\n\nApply `schema.sql` to a new D1 database with:\n\n```bash\nwrangler d1 execute machinegrade-validate-db --file=schema.sql          # local\nwrangler d1 execute machinegrade-validate-db --file=schema.sql --remote # production\n```\n\n## Testing\n\n```bash\nnpm test          # vitest run, in-process via app.request(), MemoryStorage\nnpm run typecheck # tsc --noEmit\n```\n\nTests cover: key issuance, happy + fail cases for each validator, typed\n401/400/402/429 errors, the metering limits (both injectable in tests so\nthey don't require looping hundreds of real requests), and `/stats` funnel\ncounts.\n\n## Deploy\n\nThe service runs on Cloudflare Workers (Hono + D1 + Workers Static\nAssets). To self-host on a fresh Cloudflare account:\n\n```bash\nwrangler d1 create machinegrade-validate-db   # copy the returned database_id into wrangler.toml\nwrangler d1 execute machinegrade-validate-db --file=schema.sql --remote\nwrangler secret put ADMIN_TOKEN\nwrangler deploy\n```\n\nThen bind a custom domain (e.g. `api.machinegrade.dev`) to the Worker via\nthe Cloudflare dashboard or `wrangler`. CI can deploy on push to `main` once\n`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set and\nthe `deploy` job in `.github/workflows/ci.yml` is uncommented.\n\nTwo things worth knowing about the Workers port:\n\n- `GET /openapi.yaml` and `GET /llms.txt` are served by the `ASSETS` binding\n  (`[assets]` in `wrangler.toml`, pointing at `public/`) — Cloudflare serves\n  them directly, without invoking the Worker. The routes in `src/index.ts`\n  are a fallback for local Node dev/tests, where there's no ASSETS binding.\n- The `json_schema` and `openapi_response` validators use\n  `@cfworker/json-schema`, not `ajv`: ajv compiles schemas via\n  `new Function(...)`, which the Workers runtime disallows, and schemas\n  here arrive dynamically per request (from the caller), so they can't be\n  precompiled at build time either.\n\n## Status\n\nEarly stage, honestly so: this service is live and free-tier usage is real,\nand we're measuring whether it earns a paid tier. What you can rely on:\n\n- The API contract (`/v1/validate` request/response shapes, typed error\n  codes, verdict semantics) is stable — breaking changes only with a\n  versioned path (`/v2/...`), never silently.\n- The free tier (500 calls/month) stays.\n- If we ever sunset the service, keys keep working for 90 days after the\n  announcement, and the validators are open source in this repo — you can\n  self-host the same behavior.\n\nFeedback and integration stories are the most valuable thing you can give\nus right now: open an issue or use `POST /v1/paid-request` if you need\nmore than the free tier.\n",
+    "fetchedAt": "2026-08-11T23:37:00.304Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "validate",
+      "description": "Validate an artifact against a contract (json_schema | openapi_response | sql) via the machinegrade validate API."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:37:00.485Z",
+  "toolsPreviewStatus": "ok"
+}

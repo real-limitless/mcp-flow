@@ -1,0 +1,58 @@
+{
+  "id": "io.github.AIops-tools/queue-aiops",
+  "title": "Queue AIops",
+  "description": "Governed redis + rabbitmq ops: memory/latency/backlog/churn RCA, policies. 28 tools.",
+  "summary": "Governed redis + rabbitmq ops: memory/latency/backlog/churn RCA, policies. 28 tools.",
+  "offersHint": "Governed redis + rabbitmq ops: memory/latency/backlog/churn RCA, policies. 28 tools. · Packages: pypi:queue-aiops",
+  "version": "0.8.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "queue-aiops",
+    "version": "0.8.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "queue-aiops",
+      "version": "0.8.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/AIops-tools/Queue-AIops",
+  "repository": {
+    "url": "https://github.com/AIops-tools/Queue-AIops",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T06:50:51.84905Z",
+  "publishedAt": "2026-08-10T06:50:51.84905Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:49.392Z",
+    "sourceRepoAt": "2026-08-12T00:17:54.396Z",
+    "readmeAt": "2026-08-12T00:17:54.973Z",
+    "toolsAt": "2026-08-12T01:47:49.392Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AIops-tools/Queue-AIops",
+    "checkedAt": "2026-08-12T00:17:54.396Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AIops-tools/Queue-AIops/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.AIops-tools/queue-aiops -->\n\n# Queue AIops\n\n**Governed AI-ops for redis + rabbitmq.** queue-aiops is for the team running\ntheir own cache and message broker — a redis that \"suddenly eats memory\", a\nrabbitmq whose queues quietly grow until publishers block — without an\nenterprise observability suite. It gives an AI agent (or a human at the CLI) a\ngoverned toolset over both: transparent root-cause analyses for memory\npressure, latency, queue backlog, and connection churn, plus the handful of\nwrites an operator actually needs (config set, client kill, purge/delete\nqueue, policies) — every call audited, budgeted, risk-tiered, and undo-recorded\nby the built-in governance harness.\n\n> **Disclaimer**: Community-maintained open-source project, **not affiliated\n> with, endorsed by, or sponsored by the Redis or RabbitMQ projects or their\n> respective owners.** Redis and RabbitMQ are trademarks of their respective owners.\n>\n> **Verification**: behaviour is covered by a mock-based test suite; not yet validated\n> against live brokers. Both redis and rabbitmq are free/self-hostable (one lab container\n> or package install each), so a lab check is easy — `queue-aiops doctor` is the fastest\n> live probe, and [docs/VERIFICATION.md](docs/VERIFICATION.md) is the checklist.\n\n## Quick start\n\n```bash\nuv tool install queue-aiops\n\nqueue-aiops init      # wizard: pick platform (redis/rabbitmq), host/port, encrypted secret\nqueue-aiops doctor    # config + secret + connectivity check (PING / /api/overview)\nqueue-aiops overview  # one-shot health summary for the default target\n```\n\nThen the interesting parts:\n\n```bash\nqueue-aiops analyze memory     # redis memory-pressure RCA (maxmemory, eviction, frag, big keys)\nqueue-aiops analyze latency    # redis latency RCA (slowlog digest, fork/AOF stalls)\nqueue-aiops analyze backlog    # rabbitmq queue-backlog RCA (consumers, unacked, watermarks)\nqueue-aiops analyze churn      # connection churn, both platforms\nqueue-aiops redis bigkeys      # SCAN-budgeted big-key sample (never KEYS *)\nqueue-aiops rabbitmq queues    # deepest backlog first\n```\n\n## What this tool does, and does not, decide\n\nIt delivers broker operations — reads and writes — accurately and efficiently,\nand records every one of them. It does **not** decide whether a write is allowed\nto happen. That is the agent's judgement, or the permission of the account you\nconnect it with: give the Redis connection an ACL user restricted to read\ncommands, or the RabbitMQ management user only the `monitoring` tag, and the\nwrites fail at the broker — the place that actually owns the permission.\n\nSo there is no read-only switch, no policy file, no approval gate to configure.\nThe one thing the tool guarantees is that nothing is silent: **every call, over\nMCP and over the CLI alike, lands an audit row** in `~/.queue-aiops/audit.db`,\nand reversible writes still capture their before-state and record an inverse.\n\n> Each tool declares a `risk_level`, kept in agreement with its `[READ]`/`[WRITE]`\n> documentation tag by a test, and carried into the audit row as a descriptive\n> tier — so a reviewer can see at a glance that a row was a high-risk delete. It\n> is a label, not a gate.\n\nRunning a smaller / local model? See\n[agent-guardrails.md](skills/queue-aiops/references/agent-guardrails.md) — it lists\nthe guardrails this tool now enforces for you (so you don't spend prompt budget\nrestating them) and gives a ready-made system prompt for what's left.\n\n## Support scope\n\n| Platform | Protocol | Coverage |\n|----------|----------|----------|\n| **redis** (5.x–7.x wire protocol via `redis` Python client) | RESP, password optional, TLS optional | INFO (server/memory/clients/stats/persistence/keyspace), SLOWLOG, CLIENT LIST/KILL, CONFIG GET/SET, MEMORY STATS/USAGE, SCAN-budgeted big-key sampling, DBSIZE, PING |\n| **rabbitmq** (management plugin HTTP API) | HTTP(S), Basic auth | /api/overview, /api/queues (+ per-vhost, detail, purge, declare, delete), /api/connections, /api/channels, /api/consumers, /api/policies (get/set/delete), /api/nodes |\n\n**28 MCP tools** — 20 reads (incl. 4 flagship RCAs) + 8 governed writes.\n\n| Group | Tools | R/W |\n|-------|-------|:---:|\n| Overview | queue_overview | read |\n| redis reads | redis_server_info, redis_memory_stats, redis_clients, redis_slowlog, redis_config_get, redis_keyspace, redis_big_keys | read |\n| rabbitmq reads | rabbitmq_overview, list_queues, queue_detail, list_connections, list_channels, list_policies, node_health | read |\n| Flagship RCAs | redis_memory_pressure_rca, redis_latency_rca, rabbitmq_queue_backlog_rca, connection_churn_analysis | read |\n| Writes (medium) | redis_config_set, redis_kill_client, declare_queue, set_policy, delete_policy | write |\n| Writes (**high**) | purge_queue, delete_queue | write |\n| Undo | undo_list, undo_apply | read / write |\n\nThe four RCAs are transparent heuristics that report their numbers — thresholds\nare named constants, every finding carries its evidence, never a black-box\nverdict. Big-key sampling walks at most 10,000 keys with SCAN and sizes at most\n200 with MEMORY USAGE — **never `KEYS *`** — and reports its coverage.\n\n## Governance\n\nEvery MCP tool — and every CLI write, which routes through the same governed\nfunctions — runs through the bundled `@governed_tool` harness\n(`queue_aiops.governance` — no external dependency). It **records; it does not\nauthorize** whether a write may happen (see above):\n\n- **Audit** — every call lands in `~/.queue-aiops/audit.db` (relocatable via\n  `QUEUE_AIOPS_HOME`), secret-redacted. The CLI writes the same row the MCP path\n  does — there is no unaudited entry point.\n- **Budget / runaway guard** — a safety backstop, not an authorization gate:\n  call/time ceilings (`QUEUE_MAX_TOOL_CALLS`, `QUEUE_MAX_TOOL_SECONDS`) + a\n  runaway-loop breaker stop a stuck agent from burning unbounded calls/time.\n- **Risk tier** — a descriptive label on the audit row derived from `risk_level`;\n  it gates nothing. `QUEUE_AUDIT_APPROVED_BY` / `QUEUE_AUDIT_RATIONALE` are\n  optional annotations recorded on the row (who/why), never required and never\n  blocking.\n- **Undo** — reversible writes capture the real before-state first:\n  `redis_config_set` records the prior value from CONFIG GET;\n  `set_policy`/`delete_policy` record the prior policy; `delete_queue` records\n  the queue's definition and its undo re-declares it (the **messages are not\n  restored** — the descriptor says so). Irreversible writes (`purge_queue`,\n  `redis_kill_client`) record priorState only.\n- **Dry-run + double-confirm** — every write takes `dry_run=True` (MCP) /\n  `--dry-run` (CLI); CLI writes double-confirm and execute through the same\n  governed twins, so they land in the audit log too. `purge_queue` and\n  `delete_queue` are risk=high with dry-run + double confirmation at the CLI.\n- Credentials live **encrypted** in `~/.queue-aiops/secrets.enc` (Fernet +\n  scrypt master password; `QUEUE_AIOPS_MASTER_PASSWORD` for non-interactive\n  use). Redis passwords are optional — an auth-less lab instance is a\n  supported target.\n\n## MCP configuration\n\n```json\n{\n  \"mcpServers\": {\n    \"queue-aiops\": {\n      \"command\": \"uvx\",\n      \"args\": [\"--from\", \"queue-aiops\", \"queue-aiops-mcp\"],\n      \"env\": {\n        \"QUEUE_AIOPS_MASTER_PASSWORD\": \"your-master-password\"\n      }\n    }\n  }\n}\n```\n\n> **env-block caveat**: MCP clients launch the server with a *minimal*\n> environment — your shell profile is not sourced. Anything the server needs\n> (`QUEUE_AIOPS_MASTER_PASSWORD`, a relocated `QUEUE_AIOPS_HOME`, and any\n> optional `QUEUE_AUDIT_APPROVED_BY`/`QUEUE_AUDIT_RATIONALE` audit annotations)\n> must be set in the `env` block above, not just in your terminal.\n\nOr, with the package installed: `queue-aiops mcp`.\n\n## CLI reference (short)\n\n```text\nqueue-aiops init | doctor | overview | mcp\nqueue-aiops secret set|list|migrate ...\nqueue-aiops redis info|memory|clients|slowlog|config-get|keyspace|bigkeys\nqueue-aiops redis config-set <param> <value> [--dry-run]\nqueue-aiops redis kill-client --id <id> | --addr <ip:port> [--dry-run]\nqueue-aiops rabbitmq overview|queues|queue|connections|channels|policies|nodes\nqueue-aiops rabbitmq purge|delete-queue|declare-queue <name> [--vhost /] [--dry-run]\nqueue-aiops rabbitmq set-policy|delete-policy <name> ... [--dry-run]\nqueue-aiops analyze memory|latency|backlog|churn\n```\n\n## Verification status\n\n**Live-verified against Redis 7.4.9 and RabbitMQ 3.13.7 (2026-07-19/20).**\nConnectivity, every Redis read (cross-checked against `redis-cli` ground truth), all\nfour analyses, and the full governance loop (real `redis_config_set` → audit row →\nundo restoring the prior value) were exercised against a real server. That run found\nand fixed a real defect: integer quantities — key counts, client counts, byte totals —\nwere rendered as floats (`202.0` keys), which equality assertions cannot catch.\n\nThe RabbitMQ group is now verified end-to-end too — reads cross-checked against\n`rabbitmqadmin`, and `set_policy` → `undo_apply` closing on the live broker. **Redis\ncluster/sentinel topologies and AUTH/TLS connections** remain unverified.\n\n[docs/VERIFICATION.md](docs/VERIFICATION.md) records exactly what was checked and what\nis still open. `queue-aiops doctor` is the fastest live check.\n\n\n## Contributing\n\n缺功能提 issue/PR 欢迎留言 — missing a read you need (streams/consumer groups,\nquorum-queue specifics, shovel/federation status), another broker platform, or\na threshold that doesn't fit your fleet? Open an issue or PR at\n[github.com/AIops-tools/Queue-AIops](https://github.com/AIops-tools/Queue-AIops)\n— platform registry entries are additive and small.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:17:54.973Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:49.392Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

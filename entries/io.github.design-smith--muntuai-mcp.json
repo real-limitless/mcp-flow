@@ -1,0 +1,70 @@
+{
+  "id": "io.github.design-smith/muntuai-mcp",
+  "title": "MuntuAI",
+  "description": "Hosted MCP server for MuntuAI outreach campaigns, leads, senders, domains, and analytics.",
+  "summary": "Hosted MCP server for MuntuAI outreach campaigns, leads, senders, domains, and analytics.",
+  "offersHint": "Hosted MCP server for MuntuAI outreach campaigns, leads, senders, domains, and analytics. · Remote MCP (streamable-http) at https://api.muntuai.com/api/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.muntuai.com/api/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.muntuai.com/api/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token in the format: Bearer mnt_<keyId>.<secret>. Create an agent key in MuntuAI Settings -> Agent Keys.",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/design-smith/MuntuAI-MCP",
+  "repository": {
+    "url": "https://github.com/design-smith/MuntuAI-MCP",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-09T23:28:11.473348Z",
+  "publishedAt": "2026-05-09T23:28:11.473348Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer token in the format: Bearer mnt_<keyId>.<secret>. Create an agent key in MuntuAI Settings -> Agent Keys.",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:44.175Z",
+    "sourceRepoAt": "2026-08-11T23:49:50.505Z",
+    "readmeAt": "2026-08-11T23:49:51.109Z",
+    "toolsAt": "2026-08-12T01:24:44.176Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/design-smith/MuntuAI-MCP",
+    "checkedAt": "2026-08-11T23:49:50.505Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/design-smith/MuntuAI-MCP/main/README.md",
+    "markdown": "# MuntuAI MCP\n\nThis repository contains the public documentation, manifest, and reference clients for the live MuntuAI MCP server. The runnable server implementation lives in the main Muntu backend.\n\nThe official Model Context Protocol (MCP) server for [MuntuAI](https://muntuai.com) — giving AI agents programmatic access to email outreach campaigns, lead management, domain infrastructure, and real-time workspace events.\n\n---\n\n## What This Is\n\nMuntuAI is an AI-native email outreach platform. This MCP server lets external agents (Claude, Cursor, custom scripts) connect to a MuntuAI workspace and perform actions: create campaigns, import leads, verify domains, send emails, and subscribe to webhook events — all through a standard MCP interface over HTTP.\n\n**Protocol:** [Model Context Protocol](https://modelcontextprotocol.io) over HTTP (JSON-RPC 2.0)  \n**Transport:** Streamable HTTP (`text/event-stream` or `application/json`)  \n**Server protocol revision:** `2025-03-26`  \n**Server URL:** `https://api.muntuai.com/api/mcp`\n\n---\n\n## Quick Start\n\n### 1. Get an agent key\n\nLog in to [app.muntuai.com](https://app.muntuai.com), go to **Settings → Agent Keys**, and create a key. Choose the autonomy level that matches what your agent needs:\n\n| Level | What it can do |\n|---|---|\n| `observer` | Read anything — campaigns, leads, domains, senders, events |\n| `copilot` | Read + create and modify — campaigns, domains, senders, leads, webhooks |\n| `autonomous` | Everything above + pause, resume, delete |\n\nYou will see the raw key once: `mnt_<keyId>.<secret>`. Copy it immediately.\n\n### 2. Configure your client\n\nSecurity note: store the raw agent key in an environment variable or secret manager. Do not commit it to source control or paste it into shared files.\n\n**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):\n```json\n{\n  \"mcpServers\": {\n    \"muntu\": {\n      \"url\": \"https://api.muntuai.com/api/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer ${env:MUNTU_AGENT_KEY}\"\n      }\n    }\n  }\n}\n```\n\n**Cursor** (`.cursor/mcp.json` or Settings → MCP):\n```json\n{\n  \"mcpServers\": {\n    \"muntu\": {\n      \"url\": \"https://api.muntuai.com/api/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer ${env:MUNTU_AGENT_KEY}\"\n      }\n    }\n  }\n}\n```\n\n**Python:**\n```bash\npip install requests\nexport MUNTU_AGENT_KEY=\"mnt_YOUR_KEY_HERE\"\npython clients/python/muntu_mcp_client.py list-campaigns\n```\n\nRecommended:\n\n```bash\nexport MUNTU_SESSION_ID=\"$(uuidgen)\"\n```\n\nMuntu uses the optional `MUNTU_SESSION_ID` to group requests into one logical MCP session for session-scoped safety controls and budgeting.\n\n### 3. Make your first call\n\nOnce connected, ask your agent:\n\n> \"List all campaigns in my MuntuAI workspace\"\n\nThe agent will call `resources/read` on `muntu://campaigns/{workspaceId}` and return the campaign list.\n\nOr via Python CLI:\n```bash\npython clients/python/muntu_mcp_client.py list-campaigns\npython clients/python/muntu_mcp_client.py list-domains\npython clients/python/muntu_mcp_client.py list-emails\n```\n\n---\n\n## What Agents Can Do\n\n### Resources (read-only views)\n| Resource | URI | Description |\n|---|---|---|\n| workspace | `muntu://workspace/{id}` | Profile, policy, infrastructure counts |\n| domains | `muntu://domains/{id}?cursor=0&limit=50` | All domains with DNS and verification state |\n| senders | `muntu://senders/{id}?cursor=0&limit=50` | All email accounts with status |\n| campaigns | `muntu://campaigns/{id}?cursor=0&limit=20` | Unified campaign list |\n| campaign-plans | `muntu://campaign-plans/{id}?cursor=0&limit=20` | Draft review queue |\n| events | `muntu://events/{id}?cursor=0` | Recent system events (filterable) |\n\n### Tools (30 total)\nGrouped by domain — see [`tools/README.md`](tools/README.md) for the full index.\n\n- **Campaigns** — create, launch, pause, resume, monitor, review drafts, send\n- **Leads** — import from array or CSV URL, enrich, sample\n- **Senders** — create, delete, health check, assign to campaign\n- **Domains** — add, verify, check status\n- **Email generation** — preview, refine, generate campaign guide\n- **Webhooks** — subscribe to workspace events\n- **Meta** — get agent key info\n\n---\n\n## Repository Structure\n\n```\nmuntuai-mcp/\n├── README.md                    # This file\n├── QUICKSTART.md                # 5-minute setup guide\n├── docs/\n│   ├── authentication.md        # Token format, headers, rate limits\n│   ├── autonomy-levels.md       # Permission model\n│   ├── resources.md             # All 6 resources with schemas\n│   ├── events.md                # All event types and payloads\n│   ├── webhooks.md              # Register, sign, verify\n│   └── errors.md                # Error codes and handling\n├── tools/\n│   ├── README.md                # Full tool index\n│   ├── campaigns.md\n│   ├── leads.md\n│   ├── senders.md\n│   ├── domains.md\n│   ├── email-generation.md\n│   └── meta.md\n├── workflows/\n│   ├── README.md                # What workflows are\n│   ├── launch-first-campaign.md\n│   ├── review-and-send-drafts.md\n│   ├── domain-setup.md\n│   └── monitor-campaign.md\n├── reference/\n│   ├── event-types.md\n│   ├── resource-schemas.md\n│   └── tool-schemas.md\n├── clients/\n│   └── python/\n│       ├── muntu_mcp_client.py  # Reference Python client\n│       ├── README.md\n│       └── examples/\n├── agent-guides/\n│   ├── for-claude.md\n│   ├── for-cursor.md\n│   └── decision-guide.md\n└── .well-known/\n    └── mcp-manifest.json        # Machine-readable capabilities manifest\n```\n\n---\n\n## Key Concepts\n\n**Workspace** — All data in MuntuAI is scoped to a workspace. Your agent key is bound to one workspace and can only access data within it.\n\n**Autonomy levels** — Every tool has a minimum required level. If your key's level is below the requirement, the call is rejected and the attempt is logged. See [`docs/autonomy-levels.md`](docs/autonomy-levels.md).\n\n**Campaign lifecycle** — `uploaded → enriching → drafting → sending → completed`. Agents can observe this lifecycle through `get_campaign_performance` and the events resource. See [`workflows/monitor-campaign.md`](workflows/monitor-campaign.md).\n\n**Domain verification** — Before sending, a domain must be verified with the email provider. This involves publishing DNS records and triggering verification. See [`workflows/domain-setup.md`](workflows/domain-setup.md).\n\n---\n\n## Support\n\n- **Documentation issues:** Open an issue in this repo\n- **Platform support:** [support@muntuai.com](mailto:support@muntuai.com)\n- **Website:** [muntuai.com](https://muntuai.com)\n",
+    "fetchedAt": "2026-08-11T23:49:51.109Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:44.176Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Unauthorized",
+  "toolsPreviewStatus": "auth_required"
+}

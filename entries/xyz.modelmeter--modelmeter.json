@@ -1,0 +1,81 @@
+{
+  "id": "xyz.modelmeter/modelmeter",
+  "title": "Modelmeter",
+  "description": "The changelog of record for the AI stack: sunset checks, deprecations, pricing, and model events.",
+  "summary": "The changelog of record for the AI stack: sunset checks, deprecations, pricing, and model events.",
+  "offersHint": "The changelog of record for the AI stack: sunset checks, deprecations, pricing, and model events. · Remote MCP (streamable-http) at https://modelmeter.xyz/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://modelmeter.xyz/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://modelmeter.xyz/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://modelmeter.xyz",
+  "sourceUrl": "https://github.com/modelmeters/modelmeter",
+  "repository": {
+    "url": "https://github.com/modelmeters/modelmeter",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-04T03:07:04.665744Z",
+  "publishedAt": "2026-07-04T03:07:04.665744Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:48:28.373Z",
+    "sourceRepoAt": "2026-08-11T23:04:53.002Z",
+    "readmeAt": "2026-08-11T23:04:53.568Z",
+    "toolsAt": "2026-08-11T23:04:53.653Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/modelmeters/modelmeter",
+    "checkedAt": "2026-08-11T23:04:53.002Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/modelmeters/modelmeter/main/README.md",
+    "markdown": "# Modelmeter\n\nThe changelog of record for the AI stack. Live at [modelmeter.xyz](https://modelmeter.xyz).\n\n## What this is\n\nA machine-readable, source-verified record of everything that changes in the model layer: **deprecations with sunset dates and migration targets, silent model swaps behind stable IDs, price changes, releases** — plus three years of pricing history and cost tooling. Every event carries its sources with verbatim quotes (most with archive snapshots), a verification status (`unverified` → human-reviewed `verified`), and corrections are never silent — a `correction` event points at what it supersedes.\n\nBuilt primarily for AI agents to call programmatically, secondarily for humans through a dashboard. Reach it three ways: plain **GET URLs** returning JSON, a remote **[MCP server](#mcp-server)** any tool-calling agent can connect to, and a **visual dashboard** built on the same endpoints. The wedge: clean URLs, stable JSON contracts, an [OpenAPI spec](public/openapi.yaml), and an [`llms.txt`](public/llms.txt) discoverability file. Most sites in this space are JS-heavy SPAs that agents can't use; Modelmeter is built the other way around.\n\n## Endpoints\n\n- `GET /estimate?model=X&input=N&output=M` — token cost for a hypothetical call, including upstream-markup comparison for reseller models\n- `GET /models` — current model catalog, with filters\n- `GET /model?id=X` — unified card for one model: normalized pricing, capabilities (context window, vision, reasoning, tags), availability, reseller markup, and a price-history summary (launch vs. current price, % change, all-time low/high)\n- `GET /check?models=gpt-4o,claude-sonnet-4-6` — **is my stack okay?** Verdict per model: scheduled retirements with days-remaining and migration targets, past retirements, breaking changes, or a clean bill\n- `GET /deprecations` — per-model retirement rows: which model dies when, with runway and migration target\n- `GET /feed.xml` / `GET /feed.json` — RSS 2.0 / JSON Feed 1.1 of breaking and action-required events\n- `GET /events` — the changelog of record: deprecations, price changes, launches and surrounding market events, each with `severity` (`breaking` | `action_required` | `informational`), `announced_at`/`effective_at` dates, sources with quotes, and verification `status`. Filters: `provider`, `type`, `model`, `severity`, `since`, `until`, `status`\n- `GET /history` — historical pricing time-series per model, with filters\n- `GET /pricing.json` — raw pricing snapshot\n- `GET /events.json` — raw events snapshot\n- `GET /history.json` — raw historical time-series\n\nSee [`public/openapi.yaml`](public/openapi.yaml) for the full spec.\n\n## GitHub Action\n\nFail CI when a model your repo depends on is deprecated, sunsetting, or already retired:\n\n```yaml\n- uses: modelmeters/modelmeter/actions/check@main\n  # with:\n  #   models: \"gpt-4o, claude-sonnet-4-6\"   # optional — otherwise the repo is scanned for known model ids\n  #   fail-on: breaking                      # breaking (default) | retired | none\n  #   warn-days: \"120\"                       # sunsets within N days fail; beyond N warn\n```\n\nThe action scans your repo for known model ids (catalog + every model named in a deprecation event, dashed and dotted spellings), calls `/check`, annotates the exact `file:line` of each affected model, writes a job-summary table with migration targets, and exits nonzero per your `fail-on` policy.\n\n## MCP server\n\nModelmeter is also a remote [MCP](https://modelcontextprotocol.io) server, so any tool-calling agent (Claude, Hermes, …) can call it natively over the Streamable HTTP transport — no auth, no install:\n\n```\nhttps://modelmeter.xyz/mcp\n```\n\nTools: `check_model_dependencies`, `list_deprecations`, `estimate_cost`, `get_model`, `list_models`, `get_price_history`, `list_events`. Start with `list_models` to discover ids, then `get_model` or `estimate_cost`. The MCP tools return the same data as the REST endpoints above — use whichever your runtime prefers.\n\n## Datasets\n\n- [`pricing/`](pricing/) — current and historical model pricing across providers\n- [`events/`](events/) — the events record (schema 2.0.0): deprecations, price changes, releases, and market events with primary-source citations, verbatim quotes, and verification status\n\nEach entry carries a `last_verified` date. Daily snapshots in `pricing/snapshots/` accumulate the historical record. Wrong pricing is the existential risk — the schema requires explicit human verification before an entry is served.\n\n## Contributing\n\nFound a price change? Open a PR updating [`pricing/current.json`](pricing/current.json) with the new value, an updated `last_verified` date, and the source URL.\n\nSpotted a meaningful AI market event? Add an entry to [`events/current.json`](events/current.json) with primary-source citations and `verified: true`.\n\nAutomation opens issues when provider pricing pages change. Pick one up if you want to help.\n\n## License\n\nMIT — see [LICENSE](LICENSE).",
+    "fetchedAt": "2026-08-11T23:04:53.568Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "estimate_cost",
+      "description": "Estimate the USD cost of an LLM API call for a given model and token counts. Returns input/output/total cost, plus reseller markup vs. the upstream model when applicable."
+    },
+    {
+      "name": "get_model",
+      "description": "Unified card for one model in a single call: normalized pricing, capabilities (context window, vision, reasoning, tags), availability, reseller markup vs. upstream, and a price-history summary (launch vs. current price, percent change, last change date, all-time low/high)."
+    },
+    {
+      "name": "list_models",
+      "description": "List available models with their current pricing. Optionally filter by provider."
+    },
+    {
+      "name": "get_price_history",
+      "description": "Historical pricing time-series for a model or provider. Each point is a dated snapshot of the per-Mtok rates."
+    },
+    {
+      "name": "list_events",
+      "description": "The changelog of record for the model layer: deprecations, price changes, launches, and the market events around them. Filter by severity to find what demands action: 'breaking' (model going away, ID changing), 'action_required' (price/rate-limit/context changes), 'informational' (releases, funding)."
+    },
+    {
+      "name": "check_model_dependencies",
+      "description": "Is my stack okay? Check a list of model ids against the record: scheduled retirements with days-remaining countdowns and migration targets, past retirements, and other breaking/action-required changes. Id matching tolerates dots vs dashes, dated snapshot suffixes, and bare or provider-prefixed forms. Call this at startup or in CI with the models you depend on."
+    },
+    {
+      "name": "list_deprecations",
+      "description": "Per-model retirement rows from the record: which model dies when, with runway and migration target. Default shows scheduled (upcoming) retirements sorted by shutdown date."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:04:53.653Z",
+  "toolsPreviewStatus": "ok"
+}

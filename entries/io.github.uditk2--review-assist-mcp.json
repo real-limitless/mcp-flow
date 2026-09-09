@@ -1,0 +1,60 @@
+{
+  "id": "io.github.uditk2/review-assist-mcp",
+  "title": "review-assist-mcp",
+  "description": "Turns an AI coding agent session into a reviewable Intent Document, validated against the diff.",
+  "summary": "Turns an AI coding agent session into a reviewable Intent Document, validated against the diff.",
+  "offersHint": "Turns an AI coding agent session into a reviewable Intent Document, validated against the diff. · Packages: npm:review-assist-mcp",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "review-assist-mcp",
+    "version": "0.3.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "review-assist-mcp",
+      "version": "0.3.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/uditk2/review-assist",
+  "sourceUrl": "https://github.com/uditk2/review-assist",
+  "repository": {
+    "url": "https://github.com/uditk2/review-assist",
+    "source": "github",
+    "subfolder": "packages/mcp-server"
+  },
+  "updatedAt": "2026-08-06T05:43:52.450855Z",
+  "publishedAt": "2026-08-06T05:43:52.450855Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:58:14.244Z",
+    "sourceRepoAt": "2026-08-11T23:17:29.705Z",
+    "readmeAt": "2026-08-11T23:17:30.291Z",
+    "toolsAt": "2026-08-12T00:58:14.244Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/uditk2/review-assist",
+    "checkedAt": "2026-08-11T23:17:29.705Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/uditk2/review-assist/main/README.md",
+    "markdown": "<h1 align=\"center\">Review Assist</h1>\n\n<p align=\"center\">\n  <strong>Review AI-written code as fast as agents write it.</strong><br>\n  Turn a coding agent's session into a guided, verifiable pull-request review.\n</p>\n\n<p align=\"center\">\n  <a href=\"#install\">Install</a> ·\n  <a href=\"#update\">Update</a> ·\n  <a href=\"#uninstall\">Uninstall</a> ·\n  <a href=\"#how-it-works\">How it works</a> ·\n  <a href=\"#architecture\">Architecture</a> ·\n  <a href=\"#developing\">Developing</a> ·\n  <a href=\"#contributing\">Contributing</a>\n</p>\n\n<p align=\"center\">\n  <img src=\"docs/walkthrough.gif\" alt=\"Guided review walkthrough: overview, assumptions, anchored diff stops, verification\" width=\"820\">\n</p>\n\n---\n\nAI agents write code faster than anyone can read diffs — and the context that makes\nreview fast (what was asked, what was assumed, what was tried and abandoned, what was\ntested) is thrown away the moment the PR opens. Review Assist captures it at the source:\nan agent's session becomes an **Intent Document**, a validator proves it actually covers\nthe diff, and a GitHub App renders it as a guided review on top of the pull request.\n\nFully open source, self-hostable, and **stores none of your code**. Your session\ntranscript never leaves your machine. The app has no database: it reads the document and\ndiff from GitHub per request with the reviewer's own token, keeps them in memory for the\nlength of that request, and serves them `private, no-store` to a viewer that renders in\nthe reviewer's browser. Nothing is written down, but your code does pass through the\nservice in transit — if that matters to you, self-host it.\n\n## Install\n\nTwo one-time installs — the MCP server on the developer's side, the GitHub App on the repo's.\n\n**1. Register the MCP server with your agent** (so it can author Intent Documents).\nClaude Code and Codex keep separate configs, so registering with one does not register\nwith the other — run the section(s) you use.\n\n### Claude Code\n\n```bash\nclaude mcp add -s user review-assist -- npx -y review-assist-mcp\n```\n\nThe CLI and the VS Code extension share this one `-s user` config — but only when the\nextension inherits your shell's `PATH` (launched via `code .`, not the Dock). Launched\nfrom the Dock, GUI apps on macOS get just `/usr/bin:/bin:/usr/sbin:/sbin`, so `npx`\nisn't found and the server shows *not connected* with no error. Register without `npx`\ninstead:\n\n```bash\nnpm install -g review-assist-mcp\nclaude mcp add -s user review-assist -- \"$(which node)\" \"$(npm root -g)/review-assist-mcp/dist/index.js\"\n```\n\n### Codex\n\n```bash\ncodex mcp add review-assist -- npx -y review-assist-mcp\n```\n\nShared with the IDE extension (`~/.codex/config.toml`) under the same `code .` caveat as\nabove. Dock-launched VS Code:\n\n```bash\nnpm install -g review-assist-mcp\ncodex mcp add review-assist -- \"$(which node)\" \"$(npm root -g)/review-assist-mcp/dist/index.js\"\n```\n\n(Skip `npm install -g` if you already ran it for Claude Code — one global install\nserves both extensions; each still needs its own `mcp add`.)\n\nClaude desktop app — one-click, no terminal:\n[download the `.mcpb`](https://github.com/uditk2/review-assist/releases/latest/download/review-assist-mcp.mcpb)\nand open it.\n\n**2. [Install the GitHub App →](https://github.com/apps/review-assist-guided-review)**\n\nOne click. Read-only code + PR comments, no workflow files — it adds the automatic\ncheck on every PR, the summary comment, and the guided-review viewer.\n\n## Update\n\nOnly relevant if you used the global-install form above (`npm install -g`) — `npx -y`\nresolves to the latest release on every launch by itself.\n\n```bash\nnpm install -g review-assist-mcp@latest\n```\n\nRestart your agent afterward so it respawns the server process.\n\n## Uninstall\n\n```bash\nclaude mcp remove -s user review-assist    # or: codex mcp remove review-assist\nnpm uninstall -g review-assist-mcp         # only if you used the global-install form\nrm -rf ~/.review-assist                    # consent decisions and local run state\n```\n\n## How it works\n\n<p align=\"center\">\n  <img src=\"docs/how-it-works.svg\" alt=\"How it works, in three steps. 1 Code, on your machine: your agent writes the change and an Intent Document that explains it — the ask, the assumptions, a tour of the diff — committed alongside the code; the transcript never leaves the machine. 2 Validate, on GitHub with no code stored: a GitHub App proves the document covers the diff (schema, staleness, cross-refs, redaction), reports coverage such as 5 of 5 changes explained, and posts an Open guided review link on the pull request. 3 Review, in the reviewer's browser: check the assumptions first — flagging one posts it to the PR discussion — then take the anchored tour and approve or request changes; the verdict posts to the pull request as you, and merging stays on GitHub.\" width=\"620\">\n</p>\n\n## Architecture\n\n<p align=\"center\">\n  <a href=\"docs/architecture.svg\">\n    <img src=\"docs/architecture.svg\" alt=\"Container-level topology: three systems and two external actors. The developer machine runs the coding agent and the MCP server and writes the Intent Document, with the transcript staying local. GitHub holds the pull request, the committed document, the automation output and the reviewer's comments and verdict. The Review Assist Application receives pull_request events on its webhook, posts the check run, summary and PR-description block as its bot identity, and serves the guided review, reading and writing GitHub as the signed-in reviewer.\" width=\"820\">\n  </a>\n</p>\n\nThree systems and two external actors. Your machine produces the change and its Intent\nDocument; the session transcript never leaves it. GitHub holds the pull request and every\ndurable piece of review state. The application reacts to `pull_request` events and posts\nthe check as its bot identity, then serves the guided review, reading and writing GitHub\nas the signed-in reviewer.\n\nThe two-agent distillation — author and reviewer as separate role-locked contexts, and the\ntools each one may reach — is a component-level view, kept in\n[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) along with the full route list.\n\n## Developing\n\n| Path | Component |\n|---|---|\n| [`packages/schema`](packages/schema) | The format — JSON Schema (draft 2020-12) + TypeScript types |\n| [`packages/validator`](packages/validator) | `review-assist` CLI + library: the five checks and the Markdown renderer |\n| [`packages/mcp-server`](packages/mcp-server) | MCP server that drives distillation and gatekeeps submissions |\n| [`apps/github-app/worker`](apps/github-app/worker) | Stateless Cloudflare Worker: OAuth broker + thin GitHub proxy |\n| [`apps/github-app/viewer`](apps/github-app/viewer) | Client-side guided-review viewer |\n| [`SPEC.md`](SPEC.md) | The frozen design: the document's six sections and the five checks |\n\n```bash\nnpm install\nnpm run build\n\n# Validate and render the example Intent Document\nnode packages/validator/dist/cli.js validate packages/schema/src/example.json\nnode packages/validator/dist/cli.js render packages/schema/src/example.json\n\n# Preview the guided viewer with mock data → http://localhost:8787/#acme/checkout-service/pull/42\nnode scripts/mockserver.mjs\n\n# Tests\nnpx vitest run\n```\n\nArchitecture and internals: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).\n\n## Contributing\n\nIssues and pull requests are welcome. If the guided review reads wrong on one of your\npull requests, [open an issue](https://github.com/uditk2/review-assist/issues) with the\nIntent Document and the diff that produced it — that pair is usually enough to reproduce.\nProposals to change the format itself are worth raising as an issue first, since\n[`SPEC.md`](SPEC.md) is deliberately frozen and any change ripples through the validator,\nthe viewer, and every document already committed.\n\nBefore opening a pull request, run the checks under [Developing](#developing); CI runs the\nsame build, typecheck, tests, and example validation.\n\n## License\n\n[Apache-2.0](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:17:30.291Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:58:14.244Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

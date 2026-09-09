@@ -1,0 +1,91 @@
+{
+  "id": "io.github.lonexreb/retractguard",
+  "title": "CiteGuard",
+  "description": "Open watchdog for retracted & problematic citations: Retraction Watch, OpenAlex, Crossref.",
+  "summary": "Open watchdog for retracted & problematic citations: Retraction Watch, OpenAlex, Crossref.",
+  "offersHint": "Open watchdog for retracted & problematic citations: Retraction Watch, OpenAlex, Crossref. · Packages: pypi:retractguard · Env vars: CITEGUARD_MAILTO, OPENALEX_API_KEY",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "retractguard",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "OPENALEX_API_KEY",
+        "description": "OpenAlex API key (required for live OpenAlex lookups and watch_institution).",
+        "secret": true
+      },
+      {
+        "name": "CITEGUARD_MAILTO",
+        "description": "Contact email for the OpenAlex/Crossref polite pool."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "retractguard",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "OPENALEX_API_KEY",
+          "description": "OpenAlex API key (required for live OpenAlex lookups and watch_institution).",
+          "secret": true
+        },
+        {
+          "name": "CITEGUARD_MAILTO",
+          "description": "Contact email for the OpenAlex/Crossref polite pool."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "CITEGUARD_MAILTO",
+      "description": "Contact email for the OpenAlex/Crossref polite pool."
+    },
+    {
+      "name": "OPENALEX_API_KEY",
+      "description": "OpenAlex API key (required for live OpenAlex lookups and watch_institution).",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/lonexreb/cite-guard",
+  "repository": {
+    "url": "https://github.com/lonexreb/cite-guard",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-16T08:04:38.250807Z",
+  "publishedAt": "2026-07-16T08:04:38.250807Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:16:29.331Z",
+    "sourceRepoAt": "2026-08-11T23:37:35.213Z",
+    "readmeAt": "2026-08-11T23:37:35.828Z",
+    "toolsAt": "2026-08-12T01:16:29.331Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/lonexreb/cite-guard",
+    "checkedAt": "2026-08-11T23:37:35.213Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/lonexreb/cite-guard/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"assets/banner.svg\" alt=\"CiteGuard — the open watchdog for retracted and problematic citations\" width=\"100%\">\n</p>\n\n# CiteGuard\n\n[![PyPI](https://img.shields.io/pypi/v/retractguard)](https://pypi.org/project/retractguard/)\n[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21304655.svg)](https://doi.org/10.5281/zenodo.21304655)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\n**The free, open, OpenAlex-native watchdog for retracted and problematic citations.**\n\nCiteGuard tells you — and keeps telling you — when your references, your authors, or your\ninstitution's papers cite research the community has flagged as **retracted, corrected, or\nsubject to an expression of concern**.\n\nIt exists because the existing options each fall short: scite is proprietary and paywalled,\nRetractoBot had to license Scopus (no open citation database existed at the time), and\nOpenAlex collapses all editorial status into a single `is_retracted` boolean that can't tell\na retraction from a correction — and has produced false positives in the past.\n\nNow that the **Retraction Watch dataset is open** (via Crossref) and the **OpenAlex citation\ngraph is CC0**, CiteGuard can do this fully in the open, for free.\n\n> Status: **early development.** Building the MVP. See `GOAL.md` for the mission and\n> `CLAUDE.md` for the build guide.\n\n## What it does\n\n- **Check a reference list.** Paste a DOI or upload a `.bib` file → get a per-reference\n  status: retracted, corrected, expression of concern, hijacked-journal, or clean.\n- **Nuanced status, not a boolean.** Every flag carries its source (Retraction Watch /\n  OpenAlex / Crossref), an evidence link, a date, and a confidence note. When sources\n  disagree, CiteGuard surfaces the conflict instead of silently guessing.\n- **Watch an institution.** Point it at a ROR ID → get a digest when any of that\n  institution's works cites (or becomes) a newly-flagged paper.\n- **Use it from an AI agent.** An **MCP server** exposes the same logic as tools\n  (`check_references`, `get_editorial_status`, `watch_institution`) for Claude, Cursor, and\n  any MCP-compatible client.\n\n## Why it's trustworthy\n\nIntegrity tooling can do real harm if it's wrong — a false \"retracted\" flag damages a real\nauthor. CiteGuard is **conservative by design**: it corroborates before flagging, prefers\nthe documented editorial notice, and marks a work `UNKNOWN` rather than guess. Every core\ncapability ships with a **published eval** reporting precision and recall on a gold set.\n\n## Who it's for\n\n- Research-integrity officers and journal editors screening submissions\n- Academic librarians at OpenAlex-adopting institutions\n- Systematic reviewers (one retracted included study can invalidate a review)\n- Developers and meta-scientists building on the MCP server\n- Authors checking their own bibliography before submission\n\n## Architecture\n\nOne core, two surfaces.\n\n```\n                 ┌─────────────────────────────┐\n   OpenAlex ─────▶                             │\n   (CC0 graph)   │   editorial-status model    │──▶  MCP server\n                 │   + resolution logic        │      (check_references,\n   Retraction ──▶│   (conservative)            │       get_editorial_status,\n   Watch (open)  │                             │       watch_institution)\n                 │                             │──▶  reference-list checker\n   Crossref ─────▶                             │      (DOI / .bib → statuses,\n   (DOI norm.)   └─────────────────────────────┘       thin web UI)\n```\n\nRepository layout:\n\n```\nsrc/citeguard/\n  openalex.py         # keyed, rate-aware, ID-lookup-first OpenAlex client\n  retractionwatch.py  # ingest + normalize the Retraction Watch dump\n  status.py           # the EditorialStatus model + resolution logic (core)\n  checker.py          # reference-list checker (DOI / .bib -> statuses)\n  mcp_server.py       # MCP server exposing the three tools\ntests/                # pytest unit + functional tests\nevals/                # gold sets + precision/recall harness\ndata/                 # local RW dump + cached lookups (gitignored)\n```\n\n## Design constraints (important)\n\n- **Free-tier-aware.** OpenAlex API keys are required (since Feb 13, 2026); the free tier is\n  small and search costs ~10× a record lookup. CiteGuard resolves to IDs first and looks up\n  by ID; bulk work uses the free monthly snapshot, and the live API is reserved for\n  incremental checks.\n- **Open and reproducible.** CC0 ethos, with proper attribution to Retraction Watch and\n  OpenAlex, thorough docs, and a Zenodo DOI.\n\n## Getting started (dev)\n\nRequires Python 3.11+ and [`uv`](https://github.com/astral-sh/uv).\n\n```bash\nuv sync                                   # install dependencies\nexport OPENALEX_API_KEY=...               # your OpenAlex key\nexport CITEGUARD_MAILTO=you@example.org   # polite-pool contact\n\nuv run pytest                             # run tests\nuv run python -m evals.run                # run the eval harness (precision/recall)\nuv run python -m citeguard.mcp_server     # launch the MCP server locally\n```\n\n<!-- mcp-name: io.github.lonexreb/retractguard -->\n\n## Connect it as an MCP server\n\nCiteGuard exposes `get_editorial_status`, `check_references`, and `watch_institution`\nto any MCP client. After `pip install retractguard` (or `uv tool install retractguard`),\nthe `retractguard-mcp` command launches the stdio server.\n\n**Claude Desktop** — add to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"retractguard\": {\n      \"command\": \"retractguard-mcp\",\n      \"env\": {\n        \"OPENALEX_API_KEY\": \"your-key\",\n        \"CITEGUARD_MAILTO\": \"you@example.org\"\n      }\n    }\n  }\n}\n```\n\n**Cursor / other clients** — point them at the same `retractguard-mcp` command (stdio\ntransport). Running from a checkout instead of an install? Use\n`\"command\": \"uv\", \"args\": [\"run\", \"retractguard-mcp\"]` with `\"cwd\"` set to the repo.\n\nOn first call the server downloads the Retraction Watch dump (~65 MB, free) into\n`CITEGUARD_DATA_DIR` (default `./data`). Editorial-notice lookups (Retraction Watch,\nCrossref) need no key; OpenAlex corroboration and `watch_institution` do.\n\n## The web checker\n\nA thin web UI for people who don't live in an editor — paste DOIs or drop a `.bib` file,\nget a per-reference status table.\n\n```bash\nretractguard-web            # then open http://127.0.0.1:8000\n# or from a checkout: uv run python -m citeguard.web\n```\n\nAdd `Accept: application/json` to `POST /check` to get the results as JSON instead of a\ntable. It reuses the same conservative resolution logic as the MCP server — no separate\ncode path, no separate trust model.\n\n## Roadmap (MVP)\n\n1. `status.py` — the normalized editorial-status model (foundation)\n2. `retractionwatch.py` — ingest + normalize the Retraction Watch dump\n3. `openalex.py` — keyed, ID-first client\n4. `checker.py` — DOI / `.bib` → statuses\n5. `mcp_server.py` — expose the three tools\n6. `evals/` — gold set + precision/recall harness (running from step 2 onward)\n\n## Credits & data\n\n- **OpenAlex** — CC0 scholarly metadata and citation graph.\n- **Retraction Watch** — retraction database, made openly available via **Crossref**.\n- **Crossref** — DOI infrastructure.\n\nCiteGuard is independent and not affiliated with these projects; it builds on their open data\nwith gratitude.\n\n## License\n\n**MIT** (see `LICENSE`) — permissive and maximally reusable, in keeping with the\nopen-science ethos in `GOAL.md`.\n\nThe code is CiteGuard's. The **data it builds on is not** and carries its own terms:\nRetraction Watch (via Crossref) and OpenAlex/Crossref metadata. CiteGuard redistributes\nonly a tiny evaluation extract (see `evals/fixtures/ATTRIBUTION.md`); anything at scale\nshould be fetched from the upstream sources under their licenses.\n",
+    "fetchedAt": "2026-08-11T23:37:35.828Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:16:29.331Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

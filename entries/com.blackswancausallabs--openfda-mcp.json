@@ -1,0 +1,58 @@
+{
+  "id": "com.blackswancausallabs/openfda-mcp",
+  "title": "openFDA Regulatory Metadata",
+  "description": "Resolve FDA application numbers and product names to regulatory metadata (CDER, CBER, CDRH).",
+  "summary": "Resolve FDA application numbers and product names to regulatory metadata (CDER, CBER, CDRH).",
+  "offersHint": "Resolve FDA application numbers and product names to regulatory metadata (CDER, CBER, CDRH). · Packages: pypi:openfda-mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "openfda-mcp",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "openfda-mcp",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Black-Swan-Causal-Labs/openfda-mcp",
+  "repository": {
+    "url": "https://github.com/Black-Swan-Causal-Labs/openfda-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T03:32:28.065916Z",
+  "publishedAt": "2026-08-07T03:32:28.065916Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:38:02.982Z",
+    "sourceRepoAt": "2026-08-12T00:38:02.982Z",
+    "readmeAt": "2026-08-12T00:38:03.487Z",
+    "toolsAt": "2026-08-12T00:38:03.546Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Black-Swan-Causal-Labs/openfda-mcp",
+    "checkedAt": "2026-08-12T00:38:02.982Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Black-Swan-Causal-Labs/openfda-mcp/main/README.md",
+    "markdown": "<!-- mcp-name: com.blackswancausallabs/openfda-mcp -->\n\n# openFDA MCP\n\nAn MCP server exposing FDA regulatory metadata (drugs, biologics, and medical\ndevices) through the [openFDA](https://open.fda.gov/) API.\n\nBuilt by [Black Swan Causal Labs](https://blackswancausallabs.com) as the identifier-resolution\nlayer for a real-world-evidence (RWE) case roster: given an FDA application\nnumber or a product name, resolve it to authoritative regulatory metadata.\n\n## Why this exists\n\nThere are other openFDA MCP servers, and several are broader. This one is\nnarrow on purpose: it is the instrument that resolved the application numbers in\na specific published RWE dataset, and it exists so that dataset can name the\ntool that produced it.\n\nThat matters more than it might sound. Whether `BLA 125123/2058` resolves to a\nparticular product, or `DEN160026` to a particular device class, is a decision\nmade by a piece of software — and a different wrapper can yield a different\nroster. \"We used openFDA\" is not a sufficient methods statement; **\"openfda-mcp\nv0.1.0\"** is. If you use this in research, pin the version.\n\nIts practical edge over a general openFDA client is the **device half**:\nresolving a CDRH submission number to a risk class takes a three-hop chain\n(number → product code → classification) with two non-obvious traps, both\nhandled here.\n\n## Tools\n\n**Drugs and biologics** (`/drug/*` — CDER, CBER)\n\n| Tool | Purpose |\n|---|---|\n| `search_drug_label` | Search SPL label text, optionally scoped to a section |\n| `lookup_drugsfda_application` | Drugs@FDA record for an NDA/BLA/ANDA number |\n| `resolve_drug_to_application` | Brand or generic name → application number(s) |\n| `screen_for_rwe_signals` | **Experimental.** Sweep labels for RWE signals |\n\n**Devices** (`/device/*` — CDRH)\n\n| Tool | Purpose |\n|---|---|\n| `lookup_device_submission` | K / DEN / P / H number → device record |\n| `classify_device_product_code` | Product code → device class + medical specialty |\n| `validate_device_application` | Full chain: number → class, specialty, category |\n\n## Install\n\n```bash\npip install openfda-mcp\n```\n\nAdd to your MCP client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"openfda\": {\n      \"command\": \"openfda-mcp\",\n      \"env\": { \"OPENFDA_API_KEY\": \"${OPENFDA_API_KEY:-}\" }\n    }\n  }\n}\n```\n\n**The API key is optional.** Without one, openFDA allows 40 requests/min and\n1,000/day, which is enough for interactive use. A [free\nkey](https://open.fda.gov/apis/authentication/) raises it to 240/min and\n120,000/day — worth having for bulk sweeps.\n\n## Two findings worth knowing\n\nBoth were established empirically and are not obvious from FDA's docs.\n\n**De Novo grants live in the 510(k) endpoint.** `DEN######` numbers are stored\nin the `k_number` field of `/device/510k`. There is no De Novo endpoint, and\nlooking for one leads to the wrong conclusion that De Novo numbers can't be\nresolved. They can.\n\n**HDE numbers are not in openFDA at all.** Neither the 510(k) nor the PMA\nendpoint carries `H######`, so no product code — and therefore no classification\n— is retrievable. This server still reports `device_class: \"III\"` for them, by\nregulatory inference: HDE is by definition the pathway for devices that would\notherwise require a PMA. `medical_specialty` stays null, because that one really\nis unavailable, and `device_class_source` says which is which.\n\n## Transient failures are never silent\n\nA genuine absence and a failed request are different things, and this package\nkeeps them different:\n\n- **not found** (HTTP 404, or 200 with no results) → returns `None`; safe to cache\n- **transient failure** (timeout, connection error, 429, 5xx) → retried with\n  backoff, then raises `OpenFDATransientError`; **never** cache this\n- **rejected request** (other 4xx) → raises `OpenFDARequestError`\n\nThis is a direct response to a real defect: an earlier version swallowed every\nexception and returned `None`, so a single read timeout on one application\nnumber was cached as a real miss and silently blanked two fields on that record\nfor weeks. Cached failures are indistinguishable from real absences, which makes\nthem the worst kind of silent data loss.\n\n## On `screen_for_rwe_signals`\n\nIt is **unvalidated**. There is no ground-truth oracle for a discovery sweep, and\nbelow the strongest hits the results are dominated by applications whose labels\nuse \"registry\" in an unrelated sense. Treat its output as candidates for human\nreview — not as a finding, and not as a count to report. Establishing recall\nagainst a held-out set of known cases is open work.\n\n## Development\n\n```bash\npip install -e \".[dev]\"\npytest              # unit tests, offline\npytest -m live      # live checks against api.fda.gov\n```\n\nLive tests assert against known-good fixtures (`K203571` → class II Ophthalmic,\n`DEN160026` → class II Immunology, `BLA761180` → LEO Pharma) so a change on\nFDA's side surfaces as a test failure rather than as quietly wrong data.\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:38:03.487Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:38:03.546Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

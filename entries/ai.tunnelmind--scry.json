@@ -1,0 +1,101 @@
+{
+  "id": "ai.tunnelmind/scry",
+  "title": "Scry",
+  "description": "Free IPv4 lookups against a distributed attacker-observation corpus.",
+  "summary": "Free IPv4 lookups against a distributed attacker-observation corpus.",
+  "offersHint": "Free IPv4 lookups against a distributed attacker-observation corpus. · Remote MCP (streamable-http) at https://mcp.tunnelmind.ai/mcp",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.tunnelmind.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.tunnelmind.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://api.tunnelmind.ai",
+  "sourceUrl": "https://github.com/TunnelMind/scry-mcp",
+  "repository": {
+    "url": "https://github.com/TunnelMind/scry-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-25T01:01:59.607954Z",
+  "publishedAt": "2026-05-25T01:01:59.607954Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:43:28.665Z",
+    "sourceRepoAt": "2026-08-12T00:43:28.665Z",
+    "readmeAt": "2026-08-12T00:43:29.185Z",
+    "toolsAt": "2026-08-12T00:43:29.384Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/TunnelMind/scry-mcp",
+    "checkedAt": "2026-08-12T00:43:28.665Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/TunnelMind/scry-mcp/main/README.md",
+    "markdown": "# scry-mcp\n\nMCP (Model Context Protocol) server for the Scry corpus. Wraps the [scry-api](https://github.com/TunnelMind/scry-api) public endpoints as agent-callable tools.\n\nHosted at `mcp.tunnelmind.ai`. MCP spec version `2025-03-26`. Streamable HTTP transport.\n\n## Tools (v0.1)\n\n| Tool         | Wraps                          | Tier  |\n|--------------|--------------------------------|-------|\n| `scry_check` | `GET /v1/check/{ip}`           | Free  |\n\nFuture tools (deferred to defender tier; need ATAP attestation):\n- `scry_watch` — subscribe to state changes for an IP/domain\n- `scry_actor` — full actor profile\n- `scry_campaign` — campaign detail\n\n## Wire protocol\n\n```\nPOST https://mcp.tunnelmind.ai/mcp\nContent-Type: application/json\n\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n```\n\nMethods:\n- `initialize` — handshake, returns `{ protocolVersion, capabilities, serverInfo }`\n- `notifications/initialized` — client → server notification (returns 204)\n- `tools/list` — returns `{ tools: [...] }`\n- `tools/call` — `{ name, arguments }` → `{ content: [{ type: \"text\", text }] }`\n- `ping` — returns `{}`\n\nDiscovery:\n```\nGET https://mcp.tunnelmind.ai/\n→ { service, version, protocol, transport, endpoint, tools }\n```\n\n## Layout\n\n```\nsrc/\n  worker.js   transport (JSON-RPC 2.0 over POST /mcp)\n  tools.js    tool definitions + handlers\ntest/\n  tools.test.js   unit tests for tool registry\n```\n\n## Setup\n\n```bash\nnpm test\nnpx wrangler deploy\n```\n\nNo bindings, no secrets — this Worker is a thin proxy with no state.\n",
+    "fetchedAt": "2026-08-12T00:43:29.185Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "scry_stats",
+      "description": "Returns aggregate Scry corpus telemetry: total observation count, distinct\nsource IPs, first/last observation timestamps, last-24h activity, and\nper-protocol breakdowns. Useful as a liveness/density check before issuing\nper-IP queries — lets an agent decide whether the corpus has enough data\nto be authoritative.\n\nUse this tool when:\n- An agent is planning a multi-step investigation and wants to know if Scry\n  has corpus density worth querying.\n- You want a 'corpus health' signal in a dashboard or report.\n\nDo NOT use this tool when:\n- You want details about a specific IP — use `scry_check`.\n- You want sensor fleet size or node identities — never exposed at any tier.\n\nInputs: none.\nReturns: total_observations, distinct_source_ips, first_seen_ms, last_seen_ms, observations_last_24h, distinct_source_ips_last_24h, by_protocol, as_of_ms.\nCost: free, anonymous, rate-limited.\nLatency: <100ms typical."
+    },
+    {
+      "name": "scry_check",
+      "description": "Returns Scry's corpus knowledge for a single IPv4 address: when it was first/last\nobserved, observation count, protocols and ports targeted, ASN, country, category\n(actor/scanner/not_observed), and confidence_bucket (low/medium/high).\n\nUse when an agent needs IP triage, hostility assessment, or risk signaling.\nDo NOT use for raw payloads (never exposed) or IPv6 (corpus is v4-only at v0.1)."
+    },
+    {
+      "name": "scry_check_bulk",
+      "description": "Look up many IPv4 addresses in one request. Up to 100 IPs per call. Same per-IP shape as scry_check, keyed by IP."
+    },
+    {
+      "name": "scry_top",
+      "description": "Top-N source dimensions over a time window. Useful for situational awareness — 'where is the noise coming from right now?'"
+    },
+    {
+      "name": "scry_timeseries",
+      "description": "Bucketed observation counts over time. Detect bursts, plot trends, sanity-check whether attacker activity is rising or falling."
+    },
+    {
+      "name": "scry_asn",
+      "description": "Roll-up of corpus activity for a single ASN — observation count, distinct source IPs, actor count, scanner count, high-confidence actor count, and per-protocol breakdown."
+    },
+    {
+      "name": "scry_country",
+      "description": "Roll-up of corpus activity by ISO country code. Same shape as scry_asn."
+    },
+    {
+      "name": "scry_tools",
+      "description": "List detected attack tools — (protocol, payload, path) tuples sent by 3+ distinct source IPs. Aggregate metadata only; never lists member actors."
+    },
+    {
+      "name": "scry_tool",
+      "description": "Single tool detail by 16-char hex id from scry_tools."
+    },
+    {
+      "name": "scry_campaigns",
+      "description": "Active threat campaigns — coordinated attacker activity that exceeds the noise floor. ≥5 distinct actors, ≥3 ASNs, ≤5 destination ports, ≥1h history."
+    },
+    {
+      "name": "scry_campaign",
+      "description": "Single campaign detail by id (format: c[0-9a-f]{15})."
+    },
+    {
+      "name": "scry_recent",
+      "description": "Recent observations feed — aggregated by source IP within a time window. Cursor-paginated via since_ms."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:43:29.384Z",
+  "toolsPreviewStatus": "ok"
+}

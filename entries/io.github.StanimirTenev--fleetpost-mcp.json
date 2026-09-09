@@ -1,0 +1,89 @@
+{
+  "id": "io.github.StanimirTenev/fleetpost-mcp",
+  "title": "Fleetpost",
+  "description": "A mailbox for your machines: read fleet capabilities, send a request. Offline, no server.",
+  "summary": "A mailbox for your machines: read fleet capabilities, send a request. Offline, no server.",
+  "offersHint": "A mailbox for your machines: read fleet capabilities, send a request. Offline, no server. · Packages: pypi:fleetpost-mcp · Env vars: FLEETPOST_CONFIG, FLEETPOST_HOME",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "fleetpost-mcp",
+    "version": "0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "FLEETPOST_CONFIG",
+        "description": "Path to your Fleetpost config.env. Optional if you start the server from the checkout that contains it."
+      },
+      {
+        "name": "FLEETPOST_HOME",
+        "description": "Path to the Fleetpost checkout, if config.env was copied away from it. Needed by fleet_sync and fleet_handle."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "fleetpost-mcp",
+      "version": "0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "FLEETPOST_CONFIG",
+          "description": "Path to your Fleetpost config.env. Optional if you start the server from the checkout that contains it."
+        },
+        {
+          "name": "FLEETPOST_HOME",
+          "description": "Path to the Fleetpost checkout, if config.env was copied away from it. Needed by fleet_sync and fleet_handle."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "FLEETPOST_CONFIG",
+      "description": "Path to your Fleetpost config.env. Optional if you start the server from the checkout that contains it."
+    },
+    {
+      "name": "FLEETPOST_HOME",
+      "description": "Path to the Fleetpost checkout, if config.env was copied away from it. Needed by fleet_sync and fleet_handle."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/StanimirTenev/fleetpost",
+  "repository": {
+    "url": "https://github.com/StanimirTenev/fleetpost",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "updatedAt": "2026-08-11T15:01:00.104724Z",
+  "publishedAt": "2026-08-11T15:01:00.104724Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:38.168Z",
+    "sourceRepoAt": "2026-08-12T00:02:19.467Z",
+    "readmeAt": "2026-08-12T00:02:20.116Z",
+    "toolsAt": "2026-08-12T01:34:38.168Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/StanimirTenev/fleetpost",
+    "checkedAt": "2026-08-12T00:02:19.467Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/StanimirTenev/fleetpost/main/README.md",
+    "markdown": "# Fleetpost\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n![Made with Bash](https://img.shields.io/badge/made%20with-Bash-1f425f.svg)\n![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey.svg)\n![Server: none](https://img.shields.io/badge/server-none-brightgreen.svg)\n![Transport: rclone](https://img.shields.io/badge/transport-rclone-orange.svg)\n![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)\n\n**A mailbox for your machines.** Independent AI coding agents on separate computers\ndrop tasks in a shared folder and pick them up whenever they wake — no server, no\ndaemon, and no requirement that both sides be online at once.\n\n> Offline-tolerant coordination for independent AI agents: cross-machine, server-less,\n> carried by any folder `rclone` can reach — Google Drive, S3, Dropbox, SFTP, WebDAV.\n\nFleetpost is a handful of shell scripts and a convention. You run several agents (Claude\nCode, Cursor, Codex, Aider, whatever) on several machines. Each keeps its own local\nmemory. Fleetpost lets them **know what the others can do** and **ask each other for\nwork** — and it keeps working when a machine is asleep or powered off, because the\nmessages simply wait in the shared folder until that machine's next sync.\n\n---\n\n## Why this exists\n\nRun an agent on your laptop and another on your desktop and they are blind to each other;\nyou become the courier, copy-pasting between terminals ([a real, common pain](https://github.com/anthropics/claude-code/issues/28300)).\nThe usual answers are **live** — both agents must be running and connected at the same\nmoment. Fleetpost takes the other route: **asynchronous**. Leave the work in the drop and\nwalk away; the powered-off machine catches up on its own.\n\n## How it works\n\n```\n<shared-folder>/                     (any rclone remote: Drive, S3, Dropbox…)\n├── 00-START-HERE.md                 onboarding for a new machine\n├── PROTOCOL-CHANGES.md              append-only changelog, watched by hash\n├── laptop/\n│   ├── capabilities.md              what this machine can do (hand-written)\n│   ├── inventory.md                 what it knows (index; optional generator)\n│   └── inbox/\n│       └── handled/                 requests it has completed\n├── desktop/\n└── server/\n```\n\nA small `sync.sh` runs on a timer (systemd / cron / launchd) on each machine and does\nfour things — and nothing that touches another machine's data:\n\n1. **pulls** this machine's `inbox/`\n2. **detects** new requests (and protocol changes) → raises a local `SIGNAL.md` flag\n3. **pulls** every other machine's `capabilities.md` so this one knows who to ask\n4. **publishes** this machine's own descriptors, only when they actually changed\n\nIt never *executes* a request. It fetches and flags; the agent does the work in a session.\n\n## Demo\n\nYour **desktop** needs something only the **laptop** can do, so it drops a request in the\nlaptop's inbox and forgets about it:\n\n```console\ndesktop$ echo \"Compile the arm64 build and report the sha256.\" \\\n           > 2026-08-09-from-desktop-compile.md\ndesktop$ rclone copy 2026-08-09-from-desktop-compile.md \\\n           \"gdrive:coordination/laptop/inbox/\"\n```\n\nThe laptop is asleep. Hours later it wakes; its timer fires a sync:\n\n```console\nlaptop$ ./scripts/sync.sh\n14:17  1/4 pulling laptop/inbox …\n14:17  2/4 detecting new requests and protocol changes …\n       -> new requests; raised SIGNAL.md\n14:17  3/4 pulling fleet capabilities …\n       -> desktop: fetched\n14:17  4/4 publishing my descriptors (only if changed) …\n14:17  done.\n# exit code 10 = \"something new for you\"\n\nlaptop$ cat ~/.agent-coordination/SIGNAL.md\n# SIGNAL — something is waiting for you\n## New requests in your inbox (~/.agent-coordination/inbox/)\n- `2026-08-09-from-desktop-compile.md` (41 bytes)\n```\n\nThe laptop's agent does the work, drops a reply in `desktop/inbox/`, and moves the\nrequest into `inbox/handled/`. The desktop picks up the answer on *its* next sync — and\nat no point did both machines need to be online at the same time.\n\n## What makes it different\n\nThe category is not empty — see [Alternatives](#alternatives). Fleetpost's specific bundle is:\n\n- **rclone-first transport** — pull from object storage / Drive / S3 / Dropbox. No sync\n  daemon on every host, no git remote. If `rclone` can reach it, Fleetpost can use it.\n- **Folder-native protocol** — per-machine `inbox/` + `handled/` subfolders. A machine\n  with no automation still sees exactly its unhandled requests at the top level.\n- **Offline-published capability descriptor** — each machine leaves a \"what I can do\" file\n  in the folder, discoverable **even while that machine is off** (unlike a live Agent Card\n  that needs an HTTP server up).\n- **Hash-watched changelog** — rule changes reach already-running agents, which would\n  otherwise never re-read the onboarding doc.\n\n## Use it from an agent (MCP)\n\nThere is an MCP server in [`mcp/`](mcp/) — `fleetpost-mcp` on PyPI — so an agent can read\nthe fleet's capabilities, work through its own inbox, and hand a task to another machine as\ntool calls:\n\n```json\n{ \"mcpServers\": { \"fleetpost\": {\n    \"command\": \"uvx\", \"args\": [\"fleetpost-mcp\"],\n    \"env\": { \"FLEETPOST_CONFIG\": \"/path/to/fleetpost/config.env\" } } } }\n```\n\nIt reads this same `config.env` and runs these same scripts — no second implementation of\nthe protocol, and still no server. See [mcp/README.md](mcp/README.md).\n\n## Quickstart\n\n```bash\ngit clone https://github.com/StanimirTenev/fleetpost\ncd fleetpost\n./scripts/init.sh             # asks four questions, writes config.env, claims your folder\n$EDITOR ~/.agent-coordination/self/capabilities.md   # what this machine can do — the fleet reads it\n./scripts/doctor.sh           # confirm the wiring before wondering why nothing arrives\n./scripts/sync.sh             # first cycle: publish yourself, fetch the others\n\n# one-time for the whole fleet: seed the shared docs (from any one machine)\nrclone copy templates/00-START-HERE.md      \"<remote>:<coord-dir>/\"\nrclone copy templates/PROTOCOL-CHANGES.md   \"<remote>:<coord-dir>/\"\n\n# schedule it (Linux, user timer)\ncp examples/systemd/coordination-sync.* ~/.config/systemd/user/\nsystemctl --user daemon-reload\nsystemctl --user enable --now coordination-sync.timer\nloginctl enable-linger \"$USER\"\n```\n\nPrefer to wire it by hand? `cp config.example.env config.env` and edit — `init.sh` writes\nexactly that file and nothing else.\n\n## Day to day\n\n```bash\n./scripts/status.sh    # what's waiting for me, what the fleet can do (local, no network)\n./scripts/send.sh --to desktop --topic \"sign the installer\" \\\n                  --want \"Sign dist/app.exe with the company cert.\" \\\n                  --done \"signtool verify /pa passes on the uploaded file.\" \\\n                  --until 2026-09-01\n./scripts/handle.sh <filename>   # done with one: move it to inbox/handled/\n```\n\n`send.sh` requires every field the protocol asks for, so a request that cannot be acted on\ncannot be created.\n\n### Notice requests without being told\n\nAn established agent never re-reads the onboarding doc, so a request can sit unnoticed.\n[`examples/hooks/session-start.sh`](examples/hooks/session-start.sh) prints whatever the last\ncycle flagged at the top of an agent session, and stays completely silent when nothing is\nwaiting. It reads local files only — set `FLEETPOST_HOOK_SYNC=1` to pull first, which is the\nright choice on a machine with no scheduler.\n\nSee [`docs/PROTOCOL.md`](docs/PROTOCOL.md) for the full protocol and [`00-START-HERE.md`](templates/00-START-HERE.md)\nfor what a new agent reads.\n\n## Requirements\n\n`bash`, [`rclone`](https://rclone.org/) (configured with one remote), `sha256sum`, and a\nscheduler (systemd, cron, or launchd). That's it. No server, no database, no language runtime.\n\n## Alternatives\n\nHonest comparison — pick what fits:\n\n| Project | Transport | Cross-machine | Survives machine **off** | Capability discovery |\n|---|---|---|---|---|\n| **Fleetpost** | rclone (Drive/S3/Dropbox/…) | ✅ | ✅ (waits in folder) | ✅ offline-published |\n| [SAMP](https://github.com/slima4/agent-message) | Syncthing/Dropbox/iCloud daemon | ✅ | ✅ | ❌ |\n| [GNAP](https://github.com/farol-team/gnap) | git remote (pull/rebase/push) | ✅ | ✅ (on reconnect) | ✅ (`agents.json`) |\n| [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) | HTTP FastMCP server | ✅ | ❌ (server must be up) | partial |\n| [A2A](https://a2a-protocol.org/) | JSON-RPC over HTTP | ✅ | ❌ (agent must be online) | ✅ (live Agent Card) |\n| LangGraph / CrewAI / AutoGen | in-process runtime | ❌ | ❌ | n/a |\n\nIf you already run Syncthing everywhere, [SAMP](https://github.com/slima4/agent-message)\nis excellent and closest in spirit. Fleetpost is for when your shared layer is object\nstorage or a cloud drive (via rclone) and you want folder-native inbox/handled semantics\nplus offline capability discovery.\n\n## Design principles\n\n- **Memory stays local.** Only a short descriptor is published. Full memory never travels.\n- **Ask for actions, not access.** Secrets never travel; the machine that holds a\n  credential does the work and returns only the result.\n- **One author per shared document**, so concurrent writers can't clobber a changelog entry.\n\n## License\n\n[MIT](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:02:20.116Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:38.168Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

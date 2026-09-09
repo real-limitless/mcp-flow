@@ -1,0 +1,91 @@
+{
+  "id": "ar.com.muovi/mcp-server",
+  "title": "mcp-server",
+  "description": "Read-only MCP server for Muovi, Argentina's trust-first local services marketplace (6 tools).",
+  "summary": "Read-only MCP server for Muovi, Argentina's trust-first local services marketplace (6 tools).",
+  "offersHint": "Read-only MCP server for Muovi, Argentina's trust-first local services marketplace (6 tools). · Remote MCP (streamable-http) at https://mcp.muovi.com.ar/ · Packages: npm:@muovi/mcp-server",
+  "version": "0.1.4",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.muovi.com.ar/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.muovi.com.ar/"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@muovi/mcp-server",
+    "version": "0.1.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@muovi/mcp-server",
+      "version": "0.1.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/muovi-latam/mcp-server",
+  "repository": {
+    "url": "https://github.com/muovi-latam/mcp-server",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-17T15:28:26.324243Z",
+  "publishedAt": "2026-07-17T15:28:26.324243Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:40:57.176Z",
+    "sourceRepoAt": "2026-08-12T00:40:57.176Z",
+    "readmeAt": "2026-08-12T00:40:58.220Z",
+    "toolsAt": "2026-08-12T00:40:58.342Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/muovi-latam/mcp-server",
+    "checkedAt": "2026-08-12T00:40:57.176Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/muovi-latam/mcp-server/main/README.md",
+    "markdown": "# @muovi/mcp-server\n\n[![npm version](https://img.shields.io/npm/v/%40muovi%2Fmcp-server.svg)](https://www.npmjs.com/package/@muovi/mcp-server)\n\n**Model Context Protocol (MCP) server for [Muovi](https://muovi.com.ar)** — LATAM's trust-first local services marketplace.\n\nThis package lets MCP-aware clients (Claude Desktop, Cursor, Claude Code, and any other MCP host) discover Muovi's verified LATAM service professionals, browse the service catalog and city list, read reviews, and deep-link a user into the on-platform task-creation flow. It is a thin, read-only wrapper over Muovi's public [`/v1` REST API](https://muovi.com.ar/openapi.yaml).\n\n**Stdio mode.** The package ships an `npx`-runnable binary that speaks JSON-RPC over stdin/stdout. The hosted HTTP/SSE variant is tracked separately (Muovi MOB-142).\n\n## What it exposes\n\nSix tools, all read-only:\n\n| Tool | Wraps | Purpose |\n| --- | --- | --- |\n| `muovi_search_professionals` | `GET /v1/professionals` | Search verified pros by service, city, neighborhood, verification status, min rating, min review count. |\n| `muovi_get_professional` | `GET /v1/professionals/{slug}` | Fetch a single pro's full public profile (bio, portfolio, specialties, verifications). |\n| `muovi_list_services` | `GET /v1/services` | The full live service catalog. |\n| `muovi_list_cities` | `GET /v1/cities` | Every Argentine city Muovi serves, with neighborhoods. |\n| `muovi_get_reviews` | `GET /v1/professionals/{slug}/reviews` | Paginated reviews for a pro, most-recent first. |\n| `muovi_create_task_link` | (pure formatter) | Builds the canonical deep-link the user should follow to start a task with a specific pro for a specific service. Makes no HTTP call. |\n\n## Anti-leakage policy\n\nMuovi is on-platform-only. **Phone, email, and WhatsApp handles are never returned** by the public API — contact between consumers and professionals happens exclusively through Muovi's in-app conversation flow, reachable from each pro's `profile_url`.\n\nThis server enforces the policy twice:\n\n1. The `/v1` API strips contact data server-side.\n2. Every tool response in this package also runs through a local anti-leakage detector (a Node-compatible mirror of [`src/lib/anti-leakage/detector.ts`](https://github.com/muovi-latam/muovi-web/blob/main/src/lib/anti-leakage/detector.ts) in the Muovi web repo). If a leak is detected at the agent boundary the tool returns a stable error to the LLM client and refuses to surface the payload.\n\nHosts that integrate this server **must not** synthesise off-platform contact handles from any field. Driving the user to `profile_url` (optionally with the deep-link query string) is the only sanctioned contact channel.\n\n## Installation & configuration\n\n### Claude Desktop\n\nOpen `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\\Claude\\claude_desktop_config.json` (Windows) and add the server under `mcpServers`:\n\n```json\n{\n  \"mcpServers\": {\n    \"muovi\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@muovi/mcp-server\"]\n    }\n  }\n}\n```\n\nIf you have a Muovi API key (see [Authentication](#authentication-optional) below), pass it via env:\n\n```json\n{\n  \"mcpServers\": {\n    \"muovi\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@muovi/mcp-server\"],\n      \"env\": {\n        \"MUOVI_API_KEY\": \"your-key-here\"\n      }\n    }\n  }\n}\n```\n\nRestart Claude Desktop after editing the config.\n\n### Cursor\n\nAdd to `~/.cursor/mcp.json` (or your workspace's `.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"muovi\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@muovi/mcp-server\"]\n    }\n  }\n}\n```\n\n### Claude Code\n\nRegister the server with the Claude Code CLI:\n\n```bash\nclaude mcp add muovi --command \"npx\" --args \"-y\" \"@muovi/mcp-server\"\n```\n\nOr add it manually to your Claude Code settings:\n\n```json\n{\n  \"mcpServers\": {\n    \"muovi\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@muovi/mcp-server\"]\n    }\n  }\n}\n```\n\n### Manual / scripting\n\n```bash\nnpx -y @muovi/mcp-server\n```\n\nThe process reads JSON-RPC on stdin and replies on stdout. All log output goes to stderr.\n\n## Authentication (optional)\n\nAll `/v1` endpoints are public and unauthenticated by default. If your client has been issued a Muovi API key (higher rate-limit tier), set `MUOVI_API_KEY` in the server's environment and the package will forward it as the `X-API-Key` header on every request.\n\nYou can also override the API base URL for testing:\n\n```bash\nMUOVI_API_BASE_URL=https://staging.muovi.com.ar/api/v1 npx -y @muovi/mcp-server\n```\n\n## Example agent workflow\n\nA typical Claude conversation that uses these tools:\n\n1. User asks for \"an electrician in Palermo who's properly licensed\".\n2. Agent calls `muovi_list_services` to map \"electrician\" → `electricidad`.\n3. Agent calls `muovi_list_cities` to confirm `palermo` is a valid neighborhood under `caba`.\n4. Agent calls `muovi_search_professionals` with `{ service: \"electricidad\", city: \"caba\", neighborhood: \"palermo\", has_matricula: true, min_rating: 4.5 }`.\n5. Agent picks the top pro and calls `muovi_get_professional` for the full bio + portfolio.\n6. Agent optionally calls `muovi_get_reviews` for social proof.\n7. Agent calls `muovi_create_task_link` with `{ professional_slug, service_slug: \"electricidad\" }` and surfaces the resulting URL.\n8. User follows the link, lands on Muovi, completes the on-platform task creation flow.\n\nStep 8 — the on-platform flow — is Muovi's enforcement point for trust, payments, and disputes. MCP never bypasses it.\n\n## Local development\n\nThis package is the standalone [`muovi-latam/mcp-server`](https://github.com/muovi-latam/mcp-server) repo. Clone it, install, and run tests:\n\n```bash\ngit clone git@github.com:muovi-latam/mcp-server.git\ncd mcp-server\nnpm install\nnpm test            # unit + integration + OpenAPI drift checks\nnpm run typecheck   # strict TypeScript\nnpm run build       # emits dist/\n```\n\nThe OpenAPI drift test parses `public/openapi.yaml` and asserts each tool's input schema matches the corresponding operation's parameters exactly — adding a query param to `/v1` requires updating the corresponding tool (and vice versa).\n\n## Publishing\n\n`npm publish` is intentionally **not** wired into CI. Releases are cut manually from a clean tag:\n\n```bash\nnpm version patch    # or minor / major\nnpm publish --access public\ngit push --follow-tags\n```\n\n`prepublishOnly` runs `clean + build + test` before any publish.\n\n### MCP Registry (mcp-publisher)\n\nBeyond npm, this server is listed in the [Model Context Protocol registry](https://registry.modelcontextprotocol.io) via the committed [`server.json`](./server.json) manifest. Publishing to the registry is a **manual step — there is deliberately no CI auto-publish** (the registry is a low-frequency, human-gated surface, and namespace auth is interactive).\n\n**Committed namespace:** `ar.com.muovi/mcp-server` — the reverse-DNS form of `muovi.com.ar`. This value lives in **both** `server.json` (`name`) and `package.json` (`mcpName`) and the two **must stay byte-identical** (the `server-json` test enforces equality). It must also match the identity you authenticate as with `mcp-publisher` (see below).\n\n#### One-time namespace ownership setup\n\nProve ownership of the `ar.com.muovi` namespace once, before the first publish:\n\n- **DNS (preferred):** add the TXT record that `mcp-publisher login dns` prints to the `muovi.com.ar` zone, then authenticate against that domain. This ties the namespace to the domain we already control.\n- **GitHub OAuth (fallback):** `mcp-publisher login github` — authenticates via the `muovi-latam` GitHub org. Only use this if DNS verification is unavailable; the authenticated identity still has to line up with the committed `ar.com.muovi/mcp-server` namespace.\n\nIf the committed namespace and the authenticated identity disagree, `mcp-publisher publish` will reject the manifest — fix the namespace (in both files) or the login, do not force it.\n\n#### Publish steps\n\n```bash\nmcp-publisher validate ./server.json   # checks against the live registry schema\nmcp-publisher publish                   # publishes server.json under the authenticated namespace\n```\n\n`validate` is the step that confirms the manifest matches the current registry schema version — run it every time; the pinned `$schema` in `server.json` is a hint, not a guarantee the live schema hasn't moved.\n\n#### Version-bump discipline\n\nThe `server-json` test asserts that four version fields agree. On **every** version bump, update all of them together, then re-publish to both npm and the registry:\n\n1. `package.json` → `version`\n2. `src/server.ts` → `PACKAGE_VERSION`\n3. `server.json` → `version`\n4. `server.json` → `packages[0].version`\n\n#### Honest gating notes\n\nThe manifest advertises capabilities that are not yet fully live. Keep these caveats in mind (and do not overstate them to users):\n\n- **Remote transport** (`remotes[].url` = `https://mcp.muovi.com.ar/`) is only truthful once that endpoint reliably answers JSON-RPC `initialize` over streamable-HTTP. That hosted surface is tracked in **MOB-207**; until it lands, the **stdio** package (`npx @muovi/mcp-server`) is the only transport that actually works.\n- **`muovi_get_professional`** and **`muovi_get_reviews`** remain broken against production until **MOB-263** deploys the backing `/v1` endpoints. The tools are registered and pass drift checks, but live calls will fail until then.\n\n## License\n\n[MIT](./LICENSE).\n\n## Links\n\n- [Muovi](https://muovi.com.ar)\n- [Public `/v1` API spec](https://muovi.com.ar/openapi.yaml)\n- [Model Context Protocol](https://modelcontextprotocol.io)\n- [Report an issue](https://github.com/muovi-latam/mcp-server/issues)\n",
+    "fetchedAt": "2026-08-12T00:40:58.220Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "muovi_search_professionals",
+      "description": "Search for verified service professionals in Argentina by service type, city, neighborhood, verification status, minimum rating, and minimum review count. Returns a paginated list of professionals with display name, headline, ratings, verifications, and a `profile_url` that is the only sanctioned contact channel (no phone/email/whatsapp is ever returned). Use this for discovery; use `muovi_get_professional` for the full detail payload."
+    },
+    {
+      "name": "muovi_get_professional",
+      "description": "Fetch the full public profile for a single Muovi-verified professional by slug. Returns display name, headline, bio, portfolio image URLs, specialties, city + neighborhoods, services, ratings, verifications, and the canonical `profile_url`. The `profile_url` is the only sanctioned contact channel — phone, email, and whatsapp are never returned. Append `?create_task=1&service={slug}` to `profile_url` (or use `muovi_create_task_link`) to deep-link a user into the on-platform task creation flow targeted at this pro."
+    },
+    {
+      "name": "muovi_list_services",
+      "description": "List every service category Muovi supports in Argentina — home trades (electricidad, plomería, gas, pintura, carpintería, cerrajería, albañilería, herrería, techista), limpieza, jardinería, aire acondicionado, and moving/hauling: mudanzas (movers) and fletes (light freight/hauling). Every listed professional is identity-verified and reviewed, with on-platform payment and dispute resolution. Each entry has a stable `slug` (used as the `service` parameter on `muovi_search_professionals` and `muovi_create_task_link`), a human-readable `name`, an optional description, and a `requires_matricula` flag indicating whether listed professionals must hold a verified professional license. Call this first when you need to map a user's natural-language request to a Muovi service slug."
+    },
+    {
+      "name": "muovi_list_cities",
+      "description": "List every Argentine city Muovi serves, with active neighborhoods nested under each. Each city has a stable `slug` (used as the `city` parameter on `muovi_search_professionals`) and a human-readable `name`. Each neighborhood has its own `slug` (used as the `neighborhood` parameter on `muovi_search_professionals`). Call this when you need to resolve a user's location wording to a Muovi city or neighborhood slug."
+    },
+    {
+      "name": "muovi_get_reviews",
+      "description": "Fetch paginated reviews for a single Muovi-verified professional, sorted most-recent first. Each review has a 1-5 rating, an optional title and free-text comment, the author's reduced display name (e.g. \"María G.\" — full surnames are never returned), the author role (`client` or `worker`), the service category the review is associated with, and an ISO `created_at` timestamp. Use this to surface social-proof when recommending a professional."
+    },
+    {
+      "name": "muovi_create_task_link",
+      "description": "Build the canonical Muovi deep-link that opens the on-platform task creation flow pre-filled with a specific professional and service. Returns a URL of the form `https://muovi.com.ar/p/{slug}?create_task=1&service={service-slug}`. This is a pure formatter — it makes no network call and creates no task. After running it, surface the URL to the user so they can complete the booking on Muovi. Muovi never lets agents create tasks server-side; the consumer always sees the on-platform flow to confirm details."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:40:58.342Z",
+  "toolsPreviewStatus": "ok"
+}

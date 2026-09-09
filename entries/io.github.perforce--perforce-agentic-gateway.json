@@ -1,0 +1,58 @@
+{
+  "id": "io.github.perforce/perforce-agentic-gateway",
+  "title": "Perforce Agentic Gateway",
+  "description": "Local MCP gateway that proxies AI clients to many MCP servers with a token-efficient code mode",
+  "summary": "Local MCP gateway that proxies AI clients to many MCP servers with a token-efficient code mode",
+  "offersHint": "Local MCP gateway that proxies AI clients to many MCP servers with a token-efficient code mode · Packages: pypi:perforce-agentic-gateway",
+  "version": "2026.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "perforce-agentic-gateway",
+    "version": "2026.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "perforce-agentic-gateway",
+      "version": "2026.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/perforce/perforce-agentic-gateway",
+  "repository": {
+    "url": "https://github.com/perforce/perforce-agentic-gateway",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-08T23:57:23.481351Z",
+  "publishedAt": "2026-07-08T23:57:23.481351Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:09:05.964Z",
+    "sourceRepoAt": "2026-08-11T23:29:49.139Z",
+    "readmeAt": "2026-08-11T23:29:49.614Z",
+    "toolsAt": "2026-08-12T01:09:05.964Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/perforce/perforce-agentic-gateway",
+    "checkedAt": "2026-08-11T23:29:49.139Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/perforce/perforce-agentic-gateway/main/README.md",
+    "markdown": "<picture>\n  <source media=\"(prefers-color-scheme: dark)\" srcset=\"logo-pag-rev.svg\">\n  <img src=\"logo-pag-reg.svg\" alt=\"PAG --- Perforce Agentic Gateway\" width=\"420\">\n</picture>\n\n# PAG --- Perforce Agentic Gateway\n\nPerforce Agentic Gateway (PAG) is a local MCP gateway providing a token efficient code mode. AI clients are configured once, to connect to PAG and all other MCP servers are instead configured through PAG. Instead of being set up with and loading the tools of each MCP separately, PAG manages the running MCP server processes, restarts them when they crash, and stores their necessary credentials in your OS Keychain.\n\n## Prerequisites\n\n- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** --- the only hard requirement.\n- **Docker or Podman** --- only for servers that run as containers.\n- **Each server's own dependencies** --- PAG proxies servers, it doesn't bundle them (e.g. Node for `npx` servers, an account for API servers).\n\n## Quickstart\n\n### 1. Connect your AI client\n\nPAG runs as a **stdio MCP server**, launched via `uvx`.\n\nWith **Claude Code**:\n\n```sh\nclaude mcp add pag -- uvx perforce-agentic-gateway@latest\n```\n\nFor any client that uses **`.mcp.json`** (Cursor, and others):\n\n```json\n{\n  \"mcpServers\": {\n    \"pag\": {\n      \"command\": \"uvx\",\n      \"args\": [\"perforce-agentic-gateway@latest\"]\n    }\n  }\n}\n```\n\n`@latest` keeps PAG current on each launch. Add `--working-directory <dir>` to pin a project. Other clients (Codex, VS Code, ...): see [Connecting AI clients](connecting-clients.md). Restart the client; `pag__*` tools should appear.\n\nPrefer to install once instead of fetching on demand? `uv tool install perforce-agentic-gateway` puts a `perforce-agentic-gateway` command on your `PATH` that you run in place of `uvx perforce-agentic-gateway` --- see [Installing PAG as a tool](reference.md#installing-pag-as-a-tool).\n\n### 2. See what's available\n\nAsk your assistant:\n\n> \"What MCP servers are in the PAG registry?\"\n\nLists everything installable from configured registries --- including Perforce's first-party servers, e.g. P4, BlazeMeter, Perfecto, Delphix, IPLM.\n\n### 3. Enable a server from the catalog\n\nPerforce product support MCP servers are available straight from the catalog. Ask your assistant to recommend servers for what you're working on:\n\n> \"What MCP servers would help with this project?\"\n\nPAG scans your project for technology signals and suggests catalog servers, always asking before it enables anything. Or name one directly:\n\n> \"Enable the P4 server.\"\n\nPAG records it in your config and starts it. Most Perforce servers need credentials (typically a server URL and an access token); when so, the assistant hands you a dashboard link to enter them --- secrets never travel through the chat. See [Perforce servers](using-pag.md#perforce-servers) and [Secrets](secrets.md).\n\nBrowse the full catalog any time with `uvx perforce-agentic-gateway view`. See [Using PAG](using-pag.md).\n\n### 4. Or add a custom server\n\nAnything not in a registry --- a local command, a container, or a remote HTTP endpoint --- you add directly. The MCP **fetch** server runs via `uvx` and needs no credentials, so it's a handy zero-setup server to run end to end and see the flow:\n\n> \"Add a custom server named `fetch` that runs `uvx mcp-server-fetch`.\"\n\nPAG writes it to your config and starts it.\n\n### 5. Run a real command\n\n> \"Fetch https://modelcontextprotocol.io and tell me what MCP is.\"\n\nThe assistant calls `fetch__fetch` through PAG and answers from the live page.\n\n## Why it stays fast\n\n```\nAI client --one stdio connection--> PAG --> server A (command)\n                                     | --> server B (remote HTTP)\n                                     +-> server C (container)\n```\n\nPAG doesn't forward every downstream tool to your client (20 servers can mean a thousand tools). It exposes a small, fixed `pag__*` set and keeps the full catalog inside the gateway:\n\n- **`pag__explore`** searches the catalog; only the slice the assistant asks for enters its context.\n- **`pag__execute`** runs JavaScript that calls downstream tools, so loops and fan-out across servers take **one** round trip instead of many.\n\nFull mechanics (the sandbox, qualified tool names, prompts and resources) are in [Tools and the sandbox](using-pag.md#tools-and-the-sandbox).\n\n## Going deeper\n\n- **[Connecting AI clients](connecting-clients.md)** --- Claude Code, Codex, VS Code, Cursor.\n- **[Using PAG](using-pag.md)** --- managing servers, the dashboard, the catalog and registries, Perforce servers, the tools/sandbox model.\n- **[Secrets](secrets.md)** --- entering, storing, and looking up credentials.\n- **[Configuration](configuration.md)** --- the complete `config.toml` reference.\n- **[Troubleshooting](troubleshooting.md)** --- logging and common fixes.\n- **[Reference](reference.md)** --- command line, uninstalling, glossary.\n\n## Feedback\n\nBug reports and feature requests go through [GitHub issues](https://github.com/perforce/perforce-agentic-gateway/issues). For setup and runtime problems, check [Troubleshooting](troubleshooting.md) first --- it covers the common cases.\n\n## License\n\nUse of PAG is governed by the [Perforce Agentic Gateway Terms of Use](LICENSE.md).\n",
+    "fetchedAt": "2026-08-11T23:29:49.614Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:09:05.964Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

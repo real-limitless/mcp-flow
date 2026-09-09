@@ -1,0 +1,58 @@
+{
+  "id": "io.github.matematicsolutions/pk-eli-mcp",
+  "title": "pk-eli-mcp",
+  "description": "MCP server for Pakistani law: search and cite federal statutes and Supreme Court judgments.",
+  "summary": "MCP server for Pakistani law: search and cite federal statutes and Supreme Court judgments.",
+  "offersHint": "MCP server for Pakistani law: search and cite federal statutes and Supreme Court judgments. · Packages: pypi:pk-eli-mcp",
+  "version": "0.3.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "pk-eli-mcp",
+    "version": "0.3.4",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "pk-eli-mcp",
+      "version": "0.3.4",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/matematicsolutions/pk-eli-mcp",
+  "repository": {
+    "url": "https://github.com/matematicsolutions/pk-eli-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-07T12:04:03.732579Z",
+  "publishedAt": "2026-08-07T12:04:03.732579Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:14:28.925Z",
+    "sourceRepoAt": "2026-08-11T23:35:32.477Z",
+    "readmeAt": "2026-08-11T23:35:33.046Z",
+    "toolsAt": "2026-08-12T01:14:28.925Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/matematicsolutions/pk-eli-mcp",
+    "checkedAt": "2026-08-11T23:35:32.477Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/matematicsolutions/pk-eli-mcp/main/README.md",
+    "markdown": "# pk-eli-mcp\n\n<!-- mcp-name: io.github.matematicsolutions/pk-eli-mcp -->\n\nMCP server for Pakistani law: 967 federal statutes and 1,414 Supreme Court of\nPakistan judgments, full text, with a strict citation contract on every response.\n\nPakistan publishes no machine-readable legal API, so this connector is\n**corpus-based**: it serves two public HuggingFace mirrors of official sources\ninstead of querying a government endpoint live.\n\n| Collection | Source | Snapshot | License |\n|---|---|---|---|\n| Federal statutes (967) | [Pakistan_Laws_Dataset](https://huggingface.co/datasets/AyeshaJadoon/Pakistan_Laws_Dataset), collected from [pakistancode.gov.pk](https://pakistancode.gov.pk/) PDFs (Ministry of Law and Justice) | 2025-01-30 | ODC-BY 1.0 |\n| Supreme Court judgments (1,414) | [supreme-court-of-pak-judgments](https://huggingface.co/datasets/Ibtehaj10/supreme-court-of-pak-judgments) | 2024-07-26 | MIT |\n\n**Honest limits, stated up front:** both collections are static snapshots.\nAmendments after 2025-01-30 and judgments after 2024-07-26 are absent, and the\njudgment corpus is a subset of the Court's output. Every response repeats this\nin `dataset_note`. Verify currency against [pakistancode.gov.pk](https://pakistancode.gov.pk/)\nand [scp.gov.pk](https://www.scp.gov.pk/) before relying on a provision.\n\n## Tools\n\n| Tool | What it does |\n|---|---|\n| `pk_search_laws` | Keyword search over the 967 federal statutes (title-weighted). First call downloads the 47 MB corpus once, then serves from cache. |\n| `pk_get_law` | Full statute text by `law_id` (truncated at ~300,000 characters). |\n| `pk_case_search` | Server-side full-text search over the Supreme Court judgments. |\n| `pk_get_decision` | One judgment's full text, by `row_idx` or registry `case_id`. |\n| `pk_verify_citations` | Anti-hallucination check: extracts Pakistani legal citations from any text and verifies each against the corpus. |\n\n## Citation verification (`pk_verify_citations`)\n\nRun it on a drafted answer, memo or pleading before it reaches a reader. The tool\nextracts every checkable citation and verifies it against the corpus:\n\n- statute sections: `section 302 of the Pakistan Penal Code`,\n  `section 10A of the Pakistan Study Centres Act, 1976`, `sections 6 and 7 of ...`,\n  `sub-section (1) of section 6 of ...`;\n- act coordinates: `Act No. XLV of 1860`, `Ordinance No. LII of 2000` (Roman or Arabic);\n- Constitution articles: `Article 184(3) of the Constitution` (the tail is required -\n  a bare `Article 5` could be any instrument and is deliberately ignored);\n- Supreme Court registry citations: `Crl.A. 93/2013`, `Criminal Appeal No. 93 of 2013`.\n\nThe semantics are deliberately hard:\n\n- A cited section that does not exist makes the whole result `HALLUCINATION_DETECTED`\n  with `isError=true`, plus a range hint of what does exist (`section 999 does not\n  exist in this act; 59 sections are machine-detectable in its text, numbered\n  section 1-66`).\n- `NO_CITATIONS_FOUND` is not a success - it means there was nothing to check.\n- A parenthetical description right after a citation\n  (`section 302 of the Pakistan Penal Code (punishment of qatl-i-amd)`) is\n  content-checked against the real provision text with a character-trigram match.\n  A mismatch is a review signal, never a hard block.\n- Everything the tool could NOT check is listed in a structured `gaps` field. The\n  judgment corpus is a subset and roughly half the statute PDFs carry no\n  machine-readable coordinate header, so an unresolvable citation is reported as\n  `out_of_corpus` (\"existence UNKNOWN, not disproven\"), never as a hallucination.\n\nThe parse-verify-report pattern is adapted from\n[korean-law-mcp](https://github.com/chrisryugj/korean-law-mcp) (MIT) - see\n`THIRD_PARTY.md`. The same pattern shipped first in it-eli-mcp v0.6.0; the fleet\nrollout plan lives in [`docs/VERIFY-ROLLOUT.md`](docs/VERIFY-ROLLOUT.md).\n\n## Citation contract\n\nPakistan has not deployed ELI. Every response still carries the fleet contract:\n\n- `eli_uri` - a stable, resolvable URL: the canonical pakistancode.gov.pk PDF for\n  statutes, the dataset row URI for judgments. Never invented; see `eli_note`.\n- `human_readable_citation` - e.g. `THE PRIVATISATION COMMISSION ORDINANCE, 2000`\n  or `Supreme Court of Pakistan, Crl.A. 93/2013`.\n- `source_url` - where a human can read the same document.\n\n## Install\n\n```bash\nuvx pk-eli-mcp          # or: pip install pk-eli-mcp\n```\n\nClaude Code:\n\n```bash\nclaude mcp add pk-eli-mcp -- uvx pk-eli-mcp\n```\n\nOr drop `.mcp.json.example` into your project as `.mcp.json`.\n\n\n### Windows 11 with Smart App Control\n\nSmart App Control blocks unsigned executables, which covers `uvx.exe`, `pip.exe`\nand the `pk-eli-mcp.exe` launcher that pip writes at install time. The `python.exe` and\n`py.exe` from the python.org installer are signed by the Python Software\nFoundation, so running the module through the interpreter works:\n\n```bash\npython -m pip install pk-eli-mcp\npython -m pk_eli_mcp\n```\n\n`pip.exe` is blocked for the same reason, so install with `python -m pip`, not\n`pip install`. If `python` is not on PATH, use the Windows launcher: `py -3 -m pk_eli_mcp`.\n\n```json\n{ \"mcpServers\": { \"pk-eli-mcp\": { \"command\": \"python\", \"args\": [\"-m\", \"pk_eli_mcp\"] } } }\n```\n\nDo not turn Smart App Control off to work around this - it cannot be re-enabled\nwithout reinstalling Windows.\n\n## Configuration\n\n| Env | Default | Purpose |\n|---|---|---|\n| `PK_ELI_CACHE_DIR` | `~/.matematic/cache/pk-eli` | Corpus file + HTTP cache |\n| `PK_ELI_AUDIT_DIR` | `~/.matematic/audit` | JSONL audit log (one line per tool call) |\n\n## Development\n\n```bash\npython -m venv .venv && .venv/Scripts/pip install -e \".[dev]\"   # Linux/macOS: .venv/bin/pip\nruff check src tests\npytest tests/test_instructions_drift.py tests/test_corpus.py   # offline\npytest tests/test_smoke.py                                     # live (downloads the corpus)\n```\n\n## Governance\n\nRead-only by design: the server can search and fetch, never write. Every tool\ncall appends an audit line (`~/.matematic/audit/pk-eli-mcp.jsonl`) with a SHA-256\ninput hash, duration and status. See `CONSTITUTION.md` for the rules this\nconnector is built under and `DISCOVERY.md` for how the sources were chosen.\n\n## License\n\nApache-2.0 for this code. The datasets keep their own licenses (ODC-BY 1.0 and\nMIT); the underlying texts are Government of Pakistan public legal documents.\n",
+    "fetchedAt": "2026-08-11T23:35:33.046Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:14:28.925Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

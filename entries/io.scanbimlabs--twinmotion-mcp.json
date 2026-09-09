@@ -1,0 +1,64 @@
+{
+  "id": "io.scanbimlabs/twinmotion-mcp",
+  "title": "Twinmotion MCP",
+  "description": "Twinmotion rendering via APS — import Revit, set environments, render images, export video.",
+  "summary": "Twinmotion rendering via APS — import Revit, set environments, render images, export video.",
+  "offersHint": "Twinmotion rendering via APS — import Revit, set environments, render images, export video. · Remote MCP (streamable-http) at https://twinmotion-mcp.itmartin24.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://twinmotion-mcp.itmartin24.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://twinmotion-mcp.itmartin24.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-04-12T19:39:49.295833Z",
+  "publishedAt": "2026-04-12T19:39:49.295833Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:54:08.445Z",
+    "sourceRepoAt": "2026-08-11T23:12:11.458Z",
+    "readmeAt": "2026-08-12T00:54:08.445Z",
+    "toolsAt": "2026-08-11T23:12:11.458Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:12:11.458Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T00:54:08.445Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "tm_import_rvt",
+      "description": "Import a Revit/BIM model into the Twinmotion visualization pipeline: downloads the source file from a public URL, uploads it to an APS OSS transient bucket, and kicks off an SVF2 + thumbnail translation job. Returns the base64 URN (project_id) used by every other tm_* tool.\n\nWhen to use: when a user wants to prepare a Revit (.rvt), IFC (.ifc), or other BIM/CAD model for real-time visualization in Unreal Engine / Twinmotion — typically the first step before rendering stills, defining scenes, or exporting FBX/glTF/OBJ geometry for a UE import. Also use when you need thumbnails or view metadata from a source file that has not yet been translated by APS.\nWhen NOT to use: not for MEP clash review (use navisworks-mcp), not for quantity takeoff or cost estimation (use qto-mcp), not for Twinmotion presets editing — Twinmotion itself has no public REST API, so scene/material authoring must happen manually in the UE editor after FBX/USD export.\nAPS scopes required: data:read data:write data:create bucket:read bucket:create viewables:read. Uses Model Derivative API (translation) + OSS (upload). Twinmotion has no public REST API; all automation is APS Model Derivative + manual Unreal Engine export.\nRate limits: APS default ~50 req/min per app per endpoint; Model Derivative translation jobs ~60 req/min; large .rvt/.nwd/.ifc files are often multi-GB and translation can take 5–60 min — poll the manifest with exponential backoff (start 5s, cap 60s) rather than retrying this tool. Worker request ceiling is ~100MB body; extremely large files may need signed-URL upload instead.\nErrors: 401 = APS token failed (check APS_CLIENT_ID/APS_CLIENT_SECRET, re-auth); 403 = scope missing (bucket:create/data:write not granted — have user re-consent); 404 = file_url unreachable; 409 = bucket key collision (rare — retry, tool uses timestamp); 413/507 = file too large for worker memory (advise signed-URL upload); 422 = unsupported source format (only Autodesk-accepted types: rvt, ifc, nwd, dwg, dgn, 3dm, stp, etc.); 429 = back off 60s before retrying; 5xx = APS upstream outage, retry with backoff.\nSide effects: CREATES a new transient OSS bucket (scanbim-viz-<timestamp>, auto-expires in 24h), CREATES an object in OSS, STARTS a translation job consuming APS cloud credits. NOT idempotent — each call creates a new bucket + URN. Writes a row to usage_log D1 table."
+    },
+    {
+      "name": "tm_set_environment",
+      "description": "Configure the visualization environment (weather, time-of-day, surround context) for a previously imported model. Validates the model exists via APS Model Derivative manifest, then stores the environment config in KV (24h TTL) so tm_render_image and tm_export_video can apply it.\n\nWhen to use: after tm_import_rvt completes and the manifest status is 'success' (or in-progress if you just want to pre-stage config), when the user wants to set scene context — e.g. 'render the tower at 17:00 in an urban setting with clear weather' — before generating images or video walkthroughs. Typical step 2 in the Twinmotion flow.\nWhen NOT to use: not for editing geometry, materials, or UE post-process volumes (those live in the Unreal Engine editor after FBX/USD import — Twinmotion has no public REST API). Do not call before tm_import_rvt — there is no URN to attach config to.\nAPS scopes required: viewables:read data:read (manifest + metadata fetch only — read-only for this tool). No bucket or write scopes needed.\nRate limits: APS default ~50 req/min per app per endpoint; manifest/metadata are cheap but polling-heavy if the model is still translating — prefer a single call per user intent, not a status-poll loop. KV writes are effectively unlimited at this scale.\nErrors: 401 = APS token expired/invalid; 403 = viewables:read not granted; 404 = URN unknown to APS (wrong project_id, or translation never started); 409 = n/a; 422 = n/a; 429 = back off 30s; 5xx = APS Model Derivative outage.\nSide effects: WRITES the env config to KV under key env_config_<urn> (TTL 86400s). Idempotent — calling again overwrites the prior config. Writes a row to usage_log."
+    },
+    {
+      "name": "tm_render_image",
+      "description": "Render a still preview image of the model at a specified resolution by pulling the APS Model Derivative thumbnail (capped at 800x800 by the APS endpoint). Also resolves the camera_preset against model metadata to identify which 3D view it maps to, and applies any stored environment config from tm_set_environment for reference.\n\nWhen to use: when you need a quick visual sanity-check of an imported model (e.g. 'show me what Tower A looks like'), to preview a specific named view before committing to a full UE/Twinmotion render, or to embed a low-res preview in a chat/report. Pair with tm_list_scenes first to discover valid view names/GUIDs.\nWhen NOT to use: not for production-quality renders (APS thumbnails are low-res and raster-only; for cinematic output use Unreal Engine Movie Render Queue after FBX/USD export), not for arbitrary custom camera angles (only named views from the source file are resolvable — there is no runtime camera placement API here), not for 2D sheet exports (use tm_list_scenes to find 2D roles and fetch directly).\nAPS scopes required: viewables:read data:read. Hits Model Derivative thumbnail + metadata endpoints only.\nRate limits: APS default ~50 req/min per app per endpoint. Thumbnail endpoint is usually fast (<2s) once the model has translated; if called while status='inprogress' it returns no thumbnail. Do not loop-poll this tool — poll the manifest via tm_set_environment or tm_list_scenes instead.\nErrors: 401/403 = token/scope; 404 = URN not found or thumbnail not yet generated (model still translating — retry after manifest reports success); 409 = n/a; 422 = n/a; 429 = back off 30s; 5xx = APS upstream.\nSide effects: NONE (read-only on APS). Reads KV env_config_<urn>. Writes a row to usage_log. Idempotent."
+    },
+    {
+      "name": "tm_export_video",
+      "description": "Prepare a model for an animated walkthrough / video export by verifying the manifest is complete, then starting a secondary Model Derivative job that produces OBJ geometry (suitable for ingestion into offline rendering pipelines, Blender, or Unreal Engine). Also returns the list of available named views so the operator can stitch them into a camera path. Does NOT itself produce an mp4 — video encoding happens in the downstream UE/Twinmotion pipeline.\n\nWhen to use: when a user wants a walkthrough/flythrough video of a BIM model (e.g. 'make a 30-second tour of Tower A') — this tool gets the geometry into a UE-ingestible form (.obj, plus suggests FBX/glTF/USD naming like TowerA_walkthrough.fbx for the exported asset) and enumerates named views to guide camera path authoring.\nWhen NOT to use: not to actually encode video (no runtime renderer in this worker — output must be finished in Unreal/Twinmotion/Blender), not before tm_import_rvt, not if the manifest is still 'inprogress' (the tool will short-circuit and return status='pending'). Not for still images (use tm_render_image) or clash animations (use navisworks-mcp).\nAPS scopes required: data:read data:write viewables:read. Write scopes are needed because this kicks off a new Model Derivative translation job (OBJ + thumbnail).\nRate limits: APS default ~50 req/min; Model Derivative translation jobs ~60 req/min. OBJ derivatives of large BIM models can be multi-GB and take 10–45 min — rely on manifest polling with exponential backoff, not re-calling this tool.\nErrors: 401/403 = token/scope (data:write commonly missing); 404 = URN not found; 409 = OBJ derivative already queued (treat as success); 422 = input format does not support OBJ output (some IFC variants / proprietary formats — fall back to FBX/glTF via a different derivative format); 429 = back off 60s; 5xx = APS upstream.\nSide effects: STARTS a new translation job on an existing URN (consumes APS cloud credits). Writes usage_log. NOT idempotent per-call (each call creates a new job record), but APS will dedupe identical output requests internally if manifest already contains the derivative."
+    },
+    {
+      "name": "tm_list_scenes",
+      "description": "Enumerate every 2D/3D view ('scene') baked into the translated model, plus a shallow dump of the model object tree (first 50 top-level nodes across all 3D views), plus the list of completed derivatives (svf2, thumbnail, obj, etc.) available via APS. The canonical discovery tool for anything downstream that needs a view name or GUID.\n\nWhen to use: before tm_render_image (to pick a valid camera_preset), before tm_export_video (to plan a camera path across named views), to audit what was translated ('did the 3D coordination view survive translation?'), or to expose the top-level model hierarchy for UI display. Also a useful health check — if scene_count=0, the translation is incomplete or failed.\nWhen NOT to use: not for full property queries on individual objects (this tool returns names + GUIDs + child counts only — use a dedicated property-query tool for full attribute dumps), not for geometry data (use tm_export_video for OBJ export), not on a URN that has not yet started translating.\nAPS scopes required: viewables:read data:read. Read-only across Model Derivative manifest + metadata + object-tree endpoints.\nRate limits: APS default ~50 req/min. This tool fans out across every 3D view to fetch object trees — for models with many 3D views (10+) it can burn a chunk of the budget in one call. Prefer caching the result on the caller side rather than re-invoking.\nErrors: 401/403 = token/scope; 404 = URN not found; 422 = n/a; 429 = back off 60s (this tool makes multiple APS calls per invocation, so 429 is more likely than on single-call tools); 5xx = APS upstream. A 202 on object-tree means APS is still building the tree — the tool retries once internally.\nSide effects: NONE on APS (read-only). Writes a usage_log row. Idempotent."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:12:11.458Z",
+  "toolsPreviewStatus": "ok"
+}

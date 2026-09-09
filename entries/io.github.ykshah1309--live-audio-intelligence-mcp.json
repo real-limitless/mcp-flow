@@ -1,0 +1,59 @@
+{
+  "id": "io.github.ykshah1309/live-audio-intelligence-mcp",
+  "title": "Live Audio Intelligence",
+  "description": "Live webcast transcription + vocal stress analysis (F0 jitter, hesitation) for earnings calls.",
+  "summary": "Live webcast transcription + vocal stress analysis (F0 jitter, hesitation) for earnings calls.",
+  "offersHint": "Live webcast transcription + vocal stress analysis (F0 jitter, hesitation) for earnings calls. · Packages: pypi:live-audio-intelligence-mcp",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "live-audio-intelligence-mcp",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "live-audio-intelligence-mcp",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/ykshah1309/live-audio-intelligence-mcp",
+  "sourceUrl": "https://github.com/ykshah1309/live-audio-intelligence-mcp",
+  "repository": {
+    "url": "https://github.com/ykshah1309/live-audio-intelligence-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-16T18:42:37.859262Z",
+  "publishedAt": "2026-04-16T18:42:37.859262Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:07.396Z",
+    "sourceRepoAt": "2026-08-11T23:13:46.092Z",
+    "readmeAt": "2026-08-11T23:13:46.462Z",
+    "toolsAt": "2026-08-12T00:55:07.396Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/ykshah1309/live-audio-intelligence-mcp",
+    "checkedAt": "2026-08-11T23:13:46.092Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/ykshah1309/live-audio-intelligence-mcp/main/README.md",
+    "markdown": "# live-audio-intelligence-mcp\n\n<!-- mcp-name: io.github.ykshah1309/live-audio-intelligence-mcp -->\n\n**MCP server for live financial webcast transcription and heuristic vocal stress analysis.**\n\nTurns any live webcast URL (earnings calls, CNBC, investor days) into a real-time\npipeline that feeds an LLM two things simultaneously:\n\n1. A **rolling transcript** via `faster-whisper` (CPU, int8).\n2. A **heuristic vocal stress score (0–100)** derived from F0 pitch jitter,\n   hesitation ratio, and voiced-frame fraction. These prosodic features are\n   well-established correlates of speaker arousal in the vocal-analysis\n   literature; their composition into the score below is heuristic and has\n   **not** been empirically validated against market outcomes. Treat it as a\n   coarse signal, not an oracle.\n\nBuilt on the [Model Context Protocol](https://modelcontextprotocol.io). Exposes\n4 tools over stdio; drop it into Claude Desktop, Claude Code, or any MCP client.\n\n---\n\n## Why this exists\n\nSell-side analysts and hedge-fund PMs don't just want to read the earnings\ntranscript after the fact — they want a real-time signal about **how confident\nthe CFO sounds when asked about Q4 guidance**. This server wires a Whisper\npipeline and a pYIN-based prosody analyzer directly into an LLM's tool loop,\nso the model can ask *\"what did the CEO just say about China?\"* and *\"how\nstressed did they sound saying it?\"* in the same conversation.\n\n---\n\n## Install\n\n### 1. System prerequisite — FFmpeg\n\nFFmpeg is a **system binary**, not a Python package. The `ffmpeg-python`\nwrapper is *not* a dependency here — we drive the binary directly via\n`subprocess`. You must install it yourself.\n\n**macOS** (Homebrew):\n\n```bash\nbrew install ffmpeg\n```\n\n**Linux** (Debian / Ubuntu):\n\n```bash\nsudo apt-get update && sudo apt-get install -y ffmpeg\n```\n\n**Linux** (Fedora / RHEL):\n\n```bash\nsudo dnf install -y ffmpeg\n```\n\n**Windows** — choose one:\n\n```powershell\n# Option A — winget (Windows 10/11)\nwinget install --id=Gyan.FFmpeg -e\n\n# Option B — Chocolatey\nchoco install ffmpeg\n\n# Option C — Scoop\nscoop install ffmpeg\n```\n\nConfirm it's on your PATH:\n\n```bash\nffmpeg -version\n```\n\nIf the command errors with \"not found\", reopen the terminal (PATH changes\ndon't propagate to already-open shells) or add the ffmpeg `bin/` directory\nto your PATH manually.\n\n### 2. Python package\n\nRequires **Python ≥ 3.10**.\n\n```bash\npip install live-audio-intelligence-mcp\n```\n\nOr run directly without installing with `uv`:\n\n```bash\nuvx live-audio-intelligence-mcp\n```\n\nThe first run will download the `faster-whisper base.en` model (~140 MB) from\nHugging Face and cache it under `~/.cache/huggingface/`.\n\n---\n\n## Run it\n\nStdio MCP server:\n\n```bash\nlive-audio-intelligence-mcp\n```\n\nOr equivalently:\n\n```bash\npython -m live_audio_intelligence_mcp\n```\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"live-audio-intelligence\": {\n      \"command\": \"live-audio-intelligence-mcp\"\n    }\n  }\n}\n```\n\n### Claude Code\n\n```bash\nclaude mcp add live-audio-intelligence -- live-audio-intelligence-mcp\n```\n\n---\n\n## Tools\n\n| Tool | Purpose |\n|---|---|\n| `monitor_live_stream(url, disable_vad=False)` | Resolve the audio URL, spawn ffmpeg, start chunking + transcription. Returns a `stream_id`. |\n| `get_rolling_transcript(stream_id, minutes_back=10)` | Get the last N minutes of concatenated transcript text. |\n| `analyze_speaker_stress(stream_id, time_window_seconds=60)` | Run prosody analysis over the last N seconds of audio. Returns stress score, pitch jitter, hesitation ratio, pause stats, and a human-readable interpretation. |\n| `stop_monitor(stream_id)` | Kill ffmpeg, clean up temp files, drop the transcript buffer. |\n\n### The stress score\n\n| Score | Interpretation |\n|---|---|\n| 0–20 | Confident, fluent delivery |\n| 20–45 | Normal variation |\n| 45–75 | Elevated stress — worth monitoring |\n| 75–100 | High stress — potential market-moving signal |\n\nComposite of:\n- **Pitch jitter** (coefficient of variation of F0) — 50% weight, saturating at jitter = 0.12\n- **Hesitation ratio** (fraction of audio in pauses > 400 ms) — 35% weight, saturating at 0.30\n- **Unvoiced fraction** (speaker trailing off) — 15% weight\n\nThe three features are literature-backed correlates of speaker arousal (see\npYIN for F0 tracking, and the broad \"disfluency is a correlate of cognitive\nload\" line of work). The *weights* and *saturation points* are hand-picked\ndefaults, chosen so that a calm speaker scores in the 0–20 band on clean\nstudio audio and visibly stressed speech scores ≥ 45 — they are not fit to any\nlabeled dataset. Consumers who care about absolute numbers should recalibrate\nthresholds against their own recordings.\n\nA synthetic-audio calibration harness lives at\n[scripts/validate_stress_score.py](scripts/validate_stress_score.py). It\ngenerates controlled audio (smooth sine, jittered pitch, silence-padded\nspeech) and asserts that the score responds in the expected direction. This\nis *calibration evidence*, not market-outcome validation.\n\n### Low-SNR mode\n\nFor speakerphone audio (most earnings Q&A), pass `disable_vad=true` to\n`monitor_live_stream`. Silero VAD tends to aggressively classify muddy\nconference-call speech as silence; disabling it preserves more of the speech\nat the cost of transcribing a bit more ambient noise.\n\n### Concurrency limits\n\nBy default the server caps concurrent streams at 4 (each stream holds an\nffmpeg subprocess, a yt-dlp subprocess, a thread, and a temp directory).\nOverride via env var for high-throughput deployments:\n\n```bash\nLAI_MAX_CONCURRENT_STREAMS=16 live-audio-intelligence-mcp\n```\n\nExceeding the cap raises `StreamLimitExceededError` rather than silently\nqueuing.\n\n---\n\n## Architecture\n\n```\n                 ┌──────────────────┐\n    URL  ─────▶  │  yt-dlp resolve  │\n                 └────────┬─────────┘\n                          │ audio URL\n                          ▼\n                 ┌──────────────────┐      ┌────────────────┐\n                 │  ffmpeg (bg)     │ ───▶ │  15s WAV chunk │\n                 │  16kHz mono PCM  │      │  queue         │\n                 └──────────────────┘      └───────┬────────┘\n                                                   │\n                                ┌──────────────────┴────────────────┐\n                                ▼                                   ▼\n                       ┌──────────────────┐              ┌──────────────────┐\n                       │ faster-whisper   │              │  librosa.pyin    │\n                       │ (int8 / CPU)     │              │  + pause detect  │\n                       └────────┬─────────┘              └────────┬─────────┘\n                                │ rolling transcript              │ stress score\n                                ▼                                 ▼\n                            ┌────────────── MCP stdio ───────────────┐\n                            │    LLM (Claude) — calls tools freely   │\n                            └────────────────────────────────────────┘\n```\n\nAll blocking work (Whisper inference, ffmpeg I/O, librosa DSP) is dispatched\nto threads via `asyncio.to_thread` so the MCP event loop stays responsive.\n\n---\n\n## Development\n\n```bash\ngit clone https://github.com/ykshah1309/live-audio-intelligence-mcp\ncd live-audio-intelligence-mcp\npython -m venv .venv\nsource .venv/bin/activate  # Windows: .venv\\Scripts\\activate\npip install -e \".[dev]\"\npytest\nlive-audio-intelligence-mcp\n```\n\n### Running the tests\n\nThe pytest suite in [tests/](tests/) covers the pure-Python logic that\ndoesn't require network or ffmpeg:\n\n- URL syntactic validation (scheme allow-list, host presence)\n- Concurrency-cap enforcement in `StreamManager`\n- Custom exception hierarchy (backward-compat with `ValueError` / `RuntimeError`)\n- Prosody analyzer on synthetic audio (sine tone, silence, jittered pitch)\n\n```bash\npytest -q\n```\n\n### Calibration benchmark\n\n```bash\npython scripts/validate_stress_score.py\n```\n\nThis generates synthetic audio with known acoustic properties and verifies\nthe stress score responds in the expected direction. It's a sanity check\nfor the weighting heuristics — not a replacement for empirical validation\nagainst real earnings-call outcomes.\n\n---\n\n## Troubleshooting\n\n**`ffmpeg: command not found`** — ffmpeg isn't on PATH. See the install\nsection above. On Windows, reopen your terminal after installing.\n\n**`yt-dlp could not resolve URL`** — The site isn't supported by yt-dlp\nor the URL is malformed. Test with `yt-dlp -F <url>` from the command\nline; if that fails, the server will too.\n\n**Whisper downloads hang on first run** — The ~140 MB model download goes\nto `~/.cache/huggingface/`. Check your network and Hugging Face access.\n\n**\"Insufficient voiced frames\"** in stress output — The audio window is\nmostly silence or noise. Usually means the stream is still buffering;\nwait 30s and retry. For speakerphone Q&A, start the monitor with\n`disable_vad=true`.\n\n---\n\n## Contributing\n\nSee [CONTRIBUTING.md](CONTRIBUTING.md).\n\n## Changelog\n\nSee [CHANGELOG.md](CHANGELOG.md).\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:13:46.462Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:07.396Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

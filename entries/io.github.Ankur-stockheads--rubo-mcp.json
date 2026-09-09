@@ -1,0 +1,79 @@
+{
+  "id": "io.github.Ankur-stockheads/rubo-mcp",
+  "title": "UK Break Clause Analyzer",
+  "description": "Assess UK lease tenant break clauses with grounded citations and a measured hallucination rate.",
+  "summary": "Assess UK lease tenant break clauses with grounded citations and a measured hallucination rate.",
+  "offersHint": "Assess UK lease tenant break clauses with grounded citations and a measured hallucination rate. · Packages: pypi:uk-break-clause-analyzer-mcp · Env vars: ANTHROPIC_API_KEY",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "uk-break-clause-analyzer-mcp",
+    "version": "0.1.1",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "ANTHROPIC_API_KEY",
+        "description": "Anthropic API key for live LLM extraction/reasoning. Without it the server runs in a heuristic-only fallback mode.",
+        "secret": true
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "uk-break-clause-analyzer-mcp",
+      "version": "0.1.1",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic API key for live LLM extraction/reasoning. Without it the server runs in a heuristic-only fallback mode.",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "ANTHROPIC_API_KEY",
+      "description": "Anthropic API key for live LLM extraction/reasoning. Without it the server runs in a heuristic-only fallback mode.",
+      "secret": true
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/Ankur-stockheads/rubo-mcp",
+  "repository": {
+    "url": "https://github.com/Ankur-stockheads/rubo-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-28T03:48:27.787635Z",
+  "publishedAt": "2026-06-28T03:48:27.787635Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:55.666Z",
+    "sourceRepoAt": "2026-08-12T00:17:04.978Z",
+    "readmeAt": "2026-08-12T00:17:05.574Z",
+    "toolsAt": "2026-08-12T01:46:55.666Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Ankur-stockheads/rubo-mcp",
+    "checkedAt": "2026-08-12T00:17:04.978Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Ankur-stockheads/rubo-mcp/main/README.md",
+    "markdown": "# UK Break Clause Analyzer (MCP)\n\n[![CI](https://github.com/Ankur-stockheads/rubo-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Ankur-stockheads/rubo-mcp/actions/workflows/ci.yml)\n\n**A self-evaluating MCP server that assesses whether a UK commercial-lease tenant\nbreak clause can actually be exercised — and publishes its own measured\nhallucination rate.**\n\n> ⚖️ **Decision-support only — NOT legal advice.** Built on a deliberately\n> simplified, non-proprietary ruleset over synthetic data. A qualified solicitor\n> must verify any real decision.\n\n---\n\n## The £2m full stop\n\nIn 2012, a tenant served a valid break notice to walk away from a lease — but on\nthe break date they hadn't paid one quarter's rent that had fallen due a few weeks\nearlier. The break failed. They were bound to the lease (and its rent) for years.\nNo drama, no bad faith — just one unmet condition precedent that everyone missed\nuntil it was too late.\n\nBreak clauses are unforgiving like that. Whether a tenant can actually leave turns\non a short checklist — **notice served in time, notice served correctly, no rent\narrears, vacant possession given** — and getting any one wrong is catastrophic. It\nis exactly the kind of task you might hand to an LLM... if you could trust it not\nto confidently invent the answer.\n\n**This project is about earning that trust, and measuring it.** It is not a clever\nparser. It is a reliability harness: every claim is grounded to verbatim source\ntext or it isn't made, genuinely-ambiguous cases are routed to a human instead of\nguessed, and the whole thing ships with an eval that publishes how often it lies.\n\n## The edge\n\n- **Grounded** — every asserted condition is backed by a verbatim source span. If\n  the system can't find the text, it returns `NOT_FOUND`; it never invents a quote.\n  A deterministic gate slices the span out of the source, so it *can't* echo\n  hallucinated text.\n- **Calibrated** — when the lease genuinely doesn't settle a point, the answer is\n  `AMBIGUOUS — human verify`, not a coin-flip. Abstaining honestly is a feature.\n- **Self-evaluating** — a pytest harness scores extraction accuracy, citation\n  faithfulness, **hallucination rate**, and calibration against 24 labelled cases.\n- **Reasons + verifies** — the LLM only *proposes*; deterministic code *disposes*\n  (grounds every quote, does the date arithmetic, applies the vacant-possession\n  legal test, aggregates the verdict).\n\n## The headline number\n\nSee [`report/report.md`](report/report.md) for the full eval (all four metrics,\nper-model comparison, confusion matrix, caught-hallucination examples).\n\nThe committed report is the **heuristic baseline** (it runs with no API key) — and\nit already tells the core story: the grounding gate drives **ungrounded\n(fabricated) hallucinations to zero**, while a non-reasoning baseline still\n*misgrounds* and *never abstains* on the genuinely-ambiguous cases. That gap is\nexactly what a calibrated LLM is meant to close:\n\n```\nuv run python scripts/run_eval.py --record   # measure claude-haiku-4-5 vs claude-sonnet-4-6\n```\n\n## How it works\n\n```mermaid\nflowchart LR\n    A[\"Lease + Background Facts\"] --> T[\"MCP tools\"]\n    T --> L[\"LLM adapter<br/>extract + reason · temperature 0\"]\n    L -- \"proposes verbatim quotes<br/>+ findings\" --> G{\"Grounding gate<br/>verbatim? else NOT_FOUND\"}\n    G -- \"spans sliced from source\" --> C[\"Deterministic core<br/>checklist · UK date math · VP legal test\"]\n    C --> R[\"Strict-precedence aggregate<br/>fail→INVALID · uncertain→AMBIGUOUS · else VALID\"]\n    R --> O[\"Assessment<br/>verdict + calibration + human-verify gates\"]\n    subgraph EVAL[\"Eval (the point)\"]\n      D[\"24 labelled cases\"] --> H[\"harness\"] --> M[\"4 metrics\"] --> P[\"report.md + SVG\"]\n    end\n```\n\nThe trust boundary is **structural**: the deterministic `core/` package physically\ncannot import the `llm/` package (enforced by a test). \"The LLM proposes,\ndeterministic code disposes\" is a property of the codebase, not a discipline.\n\n### The four MCP tools (each does one thing)\n\n| Tool | What it does |\n|------|--------------|\n| `extract_break_clause` | Returns the break clause + its verbatim source span |\n| `check_conditions` | The four-condition checklist: each pass / fail / uncertain, with grounded evidence |\n| `find_citation` | Exact verbatim supporting text for a claim, or `NOT_FOUND` |\n| `assess_validity` | Orchestrated verdict + calibration note + mandatory human-verify gates |\n\n## Quickstart (clone to running in under 2 minutes)\n\n```bash\n# 1. Install uv (skip if you have it)\ncurl -LsSf https://astral.sh/uv/install.sh | sh\n\n# 2. Install deps (uv fetches its own Python 3.12)\nuv sync\n\n# 3. Run the test suite — proves the eval apparatus is correct\nuv run pytest -q\n\n# 4. Check the dataset (every gold span verbatim, every label coherent)\nuv run python scripts/validate_dataset.py\n\n# 5. Regenerate the eval report\nuv run python scripts/run_eval.py        # heuristic baseline, no key needed\n```\n\nNo `ANTHROPIC_API_KEY` is required for any of the above — the eval falls back to the\nheuristic baseline and is fully reproducible. Set the key (and `--record`) to\nmeasure the real Claude models.\n\n## Your Anthropic API key\n\nThe key is only needed for **live** LLM extraction (the eval `--record` step and the\nserver's real mode). Everything else runs without one.\n\n- **Never commit it.** `.env` is git-ignored and the cassettes redact the\n  `x-api-key` header.\n- **For local commands**, either export it or use a `.env` file:\n  ```bash\n  export ANTHROPIC_API_KEY=sk-ant-…           # option 1: shell\n  # or\n  cp .env.example .env && $EDITOR .env          # option 2: .env, then:\n  uv run --env-file .env python scripts/run_eval.py --record\n  ```\n- **For an MCP client**, put it in the server config's `env` block (below).\n\n## Run the MCP server\n\n```bash\n# Inspect it interactively (the official MCP Inspector)\nnpx @modelcontextprotocol/inspector uv run break-clause-analyzer\n```\n\n**Claude Desktop** — add to `claude_desktop_config.json` (use the absolute path to\nyour clone so it runs from the project):\n\n```json\n{\n  \"mcpServers\": {\n    \"break-clause-analyzer\": {\n      \"command\": \"uv\",\n      \"args\": [\"run\", \"--directory\", \"/absolute/path/to/rubo-mcp\", \"break-clause-analyzer\"],\n      \"env\": { \"ANTHROPIC_API_KEY\": \"sk-ant-…\" }\n    }\n  }\n}\n```\n\n**Claude Code** — one command:\n\n```bash\nclaude mcp add break-clause-analyzer -e ANTHROPIC_API_KEY=sk-ant-… \\\n  -- uv run --directory /absolute/path/to/rubo-mcp break-clause-analyzer\n```\n\nWithout a key the server still runs and responds — it uses the heuristic baseline\nand says so. Every tool response carries the decision-support disclaimer.\n\n## Reproducible evals (cassettes)\n\n`temperature=0` is *not* a determinism guarantee from the API, so reproducibility\ncomes from recorded cassettes (VCR.py). `scripts/run_eval.py --record` records one\ncassette set per model with the `x-api-key` header redacted; re-running without\n`--record` replays them with no key in seconds. See\n[`eval/cassettes/README.md`](eval/cassettes/README.md).\n\n## Layout\n\n```\nsrc/break_clause_analyzer/\n  core/       # deterministic trust boundary (no network; cannot import llm/)\n    grounding.py  dates.py  checklist.py  aggregate.py\n  llm/        # the only network egress (Anthropic + heuristic fallback)\n  pipeline.py # propose → gate → dispose orchestration\n  server.py   # FastMCP server: the four tools\ndata/cases/   # 24 labelled synthetic case files (+ dataset README)\neval/         # harness, metrics, report generator, cassettes\ndocs/METHODOLOGY.md  # pre-registered metric definitions\nreport/       # generated eval report + SVG\n.planning/    # the eval-first roadmap, requirements, and decision log\n```\n\n## Methodology & honesty\n\nThe metric definitions are **pre-registered** in\n[`docs/METHODOLOGY.md`](docs/METHODOLOGY.md) before any model is run, so the\nheadline number can't be defined after the fact to look good. The hallucination\nrate counts misgrounding and overconfidence — not just fabrication — precisely\nbecause a grounding gate makes fabrication trivially zero. The scorer uses no LLM\njudge; it is validated against a gold oracle and deliberately-broken systems in\n[`tests/test_harness.py`](tests/test_harness.py).\n\n## Scope (deliberately narrow)\n\nTenant break clauses only · four conditions precedent · synthetic/public data only\n· decision-support, not legal advice. Other lease provisions, landlord breaks, real\nclient data, and a production engine are explicitly out of scope.\n\n---\n*Built as a reliability-engineering artifact. The eval is the point.*\n\n<!-- mcp-name: io.github.Ankur-stockheads/rubo-mcp -->\n\n",
+    "fetchedAt": "2026-08-12T00:17:05.574Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:55.666Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

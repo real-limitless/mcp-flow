@@ -1,0 +1,52 @@
+{
+  "id": "io.github.srotzin/hive-mcp-agent-quota",
+  "title": "Hive Agent Quota",
+  "description": "Per-agent rate limits and quota enforcement for the Hive A2A economy",
+  "summary": "Per-agent rate limits and quota enforcement for the Hive A2A economy",
+  "offersHint": "Per-agent rate limits and quota enforcement for the Hive A2A economy · Remote MCP (streamable-http) at https://hive-mcp-agent-quota.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-agent-quota.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-agent-quota.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-agent-quota",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-agent-quota",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:47:03.911316Z",
+  "publishedAt": "2026-04-28T23:47:03.911316Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:40.080Z",
+    "sourceRepoAt": "2026-08-11T23:20:14.829Z",
+    "readmeAt": "2026-08-11T23:20:15.299Z",
+    "toolsAt": "2026-08-12T01:00:40.080Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-agent-quota",
+    "checkedAt": "2026-08-11T23:20:14.829Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-agent-quota/main/README.md",
+    "markdown": "# hive-mcp-agent-quota\n\n[![srotzin/hive-mcp-agent-quota MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-agent-quota/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-agent-quota)\n\nPer-agent quota meter for the A2A network. Each call to `quota_check`\nconsumes one or more units against an agent's DID and is settled at\n$0.001 USDC per unit on Base L2 via the x402 envelope. Inbound only.\n`ENABLE=true` by default.\n\nBrand color: `#C08D23` (Pantone 1245 C, Hive Civilization gold).\n\n## Surface\n\n| Layer | Endpoint | Description |\n|---|---|---|\n| MCP | `POST /mcp` | JSON-RPC 2.0, Streamable-HTTP, protocol `2024-11-05`. |\n| Discovery | `GET /.well-known/mcp.json` | Tool list and transport metadata. |\n| REST | `POST /v1/quota/check` | Consume units for a DID. 402 if no balance and no proof. |\n| REST | `GET /v1/quota/balance?did=…` | Read remaining quota for a DID. |\n| REST | `GET /v1/quota/today` | UTC-day ledger snapshot. |\n| REST | `GET /v1/quota/estimate?units=N` | Asking and floor in USDC for N units. |\n| Health | `GET /health` | Liveness, pricing, recipient address. |\n| Root | `GET /` | HTML for browsers, JSON for agents (Accept-header sniff). JSON-LD `SoftwareApplication`. |\n\n## Tools\n\n| Name | Tier | Cost | Description |\n|---|---|---|---|\n| `quota_check` | 1 | $0.001/unit | Consume N units for a DID via x402. |\n| `quota_balance` | 0 | free | Remaining quota for a DID. |\n| `quota_topup_estimate` | 0 | free | Asking and floor for N units. |\n\n## Pricing and the barter floor\n\nPricing inherits the hivemorph barter pattern. Every 402 envelope advertises\nboth `amount_usd` (asking) and `accept_min_usd` (floor). A client may submit\na proof whose on-chain paid amount is anywhere in `[floor, asking]` and the\nshim accepts it.\n\nDefaults, all overridable by environment variable:\n\n| Variable | Default | Notes |\n|---|---|---|\n| `QUOTA_CHECK_PRICE_USDC` | `0.001` | Per-unit asking price. |\n| `HIVE_X402_FLOOR_PCT_DEFAULT` | `0.70` | Floor as fraction of asking. |\n| `HIVE_X402_FLOOR_MIN_PCT` | `0.30` | Hard lower clamp. |\n| `HIVE_X402_FLOOR_MAX_PCT` | `0.95` | Hard upper clamp. |\n\nSo a 1-unit check at the defaults advertises asking `$0.0010` and accept-min\n`$0.0007`. A 100-unit check advertises asking `$0.1000` and accept-min\n`$0.0700`. The floor never falls below `MIN_PCT` of asking and never\nexceeds `MAX_PCT`.\n\n## Settlement\n\n| Field | Value |\n|---|---|\n| Chain | Base L2 |\n| Asset | USDC |\n| Contract | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |\n| Recipient | `WALLET_ADDRESS` env, default `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` |\n| Verification | `provider.getTransactionReceipt(tx_hash)` against `BASE_RPC_URL`, decode USDC `Transfer` logs to recipient, sum amount in 6-decimal units, compare to `accept_min_usd`. |\n| Signature (optional) | `ethers.verifyMessage(message, signature)` recovers payer; rejected if it disagrees with the on-chain `from`. |\n\nNo mocks. The on-chain check is a real RPC read against Base mainnet.\n\n## Storage\n\nSQLite at `QUOTA_DB_PATH` (default `/tmp/quota.db`), three tables:\n\n- `quotas (did, units_purchased, units_consumed, first_seen, last_seen)`\n- `checks (id, did, unit_count, granted, remaining, tx_hash, paid_usdc, ts)`\n- `topups (id, did, units, paid_usdc, tx_hash UNIQUE, payer, ts)`\n\n`tx_hash` is `UNIQUE` on `topups` to make replay a 409.\n\n## x402 envelope\n\nA `quota_check` call with no prepaid balance and no proof returns:\n\n```json\n{\n  \"error\": \"payment_required\",\n  \"x402_version\": 1,\n  \"payment\": {\n    \"nonce\": \"…\",\n    \"amount_usd\": 0.001,\n    \"accept_min_usd\": 0.0007,\n    \"accepts\": [{\n      \"chain\": \"base\",\n      \"asset\": \"USDC\",\n      \"contract\": \"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\n      \"decimals\": 6,\n      \"recipient\": \"0x15184bf50b3d3f52b60434f8942b7d52f2eb436e\",\n      \"scheme\": \"exact\"\n    }],\n    \"expires_at\": 1761600000,\n    \"tier\": 1,\n    \"product\": \"agent_quota_check\",\n    \"unit_count\": 1,\n    \"price_per_unit_usd\": 0.001,\n    \"floor_pct\": 0.70\n  }\n}\n```\n\nThe client sends USDC to the recipient on Base, then resubmits the same\nrequest with an `X-Payment` header containing the proof:\n\n```\nX-Payment: {\"nonce\":\"…\",\"chain\":\"base\",\"tx_hash\":\"0x…\",\"payer\":\"0x…\",\"signature\":\"0x…\",\"message\":\"hive-quota:<nonce>\"}\n```\n\n`signature` and `message` are optional. If supplied, the recovered address\nmust match `payer` and the on-chain `from`.\n\n## Environment\n\n| Variable | Default | Notes |\n|---|---|---|\n| `PORT` | `3000` | |\n| `ENABLE` | `true` | Set to `false` to disable `tools/call`. |\n| `WALLET_ADDRESS` | `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e` | USDC recipient on Base. |\n| `QUOTA_CHECK_PRICE_USDC` | `0.001` | Per-unit asking. |\n| `HIVE_X402_FLOOR_PCT_DEFAULT` | `0.70` | |\n| `HIVE_X402_FLOOR_MIN_PCT` | `0.30` | |\n| `HIVE_X402_FLOOR_MAX_PCT` | `0.95` | |\n| `BASE_RPC_URL` | `https://mainnet.base.org` | |\n| `DEFAULT_QUOTA_UNITS` | `0` | Free units credited on first sight of a DID. |\n| `QUOTA_DB_PATH` | `/tmp/quota.db` | |\n\n## Running locally\n\n```\nnpm install\nnode server.js\n```\n\nThen:\n\n```\ncurl -s http://localhost:3000/health\ncurl -s -X POST http://localhost:3000/mcp \\\n  -H 'content-type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}'\ncurl -s 'http://localhost:3000/v1/quota/today'\n```\n\n## Hard rules\n\n- Inbound only. The shim never originates an outbound payment.\n- No private key in the repo. Verification is read-only.\n- No custody. The recipient address belongs to the operator, not the shim.\n- Returns are advisory until the on-chain receipt is confirmed by `BASE_RPC_URL`.\n\n## Council provenance\n\nTier A position 3. 2026-04-27. Inbound metering surface, symmetric to\n[hive-mcp-barter](https://github.com/srotzin/hive-mcp-barter) (outbound\ncounter-offer) and [hive-mcp-auction](https://github.com/srotzin/hive-mcp-auction)\n(inbound reverse-Dutch).\n\n## License\n\nMIT. See `LICENSE`.\n\n<!-- HIVE-GAMIFICATION-META-START -->\n## Hive Gamification\n\nThis MCP server is part of the Hive Civilization gamification surface (10-mechanic capability taxonomy).\n\n- Capability taxonomy: https://hive-gamification.onrender.com/.well-known/hive-gamification.json\n- Centrifuge dashboard: https://hive-gamification.onrender.com/.well-known/hive-centrifuge.json\n- Consolidated OpenAPI: https://hive-gamification.onrender.com/.well-known/openapi.json\n\n**Surface tags:** `gamification.spec.v1` · `gamification.surface.public` · `gamification.signal.read-only` · `gamification.settlement.real-rails`\n\nReal rails on Base L2 (USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`). Read-only signal layer. Brand gold `#C08D23`.\n<!-- HIVE-GAMIFICATION-META-END -->\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:15.299Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:40.080Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Not Found\n",
+  "toolsPreviewStatus": "unreachable"
+}

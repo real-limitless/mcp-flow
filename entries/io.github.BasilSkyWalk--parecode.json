@@ -1,0 +1,58 @@
+{
+  "id": "io.github.BasilSkyWalk/parecode",
+  "title": "parecode",
+  "description": "Token-aware ripgrep code search and atomic multi-file edits for coding agents.",
+  "summary": "Token-aware ripgrep code search and atomic multi-file edits for coding agents.",
+  "offersHint": "Token-aware ripgrep code search and atomic multi-file edits for coding agents. · Packages: npm:parecode",
+  "version": "0.7.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "parecode",
+    "version": "0.7.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "parecode",
+      "version": "0.7.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/BasilSkyWalk/parecode",
+  "repository": {
+    "url": "https://github.com/BasilSkyWalk/parecode",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-10T05:29:17.371376Z",
+  "publishedAt": "2026-06-10T05:29:17.371376Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:32.226Z",
+    "sourceRepoAt": "2026-08-12T00:16:31.749Z",
+    "readmeAt": "2026-08-12T00:16:32.306Z",
+    "toolsAt": "2026-08-12T01:46:32.226Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/BasilSkyWalk/parecode",
+    "checkedAt": "2026-08-12T00:16:31.749Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/BasilSkyWalk/parecode/main/README.md",
+    "markdown": "# parecode\n\nAn MCP server that gives coding agents context-window-aware search and safe, atomic multi-file edits — built to cut token usage on large codebases without giving up correctness.\n\n[![parecode MCP server](https://glama.ai/mcp/servers/BasilSkyWalk/parecode/badges/card.svg)](https://glama.ai/mcp/servers/BasilSkyWalk/parecode)\n\n---\n\n## Requirements\n\n- **Node.js 20 or newer** (ESM, native test runner, stable `fetch`-free runtime).\n- **[ripgrep](https://github.com/BurntSushi/ripgrep)** on `PATH` (`rg` on Linux/macOS, `rg.exe` on Windows). Install via your package manager:\n  - macOS: `brew install ripgrep`\n  - Debian/Ubuntu: `apt install ripgrep`\n  - Windows: `winget install BurntSushi.ripgrep.MSVC` or `choco install ripgrep`\n- A supported MCP client (Claude Code is the reference target).\n\nParecode does **not** bundle ripgrep — it shells out to the system binary so you stay on a single, audited version.\n\n---\n\n## Install\n\n```sh\nnpm install -g parecode\n```\n\nPure JavaScript — no native dependencies, no C/C++ toolchain required.\n\n---\n\n## Quick start\n\nRegister the server with Claude Code:\n\n```sh\nparecode init                       # user scope; installs MCP + SessionStart hook + parecode-explore plugin (defaults)\nparecode init --scope project       # commit MCP config + hook to the repo\nparecode init --no-hook             # register MCP only; skip the SessionStart hook\nparecode init --no-plugin           # skip the parecode-explore Claude Code plugin\nparecode init --print               # print the equivalent command without running it\nparecode init --remove-hook         # remove the SessionStart hook (MCP stays registered)\nparecode init --remove-plugin       # uninstall the parecode-explore Claude Code plugin\n```\n\nThe SessionStart hook injects a short directive at the start of each session telling Claude to prefer `ParecodeSearch` / `ParecodeEdit` over the equivalent native tools. Without it, Claude's first-party `Grep` / `Read` / `Edit` tools typically win by default and Parecode's token savings never land. The hook payload is a static string; `parecode hook session-start` prints it. Pass `--no-hook` if you would rather opt in explicitly per session via your own tooling.\n\nThe bundled `parecode-explore` Claude Code plugin adds a read-only subagent (pinned to Haiku, given only `ParecodeSearch`) and a matching skill, so exploration-style questions (\"where is X?\", \"how does Y work?\", \"find all usages of Z\") get answered in a cheap, isolated context window instead of burning tokens in your main session. `init` registers a local marketplace pointing at the npm-installed copy and runs `claude plugin install parecode-explore@parecode`. If your Claude Code build doesn't support the `plugin` subcommand the step soft-fails with a warning and the rest of `init` still succeeds; pass `--no-plugin` to skip it entirely, or `--with-plugin` to make any plugin-step failure hard-fail.\n\nThen in any session, the `ParecodeSearch`, `ParecodeExpand`, and `ParecodeEdit` tools become available. Run `parecode doctor` to confirm registration, hook status, and `.codegraph/` pairing if present.\n\n---\n\n## What it does\n\n- **`ParecodeSearch`** — ripgrep-backed search that returns matches with surrounding context windows in a single call, with per-file byte chunking so large result sets do not blow up your context.\n  - `pattern` accepts a single string or an array of strings; arrays dispatch parallel ripgrep runs sharing the same `paths` / `contextLines`, and each match carries a `patterns: string[]` field listing which input patterns contributed. One call replaces N back-to-back greps for related-keyword flow tracing.\n  - Overlapping or adjacent windows within the same file are merged automatically (gap ≤ `contextLines`), with bridging lines loaded from disk.\n  - Per-match and response-level `estimatedTokens` are returned so the agent can self-budget before consuming results.\n  - Opt-in `relatedSymbols: true` surfaces likely event-flow neighbours (`Handle<X>`, `On<X>`, `<X>Handler/Listener/Closed/Completed/Started`) discovered in each match, capped at 10.\n  - Omitted line ranges are reported so the agent can widen with `ParecodeExpand` without re-reading the whole file.\n- **`ParecodeExpand`** — widen a known `(file, startLine, endLine)` range with optional `contextBefore` / `contextAfter` padding. Designed as the natural follow-up to a `ParecodeSearch` match. Returns the same `estimatedTokens` shape so the same self-budgeting heuristic applies. Prefer this over a full-file `Read` after locating a line.\n- **`ParecodeEdit`** — batched multi-file edits with whitespace-tolerant fuzzy matching (and an opt-in Unicode-lookalike mode), pre/post `stat` conflict detection, and atomic same-directory rename writes. Cross-file edits run in parallel.\n- **`parecode stats`** — local JSONL session log with token-saved estimates. Zero network. Zero telemetry.\n\n---\n\n## Measured savings\n\nOn search-and-edit tasks — finding call sites, multi-file refactors, \"do X to every Y\" — Parecode cut **cost ~40%** and **assistant turns ~75–83%** in matched A/B tests:\n\n| repo | task | cost | turns |\n|---|---|--:|--:|\n| TypeScript | find every call site of a symbol, edit each (17 sites, 8 files) | −43% | −83% |\n| Unity / C# | find every call site of a symbol, edit each (11 sites, 5 files) | −41% | −76% |\n\n_Method: the identical task run with Parecode on vs off, a fresh session per run, n=3 per arm with alternated order, Sonnet 4.6. Savings come from collapsing many `Grep` / `Read` / `Edit` round-trips into single `ParecodeSearch` / `ParecodeEdit` calls — so the win scales with how much searching and multi-file fan-out a task involves, and shrinks toward zero on single-file or reasoning-heavy tasks. These are measured per-session token and cost numbers, not the estimates in the scan below._\n\n---\n\n## Retroactive Savings Scan\n\nCurious how much Parecode would have saved you if you had installed it earlier? You can scan your past Claude Code sessions:\n\n```sh\nparecode stats --retroactive --since 30d\n```\n\nSample output:\n```text\nParecode — last 30d (retroactive scan)\n─────────────────────\nSessions:                   42\nTool calls:                156\nCalls batched (est):        89\nTokens saved (est):  1,200,000\n\n* Note: Retroactive savings are estimated, not measured.\n```\n\n**Privacy disclaimer:** This scan runs entirely locally against Claude Code's session transcripts (`~/.claude/projects/**`). By default, it parses only structured fields (tool names, paths, patterns, and token counts). It does not send any data over the network. The `--include-content` flag (which allows reading tool input/output) is strictly opt-in and loudly flagged if used.\n\n---\n\n## Privacy\n\nParecode performs **no network calls at runtime**. Session logs are written to your OS data directory (resolved via [`env-paths`](https://github.com/sindresorhus/env-paths)) with `0600` permissions on Unix. Logs are self-maintaining: each server start prunes session data older than 30 days and caps the envelope log at 5 MB. Prune earlier with `parecode prune <days>` or wipe the data dir. Update to the latest release (and refresh hooks/plugin) with `parecode update`.\n\n---\n\n## License\n\n[MIT](LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:16:32.306Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:32.226Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

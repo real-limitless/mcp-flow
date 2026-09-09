@@ -1,0 +1,68 @@
+{
+  "id": "io.github.kgNatx/mockups-gallery",
+  "title": "Mockups Gallery",
+  "description": "Self-hosted gallery for AI-generated mockups. MCP interface; token-efficient curl uploads.",
+  "summary": "Self-hosted gallery for AI-generated mockups. MCP interface; token-efficient curl uploads.",
+  "offersHint": "Self-hosted gallery for AI-generated mockups. MCP interface; token-efficient curl uploads. · Remote MCP (streamable-http) at https://{host}/mcp · Packages: oci:ghcr.io/kgnatx/mockups-mpc:1.4.1",
+  "version": "1.4.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://{host}/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://{host}/mcp"
+    },
+    {
+      "type": "sse",
+      "url": "https://{host}/mcp/sse"
+    }
+  ],
+  "install": {
+    "kind": "oci",
+    "package": "ghcr.io/kgnatx/mockups-mpc:1.4.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "ghcr.io/kgnatx/mockups-mpc:1.4.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/kgNatx/mockups-mpc",
+  "repository": {
+    "url": "https://github.com/kgNatx/mockups-mpc",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T23:08:21.720415Z",
+  "publishedAt": "2026-07-02T23:08:21.720415Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:36.204Z",
+    "sourceRepoAt": "2026-08-11T23:39:18.874Z",
+    "readmeAt": "2026-08-11T23:39:19.351Z",
+    "toolsAt": "2026-08-12T01:17:36.205Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/kgNatx/mockups-mpc",
+    "checkedAt": "2026-08-11T23:39:18.874Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/kgNatx/mockups-mpc/main/README.md",
+    "markdown": "# Mockups MPC\n\n[![CI](https://github.com/kgNatx/mockups-mpc/actions/workflows/ci.yml/badge.svg)](https://github.com/kgNatx/mockups-mpc/actions/workflows/ci.yml)\n[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)\n\nA self-hosted gallery for AI-generated mockups — with an MCP interface. Instead of cluttering your repo, mockups get a permanent home and a clean web gallery you can browse. AI tools upload them over a direct `curl` call; MCP handles only the lightweight coordination — listing, metadata, tagging, and retrieval.\n\n**Token-efficient by design.** MCP tool parameters flow through the model context, so sending a large HTML file via a tool call wastes tokens. Mockups MPC provides an HTTP upload endpoint (`POST /api/upload`) — the AI writes the file locally and `curl`s it to the server, keeping file content entirely out of the model context. MCP tools handle lightweight operations only: listing, metadata, tagging, and deletion.\n\n![Mockups MPC — gallery demo](docs/gallery-demo.gif)\n\n## Prerequisites\n\n- **Docker** (for deployment) or **Python 3.12+** (for local development)\n- An MCP-compatible AI client (Claude Code, Claude Desktop, etc.)\n- Optional: Traefik reverse proxy (for production with TLS)\n\n## Why\n\nEvery time an AI tool generates a mockup, there's no consistent place for it to go — so they pile up in your repo or get scattered across temp dirs, sessions lose track of them, and there's no history. Mockups MPC gives them a permanent home instead: the AI pushes the mockup to the gallery, you browse it there, and the local file gets cleaned up. One place for everything, nothing cluttering your project.\n\n## Architecture\n\n```\n┌─────────────────┐     MCP (HTTP/SSE)     ┌──────────────────────┐\n│  Claude Code /  │ ◄───────────────────── │                      │\n│  Claude Desktop │  send/list/get/update  │    Mockups MPC       │\n│  Any MCP Client │  delete/tag            │    (FastAPI)         │\n└─────────────────┘                        │                      │\n                                           │  ┌────────────────┐  │\n       Browser                             │  │  MCP Server    │  │\n    ┌──────────┐      GET /                │  │  (fastmcp)     │  │\n    │ Gallery  │ ◄──────────────────────── │  └────────────────┘  │\n    │ Viewer   │                           │  ┌────────────────┐  │\n    └──────────┘                           │  │  JSON API      │  │\n                                           │  │  /api/*        │  │\n                                           │  └────────────────┘  │\n                                           │  ┌────────────────┐  │\n                                           │  │  SQLite (WAL)  │  │\n                                           │  │  + Filesystem  │  │\n                                           │  └────────────────┘  │\n                                           └──────────────────────┘\n```\n\nSingle Docker container running a FastAPI app that serves two roles:\n\n1. **MCP Server** — mounted at `/mcp/` (HTTP transport) and `/mcp/sse` (SSE transport). AI tools connect here to send and manage mockups.\n2. **Web Gallery** — served at `/`. Sidebar with project list and chronological feed, main viewer with iframe/image display.\n\n### Data Layer\n\n- **SQLite** in WAL mode — metadata catalog (project, title, description, tags, content type, timestamps)\n- **Filesystem** — mockup files stored in `data/{project_slug}/{uuid}.{ext}`\n- **Storage** is a bind-mounted `data/` directory next to the compose file\n\n## Tech Stack\n\n- Python 3.12\n- FastAPI + uvicorn\n- fastmcp v3.x (standalone)\n- SQLite via aiosqlite\n- Jinja2 templates + vanilla JS\n- Docker + Traefik\n\n## Security\n\nThere is no built-in authentication. All API endpoints and MCP tools are open to anyone who can reach the server. This is designed for trusted networks (LAN, VPN, Tailscale) or behind a reverse proxy that handles auth. If you deploy this on a public network, add authentication at the proxy layer.\n\n## MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `send_mockup` | Send HTML/SVG (raw string) or PNG/JPG (base64) to the gallery. Returns a gallery URL. |\n| `list_mockups` | List mockups reverse-chronologically, optionally filtered by project. |\n| `get_mockup` | Get a specific mockup by UUID with view and gallery URLs. Curl the `view_url` to read the file content. |\n| `update_mockup` | Update metadata (title, description, tags) or replace content. |\n| `delete_mockup` | Delete a mockup — removes both the DB record and file on disk. |\n| `tag_mockup` | Add or remove tags on an existing mockup. |\n\nThe server stores all content permanently. AI clients can clean up local files when they're no longer needed, or retrieve content later via `get_mockup`.\n\n## API Routes\n\n| Route | Purpose |\n|-------|---------|\n| `GET /` | Gallery UI |\n| `GET /view/{id}` | Raw mockup (HTML rendered, images served with correct MIME type) |\n| `GET /api/mockups` | JSON listing with `limit`, `offset`, `project` filter |\n| `GET /api/mockups/{id}` | Single mockup metadata |\n| `GET /api/projects` | Project list with counts |\n| `POST /api/upload` | Upload a mockup file (multipart form: `file`, `project`, `title`, `description?`, `tags?`) |\n| `GET /health` | Health check |\n\n## Setup\n\n### 1. Clone and configure\n\n```bash\ngit clone https://github.com/kgNatx/mockups-mpc.git\ncd mockups-mpc\n```\n\n### 2. Deploy\n\n**Quick start (pre-built image):**\n\n```bash\ndocker compose -f docker-compose.local.yml up -d\n# Gallery available at http://localhost:8000\n```\n\n**Build from source:**\n\n```bash\ndocker compose -f docker-compose.local.yml up -d --build\n```\n\n**Production (with Traefik):**\n\n```bash\ncp .env.example .env\n# Edit .env with your domain and Traefik network name\ndocker compose up -d --build\n```\n\n### 3. Verify\n\n```bash\ncurl http://localhost:8000/health\n# {\"status\":\"ok\"}\n```\n\n### 4. Connect Claude Code\n\n```bash\nclaude mcp add-json mockups-gallery '{\"type\":\"http\",\"url\":\"https://your-domain.com/mcp\"}'\n```\n\nOr add to `.mcp.json` (project-level) or `~/.claude/.mcp.json` (global):\n\n```json\n{\n  \"mcpServers\": {\n    \"mockups-gallery\": {\n      \"type\": \"http\",\n      \"url\": \"https://your-domain.com/mcp\"\n    }\n  }\n}\n```\n\n### 5. Connect Claude Desktop\n\nAdd to your Claude Desktop config file:\n- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`\n- Windows: `%APPDATA%\\Claude\\claude_desktop_config.json`\n- Linux: `~/.config/Claude/claude_desktop_config.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"mockups-gallery\": {\n      \"type\": \"sse\",\n      \"url\": \"https://your-domain.com/mcp/sse\"\n    }\n  }\n}\n```\n\n### 6. Tell your AI to use it\n\nAdd instructions to your `CLAUDE.md` (or equivalent) so your AI uploads mockups via curl instead of passing file content through the model context:\n\n```markdown\n# Mockups\n\nWhen generating UI mockups, design concepts, or visual prototypes,\nwrite the file locally then upload it to the Mockups MPC gallery via curl:\n\n    curl -s -X POST https://your-domain.com/api/upload \\\n      -F file=@/path/to/file.html -F project=name -F title=name \\\n      [-F description=text] [-F \"tags=a,b,c\"]\n\nTo read a mockup's content later, use `get_mockup` to get its\n`view_url`, then curl it.\n```\n\nAdd to `~/.claude/CLAUDE.md` for all projects, or a project's `CLAUDE.md` for specific ones.\n\n## Gallery UI\n\nThe gallery auto-seeds a Setup Guide as the first entry on fresh installs. The guide covers all configuration methods with copy-able code blocks.\n\n**Layout:** Sidebar (project list + chronological feed with title filter + infinite scroll) + main viewer (iframe for HTML, img for images/SVG) + metadata bar + pop-out link.\n\n**Theme:** Techno Chic Minimalist — Space Grotesk, cyan accents, zinc/neutral dark backgrounds.\n\n## Project Structure\n\n```\napp/\n├── main.py          # FastAPI app, lifespan, MCP mount, router includes\n├── config.py        # Settings (DATA_DIR, DB_PATH, BASE_URL from env)\n├── db.py            # SQLite init + CRUD (WAL mode, aiosqlite)\n├── models.py        # Pydantic models\n├── storage.py       # Slug generation, file write/read/delete, 25MB limit\n├── mcp_server.py    # FastMCP instance, tool logic, tool wrappers\n├── seed.py          # Auto-seed setup guide on empty DB\n├── routes/\n│   ├── api.py       # JSON API endpoints\n│   └── gallery.py   # Gallery page + raw mockup serving\n├── templates/\n│   └── gallery.html # Jinja2 gallery template\n└── static/\n    ├── style.css         # Gallery theme\n    └── setup-guide.html  # Self-contained setup guide page\n```\n\n## Development\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate\npip install -r requirements.txt\npytest tests/ -v\nuvicorn app.main:app --reload\n```\n\nThe test suite covers storage, database, MCP tools, API routes, upload, and gallery.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:39:19.351Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:36.205Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

@@ -1,0 +1,58 @@
+{
+  "id": "io.github.igmizo/auseklis",
+  "title": "Auseklis Astrology",
+  "description": "Astrology from a real ephemeris: natal charts, transits, synastry, eclipses, returns. No API keys.",
+  "summary": "Astrology from a real ephemeris: natal charts, transits, synastry, eclipses, returns. No API keys.",
+  "offersHint": "Astrology from a real ephemeris: natal charts, transits, synastry, eclipses, returns. No API keys. · Packages: npm:auseklis",
+  "version": "0.4.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "auseklis",
+    "version": "0.4.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "auseklis",
+      "version": "0.4.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/igmizo/auseklis",
+  "repository": {
+    "url": "https://github.com/igmizo/auseklis",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-10T11:18:14.225326Z",
+  "publishedAt": "2026-07-10T11:18:14.225326Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:20:14.449Z",
+    "sourceRepoAt": "2026-08-11T23:42:41.855Z",
+    "readmeAt": "2026-08-11T23:42:42.316Z",
+    "toolsAt": "2026-08-12T01:20:14.449Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/igmizo/auseklis",
+    "checkedAt": "2026-08-11T23:42:41.855Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/igmizo/auseklis/main/README.md",
+    "markdown": "# auseklis\n\n**Astrology MCP server** — natal charts, transits, synastry, progressions, returns, eclipses, retrogrades, moon phases. Computed from a real ephemeris, so AI agents stop hallucinating planet positions.\n\nNamed after the Latvian morning star. MIT-licensed with **no AGPL ephemeris data** — see [Licensing](#licensing).\n\n## Tools\n\n| Tool | What it does |\n| --- | --- |\n| `get_planet_position` | Position of one body/point at a moment (sign, degree, speed, retrograde) |\n| `compute_natal_chart` | Full birth chart: 13 points, houses, angles, Part of Fortune, aspects |\n| `compute_transits` | Aspects from the current (or any) sky to a natal chart |\n| `compute_progressions` | Secondary progressions (day-for-a-year) |\n| `compute_synastry` | Cross-chart aspects between two people |\n| `compute_composite_chart` | Midpoint composite chart of a relationship |\n| `find_returns` | Solar/lunar/planetary returns (exact moments) |\n| `get_moon_phase` | Phase, illumination, Moon sign, next four quarters |\n| `find_eclipses` | Lunar/solar eclipses with signs, incl. local visibility |\n| `find_retrograde_periods` | Station retrograde/direct moments for any planet |\n| `find_sign_ingresses` | When a body changes signs (equinoxes, Saturn ingresses, …) |\n| `find_aspect_times` | Exact moment a transit perfects (\"when does Saturn square my Sun?\") |\n\nPlus two prompts (`natal_chart_reading`, `current_sky_report`) and a glossary resource (`auseklis://glossary`).\n\n**Features:** local birth times with IANA timezones (full historical DST handling) · tropical and sidereal (Lahiri, Fagan/Bradley) zodiacs · whole-sign, equal, Porphyry, and Placidus houses · mean lunar nodes and Black Moon Lilith · Part of Fortune (classical day/night formula).\n\n## Installation\n\n### Claude Code\n\n```bash\nclaude mcp add auseklis -- npx -y auseklis\n```\n\n### Claude Desktop / any MCP client (stdio)\n\n```json\n{\n  \"mcpServers\": {\n    \"auseklis\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"auseklis\"]\n    }\n  }\n}\n```\n\nNo API keys, no configuration — the ephemeris is computed locally.\n\n### Desktop Extension\n\nDownload `auseklis.mcpb` from the [releases page](https://github.com/igmizo/auseklis/releases) and double-click to install in Claude Desktop. Or build it yourself: `npm run bundle`.\n\n### Remote (self-hosted)\n\nThe same server runs as a Cloudflare Worker speaking Streamable HTTP. Deploy it to your own account:\n\n```bash\nnpm run deploy   # wrangler deploy\nclaude mcp add --transport http auseklis https://auseklis.<your-subdomain>.workers.dev/mcp\n```\n\nSet the `MCP_SHARED_SECRET` secret to require a bearer token.\n\n## Library usage\n\nThe ephemeris core (everything under `src/ephemeris/`) is importable directly — no MCP client or subprocess needed. This is the right shape for serverless runtimes (Vercel, Workers), where spawning `npx auseklis` per request is not an option:\n\n```ts\nimport { computeNatalChart } from \"auseklis/ephemeris\";\nimport { findRetrogradePeriods } from \"auseklis/ephemeris/events\";\nimport { findEclipses } from \"auseklis/ephemeris/eclipses\";\n\nconst chart = computeNatalChart({\n  utc: \"1990-03-15T13:45:00Z\",\n  location: { latitude: 56.95, longitude: 24.11 }, // Riga\n  houseSystem: \"placidus\",\n});\n```\n\n`auseklis/ephemeris` carries the chart math (natal, transits, synastry, composite, progressions, single positions, angles) plus `resolveInstant` for local-time → UTC conversion; `…/events` and `…/eclipses` carry the time-domain searches. Fully typed, ESM only, no data files.\n\n## Example questions to ask\n\n- *\"Compute my natal chart — born 15 March 1990, 15:45 in Riga.\"*\n- *\"What's transiting my Sun this month?\"*\n- *\"When exactly is my Saturn return?\"*\n- *\"Synastry between me and my partner?\"* (two birth date/times)\n- *\"When is Mercury retrograde in 2027, and in which signs?\"*\n- *\"Is tonight's full moon visible as an eclipse from here?\"*\n\nThe model handles place-name → coordinates; the server handles local-time → UTC via the IANA timezone database.\n\n## Accuracy\n\nPositions come from [astronomy-engine](https://github.com/cosinekitty/astronomy) (VSOP87 + NOVAS C 3.1): ±1 arcminute for 1700–2200, far below the 1° resolution astrological interpretation uses. Event searches (stations, ingresses, returns, quarters) are refined to ~1 second of time. Verified in CI against published eclipse dates, the 2026 equinox, NOVAS Sun positions, and an independent Placidus implementation.\n\n## Architecture\n\n```\nsrc/\n├── ephemeris/        Astrology core — backend-agnostic\n│   ├── engine.ts     EphemerisBackend interface + astronomy-engine adapter (the swap seam)\n│   ├── index.ts      Charts, aspects, synastry, composite, progressions\n│   ├── events.ts     Time searches: returns, stations, ingresses, aspect times, moon phases\n│   ├── eclipses.ts   Eclipse searches with astrological context\n│   ├── houses.ts     Whole-sign, equal, Porphyry, Placidus (semi-arc solver)\n│   ├── points.ts     Mean lunar nodes, Black Moon Lilith\n│   ├── sidereal.ts   Ayanamsa (Lahiri, Fagan/Bradley)\n│   └── time.ts       IANA timezone → UTC conversion (no dependencies, uses Intl)\n├── mcp/              Tool/prompt/resource definitions on @modelcontextprotocol/sdk\n├── stdio.ts          Local entry — `npx auseklis`\n└── index.ts          Remote entry — Cloudflare Worker, Streamable HTTP via @hono/mcp\n```\n\nThe `EphemerisBackend` interface in `engine.ts` is the deliberate swap seam: a future Rust/WASM clean-room ephemeris only needs to reimplement that one interface.\n\n## Development\n\n```bash\nnpm install\nnpm run typecheck   # strict TS\nnpm test            # 23-check smoke suite (ephemeris references + MCP end-to-end)\nnpm run build       # emit dist/\nnpm run dev         # local Cloudflare Worker on :8787\nnpx @modelcontextprotocol/inspector node dist/stdio.js   # poke tools interactively\n```\n\nSee [docs/tools.md](docs/tools.md) for the full tool reference and [docs/architecture.md](docs/architecture.md) for design notes.\n\n## Licensing\n\nMIT. This project deliberately avoids the Swiss Ephemeris (`.se1`/`.se2` data files and the `sweph` bindings): those are AGPL-licensed, which would impose AGPL obligations on any network service built on them. Everything here is computed from MIT-licensed code with no external data files — safe to embed, fork, and deploy commercially. Details in [NOTICE](NOTICE).\n\nThe trade-off: no Chiron or asteroids (they need ephemeris data files). They are on the roadmap via public-domain JPL-derived data.\n\n## Roadmap\n\n- v1: Rust/WASM clean-room ephemeris backend behind the same `EphemerisBackend` seam\n- Chiron + major asteroids from public-domain JPL data\n- Koch houses, declination/parallel aspects\n",
+    "fetchedAt": "2026-08-11T23:42:42.316Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:20:14.449Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

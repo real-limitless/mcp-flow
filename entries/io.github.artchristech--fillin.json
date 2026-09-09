@@ -1,0 +1,101 @@
+{
+  "id": "io.github.artchristech/fillin",
+  "title": "Fillin",
+  "description": "Search for AI agents. Closes the LLM-cutoff gap: CVEs, papers, frontier AI, prediction markets.",
+  "summary": "Search for AI agents. Closes the LLM-cutoff gap: CVEs, papers, frontier AI, prediction markets.",
+  "offersHint": "Search for AI agents. Closes the LLM-cutoff gap: CVEs, papers, frontier AI, prediction markets. · Remote MCP (streamable-http) at https://fillin.glyphapi.dev/mcp/",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://fillin.glyphapi.dev/mcp/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://fillin.glyphapi.dev/mcp/"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://fillin.glyphapi.dev",
+  "updatedAt": "2026-05-23T13:50:22.409533Z",
+  "publishedAt": "2026-05-23T13:50:22.409533Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:30:01.212Z",
+    "sourceRepoAt": "2026-08-11T23:56:13.189Z",
+    "readmeAt": "2026-08-12T01:30:01.212Z",
+    "toolsAt": "2026-08-11T23:56:13.189Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:56:13.189Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:30:01.212Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "fillin_query",
+      "description": "Retrieve documents published after a training cutoff, ranked by similarity.\n\n    Call this whenever the user asks about events, releases, papers, issues,\n    or news that might post-date your training data. Fillin only returns\n    documents published AFTER `cutoff`, so nothing returned is redundant\n    with what the model already knows.\n\n    Args:\n        query: Natural-language search query (e.g. \"rust async runtimes\").\n               Max 512 characters.\n        cutoff: ISO-8601 date representing the agent's training cutoff\n                (e.g. \"2026-01-01\"). Documents on or before this date are\n                excluded from results.\n        k: Number of documents to retrieve, 1-20. Defaults to 5.\n\n    Returns:\n        A dict with:\n          - cutoff: echoed cutoff (ISO timestamp)\n          - query: echoed query\n          - gap_days: days between cutoff and now\n          - results: list of {id, source, url, published_at, title, text, score}\n    "
+    },
+    {
+      "name": "glyph_search",
+      "description": "Same as fillin_query, but returns the result pieces rendered as **photo\n    glyph** image(s) — dense, vision-readable pages — followed by a JSON\n    citation index ({n, source, url, title, published_at, page}).\n\n    Read the image(s) directly with your vision capability; use the citation\n    index to attribute or follow up. Glyphs are for comprehension and\n    fact-extraction, not verbatim quotes (vision models paraphrase) — open the\n    url for exact text. Billed at the flat /query rate; rendering is free.\n    "
+    },
+    {
+      "name": "retrieve_auto",
+      "description": "One retrieval, auto-picked substrate — the MCP twin of HTTP POST /v1/retrieve with\n    substrate=\"auto\".\n\n    Runs a single post-cutoff retrieval, then returns whichever delivery substrate is\n    cheapest AND legible for your `reader` model's token billing:\n\n      - text   — raw result pieces (Claude/GPT pixel billing, or any unknown reader).\n      - glyph  — a dense photo-glyph image (Gemini/Qwen flat-tile billing) you read with\n                 vision; the raw pieces ride along as a citation index.\n      - answer — a pre-cited synthesized paragraph (weak tool-callers; needs a server LLM key).\n\n    The trailing JSON block always carries a `selection` object\n    {substrate, reader, reader_class, tier, rationale, estimates} so the choice is\n    auditable from the honest token math — the same object the HTTP route returns. When the\n    pick is glyph, the page image(s) precede that JSON block.\n\n    Pricing matches /v1/retrieve: text/glyph bill the flat /query rate, answer bills the\n    answer rate. The answer rate is charged up front and the delta is refunded when the\n    pick resolves to text/glyph, so you always pay exactly the right rate.\n    "
+    },
+    {
+      "name": "encode",
+      "description": "Bring your own text -> the cheapest substrate for your reader — the MCP twin of\n    HTTP POST /v1/encode.\n\n    Not a search-result rendering trick: this is Glyph as a language anyone can speak.\n    Give it a tool result, a RAG chunk, a document — it comes back as whichever form\n    (dense photo-glyph image or plain text) is genuinely cheaper for your reader model's\n    token billing, with the honest manifest attached. The trailing JSON block always\n    carries a `selection` object {substrate, reader, reader_class, tier, rationale,\n    estimates} so the choice is auditable from the token math — the same object the\n    HTTP route returns.\n\n    Billed at the flat query rate regardless of which substrate is chosen — text and\n    glyph cost the same here, unlike retrieve_auto's answer substrate.\n    "
+    },
+    {
+      "name": "fillin_answer",
+      "description": "Synthesized post-cutoff answer with inline citations.\n\n    Use this when your model is small / cheap / weaker at tool-result\n    synthesis (Llama, Gemini Flash, Mistral, Nemotron, Qwen). Fillin runs\n    a server-side LLM pass over the retrieved post-cutoff documents and\n    returns a 150-250 word answer with [title](url) citations already\n    embedded — you can quote it directly.\n\n    Premium models (Opus, Sonnet, GPT-4o) usually get better results from\n    `fillin_query` and synthesizing themselves, but this tool works for\n    any caller. Costs more than fillin_query because of the synthesis pass.\n\n    Returns:\n        A dict with:\n          - answer: the synthesized paragraph (str | None)\n          - citations: list of {title, url} extracted from the answer\n          - corpus_match: \"strong\" | \"weak\" | \"none\" — quality of retrieval\n          - top_score: float — top reranked similarity score\n          - model: the synthesizer model used (e.g. claude-haiku-4-5)\n          - reason: set when answer is None (e.g. \"no_relevant_docs\")\n          - results: raw post-cutoff documents (same shape as fillin_query)\n          - cutoff, query, gap_days: echoes for context\n    "
+    },
+    {
+      "name": "fillin_stats",
+      "description": "Get corpus stats — total docs, date range, freshness."
+    },
+    {
+      "name": "fillin_health",
+      "description": "Liveness + freshness — host, total docs, earliest, latest. No auth required."
+    },
+    {
+      "name": "query_cves",
+      "description": "Daily snapshot of CVE / supply-chain advisories from NVD, GitHub\n    Security Advisories, and OSV. Use before merging dependency updates,\n    when triaging an alert, or when a user asks \"is package X compromised\".\n\n    Each result row carries a structured `affected` list (one entry per\n    affected package: ecosystem, name, vulnerable_range, patched_range) and\n    a numeric `severity_score` (CVSS baseScore, nullable on OSV-only rows).\n    A buyer can act on the returned row — pin to `patched_range` — without\n    a second hop to NVD or GHSA.\n    "
+    },
+    {
+      "name": "query_papers",
+      "description": "Daily snapshot of new research relevant to AI/ML/agents. Union of\n    arXiv (cs.AI/cs.LG/cs.CL/cs.CR/cs.DC), HuggingFace daily papers (with\n    upvote signal in title), and bioRxiv. Use when a user asks about a\n    new technique, paper, or benchmark.\n    "
+    },
+    {
+      "name": "query_frontier",
+      "description": "Daily snapshot of frontier AI lab announcements + HuggingFace\n    trending model releases. Sources: OpenAI / DeepMind / Meta / Mistral\n    blog RSS, Anthropic + HF blogs (via shared rss corpus), and the HF\n    trending models API. Use when a user asks \"what model dropped\" or\n    \"did <lab> announce X\".\n    "
+    },
+    {
+      "name": "query_markets",
+      "description": "Active prediction markets across Polymarket, Kalshi, Manifold, and\n    Metaculus. Use when a user asks \"is there a market on X\", \"what odds\n    is the market giving Y\", or before any agent action that should be\n    informed by a market price.\n\n    Each result row carries the question, venue, close date, volume, and\n    a first-sight price snapshot embedded in `text`. Prices in the corpus\n    are point-in-time at first ingestion — for live pre-trade pricing,\n    follow the `url` to the venue and read the current quote there.\n    "
+    },
+    {
+      "name": "fillin_market_search",
+      "description": "Search the Fillin marketplace for minted (data + reasoning) assets\n    matching your fingerprint. A mint is another agent's typed reasoning\n    over Fillin's corpus — buying one is often cheaper than re-running\n    the underlying retrieval + reasoning yourself.\n\n    Returns {fingerprint, mints[]}. Each mint includes its conclusion,\n    list_price_usdc, and a Fillin-signed attestation you can verify before\n    paying with fillin_buy_mint.\n    "
+    },
+    {
+      "name": "fillin_mint",
+      "description": "Mint a (data + reasoning) asset on the Fillin marketplace. Fillin\n    verifies every evidence chunk_id resolves in its corpus, validates the\n    typed reasoning shape, HMAC-signs the canonical payload, and returns\n    the mint_id + attestation. Other agents with the same fingerprint can\n    then buy your mint via fillin_buy_mint, splitting the proceeds 70/30\n    in your favor.\n\n    Requires FILLIN_API_KEY (a Fillin bearer token).\n    "
+    },
+    {
+      "name": "fillin_buy_mint",
+      "description": "Buy a listed mint. Debits your bearer balance, credits the seller\n    (minus Fillin's rake), records the transaction, and returns the full\n    mint payload including the previously-paywalled reasoning_graph.\n\n    Requires FILLIN_API_KEY with sufficient balance for the mint's list price.\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:56:13.189Z",
+  "toolsPreviewStatus": "ok"
+}

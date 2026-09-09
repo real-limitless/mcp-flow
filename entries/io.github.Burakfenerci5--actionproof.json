@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Burakfenerci5/actionproof",
+  "title": "ActionProof",
+  "description": "Tamper-proof audit trail for AI agents. Signed receipts, offline-verifiable, zero backend.",
+  "summary": "Tamper-proof audit trail for AI agents. Signed receipts, offline-verifiable, zero backend.",
+  "offersHint": "Tamper-proof audit trail for AI agents. Signed receipts, offline-verifiable, zero backend. · Packages: npm:actionproof",
+  "version": "0.0.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "actionproof",
+    "version": "0.0.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "actionproof",
+      "version": "0.0.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/Burakfenerci5/actionproof",
+  "sourceUrl": "https://github.com/Burakfenerci5/actionproof",
+  "repository": {
+    "url": "https://github.com/Burakfenerci5/actionproof",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-01T07:41:19.131765Z",
+  "publishedAt": "2026-07-01T07:41:19.131765Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:45:58.531Z",
+    "sourceRepoAt": "2026-08-12T00:15:52.159Z",
+    "readmeAt": "2026-08-12T00:15:52.580Z",
+    "toolsAt": "2026-08-12T01:45:58.531Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Burakfenerci5/actionproof",
+    "checkedAt": "2026-08-12T00:15:52.159Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Burakfenerci5/actionproof/main/README.md",
+    "markdown": "# ActionProof\n\n**A tamper-proof audit trail for AI agents.** Verifiable observability: every action your\nagent takes gets a cryptographically signed receipt you can verify offline, anywhere —\nzero backend.\n\nObservability tools (LangSmith, Langfuse, Arize) show you what your agent *reportedly*\ndid — traces recorded inside their platform, on their word. But those logs are\nself-asserted: an agent, a bug, or an attacker can write anything into them, and you\ncan't prove after the fact that the record wasn't edited.\n\nActionProof adds the missing layer: **verifiable** observability. Each action —\nemail sent, form filed, payment made — gets a tamper-evident, Ed25519-signed **receipt**\ncapturing *what* was done, *by which agent*, *when*, and *on whose authority*. Edit any\nfield and verification fails. It's an audit trail you (or an auditor, a user, or a\ncounterparty) can trust without trusting the agent, the vendor, or us.\n\nBuilt for the compliance floor that's coming — the EU AI Act (Article 12) and ISO 42001\nrequire traceable, tamper-evident logs for automated decisions. ActionProof produces\nexactly that, as a portable primitive rather than a walled-garden platform.\n\n## Install\n\n```bash\nnpm install actionproof      # TypeScript / JavaScript\npip install actionproof      # Python\n```\n\nReceipts are cross-compatible: one signed in TypeScript verifies in Python, and vice-versa.\n\n## Quick start (TypeScript)\n\n```ts\nimport { attest, verify, generateKeypair } from \"actionproof\";\n\nconst agent = generateKeypair();               // agent's identity = its key (did:key)\n\nconst receipt = attest(agent, {\n  type: \"email.send\",\n  summary: \"Sent renewal quote to jane@acme.com\",\n  params: { to: \"jane@acme.com\", amount: 4200 }, // hashed, not stored in clear\n  result: { smtp: 250 },\n  outcome: \"ok\",\n});\n\nverify(receipt);            // -> { valid: true, agent: \"did:key:z6Mk...\" }\n```\n\n## Quick start (Python)\n\n```python\nfrom actionproof import attest, verify, generate_keypair\n\nagent = generate_keypair()\n\nreceipt = attest(\n    agent,\n    type=\"email.send\",\n    summary=\"Sent renewal quote to jane@acme.com\",\n    params={\"to\": \"jane@acme.com\", \"amount\": 4200},  # hashed, not stored in clear\n    result={\"smtp\": 250},\n    outcome=\"ok\",\n)\n\nverify(receipt)             # -> VerifyResult(valid=True, agent=\"did:key:z6Mk...\")\n```\n\nEdit any field of that receipt and `verify` returns invalid. That's the whole idea.\n\n## Where it fits: the verifiable layer of agent observability\n\nActionProof complements your observability stack rather than replacing it. Keep using\nLangSmith / Langfuse / Arize for rich traces, latency, and cost — then attach an\nActionProof receipt to the actions that *matter* (the ones that move money, change state,\nor touch a user's data) so that part of your trail is **tamper-evident and independently\nverifiable**.\n\n| | Observability platforms | ActionProof |\n|---|---|---|\n| Recording | traces/logs inside the vendor | signed receipts you hold |\n| Trust model | trust the platform's stored record | verify cryptographically, trust no one |\n| Tamper-evidence | editable by whoever has DB access | any edit breaks the signature |\n| Portability | lives in the vendor | offline, cross-language, anywhere |\n| Cost at scale | metered per event | ~$0 (local signing, zero backend) |\n\nIt's a *proof*, not just a log entry — the difference between \"our dashboard says the agent\ndid this\" and \"here's a signed receipt anyone can verify.\"\n\n## Design principles\n\n- **Offline & zero-backend.** The agent brings its own Ed25519 key. Signing and\n  verification use only native crypto — no server, no account, no network. (This is also\n  why it costs ~nothing to run at any scale.)\n- **Privacy-preserving.** Sensitive inputs/outputs are stored as SHA-256 hashes; you can\n  later prove a value matches without ever putting it in the receipt.\n- **Composable, not competitive.** ActionProof is the *receipt envelope*. Bind stronger\n  evidence into `result_hash` — an [x402](https://x402.org) settlement, an AP2 mandate\n  reference, a DKIM-signed SMTP `250` — to make a receipt as strong as its counterparty\n  evidence.\n- **Identity with no registry.** Agent identity is a `did:key` (self-describing public\n  key). Who you *trust* is your policy (pinned keys, an allow-list, or the optional log\n  below).\n\nSee [SPEC.md](./SPEC.md) for the wire format.\n\n## Use it as an MCP server (no code)\n\nThe fastest way to give an agent receipts: run ActionProof as an MCP server and add it to\nClaude Desktop / Cursor. Your agent gets three tools — `attest_action`, `verify_receipt`,\n`get_identity` — and can emit a receipt right after it does something.\n\nAdd to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):\n\n```jsonc\n{\n  \"mcpServers\": {\n    \"actionproof\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"actionproof-mcp\"]\n    }\n  }\n}\n```\n\nThe server mints a stable Ed25519 identity on first run (stored at\n`~/.actionproof/agent.key.pem`, override with `ACTIONPROOF_KEY_PATH`). Every receipt it\nsigns is attributable to that one agent `did:key`.\n\n## Auto-emit receipts (framework wrappers)\n\nYou don't have to call `attest` by hand after every action — wrap the tool once and every\ncall emits a receipt.\n\nTypeScript (framework-agnostic; works with LangChain.js, Mastra, Vercel AI SDK):\n\n```ts\nimport { withReceipts, generateKeypair } from \"actionproof\";\n\nconst agent = generateKeypair();\nconst send = withReceipts(agent, rawSendEmail, {\n  type: \"email.send\",\n  onReceipt: (r) => store(r),   // called with a signed receipt on every call\n});\n```\n\nPython (`@attest_action` decorator, or a LangChain/CrewAI callback):\n\n```python\nfrom actionproof import attest_action, ActionProofCallbackHandler\n\n@attest_action(agent, type=\"email.send\", on_receipt=store)\ndef send_email(to, body): ...\n\n# or attest every tool a framework agent runs, no per-tool code:\nhandler = ActionProofCallbackHandler(agent, on_receipt=store)\nagent_executor.invoke(input, config={\"callbacks\": [handler]})\n```\n\n## Develop locally\n\n```bash\ngit clone https://github.com/Burakfenerci5/actionproof\ncd actionproof && npm install\nnpm run demo     # full sign → verify → tamper loop\nnpm test         # TS suite (9 tests)\nnpm run mcp      # start the MCP server over stdio\n\ncd python && pip install -e \".[dev]\" && pytest   # Python suite (7 tests, incl. TS↔Python interop)\n```\n\n## Roadmap\n\n- **Now (shipped):** TypeScript library + MCP server + framework wrapper, and the Python\n  package with a decorator and LangChain/CrewAI callback. Receipts interoperate across both.\n- **Next:** first-class LlamaIndex / CrewAI plugins; exporters that attach receipts to\n  spans in your existing observability stack (OpenTelemetry, LangSmith, Langfuse).\n- **Later (optional, hosted):** a **verifiable audit dashboard** — a searchable,\n  shareable, tamper-evident timeline of what your fleet of agents did, backed by an\n  append-only log, for teams that need compliance-grade evidence (EU AI Act / ISO 42001)\n  without building it themselves. **The library and MCP server stay free and offline\n  forever;** only the hosted dashboard is a paid service.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-12T00:15:52.580Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:45:58.531Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

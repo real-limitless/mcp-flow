@@ -1,0 +1,58 @@
+{
+  "id": "io.github.sebastienrousseau/camt-exceptions",
+  "title": "camt-exceptions",
+  "description": "Generate + XSD-validate ISO 20022 E&I camt messages (camt.056 cancellation, camt.029 resolution).",
+  "summary": "Generate + XSD-validate ISO 20022 E&I camt messages (camt.056 cancellation, camt.029 resolution).",
+  "offersHint": "Generate + XSD-validate ISO 20022 E&I camt messages (camt.056 cancellation, camt.029 resolution). · Packages: pypi:camt-exceptions",
+  "version": "0.0.15",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "camt-exceptions",
+    "version": "0.0.15",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "camt-exceptions",
+      "version": "0.0.15",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sebastienrousseau/camt-exceptions",
+  "repository": {
+    "url": "https://github.com/sebastienrousseau/camt-exceptions",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T07:30:46.660017Z",
+  "publishedAt": "2026-07-29T07:30:46.660017Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:13.351Z",
+    "sourceRepoAt": "2026-08-11T23:22:11.724Z",
+    "readmeAt": "2026-08-11T23:22:12.345Z",
+    "toolsAt": "2026-08-12T01:02:13.352Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sebastienrousseau/camt-exceptions",
+    "checkedAt": "2026-08-11T23:22:11.724Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sebastienrousseau/camt-exceptions/main/README.md",
+    "markdown": "# camt-exceptions: ISO 20022 Exceptions & Investigations, generated + XSD-valid\n\n**Generate and validate ISO 20022 Exceptions & Investigations (E&I) `camt`\nmessages — with an [MCP][mcp] server.** Starts with **`camt.056`** (FI-to-FI\nPayment Cancellation Request): the message a bank sends to *recall or cancel* a\npayment it already dispatched — a duplicate, an erroneous amount, a fraud\nrecall. Output is validated against the **official bundled XSD** before it's\nreturned.\n\n> **Latest release: v0.0.14** — `camt.056` + `camt.029` generation + validation, 4 MCP\n> tools over stdio, 100% branch coverage, for Python 3.10+. Part of the\n> [ISO 20022 MCP suite](#the-suite). Additional E&I messages (camt.029, camt.026,\n> camt.027, camt.087) plug into the same engine.\n\n## Why E&I\n\nWhen a payment goes wrong, the fix is an Exceptions & Investigations message —\nand these are the *least* tooled corner of ISO 20022. `camt.056` alone covers\nthe single most common need: **\"I need to cancel/recall that payment.\"** This\nlibrary makes it a one-call, schema-valid operation for an agent, with the same\ndepth as the credit-transfer generators elsewhere in the suite.\n\n## Install\n\n```sh\npip install camt-exceptions\n# or run the MCP server without installing:\nuvx camt-exceptions\n```\n\nMCP client config (e.g. Claude Desktop):\n\n```json\n{\n  \"mcpServers\": {\n    \"camt-exceptions\": {\n      \"command\": \"camt-exceptions-mcp\"\n    }\n  }\n}\n```\n\n## Quick start — cancel a payment\n\n```python\nfrom camt_exceptions import generator as g\n\nxml = g.generate_message(\"camt.056.001.12\", {\n    \"assignment_id\": \"CXL-001\",\n    \"assigner_agent_bic\": \"DEUTDEFF\",\n    \"assignee_agent_bic\": \"COBADEFF\",\n    \"creation_date_time\": \"2026-03-02T10:00:00\",\n    \"original_msg_id\": \"MSG-ORIG-001\",\n    \"original_msg_nm_id\": \"pacs.008.001.08\",\n    \"transactions\": [{\n        \"original_end_to_end_id\": \"E2E-001\",\n        \"original_interbank_settlement_amount\": \"1000.00\",\n        \"original_interbank_settlement_currency\": \"EUR\",\n        \"cancellation_reason_cd\": \"DUPL\",       # duplicate payment\n    }],\n})\nassert g.validate_xml(\"camt.056.001.12\", xml)[\"is_valid\"]   # True\n```\n\n## Tools\n\n- `list_message_types` — List supported E&I message types and names.\n- `get_required_fields` — Required top-level fields for a message type.\n- `generate_message` — Generate a validated E&I XML message from a record (validated against the bundled XSD before return).\n- `validate_xml` — Validate raw XML against a message type's bundled XSD.\n\n## Supported messages\n\n| Message | Name | Status |\n| --- | --- | --- |\n| `camt.056.001.12` | FI to FI Payment Cancellation Request | ✅ |\n| `camt.029.001.14` | Resolution of Investigation | ✅ |\n| `camt.026` | Unable to Apply | planned |\n| `camt.027` | Claim Non-Receipt | planned |\n| `camt.087` | Request to Modify Payment | planned |\n\nEach new message plugs into the same engine: bundle its official XSD +\n`template.xml` and register it in `MESSAGE_TYPES`. Generated output is always\nXSD-validated before return, so correctness is machine-checked, not asserted.\n\n> Note: the payment-status and return messages of the E&I family —\n> **`pacs.002`** (Payment Status Report) and **`pacs.004`** (Payment Return) —\n> are already generated, XSD-valid, by [`pacs008-mcp`][pacs008-mcp].\n\n## The suite\n\nPart of a family of vendor-neutral, Python-native ISO 20022 MCP servers:\n\n- [`iso20022-mcp`][iso20022-mcp] — unified gateway across the families.\n- [`pain001-mcp`][pain001-mcp] · [`pacs008-mcp`][pacs008-mcp] ·\n  [`camt053-mcp`][camt053-mcp] · [`acmt001-mcp`][acmt001-mcp] — per-family servers.\n- [`reconcile-mcp`][reconcile-mcp] — statement/payment reconciliation.\n\n## Development\n\n```sh\ngit clone https://github.com/sebastienrousseau/camt-exceptions\ncd camt-exceptions\npython -m venv .venv && . .venv/bin/activate\npip install -e . && pip install pytest pytest-cov ruff black mypy\npytest                      # 100% branch coverage gate; output is XSD-validated\nruff check camt_exceptions tests && black --check camt_exceptions tests && mypy camt_exceptions\n```\n\n## Licence\n\nCode licensed under the [Apache License, Version 2.0](LICENSE). Bundled ISO\n20022 message schemas (`*.xsd`) are © ISO 20022 and redistributed under the\nISO 20022 terms; they are the same schemas published at\n[iso20022.org](https://www.iso20022.org).\n\n---\n\n`mcp-name: io.github.sebastienrousseau/camt-exceptions`\n\n[mcp]: https://modelcontextprotocol.io\n[iso20022-mcp]: https://github.com/sebastienrousseau/iso20022-mcp\n[pain001-mcp]: https://github.com/sebastienrousseau/pain001-mcp\n[pacs008-mcp]: https://github.com/sebastienrousseau/pacs008-mcp\n[camt053-mcp]: https://github.com/sebastienrousseau/camt053-mcp\n[acmt001-mcp]: https://github.com/sebastienrousseau/acmt001-mcp\n[reconcile-mcp]: https://github.com/sebastienrousseau/reconcile-mcp\n",
+    "fetchedAt": "2026-08-11T23:22:12.345Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:13.352Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

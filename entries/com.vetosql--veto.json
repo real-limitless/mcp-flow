@@ -1,0 +1,65 @@
+{
+  "id": "com.vetosql/veto",
+  "title": "Veto — SQL Safety & Cost Oracle",
+  "description": "Deterministic safety, correctness & cost gate that vets Postgres SQL before your AI agent runs it.",
+  "summary": "Deterministic safety, correctness & cost gate that vets Postgres SQL before your AI agent runs it.",
+  "offersHint": "Deterministic safety, correctness & cost gate that vets Postgres SQL before your AI agent runs it. · Remote MCP (streamable-http) at https://vetosql.com/mcp",
+  "version": "0.5.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://vetosql.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://vetosql.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://vetosql.com",
+  "sourceUrl": "https://github.com/metaweardigital/veto-mcp",
+  "repository": {
+    "url": "https://github.com/metaweardigital/veto-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-14T20:46:14.42097Z",
+  "publishedAt": "2026-06-14T20:46:14.42097Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:52:00.554Z",
+    "sourceRepoAt": "2026-08-12T00:24:29.650Z",
+    "readmeAt": "2026-08-12T00:24:30.246Z",
+    "toolsAt": "2026-08-12T00:24:30.538Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/metaweardigital/veto-mcp",
+    "checkedAt": "2026-08-12T00:24:29.650Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/metaweardigital/veto-mcp/main/README.md",
+    "markdown": "# Veto — SQL Safety & Cost Oracle (MCP)\n\n> **Veto is a deterministic MCP server that vets Postgres SQL for safety, correctness, and cost *before* an AI coding agent runs it.** It returns an `ok` / `warn` / `block` verdict on every statement — no LLM in the core, and it never connects to your database.\n\n**Website:** https://vetosql.com · **MCP endpoint:** `https://vetosql.com/mcp` (remote, streamable-http)\n\nAI coding agents (Claude Code, Cursor, …) write and execute SQL. Occasionally they write `DELETE FROM payments` with no `WHERE`, or a `DROP TABLE` during a migration. More prompting doesn't fix a probabilistic system — a deterministic gate does. Veto is that gate: given the same statement, it returns the same verdict, every time, with stable finding ids you can audit and gate CI on.\n\n---\n\n## What it catches\n\n| Verdict | Meaning | What falls here |\n|---|---|---|\n| `block` | Destructive / data loss | Unscoped `DELETE`/`UPDATE`, `TRUNCATE`, dropping data-bearing objects — including destructive statements hidden inside CTEs |\n| `warn` | Risky but recoverable | Lock-heavy schema changes, expensive scans, correctness traps that silently return wrong rows (`= NULL`, `NOT IN (subquery)`, a LEFT JOIN filtered into an inner join), common anti-patterns like `SELECT *` |\n| `ok` | Safe to run | Routine, reversible migrations |\n\nEvery finding carries a stable dotted id (e.g. `destructive.delete_without_where`) so your pipeline can branch on it. The exact rule set lives server-side and evolves over time.\n\n## Why deterministic\n\n- **Reproducible** — same input, same verdict. Testable, so trustable.\n- **Auditable** — a *named rule* fired, not \"the model felt it was risky.\"\n- **No drift** — can't be talked out of a `block` by a clever prompt; doesn't get worse on a bad day.\n- **Never touches your DB** — cost is measured with a real `EXPLAIN` on a throwaway scratch Postgres inside a transaction that is **always rolled back**. Your production database is never connected.\n\n## Tools\n\n### `analyze_sql`\nReturns a deterministic safety + cost verdict for Postgres SQL / migrations.\n\n| Input | Type | Notes |\n|---|---|---|\n| `sql` | string | The SQL / migration to analyze — one or more statements (required) |\n| `schema` | string? | Optional `CREATE TABLE/INDEX` DDL — enables `EXPLAIN`-based cost analysis on scratch Postgres |\n| `rowCountHints` | object? | Optional map of table name → estimated row count, for realistic cost estimates |\n\nReturns `{ verdict, findings[], plan?, meta }` where `verdict` ∈ `ok | warn | block`.\n\n### `set_policies` *(Pro)*\nStores custom org policies keyed to your Pro key; `analyze_sql` then enforces them on top of the built-in rules. Policies are **declarative data — validated and never executed** (max 50, replaces the previously stored set).\n\nEach policy: `table` (exact name or glob, e.g. `payments`, `audit_*`, `*`), `operations` (any of `select`/`insert`/`update`/`delete`/`truncate`/`drop`/`alter`), `action` (`block`/`warn`), optional `message`.\n\n```json\n{\n  \"policies\": [\n    { \"table\": \"payments\", \"operations\": [\"delete\", \"truncate\"], \"action\": \"block\",\n      \"message\": \"Never delete from payments — use the refund flow.\" }\n  ]\n}\n```\n\nSending the full set **updates** it; sending an empty array **clears** it.\n\n### `get_policies` *(Pro)*\nReturns the custom org policy set currently stored for your key — the same rules `analyze_sql` enforces on top of the built-ins. Read-only; returns an empty list if none are set.\n\n---\n\n## Setup\n\nVeto is a **remote** MCP server — no install, no source needed. Point your client at the endpoint.\n\n### Claude Code — `.mcp.json`\n```json\n{\n  \"mcpServers\": {\n    \"veto\": {\n      \"type\": \"http\",\n      \"url\": \"https://vetosql.com/mcp\"\n    }\n  }\n}\n```\n\n### Cursor — `~/.cursor/mcp.json`\n```json\n{\n  \"mcpServers\": {\n    \"veto\": {\n      \"url\": \"https://vetosql.com/mcp\"\n    }\n  }\n}\n```\n\nThe free tier needs no key (60 req/min). **Pro:** add your `VETO-…` key as a bearer token (keep the word `Bearer` and the space):\n```json\n\"headers\": { \"Authorization\": \"Bearer VETO-…\" }\n```\n\n---\n\n## Pricing\n\n| Tier | Price | Limits | Extras |\n|---|---|---|---|\n| **Free** | €0 | 60 req/min | Full deterministic verdict — all destructive, locking, correctness & cost rules |\n| **Pro** | €9.90 / mo | 1200 req/min | Custom org policies (`set_policies`), maintainer support |\n\nSubscribe at [vetosql.com](https://vetosql.com).\n\n---\n\n## FAQ\n\n**What databases does Veto support?**\nPostgreSQL. Works with any Postgres host (Supabase, Neon, RDS, self-hosted) and any migration tool, because Veto analyzes the SQL text — it doesn't connect to your database.\n\n**Is it safe? Can it see or modify my data?**\nNo. Veto never connects to your production database. Cost analysis runs inside a transaction that is always rolled back, against a separate scratch Postgres — no data is read or written.\n\n**How is Veto different from a linter like Squawk or sqlfluff?**\nThose are CI/style tools. Veto is a real-time *runtime gate* an AI agent calls over MCP, returning an `ok`/`warn`/`block` verdict on the exact statement it's about to execute — plus cost estimation and custom org policies.\n\n**Why not just give the agent a read-only or restricted DB role?**\nRoles are coarse and easy to misconfigure, and they don't catch a costly sequential scan or a full-table `UPDATE` inside a write-allowed role. Veto adds a statement-level verdict on top of whatever roles you use.\n\n**Does it use an LLM?**\nNo. The core is deterministic static analysis + `EXPLAIN`. The calling agent narrates the structured verdict; the verdict itself never comes from a model.\n\n---\n\n## Links\n\n- **Website:** [vetosql.com](https://vetosql.com)\n- **Blog:** [An AI agent wiped a production database. The fix isn't a better prompt.](https://vetosql.com/blog/ai-agent-deleted-production-database/)\n- **MCP endpoint:** `https://vetosql.com/mcp`\n- **Official MCP registry:** `com.vetosql/veto`\n- **Glama:** [glama.ai/mcp/connectors/com.vetosql/veto](https://glama.ai/mcp/connectors/com.vetosql/veto)\n\n---\n\nBuilt by [Metawear](https://www.metawear.cz). The hosted service runs at [vetosql.com](https://vetosql.com); this repository is the public documentation and MCP registry manifest for the Veto server.\n",
+    "fetchedAt": "2026-08-12T00:24:30.246Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "analyze_sql",
+      "description": "Analyze Postgres SQL/migrations for destructive operations, locking risk, correctness traps (NULL handling that silently returns wrong results), anti-patterns, and query cost. Returns a deterministic verdict (ok/warn/block) with findings. Pass the optional `schema` argument (your CREATE TABLE/INDEX DDL) to also get EXPLAIN-based cost analysis run on a throwaway scratch Postgres — no separate tool or DB connection needed."
+    },
+    {
+      "name": "set_policies",
+      "description": "Replace the stored custom org policy set for your Pro key (this is also how you update or clear them: send the full new set to update, or an empty array to remove all). Each policy blocks or warns on an operation against matching tables (e.g. no DELETE on payments). Policies are declarative data — validated, never executed — and apply transparently to every later analyze_sql call made with this key. Use get_policies to read the current set."
+    },
+    {
+      "name": "get_policies",
+      "description": "Return the custom org policy set currently stored for your Pro key — the same rules analyze_sql enforces on top of the built-ins. Read-only; returns an empty list if none are set. Use set_policies to change them."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:24:30.538Z",
+  "toolsPreviewStatus": "ok"
+}

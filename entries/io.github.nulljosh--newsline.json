@@ -1,0 +1,60 @@
+{
+  "id": "io.github.nulljosh/newsline",
+  "title": "Newsline",
+  "description": "News from 17 outlets with left/center/right bias tags and one-sided blindspot detection",
+  "summary": "News from 17 outlets with left/center/right bias tags and one-sided blindspot detection",
+  "offersHint": "News from 17 outlets with left/center/right bias tags and one-sided blindspot detection · Remote MCP (streamable-http) at https://news.heyitsmejosh.com/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://news.heyitsmejosh.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://news.heyitsmejosh.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/nulljosh/newsline",
+  "repository": {
+    "url": "https://github.com/nulljosh/newsline",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T03:54:28.010726Z",
+  "publishedAt": "2026-08-10T03:54:28.010726Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:26.686Z",
+    "sourceRepoAt": "2026-08-11T23:31:23.647Z",
+    "readmeAt": "2026-08-11T23:31:24.419Z",
+    "toolsAt": "2026-08-11T23:31:24.545Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nulljosh/newsline",
+    "checkedAt": "2026-08-11T23:31:23.647Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nulljosh/newsline/main/README.md",
+    "markdown": "<img src=\"icon.svg\" width=\"80\" style=\"border-radius:18px\">\n\n# Newsline\n\n![version](https://img.shields.io/badge/version-v0.3.0-blue) ![license](https://img.shields.io/badge/license-MIT-green) [![GitHub](https://img.shields.io/badge/GitHub-nulljosh%2Fnewsline-black?logo=github)](https://github.com/nulljosh/newsline)\n\nHeadlines from 17 news outlets across the political spectrum, with left/center/right bias tags and **blindspot** detection — stories covered by only one side. Free, unauthenticated, no rate limit.\n\nFour ways in: a [web reader](https://news.heyitsmejosh.com), native [iPhone/iPad/Mac apps](https://news.heyitsmejosh.com/app), a JSON API, and an MCP server.\n\n## Apps\n\nSwiftUI, one codebase for iOS and macOS, in `ios/`. Reads the same public API — no account, no\ntracking, saved stories and the feed cache stay on device.\n\n```\ncd ios && xcodegen generate\nxcodebuild -scheme Newsline-iOS -destination 'generic/platform=iOS Simulator' build\n```\n\n## MCP\n\n```\nclaude mcp add --transport http newsline https://news.heyitsmejosh.com/mcp\n```\n\n| Tool | Params | Returns |\n|---|---|---|\n| `get_news` | `view`, `outlet`, `bias`, `q`, `limit` | Current headlines, flat or clustered by story |\n| `get_blindspots` | `limit` | Only stories covered by a single political side |\n\nStateless streamable HTTP, no auth. Works with any MCP client — Claude Desktop, Claude Code, Cursor.\n\n## API\n\n`GET https://news.heyitsmejosh.com/api/stories` — every parameter is optional.\n\n| Param | Values | Default |\n|---|---|---|\n| `view` | `latest`, `stories`, `both` | `both` |\n| `outlet` | any outlet name, e.g. `Hacker News` | all |\n| `bias` | `left`, `center`, `right` | all |\n| `blindspot` | `true` | off |\n| `q` | substring match on headline text | none |\n| `limit` | 1–200 | 60 clusters / 120 headlines |\n\n```bash\ncurl 'https://news.heyitsmejosh.com/api/stories?view=stories&blindspot=true'\ncurl 'https://news.heyitsmejosh.com/api/stories?view=latest&outlet=Hacker%20News&limit=10'\n```\n\n```json\n{\n  \"updated\": 1754700000000,\n  \"stories\": [\n    {\n      \"title\": \"Fed holds rates steady\",\n      \"blindspot\": false,\n      \"sources\": [\n        { \"title\": \"Fed holds rates steady\", \"link\": \"https://…\", \"outlet\": \"CNN\", \"bias\": -1 },\n        { \"title\": \"Fed refuses to cut rates\", \"link\": \"https://…\", \"outlet\": \"Fox News\", \"bias\": 2 }\n      ]\n    }\n  ],\n  \"latest\": [\n    { \"title\": \"Fed holds rates steady\", \"link\": \"https://…\", \"outlet\": \"CNN\", \"bias\": -1, \"ts\": 1754699000000 }\n  ]\n}\n```\n\nCORS open to all origins. Feeds are re-pulled at most every 2 minutes; responses themselves are `no-store` (see below). `ts` is epoch ms, or `0` when the feed published no date (those sort to the bottom). Full spec: [`openapi.yaml`](https://news.heyitsmejosh.com/openapi.yaml) · orientation for agents: [`llms.txt`](https://news.heyitsmejosh.com/llms.txt).\n\n## How it works\n\nOne Cloudflare Worker (`worker.js`) polls 17 RSS feeds and serves the page, the API, and MCP off a single cached pull:\n\n- **`latest`** — flat reverse-chronological feed across all sources.\n- **`stories`** — headlines clustered by title-keyword overlap, each source tagged left/center/right, one-sided clusters flagged `blindspot`.\n\nOnly the feed pull is cached, under a constant key. Filtering happens per-request in `shape()` downstream of it, and responses go out `no-store` — the zone's CDN cache ignores query strings, so caching them would serve one caller's `?outlet=` to everyone. Nothing is refetched either way; only the cheap filtering runs again.\n\nClusters are filtered *after* clustering, and the flat feed *before* its 120-item cap. Both orderings matter: narrowing the input first would destroy the cross-outlet comparison, and filtering after the cap would hide low-volume outlets.\n\n![architecture](architecture.svg)\n\n## Bias scores\n\nEach source carries a score from `-2` (left) to `+2` (right); `0` is center, or non-political for tech outlets like Hacker News and Daring Fireball. These are hand-assigned in `FEEDS`, not a third-party rating — treat them as a rough lean.\n\nCBC · The Guardian · CNN · NPR · BBC · Global News · National Post · Fox News · NY Post · Daily Wire · Hacker News · Daring Fireball · NBC News · Wall Street Journal · NY Post Opinion · Vancouver Sun · The Province\n\nAdd one by appending `[outlet, bias, url]` to `FEEDS` at the top of `worker.js`. Any RSS 2.0 or Atom feed works.\n\n## Develop\n\n```\nnpm test         # node test.mjs — parser, sort, cluster, shape filters\nnpm run deploy   # wrangler deploy\n```\n\nCloudflare Workers + Workers Static Assets — one deploy serves the page, `/api/stories`, and `/mcp`.\n\nSecurity: see [SECURITY.md](SECURITY.md).\n\n## License\n\nMIT 2026, Joshua Trommel. Headlines and links belong to their publishers — Newsline stores nothing and links out to the original article.\n",
+    "fetchedAt": "2026-08-11T23:31:24.419Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_news",
+      "description": "Current headlines from 22 news outlets across the political spectrum. Each source carries a bias score from -2 (left) to +2 (right); 0 is center or non-political. Use view=latest for a flat reverse-chronological feed, or view=stories to group the same event as covered by different outlets."
+    },
+    {
+      "name": "get_blindspots",
+      "description": "Stories covered by only one side of the political spectrum — reported by left-leaning outlets but not right-leaning, or vice versa. Each source carries a bias score from -2 (left) to +2 (right); 0 is center or non-political. Useful for finding what a given audience is not being told."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:31:24.545Z",
+  "toolsPreviewStatus": "ok"
+}

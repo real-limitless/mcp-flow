@@ -1,0 +1,122 @@
+{
+  "id": "io.github.emercoin/emercoin-agent",
+  "title": "Emercoin Agent",
+  "description": "On-chain identity and durable memory for AI agents on the Emercoin blockchain (NVS).",
+  "summary": "On-chain identity and durable memory for AI agents on the Emercoin blockchain (NVS).",
+  "offersHint": "On-chain identity and durable memory for AI agents on the Emercoin blockchain (NVS). · Remote MCP (streamable-http) at https://ai.emercoin.com/mcp · Packages: oci:docker.io/emercoin/mcp:0.1.0 · Optional headers: Authorization · Env vars: GATEWAY_URL",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://ai.emercoin.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://ai.emercoin.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <session JWT> from https://ai.emercoin.com/login — required for write tools; read tools are open",
+          "secret": true
+        }
+      ]
+    }
+  ],
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/emercoin/mcp:0.1.0",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "GATEWAY_URL",
+        "description": "Base URL of the edge gateway the MCP server talks to",
+        "default": "https://ai.emercoin.com"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/emercoin/mcp:0.1.0",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "GATEWAY_URL",
+          "description": "Base URL of the edge gateway the MCP server talks to",
+          "default": "https://ai.emercoin.com"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "GATEWAY_URL",
+      "description": "Base URL of the edge gateway the MCP server talks to",
+      "default": "https://ai.emercoin.com"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://ai.emercoin.com",
+  "sourceUrl": "https://github.com/emercoin/emer-ai-tools",
+  "repository": {
+    "url": "https://github.com/emercoin/emer-ai-tools",
+    "source": "github",
+    "subfolder": "mcp_server"
+  },
+  "updatedAt": "2026-06-12T13:28:15.590542Z",
+  "publishedAt": "2026-06-12T13:28:15.590542Z",
+  "provenance": "official-registry",
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <session JWT> from https://ai.emercoin.com/login — required for write tools; read tools are open",
+      "secret": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:12.680Z",
+    "sourceRepoAt": "2026-08-11T23:47:05.566Z",
+    "readmeAt": "2026-08-11T23:47:05.988Z",
+    "toolsAt": "2026-08-11T23:47:06.110Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/emercoin/emer-ai-tools",
+    "checkedAt": "2026-08-11T23:47:05.566Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/emercoin/emer-ai-tools/main/README.md",
+    "markdown": "![](https://github.com/emercoin/emer-ai-tools/blob/main/docs/docker.png)\n[![smithery badge](https://smithery.ai/badge/mechnotech/emer-ai)](https://smithery.ai/servers/mechnotech/emer-ai)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n# Emercoin + AI agent tools (`emer-ai-tools`)\n\nA runnable Docker stack: an **Emercoin node** plus an **agent gateway** that turns\nthe chain's Name-Value Storage (NVS) into an **on-chain identity & memory layer for\nAI agents**. An agent can prove who it is and anchor what it has learned on a public\nblockchain — **without holding any cryptocurrency**. Hosted at\n**[ai.emercoin.com](https://ai.emercoin.com)**; exposed to agents as the\n`emercoin-agent` MCP server.\n\n> **🤖 Building with an AI agent?** Read **[AGENTS.md](AGENTS.md)** — the problem it\n> solves, the trust model, the tools, and a first-flow quickstart. A ready-to-use\n> Claude Code skill ships at `.claude/skills/emercoin-identity/` (invoke with\n> `/emercoin-identity`). Design notes: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.\n\nThe repo was originally just a Dockerized Emercoin node; it is now a full\napplication built on top of that node. You can run the **whole stack**, use the\n**hosted service**, or run **just the node** — see the sections below.\n\n## What's in here\n\n```\n AI agent ──MCP tools──▶ edge (auth boundary) ──HTTP──▶ adapter ──JSON-RPC──▶ node\n                              │                       (RPC↔REST)        (NVS on-chain)\n                              └── Redis (rate limit + login nonces)\n```\n\n| Component | Path | Role |\n|-----------|------|------|\n| **node** (`emc`) | `node/` | Emercoin core — holds the chain + hot-wallet; internal-only, authorizes nothing. |\n| **adapter** (`emer-adapter`) | `adapter/` | RPC↔REST: a plain REST surface over the node's JSON-RPC. Internal, gated by `X-Internal-Key`. |\n| **edge** (`emer-edge`) | `edge/` | The trust boundary: authenticates agents (GitHub → JWT / signature login), rate-limits writes, builds NVS records, mounts the `emercoin-agent` MCP at `/mcp`. |\n| **mcp_server** | `mcp_server/` | A thin stdio MCP client of the edge, distributed via Docker / Smithery for local use. |\n| **site** | `site/` | The public `ai.emercoin.com` front-end (landing, login, stats). |\n\n## Use it as an agent (hosted)\n\nThe `emercoin-agent` MCP server is live — no self-hosting needed:\n\n- **Streamable HTTP:** `https://ai.emercoin.com/mcp` (read tools open; write tools need\n  a GitHub sign-in via OAuth, performed by your MCP client).\n- **Smithery / stdio Docker image:** see the [Smithery listing](https://smithery.ai/servers/mechnotech/emer-ai)\n  and `mcp_server/README.md`.\n\nTools: `node_status`, `read_record` (open) and `register_identity`, `store_memory`,\n`store_memory_batch` (after login). Full reference + first-flow in **[AGENTS.md](AGENTS.md)**.\n\n## Run the full stack (self-host)\n\nNode (mainnet) + adapter + edge + redis, dev profile:\n```bash\ngit clone https://github.com/emercoin/emer-ai-tools && cd emer-ai-tools\ncp node/emercoin.conf.example node/emercoin.conf      # set rpcpassword\ndocker compose -f deploy/docker-compose.yaml --profile dev up -d --build\n```\nEdge API on `:8000`; the adapter's RPC↔REST docs are browsable at\n`http://localhost:8001/docs` (dev profile). Wire the MCP server into your agent and\nrun the first flow — see the [AGENTS.md quickstart](AGENTS.md#quickstart).\n(Use `--profile prod` to gate the adapter behind a shared `X-Internal-Key`.)\n\n## Run just the Emercoin node\n\nThe node alone (no agent tools) is the default stack — no profile needed. It is a\nclassic Emercoin wallet in a container with a separate volume for the blockchain:\ncross-platform, one-click version bumps, usable from your own projects over JSON-RPC.\n\n```bash\ncp node/emercoin.conf.example node/emercoin.conf\ndocker compose -f deploy/docker-compose.yaml up -d --build\n```\n\nInitial sync takes a few hours, but the RPC is usable right away. By default port\n**6662** connects to the container:\n- address: **127.0.0.1** · user: **emcrpc** · password: **emcpass**\n- method: **POST**, e.g. body `{\"method\": \"getinfo\"}`\n\n**Change the RPC password:**\n```bash\ndocker compose -f deploy/docker-compose.yaml exec emc bash changepass.sh\ndocker compose -f deploy/docker-compose.yaml restart emc\n```\n\n**Health check** — POST to `http://emcrpc:emcpass@127.0.0.1:6662` with `{\"method\":\"getinfo\"}`:\n```bash\ncurl --location --request POST 'emcrpc:emcpass@127.0.0.1:6662' \\\n  --header 'Content-Type: application/json' \\\n  --data-raw '{\"method\": \"getinfo\"}'\n```\nA healthy node replies with JSON (`fullversion`, `version`, `balance`, …).\n\n**Manage the build:**\n```bash\ndocker compose -f deploy/docker-compose.yaml stop emc    # stop\ndocker compose -f deploy/docker-compose.yaml down        # remove containers (keeps the volume)\ndocker volume rm emer_data                               # delete the chain DB — also deletes wallet.dat!\n```\n\n## Status\n\nMVP, verified end-to-end on mainnet: identity registration, signature login, single\n+ atomic batch memory writes, reads, history, names-by-address. Not yet\nproduction-hardened (GitHub App/OAuth login, ≥32-byte JWT secret, hot-wallet split);\nthe `prod` compose profile already gates the adapter behind `X-Internal-Key`. Details\nin **[AGENTS.md](AGENTS.md)** and **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.\n\n## License\n\nMIT — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:47:05.988Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "node_status",
+      "description": "Report the Emercoin node's version, block height, header height, peer\n    connections and sync state (`synced` true once block == header height).\n    Read-only, no sign-in required, no parameters. Call it first in a session to\n    confirm the node is healthy and fully synced before trusting `read_record` or\n    writing with `register_identity` / `store_memory`."
+    },
+    {
+      "name": "read_record",
+      "description": "Read one Emercoin NVS (Name-Value Storage) record by its full name — an\n    agent's identity (`ai:gh:<github_id>`) or a memory\n    (`ai:gh:<github_id>:mem:<hash>`) written by `register_identity` / `store_memory`.\n    Returns the confirmed on-chain record, or a `pending` one still in the mempool —\n    the `status` field ('confirmed' | 'pending') distinguishes them. Read-only, no\n    sign-in required; use `whoami` to find your own github_id. Returns null fields\n    for a name that does not exist."
+    },
+    {
+      "name": "whoami",
+      "description": "Report the current session's identity. Read-only, no sign-in required: an\n    anonymous session gets `{authenticated: false}` with a hint (not an error),\n    a signed-in one gets `{authenticated: true}` plus the GitHub-rooted id, login\n    and tariff. Call it to confirm who you are before `register_identity` /\n    `store_memory`; an anonymous caller must sign in (GitHub OAuth) first."
+    },
+    {
+      "name": "register_identity",
+      "description": "Create or rotate your on-chain identity record `ai:gh:<github_id>`, binding an\n    Emercoin address to your GitHub identity. Requires a signed-in session (OAuth)\n    and counts against the FREE-tier per-minute write limit. Run `whoami` first to\n    confirm you are signed in; anchor memories under this identity afterwards with\n    `store_memory`. Writes one NVS transaction paid by the gateway (you need no EMC);\n    the record reads back as `pending` at once and `confirmed` after the next block\n    (~10 min on average). Idempotent — calling again rebinds the address. Returns the\n    record name and the transaction id."
+    },
+    {
+      "name": "store_memory",
+      "description": "Anchor a memory/artifact on-chain as the NVS record\n    `ai:gh:<github_id>:mem:<content_hash>` — a tamper-evident fingerprint others can\n    verify later. Requires a signed-in session (OAuth) and counts against the\n    FREE-tier per-minute write limit. Writes one NVS transaction paid by the gateway;\n    reads back `pending` at once, `confirmed` after the next block (~10 min). Not\n    idempotent — each distinct hash is a new record. Register your identity first.\n    Returns the record name and the transaction id."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:47:06.110Z",
+  "toolsPreviewStatus": "ok"
+}

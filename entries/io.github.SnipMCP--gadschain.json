@@ -1,0 +1,58 @@
+{
+  "id": "io.github.SnipMCP/gadschain",
+  "title": "gadschain",
+  "description": "Google Ads MCP server. Read campaigns, manage budgets, pause/enable, add negative keywords.",
+  "summary": "Google Ads MCP server. Read campaigns, manage budgets, pause/enable, add negative keywords.",
+  "offersHint": "Google Ads MCP server. Read campaigns, manage budgets, pause/enable, add negative keywords. · Packages: pypi:gadschain",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "gadschain",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "gadschain",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/SnipMCP/gadschain",
+  "repository": {
+    "url": "https://github.com/SnipMCP/gadschain",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-23T21:45:49.078994Z",
+  "publishedAt": "2026-05-23T21:45:49.078994Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:34:44.889Z",
+    "sourceRepoAt": "2026-08-12T00:02:30.874Z",
+    "readmeAt": "2026-08-12T00:02:31.309Z",
+    "toolsAt": "2026-08-12T01:34:44.889Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/SnipMCP/gadschain",
+    "checkedAt": "2026-08-12T00:02:30.874Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/SnipMCP/gadschain/main/README.md",
+    "markdown": "<!-- mcp-name: io.github.SnipMCP/gadschain -->\n\n# GadsChain\n\nThe AI layer between your Google Ads account and your marketing decisions.\n\n**Battle-tested.** Six tools cover the daily-ops loop — campaign listing, search-term review, budget tuning, pause/enable, and negative-keyword grooming. All responses are strict Pydantic models. No raw protobuf reaches the agent.\n\n![GadsChain Demo](demo/gadschain_demo.gif)\n\n## ☁️ Moving to production?\n\nThe open-source server runs locally with your own API keys.\nFor hosted infrastructure with multi-account failover, SLA guarantees,\nand webhook alerts — [join the managed cloud waitlist](https://snipmcp.com).\n\n## The Problem\n\nRaw Google Ads API returns thousands of rows. One bad campaign structure bleeds budget silently. GadsChain reads, sanitizes, and acts on your ad data before waste compounds.\n\n## Installation\n\n```bash\ngit clone https://github.com/SnipMCP/gadschain.git\ncd gadschain\npip install -e \".[dev]\"\ncp .env.example .env\n```\n\nOr with Docker:\n\n```bash\ndocker-compose up --build\n```\n\n## Configuration\n\n```env\nGOOGLE_ADS_DEVELOPER_TOKEN=your_developer_token_here\nGOOGLE_ADS_CLIENT_ID=your_oauth_client_id_here\nGOOGLE_ADS_CLIENT_SECRET=your_oauth_client_secret_here\nGOOGLE_ADS_REFRESH_TOKEN=your_refresh_token_here\nGOOGLE_ADS_LOGIN_CUSTOMER_ID=1234567890   # MCC (manager), digits only\nGOOGLE_ADS_CUSTOMER_ID=1234567890         # default operating account\nGOOGLE_ADS_API_VERSION=v24\nLOG_LEVEL=INFO\n```\n\n## Usage\n\nThree example prompts to send to Claude (or any MCP-compatible agent):\n\n1. `Use get_campaigns to show me which campaigns are bleeding budget this month`\n2. `Run get_search_terms for the last 30 days and tell me which queries are wasting spend`\n3. `Add \"free\", \"cheap\", \"jobs\" as negative keywords to campaign 12345`\n\n### Run it in two terminals\n\n```bash\n# Tab 1 — start the MCP server\npython -m gadschain.server\n```\n\n```bash\n# Tab 2 — call a tool from a Python shell or your MCP client\n# Tool signatures:\n#   get_campaigns(customer_id=None)\n#   get_search_terms(customer_id=None, days=30, campaign_id=None)\n#   update_budget(campaign_id, new_budget_dollars, customer_id=None)\n#   pause_campaign(campaign_id, customer_id=None)\n#   enable_campaign(campaign_id, customer_id=None)\n#   add_negative_keywords(campaign_id, keywords, match_type=\"BROAD\", customer_id=None)\n```\n\n## How it works\n\nThree layers between raw Google Ads output and your model:\n\n```\nGoogle Ads API → [Fetch] → [Transform] → [Act] → MCP Tool → AI Agent\n                  GAQL      micros→$       safe\n                  queries   enum→str       mutations\n                            CTR→%          shared-budget guard\n```\n\n- **Fetch**: Targeted GAQL queries — only the columns the daily-ops loop actually needs. No `SELECT *`, no protobuf pagination footguns.\n- **Transform**: Currency micros divided to dollars, CTR scaled to percent, enums to human strings, every nested attribute lookup tolerates missing fields without crashing.\n- **Act**: Mutations route through guard rails — `REMOVED` blocked on status changes, shared budgets refused (`shared_budget_refused`), match types validated before any mutate call. The agent never gets an exception; it gets a structured `{\"error\": ..., \"message\": ...}` it can reason about.\n\n### Real numbers from a live Franka Pizzeria account (28-day window)\n\n```\nRAW GOOGLE ADS PAYLOAD          GADSCHAIN OUTPUT\n─────────────────────────────────────────────────\nImpressions:    3,389           Spend (28d):      $51.41\nClicks:         163             Conversions:      3 ($17.14 each)\nCTR:            4.81%           Conv. rate:       1.84%\nCost/click:     $0.32 avg       Surface:          Display Network waste\n                                                  identified on Fridays\n                                                  ($0.11 CPC vs $0.44 avg)\n```\n\nIn one read of a real account, GadsChain surfaced **$51.41 spent over 28 days for 3 conversions at $17.14 each** — a 1.84% conversion rate hidden inside a 4.81% CTR that looks healthy on paper. The Display Network was the silent culprit, with Friday clicks averaging **$0.11 CPC vs the $0.44 search-side average** — cheap junk traffic inflating CTR while contributing nothing to conversions. The agent saw it because the transformed payload made channel attribution legible instead of buried in protobuf.\n\n## Roadmap\n\n- Managed cloud tier (hosted, multi-tenant, webhook alerts)\n- Phase 2: ChatGPT REST shim (FastAPI surface over the same six tools)\n- Bid-strategy tuning tools (target CPA, target ROAS)\n- Anomaly alerts on cost-per-conversion drift\n\n## Contributing\n\nPRs welcome. Run `pytest` before submitting.\n",
+    "fetchedAt": "2026-08-12T00:02:31.309Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:34:44.889Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

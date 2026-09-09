@@ -1,0 +1,58 @@
+{
+  "id": "io.github.laser54/bot-factory",
+  "title": "Telegram Managed Bot Factory",
+  "description": "Provision owner-confirmed isolated Telegram Managed Bot instances.",
+  "summary": "Provision owner-confirmed isolated Telegram Managed Bot instances.",
+  "offersHint": "Provision owner-confirmed isolated Telegram Managed Bot instances. · Packages: pypi:telegram-managed-bot-factory",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "telegram-managed-bot-factory",
+    "version": "0.1.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "telegram-managed-bot-factory",
+      "version": "0.1.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/laser54/telegram-managed-bot-factory",
+  "repository": {
+    "url": "https://github.com/laser54/telegram-managed-bot-factory",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-09T08:02:13.877398Z",
+  "publishedAt": "2026-08-09T08:02:13.877398Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:17:07.791Z",
+    "sourceRepoAt": "2026-08-11T23:38:21.313Z",
+    "readmeAt": "2026-08-11T23:38:21.800Z",
+    "toolsAt": "2026-08-12T01:17:07.791Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/laser54/telegram-managed-bot-factory",
+    "checkedAt": "2026-08-11T23:38:21.313Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/laser54/telegram-managed-bot-factory/main/README.md",
+    "markdown": "# Telegram Managed Bot Factory\n\n[![PyPI release 0.2.2](https://img.shields.io/badge/PyPI%20release-0.2.2-blue.svg)](https://pypi.org/project/telegram-managed-bot-factory/0.2.2/)\n\n<!-- mcp-name: io.github.laser54/bot-factory -->\n\nA self-hosted MCP control plane that turns one user-owned Telegram manager bot\ninto isolated, useful child bots. Ask Hermes for a supported bot, confirm that\nspecific creation in Telegram, and the persistent Factory worker retrieves and\ncontains the child credential without exposing it to the model or MCP.\n\nVersion `0.2.2` is terminal-only: no Desktop bootstrap exists.\nEach PyPI version is immutable; install the pinned release below.\n\n## Why this matters\n\nCreating a bot manually involves a valuable credential and a real external side effect. Factory makes that workflow explicit: an agent can prepare a bounded request, but the owner approves creation in Telegram and the persistent worker receives the resulting credential outside the agent context.\n\n## What I built\n\nI designed the MCP/control-plane boundary, the durable worker lifecycle, credential isolation, request state and reconciliation rules, then packaged and released the tool for self-hosted use. The design deliberately does **not** claim exactly-once external effects: a crash-ambiguous result is surfaced for reconciliation instead of being blindly retried.\n\n## Install\n\nRequires Linux with `systemd --user`, Python 3.11–3.14, [uv](https://docs.astral.sh/uv/),\nHermes 0.18, and a separate Telegram bot with Bot Management Mode enabled.\n\n```bash\nuvx --refresh --from telegram-managed-bot-factory==0.2.2 bot-factory install-hermes\n```\n\nThe local installer first verifies `systemd --user` and enables verified user\nlingering so the worker survives SSH logout, then securely prompts once for the manager credential, enrolls the owner, installs and verifies\nthe persistent user service and a fresh worker heartbeat, registers the six-tool\nstdio server with Hermes, and verifies discovery. It creates no child bot.\n\n### Terminal-only first run\n\nRun the install command from an interactive SSH or console terminal on the same\nLinux host that will run the worker. It performs the complete setup in that terminal:\n\n1. install the exact Factory version as a persistent `uv tool` (the worker unit\n   never points at an evictable `uvx` cache);\n2. verify `systemd --user` and enable verified user lingering **before** requesting any credential;\n3. accept the manager token only through hidden terminal input;\n4. enroll the owner, install the service, require it to be active, and observe a\n   fresh worker heartbeat;\n5. register and verify the six-tool stdio server with Hermes; any Hermes confirmation stays visible in this terminal.\n\nThere is no GUI launcher and no unconfigured MCP bootstrap tool. Until this command\ncompletes, Factory MCP deliberately refuses to start. The token must never be pasted\ninto Hermes chat, an MCP argument, a shell command, or an environment variable.\n\n## How it works\n\n```text\nYou → Hermes → Factory MCP ──durable request──▶ persistent worker\n                  ▲                                │\n                  │ safe status                    │ Bot API\n                  │                                ▼\n                  └──── Telegram confirmation ◀─ manager bot\n                                                   │ child credential\n                                                   ▼\n                                         isolated child runtime\n```\n\nHermes and MCP are the non-secret control plane. The persistent worker alone\npolls the manager bot and retrieves credentials. Each child receives only its\nown credential and uses instance-local state.\n\n## Useful profiles\n\n| Profile | Use it for |\n|---|---|\n| `quick_faq` | A public menu of 3–8 local plain-text answers and contact text. |\n| `lead_inbox` | A privacy-noticed message form with owner notification and confirmed export/purge. |\n| `link_inbox` | Owner-only URLs and notes with `/list` and `/done`; URLs are never fetched. |\n\n`owner_echo` is also included as an owner-only isolation and health smoke test.\nProfiles cannot provide arbitrary code, executables, filesystem paths, HTML,\nagent tools, or remote fetches.\n\n## 60–90 second demo\n\nAfter installation, ask Hermes:\n\n> Create a quick FAQ bot named “Studio FAQ” with username `studio_faq_bot`.\n> Welcome: “Choose a question.” Add pricing, turnaround, and contact FAQs.\n\nHermes returns the Telegram creation link. Open it, approve once, then open the\nnew child and send `/start`, `/faq 1`, and `/health`. If provisioning is still\nin progress, ask Hermes for the request status. For the other profiles, submit\none test lead and try owner-only `/export confirm` then `/purge confirm`, or\nsave a URL in `link_inbox`, inspect `/list`, and use `/done 1`.\n\n## Platform and boundaries\n\n- Supported runtime: Linux with `systemd --user`; Ubuntu and WSL2 are tested.\n- Supported clients: Hermes 0.18 legacy stdio and tested MCP `2026-07-28` paths.\n- Not supported: Windows/macOS installation, hosted multi-tenancy, arbitrary\n  child code, automatic bot-account deletion, or bypassing Telegram approval.\n- The manager bot is user-owned and separate from the Hermes gateway bot.\n- Every child creation requires Telegram confirmation; this is not “one-click.”\n- The Official MCP Registry listing is metadata, not a security certification.\n\n## Security highlights\n\n- Tokens never enter MCP arguments/results, chat, CLI arguments, YAML, SQLite,\n  manifests, logs, traces, fixtures, or Git.\n- Secret directories are `0700`, files are `0600`, and child credentials travel\n  through an inherited anonymous file descriptor rather than argv or environment.\n- Child inbound update IDs and offsets are durable. Completed collisions are\n  no-ops; a crash-ambiguous side effect is quarantined for reconciliation, not\n  silently retried. External effects are not claimed to be exactly once.\n- Inputs are bounded and validated; profiles cannot execute or fetch supplied content.\n\nSee the [security policy](SECURITY.md) and [architecture](docs/ARCHITECTURE.md)\nfor the full boundary model.\n\n## Documentation and source\n\n- [Source and issues](https://github.com/laser54/telegram-managed-bot-factory)\n- [Specification](docs/SPECIFICATION.md) · [acceptance](docs/ACCEPTANCE.md) ·\n  [status](docs/STATUS.md) · [publication evidence](docs/evidence/RELEASE_0.1.0_2026-08-09.md)\n- [Changelog](CHANGELOG.md) · [contributing](CONTRIBUTING.md) · [security](SECURITY.md)\n- [Telegram Managed Bots](https://core.telegram.org/bots/features#managed-bots) ·\n  [Official MCP Registry entry](https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.laser54%2Fbot-factory)\n\n## Troubleshooting and removal\n\nCheck the worker and Hermes registration without sharing unreviewed journal output:\n\n```bash\nsystemctl --user status bot-factory-manager.service\nhermes mcp test bot-factory\n```\n\nOn WSL2, PID 1 must be `systemd`, and the distribution must remain running.\nUninstalling the service/package does not delete Factory data or revoke Telegram\nbots; review local XDG `bot-factory` directories and BotFather controls separately.\n",
+    "fetchedAt": "2026-08-11T23:38:21.800Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:17:07.791Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

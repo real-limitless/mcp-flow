@@ -1,0 +1,163 @@
+{
+  "id": "com.stagenth/file-relay",
+  "title": "stagenth · file-relay",
+  "description": "Cloud file relay: chunked uploads, folders, share links, inline text reads, ZIP packing.",
+  "summary": "Cloud file relay: chunked uploads, folders, share links, inline text reads, ZIP packing.",
+  "offersHint": "Cloud file relay: chunked uploads, folders, share links, inline text reads, ZIP packing. · Remote MCP (streamable-http) at https://stagenth.com/mcp/file-relay/ · Requires headers: Authorization",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://stagenth.com/mcp/file-relay/",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://stagenth.com/mcp/file-relay/",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <API_KEY> - create an API Key at https://www.stagenth.com/settings?tab=tokens",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "updatedAt": "2026-07-05T15:49:03.562386Z",
+  "publishedAt": "2026-07-05T15:49:03.562386Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <API_KEY> - create an API Key at https://www.stagenth.com/settings?tab=tokens",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:53:28.980Z",
+    "sourceRepoAt": "2026-08-12T00:26:10.096Z",
+    "readmeAt": "2026-08-12T01:53:28.980Z",
+    "toolsAt": "2026-08-12T00:26:10.096Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:26:10.096Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:53:28.980Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_user_quota",
+      "description": "查看当前用户的存储配额使用情况。"
+    },
+    {
+      "name": "list_files",
+      "description": "列出当前用户的文件 (默认递归遍历整个文件夹层级).\n\n        返回值同时附带 ``subfolders``(直接子文件夹列表) 与 ``has_subfolders``\n        提示, 帮助 AI 感知层级结构。若用户问“目录结构 / 树”, 直接调\n        ``get_folder_tree`` 拿到 ASCII 树状图更直观。\n\n        每个 item 都有 ``folder_path`` 字段标注它的实际归属, 同名文件不会\n        因递归而混淆。\n        "
+    },
+    {
+      "name": "search_files",
+      "description": "在当前用户的所有文件中搜索。"
+    },
+    {
+      "name": "get_file_info",
+      "description": "查询单个文件详情。file_id 与 file_uuid 提供其一即可。"
+    },
+    {
+      "name": "delete_file",
+      "description": "删除一个文件。"
+    },
+    {
+      "name": "delete_files",
+      "description": "批量删除文件（移入回收站，30 天内可在网页端恢复）。\n\n        逐个删除，单个失败不影响其余；返回每个 ID 的结果。\n        "
+    },
+    {
+      "name": "upload_file",
+      "description": "上传一个文件（base64 形式）到用户的文件中转站。\n\n        仅在用户明确要求把某个文件存入中转站 / 传输到其他设备 / 分享给他人时调用。\n        上传会占用用户的付费存储配额并按传输量扣 credit —— 不要主动上传\n        中间结果、日志、临时文件或用户没有要求保存的命令输出。\n\n        用 init + 单次分片 + complete 的方式复用现有服务。\n        适合中小文件（< 20MB）。超大文件请使用 Web 端分片上传。\n\n        新增 folder_path: 上传到指定文件夹, 默认根目录 \"/\"。\n        "
+    },
+    {
+      "name": "upload_init",
+      "description": "发起分片上传会话 (第 1 步 / 共 3 步)。\n\n        返回:\n          - instant=true 时, file 字段是已秒传的文件元数据, 直接用即可\n          - instant=false 时, 用 session_uuid + 服务端给的 chunk_size/total_chunks\n            逐片调 upload_chunk, 最后调 upload_complete。\n        "
+    },
+    {
+      "name": "upload_chunk",
+      "description": "上传单个分片 (第 2 步 / 共 3 步)。\n\n        可并发调用, 后端内部会记录已上传索引。网络抖动重试同一 chunk_index\n        安全 (服务端幂等写临时块)。\n        "
+    },
+    {
+      "name": "upload_complete",
+      "description": "合并所有分片 (第 3 步 / 共 3 步)。\n\n        两种路径:\n          - 直传 (推荐, shim 走这条): parts 带齐所有 (part_number, etag),\n            后端调 OSS CompleteMultipartUpload 服务端合并, 不耗 ECS 内存/带宽。\n          - 中转 (兼容老 shim / 网页端): 不传 parts, 从临时分片合并。\n\n        返回最终 file 元数据 (id, uuid, filename, size_bytes, sha256, ...).\n        "
+    },
+    {
+      "name": "download_file",
+      "description": "下载一个文件, 按 MCP spec 2025-06-18 的原生 content 类型返回。\n\n        根据文件 category 自动选择最合适的 MCP content block 类型:\n        - image (jpg/png/webp/...)  → content[0].type = \"image\"\n          (base64 + mimeType; AI 客户端原生显示图片, 多模态 LLM 可直接看图)\n        - audio (mp3/wav/...)       → content[0].type = \"audio\"\n          (base64 + mimeType; AI 客户端原生播放, 多模态模型可直接听)\n        - text/code + as_text=true  → content[0].type = \"text\"\n          (UTF-8 字符串; 适合代码/文档阅读分析)\n        - 其他所有 (video / document / archive / 大文本 / ...)\n                                    → content[0].type = \"resource_link\"\n          (15 分钟有效的 URL + mimeType + size; 签名自带, 无需 Authorization;\n           AI 用 bash curl 拉字节, 或提示用户点链接在浏览器下载)\n\n        【限速】所有分支都遵守会员档位的 download_speed_bytes_per_sec 设定:\n          - image / audio / text 分支走 astream_file(throttle=...) 读字节再 base64\n          - resource_link 分支: 链接指向 /api/v1/mcp-download/{token}, 目标路由\n            也用同一套 astream_file + throttle 算法 (详见 api/v1/mcp_download.py)\n\n        【零副作用】不再使用 share_service.create_share —— MCP 下载不会在你的\n        账号里留下任何公开分享记录, 不进分享面板, 不计分享审计。\n        "
+    },
+    {
+      "name": "create_share_link",
+      "description": "为文件生成一个分享链接。"
+    },
+    {
+      "name": "download_shared_file",
+      "description": "通过分享链接下载文件（无需是文件拥有者）。\n\n        适合别人发给你一个 /s/<uuid> 链接,你想让 AI 直接读取其内容的场景。\n        不会占用你的存储配额。下载计入分享者的月流量。\n        "
+    },
+    {
+      "name": "import_shared_file",
+      "description": "把别人分享的文件导入到当前登录用户的文件列表。\n\n        等价于「下载后再上传」,但服务端直接从源文件拷贝字节流、仍走配额/白名单/秒传检查,\n        所以比本地往返更快、也不消耗带宽。\n        下载量计入分享者的月流量;存储占用计入当前用户的配额。\n        "
+    },
+    {
+      "name": "list_folders",
+      "description": "列出文件夹 (类似 ``ls -d`` 只看目录)。\n\n        路径不存在抛 folder_not_found。要列文件用 list_files。\n        "
+    },
+    {
+      "name": "create_folder",
+      "description": "创建文件夹 (类似 ``mkdir -p``)。\n\n        幂等: 如果路径已经存在, 直接返回该文件夹元数据, 不抛错。\n        "
+    },
+    {
+      "name": "move_file",
+      "description": "把文件挪到指定文件夹 (类似 ``mv file /target/dir/``)。\n\n        OSS 字节不动, 只改逻辑路径, 操作几毫秒完成。\n        "
+    },
+    {
+      "name": "move_folder",
+      "description": "移动整个文件夹 (类似 ``mv /工作/项目A /归档/``)。\n\n        会递归更新所有后代的逻辑路径。OSS 字节不动。\n        "
+    },
+    {
+      "name": "rename_folder",
+      "description": "改名 (不动 parent)。"
+    },
+    {
+      "name": "delete_folder",
+      "description": "删除文件夹 (类似 ``rmdir`` 或 ``rm -r``)。\n\n        内部 ready/locked 文件按\"软删进回收站\"处理, 30 天后才物删 OSS 字节;\n        用户可在该窗口期内通过回收站恢复。\n        "
+    },
+    {
+      "name": "delete_folders",
+      "description": "批量删除文件夹 (delete_folder 的批量版)。\n\n        逐个删除, 单个失败不影响其余; 返回每个路径的结果。\n        文件按软删进回收站处理, 30 天内可在网页端恢复。\n        "
+    },
+    {
+      "name": "get_folder_tree",
+      "description": "以 ASCII 树状图返回用户的文件夹/文件层级 (推荐: 用户问“目录结构”时用这个).\n\n        返回:\n          {\n            \"root_path\": \"/\",\n            \"tree\": \"ASCII 字符串\",\n            \"stats\": {\"folders\": N, \"files\": M, \"truncated\": bool}\n          }\n        "
+    },
+    {
+      "name": "scrape_url",
+      "description": "抓取一个公开网页，返回干净的 Markdown（供 AI 阅读/总结/提取）。\n\n        只抓公开网页，禁止内网/保留地址；不生成任何内容，只做抓取与格式转换。\n        "
+    },
+    {
+      "name": "file_read",
+      "description": "直接返回文本类文件的内容（txt/md/csv/json/日志/代码等），AI 免下载即读。\n\n        二进制文件（图片/压缩包/Office 等）请用 download_file；超长文本按 max_bytes 截断并标记。\n        "
+    },
+    {
+      "name": "zip_files",
+      "description": "把多个文件打包成一个 ZIP，存入文件中转站并返 15 分钟下载 URL。\n\n        单包上限 50 个文件 / 200MB 原始体积；同名文件自动加序号。\n        "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:26:10.096Z",
+  "toolsPreviewStatus": "ok"
+}

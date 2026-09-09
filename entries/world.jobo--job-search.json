@@ -1,0 +1,85 @@
+{
+  "id": "world.jobo/job-search",
+  "title": "Jobo Job Search",
+  "description": "Search a live index of millions of open jobs from employer career sites and 100+ ATS platforms.",
+  "summary": "Search a live index of millions of open jobs from employer career sites and 100+ ATS platforms.",
+  "offersHint": "Search a live index of millions of open jobs from employer career sites and 100+ ATS platforms. · Remote MCP (streamable-http) at https://jobs-mcp.jobo.world/mcp · Packages: npm:jobo-job-search-mcp · Env vars: PORT",
+  "version": "1.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://jobs-mcp.jobo.world/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://jobs-mcp.jobo.world/mcp"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "jobo-job-search-mcp",
+    "version": "1.1.0",
+    "transport": "streamable-http",
+    "environmentVariables": [
+      {
+        "name": "PORT",
+        "description": "Port for the local HTTP server (default 3002)."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "jobo-job-search-mcp",
+      "version": "1.1.0",
+      "transport": "streamable-http",
+      "environmentVariables": [
+        {
+          "name": "PORT",
+          "description": "Port for the local HTTP server (default 3002)."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "PORT",
+      "description": "Port for the local HTTP server (default 3002)."
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://jobo.world/mcp",
+  "sourceUrl": "https://github.com/JoboAI/jobo-mcp",
+  "repository": {
+    "url": "https://github.com/JoboAI/jobo-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-03T10:49:44.65363Z",
+  "publishedAt": "2026-08-03T10:49:44.65363Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:48:30.744Z",
+    "sourceRepoAt": "2026-08-11T23:05:20.094Z",
+    "readmeAt": "2026-08-11T23:05:21.013Z",
+    "toolsAt": "2026-08-12T00:48:30.744Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/JoboAI/jobo-mcp",
+    "checkedAt": "2026-08-11T23:05:20.094Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/JoboAI/jobo-mcp/main/README.md",
+    "markdown": "# Jobo Job Search MCP Server\n\nRemote MCP server exposing Jobo's live job index — millions of listings collected from employer career\nsites and 100+ applicant tracking systems — to LLM clients.\n\nFull client setup (Claude, ChatGPT, Cursor, Codex CLI) and the tool reference:\n[jobo.world/docs/connectors/mcp](https://jobo.world/docs/connectors/mcp).\n\n- **Transport:** Streamable HTTP, single `/mcp` endpoint, stateless. Serves MCP spec **2026-07-28**\n  natively and every 2025-era client through the built-in legacy fallback (SDK v2\n  `createMcpHandler`, one factory for both eras).\n- **Auth:** OAuth 2.1. This is a Resource Server; the Authorization Server is the Jobo API. Clients log in\n  with their Jobo account — no API key copy-paste. Required scope: `jobs:read`.\n\n## Self-hosting\n\nThe hosted deployment is `https://jobs-mcp.jobo.world`. To run your own copy instead:\n\n```bash\nnpx jobo-job-search-mcp\n```\n\nStarts the Streamable HTTP server on `$PORT` (default `3002`); point your client at\n`http://localhost:3002/mcp`. This changes *where* the gateway runs, not its auth model — it's still an\nOAuth resource server gated on Jobo account sign-in, since the upstream API validates every request against\nthe Authorization Server regardless of which copy of the gateway forwarded it. Set `MCP_RESOURCE_URL` to\nmatch whatever host you actually serve it from — see [Configuration](#configuration) below.\n\n## Why this is a separate server\n\n`Jobo.Enterprise/Jobo.Enterprise.Mcp` was deliberately re-scoped to analytics-only in v4, which removed\n`search_jobs`, `get_job_details`, `list_filters`, `search` and `fetch`. Adding job tools back there would\nundo that decision, so this is a second server against the same External API.\n\nThe `/api/mcp/jobs/*` endpoints were never removed — `McpController.cs` still serves them, and its own\ncomment notes the GET search is \"convenient for the canonical ChatGPT `search(query)` tool\". This server\nis a thin OAuth-forwarding gateway in front of endpoints that were built for it.\n\nThe immediate payoff: **`search` + `fetch` restore Deep Research compatibility.** Without that canonical\npair a server cannot be used as a ChatGPT Deep Research connector at all.\n\n## Tools\n\n| Tool | Purpose |\n| --- | --- |\n| `search` | Canonical Deep Research contract: `{query}` → `{results: [{id, title, url}]}`. |\n| `fetch` | Canonical Deep Research contract: `{id}` → `{id, title, text, url, metadata}`. |\n| `search_jobs` | Structured search — location, work model, employment type, experience level, source, skills, industries, salary, date, facets, paging. |\n| `get_job_details` | Full listing for clients not using the Deep Research contract. |\n| `list_filters` | Accepted values for every filter, with live counts. |\n\n`search`/`fetch` deliberately take the minimum arguments the contract allows. Anything with structure\nshould go through `search_jobs`, where filters are real parameters rather than hopeful free text.\n\n### What `fetch` returns\n\n`text` is self-contained prose, because Deep Research reads it and never opens the URL. It is built from\nthe AI-extracted fields (responsibilities, qualifications, benefits, compensation) in preference to the\nraw employer HTML, which is boilerplate-heavy and frequently longer than it is useful. The raw description\nis available via `get_job_details` with `include_description: true`.\n\n## Auth model\n\nThe server is a gateway, not the cryptographic authority. The C# External API validates the JWT with\nOpenIddict against the same issuer, audience and `jobs:read` scope; verifying the signature a second time\nhere would only let the two validators drift. So this does the minimum a gateway must:\n\n1. Require a Bearer token; absent → `401` with the resource-metadata challenge, starting the OAuth flow.\n2. Cheaply reject an already-expired token (decode `exp`, no signature check) so long-lived clients\n   refresh rather than forwarding a dead token.\n3. Attach the raw current-request token to `req.auth`, so every tool call forwards the token the client\n   just sent — never one captured at session-initialize.\n\n## Stateless by design\n\nNo session map. That map lived in process memory, so every restart or redeploy stranded clients with\n\"No active session\", and it pinned the deployment to a single replica. Redis cannot back it either: the\nvalue is a live transport object holding open streams. Each POST is served by a fresh server and transport\nwith no `mcp-session-id` issued.\n\n## Configuration\n\n| Variable | Default | Notes |\n| --- | --- | --- |\n| `JOBO_API_URL` | `https://connect.jobo.world` | Upstream External API. |\n| `MCP_RESOURCE_URL` | `https://jobs-mcp.jobo.world` | OAuth audience. **Must differ from the analytics server's `mcp.jobo.world`.** |\n| `OAUTH_AUTH_SERVER_URL` | `https://enterprise.jobo.world` | Authorization Server. |\n| `PORT` | `3002` | Analytics server uses 3001. |\n\n## Development\n\n```bash\nnpm install && npm run build && npm test\n```\n\n```bash\nnpm run dev\n```\n\n### Verifying without credentials\n\n`node --test dist/format.test.js` covers the mapping logic, including that `search` and `fetch` return\nexactly the shapes Deep Research requires. For the wire path, point the server at a stub:\n\n```bash\nJOBO_API_URL=http://localhost:3098 PORT=3097 MCP_RESOURCE_URL=http://localhost:3097 node dist/index.js\n```\n\nThen `tools/list` and `tools/call` over HTTP with any JWT-shaped bearer whose `exp` is in the future —\nthe gateway forwards it and the stub answers. A real token is only needed against the live API.\n\n## Registry listing\n\nPublished to the official MCP Registry as **`world.jobo/job-search`** (the `mcpName` in `package.json`;\n`server.json` in this directory is the registry manifest). Publishing is automated: the `mcp-v*` tag\nworkflow publishes npm first, then pushes `server.json` to the registry under the DNS-TXT-verified\n`world.jobo/*` namespace — see `../RELEASING.md`. There is no review queue and aggregators poll roughly\nhourly. Note the official registry has **no per-server web page** by design — it is a metadata API for\naggregators. The downstream surfaces differ: PulseMCP emits a dofollow link, Glama and mcp.so are\n`nofollow`. Manual directory submissions (Claude, ChatGPT, aggregator claims) live in\n`../MCP-DISTRIBUTION.md`.\n",
+    "fetchedAt": "2026-08-11T23:05:21.013Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:48:30.744Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid_request\",\"error_description\":\"Bearer token required\"}",
+  "toolsPreviewStatus": "auth_required"
+}

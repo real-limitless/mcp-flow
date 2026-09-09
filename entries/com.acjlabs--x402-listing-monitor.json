@@ -1,0 +1,57 @@
+{
+  "id": "com.acjlabs/x402-listing-monitor",
+  "title": "x402 Bazaar Listing Monitor",
+  "description": "Checks x402 Bazaar resource listings against the public discovery catalog and flags drops.",
+  "summary": "Checks x402 Bazaar resource listings against the public discovery catalog and flags drops.",
+  "offersHint": "Checks x402 Bazaar resource listings against the public discovery catalog and flags drops. · Remote MCP (streamable-http) at https://x402-listing-monitor.acjlabs.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://x402-listing-monitor.acjlabs.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://x402-listing-monitor.acjlabs.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://acjlabs.com/products",
+  "sourceUrl": "https://github.com/acjlabs/x402-listing-monitor",
+  "repository": {
+    "url": "https://github.com/acjlabs/x402-listing-monitor",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-02T04:54:40.413752Z",
+  "publishedAt": "2026-08-02T04:54:40.413752Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:39:31.184Z",
+    "sourceRepoAt": "2026-08-12T00:39:31.184Z",
+    "readmeAt": "2026-08-12T00:39:31.767Z",
+    "toolsAt": "2026-08-12T00:39:32.049Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/acjlabs/x402-listing-monitor",
+    "checkedAt": "2026-08-12T00:39:31.184Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/acjlabs/x402-listing-monitor/main/README.md",
+    "markdown": "# x402 Bazaar Listing Monitor\n\nScheduled watchdog for x402 sellers: polls Coinbase CDP's public Bazaar discovery catalog for the\nresources you register and alerts when one drops out or comes back — instead of finding out from a\nrevenue dip days later.\n\nSellers who settle real x402 payments have no reliable way to confirm their resources stay\ndiscoverable in CDP's Bazaar catalog. The discovery API has a recurring, publicly-reported class of\nbug where a resource silently stops appearing despite confirmed settlements — sellers currently catch\nthis only by manually re-running `GET /discovery/merchant?payTo=<address>` on their own schedule.\n\nThis service automates that check: register your `payTo` address and the resource URLs you serve, and\na scheduled poll diffs them against the live discovery catalog. State changes are recorded with\ntimestamps, so you have a durable history you can cite if you need to escalate to CDP support.\n\n## MCP server\n\n**Endpoint:** `https://x402-listing-monitor.acjlabs.com/mcp` (streamable HTTP)\n\nOne tool — no signup, no API key:\n\n### `check_listing_health`\n\nChecks whether a seller's x402 Bazaar resources are currently listed under a given `payTo` address in\nthe public discovery catalog. Runs the same per-seller diff as the scheduled poller, on demand, for\nany `payTo`/resources pair — registered here or not.\n\n| parameter | type | notes |\n| --- | --- | --- |\n| `payTo` | string | `0x`-prefixed, 40 hex characters |\n| `resources` | string[] | 1–200 `http(s)` URLs |\n\nReturns each resource flagged as listed or missing, as JSON.\n\n## HTTP API\n\nBase URL: `https://x402-listing-monitor.acjlabs.com`\n\n| method | path | purpose |\n| --- | --- | --- |\n| `GET` | `/health` | liveness check |\n| `POST` | `/register` | register a seller for scheduled polling |\n| `GET` | `/status` | read your own current status and recent alerts |\n| `POST` | `/poll` | run a poll immediately (counts only, see below) |\n\n### `POST /register`\n\n```json\n{\n  \"sellerId\": \"your-slug\",\n  \"payTo\": \"0x0000000000000000000000000000000000000000\",\n  \"resources\": [\"https://api.example.com/your-resource\"],\n  \"alertWebhookUrl\": \"https://example.com/hook\"\n}\n```\n\n- `sellerId` — 2–64 characters: letters, digits, `-`, `_`\n- `payTo` — `0x`-prefixed, 40 hex characters\n- `resources` — 1–200 `http(s)` URLs, no duplicates\n- `alertWebhookUrl` — optional. A public `https` URL; alerts on your plan are `POST`ed to it. IP-literal,\n  loopback, `.internal`/`.local` hosts and URLs carrying credentials are rejected.\n- `alertEmail` — optional, and **stored but not yet used**: email delivery is not enabled (see Status).\n\nBoth contact fields are optional and registration succeeds without either. Supply neither and nothing is\npushed to you — use `GET /status` below to check on your listings yourself.\n\nResources are watched by self-declaration: the service checks what you tell it to check. A `sellerId`\nthat already exists is rejected rather than overwritten.\n\n### `GET /status`\n\n```\nGET /status?sellerId=your-slug&payTo=0x0000000000000000000000000000000000000000\n```\n\nReturns your own record: every resource you registered with its current status (`listed`, `missing`,\n`payTo-mismatch`, or `null` if no poll has reached it yet), its consecutive-miss count and last-checked\ntimestamp, plus your most recent alerts and whether each was delivered.\n\nBoth `sellerId` and `payTo` are required and must match your registration; anything else returns `404`.\nThis is a knowledge check, not authentication — the data it returns is a diff against a public catalog.\nYour `alertEmail` and `alertWebhookUrl` are never echoed back, only reported as set or not set.\n\n### `POST /poll`\n\nRuns the same poll the six-hourly cron runs, immediately, for every registered seller. Takes no body\nand returns counts only:\n\n```json\n{ \"polled\": 2, \"ok\": 2, \"failed\": 0 }\n```\n\nIt reports nothing about any individual seller. This endpoint is unauthenticated, so anything it\nreturned would be public — read your own state with `GET /status` instead.\n\nOnly one poll runs at a time. If a poll is already in progress — whether someone else triggered it or\nthe six-hourly cron did — this returns `409` and does no work:\n\n```json\n{ \"status\": \"already_running\" }\n```\n\nThat is not an error to retry through: the poll you asked for is already happening, and retrying cannot\nmake its alerts arrive sooner or arrive twice — the lock is what stops two concurrent polls from sending\nyou the same alert. It is a guarantee against duplication, not a delivery guarantee: an alert is always\nrecorded before it is sent, and if the send does not land it stays recorded and undelivered rather than\nbeing retried. Wait, then read `GET /status`, which shows each recent alert and whether it was\ndelivered.\n\nPer-IP rate limits apply to `/register`, `/status`, `/poll` and MCP tool calls.\n\n### Webhook payload\n\n```json\n{\n  \"service\": \"x402-listing-monitor\",\n  \"sellerId\": \"your-slug\",\n  \"checkedAt\": \"2026-08-07T00:00:00.000Z\",\n  \"alerts\": [\n    {\n      \"type\": \"listing-dropped\",\n      \"resource\": \"https://api.example.com/your-resource\",\n      \"detail\": \"was listed, now missing from discovery\",\n      \"message\": \"⚠️ Listing dropped: https://api.example.com/your-resource — was listed, now missing from discovery\"\n    }\n  ]\n}\n```\n\n`checkedAt` is the poll's timestamp, matching `created_at` on the same alerts in `GET /status`. Any 2xx\ncounts as delivered. Redirects are not followed — a `3xx` is treated as a failed delivery, so register\nthe final URL. Failed deliveries are not retried; the alert stays in your history marked undelivered.\n\n## Polling and alerts\n\nThe scheduled poll runs **every 6 hours**. Each run diffs your registered resources against the live\ndiscovery catalog and records state changes with timestamps — a history, not just a point-in-time\nanswer.\n\n| alert type | tier |\n| --- | --- |\n| resource dropped out of the catalog | free |\n| still missing after an indexing-lag grace period | free |\n| resource recovered | free |\n| registered payTo missing from the catalog entry | paid |\n| catalog quality/rank drop | paid |\n\n\"Still missing\" fires **once per miss streak**, from the first poll at which a resource has been absent\nfor three or more consecutive polls — long enough that indexing lag is ruled out. It does not repeat\nevery six hours while the resource stays missing; the current state is always readable from\n`GET /status`.\n\nThree consecutive misses is the earliest it can fire, not the only point at which it can. A resource\nthat is already past three consecutive misses **and has not yet been alerted for that streak** raises\nits one alert on the next poll. If the resource recovers and later drops out again, that is a new\nstreak and it alerts again.\n\nPaid tiers also tighten the polling interval.\n\n## Status\n\nEarly release. The service is live and polling, and the recorded alert history is authoritative for\nwhat it has observed.\n\n- **Webhook delivery is enabled.** Register an `https` `alertWebhookUrl` and alerts on your plan are\n  `POST`ed to it when a check produces one.\n- **Email alerts are not enabled yet.** `alertEmail` is stored against your registration and nothing is\n  sent to it.\n- **No contact is required.** `GET /status` gives you the same information on demand.\n\n## Source availability & support\n\nThis repository hosts the documentation for the hosted service. The service implementation is not\nopen source. Bug reports and feature requests are welcome in this repo's Issues; you can also reach us\nat <contact@acjlabs.com>.\n\n## Source availability & support\n\nThis repository hosts the documentation for the hosted service. The service implementation is not open source. Bug reports and feature requests are welcome in this repo's Issues; you can also reach us at <contact@acjlabs.com>.\n",
+    "fetchedAt": "2026-08-12T00:39:31.767Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_listing_health",
+      "description": "Checks whether a seller's x402 Bazaar resources are currently listed under the given payTo address in the public discovery catalog. Flags each resource as listed or missing — the same per-seller diff the registered poller runs on a schedule, run once on demand for a payTo/resources pair whether or not it has been registered with this service."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:39:32.049Z",
+  "toolsPreviewStatus": "ok"
+}

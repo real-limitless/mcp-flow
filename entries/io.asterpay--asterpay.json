@@ -1,0 +1,70 @@
+{
+  "id": "io.asterpay/asterpay",
+  "title": "AsterPay — EUR Settlement for AI Agents",
+  "description": "EUR settlement + trust for AI agent commerce: budgets, KYA, merchant discovery. 22 tools.",
+  "summary": "EUR settlement + trust for AI agent commerce: budgets, KYA, merchant discovery. 22 tools.",
+  "offersHint": "EUR settlement + trust for AI agent commerce: budgets, KYA, merchant discovery. 22 tools. · Remote MCP (streamable-http) at https://mcp-api.asterpay.io/mcp",
+  "version": "2.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp-api.asterpay.io/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp-api.asterpay.io/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://asterpay.io",
+  "sourceUrl": "https://github.com/AsterPay/erc8183-kya-hook",
+  "repository": {
+    "url": "https://github.com/AsterPay/erc8183-kya-hook",
+    "source": "github",
+    "subfolder": "mcp-server"
+  },
+  "updatedAt": "2026-07-04T15:16:54.724294Z",
+  "publishedAt": "2026-07-04T15:16:54.724294Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:48:51.109Z",
+    "sourceRepoAt": "2026-08-12T00:19:41.235Z",
+    "readmeAt": "2026-08-12T00:19:41.677Z",
+    "toolsAt": "2026-08-12T00:19:41.844Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/AsterPay/erc8183-kya-hook",
+    "checkedAt": "2026-08-12T00:19:41.235Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/AsterPay/erc8183-kya-hook/main/README.md",
+    "markdown": "# AsterPay KYA Hook — ERC-8183 Integration\n\n**Know Your Agent (KYA) verification gate for Agentic Commerce jobs.**\n\nThis hook implements the [`IACPHook`](https://eips.ethereum.org/EIPS/eip-8183) interface to enforce AsterPay's 5-layer Trust Framework before AI agents can participate in ERC-8183 commerce jobs.\n\n## How It Works\n\n```\nClient creates job with hook = AsterPayKYAHook\n                    │\n                    ▼\n     ┌──── setProvider() ────┐\n     │  beforeAction:        │\n     │  ✓ Sanctions Oracle   │\n     │  ✓ Trust Score ≥ N    │\n     │  ✓ Score freshness    │\n     └───────────────────────┘\n                    │\n                    ▼\n     ┌──────── fund() ───────┐\n     │  beforeAction:        │\n     │  ✓ Same KYA checks    │\n     │  ✓ Cache result       │\n     └───────────────────────┘\n                    │\n         provider works...\n                    │\n     ┌─────── complete() ────┐\n     │  afterAction:         │\n     │  → ReputationPositive │\n     └───────────────────────┘\n```\n\n## Architecture\n\n| Contract | Purpose |\n|----------|---------|\n| `AsterPayKYAHook.sol` | Main hook — sanctions + trust score gate |\n| `IACPHook.sol` | ERC-8183 hook interface |\n| `IAgenticCommerce.sol` | Read-only ACP job interface |\n| `IAgentTrustScore.sol` | AsterPay trust score oracle interface |\n| `ISanctionsOracle.sol` | Chainalysis oracle interface |\n\n## Checks Performed\n\n1. **Sanctions screening** — Chainalysis Oracle on Base (OFAC, EU, UN). Fail-closed if oracle unreachable.\n2. **Trust Score** — Agent must have score ≥ `minTrustScore` (default: 20 = verified tier)\n3. **Score freshness** — Score must be updated within `maxScoreAge` seconds (default: 3600)\n4. **Tier validation** — Agent must not be in \"blocked\" tier\n\n## Quick Start\n\n### Deploy\n\n```bash\ncd contracts/erc8183-kya-hook\n\n# Install Foundry deps\nforge install\n\n# Deploy to Base Sepolia\nACP_ADDRESS=0x... \\\nTRUST_ORACLE_ADDRESS=0x... \\\nforge script script/Deploy.s.sol:DeployKYAHook \\\n  --rpc-url base_sepolia --broadcast --verify\n```\n\n### Test\n\n```bash\nforge test -vvv\n```\n\n### TypeScript SDK\n\n```typescript\nimport { createKYAHookSDK } from './ts-sdk/kya-hook';\nimport { ethers } from 'ethers';\n\nconst provider = new ethers.JsonRpcProvider('https://mainnet.base.org');\nconst signer = new ethers.Wallet(PRIVATE_KEY, provider);\n\nconst sdk = createKYAHookSDK(HOOK_ADDRESS, ACP_ADDRESS, signer);\n\n// Pre-flight check\nconst result = await sdk.wouldPass('0xAgentWallet...');\nconsole.log(result);\n// { passes: true, score: 42, tier: 'verified', sanctionsClear: true }\n\n// Create a KYA-protected job\nconst jobId = await sdk.createJobWithKYA({\n  provider: '0xAgentWallet...',\n  evaluator: '0xEvaluator...',\n  expiredAt: Math.floor(Date.now() / 1000) + 86400,\n  description: 'Translate document EN→FR',\n});\n\n// Fund triggers KYA check automatically\nawait sdk.fundJob(jobId, 100n);\n```\n\n## Configuration\n\n| Parameter | Default | Description |\n|-----------|---------|-------------|\n| `minTrustScore` | 20 | Minimum score (0-100). 20 = verified tier |\n| `maxScoreAge` | 3600 | Max seconds since last score update |\n| `sanctionsEnabled` | true | Enable Chainalysis screening |\n\nAll configurable by contract owner via `setMinTrustScore()`, `setMaxScoreAge()`, `setSanctionsEnabled()`.\n\n## Events\n\n| Event | When | Use |\n|-------|------|-----|\n| `KYAVerified` | Agent passes all checks | Index verified agents |\n| `KYABlocked` | Agent fails any check | Alert, compliance logging |\n| `ReputationPositive` | Job completed | Feed into ERC-8004 reputation |\n| `ReputationNegative` | Job rejected | Feed into ERC-8004 reputation |\n\n## License\n\nMIT (hook contract) / CC0 (interfaces aligned with ERC-8183 and EIP-Agent Trust Score)\n",
+    "fetchedAt": "2026-08-12T00:19:41.677Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_agent_trust",
+      "description": "Know Your Agent (KYA): score how trustworthy an AI agent or wallet is before paying or transacting with it. Returns a trust score 0-100, tier (Open/Verified/Trusted/Enterprise) and components (ERC-8004 identity, sanctions screening, wallet age/activity). Input: an Ethereum address. Free, read-only."
+    },
+    {
+      "name": "settlement_estimate",
+      "description": "Estimate converting a USDC amount to EUR via AsterPay's EUR off-ramp. Returns the exchange rate, AsterPay fee (0.5% + €0.10 on the EU rail), net EUR amount and SEPA Instant timing. Input: a USDC amount. Free, read-only — no payment is made."
+    },
+    {
+      "name": "market_rates",
+      "description": "Get current reference market rates used by AsterPay (e.g. USDC, EURC, major crypto rates and FX). No input. Free, read-only."
+    },
+    {
+      "name": "merchant_resolve",
+      "description": "Resolve a European business to its verified payment endpoint (IBAN/BIC) via AsterPay's Merchant Payment Endpoint (MPE), from provable sources only. Provide EITHER a merchant_id OR a business_id together with its business_id_type (vat, y_tunnus, company_number, lei, duns). Tip: business_id_type 'demo' (or business_id 'FI-DEMO-0001') returns a safe demo merchant. Free, read-only — resolution does not move money."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:19:41.844Z",
+  "toolsPreviewStatus": "ok"
+}

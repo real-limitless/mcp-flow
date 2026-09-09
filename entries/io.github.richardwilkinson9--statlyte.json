@@ -1,0 +1,59 @@
+{
+  "id": "io.github.richardwilkinson9/statlyte",
+  "title": "statlyte — live LLM pricing",
+  "description": "Live LLM pricing, context windows and model ids, read from each vendor's own page every 3 hours.",
+  "summary": "Live LLM pricing, context windows and model ids, read from each vendor's own page every 3 hours.",
+  "offersHint": "Live LLM pricing, context windows and model ids, read from each vendor's own page every 3 hours. · Packages: npm:statlyte",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "statlyte",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "statlyte",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://statlyte.com",
+  "sourceUrl": "https://github.com/richardwilkinson9/statlyte-data",
+  "repository": {
+    "url": "https://github.com/richardwilkinson9/statlyte-data",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-08T22:08:16.975212Z",
+  "publishedAt": "2026-08-08T22:08:16.975212Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:10.026Z",
+    "sourceRepoAt": "2026-08-11T23:24:15.542Z",
+    "readmeAt": "2026-08-11T23:24:16.336Z",
+    "toolsAt": "2026-08-12T01:04:10.027Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/richardwilkinson9/statlyte-data",
+    "checkedAt": "2026-08-11T23:24:15.542Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/richardwilkinson9/statlyte-data/master/README.md",
+    "markdown": "# statlyte\n\n**Live pricing, context windows and identifiers for every major LLM API — so you can stop hardcoding a model table that goes stale.**\n\nEvery app that touches an LLM ends up with something like this pasted into it:\n\n```js\nconst PRICES = {\n  'gpt-4o': { input: 2.5, output: 10 },\n  'claude-3-5-sonnet': { input: 3, output: 15 },\n  // …written once, wrong within a month\n};\n```\n\nThen a model is retired, a new one lands, an introductory rate expires, and your cost\ndashboard is quietly lying to you. This package fetches the current numbers instead.\n\n- **156 models across 13 providers** — Anthropic, OpenAI, Google, xAI, DeepSeek, Mistral, Together AI, Voyage AI, Groq, Cohere, Fireworks AI, Deepgram, AssemblyAI\n- Read from each vendor's **own published pricing page**, every three hours, with the source URL recorded\n- **Zero dependencies.** Node, Bun, Deno, Cloudflare Workers, browser\n- Bundled snapshot fallback, so a flaky network never throws in your request path\n- **MIT.** The data is free and the API needs no key\n\n```bash\nnpm i statlyte\n```\n\n## Use it\n\n```js\nimport { getModel, costOf, rankByCost, scheduledChanges } from 'statlyte';\n\n// What does this actually cost me?\nawait costOf('claude-sonnet-5', { input: 12_000, output: 800 });\n// => 0.032\n\n// Look up by statlyte id or the vendor's own API id\nconst m = await getModel('gpt-5-mini');\nm.contextWindow;        // 400000\nm.prices.input;         // 0.25  (USD per million tokens)\nm.prices.cache_read;    // 0.025\n\n// Cheapest model for a real monthly workload\nconst ranked = await rankByCost({ inputPerMonth: 620e6, outputPerMonth: 210e6 });\nranked[0].name;         // cheapest first\nranked[0].monthlyCost;  // USD/month\n\n// Price rises vendors have already announced\nawait scheduledChanges();\n// [{ name: 'Claude Sonnet 5', effectiveOn: '2026-09-01',\n//    from: { input: 2, output: 10 }, to: { input: 3, output: 15 },\n//    reason: 'Introductory pricing ends' }]\n```\n\nEverything is cached in-process for six hours. Pass `{ offline: true }` to any call to\nuse only the bundled snapshot and never touch the network.\n\nAudio/transcription models (Deepgram, OpenAI Whisper/TTS) aren't priced per token — they carry\n`m.nonTokenPrice` (`{ unit: 'per_minute' | 'per_million_characters', amount }`) instead, and\n`m.prices` is `{}`. `costOf()` throws a clear error rather than silently returning 0 if you call\nit on one of these; check `m.nonTokenPrice` first, or filter on `m.prices.input != null`.\n\n## Fail your build when a price is about to change\n\nThe genuinely useful trick. `scheduledChanges()` returns increases vendors have announced\nbut not yet applied — so you can find out at build time rather than on the invoice:\n\n```js\n// scripts/check-model-costs.mjs\nimport { scheduledChanges } from 'statlyte';\n\nconst MODELS_WE_USE = ['anthropic/claude-sonnet-5', 'openai/gpt-5-mini'];\nconst soon = (await scheduledChanges())\n  .filter((c) => MODELS_WE_USE.includes(c.id))\n  .filter((c) => new Date(c.effectiveOn) - Date.now() < 60 * 86400_000);\n\nif (soon.length) {\n  console.error('Price change coming:');\n  for (const c of soon) {\n    console.error(`  ${c.name} on ${c.effectiveOn}: ` +\n      `in $${c.from.input}→$${c.to.input}, out $${c.from.output}→$${c.to.output} per MTok`);\n  }\n  process.exit(1);\n}\n```\n\n## MCP server\n\nAn assistant's training data goes stale on prices within weeks, and a guessed number is\nworse than no number. This gives your agent the current figures:\n\n```bash\nclaude mcp add statlyte -- npx -y statlyte\n```\n\n<details>\n<summary>Other MCP clients</summary>\n\n```json\n{\n  \"mcpServers\": {\n    \"statlyte\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"statlyte\"]\n    }\n  }\n}\n```\n</details>\n\nTools: `list_models`, `get_model_pricing`, `estimate_cost`, `cheapest_for_workload`,\n`scheduled_price_changes`.\n\nAlso listed in the [official MCP Registry](https://registry.modelcontextprotocol.io/) as\n`io.github.richardwilkinson9/statlyte`.\n\n## Or just take the JSON\n\nNo install, no key, CORS open:\n\n```\nhttps://statlyte.com/api/v1/models\nhttps://statlyte.com/api/v1/models/anthropic/claude-opus-5\nhttps://statlyte.com/api/v1/changes\n```\n\nThe raw dataset also lives in this repo as [`models.json`](models.json) and\n[`changes.json`](changes.json), updated by commit — so you can diff it, pin it, or vendor it.\n\n## Where the numbers come from\n\nA job re-reads each provider's published pricing page every three hours. When a figure\ndiffers from the last one on file it writes a new observation with a timestamp and the URL\nit was read from. Nothing is inferred and nothing is estimated: **if a price isn't\npublished, it isn't listed.**\n\nTwo honest caveats:\n\n1. **These are list prices.** Negotiated, enterprise, regional and committed-spend rates\n   differ, sometimes a lot. Confirm with the vendor before making a commercial decision.\n2. **Cheaper is not the same as substitutable.** This records what models cost, not what\n   they can do. `rankByCost` will happily tell you an 8B model is cheaper than a frontier\n   one. That is arithmetic, not advice.\n\nFound a figure that disagrees with a vendor's page? The vendor is right and we're wrong —\n[open an issue](https://github.com/richardwilkinson9/statlyte-data/issues) and it gets fixed\non the next run.\n\n## The rest of it\n\n[statlyte.com](https://statlyte.com) has the human-facing side: a change log, a\n[calculator](https://statlyte.com/calculator) that puts two models head to head at your own\nvolume, and a [calendar](https://statlyte.com/calendar) of announced changes. Free, no\naccount.\n\nMIT licensed. Attribution appreciated, not required.\n",
+    "fetchedAt": "2026-08-11T23:24:16.336Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:10.027Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

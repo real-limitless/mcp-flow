@@ -1,0 +1,59 @@
+{
+  "id": "io.github.Moin105/karst",
+  "title": "karst",
+  "description": "Code context for AI dev tools: pack-scoped, cited code retrieval over MCP.",
+  "summary": "Code context for AI dev tools: pack-scoped, cited code retrieval over MCP.",
+  "offersHint": "Code context for AI dev tools: pack-scoped, cited code retrieval over MCP. · Packages: pypi:karst",
+  "version": "0.2.9",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "karst",
+    "version": "0.2.9",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "karst",
+      "version": "0.2.9",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://pypi.org/project/karst/",
+  "sourceUrl": "https://github.com/Moin105/upgraded-garbanzo",
+  "repository": {
+    "url": "https://github.com/Moin105/upgraded-garbanzo",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-23T21:26:23.336883Z",
+  "publishedAt": "2026-06-23T21:26:23.336883Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:37:57.806Z",
+    "sourceRepoAt": "2026-08-12T00:06:16.270Z",
+    "readmeAt": "2026-08-12T00:06:17.000Z",
+    "toolsAt": "2026-08-12T01:37:57.806Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Moin105/upgraded-garbanzo",
+    "checkedAt": "2026-08-12T00:06:16.270Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Moin105/upgraded-garbanzo/main/README.md",
+    "markdown": "# karst\n\n<!-- mcp-name: io.github.Moin105/karst -->\n\n**Know what your change breaks — without your code leaving your machine.**\nkarst gives any AI coding tool — Cursor, Claude Desktop, a custom agent — a local\nmap of your codebase. It answers questions with exact `file:line` citations **and**\nwalks a real call / import / inheritance graph to compute the **blast radius** of a\nchange — *\"what else breaks if I touch this?\"* — the question plain search and\nagentic `grep` can't answer.\n\nIt runs **100% locally**, speaks **MCP** (so it drops into any agent), and never\ncalls an LLM itself — your source code never leaves the box. As a bonus,\npack-scoped retrieval cuts **~60%** of the input tokens per question.\n\n> **Regulated, air-gapped, or IP-sensitive team?** karst is built for the\n> environments cloud coding tools structurally can't enter — fully offline, no\n> telemetry, source you can audit. Start with the\n> **[Compliance & Air-Gap Pack](docs/compliance/README.md)** (attestation,\n> network-egress table, pre-filled security questionnaire, offline install).\n\n```bash\nuv tool install karst      # recommended — fast, and puts `karst` on PATH for you\n# or\npipx install karst         # isolated install, also handles PATH\n# or\npip install karst          # if `karst` isn't found after, use `python -m karst …`\n```\n\n> [`uv`](https://docs.astral.sh/uv/) and `pipx` are the cleanest because they\n> put the `karst` command on your PATH automatically. With plain `pip --user`\n> (notably Microsoft Store Python) the command may not be on PATH — in that case\n> `python -m karst …` always works, no PATH setup required.\n\n## Why\n\nMost \"chat with your codebase\" tools dump tens of thousands of vaguely-related\ntokens into the model on every question. You can't see what was loaded, you\ncan't scope it, and the bill arrives at the end of the month. karst inverts\nthat:\n\n- **Scopes** — pack-filtered retrieval reads ~200 chunks, not 5,000.\n- **Cites** — every chunk carries an exact `file:line`. Verify, don't trust.\n- **Predicts** — a real call/import graph answers \"what else breaks if I change\n  this?\" — which embeddings alone can't.\n\nMeasured on a real 246-file NestJS + Next.js repo: 906 chunks indexed, re-index\n**343s → 2.3s** incremental, **~$0.019** per question on Sonnet 4.6 (shown\n*before* the call), **60%** fewer tokens with packs attached.\n\n## Quickstart (CLI)\n\n> **`karst` command not found?** Your Python Scripts dir isn't on PATH (common\n> with Microsoft Store Python). Everything below works the same with\n> **`python -m karst …`** — no PATH setup. (Or install via `uv`/`pipx`, which put\n> `karst` on PATH for you.)\n\n```bash\ncd your-project\n\n# one command: index + call/import graph + suggested packs\nkarst quickstart                 #  or:  python -m karst quickstart\n\n# ask questions about the code (defaults to this folder's index)\nkarst ask \"how does checkout charge the user?\" --no-llm    # cited code, no API key\nkarst ask -i                     # interactive: ask many questions\n\n# what breaks if I change a function?\nkarst impact --target checkout --graph-path ~/.karst/indexes/your-project/graph.pkl\n\n# review a diff with severity-tagged, cited findings\nkarst review --staged --storage ~/.karst/indexes/your-project\n\nkarst examples                   # a copy-paste cheatsheet of everything\n```\n\n`karst quickstart` prints the exact follow-up commands with your index path\nfilled in. `karst ask` writes an LLM answer when `ANTHROPIC_API_KEY` /\n`OPENAI_API_KEY` is set; otherwise add `--no-llm` for cited chunks (no key). The\n**MCP server below needs no key either** — your IDE supplies the model.\n\n## Use it from your IDE (MCP)\n\nkarst ships an MCP server (`karst-mcp`) exposing five tools — `search_code`,\n`find_impact`, `list_packs`, `index_status`, `index_repository` — over stdio.\n\n**Claude Desktop** (`claude_desktop_config.json`) or **Cursor**\n(`.cursor/mcp.json`) — pick whichever launcher you have:\n\n```json\n{\n  \"mcpServers\": {\n    \"karst\": { \"command\": \"uvx\", \"args\": [\"--from\", \"karst\", \"karst-mcp\"] }\n  }\n}\n```\n\n`uvx` needs nothing pre-installed — it fetches and runs karst on demand. Already\ninstalled it? `{ \"command\": \"karst-mcp\" }` works too. No PATH at all? Use\n`{ \"command\": \"python\", \"args\": [\"-m\", \"karst.mcp_server\"] }`.\n\nRestart the host, then ask normally — it calls karst's tools when useful and\ngets back scoped, cited context. Full setup is in [docs/MCP.md](docs/MCP.md).\n\n## Guides\n\nNew here? Start with whichever fits you:\n\n- **[Why karst?](docs/WHY.md)** — what it is and what it's for, in plain\n  language. Read this first if you're not sure what problem it solves.\n- **[Quickstart](docs/QUICKSTART.md)** — zero to asking real questions in 5\n  minutes, no API key, with real output.\n- **[For vibe coders](docs/FOR-VIBE-CODERS.md)** — use karst from Cursor /\n  Claude Desktop with **no CLI commands** — you just chat.\n- **[Connect your AI tool](docs/CONNECT.md)** — copy-paste MCP setup for every\n  client: Claude Desktop, Claude Code, Cursor, Windsurf, VS Code, Zed,\n  JetBrains, plus the web apps.\n- **[Self-hosted & air-gapped](docs/SELF-HOSTED.md)** — run karst *and* the AI\n  answers fully on your machine with a local model. For teams whose code can't\n  go to the cloud.\n- **[Cookbook](docs/COOKBOOK.md)** — real scenarios (onboarding, blast radius,\n  cutting token cost, reviewing a diff) with copy-paste commands.\n- **[MCP setup](docs/MCP.md)** — connect karst to any MCP client.\n\n## How it works\n\n1. **Index** — tree-sitter splits every function, class and method into an\n   AST-aware chunk (Python, JS, TS, Go, Rust, Java); chunks are embedded into a\n   local Qdrant store. Incremental: a SHA manifest + embedding cache skip\n   unchanged files.\n2. **Graph** — a NetworkX knowledge graph of `CALLS` / `IMPORTS` / `CONTAINS` /\n   `IMPLEMENTS` edges powers impact analysis (\"what depends on this?\" — including\n   which classes implement an interface or extend a base).\n3. **Pack** — related files become named, attachable context packs (`auth`,\n   `billing`). A query loads only its pack.\n4. **Serve** — the MCP server returns ranked, `file:line`-cited chunks; your\n   host's model reasons over them.\n\nEverything is local and offline-capable (FastEmbed/ONNX embeddings, Qdrant\nlocal mode, sqlite caches — no Docker, no daemon).\n\n## Status\n\nLive: AST chunking (6 languages), call/import graph + impact analysis,\npack-scoped retrieval, token + cost meter, incremental indexing + embedding\ncache, diff code review with inline PR posting (`review --pr --post-to-pr`), and\nthe MCP server over both stdio and remote Streamable-HTTP (`karst-mcp --http`).\nComing next: hosted indexing, team-shared pack libraries, an autonomous GitHub\nPR review bot, and OAuth for browser connectors (claude.ai / ChatGPT).\n\n## License\n\nApache-2.0. See [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:06:17.000Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:37:57.806Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

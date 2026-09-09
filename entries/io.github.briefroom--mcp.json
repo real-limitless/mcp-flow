@@ -1,0 +1,58 @@
+{
+  "id": "io.github.briefroom/mcp",
+  "title": "mcp",
+  "description": "briefroom stdio MCP server — expose the briefroom CLI to Claude Code, Codex, and other agents.",
+  "summary": "briefroom stdio MCP server — expose the briefroom CLI to Claude Code, Codex, and other agents.",
+  "offersHint": "briefroom stdio MCP server — expose the briefroom CLI to Claude Code, Codex, and other agents. · Packages: npm:@briefroom/mcp",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@briefroom/mcp",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@briefroom/mcp",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/briefroom/mcp",
+  "repository": {
+    "url": "https://github.com/briefroom/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-25T01:13:53.682122Z",
+  "publishedAt": "2026-07-25T01:13:53.682122Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:28:27.521Z",
+    "sourceRepoAt": "2026-08-11T23:54:03.197Z",
+    "readmeAt": "2026-08-11T23:54:03.751Z",
+    "toolsAt": "2026-08-12T01:28:27.522Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/briefroom/mcp",
+    "checkedAt": "2026-08-11T23:54:03.197Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/briefroom/mcp/main/README.md",
+    "markdown": "# @briefroom/mcp\n\n> 日本語版 README: [README.ja.md](./README.ja.md)\n\n**briefroom stdio MCP server** — expose the [briefroom](https://briefroom.net) CLI to Claude Code, Codex, Cursor, and other agents so they can deploy HTML and pull reviewer comments without spawning shells themselves.\n\n- **Deploy in one call** — zip a local directory, upload it, get a share URL back.\n- **Pull reviewer feedback** — grab comments from the browser as AI-agent-ready Markdown.\n- **List your rooms** — enumerate your existing deploys with their share URLs.\n\n<!-- demo.gif placeholder — record a Claude Code / Cursor session driving deploy_html + get_feedback -->\n\n## Add it to Claude Code (one command)\n\n```bash\nclaude mcp add briefroom -- npx -y @briefroom/mcp\n```\n\nSet `BRIEFROOM_TOKEN` in your environment (create a PAT at [briefroom.net/dashboard/settings/tokens](https://briefroom.net/dashboard/settings/tokens)) or run `npx @briefroom/cli login` once to store it in the OS keychain.\n\n## What it gives your agent\n\n| Tool | What it does |\n|---|---|\n| `deploy_html` | Zip a local directory and upload it to briefroom. Returns a share URL. |\n| `get_feedback` | Fetch reviewer comments for a share URL as AI-agent-ready Markdown (default) or JSON. |\n| `list_deployments` | List rooms owned by the current PAT with their latest deploy and share URL. |\n\nInternally each tool runs `@briefroom/cli` as a child process (`process.execPath` → `node <cli>/dist/index.js`), so behavior stays identical to the CLI and both packages evolve together.\n\n## Install\n\n```bash\nnpm i -g @briefroom/mcp\n# or use it via npx (recommended for .mcp.json)\n```\n\n## Configure\n\nConfig file location and `env` interpolation semantics differ per client. Pick the block that matches yours.\n\n### Claude Code\n\nPut `.mcp.json` at your project root. Claude Code expands `${VAR}` against the launching shell's environment:\n\n```json\n{\n  \"mcpServers\": {\n    \"briefroom\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@briefroom/mcp\"],\n      \"env\": {\n        \"BRIEFROOM_TOKEN\": \"${BRIEFROOM_TOKEN}\"\n      }\n    }\n  }\n}\n```\n\nOr register it via the Claude Code CLI:\n\n```bash\nclaude mcp add briefroom -- npx -y @briefroom/mcp\n```\n\n### Codex CLI\n\nCodex reads MCP server definitions from `~/.codex/config.toml` (see the [Codex CLI docs](https://github.com/openai/codex/blob/main/docs/config.md#mcp_servers)):\n\n```toml\n[mcp_servers.briefroom]\ncommand = \"npx\"\nargs = [\"-y\", \"@briefroom/mcp\"]\nenv = { BRIEFROOM_TOKEN = \"hak_your_pat_here\" }\n```\n\nOr omit the `env` block and let the MCP process inherit `BRIEFROOM_TOKEN` from the shell that launched Codex.\n\n### Cursor\n\nCursor does not expand `${VAR}` inside `env` blocks in its MCP config, so you have to decide up front how to supply the PAT. Options, in preference order:\n\n**Option A — user-wide config with a literal PAT (keeps PAT out of any repo):**\n\n`~/.cursor/mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"briefroom\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@briefroom/mcp\"],\n      \"env\": { \"BRIEFROOM_TOKEN\": \"hak_your_pat_here\" }\n    }\n  }\n}\n```\n\nThe file lives in your home directory, so there's no path for it to end up in a project's git history.\n\n**Option B — inherit from the parent shell (no PAT in any config file):**\n\nEither `~/.cursor/mcp.json` or the project's `.cursor/mcp.json`, with **no `env` block**:\n\n```json\n{\n  \"mcpServers\": {\n    \"briefroom\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@briefroom/mcp\"]\n    }\n  }\n}\n```\n\nWith `env` omitted, the MCP process inherits your shell's environment. If you've run `npx @briefroom/cli login`, the CLI reads the PAT from the OS keychain. Alternatively, launch Cursor from a shell that has `BRIEFROOM_TOKEN=hak_...` exported.\n\n**Not recommended — project `.cursor/mcp.json` with a literal PAT:**\n\n> If you must put a literal PAT in the project's `.cursor/mcp.json`, add that file to `.gitignore` and never commit it. Leaked PATs in public repos are a well-known incident class — prefer options A or B above. Rotate the PAT at [briefroom.net/dashboard/settings/tokens](https://briefroom.net/dashboard/settings/tokens) if you commit one by accident.\n\n### Other stdio-MCP clients (Cline / Roo Code / Continue / …)\n\nThe stanza above works verbatim, but consult your client's docs for `${VAR}` interpolation semantics and PAT-in-file safety before adopting it — the same \"user-wide file or env inheritance\" preference order applies.\n\n## Authentication\n\nTwo options — pick whichever fits your setup:\n\n1. **`BRIEFROOM_TOKEN` env var** (recommended for `.mcp.json`): create a PAT at [briefroom.net/dashboard/settings/tokens](https://briefroom.net/dashboard/settings/tokens) and pass it through the `env` block above.\n2. **OS keychain** (recommended for local dev): run `npx @briefroom/cli login` once. The MCP server picks up the same credential automatically.\n\n`BRIEFROOM_TOKEN` takes precedence over the keychain when both are set.\n\n`get_feedback` also works without any credentials — comments on a share URL are public API. Auth only unlocks owner-only fields.\n\n## Configuration reference\n\n| Env var | Purpose | Default |\n|---|---|---|\n| `BRIEFROOM_TOKEN` | Personal Access Token. Skips the keychain lookup. | (unset) |\n| `BRIEFROOM_API_URL` | Point the CLI at a different backend (dev / staging). | `https://briefroom.net` |\n\n## Tool reference\n\n### `deploy_html`\n\n```jsonc\n{\n  \"path\": \"./mockups\",        // required — directory to deploy\n  \"room\": \"demo-a\",           // optional — room slug: ascii identifier of the room to redeploy into\n  \"name\": \"企画書 v2\",         // optional — room display name, 1-100 chars, any language\n  \"expires\": \"7d\",            // optional — \"7d\" | \"30d\" | \"never\" (also updates the existing link on redeploy)\n  \"new\": false,               // optional — start a brand new room\n  \"password\": \"s3cret\",       // optional — password-protect the link (Pro+ plans; passed to the CLI via env, never argv)\n  \"visibility\": \"unlisted\"    // optional — \"unlisted\" | \"password_protected\"; \"unlisted\" clears an existing password\n}\n```\n\nReturns the raw CLI JSON (`share_url`, `room_id`, `version_number`, `visibility`, …).\n\nThree identifiers that are easy to confuse:\n\n| Field | What it is |\n|---|---|\n| `name` | Display name shown on the dashboard and in the viewer. Any language. Set it on the first deploy; on a redeploy it updates the room name **only when passed explicitly** (omit it to keep the current name). |\n| `room` | Room slug — an ascii kebab-case identifier used only to find the existing room to redeploy into. Never part of the share URL. |\n| share URL | Always auto-issued with a random token (`/s/<token>`). Not derived from `name` or `room`. |\n\n### `get_feedback`\n\n```jsonc\n{\n  \"share\": \"https://briefroom.net/s/aB3xQ2mK9pNvR4\", // URL or bare token\n  \"status\": \"all\",             // optional — \"open\" | \"resolved\" | \"all\"\n  \"since\": \"2026-07-01T00:00Z\",// optional ISO 8601 for delta pulls\n  \"format\": \"prompt\",          // optional — \"prompt\" (Markdown) | \"json\"\n  \"locale\": \"ja\"               // optional — \"ja\" | \"en\"\n}\n```\n\nReturns Markdown by default, formatted so an agent can paste it straight back into context.\n\n### `list_deployments`\n\n```jsonc\n{\n  \"limit\": 20,     // optional — 1-100, default 20\n  \"archived\": false\n}\n```\n\nReturns the raw `/api/v1/rooms` JSON.\n\n## Debugging\n\nLog lines are written to **stderr only** — stdout is reserved for JSON-RPC. To see what the server does:\n\n```bash\nBRIEFROOM_TOKEN=$YOUR_PAT npx @modelcontextprotocol/inspector \\\n  npx -y @briefroom/mcp\n```\n\nPoint the inspector at a running backend with `BRIEFROOM_API_URL=http://localhost:3000` when developing against a local dev server.\n\n## Roadmap\n\n- `resolve_comment` — pending backend PAT support on the comment PATCH endpoint.\n- Streamable HTTP transport for hosted usage.\n\n## Contributing\n\nIssues and pull requests are welcome at [github.com/briefroom/mcp](https://github.com/briefroom/mcp). The public repo mirrors the internal source of truth in the briefroom monorepo; changes land upstream first, then are exported here.\n\nLocal dev inside this repo:\n\n```bash\nnpm install\nnpm run build\nnpm test\n```\n\n## License\n\nMIT © Talent Cloud, Inc.\n",
+    "fetchedAt": "2026-08-11T23:54:03.751Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:28:27.522Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

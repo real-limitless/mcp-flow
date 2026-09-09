@@ -1,0 +1,58 @@
+{
+  "id": "io.github.3xpr1ment/repiscope",
+  "title": "repiscope",
+  "description": "Read-only MCP server: your agent sees all your sibling repos but structurally cannot touch them",
+  "summary": "Read-only MCP server: your agent sees all your sibling repos but structurally cannot touch them",
+  "offersHint": "Read-only MCP server: your agent sees all your sibling repos but structurally cannot touch them · Packages: pypi:repiscope",
+  "version": "0.2.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "repiscope",
+    "version": "0.2.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "repiscope",
+      "version": "0.2.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/3xpr1ment/repiscope",
+  "repository": {
+    "url": "https://github.com/3xpr1ment/repiscope",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-09T05:43:53.485686Z",
+  "publishedAt": "2026-07-09T05:43:53.485686Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:48:00.078Z",
+    "sourceRepoAt": "2026-08-12T00:18:20.064Z",
+    "readmeAt": "2026-08-12T00:18:20.636Z",
+    "toolsAt": "2026-08-12T01:48:00.078Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/3xpr1ment/repiscope",
+    "checkedAt": "2026-08-12T00:18:20.064Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/3xpr1ment/repiscope/main/README.md",
+    "markdown": "# Repiscope\n\n**A periscope for your repos — see everything, touch nothing.**\n\nRepiscope is a read-only MCP server that gives your coding agent (Claude Code,\nCursor, or any MCP client) awareness of the *sibling repositories* next to the\none it's working in — without ever letting it modify them.\n\n## Why\n\nI built a personal assistant to help me decide where my time goes: for that\nit needs to know the real state of every project — what changed, what\nstalled, what the next step is. So it has to *see* all my repos. But telling\nan agent \"don't touch anything\" is a request, not a guarantee. Repiscope\nmakes it a **guarantee**: the server exposes zero write tools, so the agent\nstructurally *cannot* modify your repos. And the same periscope helps any\ncoding agent working in project A that needs to know how a part of\nproject B works.\n\nSandboxes make this worse, not better: mine (rightly) stops the agent from\neven *reading* outside the repo it started in without asking. Widening the\nsandbox would grant write access too. Repiscope is the third way — the\nagent gets structured, read-only sight of every sibling repo through one\nMCP server, and the sandbox stays tight.\n\n## See it in action\n\nYou're working in `project-a` and need to pull data from another project's\nAPI. Instead of you digging through that codebase, the agent asks Repiscope\ndirectly:\n\n```\nYou:    Use Repiscope to find out what kind of data I can retrieve\n        from billing-api through its API.\n\nAgent:  (calls list_projects → sees \"billing-api\")\n        (calls project_overview \"billing-api\" → spots src/routes/)\n        (calls search \"route\" project=\"billing-api\")\n        (calls read_file \"billing-api\" \"src/routes/invoices.py\")\n\n        billing-api exposes three endpoints: /invoices (list, filterable\n        by customer and date), /invoices/{id} (full invoice with line\n        items), and /customers/{id}/balance (current balance). All\n        responses are JSON; auth is a bearer token.\n```\n\nThe agent explored a repo it has **no ability to write to**. No copy-paste,\nno \"please don't edit anything,\" no risk.\n\n## Tools\n\n| Tool | Input | Returns |\n|------|-------|---------|\n| `list_projects()` | — | every sibling repo + one-line description |\n| `project_overview(project)` | repo name | full overview: purpose, stack, structure, recent commits |\n| `search(query, project?)` | text, optional repo | files & lines matching the query |\n| `read_file(project, path)` | repo + file path | full file contents (size-capped) |\n| `store_summary(project, summary)` | repo + your text | caches an agent-written summary (see below) |\n\n## How it stays fresh\n\nOverviews are cached as markdown and refreshed lazily: on each call Repiscope\ncompares the repo's current git commit hash against the one recorded when the\noverview was built. Same hash → serve the cache. Different → rebuild just that\nrepo's overview. No cron, no daemons.\n\n## Borrowed intelligence\n\nRepiscope has no LLM of its own — no API key, no model calls, zero cost. But\nit talks to LLMs all day, so it borrows them: when an overview has no fresh\nagent-written summary, it ends with a note asking the *calling* agent to\nwrite one and hand it back via `store_summary`. The summary then opens every\nfuture overview of that project — written by one agent, read by all the\nnext — until the repo's next commit marks it outdated and the cycle repeats.\n\n## Security by architecture\n\nRepiscope is built so that the safe behaviour is not a promise — it's the\nonly behaviour possible:\n\n- **Zero repo-write tools.** The server exposes no tool that can create,\n  edit or delete anything inside your repositories. The one tool that\n  accepts data, `store_summary`, can only write to Repiscope's own cache in\n  `~/.cache/repiscope`. An agent cannot misuse a capability that doesn't\n  exist.\n- **Secrets are invisible.** A single filter (`privacy.py`) is enforced by\n  every tool: private keys, certificates (`.pem`, `.pfx`, `.p12`, …),\n  `.env*` files, keystores, and anything named like a credential never\n  appear in overviews, trees, search results or file reads.\n  *Honest limit:* the filter hides sensitive **files** — it does not scrub\n  mentions of e.g. a password pasted inside an ordinary text file.\n- **Symlinks can't smuggle.** A cloned repo is untrusted content — it may\n  contain a symlink like `notes.txt → ~/.ssh/id_rsa`. Anything whose real\n  location falls outside the project is invisible to every tool, the secret\n  filter also checks a link's real target, and path traversal (`../`) is\n  refused.\n- **You define the perimeter.** Repiscope only sees the folder you\n  explicitly pass (`--root`), and `--exclude` makes chosen repos fully\n  invisible — they can't even be resolved by name.\n- **It leaves no trace.** Overview caches live in `~/.cache/repiscope`,\n  never inside your repositories.\n\nEvery claim above is enforced by the test suite in `tests/` — clone the\nrepo and run `pytest` to check them yourself.\n\n## Quick start\n\n```bash\npip install repiscope\nclaude mcp add repiscope --scope user -- repiscope --root ~/your/projects/folder\n```\n\nThat's it — point `--root` at the folder *containing* your repos (not a repo\nitself). Optionally hide repos with `--exclude repo-a --exclude repo-b`.\nWorks with any MCP client; for Claude Desktop there's also a one-click\n`.mcpb` bundle (build it with `mcpb/build.sh`).\n\nFrom source instead:\n\n```bash\ngit clone https://github.com/3xpr1ment/repiscope.git\ncd repiscope\npython -m venv .venv && .venv/bin/pip install -e .[dev]\n.venv/bin/pytest   # the security claims, as executable proof\n```\n\n## Limitations\n\nHonesty section — what Repiscope deliberately does *not* do:\n\n- **The secret filter works at file level.** Sensitive *files* are\n  invisible, but a password pasted inside an ordinary `notes.md` will not\n  be scrubbed. The perimeter is yours: only point `--root` at folders you\n  are comfortable showing to your agent — whatever the tools can see, your\n  LLM provider will see too.\n- **Search is deliberately dumb.** Case-insensitive substring match, capped\n  results, no index, no regex. The calling LLM supplies the intelligence at\n  both ends; for heavy code search, use a real code-search tool.\n- **Overviews are mechanical.** Without an agent-written summary they are\n  README excerpts, language stats and git logs — useful, not insightful.\n  The insight arrives once your agents start leaving summaries behind.\n- **Read-only cuts both ways.** There is no refresh tool to call: caches\n  refresh lazily on the next commit, and stale summaries are served marked\n  as stale until an agent writes a new one.\n- **Python ≥ 3.11**, developed and tested on macOS; Linux should behave\n  identically, Windows symlink semantics are untested.\n\n## Status\n\nv0.2.2 — working and dogfooded daily. Four read-only tools plus borrowed-LLM\nsummaries, lazy cache refresh, sensitive-file filtering, and a test suite\nproving the security claims (path traversal, symlink escapes, secret\nfiltering — see `tests/`). API may still change.\n\n## How this was built\n\nTo be completely clear about authorship: I am not an engineer. Every\narchitecture decision in Repiscope is mine — what it does, what it refuses\nto do, where the security gates live — but the coding itself is done by\nClaude (Anthropic's Fable model). My rule for the collaboration: nothing\ngoes in that I don't understand. The commit history carries the\nco-authorship openly, commit by commit.\n\n## License\n\n[MIT](LICENSE)\n\n---\n\nmcp-name: io.github.3xpr1ment/repiscope\n",
+    "fetchedAt": "2026-08-12T00:18:20.636Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:48:00.078Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

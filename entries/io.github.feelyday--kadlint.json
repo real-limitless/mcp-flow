@@ -1,0 +1,58 @@
+{
+  "id": "io.github.feelyday/kadlint",
+  "title": "kadlint",
+  "description": "Korean ad-compliance linter for cosmetics and health-food marketing copy",
+  "summary": "Korean ad-compliance linter for cosmetics and health-food marketing copy",
+  "offersHint": "Korean ad-compliance linter for cosmetics and health-food marketing copy · Packages: npm:kadlint",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "kadlint",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "kadlint",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/feelyday/kadlint",
+  "repository": {
+    "url": "https://github.com/feelyday/kadlint",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-18T07:37:29.150183Z",
+  "publishedAt": "2026-07-18T07:37:29.150183Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:43.950Z",
+    "sourceRepoAt": "2026-08-11T23:46:22.356Z",
+    "readmeAt": "2026-08-11T23:46:22.867Z",
+    "toolsAt": "2026-08-12T01:22:43.951Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/feelyday/kadlint",
+    "checkedAt": "2026-08-11T23:46:22.356Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/feelyday/kadlint/main/README.md",
+    "markdown": "# kadlint\n\n> Korean ad-compliance linter for cosmetics and health-food marketing copy — detects prohibited claims with the legal basis, severity, and safer alternatives.\n\n[![npm version](https://img.shields.io/npm/v/kadlint.svg)](https://www.npmjs.com/package/kadlint)\n[![CI](https://github.com/feelyday/kadlint/actions/workflows/ci.yml/badge.svg)](https://github.com/feelyday/kadlint/actions/workflows/ci.yml)\n[![license](https://img.shields.io/npm/l/kadlint.svg)](./LICENSE)\n\n[한국어 README](./README.ko.md)\n\nKorean law tightly regulates what cosmetics and health-functional-food ads may claim. A face cream may not say it \"treats acne\" (that is a drug claim under the Cosmetics Act), a probiotic may not promise to \"boost immunity\" unless that exact functionality was approved, and \"No.1\" / \"100% natural\" claims require objective substantiation under the Fair Labeling and Advertising Act. Korea's Ministry of Food and Drug Safety (MFDS) keeps detecting thousands of unlawful online ads in these categories every year — in 2025 its routine sweeps again flagged large batches of cosmetics and health-food ads for drug-like or unsubstantiated claims, and violations can mean ad bans, sales suspensions, and fines.\n\n`kadlint` lints Korean marketing copy against a curated dictionary of **299 rules** (183 cosmetics, 51 health-food, 65 common) distilled from:\n\n- 화장품법 (Cosmetics Act) and its enforcement rules (별표5)\n- 건강기능식품법 / 식품표시광고법 (Health Functional Foods & Food Labeling/Advertising Acts)\n- 표시광고법 (Fair Labeling and Advertising Act)\n- MFDS advertising guidelines and enforcement precedents\n\nEvery finding comes with the violation category, the legal basis citation, a severity (`high` / `medium` / `low`), an explanation, and safer alternative phrasings.\n\n## Install\n\n```sh\nnpm install -g kadlint     # CLI\nnpm install kadlint        # library\n```\n\nRequires Node.js >= 18.\n\n## CLI\n\n```sh\nkadlint check ad-copy.txt\nkadlint check ./landing-pages --format json --min-severity high\nkadlint check - < draft.md                 # stdin\nkadlint check banner.html --domain cosmetics,common\n```\n\n```\nad-copy.txt:1:1 [HIGH] '여드름 치료' — 의약품 오인 표현 (cos-113)\n    근거: 화장품법 제13조제1항제1호, 식약처 「화장품 표시·광고 관리 지침」\n    대체 표현: 피지·각질 케어로 매끈한 피부결 / (실증 보유 시) 여드름성 피부에 사용 적합\n\n✖ 1건 발견 (high 1 · medium 0 · low 0) — 파일 1개, 규칙 299개 검사\n```\n\n- Supported inputs: `.txt`, `.md`, `.html` (tags stripped, offsets preserved), directories (recursive), `-` (stdin).\n- Exit codes: `0` clean, `1` findings at/above `--min-severity`, `2` usage error.\n- Literal rules match through inserted spaces, middle dots, and hyphens (`살 균`, `살·균`, `살-균`), a common evasion tactic; disable with `--no-normalize`.\n\n## API\n\n```ts\nimport { lint, lintFile } from 'kadlint';\n\nconst result = lint('여드름 치료에 탁월한 크림', { domains: ['cosmetics'] });\nfor (const f of result.findings) {\n  console.log(f.ruleId, f.severity, f.match, f.legalBasis, f.alternatives);\n}\n\nconst fileResult = lintFile('landing.html', { minSeverity: 'medium' });\n```\n\nOptions: `domains` (`cosmetics` | `health_food` | `common`), `minSeverity`, `normalize` (default `true`).\n\nWhen one of a rule's `exceptions` phrases appears within 80 characters of a match (e.g. an approved functional claim used verbatim), the finding is downgraded to `low` with an explanatory `note`.\n\n## MCP server\n\n`kadlint-mcp` exposes a `check_ad_copy { text, domain? }` tool over stdio so LLM assistants can lint copy while drafting it.\n\nClaude Desktop (`claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"kadlint\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"kadlint\", \"kadlint-mcp\"]\n    }\n  }\n}\n```\n\nIf installed globally, `\"command\": \"kadlint-mcp\"` suffices:\n\n```json\n{\n  \"mcpServers\": {\n    \"kadlint\": { \"command\": \"kadlint-mcp\" }\n  }\n}\n```\n\nClaude Code:\n\n```sh\nclaude mcp add kadlint -- kadlint-mcp\n```\n\nor in `.mcp.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"kadlint\": {\n      \"command\": \"kadlint-mcp\",\n      \"args\": []\n    }\n  }\n}\n```\n\n## Playground\n\n`playground/index.html` is a dependency-free static page (GitHub Pages friendly): paste copy, get highlighted matches and rule cards with the legal basis and alternatives.\n\n## Rule dictionary\n\nRules live in `data/*.json`:\n\n```json\n{\n  \"id\": \"cos-113\",\n  \"pattern\": \"여드름.{0,8}(개선|치료|완화|박멸|없애|케어|예방)\",\n  \"pattern_type\": \"regex\",\n  \"violation\": \"의약품 오인 표현\",\n  \"legal_basis\": \"화장품법 제13조제1항제1호\",\n  \"severity\": \"high\",\n  \"message\": \"…why this is prohibited…\",\n  \"alternatives\": [\"피지·각질 케어로 매끈한 피부결\"],\n  \"exceptions\": [\"여드름성 피부 완화 기능성화장품 심사(보고) 효능효과\"]\n}\n```\n\n`data/_needs_review.json` is a backlog of candidate rules that have not been verified yet; it is excluded from the npm package. Contributions welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) (no coding required, every rule must cite its legal basis).\n\n## Disclaimer\n\n- kadlint is **not legal advice**. It is a heuristic linter over a hand-curated dictionary.\n- A clean result does **not** guarantee compliance — false negatives are inherent to pattern matching, and regulations change.\n- Final legal responsibility for any advertisement rests with the **advertiser**. Consult a qualified professional for high-stakes copy.\n\n## Roadmap\n\n- **v0.2**: PyPI mirror (`pip install kadlint`), review of the 25 backlog rules in `_needs_review.json`, and a pipeline for tracking MFDS guideline revisions.\n\n## License\n\nMIT © 2026 Jungkyun Lim\n",
+    "fetchedAt": "2026-08-11T23:46:22.867Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:43.951Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

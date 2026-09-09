@@ -1,0 +1,58 @@
+{
+  "id": "io.github.nugehs/gate",
+  "title": "gate",
+  "description": "One ship/no-ship verdict from aiglare, bouncer, tieline & repoctx — the unified merge gate.",
+  "summary": "One ship/no-ship verdict from aiglare, bouncer, tieline & repoctx — the unified merge gate.",
+  "offersHint": "One ship/no-ship verdict from aiglare, bouncer, tieline & repoctx — the unified merge gate. · Packages: npm:@nugehs/gate",
+  "version": "0.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@nugehs/gate",
+    "version": "0.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@nugehs/gate",
+      "version": "0.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/nugehs/gate",
+  "repository": {
+    "url": "https://github.com/nugehs/gate",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-14T09:39:11.017213Z",
+  "publishedAt": "2026-06-14T09:39:11.017213Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:10:23.219Z",
+    "sourceRepoAt": "2026-08-11T23:31:14.225Z",
+    "readmeAt": "2026-08-11T23:31:14.659Z",
+    "toolsAt": "2026-08-12T01:10:23.220Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nugehs/gate",
+    "checkedAt": "2026-08-11T23:31:14.225Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nugehs/gate/main/README.md",
+    "markdown": "# gate\n\n**One ship/no-ship verdict from your whole nugehs toolchain.**\n\n[![npm](https://img.shields.io/npm/v/@nugehs/gate?style=flat-square)](https://www.npmjs.com/package/@nugehs/gate) [![license: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE) [![node](https://img.shields.io/node/v/@nugehs/gate?style=flat-square)](https://www.npmjs.com/package/@nugehs/gate)\n\n![gate demo](gate-demo.gif)\n\n`gate` runs [aiglare](https://www.npmjs.com/package/@nugehs/aiglare),\n[bouncer](https://www.npmjs.com/package/@nugehs/bouncer),\n[tieline](https://www.npmjs.com/package/@nugehs/tieline) and\n[repoctx](https://www.npmjs.com/package/@nugehs/repoctx) against a repo and\nmerges their four dialects into **one normalized verdict**. Each tool already\nanswers a different \"can this ship?\" question — gate is the place they finally\nagree on the answer.\n\n```\nnpx @nugehs/gate                      # audit the current repo\nnpx @nugehs/gate ./service --ci       # fail the build on a blocking verdict\nnpx @nugehs/gate --json               # the unified verdict, machine-readable\n```\n\n```\n        ┌──────────────────────────────────────────────┐\n        │                   gate                         │\n        │   one config · one verdict · one report        │\n        └──────────────────────────────────────────────┘\n            │            │            │            │\n        aiglare       bouncer      tieline      repoctx\n       red/amber/    pass/fail/   matched/     PASS/WARN/\n         green        unknown      drift         FAIL\n            │            │            │            │\n            └──── normalize to pass · warn · fail ─────┘\n                          │\n                  ✗ FAIL   ⚠ WARN   ✓ PASS\n```\n\n## What it reports\n\n```\n  gate · /path/to/repo\n\n  ✗  AI governance    fail      2 red · 1 amber · 13 green · 1 blocking side-effect\n  ·  Compliance       skipped   not configured (run `bouncer init`)\n  ·  Contract drift   skipped   not configured (run `tieline init`)\n  ⚠  Merge readiness  warn      1 of 8 checks need attention\n\n  verdict: FAIL — 1 blocking · 1 warn · 2 skipped\n```\n\nEach tool's native result is normalized onto one status vocabulary:\n\n| Status | Meaning |\n| --- | --- |\n| `pass`    | the check ran and is clean |\n| `warn`    | ran, found something worth a look — not blocking |\n| `fail`    | ran, found a blocking problem |\n| `unknown` | ran, but couldn't determine — explicitly **not** a pass |\n| `skipped` | not applicable / not configured for this repo |\n| `error`   | the tool couldn't be run, or returned garbage |\n\nThe top-level verdict is the worst across the domains that actually ran\n(`skipped` never counts). `unknown` and `error` roll up to `warn` so nothing\nslips through as a silent pass.\n\n## How each dialect maps\n\n| Tool | Native signal | → gate |\n| --- | --- | --- |\n| **aiglare** | a red surface on a side-effectful sink | `fail`; any red/amber → `warn` |\n| **bouncer** | a `fail` finding (missing required control) | `fail`; any `unknown` control → `unknown` |\n| **tieline** | `drift` > 0 (FE call with no BE route) | `fail`; `unverifiable` > 0 → `warn` |\n| **repoctx** | `FAIL`/`BLOCK` merge verdict | `fail`; `WARN` → `warn` |\n\n> gate runs aiglare **without** `--ci` and derives the blocking verdict itself,\n> so a tool that `process.exit()`s before flushing its pipe can't truncate the\n> report it feeds us.\n\n**A run that checked nothing is not a pass.** If every domain is skipped or\ndeselected (e.g. `--skip` them all, or a typo'd `--only`), gate reports **NO\nCHECKS RAN** (`ok:false`) and fails under `--ci` — a misconfiguration can't\nsilently turn the gate green.\n\n**On repoctx + local mode.** repoctx's merge-readiness gate can only verify\nreview state (approvals, CODEOWNERS, required checks) against a host like\nGitHub. Run locally it reports those as a `WARN`, so on a clean local repo gate\nwill often show `merge readiness: warn`. That's repoctx being honest about what\nit can't see locally — not a problem with your change.\n\n## CLI\n\n```\ngate [path] [options]\n\n  --json            Emit the unified verdict as JSON\n  --ci              Exit non-zero when the gate fails (blocking by default)\n  --strict          Treat WARN/UNKNOWN as blocking too\n  --only <list>     Run only these tools (aiglare,bouncer,tieline,repoctx)\n  --skip <list>     Skip these tools\n  -h, --help        Show this help\n\ngate mcp            Start the MCP server (stdio)\n```\n\nBy default only a `fail` verdict blocks under `--ci` — safe to adopt without\ndrowning a team in warnings. Add `--strict` when you want warnings to gate too.\n\n## Tool resolution\n\ngate doesn't bundle the four tools; it finds each one at runtime. Per tool, first hit wins:\n\n1. `GATE_<TOOL>_BIN` environment variable (explicit override)\n2. the installed `@nugehs/<tool>` package (from `node_modules`)\n3. a sibling checkout at `../<tool>` (local development)\n\nA tool that can't be resolved is reported as `skipped`, never a hard failure —\nso `gate` is safe to run in a repo that only uses some of the toolchain.\n\n## In CI\n\n```yaml\n- run: npx @nugehs/gate . --ci\n```\n\nFor a machine-readable record, `--json` emits the full verdict (schema version,\nper-domain results, counts, and the blocking reasons) for dashboards or audit\nevidence.\n\n## MCP\n\ngate is also an MCP server, so an agent can ask \"can this ship?\" in one call —\nthe unified verdict, not four separate tools.\n\n```\ngate mcp                 # stdio JSON-RPC server\nnpx @nugehs/gate mcp\n```\n\nTools:\n\n| Tool | Returns |\n| --- | --- |\n| `gate_check` | the unified verdict for a repo (`path`, optional `only`/`skip`/`ci`/`strict`) |\n| `list_checks` | the four checks gate runs, each with its domain and what it answers |\n\nRegistry manifest: [`server.json`](server.json) (`io.github.nugehs/gate`).\n\n## Editor extension\n\nThe same normalized verdict drives a **VS Code / Cursor extension**\n([`clients/vscode`](clients/vscode)) — the gates, shifted left from CI into the\neditor:\n\n- a **verdict cockpit** and a checks tree in gate's own Activity Bar container;\n- **inline diagnostics**, hovers, Quick Fixes (mute / open docs) and CodeLens on\n  located findings;\n- **AI-native gating** — an `@gate` chat participant, a `gate_check` tool agent\n  mode can call before it says \"done\", and an MCP server provider — so the\n  assistant writing the code is checked by the same gate as CI;\n- debounced run-on-save with in-flight cancellation, and multi-root support.\n\n## Roadmap\n\ngate is the shared spine. The same JSON already drives the CLI, the `--ci` gate,\nthe MCP server, and the editor extension above. Next client on the same JSON:\n\n- **Web cockpit** — a repo/PR verdict board over the JSON, unifying the four `*-web` sites.\n\n## License\n\nMIT © Oluwasegun Olumbe\n",
+    "fetchedAt": "2026-08-11T23:31:14.659Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:10:23.220Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

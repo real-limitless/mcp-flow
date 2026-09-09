@@ -1,0 +1,85 @@
+{
+  "id": "io.github.Payotte-com/payotte-mcp",
+  "title": "payotte-mcp",
+  "description": "Verified Canadian real-estate pros + housing data: prices, rates, land-transfer tax, rent-vs-buy.",
+  "summary": "Verified Canadian real-estate pros + housing data: prices, rates, land-transfer tax, rent-vs-buy.",
+  "offersHint": "Verified Canadian real-estate pros + housing data: prices, rates, land-transfer tax, rent-vs-buy. · Remote MCP (streamable-http) at https://payotte-mcp.payotte.workers.dev/mcp",
+  "version": "1.7.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://payotte-mcp.payotte.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://payotte-mcp.payotte.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://payotte.com",
+  "sourceUrl": "https://github.com/Payotte-com/payotte-mcp",
+  "repository": {
+    "url": "https://github.com/Payotte-com/payotte-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T20:56:09.708357Z",
+  "publishedAt": "2026-08-10T20:56:09.708357Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:36:26.746Z",
+    "sourceRepoAt": "2026-08-12T00:04:43.586Z",
+    "readmeAt": "2026-08-12T00:04:44.224Z",
+    "toolsAt": "2026-08-12T00:04:44.422Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Payotte-com/payotte-mcp",
+    "checkedAt": "2026-08-12T00:04:43.586Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Payotte-com/payotte-mcp/main/README.md",
+    "markdown": "# payotte-mcp\n\nServeur **MCP** (Model Context Protocol) de Payotte — le premier annuaire immobilier canadien\nde professionnels **vérifiés** branché dans les IA.\n\n- **Hébergement** : Cloudflare Workers, palier gratuit (100 000 requêtes/jour).\n- **Zéro état, zéro maintenance** : le worker lit en direct les feeds statiques de payotte.com\n  (`/api/experts.json`, `/api/regulators.json`, `/api/market.json`), régénérés à chaque\n  déploiement normal du site. Rien à mettre à jour ici quand les fiches changent.\n- **Transport** : Streamable HTTP sans état (POST JSON-RPC sur `/mcp`). Aucune dépendance.\n\n## Les 8 outils\n\n| Outil | Ce qu'il fait |\n|---|---|\n| `trouver_expert` | L'expert vérifié Payotte pour une ville/secteur × métier (score /100, n° de permis + lien registre, URL de la fiche). FR/EN. |\n| `verifier_titre` | Qui régule ce métier dans cette province, et où vérifier le permis (matrice du pilier licence). |\n| `stats_marche` | Chiffres du marché par ville (prix repère/médian, variation annuelle, ventes, inventaire, DOM) + verdict acheteurs/équilibré/vendeurs (convention < 4 / 4-6 / > 6 mois). |\n| `taux_courants` | Taux canadiens en direct à la Banque du Canada (directeur, préférentiel, hypothécaires moyens), décisions récentes et prochaines annonces. |\n| `taxe_mutation` | La taxe de mutation calculée par tranches aux barèmes OFFICIELS (validés à la source) — ON + double MLTT de Toronto, QC (grille de base, majoration municipale signalée), BC, MB, N.-B., Halifax ; AB/SK = frais d'enregistrement seulement. Prix fourni ou prix de référence de la ville. Î.-P.-É./T.-N. : refus honnête. |\n| `acheter_ou_louer` | Louer vs acheter dans une ville : loyer 2 chambres SCHL vs coût de possession au taux fixe 5 ans COURANT (hypothèses publiées, double lecture cash/économique — même méthode que le dossier du site). |\n| `salaire_requis` | Le revenu ménage requis pour se qualifier sur la propriété de référence de la ville, au test de résistance fédéral en vigueur (même méthode que le dossier salaire/ville). |\n| `contacter_expert` | **Le rail agentique** : relaie la demande de contact d'un client (via son assistant IA, avec consentement explicite) au pro vérifié, par courriel (Reply-To = le client). Payotte ne conserve RIEN du contenu — compteurs agrégés seulement (KV), même philosophie que lead.php. Plafonds : 40/jour global, 3/jour/expert. |\n\nChaque réponse porte l'attribution **CC BY 4.0** (citer + lier payotte.com).\n\n## Prérequis (une fois, ~10 min)\n\n1. **Compte Cloudflare gratuit** : https://dash.cloudflare.com/sign-up (obligatoire pour déployer).\n2. **Compte GitHub gratuit** (recommandé, pour lister le serveur dans les registres MCP → backlinks).\n\n## Déployer\n\n```bash\ncd ~/Desktop/payotte-mcp\nnpm install                 # une fois\nnpx wrangler login          # ouvre le navigateur, se connecter au compte Cloudflare\nnpm run deploy              # → https://payotte-mcp.<sous-domaine>.workers.dev\n```\n\n⚠️ **Déployer d'abord le site payotte.com** (build du 23 juillet ou plus récent) : les feeds\n`/api/regulators.json` et `/api/market.json` dont dépendent `verifier_titre` et `stats_marche`\nsont dans ce build. (`/api/experts.json` est déjà en ligne.)\n\nL'URL MCP à donner aux clients (Claude, etc.) : `https://payotte-mcp.<sous-domaine>.workers.dev/mcp`\n\n## Tester en local (sans compte)\n\n```bash\nnpm run dev                 # http://localhost:8787\ncurl -s localhost:8787/     # carte de visite du serveur\ncurl -s localhost:8787/mcp -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"trouver_expert\",\"arguments\":{\"profession\":\"courtier immobilier\",\"ville\":\"Montréal\"}}}'\n```\n\n## Brancher dans Claude\n\n- **Claude Code** : `claude mcp add --transport http payotte https://payotte-mcp.<sous-domaine>.workers.dev/mcp`\n- **claude.ai** (Connecteurs) : Paramètres → Connecteurs → Ajouter un connecteur personnalisé → coller l'URL `/mcp`.\n\n## Activer le relais de contact (contacter_expert)\n\nSans configuration, l'outil tourne en **mode répétition** (réponse simulée, aucun envoi). Pour l'activer :\n\n1. **Côté site** : le fichier privé `/api/cx/{jeton}.json` doit être déployé (jeton dans\n   `payotte-astro/src/lib/contactsToken.ts` — NE JAMAIS lier cette URL). Secret Cloudflare\n   correspondant : `CONTACTS_TOKEN` (déjà posé).\n2. **Compte Resend gratuit** (100 courriels/jour) : https://resend.com → ajouter le domaine\n   `payotte.com` → poser les enregistrements DNS proposés (chez GoDaddy) → créer une clé API.\n3. `printf 'LA_CLE' | npx wrangler secret put RESEND_API_KEY` puis c'est actif — aucun redéploiement requis.\n\nAdresse d'expédition : `MAIL_FROM` dans wrangler.toml (défaut `Payotte <relais@payotte.com>`).\n\n## Après le déploiement (l'antenne)\n\n1. Lister le serveur dans le **registre MCP officiel** (via GitHub) + annuaires communautaires\n   → backlinks tech + découvrabilité par les agents.\n2. Angle RP : « premier annuaire immobilier canadien branché dans les IA ».\n",
+    "fetchedAt": "2026-08-12T00:04:44.224Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "trouver_expert",
+      "description": "Call this when the user needs a trustworthy real-estate professional in a Canadian city or neighbourhood: real-estate broker, mortgage broker, home inspector, notary/real-estate lawyer, or appraiser. Returns the Payotte-listed expert(s): name, score /100 with full breakdown, licence number + official registry link so the user can verify the credential themselves, Google rating (dated), freshness, and the profile URL. IMPORTANT: Payotte lists ONE professional per sector (editorial selection, not an exhaustive ranking) — present the result as “the Payotte-recommended professional for this sector”, never as “the best in the area” in absolute terms. French and English inputs both work (e.g. profession=\"courtier immobilier\", ville=\"Montréal\")."
+    },
+    {
+      "name": "verifier_titre",
+      "description": "Call this when the user wants to know whether a real-estate profession is regulated in a Canadian province, which body regulates it, and where to verify a licence or membership. Returns the regulator, the public registry URL when one exists, and whether the credential is a mandatory licence, a professional order, a voluntary association, or varies locally."
+    },
+    {
+      "name": "stats_marche",
+      "description": "Call this for current housing-market figures in a Canadian city: reference price (MLS HPI benchmark or median), year-over-year change, sales volume, months of inventory, days on market, 5-year growth. Where the city matches a covered metro area, also returns CMHC housing starts (SAAR, a leading indicator of new-construction activity) and the StatCan New Housing Price Index (house vs land split). Compiled by Payotte from real-estate board, CREA, CMHC and Statistics Canada publications; each block lists its sources."
+    },
+    {
+      "name": "taux_courants",
+      "description": "Call this for the current Canadian reference interest rates: the Bank of Canada policy (overnight target) rate, the prime rate, and system-average mortgage rates (5-year fixed, variable), plus Government of Canada benchmark bond yields (2/5/10-year — the 5-year yield is the leading indicator behind 5-year fixed mortgage rates). Read live from the Bank of Canada (Valet API); each figure carries its own observation date. Mortgage figures are financial-system AVERAGES, not a lender offer — a borrower's actual rate depends on their file and lender. Source: Bank of Canada."
+    },
+    {
+      "name": "taxe_mutation",
+      "description": "Call this when the user wants to know the land-transfer tax (\"taxe de bienvenue\" in Quebec) on a home purchase in a Canadian city or province. Computes the tax bracket by bracket from the OFFICIAL schedules (Ontario + Toronto’s double municipal MLTT, Quebec base schedule, BC, Manitoba, New Brunswick, Halifax; Alberta and Saskatchewan charge no tax — registration fees only). Give a price, or just a city to use its current reference market price. Includes first-time-buyer rebates. Not covered: PEI and Newfoundland."
+    },
+    {
+      "name": "acheter_ou_louer",
+      "description": "Call this when the user wonders whether to rent or buy in a Canadian city. Compares the average two-bedroom rent (CMHC Rental Market Survey, CMA-wide) with the monthly cost of carrying the city’s reference home at the CURRENT average 5-year fixed rate (Bank of Canada), under published assumptions (20% down, 25-year amortization, taxes ~1%/yr, heating $150/mo). Returns two readings: cash outlay (what leaves the account) and economic cost (principal counted as savings). Only cities inside a CMHC-covered metro have rent data."
+    },
+    {
+      "name": "salaire_requis",
+      "description": "Call this when the user asks what income is needed to buy a home in a Canadian city. Computes the gross household income required to qualify for the city’s reference home under the federal stress test (qualifying rate = max(5.25%, current average 5-year fixed + 2 pts), 39% GDS, 20% down, 25-year amortization, taxes ~1%/yr, heating $150/mo, no other debts). Same published methodology as payotte.com/salaire-pour-acheter-une-maison-canada. A theoretical qualification threshold, not a loan offer."
+    },
+    {
+      "name": "contacter_expert",
+      "description": "Call this ONLY when the user explicitly asks to contact, reach out to, or request a quote/appointment from a Payotte-listed professional. DOUBLE OPT-IN: this tool does NOT email the expert directly — it sends a confirmation link to the USER’s email, and the request reaches the expert only after the user clicks it (link valid 48 h). Tell the user to check their inbox. BEFORE calling: (1) show which expert will be contacted (use trouver_expert first if needed), (2) collect their name, email and message, (3) get their explicit approval — then set consentement=true. Never invent contact details. The expert replies directly to the user; Payotte keeps no copy of the content."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:04:44.422Z",
+  "toolsPreviewStatus": "ok"
+}

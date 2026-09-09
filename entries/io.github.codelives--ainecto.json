@@ -1,0 +1,59 @@
+{
+  "id": "io.github.codelives/ainecto",
+  "title": "Ainecto",
+  "description": "Ainecto MCP connector for workspace, document, ERD, diagram, task, and attachment workflows.",
+  "summary": "Ainecto MCP connector for workspace, document, ERD, diagram, task, and attachment workflows.",
+  "offersHint": "Ainecto MCP connector for workspace, document, ERD, diagram, task, and attachment workflows. · Packages: npm:@ainecto/mcp",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@ainecto/mcp",
+    "version": "0.1.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@ainecto/mcp",
+      "version": "0.1.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://ainecto.com",
+  "sourceUrl": "https://github.com/codelives/ainecto",
+  "repository": {
+    "url": "https://github.com/codelives/ainecto",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-10T08:38:33.629301Z",
+  "publishedAt": "2026-07-10T08:38:33.629301Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:37.057Z",
+    "sourceRepoAt": "2026-08-11T23:52:17.359Z",
+    "readmeAt": "2026-08-11T23:52:18.298Z",
+    "toolsAt": "2026-08-12T01:26:37.058Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/codelives/ainecto",
+    "checkedAt": "2026-08-11T23:52:17.359Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/codelives/ainecto/main/README.md",
+    "markdown": "# @ainecto/mcp\n\nAinecto MCP connector and first-party CLI.\n\nThis package exposes two entry points:\n\n- `npx -y @ainecto/mcp` or `ainecto mcp`: raw stdio-to-HTTP JSON-RPC proxy for Ainecto MCP.\n- `ainecto <command>`: human CLI for auth and low-level tool calls.\n\nPhase 1 keeps the connector as a raw proxy. File, stdin, and inline JSON parsing are only available in first-party CLI commands.\n\n## Local Setup\n\n```bash\nnpm install\nnpm run typecheck\nnpm test\nnpm run build\nnpm link\n```\n\n## Commands\n\n```bash\nainecto auth login --env dev\nainecto auth status --env dev\nainecto auth logout --env dev\n\nainecto tools list --env dev\nainecto tools call mcp__ainecto__list_projects --env dev --json\nainecto tools call mcp__ainecto__erd_apply_changes -f changes.json --json\ncat payload.json | ainecto tools call mcp__ainecto__erd_apply_changes --json\n\nainecto projects list --env dev\nainecto task list-tasks --env dev --document-uuid <documentUuid> --json\nainecto erd apply-changes --env dev -f erd-operations.json --yes\n```\n\nEndpoint resolution priority:\n\n1. `--endpoint <url>`\n2. `AINECTO_MCP_ENDPOINT`\n3. `--env dev`\n4. production default, `https://ainecto.com/mcp`\n\nEndpoint URLs must use `https:`. Plain `http:` is accepted only for localhost loopback targets such as `127.0.0.1`. When `AINECTO_TOKEN` is set, the CLI only sends it to the default prod/dev endpoints unless `AINECTO_ALLOW_CUSTOM_ENDPOINT_TOKEN=1` is set for an explicitly trusted custom endpoint.\n\n## Connector Mode\n\n```bash\nnpx -y @ainecto/mcp\nainecto mcp --env dev\n```\n\nThe connector proxies `initialize`, `tools/list`, and `tools/call` to the resolved `/mcp` endpoint. It does not rewrite remote schemas or interpret local file references.\n\n## MCP Client Installation\n\nUse the direct package configuration until the server is published to the official MCP Registry.\n\n```json\n{\n  \"mcpServers\": {\n    \"ainecto\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@ainecto/mcp\"]\n    }\n  }\n}\n```\n\nFor a non-production endpoint, pass CLI flags through the package args:\n\n```json\n{\n  \"mcpServers\": {\n    \"ainecto-dev\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@ainecto/mcp\", \"--env\", \"dev\"]\n    }\n  }\n}\n```\n\nThe planned official Registry server name is `io.github.codelives/ainecto`, backed by the public npm package `@ainecto/mcp`. Registry publication requires the npm package version referenced by `server.json` to include a matching `mcpName` field in `package.json`.\n\n## Catalog Sync\n\n`sync:tools --check` is intended for publish-time live drift checks. It fails fast when `AINECTO_CATALOG_SYNC_TOKEN` is missing, so automatic publish cannot silently fall back to fixtures.\nFor local development, `sync:tools` can also use credentials from `ainecto auth login --env <env>`.\n\n```bash\nAINECTO_CATALOG_SYNC_TOKEN=... npm run sync:tools -- --env prod --check\nAINECTO_CATALOG_SYNC_TOKEN=... npm run sync:tools -- --env dev --check\n```\n\nThe checked-in generated catalogs are deterministic output from `tools/list`. The prod and dev catalogs are live-synced snapshots from `https://ainecto.com/mcp` and `https://dev.ainecto.com/mcp`. Presentation metadata lives separately in `src/core/catalog/enrichments.ts`.\n\n`ainecto tools catalog` prints the local generated catalog. Rerun authenticated `sync:tools` when prod or dev `tools/list` changes.\n\n## Generated Friendly Commands\n\nEvery checked-in generated catalog tool is reachable through its deterministic command path. Scalar schema fields are exposed as flags, with both kebab-case and schema-case accepted:\n\n```bash\nainecto task list-tasks --env dev --document-uuid <documentUuid>\nainecto task list-tasks --env dev --documentUuid <documentUuid>\n```\n\nArray or object payloads use the existing first-party CLI JSON payload reader:\n\n```bash\nainecto documents create --env dev -f create-documents.json\ncat task-ops.json | ainecto task apply-changes --env dev --json\n```\n\nDestructive generated commands prompt in human mode unless `--yes` is supplied. In `--json` mode they fail with a structured error unless `--yes` is present.\n\nAttachment file upload is available through a bespoke command that performs the upload-token, raw PUT, and attachment registration flow:\n\n```bash\nainecto attachments upload --env dev --document-uuid <documentUuid> ./diagram.png ./notes.pdf\n```\n\nThe generated `request_upload_token` and `upload_attachments` paths remain raw MCP argument-contract commands and do not read local files.\n\n## Local Tarball Smoke\n\n```bash\nnpm pack\nnpx -y ./ainecto-mcp-0.1.4.tgz --help\nnpm exec --package ./ainecto-mcp-0.1.4.tgz -- ainecto --help\n```\n\n## Live Dev MCP Smoke\n\nThis requires an authenticated dev token from `ainecto auth login --env dev` or a local developer `AINECTO_TOKEN`.\n\n```bash\nnpm run smoke:mcp -- --env dev\n```\n\nThe smoke initializes MCP, reads `tools/list`, calls `mcp__ainecto__list_projects`, and prints only aggregate metadata such as tool count and Task tool exposure.\n\n## Local Attachment Upload Smoke\n\nThis exercises the full `attachments upload` flow against a local `ainecto-api` dev server:\nOAuth MCP token issue, REST fixture document creation, CLI upload, `list_attachments`, and server filesystem byte verification.\n\n```bash\nnpm run smoke:attachments -- --base-url http://localhost:8080 --endpoint http://localhost:8080/mcp --api-root /Users/ryan/project/workspace/codelive/ainecto-api\n```\n\nThe smoke creates a temporary user/workspace/project/document and removes the fixture account, local temp file, and stored upload file unless `--keep` is supplied.\n\n## Known Limitations\n\n- The MCP connector currently implements newline-delimited stdio JSON-RPC to HTTP JSON-RPC. Streamable HTTP SSE responses and `MCP-Session-Id` session handling are not implemented in Phase 1.\n\nOfficial MCP Registry publish is pending GitHub namespace owner authentication with `mcp-publisher` and metadata submission.\n",
+    "fetchedAt": "2026-08-11T23:52:18.298Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:26:37.058Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

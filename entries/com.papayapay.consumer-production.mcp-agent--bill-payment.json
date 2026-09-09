@@ -1,0 +1,69 @@
+{
+  "id": "com.papayapay.consumer-production.mcp-agent/bill-payment",
+  "title": "Papaya Pay Any Bill (US)",
+  "description": "Pay any US bill in a snap, right from your chat — utilities, medical, rent, parking tickets & more.",
+  "summary": "Pay any US bill in a snap, right from your chat — utilities, medical, rent, parking tickets & more.",
+  "offersHint": "Pay any US bill in a snap, right from your chat — utilities, medical, rent, parking tickets & more. · Remote MCP (streamable-http) at https://mcp-agent.consumer-production.papayapay.com/payagent/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp-agent.consumer-production.papayapay.com/payagent/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp-agent.consumer-production.papayapay.com/payagent/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://papayapay.com/payabill",
+  "updatedAt": "2026-07-09T20:10:01.087734Z",
+  "publishedAt": "2026-07-09T20:10:01.087734Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:55:19.272Z",
+    "sourceRepoAt": "2026-08-12T00:28:58.592Z",
+    "readmeAt": "2026-08-12T01:55:19.272Z",
+    "toolsAt": "2026-08-12T00:28:58.592Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-12T00:28:58.592Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:55:19.272Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "analyze_bill",
+      "description": "Read a bill from the user's description and create it for payment. This is the\n    first step. Capture every address and identifier on the bill (remit-to address,\n    account/invoice number, any code or pin) - missing details can delay or fail\n    the payment. The remit-to address (where payment is sent) is especially important:\n    it is what identifies the correct biller, and a wrong or missing one can match the\n    bill to the wrong biller and cause a failed or delayed payment. Always include it. If\n    the bill does not show a remit-to address, research the biller's official remit-to /\n    payment address online and use that rather than omitting it. For the same reason,\n    capture the bill's online-payment URL in payUrl and any payment phone number in\n    otherInfo whenever the bill shows them - these strongly identify the correct biller.\n    Always secure a user identifier so the payment can be applied to the right account or\n    charge: capture the account/customer number in the account field, and any invoice,\n    ticket, or reference number in otherInfo - capture all that the bill shows, since some\n    billers need the account number plus another identifier. If the bill shows none, ask\n    the user for one rather than proceeding without it.\n    Before calling, ask the user how much they want to pay (the full\n    balance amountDue, or a partial amount), then pass it as amount_to_pay and quote\n    what they said in user_amount_statement - both are required (never invent the\n    amount). If the payment carries a fee, the result includes a `fees` list - show any\n    returned fee to the user before continuing. The result also includes a\n    `payment_link`: give this link to the user as-is so they can enter their card on the\n    secure form (the only way to set a payment method). If the user already exists from a\n    prior bill, pass their user_id and auth_token to reuse the account.\n\n    Args:\n        bill_description: structured bill details, including amountDue, amount_to_pay\n            and user_amount_statement\n\n    Returns:\n        bill/user identifiers, tokens, provider, amount due, the chosen amount_to_pay,\n        a payment_link to the secure card form, and any user-facing fees\n    "
+    },
+    {
+      "name": "check_payment_method",
+      "description": "Optional: check whether the user has finished the secure form and a card is on the\n    bill yet. Returns the card's last 4 digits and name when one is set, or a PENDING\n    status when the form has not been completed. Use only if you need to confirm the card\n    landed (e.g. the user asks) - it is not a required step; the normal path is\n    analyze_bill -> user fills the form -> confirm_payment_intent.\n\n    Args:\n        check_input: the user_id and bill_id to look up\n    "
+    },
+    {
+      "name": "confirm_payment_intent",
+      "description": "Final step: submit the bill for payment, after a card has been set. You must have\n    confirmed the amount with the user first (amount_to_pay may be partial) and quote\n    their confirmation in user_amount_statement - do not call this until you have asked.\n    If analyze_bill reported a need for extra information, supply it in extra_infos or\n    submission will fail. Use entered_account / entered_provider only to correct a\n    mis-extracted value. Pass the user's current refresh_token (from analyze_bill or a\n    prior confirm) - do not guess.\n\n    Args:\n        confirm_input: identifiers, the amount to pay, contact info and any extra info\n    "
+    },
+    {
+      "name": "get_new_auth_token",
+      "description": "Get a fresh auth token when another tool fails with an authorization error. Pass\n    the user's current refresh_token; returns a new auth_token/refresh_token pair to use\n    on the retried call and on later calls. Call this only in response to an auth failure,\n    not preemptively.\n\n    Args:\n        new_token_input: contains the user's refresh token\n\n    Returns:\n        a new auth_token and refresh_token pair, or an error if the refresh token is\n        missing or invalid\n    "
+    },
+    {
+      "name": "fetch_bill_status",
+      "description": "Check the payment status of a submitted bill. Read `value` for the current status.\n    statusEvaluatedDescription is only present when the payment was declined or failed,\n    and then explains why - relay that reason to the user. It is omitted for every other\n    status, so treat its presence as a decline/failure.\n\n    Args:\n        bill_status_input: the bill identifier and auth token\n\n    Returns:\n        dictionary with keys value, statusDescription, and - only for declined/failed\n        bills - statusEvaluatedDescription explaining why the payment did not go through\n    "
+    },
+    {
+      "name": "request_bill_cancellation",
+      "description": "Cancel a submitted bill so it will not be paid. Use when the user wants to stop a\n    bill they submitted; cancellation may be rejected if the payment has already\n    progressed too far - relay any error to the user. Not for correcting bill details:\n    re-run analyze_bill for that.\n\n    Args:\n        bill_cancel_input: the bill identifier and auth token\n\n    Returns:\n        the cancelled bill id and status, or error details\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:28:58.592Z",
+  "toolsPreviewStatus": "ok"
+}

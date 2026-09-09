@@ -1,0 +1,58 @@
+{
+  "id": "io.github.BigJai/codemunch-pro",
+  "title": "codemunch-pro",
+  "description": "Code indexing MCP: 15 tools, 10 languages, hybrid search, call graphs, O(1) retrieval.",
+  "summary": "Code indexing MCP: 15 tools, 10 languages, hybrid search, call graphs, O(1) retrieval.",
+  "offersHint": "Code indexing MCP: 15 tools, 10 languages, hybrid search, call graphs, O(1) retrieval. · Packages: pypi:codemunch-pro",
+  "version": "1.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "codemunch-pro",
+    "version": "1.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "codemunch-pro",
+      "version": "1.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/BigJai/codemunch-pro",
+  "repository": {
+    "url": "https://github.com/BigJai/codemunch-pro",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-02T13:02:20.85968Z",
+  "publishedAt": "2026-03-02T13:02:20.85968Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:46:24.673Z",
+    "sourceRepoAt": "2026-08-12T00:16:28.271Z",
+    "readmeAt": "2026-08-12T00:16:28.660Z",
+    "toolsAt": "2026-08-12T01:46:24.673Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/BigJai/codemunch-pro",
+    "checkedAt": "2026-08-12T00:16:28.271Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/BigJai/codemunch-pro/main/README.md",
+    "markdown": "# CodeMunch Pro\n\n<!-- mcp-name: io.github.BigJai/codemunch-pro -->\n\nIntelligent code indexing MCP server. 15 tools, 10 languages, tree-sitter AST extraction, hybrid search (FTS5 + vector), call graphs, remote repo indexing, incremental indexing.\n\n**Save 99% of tokens** — get exact function source via byte-offset seek instead of reading entire files.\n\n## Install\n\n```bash\npip install codemunch-pro\n```\n\n## Quick Start\n\n### Claude Desktop / Cline\n\nAdd to your MCP client config:\n\n```json\n{\n  \"mcpServers\": {\n    \"codemunch-pro\": {\n      \"command\": \"codemunch-pro\"\n    }\n  }\n}\n```\n\n### HTTP Server\n\n```bash\ncodemunch-pro --transport streamable-http --port 5002\n```\n\n## 15 MCP Tools\n\n| Tool | Description |\n|------|-------------|\n| `index_folder` | Index a local directory (incremental, SHA-256 based) |\n| `index_repo` | Index a GitHub/GitLab repo (tarball download, no git needed) |\n| `list_repos` | List all indexed repositories with stats |\n| `invalidate_cache` | Force re-index a repository |\n| `file_tree` | Get directory tree with file counts |\n| `file_outline` | List symbols in a single file |\n| `repo_outline` | List all symbols in repo (summary) |\n| `get_symbol` | Get full source of one symbol (O(1) byte seek) |\n| `get_symbols` | Batch get multiple symbols |\n| `search_symbols` | Hybrid search (FTS5 + vector RRF) |\n| `search_text` | Full-text search in file contents |\n| `get_callees` | What does this function call? |\n| `get_callers` | Who calls this function? |\n| `diff_symbols` | What changed since last index? (PR review) |\n| `dependency_map` | What does this file depend on? What depends on it? |\n\n## 10 Languages\n\nPython, JavaScript, TypeScript, Go, Rust, Java, C, C++, C#, Ruby\n\nAll via [tree-sitter-language-pack](https://pypi.org/project/tree-sitter-language-pack/) — zero compilation, pre-built binaries.\n\n## Key Features\n\n### O(1) Symbol Retrieval\nEvery symbol stores its byte offset and length. `get_symbol` seeks directly to the function source — no reading entire files. A 200-byte function from a 40KB file = **99.5% token savings**.\n\n### Incremental Indexing\nFiles are hashed (SHA-256). Only changed files are re-parsed. Re-indexing a 10K file repo after changing one file takes milliseconds.\n\n### Hybrid Search (FTS5 + Vector)\nCombines BM25 keyword matching with semantic vector similarity using Reciprocal Rank Fusion. Search \"authentication middleware\" and find `auth_middleware`, `verify_token`, and `login_handler`.\n\n### Call Graphs\nTraces function calls through the AST. `get_callees(\"main\")` shows what `main` calls. `get_callers(\"authenticate\")` shows who calls `authenticate`. Supports depth traversal.\n\n### Remote Repo Indexing (v1.1)\nIndex any public GitHub or GitLab repo by URL — no git binary needed. Downloads the tarball via API, extracts, and indexes. Cached locally with SHA-based freshness checks. Supports private repos with auth tokens and sparse paths.\n\n### Full-Text Content Search\nSearch raw file contents — string literals, TODO comments, config values, error messages. Not just symbol names.\n\n## How It Works\n\n1. **Parse** — tree-sitter builds an AST for each source file\n2. **Extract** — Walk AST to find functions, classes, methods, types, interfaces\n3. **Store** — SQLite database per repo with FTS5 virtual tables\n4. **Embed** — FastEmbed (ONNX, CPU-only) generates 384-dim vectors for semantic search\n5. **Graph** — Call expressions extracted from function bodies, edges stored and resolved\n6. **Serve** — FastMCP exposes 13 tools via stdio or HTTP\n\n## Architecture\n\n```\n~/.codemunch-pro/\n├── myproject_a1b2c3d4e5f6.db    # Per-repo SQLite database\n├── otherproject_7890abcdef.db\n└── ...\n\nEach DB contains:\n├── files          # Indexed files with SHA-256 hashes\n├── symbols        # Functions, classes, methods, types\n├── symbols_fts    # FTS5 full-text search index\n├── symbols_vec    # sqlite-vec 384-dim vector index\n├── call_edges     # Call graph (caller → callee)\n└── file_content_fts  # Raw file content search\n```\n\n## Use Cases\n\n- **AI Coding Agents**: Give your agent surgical access to codebases without burning context\n- **Code Review**: Find all callers of a function before changing its signature\n- **Onboarding**: Search symbols semantically — \"where is error handling?\" finds relevant code\n- **Refactoring**: Map call graphs before moving functions between modules\n- **Documentation**: Extract all public APIs with signatures and docstrings\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:16:28.660Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:46:24.673Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

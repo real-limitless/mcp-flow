@@ -1,0 +1,105 @@
+{
+  "id": "io.github.ZlaylowZ/nukez-mcp",
+  "title": "nukez-mcp",
+  "description": "Agent-native storage with cryptographic verification on Solana. Keyless: clients sign and pay.",
+  "summary": "Agent-native storage with cryptographic verification on Solana. Keyless: clients sign and pay.",
+  "offersHint": "Agent-native storage with cryptographic verification on Solana. Keyless: clients sign and pay. · Remote MCP (streamable-http) at https://mcp.nukez.xyz/mcp",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.nukez.xyz/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.nukez.xyz/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://nukez.xyz/docs/mcp",
+  "updatedAt": "2026-07-29T18:50:44.689818Z",
+  "publishedAt": "2026-07-29T18:50:44.689818Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:32:18.135Z",
+    "sourceRepoAt": "2026-08-11T23:59:20.439Z",
+    "readmeAt": "2026-08-12T01:32:18.135Z",
+    "toolsAt": "2026-08-11T23:59:20.439Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "skipped",
+    "checkedAt": "2026-08-11T23:59:20.439Z",
+    "error": "no sourceUrl"
+  },
+  "readme": {
+    "source": "none",
+    "fetchedAt": "2026-08-12T01:32:18.135Z",
+    "error": "no sourceUrl"
+  },
+  "toolsPreview": [
+    {
+      "name": "nukez_quote",
+      "description": "Step 1: Get storage pricing and payment options. Returns price breakdown and every available payment method (SOL/USDC/USDT/WETH/BETA on Solana, USDC/USDT0/MON/WETH on Monad). Each option carries a `destination_kind`: 'wallet' (native SOL — send lamports to pay_to_address), 'spl_token_account' (Solana SPL tokens — pay_to_address IS already the treasury's token account; pass it DIRECTLY as the transferChecked destination, do NOT derive an ATA from it), or 'evm_address' (Monad — send native value to the address, or call transfer() on the token contract at token_address). SPL options also include a self-contained `spl_transfer` block (program_id, destination_token_account, mint, amount_raw, decimals) you can pass straight to a signer. Review payment_options, pick one, then sign+submit externally and call nukez_pay with the resulting tx_sig. Providers: gcs (default), mongodb, storj, arweave, filecoin, firestore."
+    },
+    {
+      "name": "nukez_pay",
+      "description": "Step 2: Record an externally-executed on-chain payment. The server is keyless and never signs transactions — execute the transfer yourself (Solana sendTransaction or an EVM client) and pass the resulting signature as tx_sig. Uses pay_req_id from nukez_quote (auto-resolved from state). Specify chain and pay_asset to identify the rail (e.g. chain='solana-mainnet', pay_asset='BETA'); defaults to the quote's choice. Solana SPL pre-flight: when the quote selected an SPL token (USDC/USDT/WETH/BETA), this tool fetches the tx via read-only RPC and verifies it transferred ≥ the expected amount of the expected mint to the treasury's SPL token account. A confirmed mismatch (typically: tokens sent to an ATA derived from pay_to_address) is REJECTED with a structured WRONG_DESTINATION error and the tx_sig is NOT recorded — the quote remains valid so you can re-pay correctly. Indeterminate pre-flights (RPC down, tx not yet visible) fall through to recording."
+    },
+    {
+      "name": "nukez_provision",
+      "description": "Step 3: Confirm payment settlement on the gateway and provision the storage locker. Two modes: (a) Without `envelope`: pass pay_req_id + tx_sig (auto-resolved from state). Returns the receipt_id and a hint to build a signed `locker:provision` envelope. (b) With `receipt_id` + `envelope`: forwards the signed envelope to /v1/storage/signed_provision and activates the locker. Also accepts `receipt_id` alone to rehydrate an already-provisioned locker without re-paying."
+    },
+    {
+      "name": "nukez_setup",
+      "description": "Set up Nukez storage: checks wallet, purchases storage, and provisions locker in a single call. Call with no args to run the full flow. Call with receipt_id to rehydrate an existing locker. Providers: gcs (default), mongodb, storj, arweave, filecoin, firestore. Payments: Solana (SOL, USDC, USDT, WETH, BETA) and Monad/EVM (MON, USDC, USDT0, WETH) — chain is auto-detected."
+    },
+    {
+      "name": "nukez_create_file",
+      "description": "Create a file entry and get upload_url + confirm_url for direct upload. The client PUTs raw bytes directly to the upload_url (307-redirects to GCS), then calls nukez_confirm to finalize. Bytes never transit the MCP server. Use this for large files from local/external sources against Cloud Run. For small inline content (<4KB), use nukez_store with data_b64 instead."
+    },
+    {
+      "name": "nukez_store",
+      "description": "Store files in your Nukez locker. ALWAYS BATCH: pass ALL the files you want to upload in a SINGLE call, as a list under `files`. Do NOT loop over your file list and call nukez_store once per file — that triggers one on-chain attestation per file (slow + costs SOL fees per push). One nukez_store call with N files triggers exactly ONE attestation for the whole batch. Each list item: {name, <data_source>, content_type?}. UPLOAD PATH PRIORITY: 1. source_url — if the file is available at a public HTTPS URL, pass it and the server fetches directly (fastest, zero token cost). 2. sandbox_path — if you have compute/bash access and the file is on disk, pass the absolute path. 3. local_path — if the file exists on local disk (desktop/CLI environments). 4. data_b64 — LAST RESORT for small content only (<4KB). Sends bytes through your context window.    Accepts both base64-encoded binary and plain UTF-8 text. 5. nukez_upload_chunk — if sandbox_path curl failed (HTTP 000 / network blocked),    upload in 4KB chunks with sha256 verification. Run the prep script from the response,    then call nukez_upload_chunk for each chunk. NEVER base64-encode files >4KB in one call. Upload path is auto-selected based on size and runtime environment."
+    },
+    {
+      "name": "nukez_confirm",
+      "description": "Confirm a file upload after sandbox curl completes. Call this after executing the curl command returned by nukez_store in sandbox mode. The server computes SHA-256 and records the hash. Requires a payer-signed locker:write envelope: signer-mode deployments sign automatically via the SDK; keyless clients first call without envelope to receive the exact envelope spec to sign, then re-call with envelope=<signed result> (the batch spec returned by nukez_store is also accepted here)."
+    },
+    {
+      "name": "nukez_upload_chunk",
+      "description": "Upload a file in chunks when sandbox curl/network is blocked. PREPARATION — run this bash script first to split and hash:\n  python3 -c \"\nimport base64, hashlib, os, json, math\npath = '<SANDBOX_FILE_PATH>'\nCHUNK = 4096\nsize = os.path.getsize(path)\nn = math.ceil(size / CHUNK)\nos.makedirs('/tmp/nkz', exist_ok=True)\nhashes = []\nwith open(path, 'rb') as f:\n    for i in range(n):\n        raw = f.read(CHUNK)\n        h = hashlib.sha256(raw).hexdigest()\n        b = base64.b64encode(raw).decode()\n        open(f'/tmp/nkz/{i:04d}.b64','w').write(b)\n        open(f'/tmp/nkz/{i:04d}.sha','w').write(h)\n        hashes.append(h)\nprint(json.dumps({'chunks':n,'bytes':size,'hashes':hashes}))\n\"\nThen for each chunk: read the .b64 file, read the .sha file, and call this tool:\n  cat /tmp/nkz/0000.b64  → data_b64\n  cat /tmp/nkz/0000.sha  → sha256\n  nukez_upload_chunk(filename=..., data_b64=..., sha256=..., part_no=0)\nSet is_last=True on the final chunk. Server verifies sha256 — hash mismatch means token corruption, retry by re-reading. Always use 4KB chunks (CHUNK=4096). Do not use larger chunks.\nSTATELESS RELAY: part_no=0 returns job_id and file_id. Pass both back on every subsequent chunk (required when each chunk is a separate MCP session)."
+    },
+    {
+      "name": "nukez_retrieve",
+      "description": "List files or download content from your Nukez locker. Call with no filenames to list all files. Call with filenames=['file.txt'] to download specific files."
+    },
+    {
+      "name": "nukez_verify",
+      "description": "Fast structural verification of locker state. Returns merkle root, attestation status, and optional per-file proof. Pass memory_key to verify a specific memory record by key. Cheap: reads the persisted attestation; latency is independent of locker size (~sub-second typical). With push=True, also triggers a fresh on-chain attestation: the gateway enqueues the same background job the async path uses (its Cloud Tasks worker performs the single on-chain push) and polls server-side, returning the settled attestation — or a 202-style accepted response pointing at the verify endpoint if its 90-second poll ceiling expires first. DO NOT call repeatedly after every store/delete just to keep the attestation current — the gateway already runs auto-reattest after every file mutation, gated to skip when the manifest is unchanged since the last attestation, so manual push calls are normally unnecessary. Use push=True only when you explicitly need the on-chain anchor right now and inline. For byte-level proof that storage bytes still match the recorded hashes (re-downloads everything), use nukez_recompute_verify instead."
+    },
+    {
+      "name": "nukez_recompute_verify",
+      "description": "Byte-level integrity proof: re-downloads every file from storage, recomputes content hashes, rebuilds the merkle tree, and compares the result against the persisted attestation. Returns match=True when storage bytes still match the recorded hashes, match=False when they have drifted. Cost: scales with total locker bytes (re-downloads everything). Slower than nukez_verify — reach for this only on audits, post-migration sanity checks, or when you suspect drift between storage and the persisted manifest. For routine integrity checks, nukez_verify is the right tool (sub-second, structural). Requires payer authorization (a signed locker:read envelope): signer-mode deployments sign automatically via the SDK; keyless deployments get action_required='sign_envelopes' with the exact envelope spec, then re-call with envelope=<signed result>."
+    },
+    {
+      "name": "nukez_status",
+      "description": "Check wallet balance, locker state, and lifecycle stage. Works at any stage — no active locker required."
+    },
+    {
+      "name": "nukez_delete",
+      "description": "Delete files from your Nukez locker. WARNING: permanent and irreversible. Invalidates existing attestation."
+    },
+    {
+      "name": "nukez_remember",
+      "description": "Store a structured memory record in your Nukez locker. Memories are indexed for fast search via nukez_recall. Use namespaces to organize (e.g., 'config', 'context', 'decisions'). Requires: key, content, summary. ENVELOPE: pass a list of 2 envelopes (each with unique nonce, POST path, ops=locker:write) — one for the record file, one for the index."
+    },
+    {
+      "name": "nukez_recall",
+      "description": "Search and retrieve memory records from your Nukez locker. Two modes: exact key lookup (pass key) returns full content + proof, or search (pass namespace/tags/query/prefix) returns matching index entries. ENVELOPE: none needed — both index and record are read via the public receipt-proxy URL. Just pass receipt_id."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:59:20.439Z",
+  "toolsPreviewStatus": "ok"
+}

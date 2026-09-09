@@ -1,0 +1,52 @@
+{
+  "id": "io.github.musyta-labs/mcpcut",
+  "title": "mcpcut",
+  "description": "A real timeline video editor for AI agents: journaled edits, FFmpeg/MLT rendering, exports",
+  "summary": "A real timeline video editor for AI agents: journaled edits, FFmpeg/MLT rendering, exports",
+  "offersHint": "A real timeline video editor for AI agents: journaled edits, FFmpeg/MLT rendering, exports · Remote MCP (streamable-http) at https://mcpcut.com/mcp",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcpcut.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcpcut.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://mcpcut.com",
+  "sourceUrl": "https://github.com/musyta-labs/mcpCut",
+  "repository": {
+    "url": "https://github.com/musyta-labs/mcpCut",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-03T08:17:05.484412Z",
+  "publishedAt": "2026-08-03T08:17:05.484412Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:11:49.389Z",
+    "sourceRepoAt": "2026-08-11T23:32:53.079Z",
+    "readmeAt": "2026-08-11T23:32:53.608Z",
+    "toolsAt": "2026-08-12T01:11:49.390Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/musyta-labs/mcpCut",
+    "checkedAt": "2026-08-11T23:32:53.079Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/musyta-labs/mcpCut/main/README.md",
+    "markdown": "# mcpCut\n\n**A real video editor for AI agents, served over MCP.**\n\nmcpCut gives any MCP-capable agent (Claude Code, Claude Desktop, or anything\nelse that speaks the protocol) an actual editing model — not a wrapper around\none ffmpeg command. Projects are immutable snapshots with a journaled history\nof named operations; rendering goes through FFmpeg or the MLT framework; a\ndeterministic CLI twin drives the same logic without a server.\n\n## Two ways to use it\n\n**☁️ Hosted (fastest — no install).** [mcpcut.com](https://mcpcut.com) runs\nthis editor as a service, with a browser editor on top: sign up, create an\nAPI token, and point your agent at the cloud MCP endpoint:\n\n```bash\nclaude mcp add --transport http mcpcut https://mcpcut.com/mcp \\\n  --header \"Authorization: Bearer <your token>\"\n```\n\nYou and your agent then work on the **same** projects — the agent edits over\nMCP, you review and tweak in the browser editor.\n\n**🖥 Self-hosted (this repository).** The open, single-user core: run it on\nyour own machine, point your agent at it, keep everything local. No accounts,\nno browser editor — just the MCP server, the editing engine and the CLI. The\nrest of this README is about this option.\n\n## What the agent gets\n\n44 tools over one consistent model:\n\n- **Projects & history** — create/list projects, journaled operations\n  (`editor_get_history` shows every edit ever made), named versions with\n  restore, annotations.\n- **Timeline** — multiple video/audio tracks, clips with trim/split/move/\n  resize, transforms with keyframes, transitions, canvas fit, color\n  adjustments.\n- **Text & graphics** — text overlays rasterized server-side, image/video\n  overlays, covers.\n- **Audio** — music beds, per-clip audio, volume envelopes.\n- **Media in** — local paths or URLs (URL import goes through an SSRF egress\n  guard; media is sanity-checked with ffprobe before it touches a timeline).\n- **Understanding** — media analysis (scenes, audio peaks, keyframes),\n  auto-captions via faster-whisper (`.[asr]` extra), local voiceover via\n  piper (`.[tts]` extra, GPL — see THIRD_PARTY_NOTICES.md).\n- **Out** — validation, preview renders, full exports with presets. Each\n  export writes an `.mlt` sidecar you can open in Shotcut or Kdenlive.\n\nEvery mutation validates its arguments against the tool's real signature\n(strings can't leak into numeric filter fields), returns a fresh snapshot\nwith a bumped version, and lands in the journal. Nothing edits in place.\n\n## Prerequisites\n\n- Python **3.12+**\n- **FFmpeg** (`ffmpeg` + `ffprobe` on PATH)\n- **MLT** (`melt` on PATH) — the default render engine. Alternatively set\n  `RENDER_ENGINE=ffmpeg` and skip melt.\n- A font for text rendering, e.g. Debian/Ubuntu:\n  `apt install fonts-dejavu-core fonts-noto-color-emoji`\n  (elsewhere, point `FONT_PATH` at any `.ttf`).\n\n```bash\n# Debian/Ubuntu, everything at once:\napt install ffmpeg melt fonts-dejavu-core fonts-noto-color-emoji\n```\n\n## Quickstart\n\n```bash\ngit clone https://github.com/musyta-labs/mcpCut && cd mcpCut\npython3 -m venv .venv && .venv/bin/pip install -e .\n\ncp .env.example .env       # MCP_AUTH_ENABLED=false is already set there\n.venv/bin/python -m app.mcp.server\n```\n\nThe server starts on `http://127.0.0.1:8100` — the MCP endpoint is\n`http://127.0.0.1:8100/mcp`. The database (SQLite) and media workspace are\ncreated on first run.\n\nOr with Docker (ffmpeg, melt and fonts included in the image):\n\n```bash\ndocker build -t mcpcut .\ndocker run -p 127.0.0.1:8100:8100 -e MCP_TRANSPORT=streamable-http \\\n  -v mcpcut-data:/data mcpcut\n```\n\n> **Single-user by design.** This build has no accounts: whoever can reach\n> the port is the operator, with full tool access including local file paths.\n> Keep it bound to localhost, or put an authenticating reverse proxy in front.\n> `MCP_AUTH_ENABLED=false` must be set explicitly — the server refuses to\n> start otherwise, so an open port is always a decision you made.\n\n### Connect an agent\n\nClaude Code:\n\n```bash\nclaude mcp add --transport http mcpcut http://127.0.0.1:8100/mcp\n```\n\nAny other MCP client, in its JSON config:\n\n```json\n{\n  \"mcpServers\": {\n    \"mcpcut\": { \"type\": \"http\", \"url\": \"http://127.0.0.1:8100/mcp\" }\n  }\n}\n```\n\nThen ask the agent for something real: *“make a 30-second cut of\n~/videos/talk.mp4 with auto-captions and export it.”* The `skills/` directory\ncontains ready-made instructions you can hand to any agent — see\n[skills/README.md](skills/README.md).\n\n### Or drive it without a server\n\nThe CLI twin runs the same operations deterministically:\n\n```bash\necho '{\"op\": \"create_project\", \"args\": {\"metadata\": {}}}' > /tmp/ops.json\n.venv/bin/python -m app.mcp.cli /tmp/ops.json\n```\n\n## Configuration\n\nEverything lives in environment variables (or `.env`); see\n[.env.example](.env.example) for the full annotated list. The ones that\nmatter most:\n\n| Variable | Default | What it does |\n|---|---|---|\n| `MCP_AUTH_ENABLED` | `true` | must be set to `false` in this build (see above) |\n| `DATABASE_URL` | `sqlite:///./data/editor.db` | SQLite by default; Postgres via `.[postgres]` |\n| `MEDIA_DIR` | `./media` | originals, exports, previews, caches |\n| `MCP_HOST` / `MCP_PORT` | `0.0.0.0` / `8100` | bind address of the server |\n| `RENDER_ENGINE` | `mlt` | `mlt` or `ffmpeg` |\n| `FONT_PATH` | DejaVu Bold (Debian path) | font for text overlays and captions |\n| `EXPORT_TTL_HOURS` / `CLIP_CACHE_TTL_HOURS` | `24` / `48` | retention sweep; `RETENTION_ENABLED=false` disables it |\n\n**Retention is real:** a background daemon deletes exports after 24 h and\ncached clips after 48 h by default. On a personal machine either download\nyour exports promptly or set `RETENTION_ENABLED=false`.\n\n## How it's built\n\n| Layer | Where | What |\n|---|---|---|\n| Timeline model | `app/editor/model.py` | frozen dataclasses; every edit returns a **new** project, `version + 1` |\n| Mutations | `app/editor/mutations.py` | pure functions, one named journaled operation per gesture |\n| Validation | `app/editor/validation.py` | structural checks + opt-in shorts profile |\n| Render | `app/editor/render.py` | one contract, two engines: `mlt_graph.py` (default) and `ffmpeg_graph.py` |\n| Analysis | `app/analysis/` | scenes, peaks, keyframes — feeds the agent's decisions |\n| Storage | `app/db/` | SQLite/Postgres via SQLAlchemy + Alembic; append-only operation journal |\n| MCP server | `app/mcp/server.py` | streamable-http or stdio; tool schemas derived from real signatures |\n| CLI twin | `app/mcp/cli.py` | same operations, no server, deterministic |\n\nSafety properties the codebase holds everywhere: no `shell=True` (argv lists\nonly), timeouts on every subprocess, atomic export writes, SSRF egress guard\non URL imports, argument validation derived from tool signatures.\n\n## License\n\n[MIT](LICENSE). Third-party obligations (FFmpeg/MLT installed by you, the\nGPL `piper-tts` extra, fonts) are documented in\n[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).\n",
+    "fetchedAt": "2026-08-11T23:32:53.608Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:11:49.390Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

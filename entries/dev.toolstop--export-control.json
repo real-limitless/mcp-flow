@@ -1,0 +1,84 @@
+{
+  "id": "dev.toolstop/export-control",
+  "title": "Export Control",
+  "description": "Does the US Commerce Country Chart require an export licence for an ECCN to a destination?",
+  "summary": "Does the US Commerce Country Chart require an export licence for an ECCN to a destination?",
+  "offersHint": "Does the US Commerce Country Chart require an export licence for an ECCN to a destination? · Remote MCP (streamable-http) at https://export-control.toolstop.dev · Packages: npm:@toolstop/export-control",
+  "version": "0.3.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://export-control.toolstop.dev",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://export-control.toolstop.dev"
+    }
+  ],
+  "install": {
+    "kind": "npm",
+    "package": "@toolstop/export-control",
+    "version": "0.3.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@toolstop/export-control",
+      "version": "0.3.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "remote",
+    "stdio"
+  ],
+  "homepage": "https://export-control.toolstop.dev",
+  "sourceUrl": "https://github.com/toolstop/toolstop",
+  "repository": {
+    "url": "https://github.com/toolstop/toolstop",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T20:49:14.657829Z",
+  "publishedAt": "2026-08-11T20:49:14.657829Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:24.339Z",
+    "sourceRepoAt": "2026-08-12T00:21:53.954Z",
+    "readmeAt": "2026-08-12T00:21:54.397Z",
+    "toolsAt": "2026-08-12T00:21:54.479Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/toolstop/toolstop",
+    "checkedAt": "2026-08-12T00:21:53.954Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/toolstop/toolstop/main/README.md",
+    "markdown": "# toolstop\n\nSmall, stateless MCP servers. Each one does a single narrow job exactly, so an\nassistant can call it instead of guessing.\n\nEvery server runs on Cloudflare Workers at `<name>.toolstop.dev`, holds no\nstate, and can also run locally over stdio.\n\n## Servers\n\n| Server | Does | Endpoint |\n|---|---|---|\n| [check-digits](packages/mcp-check-digits) | Validates check digits for IBAN, LEI, ISBN, GTIN/UPC/EAN, VIN, NPI, ISIN, ABA routing numbers and payment cards | `https://check-digits.toolstop.dev` |\n\n## Connecting\n\nRemote, over streamable HTTP. No install, no account:\n\n```json\n{\n  \"mcpServers\": {\n    \"check-digits\": {\n      \"type\": \"url\",\n      \"url\": \"https://check-digits.toolstop.dev\"\n    }\n  }\n}\n```\n\nLocal, over stdio:\n\n```bash\nnpx @toolstop/check-digits\n```\n\n## Design\n\n**Stateless.** No database, no vector index, no metered upstream API. A request\nis answered from its arguments alone. Servers scale to zero and an idle one\ncosts nothing.\n\n**Zero runtime dependencies.** No MCP SDK, no schema library. MCP over\nstreamable HTTP is request/response, which makes hand-rolled dispatch small\nenough to be worth it: faster cold starts, and no supply chain.\n\n**Telemetry records shape and outcome, never argument values.** A check-digit\nserver that logged its input would be storing real IBANs and card numbers. The\ntransport emits one row per request describing *what kind* of call happened and\nwhether it succeeded. `packages/_shared/transport.test.mjs` asserts that no raw\nargument value can reach it.\n\nThe row also carries a session id, and it is derived from the **network** the\nrequest came from, truncated to a /24 or /48 before hashing, never the full\naddress. Hashing the whole IP would not have anonymised it: the IPv4 space is 32\nbits and the other inputs are public, so the id was walkable back to one address\nuntil this was fixed on 2026-08-10. Each server's README states the complete\nrecorded row rather than only what is left out.\n\n**Every tool declares `readOnlyHint`, a complete `inputSchema` and an\n`outputSchema`**, so a client can tell what a call will do before making it and\nwhat shape comes back. The transport refuses to start a server whose tools do\nnot state their annotations, rather than defaulting them to something reassuring.\n\n## Repo layout\n\n```\npackages/_shared/     shared transport, dispatch and telemetry\npackages/mcp-<name>/  one server\nscripts/discover.mjs  derives the CI matrix from the filesystem\nscripts/smoke.mjs     protocol check against a live endpoint\n```\n\nSee [CLAUDE.md](CLAUDE.md) for the operating manual.\n\n## Development\n\n```bash\nnpm install\nnpm test                                # every server plus the shared transport\nnode scripts/smoke.mjs mcp-check-digits # protocol check against the live endpoint\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-12T00:21:54.397Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_export_license",
+      "description": "Given an ECCN and a destination country, report whether the Commerce Country Chart requires an export licence, and which reasons for control trigger it. Use this when someone is about to ship or transfer a controlled item abroad and needs the licence question answered before it moves. Returns the triggering reasons with the scope text from the Control List entry, because many controls apply to only part of an entry, plus any controls that are not decided by the chart at all. A `false` result means the chart alone does not require a licence; it is not clearance to export, and it says nothing about the Entity List, embargoes, end-use controls, or whether the ECCN is the right one. An entry the chart does not decide returns `indeterminate` with its requirement text instead of a verdict, which is an unanswered question rather than a negative answer. This tool cannot classify an item into an ECCN and will not try."
+    },
+    {
+      "name": "lookup_eccn",
+      "description": "Look up one ECCN on the Commerce Control List and return its title, its reasons for control, and the chart column each reason maps to. Use this to understand why an item is controlled, or to see the scope caveats before relying on a licence answer, since a control often applies to only some sub-paragraphs of an entry. Some entries are not decided by the country chart at all, and those return `chartDetermined: false` with the requirement text instead, or `indeterminate` when the entry carries no chart control at all. Knowing an entry's reasons for control does not tell you whether a licence is required for a destination; pass the ECCN to check_export_license for that. This tool cannot tell you whether an item falls under this ECCN."
+    },
+    {
+      "name": "lookup_country",
+      "description": "Return the Commerce Country Chart row for a destination: which of the sixteen control columns are marked, with each reason expanded. Use this to see how heavily controlled a destination is, or to check the chart's spelling of a country before another lookup. Special-controls destinations such as Cuba, Iran, North Korea and Syria return `embargoed` with a referral, because the chart does not govern them and reading a blank row as permission would be badly wrong. A marked column means a licence is required for items controlled for that reason; it says nothing about any particular item until you pair it with an ECCN."
+    },
+    {
+      "name": "explain_reason_code",
+      "description": "Expand a reason-for-control code such as NS, AT or CB into its full name. Use this when reading a Control List entry or a chart column and the two-letter code is not obvious. Returns the code and the name it stands for, or the whole glossary when called with no argument. This is a glossary lookup only: it reports what a code means, never whether that control applies to anything you are shipping, and it cannot tell you whether a licence is required."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:21:54.479Z",
+  "toolsPreviewStatus": "ok"
+}

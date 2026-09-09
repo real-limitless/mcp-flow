@@ -1,0 +1,58 @@
+{
+  "id": "io.github.michaelrice/zendesk-mcp",
+  "title": "zendesk-mcp",
+  "description": "Zendesk MCP server for Claude Code and other MCP clients",
+  "summary": "Zendesk MCP server for Claude Code and other MCP clients",
+  "offersHint": "Zendesk MCP server for Claude Code and other MCP clients · Packages: pypi:zendesk-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "zendesk-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "zendesk-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/michaelrice/zendesk-mcp",
+  "repository": {
+    "url": "https://github.com/michaelrice/zendesk-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-07T16:02:25.567557Z",
+  "publishedAt": "2026-05-07T16:02:25.567557Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:08.671Z",
+    "sourceRepoAt": "2026-08-11T23:34:13.255Z",
+    "readmeAt": "2026-08-11T23:34:13.981Z",
+    "toolsAt": "2026-08-12T01:13:08.672Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/michaelrice/zendesk-mcp",
+    "checkedAt": "2026-08-11T23:34:13.255Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/michaelrice/zendesk-mcp/main/README.md",
+    "markdown": "# zendesk-mcp\n\nA [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Zendesk ticket read and write tools to [Claude Code](https://claude.com/claude-code) and other MCP clients.\n\n## What it does\n\n- Search, list (paginated), and fetch Zendesk tickets, comments, and attachments\n- Create new tickets and update existing ticket fields (including group, custom status, and tags)\n- Post public replies and internal notes\n- Set ticket status and assign tickets to agents\n- Browse and apply views and macros\n- Look up users, groups, organizations, and custom statuses\n- Read and write time-tracking entries\n- Format a ticket as a Markdown issue draft for handoff to a tracker (GitLab, GitHub, Jira)\n- Two MCP prompts (`analyze-ticket`, `draft-ticket-response`) for ticket analysis and response drafting\n- (Optional) Expose Zendesk Help Center articles as an MCP resource\n- (Optional) Read linked GitLab issues / MRs / commits via the [Git-Zen](https://www.zendesk.com/marketplace/apps/support/630175/git-zen-zendesk-and-gitlab-integration/) Zendesk app\n\n## Prerequisites\n\n- Python 3.10 or newer\n- A Zendesk OAuth client. A Zendesk admin can create one at:\n  `https://<your-subdomain>.zendesk.com/admin/apps-integrations/apis/zendesk-api/oauth_clients`\n  Set the redirect URL to `http://localhost:8787/callback` and request scopes `read write`.\n\n## Install\n\nInstall into a project-local virtualenv. Using a venv keeps `zendesk-mcp` and its dependencies isolated from your system Python and from other projects, and is the recommended path for everything below.\n\nFrom a clone of this repository:\n\n```bash\npython3 -m venv .venv\n.venv/bin/pip install --upgrade pip\n.venv/bin/pip install -e .\n```\n\nFor development (also installs pytest):\n\n```bash\n.venv/bin/pip install -e \".[dev]\"\n```\n\n> Throughout this README, commands use the venv's binaries via `.venv/bin/...`. You can instead `source .venv/bin/activate` once per shell and drop the prefix — the result is the same.\n\n## OAuth setup\n\nRun the interactive setup using the venv's Python:\n\n```bash\n.venv/bin/python -m zendesk_mcp setup\n```\n\nYou will be prompted for:\n\n1. Your Zendesk subdomain (e.g. `acme` for `acme.zendesk.com`)\n2. The OAuth client ID created by your admin\n3. The OAuth client secret\n4. (Optional) A Git-Zen integration field ID — see [Optional: Git-Zen integration](#optional-git-zen-integration)\n5. (Optional) Whether to enable the Help Center knowledge base resource — see [Optional: Help Center knowledge base](#optional-help-center-knowledge-base)\n\nThe setup opens a browser for the OAuth authorization step, then writes a token to `~/.config/zendesk-mcp/config.json` (mode `0600`).\n\nIf you have no browser, the URL is printed to the terminal — open it on any device, click **Allow**, and paste the resulting redirect URL back into the prompt.\n\n## Register with Claude Code\n\nRegister the MCP server using the venv's Python by absolute path. Claude Code launches the server in a fresh shell that does **not** inherit your activated venv, so the absolute path is required — pointing at a bare `python` here will fail to import `zendesk_mcp`.\n\n```bash\nZENDESK_MCP_DIR=\"$(pwd)\"   # run this from the repo root, after install\nclaude mcp add --scope user zendesk -- \"$ZENDESK_MCP_DIR/.venv/bin/python\" -m zendesk_mcp\n```\n\nOr just inline the absolute path you want:\n\n```bash\nclaude mcp add --scope user zendesk -- /absolute/path/to/zendesk-mcp/.venv/bin/python -m zendesk_mcp\n```\n\nThen add the read tools to `permissions.allow` in `~/.claude/settings.json` to avoid per-call prompts:\n\n```json\n{\n  \"permissions\": {\n    \"allow\": [\n      \"mcp__zendesk__zendesk_get_ticket\",\n      \"mcp__zendesk__zendesk_get_tickets\",\n      \"mcp__zendesk__zendesk_get_comments\",\n      \"mcp__zendesk__zendesk_list_attachments\",\n      \"mcp__zendesk__zendesk_download_attachment\",\n      \"mcp__zendesk__zendesk_search_tickets\",\n      \"mcp__zendesk__zendesk_ticket_to_gitlab_context\",\n      \"mcp__zendesk__zendesk_list_views\",\n      \"mcp__zendesk__zendesk_get_view\",\n      \"mcp__zendesk__zendesk_get_view_tickets\",\n      \"mcp__zendesk__zendesk_list_macros\",\n      \"mcp__zendesk__zendesk_preview_macro\",\n      \"mcp__zendesk__zendesk_search_users\",\n      \"mcp__zendesk__zendesk_get_groups\",\n      \"mcp__zendesk__zendesk_get_group_users\",\n      \"mcp__zendesk__zendesk_get_organization\",\n      \"mcp__zendesk__zendesk_list_custom_statuses\"\n    ]\n  }\n}\n```\n\nWrite tools (`zendesk_post_comment`, `zendesk_post_internal_note`, `zendesk_set_ticket_status`, `zendesk_assign_ticket`, `zendesk_create_ticket`, `zendesk_update_ticket`, `zendesk_log_time`, `zendesk_add_tag`, `zendesk_remove_tag`, `zendesk_apply_macro`) are intentionally not in the default allow-list — Claude will prompt you per call.\n\n## Tools\n\n### Tickets\n\n| Tool | What it does |\n|---|---|\n| `zendesk_search_tickets` | Search tickets by status, priority, type, assignee, requester, tags, or keyword |\n| `zendesk_get_tickets` | List tickets with pagination and sorting (page, per_page, sort_by, sort_order) |\n| `zendesk_get_ticket` | Get one ticket's metadata |\n| `zendesk_create_ticket` | Create a new ticket (subject, description, optional priority/type/assignee_id/requester_id/tags/custom_fields) |\n| `zendesk_update_ticket` | Update one or more fields on an existing ticket (status, priority, subject, type, assignee_id, requester_id, group_id, custom_status_id, tags, custom_fields, due_at) |\n| `zendesk_get_comments` | Get the conversation thread on a ticket |\n| `zendesk_list_attachments` | List attachments on a ticket |\n| `zendesk_download_attachment` | Download an attachment to a local cache directory |\n| `zendesk_ticket_to_gitlab_context` | Format a ticket and its conversation as a Markdown issue draft |\n| `zendesk_post_comment` | Post a public reply on a ticket |\n| `zendesk_post_internal_note` | Post an agent-only internal note on a ticket |\n| `zendesk_set_ticket_status` | Set ticket status (`new`, `open`, `pending`, `hold`, `solved`, `closed`) |\n| `zendesk_assign_ticket` | Assign a ticket to an agent by email or `me` |\n\n### Tags\n\n| Tool | What it does |\n|---|---|\n| `zendesk_add_tag` | Add a tag to a ticket (idempotent) |\n| `zendesk_remove_tag` | Remove a tag from a ticket (idempotent) |\n\n### Views & Macros\n\n| Tool | What it does |\n|---|---|\n| `zendesk_list_views` | List all active views |\n| `zendesk_get_view` | Get a view's filter conditions and execution settings |\n| `zendesk_get_view_tickets` | Fetch tickets currently matching a view |\n| `zendesk_list_macros` | List active macros with their actions |\n| `zendesk_preview_macro` | Preview what changes a macro would make |\n| `zendesk_apply_macro` | Apply a macro to a ticket (applies field changes and posts any comment) |\n\n### Users, Groups & Organizations\n\n| Tool | What it does |\n|---|---|\n| `zendesk_search_users` | Find users by name or email |\n| `zendesk_get_groups` | List all active groups |\n| `zendesk_get_group_users` | List the members of a group |\n| `zendesk_get_organization` | Fetch an organization including custom fields |\n| `zendesk_list_custom_statuses` | List all custom ticket statuses and their IDs |\n\n### Time tracking\n\n| Tool | What it does |\n|---|---|\n| `zendesk_get_time_tracking` | Read time-tracking entries for a ticket |\n| `zendesk_log_time` | Log a time entry against a ticket |\n\n### Git-Zen integration\n\n| Tool | What it does |\n|---|---|\n| `zendesk_get_git_zen_links` | (Git-Zen only) Get linked GitLab issues / MRs / commits for a ticket |\n\n## Prompts\n\nThe server exposes two MCP prompts that some clients (e.g. Claude Desktop) surface as slash commands:\n\n| Prompt | Argument | What it does |\n|---|---|---|\n| `analyze-ticket` | `ticket_id` | Asks the model to fetch the ticket and produce a summary, status/timeline, and key interaction points |\n| `draft-ticket-response` | `ticket_id` | Asks the model to fetch the ticket and draft a customer-facing response (with a confirmation step before posting) |\n\n## Optional: Git-Zen integration\n\nIf your Zendesk instance uses the [Git-Zen](https://www.zendesk.com/marketplace/apps/support/630175/git-zen-zendesk-and-gitlab-integration/) app, the `zendesk_get_git_zen_links` tool can read its custom-field payload. Find your instance's Git-Zen custom field ID under **Admin → Tickets → Fields** (it is a numeric ID), then either set it during `.venv/bin/python -m zendesk_mcp setup` or edit `~/.config/zendesk-mcp/config.json` to add:\n\n```json\n{\n  \"git_zen_field_id\": 12345678901234\n}\n```\n\nWithout this configured, `zendesk_get_git_zen_links` returns a \"not configured\" message.\n\n## Optional: Help Center knowledge base\n\nIf your Zendesk instance has a published Help Center, you can expose its sections and articles as the `zendesk://knowledge-base` MCP resource. The resource returns a single JSON document covering all sections and articles, cached for one hour.\n\nThis is opt-in. Enable it by either answering \"y\" to the prompt during `.venv/bin/python -m zendesk_mcp setup`, or by adding the following to `~/.config/zendesk-mcp/config.json`:\n\n```json\n{\n  \"knowledge_base_enabled\": true\n}\n```\n\nWhen the flag is absent or false, the resource is not registered, keeping the server's resource list empty for instances without a Help Center.\n\n## Development\n\n```bash\npython3 -m venv .venv\n.venv/bin/pip install -e \".[dev]\"\n.venv/bin/pytest\n```\n\nTests run on Python 3.10, 3.11, and 3.12 in CI (see `.github/workflows/test.yml`).\n\n## License\n\n[Apache-2.0](LICENSE)\n\n<!-- mcp-name: io.github.michaelrice/zendesk-mcp -->\n\n",
+    "fetchedAt": "2026-08-11T23:34:13.981Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:08.672Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

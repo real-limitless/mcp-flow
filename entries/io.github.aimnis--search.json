@@ -1,0 +1,84 @@
+{
+  "id": "io.github.aimnis/search",
+  "title": "search",
+  "description": "Collaborative, cache-first web search for agents — cited answers from a shared live-web pool.",
+  "summary": "Collaborative, cache-first web search for agents — cited answers from a shared live-web pool.",
+  "offersHint": "Collaborative, cache-first web search for agents — cited answers from a shared live-web pool. · Remote MCP (streamable-http) at https://aimnis.com/mcp · Requires headers: Authorization",
+  "version": "0.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://aimnis.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://aimnis.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer aim_YOUR_KEY — get a free eval key at https://aimnis.com/register (delivered by email).",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://aimnis.com",
+  "sourceUrl": "https://github.com/aimnis/aimnis",
+  "repository": {
+    "url": "https://github.com/aimnis/aimnis",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-04T01:56:06.268122Z",
+  "publishedAt": "2026-07-04T01:56:06.268122Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer aim_YOUR_KEY — get a free eval key at https://aimnis.com/register (delivered by email).",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:31:36.193Z",
+    "sourceRepoAt": "2026-08-11T23:58:17.959Z",
+    "readmeAt": "2026-08-11T23:58:18.605Z",
+    "toolsAt": "2026-08-11T23:58:18.823Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/aimnis/aimnis",
+    "checkedAt": "2026-08-11T23:58:17.959Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/aimnis/aimnis/main/README.md",
+    "markdown": "# Aimnis\n\n### Collaborative Search for Agents\n\n**Search once. Answer everyone.** An open-source, cache-first web-search gateway for\ncoding agents: ask a question and get a distilled, source-cited answer instantly from\na shared, always-current knowledge pool — so every search makes the pool smarter and\ncheaper for everyone. Like RAG, but over a communal live-web pool, not your stale\nprivate docs.\n\n> **Status: public preview.** The hosted service is live — get a free eval key at\n> **[aimnis.com](https://aimnis.com)** and point your agent at it in one minute\n> ([per-agent setup](https://aimnis.com/setup)). We're proving one thing in public —\n> that the cache hit rate compounds as the pool grows (the [flywheel](#the-flywheel),\n> [live dashboard](https://aimnis.com/flywheel)). Follow along.\n\n## Why\n\nEvery model has a training cutoff. The moment it ships, the world moves on — new\nlibrary versions, new APIs, new errors — and the model can't keep up without\nsearching the live web on every question. That's slow, expensive, and per-vendor.\n\nAimnis is the shared, always-current layer in front of that: the **first** thing an\nagent checks. Ask a question; if it (or a semantically similar one) has been asked\nbefore, you get a distilled, source-cited answer instantly for near-zero cost. If\nit hasn't, Aimnis fetches it live, distills it, and adds it to the pool — so the\nnext agent to ask gets it free. The corpus captures what happened *after* every\nmodel's cutoff, which no static training set can.\n\n## How it works\n\n```\nquery\n  └─ scrub secrets/PII (redacted before embed, search, distill, or storage)\n       └─ local embed + normalize\n            └─ semantic cache lookup (exact hash → vector nearest-neighbour)\n                 ├─ HIT  → return the pooled, cited answer instantly (no upstream cost)\n                 └─ MISS → live search → distill into a cited answer → quality-gate → pool it\n```\n\n- **Cache-first.** The knowledge pool *is* the semantic cache (pgvector). A\n  reworded question hits the same entry, so the pool compounds faster than exact\n  matching would.\n- **Grounded, cited answers.** Misses are distilled from live web results into a\n  short answer with `[n]` citations back to sources — not raw links. The answer is\n  **AI-generated** (a model distills the sources) and labeled as such in the tool\n  output, so the agent always knows it's reading a machine-written summary.\n- **Provenance & freshness by default.** Every answer carries its model, sources,\n  and a **cache timestamp** (when the answer was produced or last re-distilled —\n  not when it was last served), plus a relative age, so the agent (and our own\n  ranking) can weigh staleness and decide when to escalate to live search.\n- **Cited links can be routed for a relevance signal (opt-in, aggregate-only).**\n  When enabled, a cited source link points at a signed `/r/…` redirect that logs\n  which pooled answer earned a follow-through, then forwards to the source — this\n  is how click-through improves ranking. The source's real host is shown inline so\n  the agent still sees where it's going, and the log records only *entry + source +\n  host + time* — **never IP, user-agent, or any user/session id**. It's telemetry on\n  the pool, not on you. It's off unless a signing secret is configured, tokens are\n  HMAC-signed (so `/r` can't be abused as an open redirector), and self-hosting\n  points the redirect at *your own* gateway — so clicks stay on your box.\n- **Privacy-conscious ingress.** Common secret formats (API keys, tokens, private\n  keys, connection strings) and emails are redacted *before* a query is embedded,\n  sent to a search/LLM provider, or pooled; secret-dense queries are served\n  live-only and never stored. This is high-precision format-based scrubbing plus an\n  entropy pass — it catches known shapes, not every possible secret or PII, so treat\n  it as defense-in-depth, not a guarantee. The pipeline is open source precisely so\n  you can audit and extend it. **Where it runs:** self-hosted, scrubbing happens\n  locally, so raw text never leaves your machine. Against the *hosted* gateway, the\n  query is sent over TLS and scrubbed on ingress (in memory, before any provider call\n  or persistence) — if you need redaction to happen before the query leaves your\n  machine, self-host or run the local MCP server in local mode.\n- **Quality-gated pool.** A distilled answer must pass a quality gate before it can\n  enter the pool — a bad answer degrades to raw snippets rather than poisoning the\n  commons.\n\n## The flywheel\n\nThe one metric that decides whether this works: **cache hit rate vs. corpus size.**\nIf it climbs as the pool grows, the thesis holds. It's public from day one — trust,\nmade measurable.\n\n```bash\n# run the live dashboard locally (see Quickstart)\naimnis-dashboard      # → http://127.0.0.1:8080   (hit-rate curve, corpus size, storage)\n```\n\n## Use it with your coding agent\n\nAimnis speaks [MCP](https://modelcontextprotocol.io), so any MCP-capable agent can\nuse it as its web-search tool. The hosted endpoint means **nothing to install**:\n\n1. Get a free eval key at **[aimnis.com/register](https://aimnis.com/register)**\n   (delivered by email; metered, revocable, [terms](https://aimnis.com/terms)).\n2. Add the remote MCP server to your agent:\n\n```\nURL:     https://aimnis.com/mcp          (MCP, streamable HTTP)\nHeader:  Authorization: Bearer aim_YOUR_KEY\n```\n\n**Claude Code**\n\n```bash\nclaude mcp add --transport http aimnis https://aimnis.com/mcp \\\n    --header \"Authorization: Bearer aim_YOUR_KEY\"\n```\n\nThen, to make the model prefer Aimnis over the built-in tool, deny `WebSearch` in\n`.claude/settings.json`:\n\n```json\n{ \"permissions\": { \"deny\": [\"WebSearch\"] } }\n```\n\n**OpenCode, OpenClaw, Hermes, Pi, REST** — copy-paste snippets at\n[aimnis.com/setup](https://aimnis.com/setup) and in [`docs/mcp.md`](docs/mcp.md),\nplus the `search` / `stats` tool reference. Bring your own OpenRouter/search keys\nat registration and your cache misses run on your quota — with much higher limits.\n\nSelf-hosting instead? The same MCP server runs locally over stdio against your own\npool — see [Quickstart](#quickstart-dev) and [`docs/mcp.md`](docs/mcp.md).\n\n## Quickstart (dev)\n\n```bash\ncd server\ndocker compose up -d                    # Postgres+pgvector (:5432)\n# want the keyless search path too? add SearXNG (:8888):\n#   docker compose --profile keyless up -d\nuv venv .venv && . .venv/bin/activate\nuv pip install -e \".[dev]\"              # editable install (required — see docs)\npython -m aimnis.migrate                # apply migrations/*.sql\ncp .env.example .env                    # then fill in keys if you have them\npytest                                  # full suite against the compose DB\n```\n\nNo OpenRouter key? Fine — Aimnis runs keyless (via SearXNG) and returns raw cited\nsnippets, spending zero upstream quota. Add `AIMNIS_OPENROUTER_API_KEY` to turn on\ndistillation. Live search is an ordered fallback chain — Brave → Tavily → Exa →\nSearXNG — so setting any of `AIMNIS_BRAVE_API_KEY` / `AIMNIS_TAVILY_API_KEY` /\n`AIMNIS_EXA_API_KEY` gives more reliable results, and a free tier that runs dry\nrolls onto the next automatically. See [`server/README.md`](server/README.md) for\nthe component map.\n\n## Licensing\n\nThe code is open. The corpus is a curated compilation, licensed as such.\n\n| Part | License |\n| --- | --- |\n| Server core (`server/`) | **AGPLv3** — network copyleft; run a modified service, share your changes |\n| SDKs & MCP client (`clients/`) | **Apache-2.0** — embed anywhere, including commercial products |\n| Public knowledge-pool pages | **CC-BY-NC 4.0** applies to our *compilation* (curation, structure, presentation) |\n\n**On the pool's contents, honestly:** pooled answers are distilled by third-party\nmodels from third-party web results. We don't claim ownership of the underlying\nfacts or of upstream model outputs — CC-BY-NC covers our compilation, and any reuse\nalso remains subject to the terms of the original sources and the model providers.\nSome provider outputs are excluded from redistribution and from any future\ntraining-data feed wherever provider terms require it, and provider-mandated\nattributions are carried through. A training-data feed is out of scope until the\nflywheel is proven (see roadmap) — this repo makes no offer to license training data.\n\nAnti-abuse thresholds (scrubbing/dedup/quality tuning) ship with safe example\ndefaults; production values are injected at deploy and are not part of this tree —\nso publishing the ruleset doesn't hand it to poisoners.\n\n## Status & roadmap\n\nGated roadmap, Gate 0 → Gate 4. **Gate 0 complete** (ToS audit, niche, naming,\nlicensing locked). **Gate 1 in progress** — gateway + semantic cache + public\nflywheel dashboard are built and dogfooded; the pass/kill test is the hit-rate\ncurve bending upward. Ads, billing, community compute, and the training-data feed\nare explicitly out of scope until the flywheel is proven.\n",
+    "fetchedAt": "2026-08-11T23:58:18.605Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "search",
+      "description": "Search the web via Aimnis.\n\n    Returns cached, provenance-tagged results instantly when the question (or a\n    semantically similar one) has been seen before; otherwise fetches live\n    results and adds them to the shared knowledge pool. Prefer this for factual\n    lookups, library/API/docs questions, and error messages.\n\n    If a cached answer does not match your question (it echoes the question it\n    was cached for), retry the same query with `reject_entry` set to the entry id\n    from that response — the mismatched entry is skipped and the search runs live.\n    "
+    },
+    {
+      "name": "stats",
+      "description": "Report Aimnis flywheel statistics: knowledge-pool (cache) size, cache hit\n    rate (all-time and recent), and the most-reused queries.\n\n    This is the Gate 1 pass/kill metric — cache hit rate should climb as the\n    corpus grows. Call it to see whether the compounding-pool thesis is holding.\n    "
+    },
+    {
+      "name": "register",
+      "description": "Get your user a free Aimnis API key (no credit card, takes one call).\n\n    Ask your user for their email address first. The key comes back in this tool\n    result — relay it to the user so they can save it and add it to your MCP\n    connection ('Authorization: Bearer aim_...'). A key raises the daily\n    live-search limits; cached answers are always free, with or without a key.\n    Re-registering with the same email rotates (replaces) that email's key.\n    "
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:58:18.823Z",
+  "toolsPreviewStatus": "ok"
+}

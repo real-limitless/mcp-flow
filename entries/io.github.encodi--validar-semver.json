@@ -1,0 +1,56 @@
+{
+  "id": "io.github.encodi/validar-semver",
+  "title": "validar-semver",
+  "description": "Resolves real semver range satisfaction (^1.2.3, ~2.0) against a version. Paid via x402/USDC.",
+  "summary": "Resolves real semver range satisfaction (^1.2.3, ~2.0) against a version. Paid via x402/USDC.",
+  "offersHint": "Resolves real semver range satisfaction (^1.2.3, ~2.0) against a version. Paid via x402/USDC. · Remote MCP (streamable-http) at https://validar-semver.encodari.workers.dev/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://validar-semver.encodari.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://validar-semver.encodari.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/encodi/validar-semver",
+  "repository": {
+    "url": "https://github.com/encodi/validar-semver",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T15:45:37.057799Z",
+  "publishedAt": "2026-08-11T15:45:37.057799Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:23:04.641Z",
+    "sourceRepoAt": "2026-08-11T23:46:56.262Z",
+    "readmeAt": "2026-08-11T23:46:56.771Z",
+    "toolsAt": "2026-08-11T23:46:57.152Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/encodi/validar-semver",
+    "checkedAt": "2026-08-11T23:46:56.262Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/encodi/validar-semver/main/README.md",
+    "markdown": "# validar-semver\n\n[![validar-semver MCP server](https://glama.ai/mcp/servers/encodi/validar-semver/badges/score.svg)](https://glama.ai/mcp/servers/encodi/validar-semver)\n\nRemote MCP server (Cloudflare Workers) with one tool that resolves real semver range satisfaction:\n\n- **`validate_semver`** — evaluates a version (e.g. `1.2.3`) against a list of ranges (`^1.2.3`, `~2.0`, `2.x`, `>=1.0.0 <2.0.0`, ...) using the same semver engine npm uses ([`semver`](https://www.npmjs.com/package/semver)), not a model guess about what should match.\n\nNo database, no persistent state: each call builds a fresh `McpServer` (see `createServer()` in `src/index.ts`) and is self-contained.\n\n## Billing (x402)\n\nCharges per call via [x402](https://x402.org) — real USDC payment on **Base mainnet**, against the Coinbase Developer Platform (CDP) facilitator. The payment travels inside the MCP JSON-RPC itself (`_meta`), not as an HTTP header; see `src/payments.ts`.\n\n| Tool | Price |\n|---|---|\n| `validate_semver` | $0.01 USDC |\n\nAn unpaid `tools/call` returns `isError: true` with the `accepts` (network, amount, `payTo`) the client needs to pay and retry — not an unexplained exception.\n\n## Structure\n\n```\nsrc/\n  index.ts        # registers the tool in the McpServer and exposes the MCP HTTP handler\n  payments.ts     # x402 billing on Base mainnet via the CDP facilitator\n  tools/\n    semver.ts       # pure logic for validate_semver (testable without Workers)\n    semver.test.ts\nscripts/\n  dev-node.ts     # dev server that runs the handler in plain Node, no wrangler\n```\n\n## Running it locally\n\n⚠️ **Note on `wrangler dev`**: the real Cloudflare Workers runtime (`workerd`) requires **macOS 13.5+**. If your Mac has an older version, `wrangler dev` (and `npm run dev`) will fail. This project includes a plain-Node shim that runs the exact same `fetch()` handler without needing `workerd`.\n\n### 1. Install dependencies\n\n```bash\nnpm install\n```\n\n### 2. Run the unit tests\n\n```bash\nnpm test\n```\n\n### 3a. If your wrangler dev works (macOS 13.5+, Linux, Windows)\n\n```bash\nnpm run dev\n```\n\n### 3b. If `wrangler dev` fails because of the macOS version\n\n```bash\nnpm run dev:node\n```\n\nStarts at `http://localhost:8787/mcp`, reading CDP credentials from `~/.mcp-tools-factory-credentials.env` (shared across all tools in this factory).\n\n### 4. Test with curl\n\n```bash\n# 1) initialize\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl-test\",\"version\":\"0.0.1\"}}}'\n\n# 2) tools/list\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}'\n\n# 3) tools/call — validate_semver\ncurl -s -X POST http://localhost:8787/mcp \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"validate_semver\",\"arguments\":{\"version\":\"1.2.3\",\"ranges\":[\"^1.2.3\",\"^1.3.0\",\"~1.2.0\",\"2.x\"]}}}'\n```\n\nResponses come as Server-Sent Events (`event: message` + `data: {...}`); the `data:` line is the usual JSON-RPC response.\n\n## Deploy and listings\n\nDeployed at `https://validar-semver.encodari.workers.dev/mcp` (Cloudflare Workers). Published on the [official MCP registry](https://registry.modelcontextprotocol.io), [Smithery](https://smithery.ai), [mcp.so](https://mcp.so), and with an open PR to [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers).\n\n## What it doesn't do (yet)\n\n- Charges on Base mainnet with real money. To switch back to testnet (Base Sepolia, `eip155:84532`) during development, change `NETWORK` in `src/payments.ts`.\n- No database or persistent state between calls (beyond the billing config, cached in memory per isolate — see `src/payments.ts`).\n",
+    "fetchedAt": "2026-08-11T23:46:56.771Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "validate_semver",
+      "description": "Resolves real semver range satisfaction (e.g. \"^1.2.3\", \"~2.0\", \"2.x\", \">=1.0.0 <2.0.0\") against a version, using the same semver engine npm uses (the \"semver\" package), not a model guess about what should match. Costs $0.01 USDC (Base) per call."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:46:57.152Z",
+  "toolsPreviewStatus": "ok"
+}

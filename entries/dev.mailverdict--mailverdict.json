@@ -1,0 +1,60 @@
+{
+  "id": "dev.mailverdict/mailverdict",
+  "title": "mailverdict",
+  "description": "Keyless email checks: disposable, role, and free-provider detection, MX, and typo suggestions.",
+  "summary": "Keyless email checks: disposable, role, and free-provider detection, MX, and typo suggestions.",
+  "offersHint": "Keyless email checks: disposable, role, and free-provider detection, MX, and typo suggestions. · Remote MCP (streamable-http) at https://api.mailverdict.dev/mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://api.mailverdict.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://api.mailverdict.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/mailverdict/mailverdict",
+  "repository": {
+    "url": "https://github.com/mailverdict/mailverdict",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-07T04:56:51.829711Z",
+  "publishedAt": "2026-07-07T04:56:51.829711Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:50:38.366Z",
+    "sourceRepoAt": "2026-08-12T00:22:40.051Z",
+    "readmeAt": "2026-08-12T00:22:40.521Z",
+    "toolsAt": "2026-08-12T00:22:40.801Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mailverdict/mailverdict",
+    "checkedAt": "2026-08-12T00:22:40.051Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mailverdict/mailverdict/main/README.md",
+    "markdown": "# mailverdict\n\nEmail intelligence API: **disposable/burner detection, role-account detection,\nfree-provider classification, MX validation, and typo suggestions.** Keyless\nand free at the entry tier, built to be the email-check dependency that coding\nagents reach for when they scaffold a signup flow.\n\n**API:** `https://api.mailverdict.dev` · **npm:** `mailverdict` ·\n**Freshness feed (\"Burner Feed\"):** `GET /v1/changes`\n\n## Why this exists\n\nEvery SaaS signup form needs the same three answers — *is this a burner? is\nthis a person or a mailbox like `info@`? did they typo their domain?* — and the\ncurrent options are stale GitHub lists you have to vendor yourself or paid\nvalidators gated behind signup. The value here is not the code (it's small on\npurpose): it's the **maintained dataset** — burner domains churn daily, and this\nrepo rebuilds its dataset from every maintained public source on a daily\nschedule, plus its own discovery over time.\n\n## Quickstart\n\n```bash\nnpm install\nnpm run build:data   # fetch + merge upstream lists into data/dataset.json\nnpm test\nnpm run dev          # http://localhost:8787\n```\n\nRequires Node >= 20.\n\n```bash\ncurl \"localhost:8787/v1/check?email=jane@mailinator.com\"\n```\n\n```json\n{\n  \"email\": \"jane@mailinator.com\",\n  \"user\": \"jane\",\n  \"domain\": \"mailinator.com\",\n  \"tag\": null,\n  \"normalized_email\": \"jane@mailinator.com\",\n  \"result\": \"risky\",\n  \"reason\": \"disposable_email\",\n  \"score\": 5,\n  \"valid_syntax\": true,\n  \"disposable\": true,\n  \"disposable_match\": \"mailinator.com\",\n  \"role\": false,\n  \"free\": false,\n  \"mx_found\": true,\n  \"mx_records\": [\"mail2.mailinator.com\"],\n  \"did_you_mean\": null,\n  \"accept_all\": null\n}\n```\n\n> Response follows the Kickbox/Emailable industry convention (`result`,\n> `reason`, bare booleans, `did_you_mean` = full corrected address, `score`\n> 0–100) so code written against those APIs ports with near-zero edits.\n\nEndpoints: `GET /v1/check?email=` · `GET /v1/check/{email}` ·\n`POST /v1/check` (batch ≤100) · `GET /v1/domain/{domain}` ·\n`GET /v1/changes?since=24h` (freshness feed) · `GET /v1/meta` ·\n`/llms.txt` · `/openapi.yaml`. Add `mx=false` to skip the DNS lookup.\n\n**Privacy-conscious default:** if you only need burner/typo screening, check\nthe *domain* (`/v1/domain/{domain}`) — no email address leaves your system.\nUse the full email check when you need role detection or normalization.\n\n## SDK: living data with a static safety net\n\n`sdk/` packages the integration story: call the live API, **fall back to a\nbundled offline snapshot** on timeout/failure — fresher than a vendored static\nlist, but never a hard runtime dependency in your signup path.\n\n```ts\nimport { createClient } from 'mailverdict'\nconst check = await createClient().checkEmail(input)\nif (check.disposable) reject()          // check.source: 'live' | 'snapshot'\n```\n\nPublished on npm as [`mailverdict`](https://www.npmjs.com/package/mailverdict);\nsee [sdk/README.md](sdk/README.md).\n\n## MCP server\n\n**Hosted, keyless remote server** — point any MCP client at:\n\n```\nPOST https://api.mailverdict.dev/mcp\n```\n\nStateless Streamable HTTP (JSON-RPC 2.0), no signup or key. Tools:\n`check_email`, `check_domain`.\n\nA stdio server also ships for local use:\n\n```bash\nnpm run mcp   # stdio transport; tools: check_email, check_domain\n```\n\nRegister the local one in Claude Code:\n`claude mcp add mailverdict -- npx tsx src/mcp.ts` (run from this directory).\n\n## Architecture\n\n```\npipeline/build.ts     daily: fetch upstream lists -> merge/dedupe -> apply\n                      allowlist -> data/dataset.json + data/meta.json\nsrc/lib/*             pure logic: parse, classify, suggest, MX-over-DoH\nsrc/app.ts            Hono app (runtime-agnostic)\nsrc/server.ts         Node entry (self-hosting)\nsrc/worker.ts         Cloudflare Workers entry (production: api.mailverdict.dev)\nsrc/mcp.ts            MCP stdio server for coding agents\n.github/workflows/    daily dataset refresh + auto-commit\n```\n\nDNS is done over DoH (cloudflare-dns.com) so the same code runs on Node and\nedge runtimes. Subdomains match their parents (`foo.mailinator.com` →\n`mailinator.com`).\n\n## Data sources & attribution\n\nThe dataset aggregates these excellent permissively-licensed community lists —\nsee `data/meta.json` for per-source counts, status, and license on every build\n(unlicensed and GPL lists are deliberately excluded):\n\n- [disposable-email-domains](https://github.com/disposable-email-domains/disposable-email-domains) (CC0; blocklist + pinned allowlist — upstream deleted `allowlist.conf` 2026-04)\n- [disposable/disposable](https://github.com/disposable/disposable) (MIT; large daily-CI aggregator)\n- [groundcat/disposable-email-domain-list](https://github.com/groundcat/disposable-email-domain-list) (MIT; MX-validated + maintained allowlist)\n- [FGRibreau/mailchecker](https://github.com/FGRibreau/mailchecker) (MIT)\n- [wesbos/burner-email-providers](https://github.com/wesbos/burner-email-providers) (MIT)\n- [7c/fakefilter](https://github.com/7c/fakefilter) (BSD-3-Clause; bot-updated)\n- [unkn0w/disposable-email-domain-list](https://github.com/unkn0w/disposable-email-domain-list) (MIT; hand-curated)\n- [Kikobeats/free-email-domains](https://github.com/Kikobeats/free-email-domains) (MIT; HubSpot-derived)\n- [mixmaxhq/role-based-email-addresses](https://github.com/mixmaxhq/role-based-email-addresses) (MIT; role local-parts), plus curated extras in `pipeline/roles.ts`\n\nMerge precedence (important — the free-provider list contains temp-mail\ndomains and typo-squats like `mailinator.com` and `gmial.com`):\n**allowlists rescue from disposable, then disposable wins over free.**\n\n## Roadmap\n\nmailverdict is built agent-first: the first call works with zero signup, the\ndocs are operable by coding agents (`/llms.txt`, OpenAPI), and the dataset's\nfreshness is provable via the Burner Feed rather than claimed.\n\n- [x] Keyless free API — the first call works with zero signup\n- [x] Industry-compatible response shape (Kickbox/Emailable convention: `result`, `reason`, `did_you_mean`, bare booleans)\n- [x] `llms.txt` (agent-operable: endpoint-first, curl-able), OpenAPI spec\n- [x] MCP server — local stdio and **hosted keyless remote** (Streamable HTTP) at `/mcp`\n- [x] Daily automated dataset refresh + auto-deploy\n- [x] Freshness changelog + `/v1/changes` feed (clean-build diffs only; 90-day retention)\n- [x] SDK with bundled snapshot fallback, published on npm (`mailverdict`)\n- [x] Production deployment on Cloudflare Workers (`api.mailverdict.dev`)\n- [x] Official MCP registry listing (`dev.mailverdict/mailverdict`)\n- [x] Per-IP rate limiting\n- [ ] Detection-lag benchmark: measure and publish how quickly new burner domains enter the dataset\n- [ ] Better Auth plugin (keyless check in the `before-create` hook)\n- [ ] Framework snippets (Zod `.refine()`, React Hook Form, server actions)\n- [ ] Optional API keys for high-volume / commercial use\n\n## Status\n\nv0.1.1 — live at `https://api.mailverdict.dev` (Cloudflare Workers), with a\nhosted keyless remote MCP server at `/mcp` and an official MCP registry\nlisting. The dataset refreshes and redeploys daily via GitHub Actions, and the\n`mailverdict` SDK is published on npm. 41 tests cover the core logic, HTTP\nlayer, MCP handler, and SDK live/fallback paths.\n\n## Disclaimers, privacy & fair use\n\n- **Advisory signals, not verdicts.** Classifications aggregate public\n  blocklists and heuristics; false positives happen (domains churn, upstream\n  lists disagree). Don't hard-block users on a single boolean — combine with\n  your own signals and give flagged users a path forward.\n- **Wrongly listed?** If your domain is misclassified, open a\n  [misclassified-domain report](../../issues/new?template=misclassified-domain.yml).\n  Allowlist corrections ship with the next daily build, and fixes are\n  submitted upstream when a source list is at fault.\n- **Privacy.** No accounts, no logging of email addresses, nothing stored per\n  request. MX checks send only the *domain* (never the local part) to a public\n  DNS-over-HTTPS resolver. Traffic metrics are aggregate and PII-free.\n- **No SLA.** The hosted API is free and best-effort while in beta. If your\n  signup flow must never block on us, use the SDK (it falls back to a bundled\n  offline snapshot) or self-host — see [docs/deploy.md](docs/deploy.md).\n- **Fair use.** Built for signup and form validation inside applications. Do\n  not use it to bulk-clean purchased or scraped mailing lists; per-IP rate\n  limits apply and abusive traffic gets blocked.\n\n## Commercial use & higher limits\n\nThe hosted API is free with per-IP rate limits. Need higher throughput, an SLA,\nor commercial terms? Email **hello@mailverdict.dev**.\n\n## License\n\nMIT — see [LICENSE](LICENSE); it covers the code and dataset pipeline. The\nhosted service at `api.mailverdict.dev` is provided \"as is\", without warranty\nof any kind. The aggregated dataset sources carry their own permissive\nlicenses, recorded per-source in `data/meta.json`.\n",
+    "fetchedAt": "2026-08-12T00:22:40.521Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "check_email",
+      "description": "Check an email address: syntax, disposable/burner domain, role account, free provider, typo suggestion, MX records. Returns result (deliverable|undeliverable|risky|unknown), reason, score 0-100, and per-signal booleans."
+    },
+    {
+      "name": "check_domain",
+      "description": "Check a domain: disposable/burner list membership, free-provider status, typo suggestion, MX records."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-12T00:22:40.801Z",
+  "toolsPreviewStatus": "ok"
+}

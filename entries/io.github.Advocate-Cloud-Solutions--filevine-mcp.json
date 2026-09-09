@@ -1,0 +1,44 @@
+{
+  "id": "io.github.Advocate-Cloud-Solutions/filevine-mcp",
+  "title": "filevine-mcp",
+  "description": "MCP server for Filevine matter management - by Advocate Cloud Solutions.",
+  "summary": "MCP server for Filevine matter management - by Advocate Cloud Solutions.",
+  "offersHint": "MCP server for Filevine matter management - by Advocate Cloud Solutions.",
+  "version": "0.0.1",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/Advocate-Cloud-Solutions/filevine-mcp",
+  "repository": {
+    "url": "https://github.com/Advocate-Cloud-Solutions/filevine-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-10T18:00:22.812774Z",
+  "publishedAt": "2026-05-10T18:00:22.812774Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:47:19.603Z",
+    "sourceRepoAt": "2026-08-12T00:17:42.389Z",
+    "readmeAt": "2026-08-12T00:17:42.955Z",
+    "toolsAt": "2026-08-12T01:47:19.603Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Advocate-Cloud-Solutions/filevine-mcp",
+    "checkedAt": "2026-08-12T00:17:42.389Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Advocate-Cloud-Solutions/filevine-mcp/main/README.md",
+    "markdown": "# filevine-mcp\n\n**An open-source MCP (Model Context Protocol) server for Filevine matter management and Lead Docket intake.**\n\nBuilt and maintained by [Advocate Cloud Solutions](https://advocatecloudsolutions.com) — a Salesforce consultancy for law firms. This MCP exposes the Filevine + Lead Docket API surface as Claude-callable tools so legal teams can query, build, and fix matters and intake leads through natural language — running entirely on your own machine against your own Filevine org.\n\n[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)\n[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.Advocate--Cloud--Solutions%2Ffilevine--mcp-blueviolet)](https://registry.modelcontextprotocol.io/)\n[![Status](https://img.shields.io/badge/status-pre--alpha-orange)](#roadmap)\n\n---\n\n## What this is\n\nFilevine is the leading mid-market personal injury / mass tort case management platform (~3,000 firms, $400M Series funding Sept 2025). Lead Docket is Filevine's acquired intake/CRM product — leads from web forms, chatbots, and calls, with scoring, routing, and conversion into Filevine projects.\n\n`filevine-mcp` is a standalone, single-tenant MCP server. You generate your own Filevine PAT, run the server locally (or on infrastructure you control), and connect it to any MCP-compatible client — Claude Desktop, Claude Code, Cowork, or anything else that speaks MCP.\n\nThis MCP wraps both Filevine and Lead Docket under one namespace so a single install gives Claude access to the full intake-to-matter funnel.\n\n**Three workflows the MCP unlocks:**\n\n- **Pull** — \"Show me every Lead Docket lead from this week's PPC campaigns that hasn't been contacted yet, plus every Filevine project in pre-litigation phase older than 90 days.\"\n- **Fix** — \"On project 78213, the policy-limit field is wrong — should be $250K not $25K. Update it and add a note. Also re-route the bad-faith Lead Docket lead to the senior PI partner.\"\n- **Build** — \"Convert this Lead Docket lead into a new Filevine PI project, pre-fill the intake section from the lead's form data, and schedule the consultation.\"\n\n## Quick start\n\n```bash\ngit clone https://github.com/Advocate-Cloud-Solutions/filevine-mcp.git\ncd filevine-mcp\nnpm install\ncp .env.example .env  # fill in your Filevine PAT, client_id, client_secret\nnpm run build\n```\n\nThen add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):\n\n```json\n{\n  \"mcpServers\": {\n    \"filevine\": {\n      \"command\": \"node\",\n      \"args\": [\"/absolute/path/to/filevine-mcp/dist/index.js\"],\n      \"env\": {\n        \"FILEVINE_CLIENT_ID\": \"...\",\n        \"FILEVINE_CLIENT_SECRET\": \"...\",\n        \"FILEVINE_PAT\": \"...\",\n        \"FILEVINE_USER_ID\": \"...\",\n        \"FILEVINE_ORG_ID\": \"...\"\n      }\n    }\n  }\n}\n```\n\nSee [AGENTS.md](AGENTS.md) for the full setup walkthrough including how to generate a PAT in the Filevine Org Admin tools.\n\n## Architecture at a glance\n\n- **PAT exchange auth** for Filevine; separate API key for Lead Docket (both read from environment variables)\n- **Dynamic schema introspection** — Filevine's per-firm Project Type templating means every write tool needs runtime schema discovery (1hr in-memory cache, `force_refresh` flag)\n- **Rate-limit governor** — Per-endpoint token buckets (Filevine: 320/min general, 250/min billing, **5/min Reports + Vitals**; Lead Docket: separate buckets per its own limits)\n- **Optional audit logging** — JSONL audit log per ABA Opinion 512, off by default, opt-in via `AUDIT_LOG_PATH`\n\nFull architecture: see [ARCHITECTURE.md](ARCHITECTURE.md). Lead Docket-specific design notes: [docs/LEAD_DOCKET.md](docs/LEAD_DOCKET.md).\n\n## Tool surface\n\n**~32 tools total**: 25 Filevine core + 7 Lead Docket.\n\n### Filevine core (25 tools)\n\n| Tool | What it does |\n|---|---|\n| `filevine_search_projects` | Query projects by phase, project type, assignee, date |\n| `filevine_describe_sections` | Returns full schema (sections + fields + types) for a project type |\n| `filevine_get_section` / `filevine_update_section` | Read/write static section field values |\n| `filevine_create_collection_item` | Add a row to a Collection section (medical providers, defendants, etc.) |\n| `filevine_create_note` | Add a note with @mentions and attachments |\n| `filevine_run_report` | Execute a saved Periscope report (heavily cached due to 5/min cap) |\n\n### Lead Docket (7 tools)\n\n| Tool | What it does |\n|---|---|\n| `filevine_lead_search` | Query leads by status, source, owner, date range |\n| `filevine_lead_get` | Get a lead's full intake-form data + scoring |\n| `filevine_lead_create` | Create a lead (manual entry; web forms write via Lead Docket UI) |\n| `filevine_lead_update_status` | Move a lead through statuses (new → contacted → qualified → converted/declined) |\n| `filevine_lead_assign` | Reassign a lead to a different intake specialist or attorney |\n| `filevine_lead_convert_to_project` | Convert a qualified lead into a Filevine project; carries form data into intake section |\n| `filevine_lead_list_sources` | List lead sources (PPC campaigns, referrals, web forms) for routing decisions |\n\nFull inventory: [docs/TOOLS.md](docs/TOOLS.md).\n\n## Roadmap\n\n6-phase build, ~17-25 dev-weeks for v1.\n\n1. **Recon + sandbox** (1-2 wk) — engineering seats, validate endpoints, draft type system\n2. **Filevine read-only MCP** (4-6 wk) — 10 read tools, PAT exchange, rate-limit governor\n3. **Filevine write tools** (3-4 wk) — Section writes, note/task create, collection CRUD, doc upload\n4. **Filevine reports + caching** (4-6 wk) — Reports tool, materialized cache, Periscope passthrough\n5. **Lead Docket sub-module** (2-3 wk) — 7 tools, separate auth, lead-to-project conversion bridge\n6. **Hardening + CPI** (3-4 wk) — Certified Partner Integration application, security review, error taxonomy, observability\n\nFull roadmap: [ROADMAP.md](ROADMAP.md).\n\n## Status\n\n**Pre-alpha — namespace claimed, scaffolding in place, core implementation pending.**\n\nFirst Filevine + Lead Docket MCP in the registry. Filevine has not announced a first-party server.\n\n## Contributing\n\nExternal contributions welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).\n\n## License\n\nApache 2.0 — see [LICENSE](LICENSE).\n\n## Contact\n\nJason Adams · Advocate Cloud Solutions\n[jason@advocatecloudsolutions.com](mailto:jason@advocatecloudsolutions.com) · [advocatecloudsolutions.com](https://advocatecloudsolutions.com)\n",
+    "fetchedAt": "2026-08-12T00:17:42.955Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:47:19.603Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

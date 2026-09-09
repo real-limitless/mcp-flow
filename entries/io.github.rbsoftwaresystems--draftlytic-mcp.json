@@ -1,0 +1,58 @@
+{
+  "id": "io.github.rbsoftwaresystems/draftlytic-mcp",
+  "title": "draftlytic-mcp",
+  "description": "Offline MCP server for planning structured project specs — validate, render, and checklist tools.",
+  "summary": "Offline MCP server for planning structured project specs — validate, render, and checklist tools.",
+  "offersHint": "Offline MCP server for planning structured project specs — validate, render, and checklist tools. · Packages: npm:draftlytic-mcp",
+  "version": "0.4.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "draftlytic-mcp",
+    "version": "0.4.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "draftlytic-mcp",
+      "version": "0.4.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/rbsoftwaresystems/draftlytic-mcp",
+  "repository": {
+    "url": "https://github.com/rbsoftwaresystems/draftlytic-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-08T11:39:11.998297Z",
+  "publishedAt": "2026-07-08T11:39:11.998297Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:04:24.021Z",
+    "sourceRepoAt": "2026-08-11T23:24:37.595Z",
+    "readmeAt": "2026-08-11T23:24:38.228Z",
+    "toolsAt": "2026-08-12T01:04:24.021Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/rbsoftwaresystems/draftlytic-mcp",
+    "checkedAt": "2026-08-11T23:24:37.595Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/rbsoftwaresystems/draftlytic-mcp/main/README.md",
+    "markdown": "# draftlytic-mcp\n\n[![smithery badge](https://smithery.ai/badge/rbsoftwaresystems/draftlytic-mcp)](https://smithery.ai/servers/rbsoftwaresystems/draftlytic-mcp)\n\nAn MCP server that turns a rough project idea into a structured spec — right inside Claude Code, Cursor, or any MCP-compatible editor. No API key, no account, no network calls. It runs entirely on your machine and hands your editor's model a schema to write into, a checklist of what to ask about, a validator that catches gaps before you start coding, and a renderer that turns the result into a clean Markdown PRD.\n\nThis exists because \"vibe coding\" from a one-line prompt tends to produce a plausible-looking app that's missing half the decisions you actually needed to make — what's in scope for v1, what the data model looks like, what \"done\" means for a feature. draftlytic-mcp doesn't generate any of that for you; it structures the conversation so your model asks the right questions, then checks its own homework before you start building.\n\n## Install\n\n### Claude Code\n\n```bash\nclaude mcp add draftlytic -- npx -y draftlytic-mcp\n```\n\n### Cursor\n\nAdd to `.cursor/mcp.json` in your project (or the global `~/.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"draftlytic\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"draftlytic-mcp\"]\n    }\n  }\n}\n```\n\n### Any other MCP client\n\nMost MCP hosts read a generic `mcp.json` with the same shape:\n\n```json\n{\n  \"mcpServers\": {\n    \"draftlytic\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"draftlytic-mcp\"]\n    }\n  }\n}\n```\n\n## Usage\n\nOnce connected, ask your editor's model something like:\n\n> Use the plan_project prompt for \"a habit tracker that reminds me by text message\"\n\nIt'll walk through `spec_checklist` with you (platform, tech stack, audience, features, competitors, revenue, constraints, data model, notifications, external services, design & UX — a handful of concrete questions per category, many offered as click-to-pick single/multi-select choices rather than blank prompts, with a free-text escape always available), draft a spec, run it through `validate_spec`, fix what comes back, and hand you a rendered PRD in Markdown you can drop straight into a coding-agent prompt, a `SPEC.md`, or a GitHub issue.\n\nYou can also call the tools directly if you already have a spec drafted (by hand, or from another source) and just want it checked and rendered.\n\n## Tool reference\n\n| Tool                 | Input                                             | What it does                                                                                                                                                                                                                                                                                                                            |\n| -------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |\n| `validate_spec`      | `spec` (JSON object)                              | Zod-validates the spec and returns structured issues: errors for missing/empty required sections, placeholder text (`TBD`, `lorem ipsum`, `fixme`, etc.), and features without a priority — plus non-blocking quality hints like \"no acceptance criteria on your must-haves\" or \"no non_goals listed\".                                  |\n| `render_prd`         | `spec` (JSON object)                              | Renders a validated spec into deterministic Markdown: title, overview, target audience, platforms, tech stack, features grouped by priority with acceptance-criteria checklists, screens & navigation, data model tables, constraints, and non-goals. Refuses to render (returns an error) if the spec has structural errors.           |\n| `spec_checklist`     | —                                                 | Returns the planning checklist grouped by category, each with 2-4 concrete questions. Each question is `{ prompt, options?, multiSelect? }` — questions with `options` are meant to be shown as selectable single/multi-choice answers (with a free-text escape), open ones stay free-text.                                              |\n| `open_in_draftlytic` | `spec` (JSON object, optional) or `idea` (string) | Builds a link that opens your idea in the full Draftlytic app with the brief pre-filled — its guided AI question flow, richer generation, an editable spec editor, and PRD export live there. Compresses a spec (even a partial one) into a starting brief, or takes a plain-text idea. Builds the URL locally; sends nothing anywhere. |\n\nPlus one prompt:\n\n| Prompt         | Args            | What it does                                                                                                                             |\n| -------------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |\n| `plan_project` | `idea` (string) | Instructs the model to interview the user with `spec_checklist`, draft a spec, validate and fix it in a loop, then render the final PRD. |\n\n### The spec shape\n\n```\n{\n  name: string\n  overview: string\n  target_audience: string\n  platforms: string[]\n  tech_stack: string[]\n  features: Array<{\n    title: string\n    description: string\n    priority: \"must-have\" | \"nice-to-have\" | \"future\"\n    acceptance_criteria?: string[]\n  }>\n  screens?: Array<{ name: string; purpose: string }>\n  data_model?: Array<{\n    entity: string\n    fields: Array<{ name: string; type: string; notes?: string }>\n  }>\n  constraints?: string[]\n  non_goals?: string[]\n  revenue_model?: string\n}\n```\n\n## Honest limits\n\n- **This is v1 and purely local.** There's no Draftlytic API behind it — every tool runs synchronous, offline logic against whatever spec JSON your editor's model hands it. It doesn't call any AI itself.\n- **The model does the writing, this just structures it.** `validate_spec` and `spec_checklist` are heuristics, not a substitute for actually knowing what you're building. A spec that passes validation can still be a bad plan.\n- **Placeholder detection is pattern-based**, not semantic. It catches `TBD`/`lorem ipsum`/`fixme`-style filler, not \"this description is vague but technically real words.\"\n- **No persistence.** Nothing is saved between calls — the spec JSON lives in the conversation. If you want it saved, ask your model to write it to a file.\n- **No collaboration, no versioning, no export formats beyond Markdown.** It's a planning tool, not a project manager.\n\n---\n\ndraftlytic-mcp is the offline sibling of [draftlytic.com](https://draftlytic.com?utm_source=github&utm_medium=mcp-readme) — the full editor adds AI generation, logo drafts, scan-for-gaps, and GitHub push.\n",
+    "fetchedAt": "2026-08-11T23:24:38.228Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:04:24.021Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

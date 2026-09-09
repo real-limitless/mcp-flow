@@ -1,0 +1,78 @@
+{
+  "id": "io.github.dimitrovakulenko/dwg-mcp-server",
+  "title": "DWG MCP Server",
+  "description": "Read-only MCP server for inspecting AutoCAD DWG files",
+  "summary": "Read-only MCP server for inspecting AutoCAD DWG files",
+  "offersHint": "Read-only MCP server for inspecting AutoCAD DWG files · Packages: npm:@dmytro-prototypes/dwg-mcp-server · Env vars: DWG_MCP_HOST_FOLDERS",
+  "version": "0.1.4",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@dmytro-prototypes/dwg-mcp-server",
+    "version": "0.1.4",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "DWG_MCP_HOST_FOLDERS",
+        "description": "Semicolon-separated absolute host folders that may be opened read-only. Defaults to ~/Documents when omitted by the npm Docker launcher."
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@dmytro-prototypes/dwg-mcp-server",
+      "version": "0.1.4",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "DWG_MCP_HOST_FOLDERS",
+          "description": "Semicolon-separated absolute host folders that may be opened read-only. Defaults to ~/Documents when omitted by the npm Docker launcher."
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "DWG_MCP_HOST_FOLDERS",
+      "description": "Semicolon-separated absolute host folders that may be opened read-only. Defaults to ~/Documents when omitted by the npm Docker launcher."
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/dimitrovakulenko/dwg-mcp-server",
+  "sourceUrl": "https://github.com/dimitrovakulenko/dwg-mcp-server",
+  "repository": {
+    "url": "https://github.com/dimitrovakulenko/dwg-mcp-server",
+    "source": "github",
+    "id": "1188307756"
+  },
+  "updatedAt": "2026-05-10T15:53:06.507247Z",
+  "publishedAt": "2026-05-10T15:53:06.507247Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:24:31.181Z",
+    "sourceRepoAt": "2026-08-11T23:48:49.169Z",
+    "readmeAt": "2026-08-11T23:48:49.780Z",
+    "toolsAt": "2026-08-12T01:24:31.181Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/dimitrovakulenko/dwg-mcp-server",
+    "checkedAt": "2026-08-11T23:48:49.169Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/dimitrovakulenko/dwg-mcp-server/main/README.md",
+    "markdown": "# DWG MCP Server\n\nDWG MCP Server is an MCP server for inspecting AutoCAD DWG files with AI agents and assistants.\nIt provides read-only access to drawing contents as queryable objects.\nAgents can open a DWG, inspect available types, fetch objects by handle, and query properties, scopes, and references.\n\n## Quick Start\n\nUse DWG MCP Server from the MCP client of your choice.\nThe npm package launches the published Docker image.\nThe Docker launcher mounts `$HOME` by default. For drawings outside `$HOME`, set\n`DWG_MCP_DOCKER_MOUNTS`.\n\nIf your MCP client, AI agent, or test harness does not support MCP roots, set\n`DWG_MCP_ALLOWED_ROOTS` to the folders that should be accessible.\n\n### Codex\n\n```bash\ncodex mcp add dwg-mcp \\\n  --env DWG_MCP_ALLOWED_ROOTS=\"$HOME\" \\\n  -- npx -y @dmytro-prototypes/dwg-mcp-server\n```\n\nCodex does not currently provide MCP client roots to stdio MCP servers. Configure\nexplicit allowed roots for the folders that contain your drawings.\n\n### Claude\n\n```bash\nclaude mcp add --scope user --transport stdio dwg-mcp -- npx -y @dmytro-prototypes/dwg-mcp-server\n```\n\nClaude Code provides MCP roots, so no extra path variable is usually needed.\n\n### Cursor\n\n```json\n{\n  \"mcpServers\": {\n    \"dwg-mcp\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@dmytro-prototypes/dwg-mcp-server\"]\n    }\n  }\n}\n```\n\n## Exposed Tools\n\n| Tool | Purpose |\n| --- | --- |\n| `dwg.list_roots` | List folders available for DWG access. |\n| `dwg.open_file` | Open a DWG from an available folder and return a `documentId`. |\n| `dwg.close_file` | Close an opened document and release its worker process. |\n| `dwg.list_types` | List the globally supported DWG types known to the backend. |\n| `dwg.list_file_types` | List only the types that are present in a specific opened DWG. |\n| `dwg.describe_type` | Describe a supported type, including its properties and default projection. |\n| `dwg.get_objects` | Fetch specific objects by handle, preserving the requested order and reporting missing handles. |\n| `dwg.query_objects` | Query objects with filters, scopes, relation traversal, sorting, projection, and pagination. |\n\nA typical flow is:\n\n1. Discover available folders with `dwg.list_roots`.\n2. Open a file from one of those folders with `dwg.open_file`.\n3. Inspect supported or file-local types with `dwg.list_types`, `dwg.list_file_types`, or `dwg.describe_type`.\n4. Fetch known handles with `dwg.get_objects` or search the drawing with `dwg.query_objects`.\n5. Close the session with `dwg.close_file`.\n\n## Architecture\n\n### Runtime model\n\nIn the packaged deployment, DWG MCP Server is a stdio MCP server implemented in Python and typically run inside a Linux container.\nThe Python host exposes the MCP tools, validates file access, and manages document sessions.\n\nEach `dwg.open_file` call starts a dedicated Rust `dwg-worker` process for that DWG and returns a host-side `documentId`.\nAll later file-scoped calls use that document id.\n`dwg.close_file` terminates the worker for that session.\n\n### Worker and query model\n\nThe Rust worker speaks newline-delimited JSON over stdin and stdout.\nWhen it opens a DWG through LibreDWG, it first builds an in-memory indexed document.\nThat upfront indexing step is central to the design: the server pays the cost once when the file is opened, then answers later requests against the index instead of rescanning the DWG each time.\n\nThe indexed model stores object handles, kinds, type names, generic types, summary and full properties, and derived block, layout, and space membership.\nIt also stores supported type metadata such as aliases, default projections, and property definitions.\n\nWhen you request full object records, responses also include that derived membership under `extendedData`, including container block, layout, and model or paper space when known.\n\n`dwg.get_objects` is direct lookup by handle.\n`dwg.query_objects` runs over indices for handle, type, generic type, kind, exact property values, block, layout, and space, then applies filters, scopes, relation traversal, sorting, projection, and pagination.\nThis is what makes queries over blocks, layers, layouts, references, and related objects practical on an opened drawing.\n\n### Access and packaging\n\nDWG files must be opened from roots listed by `dwg.list_roots`. The server first\nasks the MCP client for roots. If the client, AI agent, or test harness does not\nsupport MCP roots, configure explicit allowed roots:\n\n```bash\npython3 -m dwg_mcp_server --allowed-root \"$HOME/Downloads\"\n```\n\nor:\n\n```bash\nDWG_MCP_ALLOWED_ROOTS=\"$HOME/Downloads;$HOME/Documents/dwg\" \\\npython3 -m dwg_mcp_server\n```\n\n`DWG_MCP_ALLOWED_ROOTS` is an authorization fallback for clients without roots.\nIt should be a semicolon-separated list of absolute directories.\n\nDocker is separate from MCP roots: roots authorize access, mounts make host\nfolders visible inside the container. The npm Docker launcher mounts `$HOME` by\ndefault. For drawings outside `$HOME`, set `DWG_MCP_DOCKER_MOUNTS`.\n\nFor clients without MCP roots, `DWG_MCP_ALLOWED_ROOTS` is also used as the Docker\nmount list unless `DWG_MCP_DOCKER_MOUNTS` is set.\n\nThe Docker image itself unpacks a prebuilt LibreDWG bundle, builds the Rust\nworker against it, and copies only the static-linked worker plus schema files\ninto the final Python runtime image.\n\n## Build and Test From Source\n\nLocal source builds use the vendored `third_party/libredwg` submodule by default.\n\n### Prerequisites\n\n- Rust toolchain\n- Python 3.11 or newer\n- Docker, if you want to build or run the container image\n- autotools for local LibreDWG builds on macOS or Linux (`autoreconf`, `aclocal`, `automake`, `autoconf`, `make`)\n\n### Bootstrap\n\n```bash\ngit submodule update --init --recursive\nbash scripts/build-libredwg.sh\n```\n\n### Prebuilt LibreDWG bundles\n\nCI and Docker builds use a Git LFS LibreDWG bundle instead of rebuilding\nLibreDWG on every run. The current CI bundle target is:\n\n```text\nprebuilt/libredwg/x86_64-unknown-linux-gnu.tar.gz\n```\n\nRefresh it only when the LibreDWG submodule or native build inputs change:\n\n```bash\nbash scripts/build-linux-libredwg-prebuilt.sh x86_64-unknown-linux-gnu\n```\n\nFor local macOS debugging, keep using `bash scripts/build-libredwg.sh` and the\nlocal Rust build; the Linux prebuilt archive is for CI and Docker.\n\n### Build and test\n\n```bash\ncargo test --workspace\nbash scripts/run-e2e-tests.sh\n```\n\n### Run the MCP host locally\n\nThe Python host looks for `dwg-worker` under `target/release` or `target/debug`.\nIf you want a release build explicitly:\n\n```bash\ncargo build -p dwg-worker --release\n```\n\nThen run the MCP host:\n\n```bash\nPYTHONPATH=server/src python3 -m dwg_mcp_server\n```\n\nIf the worker binary lives somewhere else, set `DWG_WORKER_BIN` to that executable.\n\n### Build and run with Docker\n\nBuild the image:\n\n```bash\nbash scripts/build-docker-mcp-server.sh\n```\n\nRun the server and expose specific host folders read-only:\n\n```bash\nDWG_MCP_DOCKER_MOUNTS=\"$HOME/Documents;$HOME/Desktop/dwg\" \\\nbash scripts/run-docker-mcp-server.sh\n```\n\nUse this when your client supports MCP roots but the container still needs those\nhost root paths mounted read-only.\n\nFor clients without MCP roots, set `DWG_MCP_ALLOWED_ROOTS` instead:\n\n```bash\nDWG_MCP_ALLOWED_ROOTS=\"$HOME/Documents;$HOME/Desktop/dwg\" \\\nbash scripts/run-docker-mcp-server.sh\n```\n\nUse this when your AI agent or harness does not provide MCP roots. The server\nwill allow those directories, and the Docker launcher will mount the same\ndirectories read-only unless `DWG_MCP_DOCKER_MOUNTS` is set.\n\nBy default, the Docker launcher mounts `DWG_MCP_ALLOWED_ROOTS`, then\n`~/Documents` when no roots are configured. Access is still authorized by MCP\nclient roots or explicit allowed roots; Docker mounts only make those paths\nvisible inside the container.\n\n### Clean rebuild\n\nRemove local build artifacts, Python caches, and the local Docker image:\n\n```bash\nbash scripts/clean-build-artifacts.sh\n```\n\nTo also wipe the host LibreDWG build under `third_party/libredwg`:\n\n```bash\nbash scripts/clean-build-artifacts.sh --with-libredwg\n```\n\n## Official MCP Registry\n\nRegistry metadata lives in `server.json` under the GitHub-authenticated name\n`io.github.dimitrovakulenko/dwg-mcp-server`.\n\nBefore publishing a new registry version:\n\n1. Publish the matching npm package version from `npm/`.\n2. Confirm `npm/package.json` contains the same `mcpName` as `server.json`.\n3. Run the manual `Publish MCP Registry` GitHub Actions workflow, or run:\n\n```bash\nmcp-publisher login github\nmcp-publisher publish\n```\n\nThe registry validates the published npm package, so `server.json` must point to\nan npm version that already exists on the public npm registry.\n\n## License\n\nThis project is licensed under the GNU General Public License v3.0.\nSee `LICENSE` for the full license text.\n",
+    "fetchedAt": "2026-08-11T23:48:49.780Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:24:31.181Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

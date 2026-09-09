@@ -1,0 +1,52 @@
+{
+  "id": "ai.responsibleailabs/rail-score",
+  "title": "rail-score",
+  "description": "Responsible-AI guardrails for agents: scoring with policy, injection & PII detection, DPDP.",
+  "summary": "Responsible-AI guardrails for agents: scoring with policy, injection & PII detection, DPDP.",
+  "offersHint": "Responsible-AI guardrails for agents: scoring with policy, injection & PII detection, DPDP. · Remote MCP (streamable-http) at https://mcp.responsibleailabs.ai/mcp",
+  "version": "1.1.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.responsibleailabs.ai/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.responsibleailabs.ai/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://responsibleailabs.ai",
+  "sourceUrl": "https://github.com/Responsible-AI-Labs/rail-score-mcp",
+  "repository": {
+    "url": "https://github.com/Responsible-AI-Labs/rail-score-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-12T10:54:59.982536Z",
+  "publishedAt": "2026-06-12T10:54:59.982536Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:45:13.798Z",
+    "sourceRepoAt": "2026-08-12T00:45:13.798Z",
+    "readmeAt": "2026-08-12T00:45:14.458Z",
+    "toolsAt": "2026-08-12T00:45:14.800Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/Responsible-AI-Labs/rail-score-mcp",
+    "checkedAt": "2026-08-12T00:45:13.798Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/Responsible-AI-Labs/rail-score-mcp/main/README.md",
+    "markdown": "# RAIL Score MCP Server\n\nAdd a responsible-AI safety layer to any agent in one URL.\n\nA remote, hosted [Model Context Protocol](https://modelcontextprotocol.io) server\nthat exposes RAIL Score's evaluation, agent-guardrail, and India DPDP compliance\ncapabilities to any MCP client — Claude, ChatGPT, Cursor, Copilot, Replit Agent,\nLangGraph, CrewAI, or a custom stack — with zero SDK integration.\n\n```\nhttps://mcp.responsibleailabs.ai/mcp\n```\n\nThe server is a thin, hardened gateway in front of the existing REST API at\n`api.responsibleailabs.ai/railscore/v1/`. It reimplements no scoring logic: it\nvalidates the caller, shapes requests and responses for agent ergonomics, and\nforwards to the engine. Credits, tenancy, and rate limits are identical via MCP\nand REST.\n\n## Quickstart\n\nYou need a RAIL API key (`rail_...`) from the [dashboard](https://responsibleailabs.ai/dashboard).\n\n**Claude Code**\n\n```bash\nclaude mcp add --transport http rail https://mcp.responsibleailabs.ai/mcp \\\n  --header \"Authorization: Bearer ${RAIL_API_KEY}\"\n```\n\n**Cursor / Windsurf** (`.cursor/mcp.json`)\n\n```json\n{\n  \"mcpServers\": {\n    \"rail\": {\n      \"url\": \"https://mcp.responsibleailabs.ai/mcp\",\n      \"headers\": { \"Authorization\": \"Bearer rail_YOUR_KEY\" }\n    }\n  }\n}\n```\n\n**Claude.ai / Desktop** — Settings → Connectors → Add custom connector → URL\n`https://mcp.responsibleailabs.ai/mcp`, then paste your `rail_` key.\n\nMore clients (OpenAI Responses API, LangGraph, Replit) are documented at\n[docs.responsibleailabs.ai/mcp](https://docs.responsibleailabs.ai/mcp/connect).\n\n## Tools\n\nNine tools, all `rail_`-prefixed. Descriptions state cost, latency, and when not\nto use a tool, because agents select tools from descriptions alone.\n\n| Tool | Purpose | Credits |\n|---|---|---|\n| `rail_evaluate` | Score content across the 8 RAIL dimensions (optional `policy` enforcement) | 1.0 basic / 3.0 deep |\n| `rail_check_compliance` | Check against gdpr, ccpa, hipaa, eu_ai_act, india_dpdp, india_ai_gov | 5–10 |\n| `rail_detect_injection` | Detect prompt injection in untrusted text | 0.5 |\n| `rail_evaluate_tool_call` | Allow/warn/block a tool call before it runs | 1.5–3.0 |\n| `rail_scan_tool_result` | Scan a tool's output for PII + injection, return redacted text | 0.5–1.0 |\n| `rail_safe_regenerate` | Iteratively regenerate content until it passes (slow) | 1–9 |\n| `rail_dpdp_scan` | Scan for Indian personal data under the DPDP Act 2023 | 0.5 |\n| `rail_dpdp_gate` | Real-time DPDP processing gate (allow/block/require_action) | 0.3 |\n| `rail_dpdp_compliance` | DPDP workflow: emit, require, evidence, session, timers | varies |\n\nThree read-only **resources** (free, zero credits): `rail://framework/dimensions`,\n`rail://account/capabilities`, and `rail://framework/policy-schema` (the JSON\nSchema for the `policy` parameter).\n\n## Policy enforcement\n\n`rail_evaluate` accepts an optional `policy` of per-dimension threshold rules and\nreturns a `policy_outcome`. A rule fires when a dimension scores **below** its\nthreshold; `action` is the most severe fired action (`block` > `flag` > `warn` >\n`allow`), mirroring the `rail-score-sdk` `Policy`/`Rule` shape.\n\n```json\n{ \"rules\": [\n  { \"dimension\": \"safety\",   \"threshold\": 7.0, \"action\": \"block\" },\n  { \"dimension\": \"fairness\", \"threshold\": 6.0, \"action\": \"flag\" }\n] }\n```\n\nPrecedence: if the API key's **application has a dashboard policy enforced**, that\ntakes precedence (`policy_outcome.source: \"application\"`); otherwise the request\n`policy` is applied in-gateway (`source: \"request\"`). No extra credits.\n\n## The guarded agent loop\n\nThe canonical use is to wrap an agent's reasoning end to end:\n\n1. `rail_detect_injection` on untrusted input before acting on it\n2. `rail_evaluate_tool_call` before executing any tool call (block = hard stop)\n3. `rail_scan_tool_result` on the tool's output (prefer the redacted text)\n4. `rail_evaluate` (deep) on the draft answer, or `rail_safe_regenerate` to fix it\n5. `rail_dpdp_scan` (mask) on anything leaving the boundary in India deployments\n\n## Security model\n\nA safety product that is itself unsafe is a credibility failure. The launch\nblockers (enforced and regression-tested):\n\n- **Verdicts are structured data, never advisory prose** an agent can ignore.\n- **No reflection of analyzed content.** Tools return verdicts, scores, spans,\n  and masked excerpts — never the raw analyzed text (second-order injection).\n- **No raw PII.** Detection returns masked values and offsets only.\n- **Tenant isolation by construction.** Identity comes from the validated key in\n  the auth middleware, never from a tool parameter.\n- **No token passthrough** in phase 2: client tokens are validated and dropped;\n  downstream calls use the gateway's service credential. In phase 1 the bearer\n  `rail_` key *is* the customer's RAIL credential, so it is forwarded upstream to\n  preserve per-tenant credits and isolation.\n- **Input caps, timeouts, rate limits, and audit logging** (no content bodies).\n\nSee `tests/test_no_reflection.py` and `tests/test_pii_masking.py` — these run as\na hard CI gate.\n\n## Architecture\n\n- **Transport:** Streamable HTTP only, single `/mcp` endpoint (SSE is sunset).\n- **State:** `stateless_http=True`, `json_response=True` — scales horizontally\n  behind a normal load balancer; aligns with the MCP 2026-07-28 stateless core.\n- **Auth (phase 1):** `rail_` key via `Authorization: Bearer rail_...` **or**\n  `X-API-Key: rail_...` (the latter is gateway-friendly — no Bearer prefix),\n  validated once against `POST /verify` (cached 5 min) by\n  `auth.RailKeyMiddleware`, then bound to the request context.\n- **Discovery:** `GET /.well-known/mcp/server-card.json` (public) lets registries\n  that scan behind an auth wall (e.g. Smithery) enumerate the tools without a key.\n- **Auth (phase 2):** OAuth 2.1 resource server (RFC 9728 metadata, RFC 8707\n  audience binding) via the SDK's `TokenVerifier`.\n\n```\nrail_client.py   thin httpx client to api.responsibleailabs.ai (forwards key, propagates X-Request-ID)\nauth.py          RailKeyMiddleware: validate rail_ keys, bind tenant\nrequest_context.py  per-request ContextVars (key, tenant, request id)\nserver.py        FastMCP app: 9 tools + 3 resources + landing (/) + /health + server-card\nserver.json      official MCP registry manifest (ai.responsibleailabs/rail-score)\n```\n\n## Local development\n\n```bash\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements-dev.txt\nruff check . && pytest          # unit + safety regression tests\nRAIL_API_BASE=https://api.responsibleailabs.ai python server.py   # serves on :8080\n```\n\nProtocol smoke test against a running server (needs a real key):\n\n```bash\nnpx @modelcontextprotocol/inspector --cli \\\n  http://localhost:8080/mcp --method tools/list \\\n  --header \"Authorization: Bearer ${RAIL_API_KEY}\"\n```\n\n### Configuration\n\n| Env var | Default | Purpose |\n|---|---|---|\n| `RAIL_API_BASE` | `https://api.responsibleailabs.ai` | Upstream REST API |\n| `MCP_PORT` | `8080` | Bind port |\n| `RAIL_UPSTREAM_TIMEOUT` | `60` | Upstream call timeout (s) |\n| `RAIL_KEY_CACHE_TTL` | `300` | Validated-key cache TTL (s) |\n\n## Hosting\n\nResponsible AI Labs operates the hosted server at\n`https://mcp.responsibleailabs.ai/mcp` — for almost everyone, just connect to\nthat URL; you do not need to run anything.\n\nTo self-host, build the image and run it anywhere that serves HTTP; point it at\nthe public REST API with `RAIL_API_BASE` (its default). No secrets are required:\nthe customer's RAIL key arrives on each request.\n\n```bash\ndocker build -t rail-score-mcp .\ndocker run -p 8080:8080 -e RAIL_API_BASE=https://api.responsibleailabs.ai rail-score-mcp\n```\n\n## Registry\n\nPublished to the official MCP registry as `ai.responsibleailabs/rail-score` via\n`server.json` and the `mcp-publisher` CLI (DNS-authenticated `responsibleailabs.ai`\nnamespace); a tagged GitHub release runs the `publish-registry` job automatically.\n\nThird-party directories (Smithery, Glama, PulseMCP, mcp.so) index the repository\nand the official registry independently. Each is claimed and refreshed\nseparately rather than syncing automatically, so listings can lag a release.\n",
+    "fetchedAt": "2026-08-12T00:45:14.458Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:45:14.800Z",
+  "toolsPreviewError": "fetch failed",
+  "toolsPreviewStatus": "unreachable"
+}

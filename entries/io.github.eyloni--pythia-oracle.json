@@ -1,0 +1,58 @@
+{
+  "id": "io.github.eyloni/pythia-oracle",
+  "title": "pythia-oracle",
+  "description": "Oracle for AI agents. One tool, one reading. 3 free, then $0.025 USDC via x402.",
+  "summary": "Oracle for AI agents. One tool, one reading. 3 free, then $0.025 USDC via x402.",
+  "offersHint": "Oracle for AI agents. One tool, one reading. 3 free, then $0.025 USDC via x402. · Packages: pypi:pythia-oracle",
+  "version": "0.1.3",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "pythia-oracle",
+    "version": "0.1.3",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "pythia-oracle",
+      "version": "0.1.3",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/eyloni/pythia-oracle",
+  "repository": {
+    "url": "https://github.com/eyloni/pythia-oracle",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-22T19:11:09.506642Z",
+  "publishedAt": "2026-03-22T19:11:09.506642Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:22:50.116Z",
+    "sourceRepoAt": "2026-08-11T23:46:38.638Z",
+    "readmeAt": "2026-08-11T23:46:39.097Z",
+    "toolsAt": "2026-08-12T01:22:50.116Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/eyloni/pythia-oracle",
+    "checkedAt": "2026-08-11T23:46:38.638Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/eyloni/pythia-oracle/master/README.md",
+    "markdown": "# PYTHIA Oracle\n\n[![pythia-oracle MCP server](https://glama.ai/mcp/servers/eyloni/pythia-oracle/badges/card.svg)](https://glama.ai/mcp/servers/eyloni/pythia-oracle)\n\nAn oracle for machines that need to think sideways. Feed it a creative problem; it returns something you can't quite explain but can't stop using.\n\n## How It Works\n\nPYTHIA is a remote MCP server. There is no API key, no account, no signup. Your agent connects over streamable HTTP, discovers the `consult_oracle` tool, and calls it. Identity is tracked by `agent_id` (a string you choose).\n\n**Connection → Tool Discovery → Call → Reading**\n\n```\n1. Your MCP client connects to https://pythia-mcp.fly.dev/\n2. MCP handshake: initialize → notifications/initialized → tools/list\n3. Server returns one tool: consult_oracle\n4. Agent calls consult_oracle with a query\n5. PYTHIA returns a reading (JSON with seed type + response)\n```\n\nFirst 3 readings per `agent_id` are free. After that, x402 payment kicks in (see Payments below).\n\n## Connect\n\n### Claude Desktop / Cursor / any MCP client\n\nAdd to your MCP config:\n\n```json\n{\n  \"mcpServers\": {\n    \"pythia\": {\n      \"url\": \"https://pythia-mcp.fly.dev/\"\n    }\n  }\n}\n```\n\nNo API key field needed. The URL is the only configuration.\n\n### Smithery\n\n```bash\nnpx -y @smithery/cli@latest run dexigo/pythia\n```\n\n### Python (programmatic)\n\n```python\nfrom mcp.client.streamable_http import streamablehttp_client\nfrom mcp import ClientSession\n\nasync with streamablehttp_client(\"https://pythia-mcp.fly.dev/\") as (r, w, _):\n    async with ClientSession(r, w) as session:\n        await session.initialize()\n        result = await session.call_tool(\"consult_oracle\", {\n            \"query\": \"your question here\",\n            \"agent_id\": \"your-name\",\n        })\n```\n\n### curl (raw MCP protocol)\n\n```bash\n# 1. Initialize session\ncurl -X POST https://pythia-mcp.fly.dev/ \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -D headers.txt \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},\"clientInfo\":{\"name\":\"my-agent\",\"version\":\"0.1\"}}}'\n\n# 2. Extract session ID from headers\nSESSION=$(grep -i \"mcp-session-id:\" headers.txt | awk '{print $2}' | tr -d '\\r')\n\n# 3. Call the oracle\ncurl -X POST https://pythia-mcp.fly.dev/ \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json, text/event-stream\" \\\n  -H \"Mcp-Session-Id: $SESSION\" \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"consult_oracle\",\"arguments\":{\"query\":\"What am I not seeing?\",\"agent_id\":\"my-agent\"}}}'\n```\n\n## Tool\n\n### `consult_oracle`\n\nThe oracle. Ask what's actually bothering you.\n\nPYTHIA doesn't brainstorm, rephrase, or give you a list. It doesn't solve your problem. It names the structure of the trap you're in -- the one you can feel but can't articulate. What comes back was always true but never obvious.\n\n| Parameter | Type | Required | Description |\n|-----------|------|----------|-------------|\n| `query` | string | Yes | The real question. Not the polite version. Max 2000 chars. |\n| `context` | string | No | What you've tried, where you're stuck, what framework you're trapped inside. |\n| `agent_id` | string | No | Your name. Identifies you across readings. Default: \"anonymous\". |\n\n**Returns:** JSON with `seed.type` and `response`. Example:\n\n```json\n{\n  \"id\": \"a1b2c3d4-...\",\n  \"query\": \"What am I not seeing?\",\n  \"seed\": { \"type\": \"oblique\" },\n  \"response\": \"You keep optimizing the container. The problem is what you put in it.\",\n  \"status\": \"completed\"\n}\n```\n\n## Payments\n\n### Free tier\n\nYour first 3 readings per `agent_id` require no payment, no wallet, no setup. Just call the tool.\n\n### After free tier: x402\n\nEach reading costs **$0.025 USDC** on Base (Coinbase L2). Payment uses the [x402 protocol](https://x402.org) -- an open HTTP payment standard. No API keys. No accounts with PYTHIA. Your wallet signature is your identity.\n\n### How x402 payment works\n\n```\n1. Agent calls consult_oracle (4th+ reading)\n2. PYTHIA returns 402 with payment requirements:\n   - price: $0.025\n   - network: Base (eip155:8453)\n   - asset: USDC\n   - payTo: <wallet address>\n3. Your x402 client signs a USDC payment and retries the request\n4. PYTHIA verifies payment on-chain, returns the reading\n5. Total time added: ~2 seconds\n```\n\nThis happens automatically if your agent uses an x402-aware client. Your agent does not manually handle crypto.\n\n### Setting up x402 in your agent\n\n**What you need:**\n- A USDC wallet on Base (Coinbase, MetaMask, or any EVM wallet) funded with USDC\n- An x402 client library\n\n**Python:**\n```bash\npip install x402[evm] mcp\n```\n```python\nfrom x402.clients.mcp import x402_mcp_client\nfrom mcp.client.streamable_http import streamablehttp_client\nfrom mcp import ClientSession\n\nwallet_private_key = \"0x...\"  # Your Base wallet private key\n\nasync with streamablehttp_client(\"https://pythia-mcp.fly.dev/\") as (r, w, _):\n    async with ClientSession(r, w) as session:\n        await session.initialize()\n        # x402_mcp_client wraps call_tool to handle 402 responses automatically\n        result = await x402_mcp_client(\n            session,\n            wallet_private_key,\n            tool_name=\"consult_oracle\",\n            arguments={\"query\": \"your question\", \"agent_id\": \"your-name\"},\n        )\n```\n\n**TypeScript:**\n```bash\nnpm install @x402/fetch\n```\n```typescript\nimport { withPaymentInterceptor } from \"@x402/fetch\";\n// Wraps fetch to automatically handle 402 responses with USDC payment\nconst payingFetch = withPaymentInterceptor(fetch, walletClient);\n```\n\n**Coinbase AgentKit:** x402 support is built in. No additional setup.\n\nSee [x402.org](https://x402.org) for all SDKs and framework integrations.\n\n> **Note:** The Python example above uses the x402 SDK's MCP helper. If your framework\n> handles x402 at a lower level, the payment flows through MCP `_meta` fields — your\n> x402 client intercepts the 402 response and retries with payment automatically.\n\n### If you don't have x402 set up\n\nThe tool will return an error after your 3 free readings with the payment requirements in the response. Your 3 free readings always work regardless.\n\n## Links\n\n- **Smithery:** [smithery.ai/server/dexigo/pythia](https://smithery.ai/server/dexigo/pythia)\n- **Glama:** [glama.ai/mcp/servers/eyloni/pythia-the-oracle](https://glama.ai/mcp/servers/eyloni/pythia-the-oracle)\n- **x402 Protocol:** [x402.org](https://x402.org)\n\n## License\n\nProprietary. The oracle's methodology is not open source.\n\nmcp-name: io.github.eyloni/pythia-oracle\n",
+    "fetchedAt": "2026-08-11T23:46:39.097Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:22:50.116Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

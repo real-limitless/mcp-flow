@@ -1,0 +1,58 @@
+{
+  "id": "io.github.vola-trebla/ndjson-local-log-triage-mcp",
+  "title": "ndjson-local-log-triage-mcp",
+  "description": "Streams NDJSON log triage: query patterns, detect anomalies, summarize timelines without full load.",
+  "summary": "Streams NDJSON log triage: query patterns, detect anomalies, summarize timelines without full load.",
+  "offersHint": "Streams NDJSON log triage: query patterns, detect anomalies, summarize timelines without full load. · Packages: npm:ndjson-local-log-triage-mcp",
+  "version": "0.2.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "ndjson-local-log-triage-mcp",
+    "version": "0.2.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "ndjson-local-log-triage-mcp",
+      "version": "0.2.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/vola-trebla/ndjson-local-log-triage-mcp",
+  "repository": {
+    "url": "https://github.com/vola-trebla/ndjson-local-log-triage-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T17:22:19.833425Z",
+  "publishedAt": "2026-05-20T17:22:19.833425Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:56:33.909Z",
+    "sourceRepoAt": "2026-08-11T23:15:35.630Z",
+    "readmeAt": "2026-08-11T23:15:36.142Z",
+    "toolsAt": "2026-08-12T00:56:33.909Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vola-trebla/ndjson-local-log-triage-mcp",
+    "checkedAt": "2026-08-11T23:15:35.630Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vola-trebla/ndjson-local-log-triage-mcp/main/README.md",
+    "markdown": "# 🪵 ndjson-local-log-triage-mcp\n\n[![npm](https://img.shields.io/npm/v/ndjson-local-log-triage-mcp)](https://www.npmjs.com/package/ndjson-local-log-triage-mcp)\n[![CI](https://github.com/vola-trebla/ndjson-local-log-triage-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/vola-trebla/ndjson-local-log-triage-mcp/actions)\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)\n\n**Your service just crashed. The log file is 2GB. Your AI agent can't help.**\n\nMCP server that stream-parses NDJSON log files without loading them into memory — filter by pattern, detect error spikes via Z-score analysis, summarize severity timelines by time window.\n\n---\n\n## 🤔 The problem\n\nA service crashes at 3am. The log file is `app.log.ndjson` and it's 2GB. You ask your agent to find what caused the spike in errors around 03:17. The agent can't read 2GB. It can't even try.\n\n`ndjson-local-log-triage-mcp` streams the file line by line — never loading it into memory — and gives the agent exactly the slice it needs.\n\n---\n\n## 🛠️ Tools\n\n### `query_log_pattern`\n\nFilter log entries by a field/value match. Returns up to N matching entries, streaming the file without loading it entirely. Pass `lineStartPattern` (e.g. `\"^{\"`) to reconstruct multiline stack traces silently dropped by the default parser.\n\n```\nLog Query Results\n  File:        /var/log/app.log.ndjson\n  Filter:      service contains \"auth\"\n  Lines read:  847,293\n  Matches:     50 (limit 50 reached)\n\n{\"timestamp\":\"2025-01-15T03:17:02Z\",\"level\":\"error\",\"service\":\"auth\",\"msg\":\"token validation failed\",\"userId\":\"u_abc123\"}\n...\n```\n\n### `detect_error_anomalies`\n\nZ-score frequency analysis. Buckets errors by time window, computes mean + stddev, flags windows where the error rate is anomalously high.\n\n```\nError Anomaly Detection\n  File:            /var/log/app.log.ndjson\n  Window:          5min\n  Z-score cutoff:  2.0\n  Baseline:        mean=3.2 errors/window, stdDev=1.8\n  Anomalies found: 2\n\n  [z=4.71] 2025-01-15T03:15:00.000Z  23 errors\n  [z=2.33] 2025-01-15T03:20:00.000Z  9 errors\n```\n\n### `summarize_log_timeline`\n\nChronological aggregation of errors, warnings, and info counts per time window. Quick visual of where the incident is.\n\nPass `adaptive: true` to auto-scale bucket size to actual event density and zoom in on the peak error window at 10× finer resolution.\n\n```\nLog Timeline Summary\n  File:        /var/log/app.log.ndjson\n  Window:      5min\n  Buckets:     48\n\n  Time (UTC)                 Errors  Warnings  Info  Other\n  ─────────────────────────────────────────────────────────\n    2025-01-15 03:00:00Z          2         8   142      0\n    2025-01-15 03:05:00Z          1         5   138      0\n    2025-01-15 03:10:00Z          3         9   141      0\n  ! 2025-01-15 03:15:00Z         23        14   119      0\n    2025-01-15 03:20:00Z          9        11   133      0\n```\n\n### `correlate_request`\n\nReconstructs a distributed trace from multiple NDJSON log files. Given a `trace_id`, collects all correlated events in chronological order across all files and surfaces the services involved and total duration.\n\n```\nRequest Correlation\n  Trace ID:          trace-8f7a9b2c\n  Files scanned:     2\n  Events found:      10\n  Services involved: api, worker\n  Duration:          890ms\n\n[2025-01-15T14:00:00.001Z] api           {\"level\":\"info\",\"msg\":\"incoming request\",...}\n[2025-01-15T14:00:00.045Z] api           {\"level\":\"info\",\"msg\":\"auth token validated\",...}\n[2025-01-15T14:00:00.112Z] worker        {\"level\":\"info\",\"msg\":\"job queued\",...}\n...\n```\n\n### `discover_log_schema`\n\nAnalyze a log file to infer its wrapper format (NDJSON, Syslog, Kubernetes container logs) and extract type schemas, identifying polymorphic keys, timestamp patterns, and severity fields.\n\n```json\n{\n  \"fileFormat\": \"NDJSON\",\n  \"detectedKeys\": {\n    \"timestamp\": { \"type\": \"string\", \"format\": \"date-time\", \"isChronologicalIndex\": true },\n    \"level\": { \"type\": \"string\", \"isSeverityField\": true, \"possibleValues\": [\"info\", \"error\"] }\n  }\n}\n```\n\n### `group_semantic_patterns`\n\nCluster log messages dynamically using the fixed-depth tree-based **Drain parsing algorithm** to isolate distinct log templates and analyze their parameter distributions (wildcard variations).\n\n```\nProcessed Logs: 1500\nUnique Patterns: 2\n\n- Template: \"connection failed from * port *\"\n  Occurrences: 1200\n  Parameters:\n    - param_0 (client_ip): 192.168.1.1 (80%), 10.0.0.5 (20%)\n```\n\n### `start_live_triage`\n\nStart background log tailing with real-time Z-score anomaly alerting on error frequency spikes and heap memory protection limits. Dispatches notifications directly over standard JSON-RPC channels.\n\n```json\n{\n  \"method\": \"notifications/triage\",\n  \"params\": {\n    \"type\": \"anomaly\",\n    \"message\": \"Live Anomaly Detected: 45 errors in current window (Z-score: 3.52)\",\n    \"z_score\": 3.52,\n    \"error_count\": 45\n  }\n}\n```\n\n### `query_external_logs`\n\nA unified gateway to query central log providers (Datadog, Splunk, Elasticsearch), converting search patterns to vendor-specific dialects and mapping the output into the standardized **OpenTelemetry Log Data Model** structure.\n\n---\n\n## ⚡ Setup\n\n```json\n{\n  \"mcpServers\": {\n    \"log-triage\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"ndjson-local-log-triage-mcp\"]\n    }\n  }\n}\n```\n\n---\n\n## 🚀 Usage\n\n> \"Analyze /var/log/app.log.ndjson — summarize the error timeline in 5-minute windows, detect any anomalous spikes, and show me the error entries around the spike.\"\n\nWorks great alongside:\n\n- [release-readiness-triage-mcp](https://www.npmjs.com/package/release-readiness-triage-mcp) — CI failure triage before release\n- [env-secret-exposure-analyzer-mcp](https://www.npmjs.com/package/env-secret-exposure-analyzer-mcp) — secret exposure scanning\n\n---\n\n## 📦 Links\n\n- **npm:** [npmjs.com/package/ndjson-local-log-triage-mcp](https://www.npmjs.com/package/ndjson-local-log-triage-mcp)\n- **GitHub:** [github.com/vola-trebla/ndjson-local-log-triage-mcp](https://github.com/vola-trebla/ndjson-local-log-triage-mcp)\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:15:36.142Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:56:33.909Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

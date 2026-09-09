@@ -1,0 +1,77 @@
+{
+  "id": "org.americandefault/research",
+  "title": "American Default Research",
+  "description": "Read-only MCP for U.S. household distress: 96 indicators, ADI composite, 3,144 counties.",
+  "summary": "Read-only MCP for U.S. household distress: 96 indicators, ADI composite, 3,144 counties.",
+  "offersHint": "Read-only MCP for U.S. household distress: 96 indicators, ADI composite, 3,144 counties. · Remote MCP (streamable-http) at https://mcp.americandefault.org/mcp",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.americandefault.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.americandefault.org/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://americandefault.org/press/mcp/",
+  "sourceUrl": "https://github.com/vibecode1/american-default-mcp",
+  "repository": {
+    "url": "https://github.com/vibecode1/american-default-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-11T15:35:53.834785Z",
+  "publishedAt": "2026-05-11T15:35:53.834785Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:51:06.360Z",
+    "sourceRepoAt": "2026-08-11T23:08:53.004Z",
+    "readmeAt": "2026-08-11T23:08:53.658Z",
+    "toolsAt": "2026-08-11T23:08:53.753Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/vibecode1/american-default-mcp",
+    "checkedAt": "2026-08-11T23:08:53.004Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/vibecode1/american-default-mcp/main/README.md",
+    "markdown": "# American Default Research — MCP Server\n\nA Model Context Protocol server that exposes American Default Research data — 96 economic distress indicators, the American Distress Index (ADI) composite score, and county-level distress scores across all 3,144 U.S. counties — to MCP-compatible AI agents.\n\n**Official MCP Registry namespace:** `org.americandefault/research`\n**Hosted endpoint:** `https://mcp.americandefault.org/mcp` (streamable HTTP)\n**Website:** [https://americandefault.org/press/mcp/](https://americandefault.org/press/mcp/)\n\n---\n\n## Use the hosted MCP (recommended)\n\nPoint any MCP-compatible client at the hosted streamable-HTTP endpoint. No install, no data files, no maintenance — every response is generated against the same data that powers [americandefault.org](https://americandefault.org).\n\n### Claude Desktop\n\nAdd to `~/Library/Application Support/Claude/claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"american-default-research\": {\n      \"url\": \"https://mcp.americandefault.org/mcp\",\n      \"transport\": \"streamable-http\"\n    }\n  }\n}\n```\n\nRestart Claude Desktop. The 5 tools appear under the hammer icon.\n\n### Smithery\n\nThe MCP is also available via the Smithery gateway at [smithery.ai/servers/americandefault/research](https://smithery.ai/servers/americandefault/research).\n\n### Cursor / other MCP clients\n\nAny client that speaks streamable HTTP can connect by adding the endpoint URL to its MCP server config. The exact config format varies by client — see your client's docs.\n\n---\n\n## Tool surface\n\n| Tool | Input | Returns |\n|---|---|---|\n| `get_indicator(slug)` | bundle slug (e.g. `the-buffer`) | compact snapshot + pre-computed aggregates + canonical citation |\n| `get_county_scorecard(fips)` | 5-digit FIPS (4-digit accepted with implicit leading zero) | CDI scorecard + 5-domain breakdown + pre-baked citations |\n| `get_adi_composite()` | (none) | latest quarter ADI + 5 components + zone + citation |\n| `search_indicators(query, limit=10)` | keyword + optional limit (max 50) | ranked matches (slug, branded_name, name, category, URL) |\n| `get_cross_correlations(slug)` | indicator slug | fully-validated leading/lagging pairs split into `as_leader` + `as_follower` |\n\n### Schema versioning\n\nEvery response carries `schema_version: \"v1\"`. Breaking changes ship as a new tool with a `_v2` suffix — v1 tools stay live for backward compatibility. Callers should assert the schema version they expect.\n\n### Response size budgets\n\n| Endpoint | Budget | Typical |\n|---|---|---|\n| `get_indicator` | ≤ 16 KB | ~13.8 KB |\n| `get_county_scorecard` | ≤ 25 KB | ~2.5 KB |\n| `get_adi_composite` | ≤ 4 KB | ~2.0 KB |\n\nRaw 300+ point indicator series is intentionally omitted from `get_indicator` to keep LLM context budgets manageable. The full series lives at `https://americandefault.org/api/indicators/{slug}.json`.\n\n---\n\n## Canonical attribution\n\nEvery response includes a `citation` object with APA, MLA, Chicago, and news-copy forms. Three-tier naming is enforced:\n\n- **American Default Research** — institutional name, used in citations, source lists, bibliographies\n- **American Default** — brand name, used for URLs and casual references\n- **American Distress Index (ADI)** — product name, used only when the composite score is the subject\n\nSee [`https://americandefault.org/llms.txt`](https://americandefault.org/llms.txt) § \"Canonical Attribution\" for the authoritative spec.\n\n---\n\n## Run locally (optional)\n\nThe recommended way to use this MCP is the hosted endpoint above. The local install path is provided for transparency, audit, and self-hosting — but the local server reads data files from sibling directories (`data/` and `site/src/data/`) that aren't included in this repo. To run locally end-to-end you need either:\n\n1. **Mirror the data files from the public API.** All indicator data is published at `https://americandefault.org/api/indicators/{slug}.json` and county scorecards at `https://americandefault.org/api/counties/{fips}.json`. A small companion script (not bundled) can fetch these into a local `data/` mirror.\n2. **Use this repo as a code reference only.** Read the source, audit the implementation, then point your client at the hosted endpoint.\n\nInstall:\n\n```bash\npython3 -m venv venv\n./venv/bin/pip install -r requirements.txt\n```\n\nProbe (confirms the server boots and discovers tools):\n\n```bash\nPYTHONPATH=. python3 -m scripts.machine_layer.mcp_server --probe\n```\n\nThis emits a JSON handshake to stdout and exits 0 without entering the stdio loop. Use it in CI or as a smoke test.\n\nRun the stdio loop:\n\n```bash\nPYTHONPATH=. python3 -m scripts.machine_layer.mcp_server\n```\n\nStdout is reserved for JSON-RPC framing. Logs go to stderr.\n\n---\n\n## Architecture\n\nThe server is built on `mcp >= 1.27.0` and supports two transports:\n\n- **stdio** (`mcp_server.py`) — for local Claude Desktop / Cursor / IDE plugins\n- **streamable-HTTP** (`http_app.py`) — for the hosted endpoint at `mcp.americandefault.org`\n\nThe HTTP transport adds a bearer-auth middleware (anonymous + issued tiers), two-level token-bucket rate limiting (per-minute burst + per-hour sustained), and per-tier rate limits. See `http_app.py` for the full middleware stack.\n\n### Slug ↔ indicator_id mapping\n\nSource JSONs carry both `indicator_id` (snake_case) and `slug` (kebab-case). 91 of 96 indicators have slugs that DO NOT mechanically transform from their id — branded indicators use marketing names like `the-buffer` (id: `savings_rate`), `the-horizon` (id: `ai_capability`), `the-pinch` (id: `census_htops_difficulty`).\n\nThe server builds a boot-time bidirectional map by scanning every source JSON once (~100ms). Lookups are O(1) thereafter.\n\n### Empty-data bundles\n\n10 of 96 bundles ship without populated data — indicators tracked but not yet backfilled (AI job postings, ABA consumer discretionary, NMHC rent tracker, utility disconnections, etc.). These return `status: \"awaiting_population\"` with full metadata and a null `latest_value`. Agents can discover the slug exists without receiving phantom data.\n\n### Rate limiting (HTTP transport)\n\nTwo-level token bucket keyed by IP and bearer-token contact:\n\n- **Per-minute burst** — `MCP_RATE_LIMIT_RPM`, default `60`\n- **Per-hour sustained** — `MCP_RATE_LIMIT_RPH`, default `600`\n\nAnonymous tier (no bearer) gets the default. Issued tier (valid bearer) gets a higher allowance configured server-side.\n\n---\n\n## Data sources\n\nThis MCP serves data sourced from FRED (Federal Reserve Economic Data), BLS (Bureau of Labor Statistics), NY Fed Household Debt and Credit Report, ATTOM Data Solutions, Mortgage Bankers Association, American Bankruptcy Institute / Epiq Systems, and additional primary government and industry sources. Data is updated daily via automated pipelines.\n\nPer-indicator source attribution is included in every `citation` field returned by the server. The full source-attribution methodology is at [https://americandefault.org/methodology/](https://americandefault.org/methodology/).\n\n---\n\n## About American Default Research\n\nAmerican Default Research is a nonpartisan data project tracking U.S. household financial distress. It publishes the American Distress Index (ADI) — a composite 0-100 score built from five statistically derived components — and the County Distress Index (CDI) for all 3,144 U.S. counties.\n\nWebsite: [https://americandefault.org](https://americandefault.org)\nPress: [https://americandefault.org/press/mcp/](https://americandefault.org/press/mcp/)\nMethodology: [https://americandefault.org/methodology/](https://americandefault.org/methodology/)\n\n---\n\n## License\n\nMIT — see `LICENSE`.\n\nData is free to use with attribution per the canonical attribution block at `https://americandefault.org/llms.txt`.\n\n---\n\n## Issues and contributions\n\nBug reports and feature requests welcome via GitHub Issues on this repo. Pull requests are reviewed against the data pipeline's correctness gates — see [`https://americandefault.org/llms.txt`](https://americandefault.org/llms.txt) for the data-accuracy standard.\n",
+    "fetchedAt": "2026-08-11T23:08:53.658Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "get_indicator",
+      "description": "Fetch a compact snapshot of an American Default economic indicator by slug. Returns latest value, unit, frequency, direction, pre-computed aggregates (period averages, extremes, sustained runs), editorial prose (when available), and canonical APA / MLA / Chicago / news-copy citations. Raw historical series is NOT included — use https://americandefault.org/api/indicators/{slug}.json for the full data. Slug examples: 'the-buffer' (personal savings rate), 'mortgage-delinquency', 'initial-unemployment-claims-sa'."
+    },
+    {
+      "name": "get_indicator_v2",
+      "description": "Fetch an explicitly versioned compact indicator snapshot. Returns the latest value and canonical citation plus `trend_suppressed` and `series_breaks` comparison-safety fields. Callers must pass `response_version='v2'`; unsupported versions fail closed. The legacy `get_indicator` tool remains pinned to its original v1 shape."
+    },
+    {
+      "name": "get_county_scorecard",
+      "description": "Fetch a county's County Distress Index (CDI) scorecard by 5-digit FIPS code. Returns composite score (0-100), score label, national + state rank, 5-domain breakdown (Delinquency, Default & Legal, Debt Burden, Labor, Safety Net & Buffer), key findings, and pre-baked APA / MLA / Chicago / news-copy citations. Accepts 4-digit FIPS with implicit leading zero. 3,144 counties available."
+    },
+    {
+      "name": "get_adi_composite",
+      "description": "Fetch the latest quarterly reading of the American Distress Index (ADI) composite. Returns the composite score (0-100), band (1-5) with its label and the literal reading gloss, the composite's own rank in history, and the five-domain breakdown (Delinquency, Default & Legal, Debt Burden, Labor, Safety Net & Buffer) with domain scores and member component percentiles. Updated quarterly."
+    },
+    {
+      "name": "search_indicators",
+      "description": "Search the 103-indicator registry by keyword. Returns ranked matches (up to `limit`, default 10, max 50) with slug, branded name, underlying name, category, and canonical URL. Scoring is substring+prefix over slug, branded_name, name, and category — e.g. query 'savings' returns both The Buffer (personal saving rate) and The Safety Net (emergency savings survey). Use this when you want to discover which slug corresponds to a concept before calling `get_indicator`."
+    },
+    {
+      "name": "get_cross_correlations",
+      "description": "Fetch statistically-validated leading/lagging relationships for an indicator. Source: the five-filter leading-indicator scanner (cross-correlation → first-differenced CCF → multi-crisis validation → Granger causality → out-of-sample validation). Returns two lists: `as_leader` (pairs where this indicator precedes its follower) and `as_follower` (pairs where another indicator precedes this one). Only fully-validated pairs are included — partial matches are not surfaced. Most of the 103 indicators return empty lists; only a handful of pairs clear the full gauntlet."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:08:53.753Z",
+  "toolsPreviewStatus": "ok"
+}

@@ -1,0 +1,51 @@
+{
+  "id": "io.github.stayce/shortcut-mcp",
+  "title": "shortcut-mcp",
+  "description": "Shortcut project management. Create, update, search stories and manage workflows.",
+  "summary": "Shortcut project management. Create, update, search stories and manage workflows.",
+  "offersHint": "Shortcut project management. Create, update, search stories and manage workflows. · Remote MCP (streamable-http) at https://streamshortcut.staycek.workers.dev/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://streamshortcut.staycek.workers.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://streamshortcut.staycek.workers.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/stayce/streamshortcut-cloudflare",
+  "repository": {
+    "url": "https://github.com/stayce/streamshortcut-cloudflare",
+    "source": "github"
+  },
+  "updatedAt": "2026-01-21T00:18:49.484757Z",
+  "publishedAt": "2026-01-21T00:18:49.484757Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:18.804Z",
+    "sourceRepoAt": "2026-08-11T23:19:58.990Z",
+    "readmeAt": "2026-08-11T23:19:59.446Z",
+    "toolsAt": "2026-08-12T01:00:18.804Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/stayce/streamshortcut-cloudflare",
+    "checkedAt": "2026-08-11T23:19:58.990Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/stayce/streamshortcut-cloudflare/main/README.md",
+    "markdown": "# StreamShortcut (Cloudflare Workers)\n\nA lightweight Shortcut MCP deployed on Cloudflare Workers. One tool, eight actions.\n\n**Live URL:** `https://streamshortcut.staycek.workers.dev/mcp`\n\n## Why?\n\nThe official `@shortcut/mcp` uses ~11,652 tokens for tool definitions (52 tools).\nStreamShortcut uses ~500 tokens — a **~96% reduction**.\n\n## Actions\n\n| Action | Purpose |\n|--------|---------|\n| `search` | Find stories (default: your active stories); text query or structured filters |\n| `get` | Story details by ID or URL |\n| `update` | Change state, estimate, owner, type, name, or description |\n| `comment` | Add comment to story |\n| `create` | Create story with type, estimate, state, epic, owner, description |\n| `epic` | Epic details with its stories |\n| `api` | Raw REST API access for everything else |\n| `help` | Documentation |\n\n## Usage with Claude\n\n**You must provide your own Shortcut API token.** Get one at: https://app.shortcut.com/settings/account/api-tokens\n\n### Option 1: `claude mcp add` (recommended)\n\nOne command, no file editing. Replace `YOUR_TOKEN` with your real token:\n\n```bash\nclaude mcp add --transport http shortcut https://streamshortcut.staycek.workers.dev/mcp --header \"X-Shortcut-Token: YOUR_TOKEN\"\n```\n\nUse `-s user` to make it available in every project instead of just the current one.\n\n### Option 2: Edit the config directly\n\nAdd this to your Claude Desktop / Claude Code config:\n\n```json\n{\n  \"mcpServers\": {\n    \"shortcut\": {\n      \"type\": \"http\",\n      \"url\": \"https://streamshortcut.staycek.workers.dev/mcp\",\n      \"headers\": {\n        \"X-Shortcut-Token\": \"your-token-here\"\n      }\n    }\n  }\n}\n```\n\n> **Put the literal token in the config.** A `\"${SHORTCUT_API_TOKEN}\"` reference only\n> resolves if the variable is present in the environment the app was *launched* from.\n> On macOS, apps started from the Dock or Finder do **not** read `~/.zshrc`, so the\n> variable will be undefined and the server will fail to authenticate. Environment\n> references work reliably only when you launch from a terminal.\n\nEither way, **restart Claude** afterwards so the new server is picked up.\n\n### Authentication\n\nThe server is stateless and stores nothing — every request carries your own token,\nand it is never persisted. Send it either way:\n\n```\nX-Shortcut-Token: your-token-here\nAuthorization: Bearer your-token-here\n```\n\n`X-Shortcut-Token` takes precedence if both are present. There is no OAuth flow;\nan unauthenticated request returns `401` with a `WWW-Authenticate` header.\n\n## Verify It Works\n\nCheck the service is up (no token needed):\n\n```bash\ncurl -s https://streamshortcut.staycek.workers.dev/health\n```\n\nConfirm your token is valid, straight against Shortcut:\n\n```bash\ncurl -s -o /dev/null -w \"%{http_code}\\n\" https://api.app.shortcut.com/api/v3/member -H \"Shortcut-Token: YOUR_TOKEN\"\n```\n\n`200` means the token is good; `401` means it's wrong or expired.\n\nThen test the full path — this returns your active stories:\n\n```bash\ncurl -s https://streamshortcut.staycek.workers.dev/mcp -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -H \"X-Shortcut-Token: YOUR_TOKEN\" -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"shortcut\",\"arguments\":{\"action\":\"search\"}}}'\n```\n\nOnce configured in Claude, just ask: *\"show me my Shortcut stories.\"*\n\n## Troubleshooting\n\n| Symptom | Cause |\n|---------|-------|\n| `401 Missing Shortcut API token` | No token sent — use either `X-Shortcut-Token` or `Authorization: Bearer` |\n| `Error: API error (401): Unauthorized` | Token reached the server but Shortcut rejected it — expired or wrong token, or an unexpanded `${SHORTCUT_API_TOKEN}` placeholder sent literally |\n| `403 Forbidden` from the worker | Cloudflare bot protection. Some default HTTP clients (e.g. Python's `urllib`) are blocked by user agent — set a normal `User-Agent` header |\n| Server missing after config edit | Claude needs a restart; it only reads MCP config at startup |\n\n## Deploy Your Own (Optional)\n\nIf you prefer to self-host:\n\n1. Clone and install:\n   ```bash\n   git clone https://github.com/stayce/streamshortcut-cloudflare\n   cd streamshortcut-cloudflare\n   npm install\n   ```\n\n2. Deploy:\n   ```bash\n   npm run deploy\n   ```\n\nNo server-side secrets needed — users always provide their own token.\n\n## Development\n\n```bash\nnpm run dev        # local server on http://localhost:8787\nnpm run typecheck  # tsc --noEmit\nnpm run build      # verify the Worker bundles (dry-run deploy)\n```\n\n## Examples\n\n```json\n{\"action\": \"search\"}\n{\"action\": \"search\", \"query\": {\"owner\": \"me\", \"state\": \"In Progress\"}}\n{\"action\": \"get\", \"id\": \"704\"}\n{\"action\": \"update\", \"id\": \"704\", \"state\": \"Done\"}\n{\"action\": \"comment\", \"id\": \"704\", \"body\": \"Fixed!\"}\n{\"action\": \"create\", \"name\": \"New bug\", \"type\": \"bug\", \"estimate\": 3, \"state\": \"Ready\", \"owner\": \"me\"}\n{\"action\": \"epic\", \"id\": \"308\"}\n{\"action\": \"api\", \"method\": \"GET\", \"path\": \"/workflows\"}\n{\"action\": \"help\"}\n```\n\n## Related\n\n- [streamshortcut](https://github.com/stayce/streamshortcut) - Original stdio version for local use\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:19:59.446Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:00:18.804Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"Missing Shortcut API token\",\"message\":\"Provide your own Shortcut API token via the X-Shortcut-Token header or Authorization: Bearer <token>. Get one at: https://app.shortcut.com/settings/account/api-tokens\",\"example\":{\"mcpServers\":{\"shortcut\":{\"type\":\"http\",\"url\":\"https://streamshortcut.staycek.workers.dev/mcp\",\"headers\":{\"X-Shortcut-Token\":\"your-token-here\"}}}}}",
+  "toolsPreviewStatus": "auth_required"
+}

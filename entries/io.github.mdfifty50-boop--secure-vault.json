@@ -1,0 +1,58 @@
+{
+  "id": "io.github.mdfifty50-boop/secure-vault",
+  "title": "secure-vault",
+  "description": "Encrypted secrets and credential management for agents",
+  "summary": "Encrypted secrets and credential management for agents",
+  "offersHint": "Encrypted secrets and credential management for agents · Packages: npm:secure-vault-mcp",
+  "version": "0.1.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "secure-vault-mcp",
+    "version": "0.1.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "secure-vault-mcp",
+      "version": "0.1.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mdfifty50-boop/secure-vault-mcp",
+  "repository": {
+    "url": "https://github.com/mdfifty50-boop/secure-vault-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-24T13:35:25.271883Z",
+  "publishedAt": "2026-04-24T13:35:25.271883Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:33.897Z",
+    "sourceRepoAt": "2026-08-11T23:34:26.912Z",
+    "readmeAt": "2026-08-11T23:34:27.631Z",
+    "toolsAt": "2026-08-12T01:13:33.897Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mdfifty50-boop/secure-vault-mcp",
+    "checkedAt": "2026-08-11T23:34:26.912Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mdfifty50-boop/secure-vault-mcp/main/README.md",
+    "markdown": "# secure-vault-mcp\n\nMCP server for agent-native secrets management. 24,008 secrets have been found in MCP config files on public GitHub. This server solves that.\n\nAgents need secrets to call APIs, but they shouldn't see raw values. secure-vault-mcp stores secrets encrypted with AES-256-GCM, issues short-lived scoped tokens, and injects secrets into requests server-side so the agent never handles plaintext credentials.\n\n## Install\n\n```bash\nnpx secure-vault-mcp\n```\n\n### Claude Desktop\n\nAdd to `claude_desktop_config.json`:\n\n```json\n{\n  \"mcpServers\": {\n    \"secure-vault\": {\n      \"command\": \"npx\",\n      \"args\": [\"secure-vault-mcp\"]\n    }\n  }\n}\n```\n\n### From source\n\n```bash\ngit clone https://github.com/mdfifty50-boop/secure-vault-mcp.git\ncd secure-vault-mcp\nnpm install\nnode src/index.js\n```\n\n## Tools\n\n### store_secret\n\nStore an encrypted secret with optional rotation policy.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `name` | string | required | Secret name (e.g. \"openai_api_key\") |\n| `value` | string | required | Secret value — encrypted immediately |\n| `service` | string | `\"default\"` | Service this secret belongs to |\n| `rotation_policy` | string | `\"none\"` | `\"none\"`, `\"daily\"`, `\"weekly\"`, `\"monthly\"` |\n\n### get_agent_token\n\nIssue a short-lived, scoped token. The agent receives an opaque token ID, never the raw secret.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `agent_id` | string | required | Requesting agent identifier |\n| `service` | string | required | Service to get a token for |\n| `scope` | string | `\"read\"` | `\"read\"`, `\"write\"`, `\"admin\"` |\n| `ttl_seconds` | number | 300 | Token TTL (10s to 86400s) |\n\n### rotate_secrets\n\nRotate all secrets for a service. Old tokens are invalidated.\n\n| Param | Type | Description |\n|-------|------|-------------|\n| `service` | string | Service whose secrets to rotate |\n| `new_value` | string | New secret value |\n\n### audit_secret_access\n\nView who accessed what secrets over a time range.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `time_range` | string | `\"24h\"` | `\"1h\"`, `\"6h\"`, `\"24h\"`, `\"7d\"`, `\"all\"` |\n| `agent_id` | string | optional | Filter by agent |\n| `secret_name` | string | optional | Filter by secret |\n\n### scan_config_for_leaks\n\nScan config text for exposed secrets. Detects AWS keys, GitHub tokens, OpenAI/Anthropic keys, Slack tokens, Stripe keys, private key blocks, bearer tokens, and generic credentials using 12 regex patterns.\n\n| Param | Type | Default | Description |\n|-------|------|---------|-------------|\n| `config_text` | string | required | Config content to scan |\n| `source_label` | string | `\"unknown\"` | Label for audit trail |\n\n### inject_secret_to_request\n\nReturn a request with the secret injected server-side. The agent provides a template with `{{SECRET}}` placeholder and a valid token ID.\n\n| Param | Type | Description |\n|-------|------|-------------|\n| `token_id` | string | Token from get_agent_token |\n| `request_template` | string | Template with `{{SECRET}}` placeholder |\n\n## Resources\n\n| URI | Description |\n|-----|-------------|\n| `secure-vault://secrets` | All stored secret names with metadata (no raw values) |\n\n## Usage Pattern\n\n```\n1. store_secret — store credentials at setup time\n2. get_agent_token — agent requests a scoped, time-limited token\n3. inject_secret_to_request — inject secret into API call template\n4. rotate_secrets — rotate when needed, old tokens auto-invalidate\n5. scan_config_for_leaks — check config files before committing\n6. audit_secret_access — review access trail\n```\n\n## Security Model\n\n- Secrets encrypted at rest with AES-256-GCM using a server-generated key\n- Agents receive opaque token IDs, never raw secret values\n- Tokens are scoped (read/write/admin) and time-limited (default 5 minutes)\n- Token rotation invalidates all outstanding tokens for the rotated secret\n- Full audit trail of every store, token issuance, and injection\n- In-memory storage — secrets exist only for the server session lifetime\n\n## Tests\n\n```bash\nnpm test\n```\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:34:27.631Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:33.897Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

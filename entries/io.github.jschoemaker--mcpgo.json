@@ -1,0 +1,58 @@
+{
+  "id": "io.github.jschoemaker/mcpgo",
+  "title": "mcpgo",
+  "description": "Manage your Claude Code MCPs by talking to Claude — list, restart, wrap, and more.",
+  "summary": "Manage your Claude Code MCPs by talking to Claude — list, restart, wrap, and more.",
+  "offersHint": "Manage your Claude Code MCPs by talking to Claude — list, restart, wrap, and more. · Packages: npm:@exfil/mcpgo",
+  "version": "0.1.6",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@exfil/mcpgo",
+    "version": "0.1.6",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@exfil/mcpgo",
+      "version": "0.1.6",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/jschoemaker/mcpgo",
+  "repository": {
+    "url": "https://github.com/jschoemaker/mcpgo",
+    "source": "github"
+  },
+  "updatedAt": "2026-05-20T16:51:19.571557Z",
+  "publishedAt": "2026-05-20T16:51:19.571557Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:21.013Z",
+    "sourceRepoAt": "2026-08-11T23:40:18.574Z",
+    "readmeAt": "2026-08-11T23:40:19.010Z",
+    "toolsAt": "2026-08-12T01:18:21.013Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/jschoemaker/mcpgo",
+    "checkedAt": "2026-08-11T23:40:18.574Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/jschoemaker/mcpgo/master/README.md",
+    "markdown": "# mcpgo\n\nManage your Claude Code MCPs by talking to Claude — list, restart, wrap, and more.\n\nWorks everywhere Claude Code works, including **Remote Control** where `/mcp` isn't available.\n\n## Installation\n\n```bash\nnpm install -g @exfil/mcpgo\nclaude mcp add mcpgo --scope user -- mcpgo\n```\n\n**Requirements:** Node.js ≥ 18\n\n## Remote Control\n\nClaude Code's Remote Control mode has no access to `/mcp`. That means you can't list, restart, or manage MCP servers remotely — unless you have mcpgo.\n\nBecause mcpgo is itself an MCP server, it's available everywhere Claude Code is:\n\n```\n\"list my mcps\"\n\"restart github\"\n\"check postgres health\"\n```\n\nNo `/mcp` UI needed.\n\n## What it does\n\n### Reliable restarts\n\nClaude Code connects to stdio MCP servers via pipes it creates at launch. If a server crashes or you want to restart it, Claude Code marks it as failed with no auto-recovery.\n\nmcpgo solves this with a **wrapper**: a long-lived process that sits between Claude Code and your MCP. Claude Code talks to the wrapper (which stays alive), and the wrapper spawns the real server as a child — auto-respawning it whenever it's killed.\n\nWrapping is **optional** — you can use mcpgo just for listing, adding, or removing MCPs without wrapping anything. Wrapping is only needed if you want reliable restarts without touching `/mcp`.\n\n**One-time setup per MCP:**\n1. `wrap_mcp_stdio` — wraps the target MCP in config\n2. Restart Claude Code (or disconnect + reconnect via `/mcp`)\n3. Done — use `restart_mcp_process` anytime\n\n**After setup:**\n```\n\"restart github\"     → instant, wrapper auto-respawns the child, Claude Code stays connected\n\"restart postgres\"        → same\n```\n\nIf you ever want to undo wrapping, use `unwrap_mcp_stdio` to restore the original config.\n\n## Tools\n\n### Process management\n\n#### `wrap_mcp_stdio`\nWrap a Claude Code stdio MCP for reliable restarts.\n```\n\"wrap github\"\n\"wrap postgres\"\n```\n\n#### `unwrap_mcp_stdio`\nRestore a wrapped MCP to its original config.\n```\n\"unwrap github\"\n\"unwrap postgres\"\n```\n\n#### `restart_mcp_process`\nRestart a wrapped MCP's child process — wrapper auto-respawns it, Claude Code stays connected.\n```\n\"restart github\"\n\"restart postgres\"\n```\n\n#### `check_mcp_health`\nCheck if an MCP is configured, wrapped, and its process is running.\n```\n\"check github health\"\n\"is postgres running?\"\n```\n\n### Codex CLI support\n\n#### `wrap_codex_mcp_stdio`\nWrap a Codex CLI MCP from `~/.codex/config.toml`.\n```\n\"wrap my codex mcp called postgres\"\n```\n\n#### `restart_codex_mcp_process`\nRestart a wrapped Codex CLI MCP.\n```\n\"restart the codex postgres\"\n```\n\n### Config management\n\n#### `list_all_mcps`\nList all configured MCP servers.\n```\n\"list my mcps\"\n\"what mcps do I have?\"\n```\n\n#### `add_mcp`\nAdd a new MCP server to `~/.claude.json`.\n```\n\"add an mcp called my-tool that runs python server.py\"\n```\n\n#### `remove_mcp`\nRemove an MCP server.\n```\n\"remove the my-tool mcp\"\n```\n\n#### `configure_mcp`\nUpdate an existing MCP server's config fields.\n```\n\"change github's command to python3\"\n```\n\n#### `get_mcp_details`\nGet full config details for a specific MCP.\n```\n\"show me the github config\"\n\"get details for postgres\"\n```\n\n## How wrapping works\n\nWhen you call `wrap_mcp_stdio \"github\"`, the config entry changes from:\n\n```json\n{ \"command\": \"python\", \"args\": [\"server.py\"] }\n```\n\nto:\n\n```json\n{\n  \"command\": \"node\",\n  \"args\": [\n    \"/path/to/wrapper.js\",\n    \"--name\", \"github\",\n    \"--pidfile\", \"...\",\n    \"--env-allowlist\", \"PATH,Path,PATHEXT,HOME,USERPROFILE,SystemRoot,...\",\n    \"--\",\n    \"python\", \"server.py\"\n  ]\n}\n```\n\nThe wrapper:\n- Spawns the original command as a child\n- Writes the child's PID to a pidfile\n- Auto-respawns the child on exit (with backoff)\n- Passes a curated env to the child (PATH, locale, temp, home, plus the MCP's declared `env` keys) instead of inheriting Claude Code's full environment\n- Exits cleanly on SIGTERM, SIGINT, or stdin EOF\n\n`restart_mcp_process` reads the pidfile and kills the child. The wrapper respawns it — Claude Code never sees a disconnect.\n\n`unwrap_mcp_stdio` reverses this — it restores the original command from the args after `--` and removes the pidfile.\n\n## Stable wrapper location\n\nWhen you wrap an MCP, mcpgo copies `wrapper.js` to a stable user-data location and writes that path into `~/.claude.json`. This means the config survives npx cache clears and mcpgo version upgrades — the wrapper won't disappear from under you.\n\n- **Windows:** `%LOCALAPPDATA%\\mcpgo\\wrapper.js`\n- **Linux/macOS:** `~/.mcpgo/wrapper.js`\n\nRe-running `wrap_mcp_stdio` on an already-wrapped MCP refreshes the wrapper copy in place.\n\n## Pidfile locations\n\n- **Windows:** `%LOCALAPPDATA%\\mcpgo\\pids\\<name>.pid`\n- **Linux/macOS:** `$TMPDIR/mcpgo/pids/<name>.pid`\n\n## Notes\n\n- Wrapping requires a Claude Code restart (or manual `/mcp` disconnect + reconnect) to take effect — Claude Code caches config in memory\n- `restart_mcp_process` works best on wrapped MCPs; for unwrapped ones it kills the process but you'll need to reconnect manually via `/mcp`\n- Mid-request crashes may cause a brief protocol desync; Claude Code recovers on the next tool call\n- Wrapped MCPs receive a curated env (PATH, locale, temp, home, plus the MCP's declared `env` keys) rather than the full Claude Code environment. Re-run `wrap_mcp_stdio` on previously-wrapped MCPs to pick up this default\n- `list_all_mcps` and `get_mcp_details` redact `env` values by default so the tools can't be used to exfiltrate secrets stored in MCP configs — pass `show_env_values: true` when you actually need to see them\n",
+    "fetchedAt": "2026-08-11T23:40:19.010Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:21.013Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

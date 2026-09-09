@@ -1,0 +1,59 @@
+{
+  "id": "io.github.CodingSelim/mcp-scan",
+  "title": "mcp-scan",
+  "description": "Passive security scanner: audits MCP servers against the OWASP MCP Top 10, graded A-F.",
+  "summary": "Passive security scanner: audits MCP servers against the OWASP MCP Top 10, graded A-F.",
+  "offersHint": "Passive security scanner: audits MCP servers against the OWASP MCP Top 10, graded A-F. · Packages: npm:owasp-mcp-scan",
+  "version": "0.2.1",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "owasp-mcp-scan",
+    "version": "0.2.1",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "owasp-mcp-scan",
+      "version": "0.2.1",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://github.com/CodingSelim/mcp-scan",
+  "sourceUrl": "https://github.com/CodingSelim/mcp-scan",
+  "repository": {
+    "url": "https://github.com/CodingSelim/mcp-scan",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-11T19:21:57.907942Z",
+  "publishedAt": "2026-07-11T19:21:57.907942Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:45:00.966Z",
+    "sourceRepoAt": "2026-08-12T00:14:40.840Z",
+    "readmeAt": "2026-08-12T00:14:41.383Z",
+    "toolsAt": "2026-08-12T01:45:00.966Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/CodingSelim/mcp-scan",
+    "checkedAt": "2026-08-12T00:14:40.840Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/CodingSelim/mcp-scan/main/README.md",
+    "markdown": "<div align=\"center\">\n\n# 🛡️ mcp-scan\n\n**Passive security scanner for Model Context Protocol servers.**\nPoint it at any running MCP server; it audits the live server against the **OWASP MCP Top 10** and grades it **A–F**. Read-only, so it is safe to run against production.\n\n[![npm](https://img.shields.io/npm/v/owasp-mcp-scan?color=blue)](https://www.npmjs.com/package/owasp-mcp-scan)\n[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)\n[![Node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen.svg)](https://nodejs.org)\n[![CI](https://github.com/CodingSelim/mcp-scan/actions/workflows/ci.yml/badge.svg)](https://github.com/CodingSelim/mcp-scan/actions/workflows/ci.yml)\n[![Tests](https://img.shields.io/badge/tests-48%20passing-brightgreen.svg)](#develop)\n[![OWASP MCP Top 10](https://img.shields.io/badge/OWASP%20MCP%20Top%2010-full%20coverage-blue.svg)](https://owasp.org/www-project-mcp-top-10/)\n\n```bash\nnpx owasp-mcp-scan --stdio \"npx -y @modelcontextprotocol/server-filesystem /tmp\"\n```\n\n<img src=\"./docs/cli-demo.png\" alt=\"mcp-scan console report: firecrawl-mcp graded F with critical findings\" width=\"760\">\n\nI ran it against the 12 most-installed MCP servers. **[9 of them failed.](#real-findings-on-real-servers)** No install, no config, no exploiting anything.\n\n</div>\n\n---\n\n## Why\n\nMCP tool descriptions are fed straight into your model's context, and most public servers were never security-reviewed. A bad one can hide instructions in a description, expose a raw-shell tool, or leak a key; and your agent acts on it. Endor Labs found **82%** of servers prone to path traversal, **34%** to command injection.\n\n**mcp-scan is the gut-check before you wire a server in.** It's passive: it reads advertised capabilities and analyzes them statically, never invoking tools, so it's safe against production servers.\n\n## How it works\n\n1. Connects to the server over stdio or Streamable HTTP and enumerates every advertised tool, prompt, and resource.\n2. Runs 12 static checks across that surface: secrets, injection, SSRF, path traversal, tool poisoning, excessive scope, and more.\n3. `toxic-flow` reasons across the **whole** toolset for the lethal trifecta (reads private data + ingests untrusted content + can exfiltrate), the shape single-tool scanners miss.\n4. Scores 0-100 and grades A-F (any critical forces F). Emits console, JSON, or SARIF.\n\nIt never calls a tool, never fuzzes, and never sends an exploit. The worst it does is read what the server already tells everyone.\n\n## Real findings on real servers\n\n12 popular npm servers, actual output (snapshot 2026-07-11, [full benchmark](./docs/BENCHMARK.md)):\n\n| Server | Tools | Grade | 🔴 | 🟠 | 🟡 | Notable |\n|---|---:|:---:|---:|---:|---:|---|\n| `firecrawl-mcp` | 26 | **F** | 2 | 11 | 1 | **lethal trifecta** (MCP10) + `code` exec (MCP05) |\n| `@modelcontextprotocol/server-filesystem` | 14 | **F** | 0 | 1 | 11 | unconstrained path params (MCP01) |\n| `@modelcontextprotocol/server-puppeteer` | 7 | **F** | 1 | 2 | 0 | `script` param executes JS (MCP05) |\n| `tavily-mcp` | 5 | **F** | 0 | 3 | 1 | untrusted-input + exfiltration (MCP10) |\n| `@modelcontextprotocol/server-memory` | 9 | **F** | 0 | 3 | 0 | `delete_*` tools, no confirmation (MCP02) |\n| `@modelcontextprotocol/server-github` | 26 | **D** | 0 | 0 | 2 | state-changing tools (MCP02) |\n| `@modelcontextprotocol/server-slack` | 8 | **C** | 0 | 1 | 0 | reads + posts = data + exfil (MCP10) |\n| `@modelcontextprotocol/server-everything` | 13 | **A** | 0 | 0 | 0 | clean ✓ |\n| `@kazuph/mcp-fetch` | 1 | **A** | 0 | 0 | 0 | clean ✓ |\n\n**9 of 12 flagged, 3 clean**, every row audited finding-by-finding, false positives stripped rather than padded. Reproduce any row yourself:\n\n```bash\nnpx owasp-mcp-scan --stdio \"npx -y firecrawl-mcp\"     # F: lethal trifecta + code exec\nnpx owasp-mcp-scan --stdio \"npx -y @modelcontextprotocol/server-everything\"   # A: clean\n```\n\n## Use it\n\n**CLI**\n\n```bash\nnpx owasp-mcp-scan --stdio \"<command>\"                                  # local stdio server\nnpx owasp-mcp-scan --url https://host/mcp --header \"Authorization: Bearer $TOKEN\"\nnpx owasp-mcp-scan --config ~/.cursor/mcp.json --format sarif --output mcp.sarif\n```\n\n**As an MCP server**,  let your agent scan servers on demand (*\"scan this MCP server before I add it\"*). Add to any client; this `mcpServers` shape works in Claude Code, Claude Desktop, Cursor, Windsurf, VS Code, and Gemini CLI:\n\n```json\n{ \"mcpServers\": { \"mcp-scan\": { \"command\": \"npx\", \"args\": [\"-y\", \"owasp-mcp-scan\", \"--serve\"] } } }\n```\n\nOpenAI Codex (`~/.codex/config.toml`):\n\n```toml\n[mcp_servers.mcp-scan]\ncommand = \"npx\"\nargs = [\"-y\", \"owasp-mcp-scan\", \"--serve\"]\n```\n\nExposes two tools: **`scan_mcp_server`** (audit a stdio/HTTP target) and **`list_checks`**.\n\n**Claude Code plugin**\n\n```\n/plugin marketplace add CodingSelim/mcp-scan\n/plugin install mcp-scan@mcp-scan\n```\n\nAlso on the official MCP registry as `io.github.CodingSelim/mcp-scan`. Publishing steps: [PUBLISHING.md](./PUBLISHING.md).\n\n## What it checks\n\nFull **OWASP MCP Top 10 (2025)** coverage, 12 checks:\n\n| Check | OWASP | Catches |\n|---|---|---|\n| `secret-exposure` | MCP01 | AWS / OpenAI / Anthropic / GitHub / GitLab / Stripe / SendGrid / npm / HF / DB URIs / JWT / private keys in advertised text |\n| `transport` | MCP01 | Plaintext `http://` to a non-loopback host |\n| `path-traversal` | MCP01 | `file:///{path}` templates and unconstrained path params |\n| `excessive-scope` | MCP02 | Destructive tools (`delete`, `drop`, `transfer`) with no confirmation |\n| `tool-poisoning` | MCP03 | Instruction overrides, hidden exfiltration directives, zero-width / Unicode-tag smuggling |\n| `tool-shadowing` | MCP03 / MCP09 | Duplicate tool-name collisions and \"call me first\" precedence injection |\n| `supply-chain` | MCP04 / MCP09 | Unpinned/placeholder versions and homoglyph server names |\n| `command-injection` | MCP05 | Unconstrained `command` / `shell` / `code` params, raw SQL, advertised execution |\n| `ssrf` | MCP05 | Arbitrary `url` / `host` params with no allowlist |\n| `tool-poisoning` (dynamic) | MCP06 | Injection in resource contents and server instructions |\n| `authn` | MCP07 | HTTP servers that complete an unauthenticated handshake |\n| `telemetry` | MCP08 | High-impact tools with no audit trail (advisory, unscored) |\n| `toxic-flow` | MCP10 | **Lethal trifecta**: one server that reads private data, ingests untrusted content, and can exfiltrate |\n\n`toxic-flow` is the standout, it reasons across the whole toolset, catching the GitHub-MCP / email-agent injection shape that per-tool checks miss.\n\n## Output & CI\n\n`console` (default) · `json` · `sarif` (GitHub Code Scanning). Exit code is non-zero at/above `--fail-on` (default `high`), so it gates CI:\n\n```yaml\n- run: npx owasp-mcp-scan --url ${{ secrets.MCP_URL }} --format sarif --output mcp.sarif\n- uses: github/codeql-action/upload-sarif@v3\n  with: { sarif_file: mcp.sarif }\n```\n\n## Limitations (read these)\n\n- Static analysis can't see runtime sandboxing, a server that safely confines paths still flags them. Verify against actual enforcement.\n- Auth and transport checks apply to HTTP targets only.\n- Heuristics favor recall, so triage findings in context. When a rule is tightened to kill a false positive, a test pins the intended behavior.\n- Scanning a stdio target spawns that command, so run it only on servers you trust.\n\n## Develop\n\n```bash\nnpm install && npm run build && npm test   # 48 tests, incl. live end-to-end fixture scans\n```\n\nChecks are pure and isolated (`src/checks/`), reusing detectors in `src/detectors/`. See [CONTRIBUTING.md](./CONTRIBUTING.md).\n\n## References\n\n[OWASP MCP Top 10](https://owasp.org/www-project-mcp-top-10/) · [MCP Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/MCP_Security_Cheat_Sheet.html) · [Vulnerable MCP Project](https://vulnerablemcp.info/) · [MCPTox](https://arxiv.org/pdf/2508.14925)\n\nMIT © [CodingSelim](https://github.com/CodingSelim)\n",
+    "fetchedAt": "2026-08-12T00:14:41.383Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:45:00.966Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

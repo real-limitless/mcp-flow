@@ -1,0 +1,44 @@
+{
+  "id": "io.github.MCPVOT/mcp-agentic-wallet",
+  "title": "MCP Agentic Wallet — open-source session management for x402",
+  "description": "Open-source EIP-2612 Permit-based wallet sessions for AI agents using MCP.",
+  "summary": "Open-source EIP-2612 Permit-based wallet sessions for AI agents using MCP.",
+  "offersHint": "Open-source EIP-2612 Permit-based wallet sessions for AI agents using MCP.",
+  "version": "1.0.1",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "sourceUrl": "https://github.com/MCPVOT/mcp-agentic-wallet",
+  "repository": {
+    "url": "https://github.com/MCPVOT/mcp-agentic-wallet",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T20:36:20.421161Z",
+  "publishedAt": "2026-07-27T20:36:20.421161Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:39:07.323Z",
+    "sourceRepoAt": "2026-08-12T00:07:47.660Z",
+    "readmeAt": "2026-08-12T00:07:48.412Z",
+    "toolsAt": "2026-08-12T01:39:07.323Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/MCPVOT/mcp-agentic-wallet",
+    "checkedAt": "2026-08-12T00:07:47.660Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/MCPVOT/mcp-agentic-wallet/master/README.md",
+    "markdown": "# MCP Agentic Wallet\n\n> **Open-source EIP-2612 Permit-based wallet sessions for AI agents.**\n> The reference implementation for paid MCP servers — verify signatures, manage sessions, settle on-chain. No API keys. No recurring charges.\n\n[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)\n[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)\n[![viem](https://img.shields.io/badge/viem-4.21.0-blue)](https://viem.sh/)\n[![Base](https://img.shields.io/badge/Base-000000?logo=base&logoColor=white)](https://base.org/)\n[![MCP](https://img.shields.io/badge/MCP-2025--11--25-blueviolet)](https://modelcontextprotocol.io/)\n\n## What This Is\n\nA human connects their crypto wallet, signs a one-time **EIP-2612 Permit** (gasless — no transaction fee), and receives a **session token**. AI agents use this token in MCP requests to pay for tool calls with USDC on Base. The server settles each call on-chain via `transferFrom`.\n\n**No API keys. No recurring charges. No per-call wallet signatures.** The permit is the policy.\n\nThis is the reference implementation used by [mcpvot.xyz](https://mcpvot.xyz) — an x402 payment facilitator for MCP servers. The open-source core (`@mcp-agentic-wallet/core`) is framework-agnostic and works with any MCP server or Next.js app.\n\n## Quick Start\n\n### 1. Install the core library\n\n```bash\nnpm install @mcp-agentic-wallet/core viem\n```\n\n### 2. Use in your MCP server\n\n```typescript\nimport { InMemoryStore, settleCall } from '@mcp-agentic-wallet/core';\n\nconst store = new InMemoryStore();\n\n// In your MCP tool handler:\nconst token = req.headers.get('Session-Token');\nconst session = store.getSession(token);\nif (!session) return new Response('Payment required', { status: 402 });\n\n// Consume budget ($0.005 = 5000 atomic USDC units)\nconst result = store.consumeBudget(token, 5000n);\nif (!result.ok) return new Response('Insufficient budget', { status: 402 });\n\n// Settle on-chain\nawait settleCall(session.humanAddress, 5000n, {\n  treasuryAddress: process.env.TREASURY_ADDRESS!,\n  hotWalletKey: process.env.HOT_WALLET_PRIVATE_KEY,\n});\n\nreturn Response.json({ result: 'your data' });\n```\n\n### 3. Run the reference server\n\n```bash\ngit clone https://github.com/MCPVOT/mcp-agentic-wallet.git\ncd mcp-agentic-wallet\nnpm install\ncp .env.example .env.local  # Configure your treasury + hot wallet key\nnpm run dev\n```\n\nVisit `http://localhost:3000/wallet` to connect a wallet and authorize a session.\n\n## How It Works\n\n```\nHuman                          Server                        Agent\n  │                              │                              │\n  │── connect wallet ──────────►│                              │\n  │── sign EIP-2612 Permit ───►│                              │\n  │   (gasless, 1-time)           │── verify signature ──────►│ (on-chain)\n  │                              │── submit permit() ────────►│ (on-chain, gas)\n  │                              │── create session ──────────┐│\n  │◄─ return session token ─────│◄───────────────────────────┘│\n  │                              │                              │\n  │                              │◄── Session-Token header ────│\n  │                              │── consume budget ───────────┐│\n  │                              │── transferFrom() ──────────►││ (on-chain, gas)\n  │                              │── return tool data ─────────┘│\n  │                              │◄──────────────────────────────│\n```\n\n## Core Library (`@mcp-agentic-wallet/core`)\n\n| Class/Function | Description |\n|---|---|\n| `InMemoryStore` | Session store (in-memory, pluggable for KV/Redis) |\n| `verifyPermit()` | Verifies EIP-712 Permit signature on-chain via viem |\n| `settleCall()` | Executes `transferFrom(human, treasury, amount)` on Base |\n| `submitPermit()` | Submits the `permit()` transaction to USDC contract |\n| `checkAllowance()` | Reads on-chain USDC allowance for an owner→spender pair |\n| `checkRateLimit()` | Simple rate limiter (per-wallet) |\n| `toSessionInfo()` | Converts session to safe client-facing info (no permit signature) |\n\n## Security\n\nSee [SECURITY.md](./SECURITY.md) for the full threat model.\n\nKey features:\n- **EIP-712 signature verification** — server verifies every permit signature on-chain before creating a session\n- **Allowance cap** — max $100 USDC per session (configurable)\n- **Deadline cap** — max 30 days\n- **Rate limiting** — 5 authorizations per wallet per hour\n- **Session revocation** — humans can revoke anytime\n- **Settlement debt tracking** — sessions suspended after 3 failed settlements\n- **Spender verification** — EIP-712 verification inherently checks `spender === treasury`\n\n## Documentation\n\n- **[ARCHITECTURE](./docs/ARCHITECTURE.md)** — system diagram, payment flow, design decisions\n- **[MCP Integration](./docs/MCP-INTEGRATION.md)** — step-by-step guide for adding to any MCP server\n- **[Security Policy](./SECURITY.md)** — threat model, attack vectors, production checklist\n- **[Contributing](./CONTRIBUTING.md)** — dev setup, guidelines, PR process\n- **[Donations](./docs/DONATIONS.md)** — support the project\n\n## Tech Stack\n\n- **EIP-2612** (Permit) — gasless approval via typed data signature\n- **EIP-712** — typed data signing and verification\n- **USDC** (FiatTokenV2) on **Base Mainnet** (chainId 8453)\n- **viem** — TypeScript Ethereum library\n- **Next.js** — reference server implementation\n- **Model Context Protocol** — MCP 2025-11-25 spec\n\n## Use Case: iRacing + Blockchain\n\nMCPVOT uses this wallet to power **on-chain sim-racing events**:\n\n1. **Host creates event** — deploys an escrow smart contract on Base with entry fee + prize pool\n2. **Drivers connect wallet** — sign EIP-2612 Permit via this library, get a session token\n3. **Drivers pay entry fee** — `transferFrom` settles the entry to the escrow contract\n4. **Race happens in iRacing** — server polls iRacing Data API for finish order\n5. **Smart contract auto-disburses** — verified winners receive USDC/SOL from the prize pool\n\nThe iRacing MCP tools (`get_race_results`, `lookup_driver`, `search_hosted_races`) are available at [mcpvot.xyz](https://mcpvot.xyz) and use the same session-token flow for payment.\n\n## Configuration\n\n| Env Var | Required | Default | Description |\n|---------|----------|---------|-------------|\n| `TREASURY_ADDRESS` | Yes | — | Address that receives USDC payments |\n| `HOT_WALLET_PRIVATE_KEY` | Yes | — | EOA private key for gas (never commit to git!) |\n| `BASE_RPC_URL` | No | `https://mainnet.base.org` | Base Mainnet RPC |\n| `NEXT_PUBLIC_TREASURY_ADDRESS` | Yes | — | Treasury shown in wallet UI |\n\n## License\n\nMIT — see [LICENSE](./LICENSE)\n",
+    "fetchedAt": "2026-08-12T00:07:48.412Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:39:07.323Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

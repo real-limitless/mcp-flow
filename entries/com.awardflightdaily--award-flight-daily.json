@@ -1,0 +1,51 @@
+{
+  "id": "com.awardflightdaily/award-flight-daily",
+  "title": "Award Flight Daily",
+  "description": "Official airline award MCP. Search 12.3M+ award flights across 48 loyalty programs.",
+  "summary": "Official airline award MCP. Search 12.3M+ award flights across 48 loyalty programs.",
+  "offersHint": "Official airline award MCP. Search 12.3M+ award flights across 48 loyalty programs. · Remote MCP (streamable-http) at https://awardflightdaily.com/mcp-server/mcp",
+  "version": "1.26.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://awardflightdaily.com/mcp-server/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://awardflightdaily.com/mcp-server/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/eCriswell7/award-flight-daily-mcp",
+  "repository": {
+    "url": "https://github.com/eCriswell7/award-flight-daily-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-29T04:39:15.917547Z",
+  "publishedAt": "2026-04-29T04:39:15.917547Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:38:11.405Z",
+    "sourceRepoAt": "2026-08-12T00:38:11.405Z",
+    "readmeAt": "2026-08-12T00:38:11.890Z",
+    "toolsAt": "2026-08-12T00:38:11.991Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/eCriswell7/award-flight-daily-mcp",
+    "checkedAt": "2026-08-12T00:38:11.405Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/eCriswell7/award-flight-daily-mcp/main/README.md",
+    "markdown": "# Award Flight Daily MCP Server\n\nA FastMCP server that wraps the Award Flight Daily database (12.3M award flight records across 25 loyalty programs) and exposes it to AI agents via tools.\n\n## Overview\n\nThe Award Flight Daily MCP server provides 7 core tools for searching, analyzing, and optimizing award travel:\n\n1. **afd_search_award_flights** - Core search across 12M+ records\n2. **afd_list_programs** - All 25 programs with statistics\n3. **afd_get_program_details** - Deep dive on a single program\n4. **afd_get_route_availability** - Calendar view for a route\n5. **afd_find_sweet_spots** - Best-value redemptions\n6. **afd_check_transfer_partners** - Credit card transfer ratios\n7. **afd_get_market_stats** - Aggregate database statistics\n\n## File Structure\n\n```\nmcp_server/\n├── __init__.py                 # Package definition\n├── config.py                   # Constants: programs, cabins, banks\n├── server.py                   # FastMCP server entry point (7 tools registered)\n├── db/\n│   ├── __init__.py\n│   └── queries.py             # DuckDB queries (read-only, parameterized)\n├── models/\n│   ├── __init__.py\n│   ├── inputs.py              # 8 Pydantic input models with validators\n│   └── responses.py           # Formatting helpers (JSON/Markdown)\n└── tools/\n    ├── __init__.py\n    ├── search.py              # afd_search_award_flights\n    ├── programs.py            # afd_list_programs, afd_get_program_details\n    ├── routes.py              # afd_get_route_availability\n    ├── sweet_spots.py         # afd_find_sweet_spots\n    ├── transfers.py           # afd_check_transfer_partners\n    └── analytics.py           # afd_get_market_stats\n```\n\n## Configuration\n\nAll environment and program configuration lives in `config.py`:\n\n- **MCP_SERVER_NAME**: \"awardflightdaily_mcp\"\n- **DUCKDB_PATH**: Environment variable, defaults to `/data/award_flights.duckdb`\n- **PROGRAMS**: Dictionary of 25 programs (slug -> full name)\n- **CABINS**: Cabin class codes (Y/W/J/F)\n- **BANKS**: 7 credit card programs\n\n## Installation & Deployment\n\n### Requirements\n\n```\nfastmcp>=1.0.0\npydantic>=2.0\nduckdb==1.1.3\n```\n\n### Running\n\nStdio mode (local):\n```bash\npython -m mcp_server.server\n```\n\nHTTP mode (remote):\n```bash\npython -m mcp_server.server --http 8001\n```\n\n## Tools API\n\n### 1. Search Award Flights\n\n```python\nSearchInput(\n    origin=\"JFK\",                      # Required: IATA code(s)\n    destination=\"NRT\",                 # Required: IATA code(s)\n    date_from=\"2026-06-01\",           # Required: YYYY-MM-DD\n    date_to=\"2026-06-30\",             # Required: YYYY-MM-DD\n    cabin=CabinClass.BUSINESS,        # Optional: Y/W/J/F (default J)\n    source=\"united,aeroplan\",         # Optional: program filter\n    direct_only=False,                # Optional: nonstop only\n    max_miles=100000,                 # Optional: mileage cap\n    min_seats=1,                      # Optional: min seats (default 1)\n    limit=50,                         # Optional: results limit (default 50, max 200)\n    offset=0,                         # Optional: pagination offset\n    response_format=ResponseFormat.JSON # Optional: JSON or Markdown\n)\n```\n\nReturns: Paginated flight results with mileage, taxes, seats, airlines, equipment.\n\n### 2. List Programs\n\n```python\nListProgramsInput(\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: All 25 programs with:\n- Total flights & routes\n- Date range\n- Cabin availability counts (Y/W/J/F)\n\n### 3. Program Details\n\n```python\nProgramDetailInput(\n    program=\"united\",  # Required: program slug\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: Deep stats for one program:\n- Total availability\n- Unique routes & airports\n- Average & minimum mileage by cabin\n\n### 4. Route Availability\n\n```python\nRouteInput(\n    origin=\"JFK\",\n    destination=\"NRT\",\n    cabin=CabinClass.BUSINESS,\n    source=None,  # Optional: filter by program\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: All dates for a route with mileage, taxes, seats per program.\n\n### 5. Find Sweet Spots\n\n```python\nSweetSpotInput(\n    cabin=CabinClass.BUSINESS,\n    origin=None,  # Optional\n    destination=None,  # Optional\n    limit=25,\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: Best-value routes ranked by minimum mileage cost.\n\n### 6. Transfer Partners\n\n```python\nTransferInput(\n    bank=\"chase\",      # Optional: bank slug\n    program=\"united\",  # Optional: program slug\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: Credit card → airline transfer mappings with:\n- Transfer ratio (e.g., \"1:1\")\n- Speed (e.g., \"Instant\", \"1-2 days\")\n\n### 7. Market Stats\n\n```python\nMarketStatsInput(\n    response_format=ResponseFormat.JSON\n)\n```\n\nReturns: Aggregate database stats:\n- Total records, programs, routes\n- Airport coverage\n- Cabin availability breakdown\n\n## Input Validation\n\nAll inputs use Pydantic with validation:\n\n- **IATA codes**: Must be exactly 3 alphabetic characters\n- **Dates**: YYYY-MM-DD format only\n- **Cabin**: Enum restricted to Y/W/J/F\n- **Limit**: 1-200 results\n- **Offset**: >= 0\n- **Min seats**: 1-9\n\nInvalid inputs raise `ValidationError` with detailed messages.\n\n## Response Formats\n\n### JSON (default)\n\nFull structured response with pagination metadata:\n\n```json\n{\n  \"total\": 1234,\n  \"count\": 50,\n  \"offset\": 0,\n  \"has_more\": true,\n  \"cabin\": \"J\",\n  \"results\": [\n    {\n      \"id\": \"...\",\n      \"source\": \"united\",\n      \"origin\": \"JFK\",\n      \"destination\": \"NRT\",\n      \"date\": \"2026-06-15\",\n      \"mileage\": 75000,\n      \"taxes\": 11.20,\n      \"seats\": 2,\n      \"direct\": true,\n      \"airlines\": \"United\",\n      \"equipment\": \"B787\",\n      \"updated_at\": \"2026-03-26T12:34:56\"\n    }\n  ]\n}\n```\n\n### Markdown\n\nHuman-readable output with formatting:\n\n```markdown\n# Award Flight Search Results\n\n**1234 flights found** | Cabin: Business | Showing 50\n\n## JFK → NRT | 2026-06-15\n\n- **75,000 miles** + $11.20 taxes | united\n- Nonstop | 2 seats | United B787\n\n...\n```\n\n## Database\n\nAll queries are:\n- **Read-only** (DuckDB in read-only mode)\n- **Parameterized** with proper escaping\n- **Filtered** on `expired_at IS NULL` (active records only)\n- **Type-safe** with CAST(? AS DATE) for dates\n\nConnection is lazy-loaded on first query and reused.\n\n## Design Principles\n\n1. **No monoliths** - Each tool in its own module\n2. **Separation of concerns** - DB queries, models, tools, responses separate\n3. **Type safety** - Pydantic models on all inputs\n4. **Defensive** - All parameterized queries, validators on inputs\n5. **Fast** - Read-only DuckDB, lazy connection, caching via MCP layer\n6. **Testable** - Pure functions, no side effects\n\n## Error Handling\n\n- Invalid input: Pydantic `ValidationError` with field details\n- Database error: Returns error message string (no 500s)\n- No results: Friendly \"No flights found\" message\n\nThe MCP layer handles serialization of errors to the client.\n\n## Future Enhancements\n\n- Price tracking ($/mile value calculation)\n- Seat map integration\n- Award chart comparison\n- Frequent flyer earning rates\n- Stopover/layover optimization\n- Alert setup via MCP (future: read-write tools)\n",
+    "fetchedAt": "2026-08-12T00:38:11.890Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:38:11.991Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: Method Not Allowed\n",
+  "toolsPreviewStatus": "unreachable"
+}

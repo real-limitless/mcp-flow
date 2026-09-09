@@ -1,0 +1,58 @@
+{
+  "id": "io.github.crabeye-ai/crabeye-mcp-bridge",
+  "title": "crabeye-mcp-bridge",
+  "description": "One MCP connection for all your tools — with discovery, namespacing, and execution policies.",
+  "summary": "One MCP connection for all your tools — with discovery, namespacing, and execution policies.",
+  "offersHint": "One MCP connection for all your tools — with discovery, namespacing, and execution policies. · Packages: npm:@crabeye-ai/crabeye-mcp-bridge",
+  "version": "1.3.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "@crabeye-ai/crabeye-mcp-bridge",
+    "version": "1.3.0",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "@crabeye-ai/crabeye-mcp-bridge",
+      "version": "1.3.0",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/crabeye-ai/crabeye-mcp-bridge",
+  "repository": {
+    "url": "https://github.com/crabeye-ai/crabeye-mcp-bridge",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-05T17:44:54.818267Z",
+  "publishedAt": "2026-06-05T17:44:54.818267Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:26:02.314Z",
+    "sourceRepoAt": "2026-08-11T23:51:30.077Z",
+    "readmeAt": "2026-08-11T23:51:30.738Z",
+    "toolsAt": "2026-08-12T01:26:02.314Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/crabeye-ai/crabeye-mcp-bridge",
+    "checkedAt": "2026-08-11T23:51:30.077Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/crabeye-ai/crabeye-mcp-bridge/main/README.md",
+    "markdown": "# Crabeye MCP Bridge\n\nOne MCP connection for all your tools — with discovery, namespacing, and execution policies.\n\nEvery MCP server you add to your AI assistant means another connection, another set of tool definitions injected into the context window, and no way to search or control them centrally. Wire up ten servers with a hundred tools each and your assistant is burning tokens on a thousand tool schemas before the conversation even starts — most of which it will never call.\n\ncrabeye-mcp-bridge consolidates all your upstream MCP servers behind a single STDIO interface and exposes exactly **two tools** to the assistant: `search_tools` and `run_tool`. Tools from every server are discovered, namespaced, and indexed at startup, but none of them touch the context window until the assistant actually searches for them. You can have a thousand tools ready to go without bloating the context, with fuzzy search to find them and per-tool execution policies to control what runs freely, what needs approval, and what is blocked.\n\n![crabeye-mcp-bridge topology: one STDIO connection from an AI assistant to the bridge exposes two tools — search_tools and run_tool — while the bridge fans out to upstream MCP servers like Linear, GitHub, Slack, Sentry, and Figma. Tool schemas stay out of the context window until a search hits.](docs/img/hero.png)\n\n## Quick start\n\nThe fastest way to get started is with `init`, which discovers your MCP client configs and sets up the bridge automatically:\n\n```bash\nnpx @crabeye-ai/crabeye-mcp-bridge init\n```\n\nThis scans for config files from Claude Desktop, Cursor, VS Code Copilot, Windsurf, Zed, Cline, Roo Code, opencode, and Continue.dev, lets you pick which ones to use, and optionally injects the bridge entry. After that, just run `npx @crabeye-ai/crabeye-mcp-bridge` — no `--config` flag needed.\n\nopencode and Continue.dev are surfaced as **detect-only**: their config schemas don't fit the rename-and-inject pipeline, so `init` prints a manual snippet for them instead of rewriting the file.\n\nTo undo, run `npx @crabeye-ai/crabeye-mcp-bridge restore`.\n\n### Manual setup\n\nIf you prefer to set things up manually, say your MCP client config looks like this today:\n\n```json\n{\n  \"mcpServers\": {\n    \"linear\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@anthropic/linear-mcp-server\"]\n    },\n    \"github\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@anthropic/github-mcp-server\"],\n      \"env\": {\n        \"GITHUB_TOKEN\": \"ghp_...\"\n      }\n    }\n  }\n}\n```\n\nFirst, store your secrets in the encrypted credential store:\n\n```bash\ncrabeye-mcp-bridge credential set github-pat ghp_abc123\n```\n\nThen rename `mcpServers` to `upstreamMcpServers`, add the bridge, and replace hardcoded tokens with `${credential:key}` references:\n\n```json\n{\n  \"mcpServers\": {\n    \"bridge\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@crabeye-ai/crabeye-mcp-bridge\", \"--config\", \"/path/to/this/file.json\"]\n    }\n  },\n  \"upstreamMcpServers\": {\n    \"linear\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@anthropic/linear-mcp-server\"]\n    },\n    \"github\": {\n      \"command\": \"npx\",\n      \"args\": [\"-y\", \"@anthropic/github-mcp-server\"],\n      \"env\": {\n        \"GITHUB_TOKEN\": \"${credential:github-pat}\"\n      }\n    }\n  }\n}\n```\n\nThat's it. Your AI assistant now has access to all tools from all configured servers through a single connection. The bridge automatically excludes itself from `mcpServers` to avoid recursion, so pointing `--config` at the same file is safe.\n\nThe bridge also reads `upstreamServers` (shorthand), `servers` (VS Code Copilot), and `context_servers` (Zed) as input keys. See [docs/configuration.md](docs/configuration.md) for the full priority order and self-exclusion rules.\n\nAlternatively, you can add the bridge alongside your existing `mcpServers` entries without renaming anything — the bridge will pick up the other servers from `mcpServers` automatically (excluding itself). Disable the other MCP servers in your client so the assistant uses the bridge as the single entry point.\n\n### Install as a Claude Code plugin\n\nRegister the bridge's repo as a Claude Code marketplace, then install the plugin:\n\n```\n/plugin marketplace add crabeye-ai/crabeye-mcp-bridge\n/plugin install crabeye-mcp-bridge@crabeye\n```\n\nClaude Code auto-registers the bridge as an MCP server. If you haven't configured upstreams yet, the bridge's startup error will surface in Claude Code's MCP server log — run `npx @crabeye-ai/crabeye-mcp-bridge init` in a terminal to discover and import existing MCP server configs from your other clients.\n\n## Features\n\n- **Discovery + search.** Two meta-tools (`search_tools`, `run_tool`) instead of N×M tool definitions in context. See [docs/how-it-works.md](docs/how-it-works.md).\n- **Configuration.** STDIO, HTTP, and SSE upstreams; categories; multi-source config keys. See [docs/configuration.md](docs/configuration.md).\n- **Authentication.** Encrypted credential store, OS-keychain-backed master key, `${credential:key}` templates, and a one-shot `auth <server>` OAuth flow for HTTP upstreams. See [docs/auth.md](docs/auth.md).\n- **Policies.** Per-tool / per-server / global tool policies (`always` / `prompt` / `never`), rate limiting, discovery modes. See [docs/policies.md](docs/policies.md).\n- **STDIO manager.** STDIO upstreams routed through a per-user manager process so multiple bridges share a single subprocess per upstream. See [docs/stdio-manager.md](docs/stdio-manager.md).\n- **CLI.** `init`, `restore`, `credential`, `daemon`, `--validate`. See [docs/cli.md](docs/cli.md).\n\n## License\n\nMIT\n",
+    "fetchedAt": "2026-08-11T23:51:30.738Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:26:02.314Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

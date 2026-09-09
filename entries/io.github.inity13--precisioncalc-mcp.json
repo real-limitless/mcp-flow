@@ -1,0 +1,96 @@
+{
+  "id": "io.github.inity13/precisioncalc-mcp",
+  "title": "precisioncalc-mcp",
+  "description": "High-precision finance & business calculations for AI agents — exact decimals, never floats.",
+  "summary": "High-precision finance & business calculations for AI agents — exact decimals, never floats.",
+  "offersHint": "High-precision finance & business calculations for AI agents — exact decimals, never floats. · Remote MCP (streamable-http) at https://precisioncalc-mcp.pages.dev/mcp",
+  "version": "2.1.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://precisioncalc-mcp.pages.dev/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://precisioncalc-mcp.pages.dev/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/inity13/precisioncalc-mcp",
+  "repository": {
+    "url": "https://github.com/inity13/precisioncalc-mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-10T11:10:34.990239Z",
+  "publishedAt": "2026-08-10T11:10:34.990239Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:19:59.751Z",
+    "sourceRepoAt": "2026-08-11T23:42:14.692Z",
+    "readmeAt": "2026-08-11T23:42:15.229Z",
+    "toolsAt": "2026-08-11T23:42:15.332Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/inity13/precisioncalc-mcp",
+    "checkedAt": "2026-08-11T23:42:14.692Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/inity13/precisioncalc-mcp/main/README.md",
+    "markdown": "# PrecisionCalc MCP\n\nA deterministic **Model Context Protocol (MCP)** server that gives LLM agents\nreliable, **high-precision business, finance, and operational calculations**.\n\nLLMs routinely lose precision or hallucinate on multi-step financial formulas,\ncurrency conversions, business-day logic, and growth math. PrecisionCalc offloads\nthat work to exact, transparent tools. Every monetary/financial value is computed\nwith Python's `decimal` module (**never floats**), and every result is returned in\na **consistent, agent-parseable JSON envelope** that includes the exact value, a\nhuman-readable value, the **formula applied**, the **inputs used**, the unit, and\nany **assumptions/warnings**.\n\n> **v2 highlights:** live + historical FX (ECB), 14 SaaS metrics, NPV/IRR,\n> loan amortization, depreciation, a `batch_calculate` tool, per-country holidays,\n> API-key auth + rate limiting + usage metering on the HTTP transport, structured\n> JSON logging, optional OpenTelemetry tracing, and property-based tests.\n\n## 🌐 Live hosted server (free, no install)\n\nA public remote MCP server runs on Cloudflare's edge — point any Streamable-HTTP\nMCP client at it:\n\n```\nhttps://precisioncalc-mcp.pages.dev/mcp\n```\n\n```json\n{ \"mcpServers\": { \"precisioncalc\": {\n    \"type\": \"http\", \"url\": \"https://precisioncalc-mcp.pages.dev/mcp\" } } }\n```\n\nThe edge build (`worker-src/`) is a Cloudflare Pages Function that mirrors the\nPython engine using `decimal.js` — verified **17/17 exact output parity**. Landing\npage + docs: <https://precisioncalc-mcp.pages.dev>.\n\n### Plans (hosted endpoint)\n\n| Plan | Price | Daily calls | Live/historical FX | `batch_calculate` |\n|------|-------|-------------|--------------------|-------------------|\n| **Free** (no key) | $0 | 15 / day (per IP) | ❌ static only | ❌ |\n| **Starter** | $12/mo | 5,000 / day | ✅ | ✅ |\n| **Pro** | $39/mo | 50,000 / day | ✅ | ✅ |\n\nCheckout is Stripe (subscription). On success you get an API key instantly; send it as\n`X-API-Key: <key>` (or `Authorization: Bearer <key>`). Manage/cancel at `/portal`.\nWhen a limit is hit, tools return a structured `status:\"error\"` envelope with `type`,\n`usage`, and an `upgrade` block containing checkout URLs — so an **agent can surface the\npaywall to the user and act on it**. Self-host (below) for unlimited calls with your own keys.\n\nBilling internals live in `worker-src/billing.mjs` (Stripe REST + Cloudflare KV for keys\nand daily counters). Server env: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,\n`PRICE_STARTER`, `PRICE_PRO`, `FREE_DAILY`, `STARTER_DAILY`, `PRO_DAILY`, and a\n`PRECISIONCALC_KV` namespace binding (see `wrangler.toml`).\n\nRebuild/redeploy the edge server:\n```bash\nnpm install          # decimal.js + esbuild\nnpm run deploy       # bundles worker-src -> site/_worker.js and deploys to Pages\n```\n\n---\n\n## What it does\n\n11 tools, all returning a uniform structured response:\n\n| Tool | Purpose |\n|------|---------|\n| `calculate_metric` | 14 SaaS/business metrics (LTV, CAC, churn, MRR growth, NRR, GRR, Rule of 40, magic number, break-even, ...) |\n| `currency_convert` | Convert 9 major currencies; static (offline) or live/historical ECB rates |\n| `business_days` | Add/count business days, next/previous; US/UK/EU + **any ISO country** + custom holidays |\n| `compound_growth` | Future value, present value, CAGR; 7 compounding frequencies incl. continuous |\n| `net_present_value` | NPV / discounted cash flow of a cashflow series |\n| `internal_rate_of_return` | IRR (Newton + bisection fallback) |\n| `loan_amortization` | Level-payment loan: payment, totals, full schedule, extra-payment payoff |\n| `depreciation` | straight-line / declining-balance / sum-of-years-digits schedules |\n| `batch_calculate` | Run many calculations in one request |\n| `list_metrics` | Discovery: every metric with descriptions + required params |\n| `health_check` | Server status, version, capabilities |\n\n### Consistent response envelope\n\nSuccess:\n```json\n{\n  \"status\": \"success\",\n  \"value\": \"1600\",                       // exact, full-precision (string for money/rates)\n  \"formatted_value\": \"$1,600.00\",        // human-readable\n  \"formula\": \"LTV = (ARPU * gross_margin) / churn_rate\",\n  \"inputs_used\": { \"arpu\": \"100\", \"gross_margin\": \"0.8\", \"churn_rate\": \"0.05\" },\n  \"unit\": \"USD\",\n  \"notes\": [\"LTV = (ARPU x gross_margin) / churn_rate.\", \"...\"]\n}\n```\n\nError (never raised across the tool boundary):\n```json\n{\n  \"status\": \"error\",\n  \"error\": {\n    \"type\": \"missing_parameter\",\n    \"message\": \"Missing required parameter 'churn_rate'.\",\n    \"hint\": \"Include 'churn_rate' in params. See list_metrics for the full schema.\"\n  }\n}\n```\n\n---\n\n## Project structure\n\n```\nprecisioncalc-mcp/\n├── server.py                 # MCP server: tool definitions + transports\n├── security.py               # API-key auth + token-bucket rate limit + metering (ASGI)\n├── observability.py          # Structured JSON logging + optional OpenTelemetry\n├── requirements.txt / pyproject.toml\n├── Dockerfile / .dockerignore\n├── fly.toml / render.yaml    # One-click hosting configs\n├── .env.example\n├── calculations/\n│   ├── _util.py              # Decimal coercion, validation, formatting\n│   ├── metrics.py            # 14 business/SaaS metrics + catalog\n│   ├── currency.py           # FX: static + Frankfurter (live/historical) providers\n│   ├── business_days.py      # Region-aware holidays (built-in + `holidays` lib)\n│   ├── growth.py             # FV / PV / CAGR\n│   └── finance.py            # NPV / IRR / loan amortization / depreciation\n├── schemas/responses.py      # Response envelope helpers\n├── examples/agent_example.py # End-to-end MCP client demo\n├── site/                     # Static landing/docs page (Cloudflare Pages)\n└── tests/                    # 49 unit tests + Hypothesis property tests\n```\n\n---\n\n## Requirements\n\n* Python **3.11+** (developed/tested on 3.12)\n* Core: `mcp`, `python-dateutil`\n* Recommended: `uvicorn` + `starlette` (HTTP transport), `holidays` (per-country calendars)\n* Optional: `opentelemetry-sdk` (tracing), `pytest` + `hypothesis` (tests)\n\nThe server auto-detects the SDK layout and works with `mcp >= 2.0`\n(`MCPServer`), `mcp 1.x` (`FastMCP`), or the standalone `fastmcp` package.\n\n---\n\n## Run it locally\n\n```bash\ncd precisioncalc-mcp\npython -m venv .venv && source .venv/bin/activate\npip install -r requirements.txt          # or: pip install -e \".[all]\"\n\n# stdio transport (default; how MCP clients launch it)\npython server.py            # or: precisioncalc-mcp   (console entrypoint)\n\n# Streamable HTTP transport (endpoint: /mcp)\npython server.py http\nPRECISIONCALC_API_KEYS=key1,key2 PRECISIONCALC_FX_PROVIDER=frankfurter python server.py http\n```\n\nDemo + tests:\n```bash\npython examples/agent_example.py         # live end-to-end over stdio\npython tests/test_calculations.py        # 28 core tests (no pytest needed)\npython tests/test_v2.py                  # 17 v2 tests\npython tests/test_properties.py          # Hypothesis property tests\n# or simply:  pytest -q\n```\n\n### Register with an MCP client (stdio)\n```json\n{ \"mcpServers\": { \"precisioncalc\": {\n    \"command\": \"python\", \"args\": [\"/absolute/path/to/precisioncalc-mcp/server.py\"] } } }\n```\n\n---\n\n## Deploy\n\n### Docker\n```bash\ndocker build -t precisioncalc-mcp .\ndocker run --rm -p 8000:8000 -e PRECISIONCALC_API_KEYS=your-key precisioncalc-mcp\ndocker run --rm -i precisioncalc-mcp python server.py stdio\n```\n\n### Fly.io\n```bash\nfly launch --no-deploy\nfly secrets set PRECISIONCALC_API_KEYS=key1,key2\nfly deploy\n```\n\n### Render.com\nPush to GitHub, then **New + → Blueprint** and point at the repo (`render.yaml`).\nSet `PRECISIONCALC_API_KEYS` as a secret in the dashboard.\n\n---\n\n## Configuration (env vars)\n\n| Var | Default | Purpose |\n|-----|---------|---------|\n| `PRECISIONCALC_HOST` / `PRECISIONCALC_PORT` | `127.0.0.1` / `8000` | HTTP bind |\n| `PRECISIONCALC_API_KEYS` | *(empty)* | Comma-separated keys. Empty = open mode (still metered/limited by IP) |\n| `PRECISIONCALC_RATE_LIMIT_PER_MIN` / `_BURST` | `120` / `40` | Token-bucket limits |\n| `PRECISIONCALC_METRICS_PATH` | `/metrics` | Usage-metrics endpoint |\n| `PRECISIONCALC_FX_PROVIDER` | `static` | `static` or `frankfurter` (live/historical ECB) |\n| `PRECISIONCALC_FX_TTL` / `_TIMEOUT` | `3600` / `4` | FX cache TTL / HTTP timeout (s) |\n| `PRECISIONCALC_LOG_LEVEL` / `_LOG_JSON` | `INFO` / `1` | Logging |\n| `PRECISIONCALC_OTEL` | `0` | `1` enables OpenTelemetry tracing if SDK present |\n\n---\n\n## Tools & parameters\n\n### `calculate_metric(metric, params, currency=\"USD\")`\nRates/margins are decimals (`0.05` = 5%).\n\n| metric | params | unit |\n|--------|--------|------|\n| `ltv` | `arpu`, `churn_rate`, `gross_margin`(=1) | currency |\n| `cac` | `total_spend`, `new_customers` | currency |\n| `ltv_cac_ratio` | `ltv`, `cac` | ratio |\n| `payback_period_months` | `cac`, `monthly_revenue_per_customer`, `gross_margin`(=1) | months |\n| `contribution_margin` | `revenue`, `variable_costs` | currency |\n| `gross_margin` | `revenue`, `cogs` | percent |\n| `churn_rate` | `customers_lost`, `customers_at_start` | percent |\n| `mrr_growth_rate` | `beginning_mrr`, `ending_mrr` | percent |\n| `arr` | `mrr` | currency |\n| `break_even_units` | `fixed_costs`, `price_per_unit`, `variable_cost_per_unit` | units |\n| `nrr` | `starting_mrr`, `expansion_mrr`, `contraction_mrr`, `churned_mrr` | percent |\n| `grr` | `starting_mrr`, `contraction_mrr`, `churned_mrr` | percent |\n| `rule_of_40` | `growth_rate`, `profit_margin` | percent |\n| `magic_number` | `current_quarter_revenue`, `prior_quarter_revenue`, `prior_quarter_sm_spend` | ratio |\n\n### `currency_convert(amount, from_currency, to_currency, date=None, live=None)`\nUSD, EUR, GBP, JPY, CAD, AUD, CHF, CNY, INR. `date` (YYYY-MM-DD) or `live=true`\nuses live/historical ECB rates (frankfurter.app), with automatic **static fallback**\non any network failure. Returns rate, provider, `is_live`, and timestamps.\n\n### `business_days(operation, start_date, days=None, end_date=None, region=\"US\", custom_holidays=None)`\n`operation`: `add_business_days` | `count_business_days` (inclusive) | `next_business_day` |\n`previous_business_day`. `region`: `US` | `UK` | `EU` | `NONE`, or **any ISO country code**\nwhen the `holidays` package is installed (DE, FR, CA, AU, JP, IN, ...).\n\n### `compound_growth(operation, rate, years, present_value, future_value, begin_value, end_value, compounding=\"annually\", currency=\"USD\")`\n`operation`: `future_value` | `present_value` | `cagr`.\n`compounding`: `daily | weekly | monthly | quarterly | semiannually | annually | continuous`.\n\n### `net_present_value(rate, cashflows, currency=\"USD\")`\nNPV = Σ CFₜ/(1+rate)ᵗ. `cashflows[0]` = period 0 (usually the negative outlay).\n\n### `internal_rate_of_return(cashflows, guess=0.1)`\nPer-period rate where NPV = 0. Requires a sign change in the cashflows.\n\n### `loan_amortization(principal, annual_rate, term_months, extra_payment=0, currency=\"USD\", include_schedule=false)`\nReturns monthly payment, months-to-payoff, total interest, total paid, and (optionally)\nthe full month-by-month schedule.\n\n### `depreciation(method, cost, salvage_value, useful_life_years, currency=\"USD\")`\n`method`: `straight_line` | `declining_balance` | `sum_of_years_digits`. Returns the\nfull yearly schedule; book value converges to `salvage_value`.\n\n### `batch_calculate(calls)`\n`calls`: list of `{\"tool\": <name>, \"arguments\": {...}}` (max 100). One item failing never\naborts the batch.\n\n### `list_metrics()` / `health_check()`\nDiscovery + status. No parameters.\n\n---\n\n## Example MCP tool-call payloads\n\n```json\n{ \"name\": \"calculate_metric\",\n  \"arguments\": { \"metric\": \"rule_of_40\", \"params\": { \"growth_rate\": 0.30, \"profit_margin\": 0.15 } } }\n```\n```json\n{ \"name\": \"currency_convert\",\n  \"arguments\": { \"amount\": 5000, \"from_currency\": \"EUR\", \"to_currency\": \"GBP\", \"date\": \"2024-01-15\" } }\n```\n```json\n{ \"name\": \"net_present_value\",\n  \"arguments\": { \"rate\": 0.10, \"cashflows\": [-10000, 3000, 4200, 6800] } }\n```\n```json\n{ \"name\": \"loan_amortization\",\n  \"arguments\": { \"principal\": 250000, \"annual_rate\": 0.065, \"term_months\": 360, \"include_schedule\": false } }\n```\n```json\n{ \"name\": \"batch_calculate\",\n  \"arguments\": { \"calls\": [\n    { \"tool\": \"internal_rate_of_return\", \"arguments\": { \"cashflows\": [-10000, 3000, 4200, 6800] } },\n    { \"tool\": \"depreciation\", \"arguments\": { \"method\": \"declining_balance\", \"cost\": 50000, \"salvage_value\": 5000, \"useful_life_years\": 5 } }\n  ] } }\n```\n\n---\n\n## Design decisions & assumptions\n\n* **Decimal everywhere** money/rates matter; `value` is serialized as a **string** to\n  prevent float loss in JSON, with a separate pretty `formatted_value`. Precision = 50 sig figs.\n* **Rates/margins are decimals** (`0.05` = 5%), documented in every tool.\n* **FX**: `static` USD-based table (`as_of` 2024-06-01) is the offline default; `frankfurter`\n  provider adds live + historical ECB rates with in-memory TTL cache and graceful static fallback.\n* **Business days**: holidays computed per-year (floating US, Easter-based UK/EU); `count` is\n  inclusive; `add` accepts negatives; custom holidays unioned; any ISO country via `holidays` lib.\n* **IRR** uses Newton's method with a bracketed bisection fallback; requires a sign change.\n* **Errors never cross the tool boundary as exceptions** — always `status:\"error\"` with a machine\n  `type` + actionable `hint`.\n* **HTTP hardening** is opt-in via env: API keys, token-bucket rate limiting, `/metrics` usage.\n* **SDK compatibility shim** runs on `mcp>=2.0`, `mcp 1.x`, or standalone `fastmcp` unchanged.\n\n---\n\n## Monetization hooks\n\n* **Auth** — `PRECISIONCALC_API_KEYS`; requests need `X-API-Key` or `Authorization: Bearer`.\n* **Rate limiting** — per-key token bucket (per-IP in open mode); swap for Redis to scale.\n* **Usage metering** — in-memory counters exposed at `/metrics`; the seam for per-key billing.\n* **FX provider** — `calculations/currency.py::RateProvider` is the drop-in point for a licensed feed.\n\n---\n\n## Roadmap (post-v2)\n\n1. Redis-backed rate limiting + billing-grade usage metering.\n2. Persisted historical FX + more providers; multi-currency carry through metrics.\n3. Bond pricing/yield, WACC, options (Black-Scholes), tax/VAT, unit conversions.\n4. Prometheus exporter + Grafana dashboard alongside OTel traces.\n5. Published PyPI package + Docker image on GHCR; hosted multi-tenant SaaS.\n",
+    "fetchedAt": "2026-08-11T23:42:15.229Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "calculate_metric",
+      "description": "Compute a business/SaaS/finance metric with exact decimal precision. Metrics: ltv, cac, ltv_cac_ratio, payback_period_months, contribution_margin, gross_margin, churn_rate, mrr_growth_rate, arr, break_even_units, nrr, grr, rule_of_40, magic_number. Rates/margins are decimals (0.05=5%). Call list_metrics for schemas."
+    },
+    {
+      "name": "list_metrics",
+      "description": "List every supported metric with descriptions and required/optional params."
+    },
+    {
+      "name": "currency_convert",
+      "description": "Convert an amount between major currencies (USD, EUR, GBP, JPY, CAD, AUD, CHF, CNY, INR) with Decimal precision. Static offline table on the free tier; live/historical ECB rates (date/live=true) require a paid plan."
+    },
+    {
+      "name": "business_days",
+      "description": "Business-day arithmetic honoring weekends + regional holidays. operation: add_business_days (needs days, negative ok) | count_business_days (needs end_date, inclusive) | next_business_day | previous_business_day. region: US | UK | EU | NONE. custom_holidays: list of YYYY-MM-DD."
+    },
+    {
+      "name": "compound_growth",
+      "description": "Compound-interest/growth math. operation: future_value (rate, years, present_value) | present_value (rate, years, future_value) | cagr (begin_value, end_value, years). rate is annual decimal (0.08=8%). compounding: daily|weekly|monthly|quarterly|semiannually|annually|continuous."
+    },
+    {
+      "name": "net_present_value",
+      "description": "Net Present Value (discounted cash flow). NPV = sum(CF_t/(1+rate)^t). cashflows[0] = period 0 (usually the negative outlay)."
+    },
+    {
+      "name": "internal_rate_of_return",
+      "description": "Internal Rate of Return: per-period rate where NPV=0 (Newton + bisection). Requires a sign change in cashflows."
+    },
+    {
+      "name": "loan_amortization",
+      "description": "Level-payment loan: monthly payment, total interest, payoff, and (optional) full schedule. payment = P*r/(1-(1+r)^-n), r=annual_rate/12."
+    },
+    {
+      "name": "depreciation",
+      "description": "Asset depreciation schedule. method: straight_line | declining_balance | sum_of_years_digits. Book value converges to salvage_value."
+    },
+    {
+      "name": "batch_calculate",
+      "description": "PAID FEATURE. Run many calculations in one request. calls: list of {tool, arguments} (max 100). One failure never aborts the batch."
+    },
+    {
+      "name": "health_check",
+      "description": "Server health/status metadata."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:42:15.332Z",
+  "toolsPreviewStatus": "ok"
+}

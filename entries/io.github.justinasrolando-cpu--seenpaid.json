@@ -1,0 +1,45 @@
+{
+  "id": "io.github.justinasrolando-cpu/seenpaid",
+  "title": "seenpaid",
+  "description": "Open-source, self-hosted posting layer with an MCP server for AI agents. 25+ platforms.",
+  "summary": "Open-source, self-hosted posting layer with an MCP server for AI agents. 25+ platforms.",
+  "offersHint": "Open-source, self-hosted posting layer with an MCP server for AI agents. 25+ platforms.",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "unknown",
+  "flags": [
+    "incomplete"
+  ],
+  "homepage": "https://seenpaid.com",
+  "sourceUrl": "https://github.com/justinasrolando-cpu/seenpaid",
+  "repository": {
+    "url": "https://github.com/justinasrolando-cpu/seenpaid",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-06T14:21:22.775305Z",
+  "publishedAt": "2026-08-06T14:21:22.775305Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:18:05.154Z",
+    "sourceRepoAt": "2026-08-11T23:39:53.261Z",
+    "readmeAt": "2026-08-11T23:39:53.874Z",
+    "toolsAt": "2026-08-12T01:18:05.154Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/justinasrolando-cpu/seenpaid",
+    "checkedAt": "2026-08-11T23:39:53.261Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/justinasrolando-cpu/seenpaid/main/README.md",
+    "markdown": "# seenpaid\n\n[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)\n\n**Ask your AI agent which of your posts made money.**\n\nThat question is answered by [seenpaid.com](https://seenpaid.com) — the\nhosted cloud product, which matches your Stripe sales back to the exact post\nthat drove them. This repository is **not** that. This repository is the\nopen posting layer underneath it: a self-hosted service that connects to\n25 social and publishing platforms, queues and retries deliveries, and\nexposes itself to an AI agent over MCP (Model Context Protocol) so an agent\ncan schedule posts on your behalf. Point an agent at your own instance, or\npoint it at seenpaid.com if you also want the revenue answer — same MCP\nshape, different depth.\n\n## What this is\n\n- A BullMQ-backed publish pipeline: schedule a post once, it fans out to\n  every connected platform as an independent, retried job.\n- 25 platform adapters behind one interface — OAuth, webhook, API-key, and\n  paste-your-own-credentials flows, whichever each platform actually uses.\n- A REST API and a 3-tool MCP server, so both a script and an AI agent can\n  drive it the same way.\n- Single-operator by design: one API key, no login screen, no multi-tenant\n  concept. Deploy it, set a key, use it.\n\n## What this is NOT\n\n- **No revenue attribution.** This repo does not track clicks, match sales,\n  or tell you which post earned anything. That's the hard, hosted part —\n  seenpaid.com — and it's deliberately not in here.\n- **No multi-user accounts, teams, or roles.** One instance, one operator.\n  If you need that, you're looking for the cloud product.\n- **No billing, plans, or usage limits.** There's nothing to meter — this\n  is software you run, not a subscription.\n\nIf what you actually want is \"which post made money,\" this repo alone\ncan't answer that — connect your instance's data to seenpaid.com, or read\n`SELF_HOST.md` for the honest tradeoffs before you invest time self-hosting\nfor that reason.\n\n## Quickstart\n\n```bash\ngit clone <this-repo>\ncd seenpaid\ncp .env.example .env\n# fill in API_KEY and TOKEN_ENCRYPTION_KEY (openssl rand -hex 32 for each)\ndocker compose up -d\ndocker compose exec api npm run db:migrate\n```\n\nThe API is now listening on `http://localhost:3001`. Full walkthrough,\nincluding connecting a platform and your agent, in `SELF_HOST.md`.\n\n## The 3 MCP tools\n\nPoint an MCP-capable agent at `POST /mcp` (Bearer `API_KEY`) and it gets:\n\n| Tool | What it does |\n|---|---|\n| `list_accounts` | Lists connected platform accounts — id, platform, handle, status |\n| `list_posts` | Lists recent posts with status, schedule time, and target platforms |\n| `schedule_post` | Schedules or immediately publishes a post to one, several, or all connected accounts |\n\nThat's the whole surface. There's no `get_analytics` or `get_top_posts`\nhere — those exist only on the hosted seenpaid.com MCP server, because\nanswering them requires the closed-source attribution engine this repo\ndoesn't include.\n\nSee `mcp-connector/README.md` for a copy-pasteable client config.\n\n## Supported platforms\n\n| Platform | Connect method |\n|---|---|\n| X (Twitter) | Bring-your-own OAuth 1.0a app keys |\n| Bluesky | App password |\n| LinkedIn | OAuth |\n| Instagram | OAuth (Meta) |\n| Facebook | OAuth (Meta) |\n| TikTok | OAuth |\n| Discord | Webhook URL |\n| Telegram | Bot token + channel |\n| Mastodon | OAuth |\n| Nostr | Private key (nsec/hex) |\n| Dev.to | API key |\n| Hashnode | Personal access token |\n| Medium | Integration token |\n| Reddit | OAuth |\n| Threads | OAuth |\n| Tumblr | OAuth |\n| Pinterest | OAuth |\n| VK | OAuth |\n| Slack | Incoming webhook URL |\n| WordPress | Application password |\n| Ghost | Admin API key |\n| Lemmy | Instance login |\n| Generic webhook | URL + optional signing secret |\n| Micro.blog | App token |\n| Matrix | Homeserver + access token + room |\n\nEach adapter lives in `src/platforms/`. Only platforms you configure\ncredentials for are usable — everything else fails cleanly with a clear\nerror rather than blocking the rest of the app. Full env var list per\nplatform in `SELF_HOST.md`.\n\n## Architecture\n\n```\nsrc/\n  platforms/        25 adapters + registry — one publish()/OAuth interface\n  domain/features/\n    posts/          Create/list/cancel a post; fans out to per-platform jobs\n    accounts/        Connect/list/disconnect a platform account\n    media/           Presigned upload + optional free AI image generation\n  jobs/              BullMQ queue + worker: the actual publish pipeline\n  entry-points/\n    api/             REST API (Express)\n    mcp/             The 3-tool MCP server\n  auth/              Single-operator API-key auth (see below)\n  data-access/       Drizzle ORM schema, repositories, migrations\n```\n\n## Auth model\n\nThis is intentionally **not** the multi-tenant JWT/RBAC system a SaaS\nproduct needs. Self-hosting means you're the only user, so auth here is one\nshared secret: set `API_KEY` in `.env`, send it as `Authorization: Bearer\n<key>` (or `X-Api-Key: <key>`) on every request. No signup, no login UI, no\nsessions, no password hashing. This mirrors how most single-operator\nself-hosted tools handle auth — one secret, checked on every request,\nnothing more to reason about.\n\nIf you need multiple users or role-based access on one instance (e.g. an\nagency running this for several clients), that's a deliberate scope cut —\nsee `CONTRIBUTING.md` for how to propose it.\n\n## License\n\nThe core (everything except `mcp-connector/`) is licensed\n**AGPL-3.0** — see `LICENSE`. The short version: you can self-host, modify,\nand redistribute freely, but if you run a modified version as a network\nservice for others, you must offer them the modified source too. This\nexists to keep the project from being cloned into a closed-source competing\nservice without the changes flowing back.\n\n`mcp-connector/` (just client-side config for connecting an agent) is\n**MIT** — see `mcp-connector/LICENSE` — so it's freely copyable into agent\ndirectories and other tooling without license friction.\n\n## Contributing\n\nSee `CONTRIBUTING.md` before opening a PR — it sets expectations on scope\nand response time.\n",
+    "fetchedAt": "2026-08-11T23:39:53.874Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:18:05.154Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

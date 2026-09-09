@@ -1,0 +1,51 @@
+{
+  "id": "io.github.nexus-mcp-infra/useful-data-source-for-agents-doing-product-price-sdk",
+  "title": "useful-data-source-for-agents-doing-product-price-sdk",
+  "description": "Semantic product search over Singapore e-commerce, ranked by an auditable entropy-based value-score",
+  "summary": "Semantic product search over Singapore e-commerce, ranked by an auditable entropy-based value-score",
+  "offersHint": "Semantic product search over Singapore e-commerce, ranked by an auditable entropy-based value-score · Remote MCP (streamable-http) at https://useful-data-source-for-agents-production.up.railway.app/mcp",
+  "version": "1.0.0",
+  "status": "deprecated",
+  "transport": "streamable-http",
+  "endpointUrl": "https://useful-data-source-for-agents-production.up.railway.app/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://useful-data-source-for-agents-production.up.railway.app/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/nexus-mcp-infra/useful-data-source-for-agents-doing-product-price-sdk",
+  "repository": {
+    "url": "https://github.com/nexus-mcp-infra/useful-data-source-for-agents-doing-product-price-sdk",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-27T16:45:52.20896Z",
+  "publishedAt": "2026-07-18T14:38:03.168772Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:11:24.449Z",
+    "sourceRepoAt": "2026-08-11T23:32:20.937Z",
+    "readmeAt": "2026-08-11T23:32:21.405Z",
+    "toolsAt": "2026-08-12T01:11:24.449Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/nexus-mcp-infra/useful-data-source-for-agents-doing-product-price-sdk",
+    "checkedAt": "2026-08-11T23:32:20.937Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/nexus-mcp-infra/useful-data-source-for-agents-doing-product-price-sdk/main/README.md",
+    "markdown": "# BuyWhere Singapore Value Intelligence API\n\nSemantic product search over Singapore e-commerce (BuyWhere), ranked by an auditable value-score derived from Shannon entropy across vendor price distributions - not just \"cheapest first.\"\n\nAvailable both as a plain HTTP API and as an MCP server (5 tools) for AI agents.\n\n---\n\n## Base URL\nhttps://useful-data-source-for-agents-production.up.railway.app\n\n## Authentication\n\nAll business endpoints require an `X-API-Key` header:\nX-API-Key: <your key>\n\n`/health` requires no authentication.\n\n## Pricing\n\nTwo ways to pay, same endpoints:\n\n- **x402 (pay-per-call, USDC on Base)** - currently on **Base Sepolia testnet**, $0.01/call. A request without payment gets `402 Payment Required` with the payment details in the `payment-required` response header.\n- **Stripe (metered billing)** - for callers provisioned with an API key and a Stripe customer on the account.\n\n---\n\n## Endpoints\n\n### `GET /search`\nSemantic product search over the BuyWhere Singapore catalog, ranked by composite value-score.\n\nQuery params:\n- `query` (required) - natural-language product description\n- `limit` (default 10, 1-50)\n- `min_value_score` (default 0.0, range 0.0-1.0) - filter out products below this score\nGET /search?query=noise+cancelling+headphones&limit=5&min_value_score=0.5\n\nResponse (`ProductSearchResponse`):\n```json\n{\n  \"query\": \"noise cancelling headphones\",\n  \"result_count\": 5,\n  \"currency\": \"SGD\",\n  \"products\": [\n    {\n      \"product_id\": \"abc123\",\n      \"title\": \"Sony WH-1000XM5\",\n      \"category\": \"electronics\",\n      \"image_url\": \"...\",\n      \"vendor_offers\": [\"...\"],\n      \"price_min_sgd\": 389.00,\n      \"price_max_sgd\": 429.00,\n      \"price_mean_sgd\": 405.30,\n      \"shannon_entropy_bits\": 1.24,\n      \"causal_reliability_score\": 0.92,\n      \"value_score\": 0.847,\n      \"value_score_explanation\": \"...\"\n    }\n  ],\n  \"computation_ms\": 43.2\n}\n```\n\n### `GET /product/{product_id}/value_breakdown`\nFull auditable decomposition of the value-score formula for one product - entropy component, reliability component, price-rank component, the formula itself, and the recommended vendor/price.\n\n### `GET /product/{product_id}/price_distribution`\nVendor price distribution for one product: entropy (raw and normalized), price spread, coefficient of variation, and a plain-language interpretation of market fragmentation.\n\n### `GET /health`\nLiveness probe. Returns `{ status, upstream_reachable, api_version, timestamp }`. No auth required. Not billed (excluded from both Stripe and x402).\n\n---\n\n## MCP tools\n\nConnect an MCP-compatible client (Claude, Cursor, etc.) to the streamable HTTP endpoint at:\nhttps://useful-data-source-for-agents-production.up.railway.app/mcp\n\nExposes 5 tools:\n- `rank_buywhere_products_by_value_score` - ranked search with `max_price_sgd` and `category_filter`\n- `fetch_buywhere_vendor_price_distribution` - vendor spread for a known `product_id`\n- `resolve_buywhere_product_identity` - disambiguate a partial/fuzzy product name into candidate product IDs\n- `compare_buywhere_products_causal_rank` - head-to-head comparison of 2-10 products with confounder adjustment\n- `extract_buywhere_deal_anomalies` - z-score based detection of mispriced or outlier listings\n\n---\n\n## Value-score: the method\n\nFor each product, prices across vendors are treated as a distribution. The composite `value_score` blends:\n\n- **Entropy component** - Shannon entropy of the price distribution across vendors (`H`, in bits) normalized against the maximum possible entropy for that vendor count. Higher entropy = genuine price competition, not vendors clustered at the same number.\n- **Reliability component** - a causal-reliability score per vendor.\n- **Price-rank component** - where this vendor's price sits in the observed range.\n\nEvery response includes the raw components (`shannon_entropy_bits`, `entropy_component`, `reliability_component`, `price_rank_component`) and, on `/product/{id}/value_breakdown`, the `formula` string itself - so an agent can cite the reasoning, not just the number.\n\n---\n\n## Limits\n\n- `/search`: `limit` up to 50 results per call\n- MCP `compare_buywhere_products_causal_rank`: 2-10 product IDs per call\n",
+    "fetchedAt": "2026-08-11T23:32:21.405Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:11:24.449Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"status\":\"error\",\"code\":404,\"message\":\"Application not found\",\"request_id\":\"z6HRRcqYS7-r8Rz1xtoGcA\"}",
+  "toolsPreviewStatus": "unreachable"
+}

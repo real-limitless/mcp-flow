@@ -1,0 +1,70 @@
+{
+  "id": "com.datpaq/datpaq",
+  "title": "DATPAQ",
+  "description": "34 production API tools over one hosted MCP endpoint.",
+  "summary": "34 production API tools over one hosted MCP endpoint.",
+  "offersHint": "34 production API tools over one hosted MCP endpoint. · Remote MCP (streamable-http) at https://mcp.datpaq.com/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://mcp.datpaq.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.datpaq.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <your DATPAQ API key>",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/datpaq/mcp",
+  "repository": {
+    "url": "https://github.com/datpaq/mcp",
+    "source": "github"
+  },
+  "updatedAt": "2026-06-28T21:42:53.656839Z",
+  "publishedAt": "2026-06-28T21:42:53.656839Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Bearer <your DATPAQ API key>",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:36:11.080Z",
+    "sourceRepoAt": "2026-08-12T00:36:11.080Z",
+    "readmeAt": "2026-08-12T00:36:11.555Z",
+    "toolsAt": "2026-08-12T00:36:11.643Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/datpaq/mcp",
+    "checkedAt": "2026-08-12T00:36:11.080Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/datpaq/mcp/main/README.md",
+    "markdown": "<div align=\"center\">\n\n# Datpaq MCP Server\n\n**Hosted [Model Context Protocol](https://modelcontextprotocol.io) server for the [Datpaq API](https://datpaq.com).**\n\n[![Go Reference](https://pkg.go.dev/badge/github.com/datpaq/mcp.svg)](https://pkg.go.dev/github.com/datpaq/mcp)\n[![Go Report Card](https://goreportcard.com/badge/github.com/datpaq/mcp)](https://goreportcard.com/report/github.com/datpaq/mcp)\n[![License](https://img.shields.io/badge/license-Apache_2.0-6b21a8.svg)](LICENSE)\n\n[Connect](#connect) · [Configure your client](#configure-your-client) · [Self-host](#self-host) · [Dashboard ↗](https://datpaq.com)\n\n</div>\n\n---\n\nHosted at **<https://mcp.datpaq.com/>** — also installable locally and self-hostable.\n\n`datpaq-mcp-http` exposes the Datpaq API as MCP tools over streamable HTTP, so any MCP-compatible client (Claude Desktop, Cursor, Codex, Cline, Continue, agent frameworks) can call Datpaq endpoints with a single connection.\n\nFor the **local CLI** (and the stdio MCP that ships with it for Claude Desktop), see [`github.com/datpaq/cli`](https://github.com/datpaq/cli).\n\n## Connect\n\n| | |\n| --- | --- |\n| **URL** | `https://mcp.datpaq.com/` |\n| **Transport** | streamable HTTP |\n| **Protocol** | `2026-07-28` and `2025-11-25` (and earlier) — see [Protocol versions](#protocol-versions) |\n| **Auth** | `Authorization: Bearer YOUR_DATPAQ_API_KEY` (per request) |\n| **Tools** | Hosted tools across 41 active APIs |\n\nVerify with `curl` — modern (`2026-07-28`):\n\n```bash\ncurl -s -X POST https://mcp.datpaq.com/ -H \"Authorization: Bearer $YOUR_DATPAQ_API_KEY\" -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -H \"MCP-Protocol-Version: 2026-07-28\" -H \"Mcp-Method: server/discover\" -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"server/discover\",\"params\":{\"_meta\":{\"io.modelcontextprotocol/protocolVersion\":\"2026-07-28\",\"io.modelcontextprotocol/clientInfo\":{\"name\":\"curl\",\"version\":\"0\"},\"io.modelcontextprotocol/clientCapabilities\":{}}}}'\n```\n\nOr legacy (`initialize` handshake), which keeps working unchanged:\n\n```bash\ncurl -s -X POST https://mcp.datpaq.com/ -H \"Authorization: Bearer $YOUR_DATPAQ_API_KEY\" -H \"Content-Type: application/json\" -H \"Accept: application/json, text/event-stream\" -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{},\"clientInfo\":{\"name\":\"curl\",\"version\":\"0\"}}}'\n```\n\n## Protocol versions\n\nThe server is **dual-era**: it speaks both the stateless `2026-07-28` revision and the\nhandshake-based revisions (`2025-11-25` and earlier) on the same endpoint, and picks per\nrequest. You do not need to configure anything — point your client at the URL and it will\nuse whichever it supports.\n\n| Era | Versions | How it's served |\n| --- | --- | --- |\n| Modern | `2026-07-28` | Stateless. Every request carries its version, client info, and capabilities in `_meta`, mirrored into the `MCP-Protocol-Version` / `Mcp-Method` / `Mcp-Name` headers. Implements `server/discover`, `tools/list`, `tools/call`. |\n| Legacy | `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` | The `initialize` handshake, exactly as before. Sessions, `GET` SSE streams, and `Mcp-Session-Id` all still work. |\n\nNotes for the modern era:\n\n- `tools/list` and `server/discover` return `ttlMs` and `cacheScope: \"public\"` caching\n  hints. The tool catalog is identical for every tenant and only changes on redeploy, so\n  clients can cache it and skip re-fetching every tool definition on each reconnect.\n- `Mcp-Method` and `Mcp-Name` are validated against the request body. A header that\n  **disagrees** with the body is rejected with `-32020 HeaderMismatch`; a **missing**\n  header is served anyway, so clients that have not implemented header mirroring yet still\n  work.\n- An unsupported version gets `400` + `-32022` listing the versions we do support, so a\n  client can retry rather than fail.\n- Features the spec deprecated in `2026-07-28` — roots, sampling, logging, DCR, and the\n  2024-11-05 HTTP+SSE transport — were never used by this server, so nothing changes for\n  you there.\n\n**Auth model:** every request must present a Datpaq API key as `Authorization: Bearer <key>` — the server holds no credentials of its own, so a single instance can serve many tenants, each billed against their own Datpaq account.\n\n## Configure your client\n\n**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"datpaq\": {\n      \"url\": \"https://mcp.datpaq.com/\",\n      \"headers\": {\n        \"Authorization\": \"Bearer YOUR_DATPAQ_API_KEY\"\n      }\n    }\n  }\n}\n```\n\n**Cursor** (`~/.cursor/mcp.json` or project `.cursor/mcp.json`):\n\n```json\n{\n  \"mcpServers\": {\n    \"datpaq\": {\n      \"url\": \"https://mcp.datpaq.com/\",\n      \"headers\": {\n        \"Authorization\": \"Bearer YOUR_DATPAQ_API_KEY\"\n      }\n    }\n  }\n}\n```\n\n**Codex CLI:**\n\n```bash\nexport DATPAQ_API_KEY=\"YOUR_DATPAQ_API_KEY\"\ncodex mcp add datpaq --url https://mcp.datpaq.com/ --bearer-token-env-var DATPAQ_API_KEY\n```\n\n**Codex TOML:**\n\n```toml\n[mcp_servers.datpaq]\nurl = \"https://mcp.datpaq.com/\"\nbearer_token_env_var = \"YOUR_DATPAQ_API_KEY\"\n```\n\nFor full step-by-step instructions per client (including Cline and Continue), see the [Datpaq MCP docs](https://datpaq.com/docs/mcp).\n\n## Self-host\n\nInstall via Go:\n\n```bash\ngo install github.com/datpaq/mcp/cmd/datpaq-mcp-http@latest\n```\n\nRequires Go 1.26.3+.\n\nOr pull the Docker image:\n\n```bash\ndocker build -t datpaq-mcp-http -f cmd/datpaq-mcp-http/Dockerfile .\ndocker run -p 8080:8080 datpaq-mcp-http\n```\n\nRun it:\n\n```bash\ndatpaq-mcp-http --addr :8080\n```\n\nThen point an MCP client at `http://localhost:8080/`.\n\nShips with a [Fly.io](https://fly.io) config for one-command deploys:\n\n```bash\nfly launch --config fly.toml\nfly deploy\n```\n\nNo secrets to configure — clients authenticate per request.\n\n## What's exposed\n\nThe server registers one MCP tool per **active** Datpaq API endpoint. The active set is curated in [`internal/cli/active-apis.json`](internal/cli/active-apis.json) — add a slug there when a new API ships on [datpaq.com](https://datpaq.com), redeploy, and the tool appears for every connected client.\n\nInactive APIs are **scrubbed entirely** from the MCP surface (unlike the CLI, which still lets you invoke them directly). This keeps the hosted tool list focused on production-ready endpoints.\n\nTools that depend on local state or shell-out to the user's machine (auth flows, config writers, etc.) are deliberately not registered — see [`internal/mcp/public_tools.go`](internal/mcp/public_tools.go).\n\n## Configuration\n\n| Variable | Purpose |\n| --- | --- |\n| `DATPAQ_BASE_URL` | Override the API base URL (default: `https://datpaq.com/api/v1`) — handy for pointing at staging |\n| `PORT` | HTTP listen port (default: `8080`, also configurable via `--addr`) |\n\nThe Datpaq API key is **not** a server-side variable. Each request must include it as `Authorization: Bearer <key>`. See the Quickstart auth model.\n\n## Managing active APIs\n\nThe active set is curated in [`internal/cli/active-apis.json`](internal/cli/active-apis.json). The **CLI repo is the canonical place to regenerate** that manifest from the admin dashboard export (or, in Phase 2, `GET /api/v1/catalog/active`). This repo receives updates via sync — it does not ship its own fetch tooling.\n\n```json\n{\n  \"active\": [\n    \"convert-time\",\n    \"ip-geolocation\",\n    \"...\"\n  ]\n}\n```\n\n**Canonical workflow** (sibling checkout at `../CLI`):\n\n```bash\n# In the CLI repo\ncd ../CLI\nmake fetch-active-apis CATALOG_INPUT=./export.json   # or CATALOG_URL=... after Phase 2\nmake sync-active-apis                                 # CLI → MCP\n\n# Then here\nmake build && make test\n# commit internal/cli/active-apis.json + code changes, deploy\n```\n\nIf you edited `active-apis.json` in this repo by mistake, push it back to CLI with `./scripts/sync-active-apis.sh` (MCP → CLI only). Prefer the CLI-first flow above for normal updates.\n\n## Development\n\n```bash\ngit clone https://github.com/datpaq/mcp && cd mcp\nmake build\n./bin/datpaq-mcp-http --addr :8080\n```\n\nRun tests:\n\n```bash\nmake test\n```\n\n## License\n\nApache 2.0 — see [LICENSE](LICENSE).\n",
+    "fetchedAt": "2026-08-12T00:36:11.555Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:36:11.643Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"unauthorized\",\"message\":\"present your Datpaq API key as 'Authorization: Bearer <key>'\"}",
+  "toolsPreviewStatus": "auth_required"
+}

@@ -1,0 +1,77 @@
+{
+  "id": "io.github.sergii-ziborov/weavatrix-refactor",
+  "title": "weavatrix-refactor",
+  "description": "Transactional refactoring MCP with 11 evidence-backed tools, hash-bound previews, and rollback.",
+  "summary": "Transactional refactoring MCP with 11 evidence-backed tools, hash-bound previews, and rollback.",
+  "offersHint": "Transactional refactoring MCP with 11 evidence-backed tools, hash-bound previews, and rollback. · Packages: npm:weavatrix-refactor · Env vars: WEAVATRIX_ALLOW_SOURCE_EDITS",
+  "version": "1.0.6",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "weavatrix-refactor",
+    "version": "1.0.6",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "WEAVATRIX_ALLOW_SOURCE_EDITS",
+        "description": "Set to 1 to authorize confirmed apply operations and rollback to write source files; unset, the refactor tools stay preview-only"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "weavatrix-refactor",
+      "version": "1.0.6",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "WEAVATRIX_ALLOW_SOURCE_EDITS",
+          "description": "Set to 1 to authorize confirmed apply operations and rollback to write source files; unset, the refactor tools stay preview-only"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "WEAVATRIX_ALLOW_SOURCE_EDITS",
+      "description": "Set to 1 to authorize confirmed apply operations and rollback to write source files; unset, the refactor tools stay preview-only"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "homepage": "https://weavatrix.com",
+  "sourceUrl": "https://github.com/sergii-ziborov/weavatrix-refactor",
+  "repository": {
+    "url": "https://github.com/sergii-ziborov/weavatrix-refactor",
+    "source": "github"
+  },
+  "updatedAt": "2026-08-11T22:00:44.431855Z",
+  "publishedAt": "2026-08-11T22:00:44.431855Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:01:53.526Z",
+    "sourceRepoAt": "2026-08-11T23:21:26.234Z",
+    "readmeAt": "2026-08-11T23:21:26.686Z",
+    "toolsAt": "2026-08-12T01:01:53.526Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sergii-ziborov/weavatrix-refactor",
+    "checkedAt": "2026-08-11T23:21:26.234Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sergii-ziborov/weavatrix-refactor/main/README.md",
+    "markdown": "# Weavatrix Refactor\n\n**Refactor across files without letting the agent guess.**\n\nWeavatrix Refactor is a native MCP server for coding agents. It finds a symbol through the\nrepository graph, previews byte-exact edits, reports every same-named occurrence it could not\nprove, and writes only after an explicit, hash-bound confirmation.\n\nThe useful difference is not “AI can rename a word.” It is that the agent gets evidence before\nthe write and a recoverable transaction after it.\n\n## Install\n\nRun the native binary through npm:\n\n```bash\nnpx -y weavatrix-refactor mcp /absolute/path/to/repository\n```\n\nOr install it with Cargo:\n\n```bash\ncargo install weavatrix-refactor --locked\nweavatrix-refactor mcp /absolute/path/to/repository\n```\n\nAn MCP client can start it directly:\n\n```json\n{\n  \"mcpServers\": {\n    \"weavatrix-refactor\": {\n      \"command\": \"weavatrix-refactor\",\n      \"args\": [\"mcp\", \"/absolute/path/to/repository\"],\n      \"env\": {\"WEAVATRIX_ALLOW_SOURCE_EDITS\": \"1\"}\n    }\n  }\n}\n```\n\nLeave `WEAVATRIX_ALLOW_SOURCE_EDITS` unset for preview-only sessions. Preview is a read; only a\nconfirmed apply or rollback requires the gate.\n\nFor a rename task, expose only the two tools the agent needs:\n\n```bash\nweavatrix-refactor mcp /absolute/path/to/repository --profile=rename\n```\n\nThe `rename` profile keeps `rename_symbol` and `rollback_last_apply`; every unrelated graph and\nrefactor tool is absent and cannot be called. Omit the option (or use `--profile=full`) for the\ncomplete repository-intelligence surface. The narrower catalog reduces repeated agent context;\nit does not weaken preview hashes, the write gate, the confirmation token, or rollback checks.\n\n## A safe cross-file rename in three calls\n\nSuppose two files declare `resolveTarget`. A bare name is ambiguous, so the server refuses to\npick one and returns exact ids:\n\n```json\n// rename_symbol\n{\"symbol\":\"resolveTarget\",\"new_name\":\"locateTarget\",\"output_format\":\"json\"}\n\n{\n  \"status\": \"NOT_FOUND\",\n  \"reason\": \"the name matches more than one symbol; pass one of the candidate ids\",\n  \"candidates\": [\n    \"symbol:src/core.ts#function:resolveTarget@2:1\",\n    \"symbol:src/shadow.ts#function:resolveTarget@3:1\"\n  ]\n}\n```\n\nRetry with the intended id. The result is still read-only: it contains the edit plan, content\nhashes, the proven edit count, and the references the backend refused to guess at.\n\n```json\n// rename_symbol\n{\n  \"symbol\": \"symbol:src/core.ts#function:resolveTarget@2:1\",\n  \"new_name\": \"locateTarget\",\n  \"output_format\": \"json\"\n}\n\n{\n  \"status\": \"PLANNED\",\n  \"completeness\": \"PARTIAL\",\n  \"renamedEdits\": 7,\n  \"uncertainReferences\": [\"... three named locations ...\"],\n  \"confirmToken\": \"single-use-token\",\n  \"plan\": {\"schemaVersion\":\"weavatrix.edit-plan.v1\",\"files\":[\"...\"]}\n}\n```\n\nAfter reviewing the plan, repeat the same operation with the same inputs and its token:\n\n```json\n// rename_symbol\n{\n  \"symbol\": \"symbol:src/core.ts#function:resolveTarget@2:1\",\n  \"new_name\": \"locateTarget\",\n  \"mode\": \"apply\",\n  \"confirm_token\": \"single-use-token\",\n  \"output_format\": \"json\"\n}\n\n{\"status\":\"APPLIED\"}\n```\n\nThis exact flow is exercised against the real stdio MCP server. The repository fixture requires\nseven edits across three files, preserves four traps (a longer identifier, string, comment, and\nunrelated shadow), and must still compile; it scores **12/12**.\n\n## What is automatic today\n\nThe eleven tools do not all claim the same level of automation:\n\n| Level | Tools | What the agent receives |\n| --- | --- | --- |\n| Complete preview/apply workflow | `rename_symbol`, `rename_related_symbols` | A generated plan and token, then a confirmed write by repeating the same operation |\n| Plan-producing | `change_signature`, `edit_symbol`, `bulk_replace`, `organize_imports`, `move_file` | Byte-exact edits or a review plan; use `apply_edit_plan` where an edit-plan envelope is returned |\n| Advisory | `move_symbol`, `delete_readiness` | Blast radius, cycle/architecture risks, or a deletion verdict; no automatic source write |\n| Safety infrastructure | `apply_edit_plan`, `rollback_last_apply` | Verification/application of an edit-plan envelope and drift-safe restoration |\n\nThe same process also exposes the read-only Weavatrix repository tools, so discovery, impact\nanalysis, planning, and application share one graph revision and one session.\n\n## Safety model and exact limits\n\n- Ambiguous names fail with candidate ids instead of selecting the first match.\n- `PARTIAL` means the graph proved the edits in the plan but did **not** prove that no other\n  semantic references exist. `uncertainReferences` names the places requiring review.\n- Every file in a plan carries a content hash. A changed working tree makes the preview stale\n  instead of applying the old coordinates.\n- Apply requires `WEAVATRIX_ALLOW_SOURCE_EDITS=1` plus a short-lived, single-use token bound to\n  that repository and exact recomputed plan.\n- `rollback_last_apply` refuses to overwrite files that drifted after the transaction.\n- Multi-file writes are journaled and crash-recoverable. They are not observationally atomic to\n  unrelated processes: another process may briefly observe an intermediate filesystem state.\n\nOnly edits with proven provenance are applied. A lexical or graph backend is deliberately more\nconservative than a language server and must not be read as a claim of full compiler semantics.\n\n## Measured benchmark, with unlike layers kept separate\n\nThe checked-in August 2026 benchmark uses equivalent adversarial TypeScript, Rust, and Python\nfixtures. Each has seven required edits, four traps, and a build/test gate. Protocol runs count\nexact `o200k_base` initialization, catalog, request, and response tokens. Agent runs use the\nactual cumulative usage reported by Codex CLI with pinned `gpt-5.6-sol` / medium reasoning.\nNo byte proxy or estimated tokens-per-second conversion is used.\n\nThe new rename-only profile kept all nine protocol runs at 12/12 while reducing fixed MCP context\nfrom 9,331 to 485 tokens. Its guided TypeScript agent A/B is:\n\n| Arm | Correctness | Median end-to-end | Median input tokens |\n| --- | ---: | ---: | ---: |\n| Naked Codex | **12/12 x3** | **42,602 ms** | **72,169** |\n| Weavatrix 1.0.6 `--profile=rename` | **12/12 x3** | 48,389 ms | 108,155 |\n| Weavatrix 1.0.5 full surface | **12/12 x3** | 58,719 ms | 275,784 |\n| Serena | **12/12 x3** | 68,728 ms | 388,271 |\n\nThe full agent matrix is 12/12 in all 27 TypeScript/Rust/Python runs; every run also completed\noperationally and passed the sanitized edit-channel audit. The deterministic protocol\nmatrix also exposed a language-specific Serena defect: its suggested `find_symbol` →\n`rename_symbol` flow scored 7/12 on TypeScript in all three runs, while Rust and Python passed.\nIt also found and drove fixes for Rust macro calls and Python f-string/module-level call evidence.\n\nOn this toy TypeScript repository naked Codex is still faster and cheaper than the narrowed\nprofile. Weavatrix's demonstrated value is preview-before-write, named uncertainty, stale-plan\nrefusal, explicit authorization, and rollback—not a universal small-repository token win.\n\nSee the [full methodology, all language medians, raw-result links, and limitations](docs/benchmarks/refactor-vs-competitors-2026-08.md).\n\n## Contract\n\nThe tool names, schemas, and result states are frozen in\n[`contract/refactor-tools.v1.json`](contract/refactor-tools.v1.json). All refactor operations are\nnative Rust; the host merges them with the read-only\n[`weavatrix-rust`](https://github.com/sergii-ziborov/weavatrix-rust) engine.\n\nVersions 0.1.x used the JavaScript engine. That line continues as\n[`weavatrix-refactor-js`](https://github.com/sergii-ziborov/weavatrix-refactor-js) and keeps a\nseparate state directory, token store, and rollback journal.\n\n## License\n\nMIT.\n",
+    "fetchedAt": "2026-08-11T23:21:26.686Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:01:53.526Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

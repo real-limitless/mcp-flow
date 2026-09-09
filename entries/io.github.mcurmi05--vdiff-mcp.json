@@ -1,0 +1,76 @@
+{
+  "id": "io.github.mcurmi05/vdiff-mcp",
+  "title": "vdiff-mcp",
+  "description": "Breaking-change diffs for npm packages: removed exports, changed signatures, migration notes.",
+  "summary": "Breaking-change diffs for npm packages: removed exports, changed signatures, migration notes.",
+  "offersHint": "Breaking-change diffs for npm packages: removed exports, changed signatures, migration notes. · Packages: npm:vdiff-mcp · Env vars: VDIFF_API_URL",
+  "version": "0.1.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "npm",
+    "package": "vdiff-mcp",
+    "version": "0.1.2",
+    "transport": "stdio",
+    "environmentVariables": [
+      {
+        "name": "VDIFF_API_URL",
+        "description": "Base URL of the vdiff API instance to use (defaults to the hosted https://vdiff-api.onrender.com)"
+      }
+    ]
+  },
+  "packages": [
+    {
+      "kind": "npm",
+      "package": "vdiff-mcp",
+      "version": "0.1.2",
+      "transport": "stdio",
+      "environmentVariables": [
+        {
+          "name": "VDIFF_API_URL",
+          "description": "Base URL of the vdiff API instance to use (defaults to the hosted https://vdiff-api.onrender.com)"
+        }
+      ]
+    }
+  ],
+  "environmentVariables": [
+    {
+      "name": "VDIFF_API_URL",
+      "description": "Base URL of the vdiff API instance to use (defaults to the hosted https://vdiff-api.onrender.com)"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/mcurmi05/vdiff",
+  "repository": {
+    "url": "https://github.com/mcurmi05/vdiff",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-02T16:18:17.576129Z",
+  "publishedAt": "2026-07-02T16:18:17.576129Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:13:32.060Z",
+    "sourceRepoAt": "2026-08-11T23:34:48.030Z",
+    "readmeAt": "2026-08-11T23:34:48.648Z",
+    "toolsAt": "2026-08-12T01:13:32.060Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/mcurmi05/vdiff",
+    "checkedAt": "2026-08-11T23:34:48.030Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/mcurmi05/vdiff/main/README.md",
+    "markdown": "# vdiff\n\nA breaking-change diff API for npm packages. Given a package and two versions, it returns a structured, machine-readable list of what actually broke: removed exports, changed function signatures, and removed or changed class and interface members. Each entry includes the before and after signatures plus a short migration note.\n\nLive at `https://vdiff-api.onrender.com`. Most easily consumed through the MCP server, [vdiff-mcp](mcp/README.md):\n\n```bash\nclaude mcp add vdiff -- npx -y vdiff-mcp\n```\n\nOr call the REST API directly:\n\n```bash\ncurl \"https://vdiff-api.onrender.com/v1/diff?ecosystem=npm&package=zod&from=3.24.0&to=4.0.0\"\n```\n\n## Why this exists\n\nLLMs learn a package's API surface during training, then the package moves on. When a coding agent writes code against `zod` or `express`, it writes for the version it remembers, which is often not the version in your lockfile. The result is confident code that calls functions that were renamed or removed two majors ago.\n\nExisting tools only solve part of this. Version lookup tools tell the agent what the current version is. Documentation tools tell it what the docs say today. Neither answers the question the agent actually has mid-edit: \"what changed between the version I know and the version installed here?\"\n\nvdiff answers exactly that. Diffs are computed from the package's own type declarations rather than changelogs, so the output reflects the real exported surface, and every response carries a confidence score so the consumer knows how much to trust it.\n\nEndpoint reference: [docs/api.md](docs/api.md).\n\n## How it works\n\n1. **Resolve.** Fetch package metadata, versions and dist-tags from the npm registry.\n2. **Extract.** For each of the two versions, download the tarball, keep only the `.d.ts` files, and build a table of public exports (functions, classes, members, normalized call signatures) using the TypeScript compiler API. Bundled declarations are preferred; packages that ship none fall back to the matching DefinitelyTyped `@types/*` package, version-matched by `major.minor`.\n3. **Compare.** Diff the two export tables into typed change entries (`export_removed`, `signature_changed`, `member_removed` and so on), each with before/after signatures and a migration note.\n4. **Cache and meter.** Results are stored in Postgres keyed on (package, from, to), so each version pair is computed once, ever. Every request is logged with cache-hit status and user agent.\n5. **Guard.** Per-IP rate limits, a cap on simultaneous diff computations, size limits on tarballs and extracted declarations, and fetch timeouts keep the service safe to expose publicly.\n\nDiffs are type-level: a runtime behavior change that leaves the types untouched is invisible. Responses using bundled types carry confidence `0.9`; responses using community-maintained `@types/*` declarations carry `0.8`.\n\n## API overview\n\n| Endpoint          | Purpose                                                              |\n| ----------------- | -------------------------------------------------------------------- |\n| `GET /v1/diff`    | Breaking-change diff between two versions (`from` required, `to` defaults to latest) |\n| `GET /v1/resolve` | Latest version and dist-tags for a package                           |\n| `GET /healthz`    | Liveness check                                                       |\n\nSee [docs/api.md](docs/api.md) for parameters, response shapes, change types, error codes and rate limits.\n\n## Stack\n\n| Layer    | Choice                                | Why                                                                 |\n| -------- | ------------------------------------- | ------------------------------------------------------------------- |\n| Runtime  | Node 20+, TypeScript                  | npm-only `.d.ts` diffing needs the TS compiler API, so one language |\n| API      | Fastify 5                             | Fast, minimal, good TypeScript support                              |\n| Diffing  | `typescript` compiler API             | Structured symbol tables from `.d.ts` files, the core of the product |\n| Database | Postgres 18 (Docker local, Neon prod) | JSONB for variable-shape diff payloads, SQL for billing and analytics |\n| Registry | npm registry HTTP API + `tar`         | Packuments and tarball extraction, declarations only                |\n| Tests    | Vitest                                | Unit tests for compare logic and `@types` version matching          |\n\nThe code is cloud-agnostic: a plain container plus a `DATABASE_URL`. It currently runs on Render with Neon Postgres.\n\n## Running it yourself\n\n```bash\ndocker compose up -d      # Postgres 18 on :5432\nnpm install\nnpm run db:migrate        # apply src/db/schema.sql\nnpm run dev               # API on :3000\n```\n\nOr containerized, the way a PaaS runs it (applies the schema on boot, then serves):\n\n```bash\ndocker build -t vdiff-api .\ndocker run -p 3000:3000 -e DATABASE_URL=\"postgres://user:pass@host:5432/db\" vdiff-api\n```\n\n### Configuration\n\nAll configuration is via environment variables:\n\n| Env var                  | Default                  | Purpose                                        |\n| ------------------------ | ------------------------ | ----------------------------------------------- |\n| `PORT`                   | `3000`                   | Listen port                                     |\n| `DATABASE_URL`           | local Docker Postgres    | Postgres connection string                      |\n| `RATE_LIMIT_DIFF_MAX`    | `30`                     | Per-IP `/v1/diff` requests per minute           |\n| `RATE_LIMIT_RESOLVE_MAX` | `120`                    | Per-IP `/v1/resolve` requests per minute        |\n| `COMPUTE_CONCURRENCY`    | `2`                      | Max simultaneous diff computations              |\n| `TRUST_PROXY`            | unset                    | Set `true` behind a PaaS proxy so the rate limiter sees real client IPs |\n\n### Hardening notes\n\n- **Rate limiting**: per-IP, in-memory (fine while single-instance). `/healthz` is exempt for platform health checks.\n- **Compute cap**: at most `COMPUTE_CONCURRENCY` uncached diffs compile at once; excess requests get a `503` with `retry-after`. Cached diffs are always served.\n- **Size guards**: tarball downloads are capped at 50 MB (checked via content-length and counted bytes), extracted declarations at 15 MB per version. Oversized packages fail with a clear `422`.\n- **Fetch budgets**: 10 s for packuments, 30 s for tarballs. Tarballs are only fetched from `registry.npmjs.org` over HTTPS.\n\n## Project layout\n\n```\nsrc/\n  index.ts          Fastify bootstrap, /healthz\n  routes.ts         /v1/resolve, /v1/diff: validation, cache, dedup, metering\n  registry/npm.ts   packument fetch, tarball download, .d.ts extraction\n  diff/\n    symbols.ts      .d.ts to symbol table (TS compiler API)\n    compare.ts      symbol table diff to breaking changes\n    engine.ts       orchestration, @types/* fallback, confidence\n  db/\n    schema.sql      packages, versions, diffs, diff_requests_log\n    migrate.ts      applies schema\nmcp/                vdiff-mcp, the MCP server wrapping this API (published to npm)\ndocs/\n  api.md            endpoint reference, kept current with the code\n```\n\n## Tests\n\n```bash\nnpm test          # unit tests (Vitest)\nnpx tsc --noEmit  # typecheck\n```\n\n## License\n\nThe API and diff engine are licensed under the [Functional Source License, v1.1, MIT Future License](LICENSE.md) (FSL-1.1-MIT): free to use, read and modify for anything except offering a competing service, and each release automatically becomes MIT two years after publication.\n\nThe MCP server wrapper in [`mcp/`](mcp/) is [MIT licensed](mcp/LICENSE).\n",
+    "fetchedAt": "2026-08-11T23:34:48.648Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:13:32.060Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

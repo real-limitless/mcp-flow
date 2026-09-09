@@ -1,0 +1,56 @@
+{
+  "id": "io.github.surisoft-io/capi-core",
+  "title": "CAPI Gateway",
+  "description": "Apache Camel API Gateway with REST-to-MCP bridging for LLM agents.",
+  "summary": "Apache Camel API Gateway with REST-to-MCP bridging for LLM agents.",
+  "offersHint": "Apache Camel API Gateway with REST-to-MCP bridging for LLM agents. · Packages: oci:docker.io/surisoft/capi-core:1.417.5",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "oci",
+    "package": "docker.io/surisoft/capi-core:1.417.5",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "oci",
+      "package": "docker.io/surisoft/capi-core:1.417.5",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/surisoft-io/capi-core",
+  "repository": {
+    "url": "https://github.com/surisoft-io/capi-core",
+    "source": "github"
+  },
+  "updatedAt": "2026-03-03T12:14:33.866291Z",
+  "publishedAt": "2026-03-03T12:14:33.866291Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:59:51.344Z",
+    "sourceRepoAt": "2026-08-11T23:19:30.912Z",
+    "readmeAt": "2026-08-11T23:19:31.993Z",
+    "toolsAt": "2026-08-12T00:59:51.344Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/surisoft-io/capi-core",
+    "checkedAt": "2026-08-11T23:19:30.912Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/surisoft-io/capi-core/main/README.md",
+    "markdown": "<p align=\"center\">\n  <img src=\"docs/capi-logo-white.svg\" alt=\"CAPI\" width=\"20%\"/>\n</p>\n\n[![CAPI](https://github.com/surisoft-io/capi-core/actions/workflows/main.yaml/badge.svg)](https://github.com/surisoft-io/capi-core/actions/workflows/main.yml)\n[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)\n![Docker Image Version (latest by date)](https://img.shields.io/docker/v/surisoft/capi-core)\n\n<h5 align=\"center\">\n  <br>\n  <a href=\"https://github.com/surisoft-io/capi-core/issues/new?assignees=&labels=use+case&template=use_case.md&title=%5BUSECASE%5D+\">\n    <img src=\"https://dummyimage.com/1000x80/000000/ffffff.png&text=If+you+are+using+CAPI,+please+let+us+know+by+clicking+here\" alt=\"Share your use case with us\">\n  </a>\n  <br>\n</h5>\n\n# CAPI Gateway\n## _Lightweight API Gateway_\n\nCAPI is a lightweight API Gateway and load balancer built on Undertow's async proxy architecture. Services register themselves in HashiCorp Consul, and CAPI automatically discovers them, creates proxy handlers, and applies security, throttling, and observability policies — no database required.\n\n## Features\n\n* REST, WebSocket, and SSE gateway with fully async proxying (zero threads blocked during backend calls)\n* Service discovery via HashiCorp Consul (automatic route creation and removal)\n* OAuth2 / OIDC token validation (multi-provider, cookie-based auth supported)\n* API Key authentication with per-key throttling (via Consul KV)\n* Fine-grained authorization via OPA (Open Policy Agent, async policy evaluation)\n* Distributed throttling (Hazelcast, with Kubernetes discovery)\n* Load balancing (Round Robin) and Failover\n* Distributed tracing (OpenTelemetry / OTLP)\n* Prometheus metrics\n* OpenAPI spec aggregation from upstream services\n* TLS termination and dynamic truststore management (via Consul KV hot-reload)\n* CORS management\n* Admin API with health, metrics, and route inspection\n* Multi-instance support (route targeting per CAPI instance)\n* Reverse proxy headers (`X-Forwarded-*`)\n* **[Experimental]** MCP Gateway — expose services as MCP tools for LLM agents (JSON-RPC 2.0 over Streamable HTTP)\n* **[Experimental]** gRPC Gateway — transparent HTTP/2 reverse proxy for gRPC services with header-based routing\n\n## REST-to-MCP Bridging\n\nCAPI's MCP Gateway turns **any existing REST API into an MCP tool** — no code changes on your backends.\n\nRegister a service in Consul with MCP metadata, and LLM agents (Claude Desktop, Cursor, custom agents) can discover and invoke it immediately. Your REST services don't need to know anything about MCP, JSON-RPC, or tool schemas. CAPI handles the translation:\n\n```\nLLM Agent                          CAPI                          Your REST API\n                                                                 (unchanged)\n  tools/list  ──────────────►  reads Consul metadata\n              ◄──────────────  returns tool catalog\n\n  tools/call  ──────────────►  extracts arguments\n              {\"name\":\"...\"}   POST /endpoint  ──────────────►  handles request\n                               wraps response  ◄──────────────  returns JSON\n              ◄──────────────  MCP-formatted result\n```\n\nCAPI also supports **real MCP Server backends** — services that already speak JSON-RPC 2.0. Register them with `mcp-type: server` and CAPI discovers their tools automatically via `tools/list`, then proxies `tools/call` requests transparently. Both REST and MCP Server backends are aggregated under one unified MCP endpoint.\n\nUnlike dedicated MCP gateways that require all backends to be MCP Servers, CAPI bridges the gap between existing REST infrastructure and LLM-native protocols. See the [MCP Gateway docs](docs/mcp-gateway.md) and the [demo](demo/) for a working example with both backend types.\n\n## Quickstart\n\nCAPI requires the `CAPI_CONFIG_FILE` environment variable pointing to a valid configuration file.\n\n### Running from JAR\n\n```bash\nCAPI_CONFIG_FILE=config/config.yaml java -jar capi-core.jar\n```\n\n### Running with Docker\n\n```bash\ndocker run -p 8380:8380 -p 8381:8381 \\\n  -v $(pwd)/config/config.yaml:/capi/config/config.yaml \\\n  -e CAPI_CONFIG_FILE=/capi/config/config.yaml \\\n  surisoft/capi-core\n```\n\n### Running with Helm (Kubernetes)\n\nA Helm chart is available in [`helm/capi-core/`](helm/capi-core/).\n\n```bash\nhelm install capi-core helm/capi-core\n\n# With custom values\nhelm install capi-core helm/capi-core -f my-values.yaml\n\n# Enable SSL and truststore\nhelm install capi-core helm/capi-core \\\n  --set capi.ssl.enabled=true \\\n  --set capi.ssl.keystoreBase64=<base64-encoded-keystore> \\\n  --set capi.ssl.password=changeit\n```\n\nSee [`helm/capi-core/values.yaml`](helm/capi-core/values.yaml) for all available configuration options.\n\n## Ports\n\n| Port | Description | Config key |\n|------|-------------|------------|\n| 8380 | REST API gateway | `capi.rest.port` |\n| 8381 | Admin / metrics | `capi.adminPort` |\n| 8382 | WebSocket gateway | `capi.websocket.port` |\n| 8383 | MCP Gateway (experimental) | `capi.mcp.port` |\n| 8384 | gRPC Gateway (experimental) | `capi.grpc.port` |\n\n## Running Modes\n\nThe `runningMode` field controls which types of services CAPI will proxy:\n\n| Mode | Description |\n|------|-------------|\n| `full` | Proxies REST, WebSocket, and SSE services (default) |\n| `websocket` | Only proxies WebSocket services |\n| `sse` | Only proxies SSE services |\n\n## Documentation\n\n| Document | Description |\n|----------|-------------|\n| [Service Registration](docs/consul-metadata.md) | How to register services in Consul and configure routing, security, and throttling via metadata |\n| [Security](docs/security.md) | OAuth2/OIDC and OPA authorization configuration |\n| [Admin API](docs/admin-api.md) | Admin endpoints reference (health, metrics, routes, OpenAPI) |\n| [Configuration Reference](docs/configuration.md) | Complete YAML configuration reference with all fields |\n| [MCP Gateway (Experimental)](docs/mcp-gateway.md) | MCP Gateway for LLM tool integration via JSON-RPC 2.0 |\n| [gRPC Gateway (Experimental)](docs/grpc-gateway.md) | Transparent gRPC reverse proxy with header-based routing |",
+    "fetchedAt": "2026-08-11T23:19:31.993Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:59:51.344Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

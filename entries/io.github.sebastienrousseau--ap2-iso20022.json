@@ -1,0 +1,58 @@
+{
+  "id": "io.github.sebastienrousseau/ap2-iso20022",
+  "title": "ap2-iso20022",
+  "description": "Bridge AP2 / x402 agent-payment mandates into wire-valid ISO 20022 pain.001 / pacs.008 records.",
+  "summary": "Bridge AP2 / x402 agent-payment mandates into wire-valid ISO 20022 pain.001 / pacs.008 records.",
+  "offersHint": "Bridge AP2 / x402 agent-payment mandates into wire-valid ISO 20022 pain.001 / pacs.008 records. · Packages: pypi:ap2-iso20022",
+  "version": "0.0.2",
+  "status": "active",
+  "transport": "stdio",
+  "install": {
+    "kind": "pypi",
+    "package": "ap2-iso20022",
+    "version": "0.0.2",
+    "transport": "stdio"
+  },
+  "packages": [
+    {
+      "kind": "pypi",
+      "package": "ap2-iso20022",
+      "version": "0.0.2",
+      "transport": "stdio"
+    }
+  ],
+  "flags": [
+    "stdio"
+  ],
+  "sourceUrl": "https://github.com/sebastienrousseau/ap2-iso20022",
+  "repository": {
+    "url": "https://github.com/sebastienrousseau/ap2-iso20022",
+    "source": "github"
+  },
+  "updatedAt": "2026-07-29T07:32:41.395813Z",
+  "publishedAt": "2026-07-29T07:32:41.395813Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:02:13.268Z",
+    "sourceRepoAt": "2026-08-11T23:22:11.727Z",
+    "readmeAt": "2026-08-11T23:22:12.365Z",
+    "toolsAt": "2026-08-12T01:02:13.268Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/sebastienrousseau/ap2-iso20022",
+    "checkedAt": "2026-08-11T23:22:11.727Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/sebastienrousseau/ap2-iso20022/main/README.md",
+    "markdown": "# ap2-iso20022: Agent-payment mandates → wire-valid ISO 20022\n\n**Bridge [AP2][ap2] (Google's Agent Payments Protocol) and [x402][x402]\n(Coinbase's HTTP-402) mandates into ISO 20022 `pain.001` / `pacs.008` records —\nwith spending-cap, expiry and authorisation guardrails, and an [MCP][mcp]\nserver.** These agentic-payment protocols authorise a payment; this library\nturns that authorisation into the **bank-rail message that actually settles it**\n— the rail the card networks and stablecoins don't cover.\n\n> **Latest release: v0.0.1** — 5 MCP tools over stdio, pure-Python (only `mcp`),\n> 100% branch coverage, for Python 3.10+. Output feeds straight into\n> [`pain001`][pain001-mcp] / [`pacs008`][pacs008-mcp] to generate wire-valid XML.\n> Part of the [ISO 20022 MCP suite](#the-suite).\n\n## Why\n\nAn agent with a signed AP2 mandate (or an x402 payment authorisation) can prove\n*it's allowed to pay* — but nothing in those protocols emits the `pain.001` a\nbank needs to move the money. `ap2-iso20022` is that missing hop. And because\nmoving money is consequential, it **only transforms and validates** — producing\nthe ISO record is deliberately separate from generating and sending it, so the\nactual payment stays an explicit, guarded step.\n\n## Install\n\n```sh\npip install ap2-iso20022\n# or run the MCP server without installing:\nuvx ap2-iso20022\n```\n\nMCP client config (e.g. Claude Desktop):\n\n```json\n{\n  \"mcpServers\": {\n    \"ap2-iso20022\": {\n      \"command\": \"ap2-iso20022-mcp\"\n    }\n  }\n}\n```\n\n## Flow: normalise → guardrail → convert\n\n```python\nfrom ap2_iso20022 import bridge\n\n# 1. Normalise the protocol payload into a canonical mandate.\nmandate = bridge.from_ap2({\n    \"intent_id\": \"AP2-CoffeeRun-7\",\n    \"payer\": \"Alice's Shopping Agent\",\n    \"payer_account\": \"DE89370400440532013000\",\n    \"merchant_name\": \"Blue Bottle Coffee\",\n    \"payee_account\": \"GB29NWBK60161331926819\",\n    \"amount\": \"12.50\", \"currency\": \"EUR\", \"memo\": \"oat latte\",\n    \"spending_limit\": \"50.00\",\n    \"signature\": \"eyJ...\", \"signature_type\": \"jws\",\n})\n\n# 2. Guardrail before it becomes a payment.\ncheck = bridge.check_mandate(mandate, as_of=\"2026-03-02T09:00:00\")\nassert check[\"ok\"]          # required fields ok, within cap, not expired, signed\n\n# 3. Convert to a pain.001 record that feeds pain001 -> wire-valid XML.\nrecord = bridge.to_pain001(mandate)   # exact pain001 field names + JSON number amounts\n```\n\n## Tools\n\n- `normalize_ap2` — AP2 mandate payload → canonical mandate.\n- `normalize_x402` — x402 payment payload → canonical mandate.\n- `check_mandate` — Guardrail: required fields, spending cap, expiry (with `as_of`), authorisation proof.\n- `to_pain001` — Canonical mandate → `pain.001` record (customer credit transfer).\n- `to_pacs008` — Canonical mandate → `pacs.008` record (FI-to-FI).\n\nThe output field names and types match what `pain001` / `pacs008` expect\n(validated against their JSON schemas), so `to_pain001(mandate)` → pain001\n`generate_message` → XSD-valid pain.001 with no glue.\n\n## Guardrails\n\n`check_mandate` returns `{ok, violations, warnings}`:\n- **required fields** — payer/payee name + account, amount, currency\n- **spending cap** — `amount <= max_amount` when a cap is present\n- **expiry** — refuses an expired mandate when you pass `as_of`\n- **authorisation proof** — warns when no `proof_type`/`proof_value` is present\n\nIt never moves money; it tells you whether the mandate is safe to act on.\n\n## The suite\n\nPart of a family of vendor-neutral, Python-native ISO 20022 MCP servers:\n\n- [`iso20022-mcp`][iso20022-mcp] — unified gateway across the families.\n- [`pain001-mcp`][pain001-mcp] · [`pacs008-mcp`][pacs008-mcp] — generate the XML this bridge feeds.\n- [`reconcile-mcp`][reconcile-mcp] — statement/payment reconciliation.\n- [`camt-exceptions`][camt-exceptions] — E&I messages (cancellation, investigation).\n\n## Development\n\n```sh\ngit clone https://github.com/sebastienrousseau/ap2-iso20022\ncd ap2-iso20022\npython -m venv .venv && . .venv/bin/activate\npip install -e . && pip install pytest pytest-cov ruff black mypy\npytest                      # 100% branch coverage gate\nruff check ap2_iso20022 tests && black --check ap2_iso20022 tests && mypy ap2_iso20022\n```\n\n## Licence\n\nLicensed under the [Apache License, Version 2.0](LICENSE).\n\n---\n\n`mcp-name: io.github.sebastienrousseau/ap2-iso20022`\n\n[mcp]: https://modelcontextprotocol.io\n[ap2]: https://github.com/google-agentic-commerce/AP2\n[x402]: https://www.x402.org\n[iso20022-mcp]: https://github.com/sebastienrousseau/iso20022-mcp\n[pain001-mcp]: https://github.com/sebastienrousseau/pain001-mcp\n[pacs008-mcp]: https://github.com/sebastienrousseau/pacs008-mcp\n[reconcile-mcp]: https://github.com/sebastienrousseau/reconcile-mcp\n[camt-exceptions]: https://github.com/sebastienrousseau/camt-exceptions\n",
+    "fetchedAt": "2026-08-11T23:22:12.365Z"
+  },
+  "toolsPreviewAt": "2026-08-12T01:02:13.268Z",
+  "toolsPreviewError": "no endpointUrl",
+  "toolsPreviewStatus": "unsupported"
+}

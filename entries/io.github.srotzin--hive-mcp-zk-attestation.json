@@ -1,0 +1,85 @@
+{
+  "id": "io.github.srotzin/hive-mcp-zk-attestation",
+  "title": "Hive Zk Attestation",
+  "description": "Zero-knowledge attestation for agent capability and trust score claims",
+  "summary": "Zero-knowledge attestation for agent capability and trust score claims",
+  "offersHint": "Zero-knowledge attestation for agent capability and trust score claims · Remote MCP (streamable-http) at https://hive-mcp-zk-attestation.onrender.com/mcp",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://hive-mcp-zk-attestation.onrender.com/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hive-mcp-zk-attestation.onrender.com/mcp"
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "homepage": "https://www.hiveagentiq.com",
+  "sourceUrl": "https://github.com/srotzin/hive-mcp-zk-attestation",
+  "repository": {
+    "url": "https://github.com/srotzin/hive-mcp-zk-attestation",
+    "source": "github"
+  },
+  "updatedAt": "2026-04-28T23:48:15.726041Z",
+  "publishedAt": "2026-04-28T23:48:15.726041Z",
+  "provenance": "official-registry",
+  "enrichment": {
+    "normalizedAt": "2026-08-12T01:00:37.083Z",
+    "sourceRepoAt": "2026-08-11T23:20:02.581Z",
+    "readmeAt": "2026-08-11T23:20:03.286Z",
+    "toolsAt": "2026-08-11T23:20:03.394Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/srotzin/hive-mcp-zk-attestation",
+    "checkedAt": "2026-08-11T23:20:02.581Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/srotzin/hive-mcp-zk-attestation/main/README.md",
+    "markdown": "# hive-mcp-zk-attestation\n\n[![srotzin/hive-mcp-zk-attestation MCP server](https://glama.ai/mcp/servers/srotzin/hive-mcp-zk-attestation/badges/score.svg)](https://glama.ai/mcp/servers/srotzin/hive-mcp-zk-attestation)\n\nVerifiable agent state attestations for the autonomous agent economy. RFC-stage v0.1.1.\n\nA Model Context Protocol shim that lets any autonomous agent emit a zero-knowledge attestation of its internal state hash and DID. The primary verification target is Aleo snarkVM (Varuna over BLS12-377), with native Hive verification next, and Risc0 / Plonky2 referenced as future research targets. Attestation-only. No asset bridging. No custody. No wrapped value.\n\nBrand colour: Hive Civilization gold `#C08D23`.\n\n## What this is\n\nAn attestation primitive for autonomous agents. The shim exposes five MCP tools that together let one agent prove to another agent — or to a regulator, counterparty, or auditor — that:\n\n1. The first agent was in a specific internal state, identified by a 32-byte hash.\n2. The state was held by a specific DID.\n3. A commitment to that proof has been anchored to Base at a known block.\n4. The verification path is reproducible against a public, ecosystem-neutral verifier.\n\nThe agent never reveals its state. The verifier never learns more than the boolean result and the public inputs. The audit trail is anchored on a public chain. The verification key is portable to compatible verifiers — primarily Aleo snarkVM via Leo.\n\n## Why it exists\n\nAutonomous agents transact, hold state, and make decisions on behalf of users. Existing agent-to-agent protocols — MCP, A2A, ACP — assume the agent is willing to publish what it knows. That assumption breaks the moment two agents need to negotiate without leaking inventory, model weights, prompt history, or counterparty positions.\n\nZero-knowledge proofs are the standard cryptographic answer. The plumbing has not been wired into the MCP / A2A surface that agent runtimes already speak. This shim is that wiring.\n\n## Interop targets\n\nHonest priority order. Every name below is a public, ecosystem-neutral verifier or a research direction. There is no co-branding, no partnership, and no shared roadmap with any of these projects.\n\n1. **Aleo snarkVM (Varuna over BLS12-377)** — primary. Aleo's native proof system is Varuna (a Marlin/AHP variant using KZG10 over BLS12-377). On-chain verification happens inside snarkVM via the `snark.verify` opcode (`synthesizer/program/src/logic/instruction/operation/snark_verify.rs`), which accepts Varuna proofs and verification keys. The TypeScript SDK `@provablehq/sdk` exposes `VerifyingKey.verify()` for client-side checks. Mainnet endpoint: `https://api.provable.com/v2`.\n2. **Native Hive verification** — proofs verified server-side at the Hive backend. Not yet rails-live; ships when the v0.1 spec is finalized and `/v1/zk/*` publishes.\n3. **Risc0** — researched, not implemented. Future verification target.\n4. **Plonky2** — researched, not implemented. Future verification target.\n\n### Architecture\n\n```\n┌─────────────┐    state hash + DID     ┌────────────────────────┐\n│ Agent (any) │ ─────────────────────▶  │  zk_attest_agent_state │\n└─────────────┘                         │  (attestation payload) │\n                                        └─────────────┬──────────┘\n                                                      │ commitment\n                                                      ▼\n                                        ┌────────────────────────┐\n                                        │  zk_anchor_to_base     │\n                                        │  commitment → Base L2  │\n                                        └─────────────┬──────────┘\n                                                      │ tx_hash\n                                                      ▼\n                                        ┌────────────────────────┐\n                                        │  Base L2 (anchor)      │\n                                        └─────────────┬──────────┘\n                                                      │\n                attestation consumed by               │\n                downstream verifier                   │\n                                                      ▼\n            ┌──────────────────────┬─────────────────────────┐\n            │  Aleo snarkVM        │  Native Hive backend    │\n            │  (Varuna/BLS12-377   │  (verification at       │\n            │  via Leo programs in │   hivemorph; not yet    │\n            │  hive-leo-circuits   │   rails-live)           │\n            │  — future repo)      │                         │\n            └──────────────────────┴─────────────────────────┘\n```\n\nHive emits the attestation. Base anchors the commitment. Verification happens either (a) inside snarkVM via Leo programs that consume the attestation and call `snark.verify` against a Varuna verification key, or (b) inside the Hive backend once `/v1/zk/*` publishes. The Leo programs themselves will live in a separate `hive-leo-circuits` repository — that repo is future work and is not part of this shim.\n\n### Future research (Groth16 / Plonk)\n\nEarlier drafts of this shim referenced Groth16 over BN254 and Plonk as if they were first-class. They are not. Aleo's mainnet verification path is Varuna over BLS12-377, and a generic Groth16/BN254 → BLS12-377 verifier inside snarkVM would be roughly two million constraints — researched, not shipped. Groth16 and Plonk remain in this repo only as research-stage references for hypothetical bring-your-own-verifier integrations.\n\n## Known gotchas\n\nThe whole point of v0.1.1 is honesty about where the integration actually is. Read this section before integrating.\n\n- **BLS12-377 keypair separation.** Aleo accounts are BLS12-377 scalar-field keypairs. They are not interoperable with the Base (W1) or Solana (B1) keys an agent may already hold. An agent that wants to verify attestations on Aleo needs a separate Aleo account.\n- **No native Groth16 verification on Aleo today.** A Groth16/BN254 proof cannot be verified inside snarkVM without a curve-translation circuit (~2M constraints). That circuit is researched, not implemented, and is not part of this shim.\n- **Leo deployment cost.** Deploying a Leo program to Aleo mainnet costs roughly 1.5 to 2 ALEO credits per program. The forthcoming `hive-leo-circuits` repository will carry that cost; this shim does not.\n- **Backend is RFC-stage.** Every paid tool returns 503 backend_pending until `/v1/zk/*` publishes. The tool surface, costs, and circuit catalog are stable across the v0.1 RFC.\n- **Attestation, not bridge.** No value moves between Base and Aleo. The shim emits proofs and commitments; nothing is wrapped, mirrored, or escrowed.\n\n## What this is NOT\n\nStated explicitly so there is no ambiguity:\n\n- **Not a bridge.** No value, no token, no wrapped asset crosses any chain. The shim emits proofs and commitments, not balances.\n- **Not a custody layer.** The shim never holds keys for any chain on behalf of the caller. It does not hold user funds, token balances, or signing authority.\n- **Not a regulated activity.** Emitting a hash commitment to a public chain is not money transmission, securities issuance, or a regulated payment service.\n- **Not a partner integration.** Aleo snarkVM, Risc0, and Plonky2 are interoperability targets — public open-source verifiers. There is no co-branding, no joint product, no shared roadmap, no Aleo logo usage, and no \"powered by Aleo\" claim.\n- **Not a product for any specific industry vertical.** The primitive is commercial dual-use: any autonomous agent that needs verifiable private state can use it.\n\n## Threat model\n\nThe shim is designed against three concrete threats:\n\n1. **Agent state confidentiality.** An agent must be able to prove a fact about its state without revealing the state. Standard zk-SNARK construction; the shim simply exposes it through the MCP surface.\n2. **Counterparty proof-of-honesty.** When two agents negotiate, each can demand a proof that the other is in a state consistent with the negotiation, without either side opening its book.\n3. **Audit trail without exposure.** Compliance-conscious operators can publish proof commitments to Base while keeping the underlying state private. The audit trail is verifiable; the data is not exposed.\n\nThe shim does not defend against: a compromised agent forging its own state hash before proving it (garbage in, valid proof of garbage out), or a verifier choosing to trust an unrelated verification key. Both are upstream of this primitive.\n\n## Tools\n\n| Tool                     | Cost                      | Status                |\n|--------------------------|---------------------------|-----------------------|\n| `zk_attest_agent_state`  | $0.05 USDC on Base        | 503 backend pending   |\n| `zk_verify_proof`        | Free                      | 503 backend pending   |\n| `zk_anchor_to_base`      | $0.02 USDC + L1 gas       | 503 backend pending   |\n| `zk_list_circuits`       | Free                      | 503 backend pending (stable circuit catalog returned inline) |\n| `zk_query_attestation`   | Free                      | 503 backend pending   |\n\nThe backend at `https://hivemorph.onrender.com/v1/zk/*` is RFC-stage. Until it ships, every paid tool returns:\n\n```json\n{\n  \"error\": \"backend_pending\",\n  \"retry_after\": 86400,\n  \"message\": \"zk attestation rails are RFC-stage. Backend endpoints publish when the spec is finalized. Tool surface, costs, and circuit list are stable.\"\n}\n```\n\nThe MCP shim, tool surface, costs, and circuit catalog are stable across the v0.1 RFC. Calling agents can integrate now and consume attestations the moment the backend is live.\n\n### Settlement\n\nReal Base USDC. No mocks, no testnet, no simulated settlement. Recipient (canonical Hive treasury, EVM): `0x15184bf50b3d3f52b60434f8942b7d52f2eb436e`. Pricing is denominated in USDC; payment is collected via x402 PaymentRequired (HTTP 402) on the paid tools.\n\n## Usage\n\n```bash\ngit clone https://github.com/srotzin/hive-mcp-zk-attestation\ncd hive-mcp-zk-attestation\nnpm install\nnode server.js\n```\n\nThen point any MCP client at `http://localhost:3000/mcp`. Discovery endpoints:\n\n- `GET /health` — health probe\n- `GET /.well-known/mcp.json` — MCP manifest\n- `GET /.well-known/agent.json` — A2A AgentCard\n- `GET /.well-known/oac.json` — Open Agent Card JSON-LD\n\n### Example: list circuits\n\n```bash\ncurl -s -X POST http://localhost:3000/mcp \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"zk_list_circuits\",\"arguments\":{}}}'\n```\n\nWhile the backend is RFC-stage, this returns the stable circuit catalog inline.\n\n## License\n\nMIT. See [LICENSE](./LICENSE).\n\n<!-- HIVE-GAMIFICATION-META-START -->\n## Hive Gamification\n\nThis MCP server is part of the Hive Civilization gamification surface (10-mechanic capability taxonomy).\n\n- Capability taxonomy: https://hive-gamification.onrender.com/.well-known/hive-gamification.json\n- Centrifuge dashboard: https://hive-gamification.onrender.com/.well-known/hive-centrifuge.json\n- Consolidated OpenAPI: https://hive-gamification.onrender.com/.well-known/openapi.json\n\n**Surface tags:** `gamification.spec.v1` · `gamification.surface.public` · `gamification.signal.read-only` · `gamification.settlement.real-rails`\n\nReal rails on Base L2 (USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`). Read-only signal layer. Brand gold `#C08D23`.\n<!-- HIVE-GAMIFICATION-META-END -->\n\n## Hive Civilization Directory\n\nPart of the Hive Civilization — agent-native financial infrastructure.\n\n- Endpoint Directory: https://thehiveryiq.com\n- Live Leaderboard: https://hive-a2amev.onrender.com/leaderboard\n- Revenue Dashboard: https://hivemine-dashboard.onrender.com\n- Other MCP Servers: https://github.com/srotzin?tab=repositories&q=hive-mcp\n\nBrand: #C08D23\n<!-- /hive-footer -->\n",
+    "fetchedAt": "2026-08-11T23:20:03.286Z"
+  },
+  "toolsPreview": [
+    {
+      "name": "zk_attest_agent_state",
+      "description": "Produce a zero-knowledge attestation of an agent state hash + DID. Primary verification target is Aleo snarkVM (Varuna over BLS12-377); native Hive verification is next. Attestation-only — emits a proof, not a token; no value crosses chains. Cost: $0.05 USDC on Base. Backend RFC-stage; returns backend_pending until rails land."
+    },
+    {
+      "name": "zk_verify_proof",
+      "description": "Verify a submitted attestation against a known verification key. Aleo snarkVM (Varuna/BLS12-377) is the primary verification target via the snark.verify opcode. Returns boolean validity plus the verification key fingerprint. Free. Read-only — no settlement, no on-chain write."
+    },
+    {
+      "name": "zk_anchor_to_base",
+      "description": "Write an attestation commitment (32-byte hash) to Base via the Hive gateway. Anchors the attestation only; does not bridge value or move state to Aleo. Aleo snarkVM consumes the attestation independently via Leo programs (future hive-leo-circuits repo). Cost: $0.02 USDC + L1 gas. Backend RFC-stage; returns backend_pending until rails land."
+    },
+    {
+      "name": "zk_list_circuits",
+      "description": "Enumerate supported circuits and verification key fingerprints. Primary: Varuna over BLS12-377 (Aleo snarkVM-compatible). Research-stage: Groth16, Plonk. Future: Risc0, Plonky2. Free. Read-only."
+    },
+    {
+      "name": "zk_query_attestation",
+      "description": "Fetch a previously-anchored attestation by Base transaction hash. Returns the proof commitment, verification key id, agent DID, and block number. Free. Read-only."
+    },
+    {
+      "name": "hive_earn_register",
+      "description": "Register an agent for the Hive Civilization attribution payout program. Settlement on real Base USDC. 5% kickback on attributed traffic, weekly payout. Calls POST https://hivemorph.onrender.com/v1/earn/register on behalf of the caller. Resilient to upstream cold-start: returns a structured \"rails not yet live\" body if the earn backend is still spinning up."
+    },
+    {
+      "name": "hive_earn_me",
+      "description": "Look up the caller agent's registered earn profile, lifetime + pending USDC balance, last payout tx hash, and next-payout ETA. Real Base USDC, no mock data. Calls GET https://hivemorph.onrender.com/v1/earn/me?agent_did=<did>. Returns \"rails not yet live\" gracefully if upstream is not yet deployed."
+    },
+    {
+      "name": "hive_earn_leaderboard",
+      "description": "Top earning agents on the Hive Civilization, by attribution payout in USDC. Real Base USDC settlement. Calls GET https://hivemorph.onrender.com/v1/earn/leaderboard?window=<window>. Returns \"rails not yet live\" gracefully if upstream is not yet deployed."
+    }
+  ],
+  "toolsPreviewAt": "2026-08-11T23:20:03.394Z",
+  "toolsPreviewStatus": "ok"
+}

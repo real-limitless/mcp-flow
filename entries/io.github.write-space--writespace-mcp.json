@@ -1,0 +1,71 @@
+{
+  "id": "io.github.write-space/writespace-mcp",
+  "title": "writespace-mcp",
+  "description": "Persistent docs and memory for AI agents — read, write, organize & search a shared workspace.",
+  "summary": "Persistent docs and memory for AI agents — read, write, organize & search a shared workspace.",
+  "offersHint": "Persistent docs and memory for AI agents — read, write, organize & search a shared workspace. · Remote MCP (streamable-http) at https://app.writespace.io/mcp · Requires headers: Authorization",
+  "version": "1.0.0",
+  "status": "active",
+  "transport": "streamable-http",
+  "endpointUrl": "https://app.writespace.io/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://app.writespace.io/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Personal access token from Settings → API tokens, sent as 'Bearer ws_pat_…'",
+          "secret": true,
+          "required": true
+        }
+      ]
+    }
+  ],
+  "flags": [
+    "remote"
+  ],
+  "sourceUrl": "https://github.com/write-space/writespace-mcp",
+  "repository": {
+    "url": "https://github.com/write-space/writespace-mcp",
+    "source": "github",
+    "id": "1265820631"
+  },
+  "updatedAt": "2026-06-18T11:41:48.171802Z",
+  "publishedAt": "2026-06-18T11:41:48.171802Z",
+  "provenance": "official-registry",
+  "requiresHeaders": [
+    "Authorization"
+  ],
+  "headerDocs": [
+    {
+      "name": "Authorization",
+      "description": "Personal access token from Settings → API tokens, sent as 'Bearer ws_pat_…'",
+      "secret": true,
+      "required": true
+    }
+  ],
+  "enrichment": {
+    "normalizedAt": "2026-08-12T00:55:56.232Z",
+    "sourceRepoAt": "2026-08-11T23:14:52.868Z",
+    "readmeAt": "2026-08-11T23:14:53.433Z",
+    "toolsAt": "2026-08-12T00:55:56.232Z",
+    "complete": true
+  },
+  "sourceRepo": {
+    "status": "ok",
+    "url": "https://github.com/write-space/writespace-mcp",
+    "checkedAt": "2026-08-11T23:14:52.868Z",
+    "httpStatus": 200,
+    "host": "github"
+  },
+  "readme": {
+    "source": "github",
+    "url": "https://raw.githubusercontent.com/write-space/writespace-mcp/main/README.md",
+    "markdown": "# Writespace MCP Server\n\nA remote, hosted [Model Context Protocol](https://modelcontextprotocol.io) server for [Writespace](https://writespace.io) — a real-time collaborative document editor. Give Claude, ChatGPT, Gemini, Cursor, or any MCP-speaking agent a shared docs workspace it can read, write, organise and search alongside you.\n\n**Endpoint:** `https://app.writespace.io/mcp` (HTTP transport, Bearer auth)\n**Free tier:** yes — up to 10 documents, no card required → [sign up](https://app.writespace.io/signup)\n\n## What it does\n\nWritespace is a markdown-first doc editor for humans with an MCP server built in for agents. Every action you can take in the app is exposed as a tool your model can call:\n\n- **Read** — walk the workspace tree, fetch any doc as lossless JSON _or_ markdown, run ranked full-text search (drop it straight into your agent as RAG retrieval)\n- **Write** — create docs, append content, replace a single section by its heading, shallow-merge structured metadata\n- **Organise** — create/rename/move folders, move docs, query docs by metadata (`{ status: \"accepted\" }`)\n\nAgent writes broadcast over Realtime, so open editors reload live. Humans and agents work on the same canvas — no export step, no format negotiation.\n\n## Quick start\n\nThree steps, two minutes:\n\n1. **Get a token** — sign in at [app.writespace.io](https://app.writespace.io), open **Settings → API tokens**, create a token (shown once, revocable any time).\n2. **Endpoint** — one hosted endpoint for all accounts: `https://app.writespace.io/mcp`\n3. **Configure your client** — snippets below.\n\n### Claude Code (CLI)\n\n```bash\nclaude mcp add --transport http writespace \\\n  https://app.writespace.io/mcp \\\n  --header \"Authorization: Bearer ws_pat_YOUR_TOKEN_HERE\"\n```\n\n### Claude Desktop\n\n`~/Library/Application Support/Claude/claude_desktop_config.json`\n\nClaude Desktop's config supports only **local (stdio)** servers, so a remote HTTP\nserver is bridged through [`mcp-remote`](https://www.npmjs.com/package/mcp-remote),\nwhich Claude Desktop launches locally and which forwards to the endpoint:\n\n```json\n{\n  \"mcpServers\": {\n    \"writespace\": {\n      \"command\": \"npx\",\n      \"args\": [\n        \"-y\",\n        \"mcp-remote\",\n        \"https://app.writespace.io/mcp\",\n        \"--header\",\n        \"Authorization:${AUTH_HEADER}\"\n      ],\n      \"env\": {\n        \"AUTH_HEADER\": \"Bearer ws_pat_YOUR_TOKEN_HERE\"\n      }\n    }\n  }\n}\n```\n\nNotes:\n\n- The token goes in the `AUTH_HEADER` env var (and `--header Authorization:${AUTH_HEADER}` with **no space** after the colon) because `mcp-remote` mishandles spaces in `--header` arguments.\n- Claude Desktop launches with a minimal `PATH`. If `npx` isn't found, use its absolute path (e.g. `/usr/local/bin/npx`, or your nvm path) — and add a matching `\"PATH\"` entry to `env` if it relies on a versioned `node`.\n- Fully quit and reopen Claude Desktop (Cmd-Q) after editing — the config is read only at launch.\n\n### Cursor\n\nSettings → MCP → Add server\n\n```\nType:    HTTP\nURL:     https://app.writespace.io/mcp\nHeader:  Authorization: Bearer ws_pat_YOUR_TOKEN_HERE\n```\n\n### Gemini CLI\n\n`~/.gemini/settings.json`\n\n```json\n{\n  \"mcpServers\": {\n    \"writespace\": {\n      \"httpUrl\": \"https://app.writespace.io/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer ws_pat_YOUR_TOKEN_HERE\"\n      }\n    }\n  }\n}\n```\n\nAny other spec-compliant MCP client works the same way: HTTP transport + `Authorization: Bearer` header.\n\n## Tools\n\nEvery tool except `list_workspaces` takes a `workspace_id` — call `list_workspaces` first to discover them.\n\n| Tool              | Description                                                               |\n| ----------------- | ------------------------------------------------------------------------- |\n| `list_workspaces` | List every workspace you belong to                                        |\n| `list_folders`    | List folders, optionally nested under a parent                            |\n| `list_docs`       | List documents, optionally scoped to a folder; returns metadata per row   |\n| `get_doc`         | Fetch a doc by ID — canonical Tiptap JSON + markdown rendering + metadata |\n| `search`          | Ranked full-text search with `<<match>>` snippets                         |\n| `query_docs`      | Find docs whose metadata contains a JSON object (Postgres JSONB `@>`)     |\n| `create_doc`      | Create a doc from Tiptap JSON or markdown                                 |\n| `update_doc`      | Update title, content, or metadata (shallow-merge; `null` deletes a key)  |\n| `upsert_doc`      | Create-or-update by title within an optional folder — idempotent          |\n| `append_to_doc`   | Append markdown / Tiptap JSON to an existing doc                          |\n| `replace_section` | Replace a section's body by its heading text — surgical edits             |\n| `delete_doc`      | Delete a doc by ID                                                        |\n| `move_doc`        | Move a doc to another folder (`folder_id: null` → root)                   |\n| `create_folder`   | Create a folder, optionally nested                                        |\n| `rename_folder`   | Rename a folder — IDs stay stable, links don't break                      |\n| `delete_folder`   | Delete a folder and its contents                                          |\n\nFull reference with format notes and troubleshooting: [writespace.io/connect](https://writespace.io/connect)\n\n## Design notes\n\n- **Lossless content, two formats** — reads return both `content` (Tiptap JSON) and `content_markdown`; writes accept either. Markdown round-trips for everything the editor supports, including tables, task lists, and mermaid diagrams.\n- **Lean write responses** — write tools return only metadata by default, saving 80–95% of the payload on long docs. Pass `include_content: true` to echo the body.\n- **Structured metadata** — every doc carries a JSONB `metadata` field. Treat it as queryable frontmatter: write it, shallow-merge it, query by containment.\n- **Stable cross-doc links** — reference docs as `writespace://doc/<id>`; IDs survive renames and moves.\n- **Live reload** — MCP writes notify open editors over Realtime; they refetch in the same tab.\n\n## Use cases\n\n- [MCP docs server](https://writespace.io/mcp-docs-server) — a docs backend your agents treat as a tool\n- [Shared docs for Claude](https://writespace.io/docs-for-claude) — persistent memory and notes for Claude\n- [Shared docs for ChatGPT](https://writespace.io/docs-for-chatgpt) — same workspace, different model\n- [MCP knowledge base](https://writespace.io/mcp-knowledge-base) — searchable team knowledge any agent can query\n\n## Auth & security\n\n- Per-agent personal access tokens, issued and revoked from Settings — scoped to your account, easy to rotate\n- Tokens are shown once at creation\n- Standard `Authorization: Bearer ws_pat_…` header; spec-compliant HTTP transport\n\n## Links\n\n- Website: [writespace.io](https://writespace.io)\n- App: [app.writespace.io](https://app.writespace.io)\n- Setup & full tool reference: [writespace.io/connect](https://writespace.io/connect)\n- Contact: hello@writespace.io\n\n---\n\n© 2026 Writespace · Pro is $5/user/month, free tier available.\n",
+    "fetchedAt": "2026-08-11T23:14:53.433Z"
+  },
+  "toolsPreviewAt": "2026-08-12T00:55:56.232Z",
+  "toolsPreviewError": "Streamable HTTP error: Error POSTing to endpoint: {\"error\":\"invalid or missing personal access token\"}",
+  "toolsPreviewStatus": "unreachable"
+}
