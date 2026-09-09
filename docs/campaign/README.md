@@ -25,8 +25,8 @@ Manual: open a frame in a browser at 100% zoom and screenshot the 1440×900 `#fr
 
 ## Story
 
-1. **Hero** — one MCP endpoint; harnesses get URL + agent key only  
-2. **Why** — stop treating every laptop as a secret store  
-3. **Gateway** — control plane + placement fan-out  
-4. **Library** — admin-owned backends with sealed secrets  
-5. **Operator** — TUI/CLI day-2 + enterprise defaults  
+1. **Hero**: one MCP endpoint; harnesses get URL + agent key only  
+2. **Why**: stop treating every laptop as a secret store  
+3. **Gateway**: control plane + placement fan-out  
+4. **Library**: admin-owned backends with sealed secrets  
+5. **Operator**. TUI/CLI day-2 + enterprise defaults  

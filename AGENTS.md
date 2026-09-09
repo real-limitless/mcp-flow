@@ -1,6 +1,6 @@
-# mcp-flow — agent guide
+# mcp-flow: agent guide
 
-Self-hosted **MCP workspace gateway** + **official-registry catalog** + **static GitHub Pages gallery**. Dual-tracked with OpenFlow and ProjectEverflow.
+Self-hosted **MCP workspace gateway** + **official-registry catalog** + **static GitHub Pages gallery**. OpenFlow and Everflow consume the catalog.
 
 Stack: **TypeScript / Node ≥ 22**, Hono HTTP, MCP SDK, SQLite (`node:sqlite`), AES-256-GCM vault.
 
@@ -15,19 +15,19 @@ Stack: **TypeScript / Node ≥ 22**, Hono HTTP, MCP SDK, SQLite (`node:sqlite`),
 | **Site** | Campaign-styled static HTML that `fetch`es catalog JSON (no 20k prebuilt pages) |
 | **Consumers** | Agents/IDEs → gateway; OpenFlow → gallery palette; Everflow → marketplace allowlist → backends |
 
-**Priority: gateway-first.** Catalog/site support the dual-track; do not block gateway fixes for gallery polish.
+**Priority: gateway-first.** Catalog and site support the consumers. Do not block gateway fixes for gallery polish.
 
 ---
 
 ## Hard rules
 
-1. **Never commit secrets** — no live API keys, master keys, decrypted headers/env, or `.env`. Redact in logs and tool results.
-2. **Catalog never stores secret values** — header *names*, `valueTemplate` (e.g. `Bearer {api_key}`), env *names* only.
-3. **Schema bumps** — changing `McpGalleryEntry` requires `catalog/schema.json` + `CATALOG_SCHEMA_VERSION` in `src/catalog/types.ts` (and consumer awareness). Current: **1.2.0**.
+1. **Never commit secrets**: no live API keys, master keys, decrypted headers/env, or `.env`. Redact in logs and tool results.
+2. **Catalog never stores secret values**: header *names*, `valueTemplate` (e.g. `Bearer {api_key}`), env *names* only.
+3. **Schema bumps**: changing `McpGalleryEntry` requires `catalog/schema.json` + `CATALOG_SCHEMA_VERSION` in `src/catalog/types.ts` (and consumer awareness). Current: **1.2.0**.
 4. **Stable allowlist id** = registry `server.name` → entry `id`.
 5. **Placement** is first-class: `remote` | `central-sandbox` | `edge-sandbox` | `edge-bare`. Edge-bare requires workspace `allowEdgeBare`.
-6. **Enterprise defaults** — deny edge-bare; no unrestricted enable-any-URL in enterprise mode.
-7. **Do not scrape competitor marketplaces** (e.g. mcpmarket) as catalog SoT — official registry + public GitHub/GitLab + live MCP probe only.
+6. **Enterprise defaults**: deny edge-bare; no unrestricted enable-any-URL in enterprise mode.
+7. **Do not scrape competitor marketplaces** (e.g. mcpmarket) as catalog SoT: official registry + public GitHub/GitLab + live MCP probe only.
 8. **Do not commit** `catalog/entries/`, `catalog/index.json`, or `site/out/` (gitignored). Publish data via **`catalog-data` branch** or CI.
 9. **No force-push `main`**, no commit unless the user asks.
 10. Prefer shared contracts/fixtures with OpenFlow over silent drift.
@@ -55,7 +55,7 @@ scripts/
   factory/            # scrape, queue-worker, TUI, proxy pool, enqueue-enrich
   site/build-pages.ts # assemble site/out = site shell + catalog JSON
   catalog/            # bundle.tgz, publish-data-branch
-site/                 # tracked HTML/CSS/JS (campaign look) — browser fetches catalog/
+site/                 # tracked HTML/CSS/JS (campaign look): browser fetches catalog/
 catalog/
   schema.json         # tracked SoT contract
   blocklist.txt
@@ -71,7 +71,7 @@ docs/campaign/        # storyboard frames + styles (design SoT for site)
 
 Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN`, optional `MCP_FLOW_API_KEY` for harnesses.
 
-Compose: `docker compose up --build -d` — gateway + bootstrap + edge (`Dockerfile.edge`: git, gh, `/repos`, `gh` config volume) + Tailscale sidecar. Do not auto-register GitHub/fs backends — add them in Admin (edge-sandbox → compose-edge).
+Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile.edge`: git, gh, `/repos`, `gh` config volume) + Tailscale sidecar. Do not auto-register GitHub/fs backends: add them in Admin (edge-sandbox → compose-edge).
 
 ---
 
@@ -92,7 +92,7 @@ Tests: `npm test` · typecheck: `npm run typecheck` · build: `npm run build`.
 ### Data model
 
 - **Sharded SoT:** `catalog/entries/<safe-id>.json` + slim `catalog/index.json` + `meta.json`.
-- **Normalize** from registry (`version=latest` query — required so you get full packages/headers, not thin historical versions).
+- **Normalize** from registry (`version=latest` query: required so you get full packages/headers, not thin historical versions).
 - **Enrich pipeline** (per job):  
   `normalize → sourceRepo → readme → tools/list`  
   - **sourceRepo:** GitHub/GitLab 404/410 → `status: inactive` + flag `repo-offline`  
@@ -129,12 +129,12 @@ npm run catalog:wipe -- --yes
 
 | Artifact | Purpose |
 | --- | --- |
-| **`main`** | Code + `site/` shell + `catalog/schema.json` — **not** 20k entry JSON |
+| **`main`** | Code + `site/` shell + `catalog/schema.json`: **not** 20k entry JSON |
 | **`catalog-data`** | Published shards (`index.json`, `meta.json`, `entries/*`) for Pages |
 | **Release `catalog-latest`** | `catalog-bundle.tgz` for Everflow/OpenFlow offline |
 
 CI: `catalog-build.yml` (nightly/manual) → `catalog-data` + release.  
-Pages: `pages.yml` loads `catalog-data`, runs `site:build`, deploys — **no enrich on Pages**.
+Pages: `pages.yml` loads `catalog-data`, runs `site:build`, deploys: **no enrich on Pages**.
 
 ---
 
@@ -170,7 +170,7 @@ Also: [PLAN.md](./PLAN.md), [catalog/README.md](./catalog/README.md), [scripts/f
 3. Catalog shape changes → update schema + tests under `tests/catalog-*.ts` / `tests/enrich.test.ts`.
 4. Site UI changes → `site/` only; rebuild with `site:build`; design match campaign screenshots in `docs/images/campaign-*.png`.
 5. To refresh production gallery from a laptop factory run: enrich locally → `npm run catalog:publish-data` → `gh workflow run pages.yml`.
-6. Do not re-enable long enrich inside `pages.yml` at 20k scale — keep heavy work on `catalog-build` / local factory.
+6. Do not re-enable long enrich inside `pages.yml` at 20k scale: keep heavy work on `catalog-build` / local factory.
 7. When user says “push,” push only what they asked; never force-push `main`.
 
 ---
