@@ -1,14 +1,15 @@
 # mcp-flow
 
-**One MCP endpoint for every AI harness — upstream secrets stay on the gateway.**
+**One MCP endpoint for every AI harness. Upstream secrets stay on the gateway.**
 
-Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, store env/API keys encrypted, mint agent API keys, and share the same tool library across Cursor, Claude, OpenCode, OpenFlow assistants, and more. Optional **central or edge** runtimes run installable MCPs in a **sandbox** (or bare, if you opt in).
+This branch (`CORE`) is documentation only: why it exists, campaign screenshots, and the marketing site. The runnable gateway lives on [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT). `main` stays a product alias.
 
-![Hero: one MCP for every agent — keep the keys](docs/images/campaign-hero.png)
-
-Also dual-tracked as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
-
-[PLAN.md](./PLAN.md) · [Agent tools](docs/AGENT-TOOLS.md) · [Campaign storyboard](docs/campaign/) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
+| | |
+|---|---|
+| **License** | [Apache-2.0](LICENSE) |
+| **Install / code** | [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT) |
+| **Catalog data** | [`catalog-data`](https://github.com/real-limitless/mcp-flow/tree/catalog-data) |
+| **Marketing site** | [site/](site/) |
 
 ## Visual tour
 
