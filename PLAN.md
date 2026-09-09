@@ -1,10 +1,10 @@
-# [PLAN] mcp-flow — workspace MCP gateway + dual-track catalog
+# [PLAN] mcp-flow: workspace MCP gateway and catalog consumers
 
 ## Summary
 
 **mcp-flow** is a self-hosted **MCP workspace gateway**: one URL and one auth for many AI harnesses, with upstream MCP servers (private + vendor), encrypted env/API keys, and optional **sandboxed or bare** runtimes on **central or edge (local machine)** devices.
 
-It remains dual-tracked with:
+Catalog consumers:
 
 | Consumer | Role |
 | --- | --- |
@@ -175,7 +175,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 
 | Phase | Deliverable | Unlocks |
 | --- | --- | --- |
-| **P0** | Repo bootstrap, types, schema stubs, Compose skeleton | — |
+| **P0** | Repo bootstrap, types, schema stubs, Compose skeleton |: |
 | **P1** | HTTP gateway + API keys + **remote** proxy + encrypted secrets + namespaced tools + stdio shim | **One auth, many agents; upstream keys hidden** |
 | **P1b** | Thin catalog: live registry search and/or `catalog:sync` + `schema.json` | Browse → add; OpenFlow/Everflow contract |
 | **P2** | Scopes, audit log basics, richer CLI; optional small admin UI | Enterprise hygiene |
@@ -211,7 +211,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 
 ---
 
-## Dual-track notes
+## Paired notes
 
 ### OpenFlow
 
@@ -241,7 +241,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 6. Harness config is **only** mcp-flow URL (or stdio shim)  
 7. Secrets never appear in list/get payloads  
 
-### Catalog / dual-track
+### Catalog / paired
 
 8. `catalog:sync` or live search yields usable entries for OpenFlow/Everflow  
 9. Schema stable enough for allowlists (`id` stability)  
