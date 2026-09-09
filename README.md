@@ -10,6 +10,9 @@ This branch (`CORE`) is documentation only: why it exists, campaign screenshots,
 | **Install / code** | [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT) |
 | **Catalog data** | [`catalog-data`](https://github.com/real-limitless/mcp-flow/tree/catalog-data) |
 | **Marketing site** | [site/](site/) |
+| **Branches** | [BRANCHES.md](BRANCHES.md) |
+| **Species** | [SPECIES.md](SPECIES.md) |
+| **Voice** | [VOICE.md](VOICE.md) |
 
 ## Visual tour
 
@@ -308,3 +311,16 @@ AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
 ## License
 
 Apache-2.0
+
+
+## Family
+
+Written standard: private TheFLOW.
+
+- OpenFlow: workflow canvas that reads this catalog
+- ProjectEverflow: later marketplace
+- skill-flow: Agent Skills plane
+- ansible-flow-mcp: Ansible for agents
+- wiki-flow: wiki workspace
+- roster-flow: org of OpenCode agents
+- CleanFlow: clean-room dock
