@@ -348,6 +348,24 @@ describe("api + gateway", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("mcp-flow");
+
+    const jsRes = await fetch(`${gw.url}/admin/app.js`);
+    expect(jsRes.status).toBe(200);
+    const js = await jsRes.text();
+    expect(js).toContain("clientConfigs");
+    expect(js).toContain('id: "cursor"');
+    expect(js).toContain('id: "opencode"');
+    expect(js).toContain('id: "claude-code"');
+    expect(js).toContain('id: "claude-desktop"');
+    expect(js).toContain('id: "vscode"');
+    expect(js).toContain('id: "stdio"');
+    expect(js).toContain("mcpServers");
+    expect(js).toContain('type: "remote"');
+    expect(js).toContain('type: "http"');
+    expect(js).toContain("oauth: false");
+    expect(js).toContain(".vscode/mcp.json");
+    expect(js).toContain("Connect a harness");
+    expect(js).toContain("keyOnceSnips");
   });
 
   it("operator mf_* key gets mf_admin_* and can use /v1", async () => {
