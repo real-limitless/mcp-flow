@@ -1,18 +1,12 @@
 name: pages
 
 on:
-  workflow_dispatch:
-  workflow_run:
-    workflows: [catalog-build]
-    types: [completed]
   push:
-    branches: [main]
+    branches: [CORE]
     paths:
       - "site/**"
-      - "scripts/site/**"
       - ".github/workflows/pages.yml"
-      - "package.json"
-      - "package-lock.json"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,58 +19,30 @@ concurrency:
 
 jobs:
   build:
-    if: >
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-
-      - run: npm ci
-
-      - name: Load catalog from catalog-data branch
-        continue-on-error: true
+      - name: Assemble site
         run: |
           set -euo pipefail
-          mkdir -p catalog/entries
+          mkdir -p _site/catalog
+          cp -a site/. _site/
           if git ls-remote --exit-code --heads origin catalog-data >/dev/null 2>&1; then
             git fetch origin catalog-data --depth=1
             rm -rf /tmp/cd && mkdir -p /tmp/cd
             git archive origin/catalog-data | tar -x -C /tmp/cd
-            cp -a /tmp/cd/. catalog/
+            cp -a /tmp/cd/. _site/catalog/ 2>/dev/null || cp -a /tmp/cd/catalog/. _site/catalog/ || true
             echo "catalog-data loaded"
-            cat catalog/meta.json || true
-            ls catalog/entries | wc -l
           else
-            echo "No catalog-data yet — empty catalog shell"
+            echo "No catalog-data yet"
           fi
-
-      - name: Ensure browse shards
-        run: npx tsx scripts/catalog/build-browse.ts
-        continue-on-error: true
-
-      - name: Build static site (JSON shell)
-        run: npm run site:build
-        env:
-          SITE_BASE: /mcp-flow
-          SITE_ORIGIN: https://real-limitless.github.io
-          SITE_REPO: https://github.com/real-limitless/mcp-flow
-          CATALOG_DIR: catalog
-
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site/out
-
+          path: _site
   deploy:
     needs: build
-    if: needs.build.result == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -2,7 +2,7 @@
 
 **One MCP endpoint for every AI harness: upstream secrets stay on the gateway.**
 
-Self-hosted **workspace MCP gateway**: register private and vendor MCP servers, store env/API keys encrypted, mint agent API keys, and share the same tool library across Cursor, Claude, OpenCode, OpenFlow assistants, and more. Optional **central or edge** runtimes run installable MCPs in a **sandbox** (or bare, if you opt in).
+This branch (`CORE`) is documentation only: why it exists, campaign screenshots, and the marketing site. The runnable gateway lives on [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT). `main` stays a product alias.
 
 ![Hero: one MCP for every agent: keep the keys](docs/images/campaign-hero.png)
 
