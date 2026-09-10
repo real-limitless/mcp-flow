@@ -1,6 +1,8 @@
 const $ = (s) => document.querySelector(s);
 const errEl = $("#err");
 const TOKEN_KEY = "mcp_flow_admin_token";
+let csrf = "";
+let currentUser = null;
 
 function token() {
   return sessionStorage.getItem(TOKEN_KEY) || "";
@@ -17,14 +19,19 @@ function showErr(msg) {
 
 async function api(path, opts = {}) {
   const t = token();
-  if (!t) throw new Error("Set admin token first");
+  const method = (opts.method || "GET").toUpperCase();
+  const headers = {
+    "Content-Type": "application/json",
+    ...(opts.headers || {}),
+  };
+  if (t) headers.Authorization = `Bearer ${t}`;
+  if (csrf && method !== "GET" && method !== "HEAD") {
+    headers["X-CSRF-Token"] = csrf;
+  }
   const res = await fetch(path, {
     ...opts,
-    headers: {
-      Authorization: `Bearer ${t}`,
-      "Content-Type": "application/json",
-      ...(opts.headers || {}),
-    },
+    credentials: "same-origin",
+    headers,
   });
   const text = await res.text();
   let body;
@@ -32,6 +39,12 @@ async function api(path, opts = {}) {
     body = text ? JSON.parse(text) : {};
   } catch {
     body = { raw: text };
+  }
+  if (res.status === 401 && !t) {
+    const st = await fetch("/v1/auth/status").then((r) => r.json()).catch(() => ({}));
+    if (st.setupRequired) location.replace("/admin/setup.html");
+    else location.replace("/admin/login.html");
+    throw new Error("unauthorized");
   }
   if (!res.ok) {
     throw new Error(body.error || res.statusText || String(res.status));
@@ -1274,6 +1287,65 @@ async function renderAudit() {
   if (list) wireAuditList(list.closest(".panel-pad") || list.parentElement);
 }
 
+async function renderOperators() {
+  const { operators } = await api("/v1/operators");
+  const rows = (operators || [])
+    .map(
+      (o) => `
+      <tr>
+        <td class="mono">${esc(o.email)}</td>
+        <td class="muted">${esc(o.createdAt)}</td>
+        <td class="muted">${esc(o.lastLoginAt || "—")}</td>
+      </tr>`,
+    )
+    .join("");
+  $("#tab-operators").innerHTML = `
+    ${surface(
+      "Operators",
+      `
+      <p class="lede" style="margin:0 0 14px">Accounts are local to this mcp-flow instance. Signup is closed after the first operator; add more here.</p>
+      <table class="data-table">
+        <thead><tr><th>Email</th><th>Created</th><th>Last login</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="3" class="muted">None</td></tr>`}</tbody>
+      </table>
+      <form id="addOp" class="form-grid" style="margin-top:16px">
+        <label class="form-field">
+          <span class="field-label">Email</span>
+          <input name="email" type="email" required />
+        </label>
+        <label class="form-field">
+          <span class="field-label">Password</span>
+          <input name="password" type="password" minlength="8" required />
+        </label>
+        <div class="form-field">
+          <span class="field-label">&nbsp;</span>
+          <button type="submit" class="pill-btn primary">Add operator</button>
+        </div>
+      </form>
+    `,
+      `${(operators || []).length} operators`,
+    )}`;
+  const form = $("#addOp");
+  if (form) {
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const fd = new FormData(form);
+      try {
+        await api("/v1/operators", {
+          method: "POST",
+          body: JSON.stringify({
+            email: fd.get("email"),
+            password: fd.get("password"),
+          }),
+        });
+        await renderOperators();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  }
+}
+
 async function refresh() {
   showErr("");
   const tab =
@@ -1286,6 +1358,7 @@ async function refresh() {
     if (tab === "projects") await renderProjects();
     if (tab === "devices") await renderDevices();
     if (tab === "audit") await renderAudit();
+    if (tab === "operators") await renderOperators();
   } catch (e) {
     showErr(e.message);
   }
@@ -1308,5 +1381,38 @@ $("#saveToken").addEventListener("click", () => {
   void refresh();
 });
 $("#refresh").addEventListener("click", () => void refresh());
+$("#logout").addEventListener("click", async () => {
+  sessionStorage.removeItem(TOKEN_KEY);
+  await fetch("/v1/auth/logout", { method: "POST" }).catch(() => undefined);
+  location.replace("/admin/login.html");
+});
 $("#token").value = token();
-if (token()) void refresh();
+
+async function bootstrap() {
+  try {
+    const me = await fetch("/v1/auth/me").then((r) =>
+      r.ok ? r.json() : null,
+    );
+    if (me && me.operator) {
+      csrf = me.csrf || "";
+      currentUser = me.operator;
+      $("#who").textContent = me.operator.email;
+      void refresh();
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  if (token()) {
+    $("#who").textContent = "Break-glass token";
+    void refresh();
+    return;
+  }
+  const st = await fetch("/v1/auth/status")
+    .then((r) => r.json())
+    .catch(() => ({}));
+  if (st.setupRequired) location.replace("/admin/setup.html");
+  else location.replace("/admin/login.html");
+}
+
+void bootstrap();

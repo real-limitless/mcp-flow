@@ -77,7 +77,7 @@ Compose: `docker compose up --build -d` — gateway + bootstrap + edge (`Dockerf
 
 ## Gateway (P1)
 
-- **Serve:** `npx mcp-flow serve --port 8787` → `POST/GET /mcp`, admin under `/v1/*` with Bearer admin token.
+- **Serve:** `npx mcp-flow serve --port 8787` → `POST/GET /mcp`, admin under `/v1/*` with operator session cookie, env admin token, or operator agent key. Browser login: `/admin/login.html` (per-instance email/password; not SSO).
 - **Tools:** `{slug}__{upstreamTool}`; meta `mf_*`.
 - **Keys:** hashed at rest; optional tool-prefix scopes; optional `scopes.admin` operator keys (`mf_admin_*` + `/v1`); audit log.
 - **Backends:** remote streamable-http / SSE; multi-header seal; SSRF guards.

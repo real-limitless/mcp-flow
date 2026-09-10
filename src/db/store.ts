@@ -1,12 +1,15 @@
 import { DatabaseSync } from "node:sqlite";
 import {
   deriveMasterKey,
+  hashPassword,
   hashToken,
   mintApiToken,
+  mintOpaqueToken,
   mintSessionToken,
   newId,
   seal,
   unseal,
+  verifyPassword,
 } from "../crypto.js";
 import type {
   ApiKeyCreated,
@@ -22,6 +25,8 @@ import type {
   DeviceCapabilities,
   DeviceEnrolled,
   DevicePublic,
+  OperatorPublic,
+  OperatorSessionAuth,
   Placement,
   Project,
   ProjectSessionCreated,
@@ -135,10 +140,48 @@ CREATE INDEX IF NOT EXISTS idx_devices_ws ON devices(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token_hash);
 CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+
+CREATE TABLE IF NOT EXISTS operators (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+  email TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_login_at TEXT,
+  UNIQUE(workspace_id, email)
+);
+
+CREATE TABLE IF NOT EXISTS operator_sessions (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL REFERENCES operators(id),
+  workspace_id TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  csrf TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_operators_ws ON operators(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_operator_sessions_hash ON operator_sessions(token_hash);
 `;
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function randomCsrf(): string {
+  return mintOpaqueToken().token;
+}
+
+function rowOperator(r: Record<string, unknown>): OperatorPublic {
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    email: String(r.email),
+    createdAt: String(r.created_at),
+    lastLoginAt: r.last_login_at == null ? null : String(r.last_login_at),
+  };
 }
 
 function parseScopes(raw: unknown): ApiKeyScopes | null {
@@ -416,6 +459,27 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+      CREATE TABLE IF NOT EXISTS operators (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_login_at TEXT,
+        UNIQUE(workspace_id, email)
+      );
+      CREATE TABLE IF NOT EXISTS operator_sessions (
+        id TEXT PRIMARY KEY,
+        operator_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        csrf TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_operators_ws ON operators(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_operator_sessions_hash ON operator_sessions(token_hash);
     `);
   }
 
@@ -568,6 +632,122 @@ export class Store {
       keyName: String(row.name),
       scopes: parseScopes(row.scopes_json),
     };
+  }
+
+  countOperators(workspaceId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM operators WHERE workspace_id = ?`,
+      )
+      .get(workspaceId) as { n: number | bigint } | undefined;
+    return Number(row?.n ?? 0);
+  }
+
+  listOperators(workspaceId: string): OperatorPublic[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, workspace_id, email, created_at, last_login_at
+         FROM operators WHERE workspace_id = ? ORDER BY created_at ASC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map(rowOperator);
+  }
+
+  createOperator(workspaceId: string, email: string, password: string): OperatorPublic {
+    const normalized = email.trim().toLowerCase();
+    const rec: OperatorPublic = {
+      id: newId("op"),
+      workspaceId,
+      email: normalized,
+      createdAt: nowIso(),
+      lastLoginAt: null,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO operators (id, workspace_id, email, password_hash, created_at, last_login_at)
+         VALUES (?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(rec.id, workspaceId, rec.email, hashPassword(password), rec.createdAt);
+    return rec;
+  }
+
+  authenticateOperator(
+    workspaceId: string,
+    email: string,
+    password: string,
+  ): OperatorPublic | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, workspace_id, email, password_hash, created_at, last_login_at
+         FROM operators WHERE workspace_id = ? AND email = ?`,
+      )
+      .get(workspaceId, email.trim().toLowerCase()) as
+      | Record<string, unknown>
+      | undefined;
+    if (!row) return null;
+    if (!verifyPassword(password, String(row.password_hash))) return null;
+    return rowOperator(row);
+  }
+
+  createOperatorSession(
+    operator: OperatorPublic,
+    ttlSeconds = 7 * 24 * 60 * 60,
+  ): { token: string; csrf: string; expiresAt: string; sessionId: string } {
+    const { token, hash } = mintOpaqueToken();
+    const csrf = randomCsrf();
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000).toISOString();
+    const sessionId = newId("opsess");
+    this.db
+      .prepare(
+        `INSERT INTO operator_sessions
+          (id, operator_id, workspace_id, token_hash, csrf, expires_at, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        sessionId,
+        operator.id,
+        operator.workspaceId,
+        hash,
+        csrf,
+        expiresAt,
+        nowIso(),
+      );
+    this.db
+      .prepare(`UPDATE operators SET last_login_at = ? WHERE id = ?`)
+      .run(nowIso(), operator.id);
+    return { token, csrf, expiresAt, sessionId };
+  }
+
+  authenticateOperatorSession(token: string): OperatorSessionAuth | null {
+    if (!token) return null;
+    const hash = hashToken(token);
+    const row = this.db
+      .prepare(
+        `SELECT s.id AS session_id, s.csrf, s.expires_at, s.revoked_at,
+                o.id, o.workspace_id, o.email, o.created_at, o.last_login_at
+         FROM operator_sessions s
+         JOIN operators o ON o.id = s.operator_id
+         WHERE s.token_hash = ?`,
+      )
+      .get(hash) as Record<string, unknown> | undefined;
+    if (!row || row.revoked_at != null) return null;
+    if (String(row.expires_at) <= nowIso()) return null;
+    return {
+      operator: rowOperator(row),
+      csrf: String(row.csrf),
+      sessionId: String(row.session_id),
+    };
+  }
+
+  revokeOperatorSession(token: string): boolean {
+    const hash = hashToken(token);
+    const res = this.db
+      .prepare(
+        `UPDATE operator_sessions SET revoked_at = ?
+         WHERE token_hash = ? AND revoked_at IS NULL`,
+      )
+      .run(nowIso(), hash);
+    return Number(res.changes) > 0;
   }
 
   writeAudit(input: {

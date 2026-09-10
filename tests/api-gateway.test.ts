@@ -443,4 +443,90 @@ describe("api + gateway", () => {
     expect(denied.isError).toBe(true);
     await agentClient.close();
   }, 60_000);
+
+  it("operator email/password login uses session cookie for /v1", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+
+    const denied = await fetch(`${base}/v1/keys`);
+    expect(denied.status).toBe(401);
+
+    const status = await fetch(`${base}/v1/auth/status`);
+    expect(status.status).toBe(200);
+    expect(((await status.json()) as { setupRequired: boolean }).setupRequired).toBe(
+      true,
+    );
+
+    const setup = await fetch(`${base}/v1/auth/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "ops@example.com",
+        password: "password12",
+      }),
+    });
+    expect(setup.status).toBe(201);
+    const setupBody = (await setup.json()) as { csrf: string };
+    const cookies =
+      typeof setup.headers.getSetCookie === "function"
+        ? setup.headers.getSetCookie()
+        : [setup.headers.get("set-cookie") ?? ""];
+    const cookie = cookies
+      .map((c) => c.split(";")[0])
+      .filter(Boolean)
+      .join("; ");
+    expect(cookie).toMatch(/mf_op=/);
+
+    const keys = await fetch(`${base}/v1/keys`, {
+      headers: { Cookie: cookie, "X-CSRF-Token": setupBody.csrf },
+    });
+    expect(keys.status).toBe(200);
+
+    const again = await fetch(`${base}/v1/auth/setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "other@example.com",
+        password: "password12",
+      }),
+    });
+    expect(again.status).toBe(409);
+
+    const login = await fetch(`${base}/v1/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: "ops@example.com",
+        password: "password12",
+      }),
+    });
+    expect(login.status).toBe(200);
+    const loginBody = (await login.json()) as { csrf: string };
+    const loginCookies =
+      typeof login.headers.getSetCookie === "function"
+        ? login.headers.getSetCookie()
+        : [login.headers.get("set-cookie") ?? ""];
+    const loginCookie = loginCookies
+      .map((c) => c.split(";")[0])
+      .filter(Boolean)
+      .join("; ");
+
+    const add = await fetch(`${base}/v1/operators`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: loginCookie,
+        "X-CSRF-Token": loginBody.csrf,
+      },
+      body: JSON.stringify({
+        email: "second@example.com",
+        password: "password12",
+      }),
+    });
+    expect(add.status).toBe(201);
+
+    const loginPage = await fetch(`${base}/admin/login.html`);
+    expect(loginPage.status).toBe(200);
+    expect(await loginPage.text()).toContain("Sign in");
+  }, 60_000);
 });

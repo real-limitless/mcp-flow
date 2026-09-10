@@ -28,6 +28,13 @@ import { buildScopesFromArgs } from "../mcp/admin-tools.js";
 import { globalSessionProjects } from "../mcp/session-project.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
+  clearSessionCookie,
+  originAllowed,
+  parseCredentials,
+  readSessionToken,
+  setSessionCookie,
+} from "../auth/http.js";
+import {
   assertBackendShape,
   assertPlacementAllowed,
   PlacementError,
@@ -160,15 +167,117 @@ export function createApp(
       return c.text("not found", 404);
     }
   });
+  app.get("/admin/:file", (c) => {
+    if (!adminDir) return c.text("not found", 404);
+    const file = c.req.param("file");
+    if (!/^[a-zA-Z0-9._-]+\.(html|js|css)$/.test(file)) {
+      return c.text("not found", 404);
+    }
+    try {
+      const body = readFileSync(join(adminDir, file), "utf8");
+      const type = file.endsWith(".js")
+        ? "application/javascript; charset=utf-8"
+        : file.endsWith(".css")
+          ? "text/css; charset=utf-8"
+          : "text/html; charset=utf-8";
+      return c.body(body, 200, { "Content-Type": type });
+    } catch {
+      return c.text("not found", 404);
+    }
+  });
 
   const admin = new Hono<{ Variables: Variables }>();
 
+  const issueSession = (
+    c: Parameters<typeof setSessionCookie>[0],
+    operator: ReturnType<Store["createOperator"]>,
+  ) => {
+    const sess = store.createOperatorSession(operator);
+    setSessionCookie(c, sess.token);
+    return sess;
+  };
+
+  app.get("/v1/auth/status", (c) => {
+    const ws = store.ensureWorkspace(cfg.workspaceName);
+    return c.json({
+      setupRequired: store.countOperators(ws.id) === 0,
+      authenticated: Boolean(
+        readSessionToken(c) &&
+          store.authenticateOperatorSession(readSessionToken(c) ?? ""),
+      ),
+    });
+  });
+
+  app.post("/v1/auth/setup", async (c) => {
+    if (!originAllowed(c)) return c.json({ error: "forbidden origin" }, 403);
+    const ws = store.ensureWorkspace(cfg.workspaceName);
+    if (store.countOperators(ws.id) > 0) {
+      return c.json({ error: "setup already completed" }, 409);
+    }
+    const creds = parseCredentials(await c.req.json().catch(() => ({})));
+    if ("error" in creds) return c.json({ error: creds.error }, 400);
+    const operator = store.createOperator(ws.id, creds.email, creds.password);
+    const sess = issueSession(c, operator);
+    store.writeAudit({
+      workspaceId: ws.id,
+      action: "operator.setup",
+      detail: { operatorId: operator.id, email: operator.email },
+      ip: clientIp(c),
+    });
+    return c.json({ operator, csrf: sess.csrf }, 201);
+  });
+
+  app.post("/v1/auth/login", async (c) => {
+    if (!originAllowed(c)) return c.json({ error: "forbidden origin" }, 403);
+    const ws = store.ensureWorkspace(cfg.workspaceName);
+    const creds = parseCredentials(await c.req.json().catch(() => ({})));
+    if ("error" in creds) return c.json({ error: creds.error }, 400);
+    const operator = store.authenticateOperator(
+      ws.id,
+      creds.email,
+      creds.password,
+    );
+    if (!operator) return c.json({ error: "invalid credentials" }, 401);
+    const sess = issueSession(c, operator);
+    store.writeAudit({
+      workspaceId: ws.id,
+      action: "operator.login",
+      detail: { operatorId: operator.id, email: operator.email },
+      ip: clientIp(c),
+    });
+    return c.json({ operator, csrf: sess.csrf });
+  });
+
+  app.post("/v1/auth/logout", (c) => {
+    const token = readSessionToken(c);
+    if (token) {
+      const sess = store.authenticateOperatorSession(token);
+      store.revokeOperatorSession(token);
+      if (sess) {
+        store.writeAudit({
+          workspaceId: sess.operator.workspaceId,
+          action: "operator.logout",
+          detail: { operatorId: sess.operator.id },
+          ip: clientIp(c),
+        });
+      }
+    }
+    clearSessionCookie(c);
+    return c.json({ ok: true });
+  });
+
+  app.get("/v1/auth/me", (c) => {
+    const token = readSessionToken(c);
+    const sess = token ? store.authenticateOperatorSession(token) : null;
+    if (!sess) return c.json({ error: "unauthorized" }, 401);
+    return c.json({ operator: sess.operator, csrf: sess.csrf });
+  });
+
   admin.use("*", async (c, next) => {
     const token = bearer(c.req.header("authorization"));
-    if (!token) return c.json({ error: "unauthorized" }, 401);
 
     // Break-glass env admin token
-    if (cfg.adminToken && safeEqualStr(token, cfg.adminToken)) {
+    if (token && cfg.adminToken && safeEqualStr(token, cfg.adminToken)) {
       const ws = store.ensureWorkspace(cfg.workspaceName);
       c.set("auth", { kind: "admin", workspaceId: ws.id });
       await next();
@@ -176,20 +285,47 @@ export function createApp(
     }
 
     // Operator agent key (scopes.admin)
-    const key = store.authenticateApiKey(token);
-    if (key && isAdminScopes(key.scopes)) {
-      c.set("auth", {
-        kind: "api_key",
-        workspaceId: key.workspaceId,
-        keyId: key.keyId,
-        keyName: key.keyName,
-        scopes: key.scopes,
-      });
-      await next();
-      return;
+    if (token) {
+      const key = store.authenticateApiKey(token);
+      if (key && isAdminScopes(key.scopes)) {
+        c.set("auth", {
+          kind: "api_key",
+          workspaceId: key.workspaceId,
+          keyId: key.keyId,
+          keyName: key.keyName,
+          scopes: key.scopes,
+        });
+        await next();
+        return;
+      }
+      return c.json({ error: "unauthorized" }, 401);
     }
 
-    return c.json({ error: "unauthorized" }, 401);
+    const cookieTok = readSessionToken(c);
+    const sess = token
+      ? null
+      : cookieTok
+        ? store.authenticateOperatorSession(cookieTok)
+        : null;
+    if (!sess) return c.json({ error: "unauthorized" }, 401);
+
+    const method = c.req.method.toUpperCase();
+    if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") {
+      if (!originAllowed(c)) return c.json({ error: "forbidden origin" }, 403);
+      const csrf = c.req.header("x-csrf-token") ?? "";
+      if (!sess.csrf || !safeEqualStr(csrf, sess.csrf)) {
+        return c.json({ error: "invalid csrf" }, 403);
+      }
+    }
+
+    c.set("auth", {
+      kind: "user",
+      workspaceId: sess.operator.workspaceId,
+      operatorId: sess.operator.id,
+      operatorEmail: sess.operator.email,
+      csrf: sess.csrf,
+    });
+    await next();
   });
 
   admin.get("/workspace", (c) => {
@@ -215,6 +351,42 @@ export function createApp(
       ip: clientIp(c),
     });
     return c.json({ workspace: ws });
+  });
+
+  admin.get("/operators", (c) => {
+    const auth = c.get("auth");
+    return c.json({ operators: store.listOperators(auth.workspaceId) });
+  });
+
+  admin.post("/operators", async (c) => {
+    const auth = c.get("auth");
+    const creds = parseCredentials(await c.req.json().catch(() => ({})));
+    if ("error" in creds) return c.json({ error: creds.error }, 400);
+    try {
+      const operator = store.createOperator(
+        auth.workspaceId,
+        creds.email,
+        creds.password,
+      );
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "operator.create",
+        detail: {
+          operatorId: operator.id,
+          email: operator.email,
+          by: auth.operatorId ?? auth.keyId ?? auth.kind,
+        },
+        ip: clientIp(c),
+      });
+      return c.json({ operator }, 201);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/UNIQUE|unique/i.test(msg)) {
+        return c.json({ error: "email already exists" }, 409);
+      }
+      throw err;
+    }
   });
 
   admin.post("/keys", async (c) => {
