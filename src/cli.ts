@@ -1128,6 +1128,7 @@ program
         report.backends = store.listBackends(ws.id).length;
         report.keys = store.listApiKeys(ws.id).length;
         report.devices = store.listDevices(ws.id).length;
+        report.operators = store.countOperators(ws.id);
         store.close();
         report.dbOk = true;
       } else {
@@ -1140,6 +1141,56 @@ program
     }
     console.log(JSON.stringify(report, null, 2));
     if (!report.dbOk) process.exit(1);
+  });
+
+const operatorCmd = program
+  .command("operator")
+  .description("Manage local web-console operators (not agent API keys)");
+
+operatorCmd
+  .command("add")
+  .description("Create an operator (first user or additional)")
+  .requiredOption("--email <email>", "operator email")
+  .requiredOption("--password <password>", "password (8+ characters)")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { email: string; password: string; db?: string }) => {
+    if (opts.password.length < 8) {
+      console.error("password must be at least 8 characters");
+      process.exit(1);
+    }
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const operator = store.createOperator(
+        workspaceId,
+        opts.email,
+        opts.password,
+      );
+      store.writeAudit({
+        workspaceId,
+        action: store.countOperators(workspaceId) === 1 ? "operator.setup" : "operator.create",
+        detail: { operatorId: operator.id, email: operator.email },
+      });
+      console.log(JSON.stringify({ operator }, null, 2));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(/UNIQUE|unique/i.test(msg) ? "email already exists" : msg);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
+operatorCmd
+  .command("list")
+  .description("List operators")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      console.log(JSON.stringify({ operators: store.listOperators(workspaceId) }, null, 2));
+    } finally {
+      store.close();
+    }
   });
 
 program.parseAsync(process.argv).catch((err: unknown) => {

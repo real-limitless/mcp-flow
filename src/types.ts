@@ -249,8 +249,22 @@ export interface UpdateBackendInput {
   sandbox?: SandboxConfig | null;
 }
 
+export interface OperatorPublic {
+  id: string;
+  workspaceId: string;
+  email: string;
+  createdAt: string;
+  lastLoginAt: string | null;
+}
+
+export interface OperatorSessionAuth {
+  operator: OperatorPublic;
+  csrf: string;
+  sessionId: string;
+}
+
 export interface AuthContext {
-  kind: "admin" | "api_key" | "project_session";
+  kind: "admin" | "api_key" | "project_session" | "user";
   workspaceId: string;
   keyId?: string;
   keyName?: string;
@@ -262,6 +276,9 @@ export interface AuthContext {
   mcpSessionId?: string | null;
   /** Project session row id when auth is mf_sess_* */
   projectSessionId?: string | null;
+  operatorId?: string;
+  operatorEmail?: string;
+  csrf?: string;
 }
 
 export type AuditAction =
@@ -284,7 +301,11 @@ export type AuditAction =
   | "project.create"
   | "project.update"
   | "project.delete"
-  | "project.use";
+  | "project.use"
+  | "operator.setup"
+  | "operator.create"
+  | "operator.login"
+  | "operator.logout";
 
 export interface AuditEvent {
   id: string;

@@ -100,9 +100,9 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
 
   console.error(`mcp-flow listening on ${url}`);
   console.error(`  MCP:    ${url}/mcp`);
-  console.error(`  Admin:  ${url}/v1/*  (Bearer admin token)`);
+  console.error(`  Admin:  ${url}/v1/*  (session cookie, admin token, or operator key)`);
   console.error(`  Edge:   ws://…/v1/edge/connect`);
-  console.error(`  UI:     ${url}/admin/`);
+  console.error(`  UI:     ${url}/admin/  (login at ${url}/admin/login.html)`);
   console.error(`  Health: ${url}/health`);
 
   return {

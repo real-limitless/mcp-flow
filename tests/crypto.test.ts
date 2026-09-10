@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   deriveMasterKey,
+  hashPassword,
   hashToken,
   mintApiToken,
   seal,
   unseal,
   safeEqualStr,
+  verifyPassword,
 } from "../src/crypto.js";
 
 describe("crypto", () => {
@@ -33,6 +35,13 @@ describe("crypto", () => {
     expect(prefix).toBe(token.slice(0, 10));
     expect(hash).toBe(hashToken(token));
     expect(hash).not.toBe(token);
+  });
+
+  it("hashes and verifies passwords", () => {
+    const stored = hashPassword("correct-horse");
+    expect(stored.startsWith("scrypt$")).toBe(true);
+    expect(verifyPassword("correct-horse", stored)).toBe(true);
+    expect(verifyPassword("wrong", stored)).toBe(false);
   });
 
   it("safeEqualStr", () => {

@@ -69,4 +69,24 @@ describe("store", () => {
     ).toThrow(/slug/);
     store.close();
   });
+
+  it("creates and authenticates operators", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    expect(store.countOperators(ws.id)).toBe(0);
+    const op = store.createOperator(ws.id, "Ops@Example.com", "password12");
+    expect(op.email).toBe("ops@example.com");
+    expect(store.countOperators(ws.id)).toBe(1);
+    expect(store.authenticateOperator(ws.id, "ops@example.com", "password12")?.id).toBe(
+      op.id,
+    );
+    expect(store.authenticateOperator(ws.id, "ops@example.com", "nope")).toBeNull();
+    const sess = store.createOperatorSession(op);
+    const auth = store.authenticateOperatorSession(sess.token);
+    expect(auth?.operator.id).toBe(op.id);
+    expect(auth?.csrf).toBe(sess.csrf);
+    expect(store.revokeOperatorSession(sess.token)).toBe(true);
+    expect(store.authenticateOperatorSession(sess.token)).toBeNull();
+    store.close();
+  });
 });

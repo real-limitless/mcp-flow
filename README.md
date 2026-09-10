@@ -170,7 +170,8 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 | | |
 | --- | --- |
 | **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only — map a domain in Dokploy/Traefik) |
-| **Admin UI** | `http://127.0.0.1:8787/admin/` |
+| **Admin UI** | `http://127.0.0.1:8787/admin/` (login at `/admin/login.html`) |
+| **First operator** | Open `/admin/setup.html` once, or `npx mcp-flow operator add --email you@host --password …` |
 | **Health** | `http://127.0.0.1:8787/health` |
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
 | **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
@@ -205,7 +206,9 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 | `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
 | `GET/POST/DELETE` | `/v1/devices` | Edge device enroll / list / revoke |
 | `WS` | `/v1/edge/connect` | Edge agent (device token) |
-| `GET` | `/admin/` | Operator admin UI |
+| `GET` | `/admin/` | Operator admin UI (session or break-glass token) |
+| `GET/POST` | `/v1/auth/status`, `/v1/auth/setup`, `/v1/auth/login`, `/v1/auth/logout`, `/v1/auth/me` | Operator login (per-instance, not SSO) |
+| `GET/POST` | `/v1/operators` | List / add operators |
 | `ALL` | `/mcp` | Agent MCP (API key) |
 
 ## Security
@@ -215,7 +218,7 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - GET payloads never include decrypted secrets
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
 - Placement: `remote`, `central-sandbox`, `edge-sandbox`, `edge-bare` (bare needs workspace policy)
-- Admin UI at `/admin/` (browser holds admin token in sessionStorage)
+- Admin UI at `/admin/` (email/password session cookie; env `MCP_FLOW_ADMIN_TOKEN` remains break-glass)
 
 ## Placement (P3–P6)
 
