@@ -53,14 +53,21 @@ Typical cases:
 Requirements: **Node.js ≥ 22**.
 
 ```bash
+git clone -b DEVELOPMENT https://github.com/real-limitless/mcp-flow.git
+cd mcp-flow
 cp .env.example .env
+docker compose up -d --build
+npx mcp-flow doctor
+```
+
+Gateway on **8787**. Host Node is for contributors:
+
+```bash
 # set MCP_FLOW_MASTER_KEY and MCP_FLOW_ADMIN_TOKEN
 openssl rand -base64 32   # master key
 openssl rand -hex 32      # admin token
-
 npm install
 npm run build
-
 export $(grep -v '^#' .env | xargs)
 npx mcp-flow serve --port 8787
 ```
