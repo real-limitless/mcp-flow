@@ -307,3 +307,16 @@ AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
 ## License
 
 Apache-2.0
+
+
+## Family
+
+Written standard: private TheFLOW.
+
+- OpenFlow: workflow canvas that reads this catalog
+- ProjectEverflow: later marketplace
+- skill-flow: Agent Skills plane
+- ansible-flow-mcp: Ansible for agents
+- wiki-flow: wiki workspace
+- roster-flow: org of OpenCode agents
+- CleanFlow: clean-room dock
