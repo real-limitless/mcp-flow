@@ -57,6 +57,232 @@ function surface(title, bodyHtml, rightTitle = "") {
     </div>`;
 }
 
+const PLACEHOLDER_TOKEN = "mf_YOUR_AGENT_KEY";
+const HARNESS_URL_KEY = "mcp_flow_harness_url";
+let harnessTabId = "cursor";
+
+function defaultMcpUrl() {
+  const origin = (
+    typeof location !== "undefined" ? location.origin : "http://127.0.0.1:8787"
+  ).replace(/\/$/, "");
+  return `${origin}/mcp`;
+}
+
+function storedHarnessUrl() {
+  try {
+    return sessionStorage.getItem(HARNESS_URL_KEY) || defaultMcpUrl();
+  } catch {
+    return defaultMcpUrl();
+  }
+}
+
+function setStoredHarnessUrl(url) {
+  try {
+    sessionStorage.setItem(HARNESS_URL_KEY, url);
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function normalizeMcpUrl(raw) {
+  const s = String(raw || "").trim() || defaultMcpUrl();
+  return s.replace(/\/+$/, "");
+}
+
+/** Full client JSON files for Cursor, OpenCode, Claude, VS Code, stdio. */
+function clientConfigs({ url, token }) {
+  const mcpUrl = normalizeMcpUrl(url);
+  const auth = `Bearer ${token}`;
+  const httpHeaders = { Authorization: auth };
+  const cursorJson = {
+    mcpServers: {
+      "mcp-flow": {
+        url: mcpUrl,
+        headers: httpHeaders,
+      },
+    },
+  };
+  const opencodeJson = {
+    $schema: "https://opencode.ai/config.json",
+    mcp: {
+      "mcp-flow": {
+        type: "remote",
+        url: mcpUrl,
+        enabled: true,
+        oauth: false,
+        headers: httpHeaders,
+      },
+    },
+  };
+  const claudeCodeJson = {
+    mcpServers: {
+      "mcp-flow": {
+        type: "http",
+        url: mcpUrl,
+        headers: httpHeaders,
+      },
+    },
+  };
+  const stdioJson = {
+    mcpServers: {
+      "mcp-flow": {
+        command: "npx",
+        args: ["-y", "mcp-flow", "stdio"],
+        env: {
+          MCP_FLOW_URL: mcpUrl,
+          MCP_FLOW_API_KEY: token,
+        },
+      },
+    },
+  };
+  const vscodeJson = {
+    servers: {
+      "mcp-flow": {
+        type: "http",
+        url: mcpUrl,
+        headers: httpHeaders,
+      },
+    },
+  };
+  return [
+    {
+      id: "cursor",
+      name: "Cursor",
+      file: "~/.cursor/mcp.json or .cursor/mcp.json",
+      json: cursorJson,
+    },
+    {
+      id: "opencode",
+      name: "OpenCode",
+      file: "opencode.json or ~/.config/opencode/opencode.json",
+      json: opencodeJson,
+    },
+    {
+      id: "claude-code",
+      name: "Claude Code",
+      file: "project .mcp.json",
+      json: claudeCodeJson,
+    },
+    {
+      id: "claude-desktop",
+      name: "Claude Desktop",
+      file: "claude_desktop_config.json",
+      json: stdioJson,
+    },
+    {
+      id: "vscode",
+      name: "VS Code",
+      file: ".vscode/mcp.json",
+      json: vscodeJson,
+    },
+    {
+      id: "stdio",
+      name: "Stdio shim",
+      file: "env + command",
+      json: stdioJson,
+      extra: `MCP_FLOW_URL=${mcpUrl} MCP_FLOW_API_KEY=${token} npx mcp-flow stdio`,
+    },
+  ];
+}
+
+function snippetJsonText(cfg) {
+  return JSON.stringify(cfg.json, null, 2);
+}
+
+function harnessSnippetsHtml({ url, token, showUrlField, idPrefix }) {
+  const configs = clientConfigs({ url, token });
+  const selected =
+    configs.find((c) => c.id === harnessTabId) || configs[0];
+  const tabs = configs
+    .map(
+      (c) =>
+        `<button type="button" class="seg-btn${c.id === selected.id ? " active" : ""}" data-snippet-tab="${esc(c.id)}">${esc(c.name)}</button>`,
+    )
+    .join("");
+  const urlField = showUrlField
+    ? `<div class="form-field harness-url-field">
+        <label class="field-label" for="${esc(idPrefix)}-url">Gateway MCP URL</label>
+        <input id="${esc(idPrefix)}-url" data-harness-url class="mono" value="${esc(url)}" autocomplete="off" spellcheck="false" />
+      </div>`
+    : "";
+  const extraHidden = selected.extra ? "" : " hidden";
+  return `
+    <div class="harness-snips" data-harness-snips data-token="${esc(token)}" data-url="${esc(url)}">
+      ${urlField}
+      <div class="harness-snip-head">
+        <div class="seg harness-snip-tabs" role="tablist" aria-label="Harness config">${tabs}</div>
+        <button type="button" class="pill-btn ghost" data-snippet-copy>Copy</button>
+      </div>
+      <p class="dim harness-snip-file" data-snippet-file>${esc(selected.file)}</p>
+      <pre data-snippet-json>${esc(snippetJsonText(selected))}</pre>
+      <p class="muted harness-snip-extra" data-snippet-extra${extraHidden}>${esc(selected.extra || "")}</p>
+    </div>`;
+}
+
+function applyHarnessTab(root, id) {
+  const token = root.getAttribute("data-token") || PLACEHOLDER_TOKEN;
+  const urlInput = root.querySelector("[data-harness-url]");
+  const url = normalizeMcpUrl(
+    urlInput?.value || root.getAttribute("data-url") || defaultMcpUrl(),
+  );
+  root.setAttribute("data-url", url);
+  const configs = clientConfigs({ url, token });
+  const cfg = configs.find((c) => c.id === id) || configs[0];
+  harnessTabId = cfg.id;
+  root.querySelectorAll("[data-snippet-tab]").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-snippet-tab") === cfg.id);
+  });
+  const file = root.querySelector("[data-snippet-file]");
+  const pre = root.querySelector("[data-snippet-json]");
+  const extra = root.querySelector("[data-snippet-extra]");
+  if (file) file.textContent = cfg.file;
+  if (pre) pre.textContent = snippetJsonText(cfg);
+  if (extra) {
+    extra.textContent = cfg.extra || "";
+    extra.hidden = !cfg.extra;
+  }
+}
+
+function wireHarnessSnippets(root) {
+  if (!root) return;
+  root.querySelectorAll("[data-snippet-tab]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      applyHarnessTab(root, btn.getAttribute("data-snippet-tab") || "cursor");
+    });
+  });
+  const urlInput = root.querySelector("[data-harness-url]");
+  urlInput?.addEventListener("input", () => {
+    const url = normalizeMcpUrl(urlInput.value || defaultMcpUrl());
+    setStoredHarnessUrl(url);
+    applyHarnessTab(root, harnessTabId);
+  });
+  urlInput?.addEventListener("change", () => {
+    const url = normalizeMcpUrl(urlInput.value || defaultMcpUrl());
+    urlInput.value = url;
+    setStoredHarnessUrl(url);
+    applyHarnessTab(root, harnessTabId);
+  });
+  const copyBtn = root.querySelector("[data-snippet-copy]");
+  copyBtn?.addEventListener("click", async () => {
+    const pre = root.querySelector("[data-snippet-json]");
+    const text = pre?.textContent || "";
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    const label = copyBtn.textContent;
+    copyBtn.textContent = ok ? "Copied" : "Copy failed";
+    copyBtn.classList.toggle("copied", ok);
+    setTimeout(() => {
+      copyBtn.textContent = label || "Copy";
+      copyBtn.classList.remove("copied");
+    }, 1400);
+  });
+}
+
 async function renderStatus() {
   const { workspace, placementModes } = await api("/v1/workspace");
   const health = await fetch("/health").then((r) => r.json());
@@ -113,7 +339,24 @@ async function renderStatus() {
       </details>
     `,
       "live",
+    )}
+    ${surface(
+      "Connect a harness",
+      `
+      <p class="muted" style="margin-bottom:12px">
+        Full JSON for Cursor, OpenCode, Claude, and VS Code. Paste into the file shown —
+        only this gateway URL and an agent key; upstream secrets stay sealed here.
+      </p>
+      ${harnessSnippetsHtml({
+        url: storedHarnessUrl(),
+        token: PLACEHOLDER_TOKEN,
+        showUrlField: true,
+        idPrefix: "statusHarness",
+      })}
+    `,
+      "mcp.json",
     )}`;
+  wireHarnessSnippets($("#tab-status [data-harness-snips]"));
   $("#savePolicy")?.addEventListener("click", async () => {
     try {
       await api("/v1/workspace/policy", {
@@ -230,6 +473,7 @@ async function renderKeys() {
         <div class="once-label" id="keyOnceLabel">Token · shown once</div>
         <pre id="keyOnceText"></pre>
         <p class="muted" id="keyOnceHint" style="margin-top:8px;font-size:12px"></p>
+        <div id="keyOnceSnips" hidden></div>
       </div>
     `,
       "mf_* · projects",
@@ -351,9 +595,20 @@ async function renderKeys() {
             ? ` Projects: ${res.key.scopes.projects.join(", ")}.`
             : " All projects allowed.";
           hint.textContent = wasOp
-            ? "Point your AI harness at /mcp with this bearer token to manage backends, keys, and catalog." +
+            ? "Copy a harness JSON below with this bearer token to manage backends, keys, and catalog." +
               projNote
-            : "Point your AI harness at /mcp with this bearer token." + projNote;
+            : "Copy a harness JSON below with this bearer token." + projNote;
+        }
+        const snips = $("#keyOnceSnips");
+        if (snips) {
+          snips.hidden = false;
+          snips.innerHTML = harnessSnippetsHtml({
+            url: storedHarnessUrl(),
+            token: onceToken,
+            showUrlField: true,
+            idPrefix: "keyHarness",
+          });
+          wireHarnessSnippets(snips.querySelector("[data-harness-snips]"));
         }
       }
     } catch (e) {
