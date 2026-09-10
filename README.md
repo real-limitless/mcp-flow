@@ -1,18 +1,14 @@
 # mcp-flow
 
-**One MCP endpoint for every AI harness. Upstream secrets stay on the gateway.**
+**One MCP endpoint for every AI harness: upstream secrets stay on the gateway.**
 
 This branch (`CORE`) is documentation only: why it exists, campaign screenshots, and the marketing site. The runnable gateway lives on [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT). `main` stays a product alias.
 
-| | |
-|---|---|
-| **License** | [Apache-2.0](LICENSE) |
-| **Install / code** | [`DEVELOPMENT`](https://github.com/real-limitless/mcp-flow/tree/DEVELOPMENT) |
-| **Catalog data** | [`catalog-data`](https://github.com/real-limitless/mcp-flow/tree/catalog-data) |
-| **Marketing site** | [site/](site/) |
-| **Branches** | [BRANCHES.md](BRANCHES.md) |
-| **Species** | [SPECIES.md](SPECIES.md) |
-| **Voice** | [VOICE.md](VOICE.md) |
+![Hero: one MCP for every agent: keep the keys](docs/images/campaign-hero.png)
+
+Also used as a **registry catalog** for [OpenFlow](https://github.com/real-limitless/OpenFlow) (one-node gallery) and [ProjectEverflow](https://github.com/real-limitless/ProjectEverflow) (marketplace MCP tab).
+
+[PLAN.md](./PLAN.md) · [Agent tools](docs/AGENT-TOOLS.md) · [Campaign storyboard](docs/campaign/) · [Issues](https://github.com/real-limitless/mcp-flow/issues) · Apache-2.0
 
 ## Visual tour
 
@@ -33,10 +29,10 @@ Every IDE holding vendor API keys is not a control plane. MCP sprawl with no rev
 
 ![Without a gateway vs mcp-flow controls](docs/images/campaign-why.png)
 
-**You need this when:**
+Typical cases:
 
 - Platform admins must own the tool library; employees only get a URL + agent key
-- Upstream secrets must stay sealed on the gateway — never in harness config or model context
+- Upstream secrets must stay sealed on the gateway: never in harness config or model context
 - Cursor, Claude, OpenCode, and OpenFlow should share one workspace library
 - Enterprise defaults matter: deny edge-bare, no unrestricted enable-any-URL
 
@@ -100,7 +96,7 @@ Prefer operator keys over pasting the env admin token into IDE config (revocable
 
 ### Projects (per-chat tool collections)
 
-One agent key can span multiple **projects** — named sets of backends. Agents switch with MCP tools:
+One agent key can span multiple **projects**: named sets of backends. Agents switch with MCP tools:
 
 ```text
 mf_list_projects → mf_use_project({ project: "webdevelopment" }) → tools/list
@@ -135,7 +131,7 @@ npx mcp-flow backend headers yh-finance \
 npx mcp-flow backend headers yh-finance
 ```
 
-You do **not** need `npx mcp-remote … --header` in the harness — put the URL + headers on the backend; harnesses only get the mcp-flow URL + agent key.
+You do **not** need `npx mcp-remote … --header` in the harness: put the URL + headers on the backend; harnesses only get the mcp-flow URL + agent key.
 
 ### Point a harness at mcp-flow only
 
@@ -160,7 +156,7 @@ Stdio shim:
 MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
 ```
 
-Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. Backend tools are `{slug}__{tool}` and often do not appear in connector listings — [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. Backend tools are `{slug}__{tool}` and often do not appear in connector listings: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Docker Compose
 
@@ -173,7 +169,7 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 
 | | |
 | --- | --- |
-| **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only — map a domain in Dokploy/Traefik) |
+| **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only: map a domain in Dokploy/Traefik) |
 | **Admin UI** | `http://127.0.0.1:8787/admin/` |
 | **Health** | `http://127.0.0.1:8787/health` |
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
@@ -191,7 +187,7 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
-Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN — Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
+Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN. Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
 
 ### Admin REST
 
@@ -259,7 +255,7 @@ Each server is **one JSON file** under `catalog/entries/` (plus slim `index.json
 
 ### Catalog factory TUI (queue + proxies)
 
-Like ansible-flow-mcp’s Galaxy factory — multi-pane scrape → queue → worker, with SOCKS/HTTP proxy pool:
+Like ansible-flow-mcp’s Galaxy factory: multi-pane scrape → queue → worker, with SOCKS/HTTP proxy pool:
 
 ```bash
 npm run factory:tui
