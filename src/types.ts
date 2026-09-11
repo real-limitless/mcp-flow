@@ -98,12 +98,83 @@ export interface ApiKeyScopes {
   projects?: string[];
   /** Default project slug when no session has selected one */
   defaultProject?: string;
+  /**
+   * Opt-in: hide namespaced upstream tools from tools/list. The agent
+   * searches with mf_list_tools, then mf_enable_tools / mf_call_tool.
+   */
+  dynamicTools?: boolean;
+  /**
+   * Prefixes always treated as enabled when dynamicTools is on
+   * (e.g. "github__") — Anthropic-style hot tools.
+   */
+  dynamicToolsHot?: string[];
 }
 
 export function isAdminScopes(
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
   return Boolean(scopes?.admin);
+}
+
+/** Working-set listing / enable cap (stay under typical 200-tool harness limits). */
+export const DYNAMIC_TOOLS_LIST_CAP = 32;
+/** Absolute ceiling; listing/enable never exceed this. */
+export const DYNAMIC_TOOLS_HARD_CAP = 128;
+export const DYNAMIC_LIST_DEFAULT_LIMIT = 25;
+export const DYNAMIC_LIST_MAX_LIMIT = 50;
+
+export function isDynamicTools(
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  return Boolean(scopes?.dynamicTools);
+}
+
+export function scopesHasFields(
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  if (!scopes) return false;
+  return Boolean(
+    scopes.admin ||
+      scopes.dynamicTools ||
+      scopes.toolPrefixAllowlist?.length ||
+      scopes.projects?.length ||
+      scopes.defaultProject ||
+      scopes.dynamicToolsHot?.length,
+  );
+}
+
+export function toolMatchesHotPrefix(
+  toolName: string,
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  const hot = scopes?.dynamicToolsHot;
+  if (!hot?.length) return false;
+  return hot.some((p) => toolName.startsWith(p));
+}
+
+/**
+ * Visibility/invoke gate for namespaced tools when dynamicTools is on.
+ * Meta tools always pass. When the flag is off, every in-scope tool is enabled.
+ */
+export function toolEnabledInWorkingSet(
+  toolName: string,
+  working: ReadonlySet<string>,
+  scopes: ApiKeyScopes | null | undefined,
+): boolean {
+  if (toolName.startsWith("mf_")) return true;
+  if (!isDynamicTools(scopes)) return true;
+  if (working.has(toolName)) return true;
+  return toolMatchesHotPrefix(toolName, scopes);
+}
+
+export function dynamicToolsCap(): number {
+  return Math.min(DYNAMIC_TOOLS_LIST_CAP, DYNAMIC_TOOLS_HARD_CAP);
+}
+
+export function clampToolSearchLimit(raw: unknown): number {
+  const n = Number(raw ?? DYNAMIC_LIST_DEFAULT_LIMIT);
+  if (!Number.isFinite(n) || n < 1) return DYNAMIC_LIST_DEFAULT_LIMIT;
+  return Math.min(Math.floor(n), DYNAMIC_LIST_MAX_LIMIT);
 }
 
 /** Named collection of backends for multi-project tool views */
@@ -308,6 +379,12 @@ export const ALWAYS_ALLOWED_META_TOOLS = new Set([
   "mf_list_projects",
   "mf_use_project",
   "mf_current_project",
+  "mf_list_backends",
+  "mf_list_tools",
+  "mf_get_tool_schema",
+  "mf_enable_tools",
+  "mf_disable_tools",
+  "mf_call_tool",
 ]);
 
 export function toolAllowedByScopes(

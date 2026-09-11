@@ -45,7 +45,7 @@ import type {
   UpdateProjectInput,
   WorkspacePolicy,
 } from "../types.js";
-import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
+import { DEFAULT_PLACEMENT, isAdminScopes, scopesHasFields } from "../types.js";
 
 type Variables = {
   auth: AuthContext;
@@ -226,6 +226,8 @@ export function createApp(
       admin?: boolean;
       projects?: string[];
       defaultProject?: string | null;
+      dynamicTools?: boolean;
+      dynamicToolsHot?: string[];
     };
     const name = body.name?.trim() || "default";
     let scopes: ApiKeyScopes | null =
@@ -236,6 +238,8 @@ export function createApp(
             toolPrefixAllowlist: body.toolPrefixAllowlist,
             projects: body.projects,
             defaultProject: body.defaultProject ?? undefined,
+            dynamicTools: body.dynamicTools === true,
+            dynamicToolsHot: body.dynamicToolsHot,
           });
     // Only env admin or existing admin keys reach here — both may grant admin
     if (scopes?.admin !== true && body.admin === true) {
@@ -248,6 +252,15 @@ export function createApp(
       scopes = {
         ...(scopes ?? {}),
         defaultProject: String(body.defaultProject).trim(),
+      };
+    }
+    if (body.dynamicTools === true) {
+      scopes = { ...(scopes ?? {}), dynamicTools: true };
+    }
+    if (body.dynamicToolsHot?.length) {
+      scopes = {
+        ...(scopes ?? {}),
+        dynamicToolsHot: body.dynamicToolsHot.map(String),
       };
     }
     const created = store.createApiKey(auth.workspaceId, name, scopes);
@@ -274,6 +287,8 @@ export function createApp(
       admin?: boolean;
       projects?: string[] | null;
       defaultProject?: string | null;
+      dynamicTools?: boolean;
+      dynamicToolsHot?: string[] | null;
     };
     let scopes: ApiKeyScopes | null;
     if (body.scopes !== undefined) scopes = body.scopes;
@@ -281,9 +296,11 @@ export function createApp(
       body.toolPrefixAllowlist !== undefined ||
       body.admin !== undefined ||
       body.projects !== undefined ||
-      body.defaultProject !== undefined
+      body.defaultProject !== undefined ||
+      body.dynamicTools !== undefined ||
+      body.dynamicToolsHot !== undefined
     ) {
-      // Merge with existing key scopes when partially updating projects
+      // Merge with existing key scopes when partially updating
       const existing = store
         .listApiKeys(auth.workspaceId)
         .find((k) => k.id === c.req.param("id"));
@@ -306,39 +323,43 @@ export function createApp(
         body.defaultProject !== undefined
           ? body.defaultProject
           : prev?.defaultProject ?? undefined;
+      const dynamicTools =
+        body.dynamicTools !== undefined
+          ? body.dynamicTools === true
+          : Boolean(prev?.dynamicTools);
+      const dynamicToolsHot =
+        body.dynamicToolsHot !== undefined
+          ? body.dynamicToolsHot === null
+            ? undefined
+            : body.dynamicToolsHot
+          : prev?.dynamicToolsHot;
       scopes = buildScopesFromArgs({
         admin: adminFlag,
         toolPrefixAllowlist: prefixes ?? undefined,
         projects: projects ?? undefined,
         defaultProject:
           defaultProject === null ? undefined : defaultProject ?? undefined,
+        dynamicTools,
+        dynamicToolsHot: dynamicToolsHot ?? undefined,
       });
       if (body.admin === false && scopes) {
         delete scopes.admin;
-        if (
-          !scopes.toolPrefixAllowlist?.length &&
-          !scopes.projects?.length &&
-          !scopes.defaultProject
-        ) {
-          scopes = null;
-        }
+      }
+      if (body.dynamicTools === false && scopes) {
+        delete scopes.dynamicTools;
       }
       // Explicit empty projects array = all projects (clear restriction)
       if (body.projects !== undefined && Array.isArray(body.projects) && body.projects.length === 0 && scopes) {
         delete scopes.projects;
-        if (
-          !scopes.admin &&
-          !scopes.toolPrefixAllowlist?.length &&
-          !scopes.defaultProject
-        ) {
-          scopes = null;
-        }
+      }
+      if (scopes && !scopesHasFields(scopes)) {
+        scopes = null;
       }
     } else {
       return c.json(
         {
           error:
-            "scopes, toolPrefixAllowlist, admin, projects, or defaultProject required",
+            "scopes, toolPrefixAllowlist, admin, projects, defaultProject, dynamicTools, or dynamicToolsHot required",
         },
         400,
       );

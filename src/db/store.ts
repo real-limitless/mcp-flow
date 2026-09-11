@@ -160,11 +160,17 @@ function parseScopes(raw: unknown): ApiKeyScopes | null {
     if (typeof s.defaultProject === "string" && s.defaultProject.trim()) {
       out.defaultProject = s.defaultProject.trim();
     }
+    if (s.dynamicTools === true) out.dynamicTools = true;
+    if (Array.isArray(s.dynamicToolsHot) && s.dynamicToolsHot.length) {
+      out.dynamicToolsHot = s.dynamicToolsHot.map(String).filter(Boolean);
+    }
     if (
       !out.toolPrefixAllowlist &&
       !out.admin &&
       !out.projects &&
-      !out.defaultProject
+      !out.defaultProject &&
+      !out.dynamicTools &&
+      !out.dynamicToolsHot?.length
     ) {
       return null;
     }

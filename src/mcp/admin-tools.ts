@@ -29,7 +29,7 @@ import type {
   UpdateBackendInput,
   WorkspacePolicy,
 } from "../types.js";
-import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
+import { DEFAULT_PLACEMENT, isAdminScopes, scopesHasFields } from "../types.js";
 import type { UpstreamPool } from "./upstream.js";
 
 export const ADMIN_META_TOOLS: Tool[] = [
@@ -163,6 +163,16 @@ export const ADMIN_META_TOOLS: Tool[] = [
           type: "string",
           description: "Default project slug when no session switch",
         },
+        dynamicTools: {
+          type: "boolean",
+          description:
+            "Hide upstream tools from tools/list; agent discovers/enables on demand",
+        },
+        dynamicToolsHot: {
+          type: "array",
+          items: { type: "string" },
+          description: "Prefixes always enabled in dynamic mode (e.g. github__)",
+        },
       },
       additionalProperties: false,
     },
@@ -184,6 +194,11 @@ export const ADMIN_META_TOOLS: Tool[] = [
           items: { type: "string" },
         },
         defaultProject: { type: "string" },
+        dynamicTools: { type: "boolean" },
+        dynamicToolsHot: {
+          type: "array",
+          items: { type: "string" },
+        },
         clear: { type: "boolean", description: "Clear all scopes (full tool access, non-admin)" },
       },
       required: ["id"],
@@ -356,6 +371,8 @@ export function buildScopesFromArgs(args: {
   toolPrefixAllowlist?: string[];
   projects?: string[];
   defaultProject?: string | null;
+  dynamicTools?: boolean;
+  dynamicToolsHot?: string[];
   clear?: boolean;
 }): ApiKeyScopes | null {
   if (args.clear) return null;
@@ -370,15 +387,11 @@ export function buildScopesFromArgs(args: {
   if (typeof args.defaultProject === "string" && args.defaultProject.trim()) {
     scopes.defaultProject = args.defaultProject.trim();
   }
-  if (
-    !scopes.admin &&
-    !scopes.toolPrefixAllowlist?.length &&
-    !scopes.projects?.length &&
-    !scopes.defaultProject
-  ) {
-    return null;
+  if (args.dynamicTools === true) scopes.dynamicTools = true;
+  if (args.dynamicToolsHot?.length) {
+    scopes.dynamicToolsHot = args.dynamicToolsHot.map(String).filter(Boolean);
   }
-  return scopes;
+  return scopesHasFields(scopes) ? scopes : null;
 }
 
 export interface AdminToolDeps {
@@ -621,6 +634,10 @@ export async function handleAdminTool(
             typeof args.defaultProject === "string"
               ? args.defaultProject
               : undefined,
+          dynamicTools: args.dynamicTools === true,
+          dynamicToolsHot: Array.isArray(args.dynamicToolsHot)
+            ? (args.dynamicToolsHot as string[])
+            : undefined,
         });
         const created = store.createApiKey(wsId, name, scopes);
         audit("key.create", {
@@ -652,17 +669,18 @@ export async function handleAdminTool(
               typeof args.defaultProject === "string"
                 ? args.defaultProject
                 : undefined,
+            dynamicTools: args.dynamicTools === true,
+            dynamicToolsHot: Array.isArray(args.dynamicToolsHot)
+              ? (args.dynamicToolsHot as string[])
+              : undefined,
           });
           if (args.admin === false && scopes?.admin) {
             delete scopes.admin;
           }
-          if (
-            scopes &&
-            !scopes.admin &&
-            !scopes.toolPrefixAllowlist?.length &&
-            !scopes.projects?.length &&
-            !scopes.defaultProject
-          ) {
+          if (args.dynamicTools === false && scopes?.dynamicTools) {
+            delete scopes.dynamicTools;
+          }
+          if (scopes && !scopesHasFields(scopes)) {
             scopes = null;
           }
         }

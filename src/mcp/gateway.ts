@@ -14,15 +14,31 @@ import type { EdgeRouter } from "../edge/router.js";
 import { CONTROL_PLANE_MODES, supportedPlacementModes } from "../placement.js";
 import type { AuthContext, Project } from "../types.js";
 import {
+  clampToolSearchLimit,
+  dynamicToolsCap,
   isAdminScopes,
+  isDynamicTools,
   keyMayUseProject,
   resolveDefaultProjectSlug,
   toolAllowedByProject,
   toolAllowedByScopes,
+  toolEnabledInWorkingSet,
+  toolMatchesHotPrefix,
 } from "../types.js";
 import { ADMIN_META_TOOLS, handleAdminTool } from "./admin-tools.js";
+import {
+  DYNAMIC_INSTRUCTIONS,
+  DYNAMIC_META_TOOLS,
+  searchCatalogTools,
+  stringList,
+} from "./dynamic-tools.js";
 import { globalSessionProjects } from "./session-project.js";
-import { parseNamespacedTool, UpstreamPool } from "./upstream.js";
+import { globalSessionToolSets } from "./session-tools.js";
+import {
+  parseNamespacedTool,
+  UpstreamPool,
+  type NamespacedTool,
+} from "./upstream.js";
 
 const META_TOOLS: Tool[] = [
   {
@@ -38,10 +54,23 @@ const META_TOOLS: Tool[] = [
   {
     name: "mf_list_tools",
     description:
-      "List namespaced tools available through mcp-flow (slug__tool) for the active project.",
+      "Search namespaced tools (slug__tool) for the active project. Returns name, description, backend, enabled — no full schemas. Use q/backend/limit to shortlist. With dynamicTools, enable matches via mf_enable_tools then mf_call_tool.",
     inputSchema: {
       type: "object",
-      properties: {},
+      properties: {
+        q: {
+          type: "string",
+          description: "Search name, description, or backend slug",
+        },
+        backend: {
+          type: "string",
+          description: "Filter by backend slug",
+        },
+        limit: {
+          type: "number",
+          description: "Max results (default 25, max 50)",
+        },
+      },
       additionalProperties: false,
     },
   },
@@ -135,6 +164,14 @@ function filterTools(
   );
 }
 
+function stickySessionId(auth: AuthContext): string | null {
+  return auth.mcpSessionId || (auth.keyId ? `key:${auth.keyId}` : null);
+}
+
+function workingSetFor(auth: AuthContext): Set<string> {
+  return globalSessionToolSets.get(stickySessionId(auth), auth.keyId);
+}
+
 function resolveActiveProject(
   store: Store,
   auth: AuthContext,
@@ -179,10 +216,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   const edgeHub = deps.edgeHub ?? null;
   const edgeRouter = deps.edgeRouter ?? null;
   const adminTools = isAdminScopes(ctx.scopes) ? ADMIN_META_TOOLS : [];
+  const dynamic = isDynamicTools(ctx.scopes);
+  const listCap = dynamicToolsCap();
 
   const server = new Server(
     { name: "mcp-flow", version: "0.1.0" },
-    { capabilities: { tools: { listChanged: true } } },
+    {
+      capabilities: { tools: { listChanged: true } },
+      ...(dynamic ? { instructions: DYNAMIC_INSTRUCTIONS } : {}),
+    },
   );
 
   const edgeEnabled = Boolean(edgeHub);
@@ -190,14 +232,37 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   const activeProject = (): Project | null =>
     resolveActiveProject(store, ctx);
 
+  const catalogInScope = async (
+    project: Project | null,
+  ): Promise<NamespacedTool[]> => {
+    const all = await upstream.listNamespacedTools(ctx.workspaceId);
+    return all.filter(
+      (t) =>
+        toolAllowedByScopes(t.name, ctx.scopes) &&
+        toolAllowedByProject(t.name, project),
+    );
+  };
+
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const project = activeProject();
-    const upstreamTools = await upstream.listNamespacedTools(ctx.workspaceId);
+    const upstreamTools = await catalogInScope(project);
+    const listedUpstream = dynamic
+      ? (() => {
+          const working = workingSetFor(ctx);
+          return upstreamTools
+            .filter((t) =>
+              toolEnabledInWorkingSet(t.name, working, ctx.scopes),
+            )
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .slice(0, listCap);
+        })()
+      : upstreamTools;
+    const metas = dynamic ? [...META_TOOLS, ...DYNAMIC_META_TOOLS] : META_TOOLS;
     const tools: Tool[] = filterTools(
       [
-        ...META_TOOLS,
+        ...metas,
         ...adminTools,
-        ...upstreamTools.map(
+        ...listedUpstream.map(
           ({ upstreamName: _u, backendSlug: _s, backendId: _b, ...tool }) =>
             tool,
         ),
@@ -212,6 +277,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       detail: {
         count: tools.length,
         project: project?.slug ?? null,
+        dynamicTools: dynamic,
       },
       ip,
     });
@@ -332,18 +398,29 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (name === "mf_list_tools") {
-      const tools = await upstream.listNamespacedTools(ctx.workspaceId);
-      const filtered = tools.filter(
-        (t) =>
-          toolAllowedByScopes(t.name, ctx.scopes) &&
-          toolAllowedByProject(t.name, project),
-      );
-      const payload = {
-        project: project?.slug ?? null,
-        tools: filtered.map((t) => ({
+      const catalog = await catalogInScope(project);
+      const working = workingSetFor(ctx);
+      const hits = searchCatalogTools(
+        catalog.map((t) => ({
           name: t.name,
           description: t.description,
           backend: t.backendSlug,
+        })),
+        {
+          q: typeof args.q === "string" ? args.q : undefined,
+          backend: typeof args.backend === "string" ? args.backend : undefined,
+          limit: clampToolSearchLimit(args.limit),
+        },
+      );
+      const payload = {
+        project: project?.slug ?? null,
+        dynamicTools: dynamic,
+        limit: clampToolSearchLimit(args.limit),
+        tools: hits.map((t) => ({
+          name: t.name,
+          description: t.description,
+          backend: t.backend,
+          enabled: toolEnabledInWorkingSet(t.name, working, ctx.scopes),
         })),
       };
       const result = textResult(payload);
@@ -509,6 +586,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         stickyDeviceId: edgeRouter?.sticky.get(ctx.keyId) ?? null,
         placementModesSupported: supportedPlacementModes({ edgeEnabled }),
         policy: store.getWorkspace(ctx.workspaceId)?.policy ?? null,
+        dynamicTools: dynamic
+          ? {
+              enabled: true,
+              enabledCount: workingSetFor(ctx).size,
+              enabledCap: listCap,
+              tools: [...workingSetFor(ctx)].sort(),
+              hotPrefixes: ctx.scopes?.dynamicToolsHot ?? [],
+            }
+          : { enabled: false, enabledCount: 0, enabledCap: listCap, tools: [] },
       };
       const result = textResult(payload);
       auditCall(result, { meta: true });
@@ -537,6 +623,233 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       if (ctx.keyId) edgeRouter.sticky.set(ctx.keyId, deviceId);
       const result = textResult({ ok: true, stickyDeviceId: deviceId });
       auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (name === "mf_get_tool_schema") {
+      const toolName = String(args.name ?? "").trim();
+      if (!toolName) {
+        const result = textResult("name required", true);
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (!toolAllowedByScopes(toolName, ctx.scopes)) {
+        const result = textResult(
+          `Tool not allowed by API key scopes: ${toolName}`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (!toolAllowedByProject(toolName, project)) {
+        const result = textResult(
+          `Tool not in active project (${project?.slug ?? "none"}): ${toolName}`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const catalog = await catalogInScope(project);
+      const hit = catalog.find((t) => t.name === toolName);
+      if (!hit) {
+        const result = textResult(`tool not found: ${toolName}`, true);
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const result = textResult({
+        name: hit.name,
+        description: hit.description,
+        backend: hit.backendSlug,
+        inputSchema: hit.inputSchema,
+        enabled: toolEnabledInWorkingSet(
+          hit.name,
+          workingSetFor(ctx),
+          ctx.scopes,
+        ),
+      });
+      auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (name === "mf_enable_tools" || name === "mf_disable_tools") {
+      if (!dynamic) {
+        const result = textResult(
+          "dynamicTools is not enabled on this API key",
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const sid = stickySessionId(ctx);
+      if (!sid || !ctx.keyId) {
+        const result = textResult("no session or key to bind working set", true);
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const catalog = await catalogInScope(project);
+      const names = stringList(args.names);
+      const backends = stringList(args.backends);
+      const prefixes = stringList(args.prefixes);
+
+      if (name === "mf_disable_tools") {
+        if (args.all === true) {
+          const enabled = [...globalSessionToolSets.clear(sid, ctx.keyId)].sort();
+          const result = textResult({
+            ok: true,
+            enabled,
+            enabledCount: enabled.length,
+            enabledCap: listCap,
+            note: "Hot prefixes on the key stay enabled.",
+          });
+          auditCall(result, { meta: true });
+          return result;
+        }
+        const toRemove = new Set<string>(names);
+        const working = workingSetFor(ctx);
+        for (const toolName of working) {
+          const parsed = parseNamespacedTool(toolName);
+          if (parsed && backends.includes(parsed.slug)) toRemove.add(toolName);
+          if (prefixes.some((p) => toolName.startsWith(p))) toRemove.add(toolName);
+        }
+        if (!toRemove.size) {
+          const result = textResult(
+            "names, backends, prefixes, or all:true required",
+            true,
+          );
+          auditCall(result, { meta: true });
+          return result;
+        }
+        const enabled = [
+          ...globalSessionToolSets.remove(sid, ctx.keyId, toRemove),
+        ].sort();
+        const result = textResult({
+          ok: true,
+          removed: [...toRemove].sort(),
+          enabled,
+          enabledCount: enabled.length,
+          enabledCap: listCap,
+        });
+        auditCall(result, { meta: true });
+        return result;
+      }
+
+      const toAdd = new Set<string>();
+      const missing: string[] = [];
+      for (const n of names) {
+        if (catalog.some((t) => t.name === n)) toAdd.add(n);
+        else missing.push(n);
+      }
+      for (const b of backends) {
+        const hits = catalog.filter((t) => t.backendSlug === b);
+        if (!hits.length) missing.push(`backend:${b}`);
+        else for (const t of hits) toAdd.add(t.name);
+      }
+      for (const p of prefixes) {
+        const hits = catalog.filter((t) => t.name.startsWith(p));
+        if (!hits.length) missing.push(`prefix:${p}`);
+        else for (const t of hits) toAdd.add(t.name);
+      }
+      if (!toAdd.size && !missing.length) {
+        const result = textResult(
+          "names, backends, or prefixes required",
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (missing.length) {
+        const result = textResult(
+          {
+            error: "unknown or out-of-scope tools",
+            missing,
+          },
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const working = workingSetFor(ctx);
+      const next = new Set(working);
+      for (const n of toAdd) next.add(n);
+      const effective = catalog.filter(
+        (t) => next.has(t.name) || toolMatchesHotPrefix(t.name, ctx.scopes),
+      );
+      if (effective.length > listCap) {
+        const result = textResult(
+          `enabling these tools would exceed the working-set cap (${listCap}); disable others first`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const enabled = [...globalSessionToolSets.add(sid, ctx.keyId, toAdd)].sort();
+      const result = textResult({
+        ok: true,
+        added: [...toAdd].sort(),
+        enabled,
+        enabledCount: enabled.length,
+        enabledCap: listCap,
+        note: "Re-run tools/list if the harness honors list changes; otherwise use mf_call_tool.",
+      });
+      auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (name === "mf_call_tool") {
+      const innerName = String(args.name ?? "").trim();
+      const innerArgs =
+        args.arguments && typeof args.arguments === "object"
+          ? (args.arguments as Record<string, unknown>)
+          : {};
+      if (!innerName) {
+        const result = textResult("name required", true);
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (innerName.startsWith("mf_")) {
+        const result = textResult(
+          "mf_call_tool is for namespaced upstream tools (slug__tool)",
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (!toolAllowedByScopes(innerName, ctx.scopes)) {
+        const result = textResult(
+          `Tool not allowed by API key scopes: ${innerName}`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (!toolAllowedByProject(innerName, project)) {
+        const result = textResult(
+          `Tool not in active project (${project?.slug ?? "none"}): ${innerName}. Use mf_use_project or mf_list_projects.`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      if (
+        dynamic &&
+        !toolEnabledInWorkingSet(innerName, workingSetFor(ctx), ctx.scopes)
+      ) {
+        const result = textResult(
+          `Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools: ${innerName}`,
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const parsed = parseNamespacedTool(innerName);
+      const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
+      const result = await upstream.callTool(ctx.workspaceId, innerName, innerArgs);
+      auditCall(result, {
+        meta: true,
+        backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
+        placement: ctxInfo.placement,
+        deviceId: ctxInfo.deviceId,
+      });
       return result;
     }
 
@@ -574,6 +887,30 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (name.startsWith("mf_")) {
       const result = textResult(`Unknown meta tool: ${name}`, true);
       auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (
+      dynamic &&
+      !toolEnabledInWorkingSet(name, workingSetFor(ctx), ctx.scopes)
+    ) {
+      const result = textResult(
+        `Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools: ${name}`,
+        true,
+      );
+      store.writeAudit({
+        workspaceId: ctx.workspaceId,
+        keyId: ctx.keyId,
+        action: "tools/call",
+        tool: name,
+        detail: toolCallAuditDetail({
+          denied: true,
+          reason: "dynamic_working_set",
+          arguments: args,
+          durationMs: Date.now() - started,
+        }),
+        ip,
+      });
       return result;
     }
 
