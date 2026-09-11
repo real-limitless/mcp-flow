@@ -113,6 +113,16 @@ mf_list_projects → mf_use_project({ project: "webdevelopment" }) → tools/lis
 - `mf_use_project` binds the chat (session sticky) and returns an optional **`mf_sess_*` session token** for project-scoped calls.
 - Admin UI → **Projects** tab, or `GET/POST /v1/projects`.
 
+### Dynamic tool discovery (harness tool caps)
+
+Some clients refuse more than ~200 tools from `tools/list`. Per-key **dynamic tool discovery** hides the upstream catalog until the agent searches and enables what it needs:
+
+```bash
+npx mcp-flow key create --name cursor --dynamic-tools
+```
+
+Agent loop: `mf_list_tools({ q })` → `mf_enable_tools({ names })` → `mf_call_tool` (or native `tools/call` of an enabled name). Optional `--dynamic-tools-hot <prefix>` keeps a small always-on set. Details: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+
 ### Add a remote MCP (headers sealed)
 
 ```bash
@@ -163,7 +173,7 @@ Stdio shim:
 MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
 ```
 
-Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. Backend tools are `{slug}__{tool}` and often do not appear in connector listings: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. With `--dynamic-tools` on the key: also `mf_get_tool_schema`, `mf_enable_tools`, `mf_disable_tools`, `mf_call_tool`. Backend tools are `{slug}__{tool}`. See [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Docker Compose
 

@@ -366,6 +366,8 @@ describe("api + gateway", () => {
     expect(js).toContain(".vscode/mcp.json");
     expect(js).toContain("Connect a harness");
     expect(js).toContain("keyOnceSnips");
+    expect(js).toContain("keyDynamicTools");
+    expect(js).toContain("Dynamic tool discovery");
   });
 
   it("operator mf_* key gets mf_admin_* and can use /v1", async () => {
@@ -460,5 +462,227 @@ describe("api + gateway", () => {
     });
     expect(denied.isError).toBe(true);
     await agentClient.close();
+  }, 60_000);
+
+  it("dynamicTools hides upstream tools until enable + mf_call_tool", async () => {
+    const upstream = await startUpstream();
+    cleanups.push(upstream.close);
+    const gw = await bootGateway();
+    const base = gw.url;
+
+    await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: "up",
+        url: upstream.url,
+        transport: "streamable-http",
+        enabled: true,
+        placement: { mode: "remote" },
+      }),
+    });
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "dyn", dynamicTools: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const dynBody = (await keyRes.json()) as {
+      key: { token: string; scopes: { dynamicTools?: boolean } };
+    };
+    expect(dynBody.key.scopes.dynamicTools).toBe(true);
+    const token = dynBody.key.token;
+
+    const client = new Client(
+      { name: "dyn-harness", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
+    );
+
+    expect(client.getInstructions() ?? "").toContain("dynamic tool discovery");
+
+    const listed = await client.listTools();
+    const names = listed.tools.map((t) => t.name);
+    expect(names).toContain("mf_status");
+    expect(names).toContain("mf_list_tools");
+    expect(names).toContain("mf_enable_tools");
+    expect(names).toContain("mf_call_tool");
+    expect(names).toContain("mf_get_tool_schema");
+    expect(names).not.toContain("up__echo");
+    expect(names).not.toContain("up__secret_probe");
+
+    const deniedBefore = await client.callTool({
+      name: "up__echo",
+      arguments: { text: "nope" },
+    });
+    expect(deniedBefore.isError).toBe(true);
+
+    const search = await client.callTool({
+      name: "mf_list_tools",
+      arguments: { q: "echo", limit: 10 },
+    });
+    expect(search.isError).not.toBe(true);
+    const searchText = JSON.stringify(search);
+    expect(searchText).toContain("up__echo");
+    expect(searchText).not.toContain("inputSchema");
+
+    const schema = await client.callTool({
+      name: "mf_get_tool_schema",
+      arguments: { name: "up__echo" },
+    });
+    expect(schema.isError).not.toBe(true);
+    expect(JSON.stringify(schema)).toContain("inputSchema");
+
+    const enabled = await client.callTool({
+      name: "mf_enable_tools",
+      arguments: { names: ["up__echo"] },
+    });
+    expect(enabled.isError).not.toBe(true);
+
+    const afterEnable = await client.listTools();
+    expect(afterEnable.tools.map((t) => t.name)).toContain("up__echo");
+    expect(afterEnable.tools.map((t) => t.name)).not.toContain("up__secret_probe");
+
+    const viaMeta = await client.callTool({
+      name: "mf_call_tool",
+      arguments: { name: "up__echo", arguments: { text: "via-meta" } },
+    });
+    expect(JSON.stringify(viaMeta)).toContain("echo:via-meta");
+
+    const viaNative = await client.callTool({
+      name: "up__echo",
+      arguments: { text: "native" },
+    });
+    expect(JSON.stringify(viaNative)).toContain("echo:native");
+
+    const disabled = await client.callTool({
+      name: "mf_disable_tools",
+      arguments: { names: ["up__echo"] },
+    });
+    expect(disabled.isError).not.toBe(true);
+
+    const afterDisable = await client.callTool({
+      name: "up__echo",
+      arguments: { text: "gone" },
+    });
+    expect(afterDisable.isError).toBe(true);
+
+    await client.close();
+
+    const scopedRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "dyn-scoped",
+        dynamicTools: true,
+        toolPrefixAllowlist: ["up__echo"],
+      }),
+    });
+    const scopedToken = (
+      (await scopedRes.json()) as { key: { token: string } }
+    ).key.token;
+    const scoped = new Client(
+      { name: "dyn-scoped", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await scoped.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${scopedToken}` } },
+      }),
+    );
+    const blocked = await scoped.callTool({
+      name: "mf_enable_tools",
+      arguments: { names: ["up__secret_probe"] },
+    });
+    expect(blocked.isError).toBe(true);
+    await scoped.close();
+
+    const emptyProj = await fetch(`${base}/v1/projects`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ slug: "emptyproj", backendSlugs: [] }),
+    });
+    expect(emptyProj.status).toBe(201);
+
+    const projKeyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "dyn-proj",
+        dynamicTools: true,
+        projects: ["emptyproj"],
+        defaultProject: "emptyproj",
+      }),
+    });
+    const projToken = (
+      (await projKeyRes.json()) as { key: { token: string } }
+    ).key.token;
+    const projClient = new Client(
+      { name: "dyn-proj", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await projClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${projToken}` } },
+      }),
+    );
+    const projEnable = await projClient.callTool({
+      name: "mf_enable_tools",
+      arguments: { names: ["up__echo"] },
+    });
+    expect(projEnable.isError).toBe(true);
+    await projClient.close();
+
+    const hotRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "dyn-hot",
+        dynamicTools: true,
+        dynamicToolsHot: ["up__echo"],
+      }),
+    });
+    const hotToken = ((await hotRes.json()) as { key: { token: string } }).key
+      .token;
+    const hotClient = new Client(
+      { name: "dyn-hot", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await hotClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${hotToken}` } },
+      }),
+    );
+    const hotList = await hotClient.listTools();
+    expect(hotList.tools.map((t) => t.name)).toContain("up__echo");
+    const hotCall = await hotClient.callTool({
+      name: "up__echo",
+      arguments: { text: "hot" },
+    });
+    expect(JSON.stringify(hotCall)).toContain("echo:hot");
+    await hotClient.close();
   }, 60_000);
 });

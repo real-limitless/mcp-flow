@@ -464,6 +464,17 @@ async function renderKeys() {
             ${projectSelectOptions(projects, "")}
           </select>
         </div>
+        <div class="form-field" style="grid-column:1/-1">
+          <label class="field-label" for="keyDynamicTools" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="keyDynamicTools" />
+            Dynamic tool discovery
+          </label>
+          <p class="dim" style="font-size:12px;margin-top:6px;max-width:42rem">
+            Hide upstream tools from <span class="mono">tools/list</span> (harness 200-tool caps).
+            Agent searches with <span class="mono">mf_list_tools</span>, then
+            <span class="mono">mf_enable_tools</span> / <span class="mono">mf_call_tool</span>.
+          </p>
+        </div>
         <div class="form-field">
           <span class="field-label">&nbsp;</span>
           <button type="button" id="createKey" class="pill-btn primary">Create key</button>
@@ -501,12 +512,17 @@ async function renderKeys() {
                       (k) => `<tr>
               <td>${esc(k.name)}</td>
               <td class="mono">${esc(k.prefix)}</td>
-              <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}</td>
+              <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}${
+                k.scopes?.dynamicTools
+                  ? ' <span class="pill accent">dynamic</span>'
+                  : ""
+              }</td>
               <td>${formatKeyProjects(k.scopes)}</td>
               <td class="mono">${esc(
                 JSON.stringify({
                   toolPrefixAllowlist: k.scopes?.toolPrefixAllowlist,
                   admin: k.scopes?.admin,
+                  dynamicTools: k.scopes?.dynamicTools,
                 }),
               )}</td>
               <td class="row-actions">
@@ -532,6 +548,12 @@ async function renderKeys() {
         <div class="form-field" style="margin-top:12px;max-width:16rem">
           <label class="field-label" for="keyEditDefault">Default project</label>
           <select id="keyEditDefault"></select>
+        </div>
+        <div class="form-field" style="margin-top:12px">
+          <label class="field-label" for="keyEditDynamic" style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="keyEditDynamic" />
+            Dynamic tool discovery
+          </label>
         </div>
         <div class="row-actions" style="margin-top:12px">
           <button type="button" id="keySaveEdit" class="pill-btn primary">Save</button>
@@ -574,6 +596,7 @@ async function renderKeys() {
       if (isOp) body.admin = true;
       if (projSlugs.length) body.projects = projSlugs;
       if (defaultProject) body.defaultProject = defaultProject;
+      if ($("#keyDynamicTools")?.checked) body.dynamicTools = true;
       const res = await api("/v1/keys", { method: "POST", body: JSON.stringify(body) });
       const onceToken = res.key.token;
       const wasOp = Boolean(res.key.scopes?.admin);
@@ -633,6 +656,8 @@ async function renderKeys() {
         projects,
         k.scopes?.defaultProject || "",
       );
+      const dyn = $("#keyEditDynamic");
+      if (dyn) dyn.checked = Boolean(k.scopes?.dynamicTools);
     });
   });
 
@@ -654,6 +679,7 @@ async function renderKeys() {
           toolPrefixAllowlist: k.scopes?.toolPrefixAllowlist ?? null,
           projects: projSlugs,
           defaultProject,
+          dynamicTools: Boolean($("#keyEditDynamic")?.checked),
         }),
       });
       await renderKeys();

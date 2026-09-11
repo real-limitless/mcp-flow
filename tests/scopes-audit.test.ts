@@ -25,7 +25,13 @@ describe("scopes", () => {
     expect(toolAllowedByScopes("other__x", scopes)).toBe(false);
     expect(toolAllowedByScopes("mf_status", scopes)).toBe(true);
     expect(toolAllowedByScopes("mf_list_tools", { toolPrefixAllowlist: ["x__"] })).toBe(
-      false,
+      true,
+    );
+    expect(toolAllowedByScopes("mf_enable_tools", { toolPrefixAllowlist: ["x__"] })).toBe(
+      true,
+    );
+    expect(toolAllowedByScopes("mf_call_tool", { toolPrefixAllowlist: ["x__"] })).toBe(
+      true,
     );
     expect(toolAllowedByScopes("anything", null)).toBe(true);
     expect(toolAllowedByScopes("mf_admin_list_backends", null)).toBe(false);
@@ -59,6 +65,26 @@ describe("scopes", () => {
     expect(JSON.stringify(store.listApiKeys(ws.id))).not.toContain(created.token);
     const auth = store.authenticateApiKey(created.token);
     expect(auth?.scopes?.toolPrefixAllowlist).toEqual(["a__"]);
+    store.close();
+  });
+
+  it("round-trips dynamicTools-only scopes", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    const created = store.createApiKey(ws.id, "dyn", { dynamicTools: true });
+    expect(created.scopes?.dynamicTools).toBe(true);
+    const listed = store.listApiKeys(ws.id).find((k) => k.id === created.id);
+    expect(listed?.scopes).toEqual({ dynamicTools: true });
+    const auth = store.authenticateApiKey(created.token);
+    expect(auth?.scopes).toEqual({ dynamicTools: true });
+    const hot = store.createApiKey(ws.id, "hot", {
+      dynamicTools: true,
+      dynamicToolsHot: ["github__"],
+    });
+    expect(store.listApiKeys(ws.id).find((k) => k.id === hot.id)?.scopes).toEqual({
+      dynamicTools: true,
+      dynamicToolsHot: ["github__"],
+    });
     store.close();
   });
 });

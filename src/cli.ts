@@ -7,6 +7,8 @@ import { startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
+import type { ApiKeyScopes } from "./types.js";
+import { scopesHasFields } from "./types.js";
 const program = new Command();
 
 program
@@ -90,22 +92,45 @@ keyCmd
     "operator key: mf_admin_* tools + /v1 REST (manage gateway)",
     false,
   )
+  .option(
+    "--dynamic-tools",
+    "hide upstream tools from tools/list; agent discovers/enables on demand",
+    false,
+  )
+  .option(
+    "--dynamic-tools-hot <prefix>",
+    "prefix always enabled in dynamic mode (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
   .option("--db <path>", "sqlite path")
   .action(
     (opts: {
       name: string;
       scopePrefix: string[];
       admin?: boolean;
+      dynamicTools?: boolean;
+      dynamicToolsHot: string[];
       db?: string;
     }) => {
     const { store, workspaceId } = openStore(opts.db);
     try {
       const scopes =
-        opts.admin || opts.scopePrefix.length
+        opts.admin ||
+        opts.scopePrefix.length ||
+        opts.dynamicTools ||
+        opts.dynamicToolsHot.length
           ? {
               ...(opts.admin ? { admin: true as const } : {}),
               ...(opts.scopePrefix.length
                 ? { toolPrefixAllowlist: opts.scopePrefix }
+                : {}),
+              ...(opts.dynamicTools ? { dynamicTools: true as const } : {}),
+              ...(opts.dynamicToolsHot.length
+                ? { dynamicToolsHot: opts.dynamicToolsHot }
                 : {}),
             }
           : null;
@@ -137,6 +162,20 @@ keyCmd
   )
   .option("--admin", "grant operator (admin) scope", false)
   .option("--no-admin", "clear operator scope")
+  .option(
+    "--dynamic-tools",
+    "enable dynamic tool discovery (hide catalog from tools/list)",
+  )
+  .option("--no-dynamic-tools", "disable dynamic tool discovery")
+  .option(
+    "--dynamic-tools-hot <prefix>",
+    "prefix always enabled in dynamic mode (repeatable)",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
   .option("--clear", "remove all scopes (full access)", false)
   .option("--db <path>", "sqlite path")
   .action(
@@ -146,34 +185,47 @@ keyCmd
         scopePrefix: string[];
         clear?: boolean;
         admin?: boolean;
+        dynamicTools?: boolean;
+        dynamicToolsHot: string[];
         db?: string;
       },
     ) => {
       const { store, workspaceId } = openStore(opts.db);
       try {
-        let scopes = opts.clear
-          ? null
-          : opts.scopePrefix.length || opts.admin
-            ? {
-                ...(opts.admin ? { admin: true as const } : {}),
-                ...(opts.scopePrefix.length
-                  ? { toolPrefixAllowlist: opts.scopePrefix }
-                  : {}),
-              }
-            : null;
-        // commander --no-admin sets admin: false
-        if (opts.admin === false && !opts.clear) {
-          scopes = opts.scopePrefix.length
-            ? { toolPrefixAllowlist: opts.scopePrefix }
-            : null;
-        }
-        if (
-          !opts.clear &&
-          !opts.scopePrefix.length &&
-          opts.admin === undefined
-        ) {
-          console.error("pass --scope-prefix, --admin, and/or --clear");
+        const existing = store
+          .listApiKeys(workspaceId)
+          .find((k) => k.id === id);
+        if (!existing) {
+          console.error("not found");
           process.exit(1);
+        }
+        const hasFlag =
+          opts.clear ||
+          opts.scopePrefix.length ||
+          opts.admin !== undefined ||
+          opts.dynamicTools !== undefined ||
+          opts.dynamicToolsHot.length;
+        if (!hasFlag) {
+          console.error(
+            "pass --scope-prefix, --admin, --dynamic-tools, --dynamic-tools-hot, and/or --clear",
+          );
+          process.exit(1);
+        }
+        let scopes: ApiKeyScopes | null = opts.clear
+          ? null
+          : { ...(existing.scopes ?? {}) };
+        if (scopes) {
+          if (opts.scopePrefix.length) {
+            scopes.toolPrefixAllowlist = opts.scopePrefix;
+          }
+          if (opts.admin === true) scopes.admin = true;
+          if (opts.admin === false) delete scopes.admin;
+          if (opts.dynamicTools === true) scopes.dynamicTools = true;
+          if (opts.dynamicTools === false) delete scopes.dynamicTools;
+          if (opts.dynamicToolsHot.length) {
+            scopes.dynamicToolsHot = opts.dynamicToolsHot;
+          }
+          if (!scopesHasFields(scopes)) scopes = null;
         }
         const key = store.updateApiKeyScopes(workspaceId, id, scopes);
         if (!key) {
