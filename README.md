@@ -124,7 +124,7 @@ npx mcp-flow key scopes <id> --dynamic-tools
 npx mcp-flow key scopes <id> --no-dynamic-tools
 ```
 
-Admin UI Keys tab: **discovery** on/off per row (also under **Edit**). Agent loop: `mf_list_tools({ q })` → `mf_enable_tools({ names })` → `mf_call_tool` (or native `tools/call` of an enabled name). Optional `--dynamic-tools-hot <prefix>` keeps a small always-on set. Details: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Admin UI Keys tab: **discovery** on/off per row (also under **Edit**). Agent loop: `mf_list_tools()` (full catalog, or `{ q }` to filter) → `mf_enable_tools({ names })` → `mf_call_tool` (or native `tools/call` of an enabled name). Optional `--dynamic-tools-hot <prefix>` keeps a small always-on set. Native `tools/list` stays small; `mf_list_tools` can return ~1k names. Details: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Add a remote MCP (headers sealed)
 

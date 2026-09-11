@@ -29,12 +29,12 @@ REST: `POST /v1/keys` or `PATCH /v1/keys/:id` with `"dynamicTools": true|false` 
 When the flag is on:
 
 1. `tools/list` returns metas plus at most 32 enabled/hot namespaced tools (never the full catalog).
-2. `mf_list_tools({ q, backend, limit })` searches the catalog (names + descriptions, no schemas; default 25, max 50).
+2. `mf_list_tools({ q, backend, limit, offset })` lists the **full in-scope catalog** by default (names + descriptions, no schemas). Default page is up to 5000 tools — enough for ~1k catalogs. `hasMore` + `offset` pages if larger. `limit` is optional to shortlist.
 3. `mf_enable_tools({ names, backends, prefixes })` adds matches to this session working set (still scope/project gated). Cap 32.
 4. `mf_get_tool_schema({ name })` then `mf_call_tool({ name, arguments })`. Native `tools/call` of an enabled name also works.
 5. `mf_disable_tools({ names })` or `{ all: true }` drops the working set. Hot prefixes stay enabled until you change the key.
 
-Typical sequence: `mf_status` → `mf_list_tools({ q: "…" })` → `mf_enable_tools` → `mf_call_tool`.
+Typical sequence: `mf_status` → `mf_list_tools()` (or `{ q: "…" }`) → `mf_enable_tools` → `mf_call_tool`.
 
 ## Meta tools
 
@@ -45,7 +45,7 @@ Typical sequence: `mf_status` → `mf_list_tools({ q: "…" })` → `mf_enable_t
 | `mf_use_project` | Activate a project for this chat/session. Returns `sessionToken` (optional bearer) and binds the MCP session. Re-list tools after switching. | `project` (string, required — project slug); `mintSessionToken` (boolean, optional — if true, mint a short-lived session token bound to this project) |
 | `mf_current_project` | Show the active project and its backend membership | none |
 | `mf_list_backends` | List MCP backends in the active project (secrets redacted) | none |
-| `mf_list_tools` | Search namespaced tools (`slug__tool`) for the active project. Returns `name` / `description` / `backend` / `enabled` — no input schemas. | `q` (string), `backend` (slug), `limit` (default 25, max 50) |
+| `mf_list_tools` | List/search namespaced tools (`slug__tool`) for the active project. Returns the full in-scope catalog by default (`name` / `description` / `backend` / `enabled`, plus `total` / `hasMore`) — no input schemas. | `q` (string), `backend` (slug), `limit` (optional, default entire catalog up to 5000), `offset`, `all` |
 | `mf_get_tool_schema` | Full `inputSchema` for one namespaced name (listed when `dynamicTools` is on) | `name` (string, required) |
 | `mf_enable_tools` | Add tools to the session working set (`dynamicTools` keys only) | `names` / `backends` / `prefixes` |
 | `mf_disable_tools` | Remove from the working set | `names` / `backends` / `prefixes` / `all` |

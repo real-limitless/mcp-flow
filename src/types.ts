@@ -120,8 +120,13 @@ export function isAdminScopes(
 export const DYNAMIC_TOOLS_LIST_CAP = 32;
 /** Absolute ceiling; listing/enable never exceed this. */
 export const DYNAMIC_TOOLS_HARD_CAP = 128;
-export const DYNAMIC_LIST_DEFAULT_LIMIT = 25;
-export const DYNAMIC_LIST_MAX_LIMIT = 50;
+/**
+ * mf_list_tools page size when `limit` is omitted: the full in-scope catalog
+ * (names + descriptions, not schemas). Native tools/list stays at LIST_CAP.
+ */
+export const DYNAMIC_LIST_DEFAULT_LIMIT = 5000;
+/** Hard cap per mf_list_tools call. Page with `offset` if the catalog is larger. */
+export const DYNAMIC_LIST_MAX_LIMIT = 5000;
 
 export function isDynamicTools(
   scopes: ApiKeyScopes | null | undefined,
@@ -172,9 +177,18 @@ export function dynamicToolsCap(): number {
 }
 
 export function clampToolSearchLimit(raw: unknown): number {
-  const n = Number(raw ?? DYNAMIC_LIST_DEFAULT_LIMIT);
-  if (!Number.isFinite(n) || n < 1) return DYNAMIC_LIST_DEFAULT_LIMIT;
+  if (raw == null || raw === "" || raw === true || raw === "all") {
+    return DYNAMIC_LIST_MAX_LIMIT;
+  }
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return DYNAMIC_LIST_MAX_LIMIT;
   return Math.min(Math.floor(n), DYNAMIC_LIST_MAX_LIMIT);
+}
+
+export function clampToolSearchOffset(raw: unknown): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(Math.floor(n), 1_000_000);
 }
 
 /** Named collection of backends for multi-project tool views */
