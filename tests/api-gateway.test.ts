@@ -545,6 +545,26 @@ describe("api + gateway", () => {
     expect(searchText).toContain("up__echo");
     expect(searchText).not.toContain("inputSchema");
 
+    const allListed = await client.callTool({
+      name: "mf_list_tools",
+      arguments: {},
+    });
+    expect(allListed.isError).not.toBe(true);
+    const allText =
+      (allListed.content as Array<{ type: string; text?: string }>)[0]?.text ??
+      "";
+    const allPage = JSON.parse(allText) as {
+      total: number;
+      hasMore: boolean;
+      tools: Array<{ name: string }>;
+    };
+    expect(allPage.total).toBe(2);
+    expect(allPage.hasMore).toBe(false);
+    expect(allPage.tools.map((t) => t.name).sort()).toEqual([
+      "up__echo",
+      "up__secret_probe",
+    ]);
+
     const schema = await client.callTool({
       name: "mf_get_tool_schema",
       arguments: { name: "up__echo" },

@@ -15,6 +15,7 @@ import { CONTROL_PLANE_MODES, supportedPlacementModes } from "../placement.js";
 import type { AuthContext, Project } from "../types.js";
 import {
   clampToolSearchLimit,
+  clampToolSearchOffset,
   dynamicToolsCap,
   isAdminScopes,
   isDynamicTools,
@@ -54,7 +55,7 @@ const META_TOOLS: Tool[] = [
   {
     name: "mf_list_tools",
     description:
-      "Search namespaced tools (slug__tool) for the active project. Returns name, description, backend, enabled — no full schemas. Use q/backend/limit to shortlist. With dynamicTools, enable matches via mf_enable_tools then mf_call_tool.",
+      "List or search namespaced tools (slug__tool) for the active project. Returns the full in-scope catalog by default (name, description, backend, enabled) — not input schemas, so this does not hit harness tools/list caps. Use q/backend to filter; offset if hasMore. With dynamicTools, enable matches via mf_enable_tools then mf_call_tool.",
     inputSchema: {
       type: "object",
       properties: {
@@ -68,7 +69,16 @@ const META_TOOLS: Tool[] = [
         },
         limit: {
           type: "number",
-          description: "Max results (default 25, max 50)",
+          description:
+            "Max results in this page (default: entire catalog up to 5000). Pass a smaller number to shortlist.",
+        },
+        offset: {
+          type: "number",
+          description: "Skip this many matches (page when hasMore is true)",
+        },
+        all: {
+          type: "boolean",
+          description: "Return the full in-scope catalog (up to 5000 per call)",
         },
       },
       additionalProperties: false,
@@ -400,7 +410,10 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (name === "mf_list_tools") {
       const catalog = await catalogInScope(project);
       const working = workingSetFor(ctx);
-      const hits = searchCatalogTools(
+      const wantAll = args.all === true;
+      const limit = clampToolSearchLimit(wantAll ? undefined : args.limit);
+      const offset = clampToolSearchOffset(args.offset);
+      const page = searchCatalogTools(
         catalog.map((t) => ({
           name: t.name,
           description: t.description,
@@ -409,14 +422,18 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         {
           q: typeof args.q === "string" ? args.q : undefined,
           backend: typeof args.backend === "string" ? args.backend : undefined,
-          limit: clampToolSearchLimit(args.limit),
+          limit,
+          offset,
         },
       );
       const payload = {
         project: project?.slug ?? null,
         dynamicTools: dynamic,
-        limit: clampToolSearchLimit(args.limit),
-        tools: hits.map((t) => ({
+        total: page.total,
+        offset: page.offset,
+        limit: page.limit,
+        hasMore: page.hasMore,
+        tools: page.tools.map((t) => ({
           name: t.name,
           description: t.description,
           backend: t.backend,
