@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../src/db/store.js";
+import { mergeApiKeyScopes } from "../src/mcp/admin-tools.js";
 import { toolAllowedByScopes } from "../src/types.js";
 
 const master = Buffer.alloc(32, 5).toString("base64");
@@ -89,6 +90,31 @@ describe("scopes", () => {
   });
 });
 
+describe("mergeApiKeyScopes", () => {
+  it("enables and disables dynamicTools without dropping other scopes", () => {
+    const prev = {
+      admin: true,
+      toolPrefixAllowlist: ["demo__"],
+      projects: ["web"],
+    };
+    const on = mergeApiKeyScopes(prev, { dynamicTools: true });
+    expect(on).toEqual({
+      admin: true,
+      toolPrefixAllowlist: ["demo__"],
+      projects: ["web"],
+      dynamicTools: true,
+    });
+    const off = mergeApiKeyScopes(on, { dynamicTools: false });
+    expect(off).toEqual({
+      admin: true,
+      toolPrefixAllowlist: ["demo__"],
+      projects: ["web"],
+    });
+    const cleared = mergeApiKeyScopes({ dynamicTools: true }, { dynamicTools: false });
+    expect(cleared).toBeNull();
+  });
+});
+
 describe("audit", () => {
   it("writes and lists events without secrets", () => {
     const store = open();
@@ -107,6 +133,37 @@ describe("audit", () => {
     expect(events[0]!.tool).toBe("demo__echo");
     expect(JSON.stringify(events)).not.toContain("Bearer leak");
     expect(events[0]!.detail?.authorization).toBe("[redacted]");
+    expect(events[0]!.keyId).toBe("key_x");
+    expect(events[0]!.keyName).toBeNull();
+    expect(events[0]!.keyPrefix).toBeNull();
+    store.close();
+  });
+
+  it("joins actor key name and prefix onto listed events", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    const created = store.createApiKey(ws.id, "cursor-agent", {
+      dynamicTools: true,
+    });
+    store.writeAudit({
+      workspaceId: ws.id,
+      keyId: created.id,
+      action: "tools/call",
+      tool: "mf_list_tools",
+    });
+    store.writeAudit({
+      workspaceId: ws.id,
+      action: "workspace.policy",
+    });
+    const events = store.listAudit(ws.id);
+    const call = events.find((e) => e.action === "tools/call");
+    expect(call?.keyId).toBe(created.id);
+    expect(call?.keyName).toBe("cursor-agent");
+    expect(call?.keyPrefix).toBe(created.prefix);
+    const policy = events.find((e) => e.action === "workspace.policy");
+    expect(policy?.keyId).toBeNull();
+    expect(policy?.keyName).toBeNull();
+    expect(policy?.keyPrefix).toBeNull();
     store.close();
   });
 

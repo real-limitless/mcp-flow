@@ -248,8 +248,10 @@ describe("api + gateway", () => {
         toolPrefixAllowlist: ["up__echo"],
       }),
     });
-    const token = ((await keyRes.json()) as { key: { token: string } }).key
-      .token;
+    const keyBody = (await keyRes.json()) as {
+      key: { token: string; id: string; name: string; prefix: string };
+    };
+    const token = keyBody.key.token;
 
     const client = new Client(
       { name: "scoped-harness", version: "1.0.0" },
@@ -286,6 +288,9 @@ describe("api + gateway", () => {
       events: Array<{
         action: string;
         tool?: string;
+        keyId?: string | null;
+        keyName?: string | null;
+        keyPrefix?: string | null;
         detail?: {
           denied?: boolean;
           arguments?: Record<string, unknown>;
@@ -306,6 +311,9 @@ describe("api + gateway", () => {
     expect(echoEv?.detail?.arguments).toEqual({ text: "scoped" });
     expect(echoEv?.detail?.result?.content?.[0]?.text).toContain("echo:scoped");
     expect(echoEv?.detail?.isError).toBe(false);
+    expect(echoEv?.keyId).toBe(keyBody.key.id);
+    expect(echoEv?.keyName).toBe("scoped");
+    expect(echoEv?.keyPrefix).toBe(keyBody.key.prefix);
   }, 60_000);
 
   it("accepts central-sandbox backend create; rejects edge-bare without policy", async () => {
@@ -685,4 +693,53 @@ describe("api + gateway", () => {
     expect(JSON.stringify(hotCall)).toContain("echo:hot");
     await hotClient.close();
   }, 60_000);
+
+  it("PATCHes dynamicTools on an existing key without dropping other scopes", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const created = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: "preexisting",
+        toolPrefixAllowlist: ["up__"],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const body = (await created.json()) as {
+      key: { id: string; scopes: { toolPrefixAllowlist?: string[]; dynamicTools?: boolean } };
+    };
+    expect(body.key.scopes.dynamicTools).toBeUndefined();
+    const on = await fetch(`${base}/v1/keys/${body.key.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ dynamicTools: true }),
+    });
+    expect(on.status).toBe(200);
+    const onJson = (await on.json()) as {
+      key: { scopes: { toolPrefixAllowlist?: string[]; dynamicTools?: boolean } };
+    };
+    expect(onJson.key.scopes.dynamicTools).toBe(true);
+    expect(onJson.key.scopes.toolPrefixAllowlist).toEqual(["up__"]);
+    const off = await fetch(`${base}/v1/keys/${body.key.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ dynamicTools: false }),
+    });
+    expect(off.status).toBe(200);
+    const offJson = (await off.json()) as {
+      key: { scopes: { toolPrefixAllowlist?: string[]; dynamicTools?: boolean } };
+    };
+    expect(offJson.key.scopes.dynamicTools).toBeUndefined();
+    expect(offJson.key.scopes.toolPrefixAllowlist).toEqual(["up__"]);
+  });
 });

@@ -361,7 +361,12 @@ export interface AuditEvent {
   id: string;
   ts: string;
   workspaceId: string;
+  /** Actor that performed the action (`audit_events.key_id`). */
   keyId: string | null;
+  /** Joined from `api_keys` at list time; null if env/system or key missing. */
+  keyName: string | null;
+  /** Joined token prefix (e.g. `mf_ab12`); never the secret. */
+  keyPrefix: string | null;
   action: AuditAction | string;
   backendSlug: string | null;
   tool: string | null;
