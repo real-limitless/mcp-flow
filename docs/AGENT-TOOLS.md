@@ -18,9 +18,13 @@ Opt in when minting or patching a key:
 npx mcp-flow key create --name cursor --dynamic-tools
 # optional always-on prefixes (listed and callable without enable):
 npx mcp-flow key create --name cursor --dynamic-tools --dynamic-tools-hot 'github__'
+
+# Flip the flag on an existing key (keeps prefixes / projects / admin):
+npx mcp-flow key scopes <id> --dynamic-tools
+npx mcp-flow key scopes <id> --no-dynamic-tools
 ```
 
-REST: `POST /v1/keys` with `"dynamicTools": true` (optional `"dynamicToolsHot": ["github__"]`). Admin UI: **Dynamic tool discovery** checkbox.
+REST: `POST /v1/keys` or `PATCH /v1/keys/:id` with `"dynamicTools": true|false` (optional `"dynamicToolsHot": ["github__"]`). Admin UI Keys tab: **discovery** toggle on each row, or **Edit**.
 
 When the flag is on:
 

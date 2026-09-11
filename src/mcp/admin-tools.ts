@@ -179,7 +179,8 @@ export const ADMIN_META_TOOLS: Tool[] = [
   },
   {
     name: "mf_admin_update_key_scopes",
-    description: "Set scopes on a key (null/empty clears). Requires admin key.",
+    description:
+      "Patch scopes on an existing key (merges with current scopes). Use clear to wipe. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -392,6 +393,75 @@ export function buildScopesFromArgs(args: {
     scopes.dynamicToolsHot = args.dynamicToolsHot.map(String).filter(Boolean);
   }
   return scopesHasFields(scopes) ? scopes : null;
+}
+
+/** Partial scope patch used by REST PATCH /v1/keys and mf_admin_update_key_scopes. */
+export function mergeApiKeyScopes(
+  prev: ApiKeyScopes | null | undefined,
+  patch: {
+    admin?: boolean;
+    toolPrefixAllowlist?: string[] | null;
+    projects?: string[] | null;
+    defaultProject?: string | null;
+    dynamicTools?: boolean;
+    dynamicToolsHot?: string[] | null;
+  },
+): ApiKeyScopes | null {
+  const adminFlag =
+    patch.admin !== undefined ? patch.admin === true : Boolean(prev?.admin);
+  const prefixes =
+    patch.toolPrefixAllowlist !== undefined
+      ? patch.toolPrefixAllowlist === null
+        ? undefined
+        : patch.toolPrefixAllowlist
+      : prev?.toolPrefixAllowlist;
+  const projects =
+    patch.projects !== undefined
+      ? patch.projects === null
+        ? undefined
+        : patch.projects
+      : prev?.projects;
+  const defaultProject =
+    patch.defaultProject !== undefined
+      ? patch.defaultProject
+      : prev?.defaultProject ?? undefined;
+  const dynamicTools =
+    patch.dynamicTools !== undefined
+      ? patch.dynamicTools === true
+      : Boolean(prev?.dynamicTools);
+  const dynamicToolsHot =
+    patch.dynamicToolsHot !== undefined
+      ? patch.dynamicToolsHot === null
+        ? undefined
+        : patch.dynamicToolsHot
+      : prev?.dynamicToolsHot;
+  let scopes = buildScopesFromArgs({
+    admin: adminFlag,
+    toolPrefixAllowlist: prefixes ?? undefined,
+    projects: projects ?? undefined,
+    defaultProject:
+      defaultProject === null ? undefined : defaultProject ?? undefined,
+    dynamicTools,
+    dynamicToolsHot: dynamicToolsHot ?? undefined,
+  });
+  if (patch.admin === false && scopes) {
+    delete scopes.admin;
+  }
+  if (patch.dynamicTools === false && scopes) {
+    delete scopes.dynamicTools;
+  }
+  if (
+    patch.projects !== undefined &&
+    Array.isArray(patch.projects) &&
+    patch.projects.length === 0 &&
+    scopes
+  ) {
+    delete scopes.projects;
+  }
+  if (scopes && !scopesHasFields(scopes)) {
+    scopes = null;
+  }
+  return scopes;
 }
 
 export interface AdminToolDeps {
@@ -654,36 +724,48 @@ export async function handleAdminTool(
 
       case "mf_admin_update_key_scopes": {
         const id = String(args.id ?? "");
-        let scopes: ApiKeyScopes | null;
-        if (args.clear === true) scopes = null;
-        else {
-          scopes = buildScopesFromArgs({
-            admin: args.admin === true,
-            toolPrefixAllowlist: Array.isArray(args.toolPrefixAllowlist)
-              ? (args.toolPrefixAllowlist as string[])
-              : undefined,
-            projects: Array.isArray(args.projects)
-              ? (args.projects as string[])
-              : undefined,
-            defaultProject:
-              typeof args.defaultProject === "string"
-                ? args.defaultProject
-                : undefined,
-            dynamicTools: args.dynamicTools === true,
-            dynamicToolsHot: Array.isArray(args.dynamicToolsHot)
-              ? (args.dynamicToolsHot as string[])
-              : undefined,
-          });
-          if (args.admin === false && scopes?.admin) {
-            delete scopes.admin;
-          }
-          if (args.dynamicTools === false && scopes?.dynamicTools) {
-            delete scopes.dynamicTools;
-          }
-          if (scopes && !scopesHasFields(scopes)) {
-            scopes = null;
-          }
+        const existing = store.listApiKeys(wsId).find((k) => k.id === id);
+        if (!existing) return textResult("not found", true);
+        const hasPatch =
+          args.clear === true ||
+          args.admin !== undefined ||
+          args.toolPrefixAllowlist !== undefined ||
+          args.projects !== undefined ||
+          args.defaultProject !== undefined ||
+          args.dynamicTools !== undefined ||
+          args.dynamicToolsHot !== undefined;
+        if (!hasPatch) {
+          return textResult(
+            "pass at least one scope field (dynamicTools, admin, …) or clear",
+            true,
+          );
         }
+        const scopes =
+          args.clear === true
+            ? null
+            : mergeApiKeyScopes(existing.scopes, {
+                admin:
+                  typeof args.admin === "boolean" ? args.admin : undefined,
+                toolPrefixAllowlist: Array.isArray(args.toolPrefixAllowlist)
+                  ? (args.toolPrefixAllowlist as string[])
+                  : undefined,
+                projects: Array.isArray(args.projects)
+                  ? (args.projects as string[])
+                  : undefined,
+                defaultProject:
+                  typeof args.defaultProject === "string"
+                    ? args.defaultProject
+                    : args.defaultProject === null
+                      ? null
+                      : undefined,
+                dynamicTools:
+                  typeof args.dynamicTools === "boolean"
+                    ? args.dynamicTools
+                    : undefined,
+                dynamicToolsHot: Array.isArray(args.dynamicToolsHot)
+                  ? (args.dynamicToolsHot as string[])
+                  : undefined,
+              });
         const key = store.updateApiKeyScopes(wsId, id, scopes);
         if (!key) return textResult("not found", true);
         audit("key.update", { via: "mf_admin", keyId: id, scopes });

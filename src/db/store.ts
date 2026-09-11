@@ -307,6 +307,31 @@ function rowDevice(r: Record<string, unknown>): DevicePublic {
   };
 }
 
+function nullableStr(v: unknown): string | null {
+  if (v == null || v === "") return null;
+  return String(v);
+}
+
+function mapAuditRow(r: Record<string, unknown>): AuditEvent {
+  return {
+    id: String(r.id),
+    ts: String(r.ts),
+    workspaceId: String(r.workspace_id),
+    keyId: r.key_id == null ? null : String(r.key_id),
+    keyName: nullableStr(r.key_name),
+    keyPrefix: nullableStr(r.key_prefix),
+    action: String(r.action),
+    backendSlug: r.backend_slug == null ? null : String(r.backend_slug),
+    tool: r.tool == null ? null : String(r.tool),
+    placement: r.placement == null ? null : String(r.placement),
+    deviceId: r.device_id == null ? null : String(r.device_id),
+    detail: r.detail_json
+      ? (JSON.parse(String(r.detail_json)) as Record<string, unknown>)
+      : null,
+    ip: r.ip == null ? null : String(r.ip),
+  };
+}
+
 function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
   return {
     id: k.id,
@@ -619,38 +644,30 @@ export class Store {
     opts: { limit?: number; before?: string } = {},
   ): AuditEvent[] {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
+    const select = `SELECT
+          a.id, a.ts, a.workspace_id, a.key_id, a.action, a.backend_slug, a.tool,
+          a.placement, a.device_id, a.detail_json, a.ip,
+          k.name AS key_name, k.prefix AS key_prefix
+        FROM audit_events a
+        LEFT JOIN api_keys k ON k.id = a.key_id`;
     const rows = (
       opts.before
         ? (this.db
             .prepare(
-              `SELECT * FROM audit_events
-               WHERE workspace_id = ? AND ts < ?
-               ORDER BY ts DESC LIMIT ?`,
+              `${select}
+               WHERE a.workspace_id = ? AND a.ts < ?
+               ORDER BY a.ts DESC LIMIT ?`,
             )
             .all(workspaceId, opts.before, limit) as Record<string, unknown>[])
         : (this.db
             .prepare(
-              `SELECT * FROM audit_events
-               WHERE workspace_id = ?
-               ORDER BY ts DESC LIMIT ?`,
+              `${select}
+               WHERE a.workspace_id = ?
+               ORDER BY a.ts DESC LIMIT ?`,
             )
             .all(workspaceId, limit) as Record<string, unknown>[])
     );
-    return rows.map((r) => ({
-      id: String(r.id),
-      ts: String(r.ts),
-      workspaceId: String(r.workspace_id),
-      keyId: r.key_id == null ? null : String(r.key_id),
-      action: String(r.action),
-      backendSlug: r.backend_slug == null ? null : String(r.backend_slug),
-      tool: r.tool == null ? null : String(r.tool),
-      placement: r.placement == null ? null : String(r.placement),
-      deviceId: r.device_id == null ? null : String(r.device_id),
-      detail: r.detail_json
-        ? (JSON.parse(String(r.detail_json)) as Record<string, unknown>)
-        : null,
-      ip: r.ip == null ? null : String(r.ip),
-    }));
+    return rows.map((r) => mapAuditRow(r));
   }
 
   createBackend(
