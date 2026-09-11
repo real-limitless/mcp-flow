@@ -119,9 +119,12 @@ Some clients refuse more than ~200 tools from `tools/list`. Per-key **dynamic to
 
 ```bash
 npx mcp-flow key create --name cursor --dynamic-tools
+# existing key — keep other scopes:
+npx mcp-flow key scopes <id> --dynamic-tools
+npx mcp-flow key scopes <id> --no-dynamic-tools
 ```
 
-Agent loop: `mf_list_tools({ q })` → `mf_enable_tools({ names })` → `mf_call_tool` (or native `tools/call` of an enabled name). Optional `--dynamic-tools-hot <prefix>` keeps a small always-on set. Details: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Admin UI Keys tab: **discovery** on/off per row (also under **Edit**). Agent loop: `mf_list_tools({ q })` → `mf_enable_tools({ names })` → `mf_call_tool` (or native `tools/call` of an enabled name). Optional `--dynamic-tools-hot <prefix>` keeps a small always-on set. Details: [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Add a remote MCP (headers sealed)
 
@@ -294,7 +297,7 @@ npx mcp-flow doctor
 
 Scoped keys only see/call matching tool name prefixes (`mf_status` always allowed).
 
-Tool-call audit rows store **redacted request arguments** and **response bodies** (size-capped; secrets scrubbed). Treat the SQLite DB as sensitive. Cap via `MCP_FLOW_AUDIT_MAX_DETAIL_BYTES`.
+Tool-call audit rows store **redacted request arguments** and **response bodies** (size-capped; secrets scrubbed). Each event includes the **actor key** (`keyId`, plus `keyName` / `keyPrefix` joined from `api_keys`). Env-admin / CLI actions with no key show as `env / system` in Admin → Audit. Treat the SQLite DB as sensitive. Cap via `MCP_FLOW_AUDIT_MAX_DETAIL_BYTES`.
 
 ## Development
 

@@ -499,6 +499,7 @@ async function renderKeys() {
               <th>name</th>
               <th>prefix</th>
               <th>role</th>
+              <th>discovery</th>
               <th>projects</th>
               <th>scopes</th>
               <th></th>
@@ -512,10 +513,14 @@ async function renderKeys() {
                       (k) => `<tr>
               <td>${esc(k.name)}</td>
               <td class="mono">${esc(k.prefix)}</td>
-              <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}${
-                k.scopes?.dynamicTools
-                  ? ' <span class="pill accent">dynamic</span>'
-                  : ""
+              <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}</td>
+              <td>${
+                k.revokedAt
+                  ? '<span class="pill off">revoked</span>'
+                  : `<button type="button" class="dyn-switch" data-key-dyn="${esc(k.id)}" aria-pressed="${k.scopes?.dynamicTools ? "true" : "false"}" title="Toggle dynamic tool discovery">
+                      <span class="dyn-switch-track" aria-hidden="true"><span class="dyn-switch-knob"></span></span>
+                      <span>${k.scopes?.dynamicTools ? "on" : "off"}</span>
+                    </button>`
               }</td>
               <td>${formatKeyProjects(k.scopes)}</td>
               <td class="mono">${esc(
@@ -526,23 +531,23 @@ async function renderKeys() {
                 }),
               )}</td>
               <td class="row-actions">
-                <button type="button" class="pill-btn ghost" data-key-edit="${esc(k.id)}">Projects</button>
+                <button type="button" class="pill-btn ghost" data-key-edit="${esc(k.id)}">Edit</button>
                 <button type="button" class="pill-btn danger" data-revoke="${esc(k.id)}">Revoke</button>
               </td>
             </tr>`,
                     )
                     .join("")
-                : `<tr><td colspan="6" class="muted">No keys yet</td></tr>`
+                : `<tr><td colspan="7" class="muted">No keys yet</td></tr>`
             }
           </tbody>
         </table>
       </div>
       <div id="keyEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px">
         <div class="once-label" style="color:var(--accent-hot)">
-          Attach projects · <span id="keyEditName"></span>
+          Edit key · <span id="keyEditName"></span>
         </div>
         <p class="muted" style="margin-bottom:8px;font-size:12px">
-          Uncheck all = allow every project. Default project is used until the agent calls mf_use_project.
+          Uncheck all projects = allow every project. Default project is used until the agent calls mf_use_project.
         </p>
         <div class="proj-be-grid" id="keyEditProjGrid"></div>
         <div class="form-field" style="margin-top:12px;max-width:16rem">
@@ -554,6 +559,11 @@ async function renderKeys() {
             <input type="checkbox" id="keyEditDynamic" />
             Dynamic tool discovery
           </label>
+          <p class="dim" style="font-size:12px;margin-top:6px;max-width:42rem">
+            Hide upstream tools from <span class="mono">tools/list</span> (harness 200-tool caps).
+            Agent searches with <span class="mono">mf_list_tools</span>, then
+            <span class="mono">mf_enable_tools</span> / <span class="mono">mf_call_tool</span>.
+          </p>
         </div>
         <div class="row-actions" style="margin-top:12px">
           <button type="button" id="keySaveEdit" class="pill-btn primary">Save</button>
@@ -637,6 +647,26 @@ async function renderKeys() {
     } catch (e) {
       showErr(e.message);
     }
+  });
+
+  document.querySelectorAll("[data-key-dyn]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-key-dyn");
+      const k = keys.find((x) => x.id === id);
+      if (!k || k.revokedAt) return;
+      const next = !Boolean(k.scopes?.dynamicTools);
+      btn.disabled = true;
+      try {
+        await api(`/v1/keys/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ dynamicTools: next }),
+        });
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+        btn.disabled = false;
+      }
+    });
   });
 
   document.querySelectorAll("[data-key-edit]").forEach((btn) => {
@@ -1374,6 +1404,20 @@ function prettyJson(v) {
   }
 }
 
+function auditKeyHtml(e) {
+  if (e.keyName) {
+    return `<span class="audit-key" title="${esc(e.keyId || "")}">
+      <span class="audit-key-name">${esc(e.keyName)}</span>
+      ${e.keyPrefix ? `<span class="mono audit-key-prefix">${esc(e.keyPrefix)}</span>` : ""}
+    </span>`;
+  }
+  if (e.keyId) {
+    const short = String(e.keyId).length > 14 ? `${String(e.keyId).slice(0, 12)}…` : e.keyId;
+    return `<span class="pill off" title="${esc(e.keyId)}">key ${esc(short)}</span>`;
+  }
+  return `<span class="pill off">env / system</span>`;
+}
+
 function auditStatusPills(detail) {
   const d = detail || {};
   const pills = [];
@@ -1518,13 +1562,22 @@ async function renderAudit() {
                 <span class="mono audit-tool">${esc(e.tool || "—")}</span>
               </span>
               <span class="audit-sum-meta">
+                ${auditKeyHtml(e)}
                 <span class="mono dim">${esc(e.backendSlug || "")}</span>
                 <span class="mono dim">${esc(e.deviceId || "")}</span>
                 <span class="audit-meta">${auditStatusPills(d)}</span>
               </span>
             </button>
             <div class="audit-expand" data-audit-body hidden>
-              ${expandable ? auditExpandBody(d) : ""}
+              ${
+                expandable
+                  ? `<div class="audit-actor">
+                      <span class="mute">actor</span>
+                      ${auditKeyHtml(e)}
+                      <span class="mono dim">${esc(e.keyId || "no key id")}</span>
+                    </div>${auditExpandBody(d)}`
+                  : ""
+              }
             </div>
           </article>`;
         })
@@ -1537,7 +1590,7 @@ async function renderAudit() {
       `
       <div class="audit-toolbar">
         <p class="muted" style="margin:0;flex:1">
-          Click a row to expand full-width request / response (redacted, size-capped).
+          Actor is the API key that performed the action. Click a row to expand request / response (redacted, size-capped).
         </p>
         <div class="row-actions">
           <button type="button" class="pill-btn ghost" data-audit-expand-calls>Expand calls</button>

@@ -2,7 +2,7 @@ import type { Config } from "../config.js";
 import { Store } from "../db/store.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import type { BackendPublic, ApiKeyPublic } from "../types.js";
-import { DEFAULT_PLACEMENT } from "../types.js";
+import { DEFAULT_PLACEMENT, scopesHasFields } from "../types.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
 import {
   c,
@@ -402,7 +402,10 @@ export async function runTui(cfg: Config): Promise<void> {
           const rev = k.revokedAt
             ? `${c.red}revoked${c.reset}`
             : `${c.green}active${c.reset}`;
-          const line = `${pad(k.name, 20)} ${pad(k.prefix + "…", 14)} ${rev}`;
+          const dyn = k.scopes?.dynamicTools
+            ? `${c.cyan}dyn${c.reset}`
+            : `${c.dim}eager${c.reset}`;
+          const line = `${pad(k.name, 20)} ${pad(k.prefix + "…", 14)} ${rev} ${dyn}`;
           writeLine(sel ? `${c.reverse} › ${line}${c.reset}` : `   ${line}`);
         });
       }
@@ -413,7 +416,7 @@ export async function runTui(cfg: Config): Promise<void> {
         );
         writeLine(`  ${c.bold}${s.lastToken}${c.reset}`);
       }
-      footer = "↑↓ · n create · x revoke · r refresh · esc";
+      footer = "↑↓ · n create · d discovery · x revoke · r refresh · esc";
     }
 
     if (screen.id === "key-create") {
@@ -981,6 +984,26 @@ export async function runTui(cfg: Config): Promise<void> {
       }
       if (key.name === "char" && key.sequence === "n") {
         screen = { id: "key-create", name: "", status: "" };
+      }
+      if (key.name === "char" && key.sequence === "d") {
+        const k = list[s.cursor];
+        if (k && !k.revokedAt) {
+          const next = { ...(k.scopes ?? {}) };
+          if (next.dynamicTools) delete next.dynamicTools;
+          else next.dynamicTools = true;
+          const scopes = scopesHasFields(next) ? next : null;
+          store.updateApiKeyScopes(ws.id, k.id, scopes);
+          store.writeAudit({
+            workspaceId: ws.id,
+            action: "key.update",
+            detail: { keyId: k.id, scopes, via: "tui" },
+          });
+          screen = {
+            ...s,
+            status: `${k.name} discovery ${scopes?.dynamicTools ? "on" : "off"}`,
+            lastToken: undefined,
+          };
+        }
       }
       if (key.name === "char" && key.sequence === "x") {
         const k = list[s.cursor];

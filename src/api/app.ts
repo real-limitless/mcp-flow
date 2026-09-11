@@ -24,7 +24,10 @@ import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
 import { createGatewayServer } from "../mcp/gateway.js";
-import { buildScopesFromArgs } from "../mcp/admin-tools.js";
+import {
+  buildScopesFromArgs,
+  mergeApiKeyScopes,
+} from "../mcp/admin-tools.js";
 import { globalSessionProjects } from "../mcp/session-project.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
@@ -45,7 +48,7 @@ import type {
   UpdateProjectInput,
   WorkspacePolicy,
 } from "../types.js";
-import { DEFAULT_PLACEMENT, isAdminScopes, scopesHasFields } from "../types.js";
+import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 
 type Variables = {
   auth: AuthContext;
@@ -300,61 +303,17 @@ export function createApp(
       body.dynamicTools !== undefined ||
       body.dynamicToolsHot !== undefined
     ) {
-      // Merge with existing key scopes when partially updating
       const existing = store
         .listApiKeys(auth.workspaceId)
         .find((k) => k.id === c.req.param("id"));
-      const prev = existing?.scopes ?? null;
-      const adminFlag =
-        body.admin !== undefined ? body.admin === true : Boolean(prev?.admin);
-      const prefixes =
-        body.toolPrefixAllowlist !== undefined
-          ? body.toolPrefixAllowlist === null
-            ? undefined
-            : body.toolPrefixAllowlist
-          : prev?.toolPrefixAllowlist;
-      const projects =
-        body.projects !== undefined
-          ? body.projects === null
-            ? undefined
-            : body.projects
-          : prev?.projects;
-      const defaultProject =
-        body.defaultProject !== undefined
-          ? body.defaultProject
-          : prev?.defaultProject ?? undefined;
-      const dynamicTools =
-        body.dynamicTools !== undefined
-          ? body.dynamicTools === true
-          : Boolean(prev?.dynamicTools);
-      const dynamicToolsHot =
-        body.dynamicToolsHot !== undefined
-          ? body.dynamicToolsHot === null
-            ? undefined
-            : body.dynamicToolsHot
-          : prev?.dynamicToolsHot;
-      scopes = buildScopesFromArgs({
-        admin: adminFlag,
-        toolPrefixAllowlist: prefixes ?? undefined,
-        projects: projects ?? undefined,
-        defaultProject:
-          defaultProject === null ? undefined : defaultProject ?? undefined,
-        dynamicTools,
-        dynamicToolsHot: dynamicToolsHot ?? undefined,
+      scopes = mergeApiKeyScopes(existing?.scopes, {
+        admin: body.admin,
+        toolPrefixAllowlist: body.toolPrefixAllowlist,
+        projects: body.projects,
+        defaultProject: body.defaultProject,
+        dynamicTools: body.dynamicTools,
+        dynamicToolsHot: body.dynamicToolsHot,
       });
-      if (body.admin === false && scopes) {
-        delete scopes.admin;
-      }
-      if (body.dynamicTools === false && scopes) {
-        delete scopes.dynamicTools;
-      }
-      // Explicit empty projects array = all projects (clear restriction)
-      if (body.projects !== undefined && Array.isArray(body.projects) && body.projects.length === 0 && scopes) {
-        delete scopes.projects;
-      }
-      if (scopes && !scopesHasFields(scopes)) {
-        scopes = null;
-      }
     } else {
       return c.json(
         {
