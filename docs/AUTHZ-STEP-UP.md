@@ -1,6 +1,6 @@
 # Plan: step-up MFA and notify-then-approve for tool calls
 
-Status: **design only** (not implemented). Gateway-first. Does not change catalog schema.
+Status: **P7a + TOTP decide (P7b) implemented.** Webhook notify (P7c) and WebAuthn (P7d) are not. Gateway-first. Does not change catalog schema.
 
 Operators should be able to pick **which tools** and **which rules** require a human in the loop before mcp-flow proxies the call:
 
@@ -54,9 +54,9 @@ A 3-minute hold is idle from the proxy’s point of view until the JSON response
 
 mcp-flow must:
 
-- Send **MCP streamable-HTTP / SSE keepalives** (periodic comment/ping) so the connection is not idle.
-- Document Traefik/nginx/`respondingTimeouts` / Cloudflare so **idle timeout ≥ `ttlSeconds` + upstream runtime** (suggest ≥ 4 minutes).
-- Cap concurrent waiting approvals per workspace (e.g. 32) so a stuck agent cannot pin the process.
+- Hold the original HTTP `tools/call` (default 180s) until approve, deny, or timeout.
+- Document Traefik/nginx/`respondingTimeouts` / Cloudflare so **idle timeout ≥ `ttlSeconds` + upstream runtime** (suggest ≥ 4 minutes). JSON streamable HTTP (`enableJsonResponse: true`) cannot SSE-ping during the wait, so proxy idle time is the real limit.
+- Cap concurrent waiting approvals per workspace (32) so a stuck agent cannot pin the process.
 - Not hold a SQLite transaction for the 3 minutes — insert pending, commit, wait in memory, then decide + proxy.
 
 If a deployment cannot raise proxy idle time, lower `ttlSeconds` (e.g. 45s). The protocol stays “wait on this call,” not resume-later.
@@ -269,8 +269,11 @@ DELETE /v1/authz/rules/:id
 
 GET    /v1/approvals?status=pending
 POST   /v1/approvals/:id/decision   { "decision": "approve"|"deny", "totp"?: "123456" }
-POST   /v1/operators/mfa/enroll
-POST   /v1/operators/mfa/verify
+
+GET    /v1/operators/mfa
+POST   /v1/operators/mfa/begin      // secret once; { replace, totp } to rotate
+POST   /v1/operators/mfa/confirm    { "totp": "123456" }
+POST   /v1/operators/mfa/disable   { "totp": "123456" }
 ```
 
 CLI: `mcp-flow authz rule add|list`, `mcp-flow approvals list|decide`.
@@ -300,7 +303,7 @@ Default workspace: **no rules**. Existing keys keep today’s behavior.
 
 | Phase | Deliverable | Unlocks |
 | --- | --- | --- |
-| **P7a** | Rules + approvals; match engine; **hold `tools/call` up to 180s**; Admin inbox + REST decide; keepalive; timeout/deny payloads; audit | Notify-then-approve without a resume protocol |
+| **P7a** | Rules + approvals; match engine; **hold `tools/call` up to 180s**; Admin inbox + REST decide; timeout/deny payloads; audit | Notify-then-approve without a resume protocol |
 | **P7b** | TOTP enroll + MFA on decide during the wait; `mfa` / `mfa_and_approve`; reuse window | Step-up during the same call |
 | **P7c** | Webhook notify + HMAC; one-time decide token for `notify_approve` only | Phone/Slack within the 3-minute window |
 | **P7d** | WebAuthn; argument matchers; per-key extras | Harder policies |

@@ -183,7 +183,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 | **P4** | **Edge agent** + device enrollment + **edge-sandbox** | Multi-desktop local tools, isolated |
 | **P5** | **edge-bare** (workspace policy opt-in) | Power-user friction reduction |
 | **P6** | Routing polish: tags, pin, failover, `mf_use_device` | Multi-machine workflows |
-| **P7** | Step-up MFA + notify-then-approve for selected tools/rules | Human in the loop on dangerous calls ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)) |
+| **P7** | Step-up MFA + notify-then-approve for selected tools/rules | Human in the loop on dangerous calls ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)) — P7a hold-`tools/call` + TOTP decide shipped; webhook/WebAuthn later |
 
 **Implementation order for next coding pass:** P0 → P1 (gateway-first). Stub `placement.mode = "remote"` in schema from day one.
 
@@ -207,7 +207,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 - Executable MCPs: sandbox default; bare requires explicit policy
 - Edge: short-lived sealed runtime secrets; wipe on disable
 - Audit: key_id, backend, tool, device_id, placement  
-- Step-up (planned): selected tools/rules require MFA and/or notify-then-approve before proxy; see [docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)
+- Step-up: selected tools/rules require MFA and/or notify-then-approve before proxy; the original `tools/call` is held (default 180s). See [docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)
 - No secrets in gallery JSON, logs, or tool schemas/results
 - Document third-party MCP supply-chain risk
 
@@ -277,5 +277,6 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 - [x] P4 edge-sandbox: device enroll, WS hub, `mcp-flow edge`, pin deviceId  
 - [x] P5 edge-bare: workspace `allowEdgeBare` policy (default false)  
 - [x] P6 routing: tags / any-online / `mf_use_device` sticky + richer `mf_status`  
-- [ ] P7 step-up MFA + notify-then-approve: design in [docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)  
+- [x] P7a/P7b step-up: hold `tools/call`, Admin Approvals + TOTP decide ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md))
+- [ ] P7c webhook notify + signed decide for `notify_approve`  
 

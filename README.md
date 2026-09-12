@@ -176,7 +176,7 @@ Stdio shim:
 MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
 ```
 
-Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. With `--dynamic-tools` on the key: also `mf_get_tool_schema`, `mf_enable_tools`, `mf_disable_tools`, `mf_call_tool`. Backend tools are `{slug}__{tool}`. See [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. With `--dynamic-tools` on the key: also `mf_get_tool_schema`, `mf_enable_tools`, `mf_disable_tools`, `mf_call_tool`. Backend tools are `{slug}__{tool}`. Gated tools hold `tools/call` until Admin → Approvals ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)). See [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Docker Compose
 
@@ -223,6 +223,10 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 | `PATCH` | `/v1/backends/:id` | Update / enable |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
 | `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
+| `GET/POST/PATCH/DELETE` | `/v1/authz/rules` | Human-gate rules (match + MFA/approve) |
+| `GET` | `/v1/approvals` | Inbox (`?status=pending`) |
+| `POST` | `/v1/approvals/:id/decision` | Approve/deny the waiting `tools/call` (`totp` if required) |
+| `GET/POST` | `/v1/operators/mfa` | TOTP enroll (`/begin`, `/confirm`, `/disable`) |
 | `GET/POST/DELETE` | `/v1/devices` | Edge device enroll / list / revoke |
 | `WS` | `/v1/edge/connect` | Edge agent (device token) |
 | `GET` | `/admin/` | Operator admin UI |
@@ -236,6 +240,7 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
 - Placement: `remote`, `central-sandbox`, `edge-sandbox`, `edge-bare` (bare needs workspace policy)
 - Admin UI at `/admin/` (browser holds admin token in sessionStorage)
+- Gated tools: Admin → **Approvals** holds the agent `tools/call` until approve/deny/timeout (default 180s). Set reverse-proxy idle timeout ≥ ~4 minutes. See [docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md).
 
 ## Placement (P3–P6)
 

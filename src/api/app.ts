@@ -17,7 +17,14 @@ import {
 } from "../catalog/sync.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
 import type { Config } from "../config.js";
-import { safeEqualStr } from "../crypto.js";
+import { globalApprovalWaiters } from "../authz/waiters.js";
+import {
+  parseAuthzRequirement,
+  requirementNeedsMfa,
+} from "../authz/types.js";
+import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
+import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
+import { seal, safeEqualStr } from "../crypto.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
@@ -849,6 +856,271 @@ export function createApp(
     }
   });
 
+  admin.get("/authz/rules", (c) => {
+    const auth = c.get("auth");
+    return c.json({ rules: store.listAuthzRules(auth.workspaceId) });
+  });
+
+  admin.post("/authz/rules", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const rule = store.createAuthzRule(auth.workspaceId, {
+        name: String(body.name ?? ""),
+        enabled: body.enabled !== false,
+        priority: typeof body.priority === "number" ? body.priority : undefined,
+        match: (body.match ?? {}) as Record<string, unknown>,
+        requirement: parseAuthzRequirement(body.requirement) ?? undefined,
+        ttlSeconds: body.ttlSeconds as number | undefined,
+        mfaReuseSeconds: body.mfaReuseSeconds as number | undefined,
+      });
+      return c.json({ rule }, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.patch("/authz/rules/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const rule = store.updateAuthzRule(auth.workspaceId, c.req.param("id"), {
+        name: body.name !== undefined ? String(body.name) : undefined,
+        enabled: body.enabled !== undefined ? Boolean(body.enabled) : undefined,
+        priority: typeof body.priority === "number" ? body.priority : undefined,
+        match:
+          body.match !== undefined
+            ? (body.match as Record<string, unknown>)
+            : undefined,
+        requirement: parseAuthzRequirement(body.requirement) ?? undefined,
+        ttlSeconds: body.ttlSeconds as number | undefined,
+        mfaReuseSeconds: body.mfaReuseSeconds as number | undefined,
+      });
+      if (!rule) return c.json({ error: "not found" }, 404);
+      return c.json({ rule });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.delete("/authz/rules/:id", (c) => {
+    const auth = c.get("auth");
+    const ok = store.deleteAuthzRule(auth.workspaceId, c.req.param("id"));
+    if (!ok) return c.json({ error: "not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  admin.get("/approvals", (c) => {
+    const auth = c.get("auth");
+    const statusRaw = c.req.query("status");
+    const status =
+      statusRaw === "pending" ||
+      statusRaw === "approved" ||
+      statusRaw === "denied" ||
+      statusRaw === "expired" ||
+      statusRaw === "all"
+        ? statusRaw
+        : "pending";
+    const approvals = store.listApprovals(auth.workspaceId, { status });
+    return c.json({
+      approvals,
+      pendingCount: store.countPendingApprovals(auth.workspaceId),
+      waiting: globalApprovalWaiters.workspacePending(auth.workspaceId),
+    });
+  });
+
+  admin.post("/approvals/:id/decision", async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      decision?: string;
+      totp?: string;
+    };
+    const decision =
+      body.decision === "approve" || body.decision === "deny"
+        ? body.decision
+        : null;
+    if (!decision) {
+      return c.json({ error: 'decision must be "approve" or "deny"' }, 400);
+    }
+
+    const approval = store.getApproval(auth.workspaceId, id, { redact: true });
+    if (!approval) return c.json({ error: "not found" }, 404);
+    if (approval.status !== "pending") {
+      return c.json(
+        { error: "approval is not pending", status: approval.status },
+        409,
+      );
+    }
+
+    if (decision === "approve" && requirementNeedsMfa(approval.requirement)) {
+      const op = operatorSubject(auth);
+      const mfa = store.getOperatorMfa(auth.workspaceId, op);
+      if (!mfa.enrolled) {
+        return c.json(
+          {
+            error: "enroll MFA first",
+            enroll: "/v1/operators/mfa/begin",
+          },
+          400,
+        );
+      }
+      const totp = String(body.totp ?? "").trim();
+      if (!totp) return c.json({ error: "totp required" }, 400);
+      const verified = verifyOperatorTotp(
+        store,
+        auth.workspaceId,
+        op,
+        totp,
+      );
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+
+    const nextStatus = decision === "approve" ? "approved" : "denied";
+    const updated = store.decideApproval(auth.workspaceId, id, {
+      status: nextStatus,
+      decidedByKeyId: auth.keyId ?? null,
+      mfaSatisfied: decision === "approve" && requirementNeedsMfa(approval.requirement),
+    });
+    if (!updated) {
+      return c.json(
+        { error: "approval is not pending", status: "expired" },
+        409,
+      );
+    }
+
+    const unblocked = globalApprovalWaiters.resolve(
+      id,
+      nextStatus === "approved" ? "approved" : "denied",
+    );
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId ?? null,
+      action: nextStatus === "approved" ? "authz.approve" : "authz.deny",
+      tool: approval.tool,
+      backendSlug: approval.backendSlug,
+      detail: {
+        approvalId: id,
+        decision: nextStatus,
+        unblocked,
+        requirement: approval.requirement,
+      },
+      ip: clientIp(c),
+    });
+    return c.json({
+      approval: store.getApproval(auth.workspaceId, id, { redact: true }),
+      unblocked,
+    });
+  });
+
+  admin.get("/operators/mfa", (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    return c.json(store.getOperatorMfa(auth.workspaceId, op));
+  });
+
+  admin.post("/operators/mfa/begin", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      replace?: boolean;
+      totp?: string;
+    };
+    const current = store.getOperatorMfa(auth.workspaceId, op);
+    if (current.enrolled && !body.replace) {
+      return c.json(
+        {
+          error: "already enrolled",
+          hint: 'POST with { "replace": true, "totp": "123456" } to rotate',
+        },
+        409,
+      );
+    }
+    if (current.enrolled && body.replace) {
+      const totp = String(body.totp ?? "").trim();
+      if (!totp) return c.json({ error: "totp required to replace" }, 400);
+      const verified = verifyOperatorTotp(
+        store,
+        auth.workspaceId,
+        op,
+        totp,
+      );
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+    const { base32 } = generateTotpSecret();
+    store.upsertOperatorMfaPending(
+      auth.workspaceId,
+      op,
+      seal(store.masterKey, { base32 }),
+    );
+    const account =
+      auth.kind === "admin"
+        ? "env-admin"
+        : (auth.keyName ?? auth.keyId ?? "operator");
+    return c.json({
+      pending: true,
+      secret: base32,
+      otpauthUrl: otpauthUrl({
+        issuer: "mcp-flow",
+        account,
+        base32,
+      }),
+    });
+  });
+
+  admin.post("/operators/mfa/confirm", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as { totp?: string };
+    const totp = String(body.totp ?? "").trim();
+    if (!totp) return c.json({ error: "totp required" }, 400);
+    const verified = verifyOperatorTotp(store, auth.workspaceId, op, totp, {
+      requireEnrolled: false,
+    });
+    if (!verified.ok) {
+      if (verified.error === "not_enrolled") {
+        return c.json({ error: "call /v1/operators/mfa/begin first" }, 400);
+      }
+      const status = verified.error === "locked" ? 429 : 401;
+      return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+    }
+    store.markOperatorMfaEnrolled(auth.workspaceId, op);
+    return c.json({ enrolled: true });
+  });
+
+  admin.post("/operators/mfa/disable", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as { totp?: string };
+    const current = store.getOperatorMfa(auth.workspaceId, op);
+    if (!current.enrolled && !current.pending) {
+      return c.json({ ok: true, enrolled: false });
+    }
+    const totp = String(body.totp ?? "").trim();
+    if (current.enrolled) {
+      if (!totp) return c.json({ error: "totp required" }, 400);
+      const verified = verifyOperatorTotp(store, auth.workspaceId, op, totp);
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+    store.deleteOperatorMfa(auth.workspaceId, op);
+    return c.json({ ok: true, enrolled: false });
+  });
+
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
@@ -915,6 +1187,8 @@ export function createApp(
       edgeHub,
       edgeRouter,
       ip: clientIp(c),
+      abortSignal: c.req.raw.signal,
+      approveBaseUrl: new URL(c.req.url).origin,
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);

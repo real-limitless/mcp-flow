@@ -369,7 +369,11 @@ export type AuditAction =
   | "project.create"
   | "project.update"
   | "project.delete"
-  | "project.use";
+  | "project.use"
+  | "authz.pending"
+  | "authz.approve"
+  | "authz.deny"
+  | "authz.timeout";
 
 export interface AuditEvent {
   id: string;

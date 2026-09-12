@@ -286,6 +286,16 @@ function wireHarnessSnippets(root) {
 async function renderStatus() {
   const { workspace, placementModes } = await api("/v1/workspace");
   const health = await fetch("/health").then((r) => r.json());
+  const [pendingRes, mfa] = await Promise.all([
+    api("/v1/approvals?status=pending").catch(() => ({
+      approvals: [],
+      pendingCount: 0,
+      waiting: 0,
+    })),
+    api("/v1/operators/mfa").catch(() => ({ enrolled: false })),
+  ]);
+  const pendingN = pendingRes.pendingCount ?? pendingRes.approvals?.length ?? 0;
+  const waitingN = pendingRes.waiting ?? 0;
   const bare = !!workspace?.policy?.allowEdgeBare;
   const ok = health?.ok !== false;
   $("#tab-status").innerHTML = `
@@ -308,6 +318,15 @@ async function renderStatus() {
         <div class="stat">
           <span class="label">Health</span>
           <span class="value"><span class="pill ${ok ? "on" : "deny"}">${ok ? "ok" : "degraded"}</span></span>
+        </div>
+        <div class="stat">
+          <span class="label">Pending approvals</span>
+          <span class="value"><span class="pill ${pendingN ? "warn" : "off"}">${esc(String(pendingN))}</span>
+            ${waitingN ? `<span class="muted"> · ${esc(String(waitingN))} waiting</span>` : ""}</span>
+        </div>
+        <div class="stat">
+          <span class="label">Operator MFA</span>
+          <span class="value"><span class="pill ${mfa?.enrolled ? "on" : "off"}">${mfa?.enrolled ? "enrolled" : "not enrolled"}</span></span>
         </div>
       </div>
       <div class="row-actions" style="margin-top:14px">
@@ -1608,6 +1627,333 @@ async function renderAudit() {
   if (list) wireAuditList(list.closest(".panel-pad") || list.parentElement);
 }
 
+let approvalsPoll = null;
+let approvalsTick = null;
+let lastPendingSig = "";
+let lastMfaBeginSecret = "";
+
+function approvalsDeepId() {
+  const m = /^#approvals\/([^/?#]+)/.exec(location.hash || "");
+  return m ? decodeURIComponent(m[1]) : "";
+}
+
+function stopApprovalsPoll() {
+  if (approvalsPoll) {
+    clearInterval(approvalsPoll);
+    approvalsPoll = null;
+  }
+  if (approvalsTick) {
+    clearInterval(approvalsTick);
+    approvalsTick = null;
+  }
+}
+
+function needsMfa(req) {
+  return req === "mfa" || req === "mfa_and_approve";
+}
+
+function csvList(raw) {
+  return String(raw || "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function matchSummary(match) {
+  const m = match || {};
+  const parts = [];
+  if (m.tools?.length) parts.push(`tools ${m.tools.join(", ")}`);
+  if (m.prefixes?.length) parts.push(`prefix ${m.prefixes.join(", ")}`);
+  if (m.backends?.length) parts.push(`backend ${m.backends.join(", ")}`);
+  if (m.placements?.length) parts.push(`place ${m.placements.join(", ")}`);
+  if (m.keyIds?.length) parts.push(`${m.keyIds.length} key(s)`);
+  return parts.join(" · ") || "—";
+}
+
+async function renderApprovals(force = false) {
+  const highlight = approvalsDeepId();
+  const [inbox, rulesRes, mfa] = await Promise.all([
+    api("/v1/approvals?status=pending"),
+    api("/v1/authz/rules"),
+    api("/v1/operators/mfa"),
+  ]);
+  const pending = inbox.approvals || [];
+  const rules = rulesRes.rules || [];
+  const enrolled = !!mfa?.enrolled;
+  const sig = pending.map((a) => a.id).join(",");
+  const focusIn =
+    document.activeElement &&
+    $("#tab-approvals")?.contains(document.activeElement);
+  if (!force && sig === lastPendingSig && focusIn) {
+    return;
+  }
+  lastPendingSig = sig;
+
+  const cards = pending.length
+    ? pending
+        .map((a) => {
+          const mfaNeed = needsMfa(a.requirement);
+          const hi = a.id === highlight ? " highlight" : "";
+          const args = a.arguments
+            ? esc(JSON.stringify(a.arguments, null, 2))
+            : "<span class='muted'>(none)</span>";
+          return `
+          <article class="approval-card${hi}" data-approval-id="${esc(a.id)}">
+            <div class="approval-head">
+              <span class="approval-tool">${esc(a.tool)}</span>
+              <span class="approval-count" data-remain="${esc(a.expiresAt)}">${esc(String(a.remainingSeconds ?? 0))}s</span>
+            </div>
+            <div class="approval-meta">
+              <span class="pill vault">${esc(a.requirement)}</span>
+              ${a.ruleName ? `<span class="pill accent">${esc(a.ruleName)}</span>` : ""}
+              <span class="pill">${esc(a.keyName || "key")} <span class="mono">${esc(a.keyPrefix || "")}</span></span>
+              ${a.backendSlug ? `<span class="pill">${esc(a.backendSlug)}</span>` : ""}
+            </div>
+            <pre class="approval-args">${args}</pre>
+            ${
+              mfaNeed
+                ? `<label class="form-field"><span>TOTP</span><input class="mono" data-appr-totp="${esc(a.id)}" inputmode="numeric" maxlength="8" placeholder="123456" autocomplete="one-time-code" /></label>`
+                : ""
+            }
+            <div class="row-actions">
+              <button type="button" class="pill-btn primary" data-appr-decide="approve" data-id="${esc(a.id)}">Approve</button>
+              <button type="button" class="pill-btn deny" data-appr-decide="deny" data-id="${esc(a.id)}">Deny</button>
+            </div>
+          </article>`;
+        })
+        .join("")
+    : `<p class="muted">No pending approvals. Gated tools hold <span class="mono">tools/call</span> for up to 3 minutes until you tap Approve.</p>`;
+
+  const ruleRows = rules.length
+    ? rules
+        .map(
+          (r) => `
+        <tr>
+          <td>${esc(r.name)}</td>
+          <td class="mono">${esc(matchSummary(r.match))}</td>
+          <td><span class="pill ${r.enabled ? "on" : "off"}">${r.enabled ? "on" : "off"}</span></td>
+          <td class="mono">${esc(r.requirement)}</td>
+          <td class="mono">${esc(String(r.ttlSeconds))}s</td>
+          <td>
+            <div class="row-actions">
+              <button type="button" class="pill-btn ghost" data-rule-toggle="${esc(r.id)}" data-enabled="${r.enabled ? "1" : "0"}">${r.enabled ? "Disable" : "Enable"}</button>
+              <button type="button" class="pill-btn deny" data-rule-del="${esc(r.id)}">Delete</button>
+            </div>
+          </td>
+        </tr>`,
+        )
+        .join("")
+    : `<tr><td colspan="6" class="muted">No rules. Default workspace: no extra gates.</td></tr>`;
+
+  $("#tab-approvals").innerHTML = `
+    ${surface(
+      "Inbox",
+      `<div class="inbox-stack">${cards}</div>`,
+      `${pending.length} pending · ${inbox.waiting ?? 0} waiting`,
+    )}
+    ${surface(
+      "Operator MFA (TOTP)",
+      enrolled
+        ? `
+        <p class="muted">Enrolled. Required when a rule uses <span class="mono">mfa</span> or <span class="mono">mfa_and_approve</span>.</p>
+        <div class="form-grid">
+          <label class="form-field"><span>Current TOTP to disable</span><input id="mfaDisableTotp" class="mono" inputmode="numeric" maxlength="8" /></label>
+        </div>
+        <div class="row-actions" style="margin-top:10px">
+          <button type="button" class="pill-btn deny" id="mfaDisable">Disable MFA</button>
+        </div>`
+        : `
+        <p class="muted">Enroll a TOTP app for this operator (env admin or admin key). Secret is shown once.</p>
+        <div class="row-actions">
+          <button type="button" class="pill-btn primary" id="mfaBegin">Begin enroll</button>
+        </div>
+        <div id="mfaBeginOut" ${lastMfaBeginSecret ? "" : "hidden"}>
+          ${
+            lastMfaBeginSecret
+              ? `<p class="muted" style="margin:12px 0 6px">Secret (once)</p><div class="mfa-secret">${esc(lastMfaBeginSecret)}</div>`
+              : ""
+          }
+          <div class="form-grid" style="margin-top:12px">
+            <label class="form-field"><span>Confirm TOTP</span><input id="mfaConfirmTotp" class="mono" inputmode="numeric" maxlength="8" /></label>
+          </div>
+          <div class="row-actions" style="margin-top:10px">
+            <button type="button" class="pill-btn primary" id="mfaConfirm">Confirm</button>
+          </div>
+        </div>`,
+      enrolled ? "enrolled" : "not enrolled",
+    )}
+    ${surface(
+      "Rules",
+      `
+      <p class="muted" style="margin-bottom:12px">
+        Extra gate after scopes / projects. Empty match is rejected. Discovery metas stay ungated.
+        Wait default 180s (proxy idle timeout should be ≥ 4 minutes).
+      </p>
+      <form id="ruleForm" class="form-grid">
+        <label class="form-field"><span>Name</span><input name="name" required placeholder="Destructive github" /></label>
+        <label class="form-field"><span>Requirement</span>
+          <select name="requirement">
+            <option value="notify_approve">notify_approve</option>
+            <option value="mfa">mfa</option>
+            <option value="mfa_and_approve">mfa_and_approve</option>
+          </select>
+        </label>
+        <label class="form-field"><span>Wait seconds</span><input name="ttlSeconds" type="number" min="1" max="600" value="180" /></label>
+        <label class="form-field"><span>Priority</span><input name="priority" type="number" value="0" /></label>
+        <label class="form-field" style="grid-column:1/-1"><span>Exact tools (comma)</span><input name="tools" class="mono" placeholder="github__delete_repo" /></label>
+        <label class="form-field"><span>Prefixes</span><input name="prefixes" class="mono" placeholder="shell__, fs__" /></label>
+        <label class="form-field"><span>Backends</span><input name="backends" class="mono" placeholder="github" /></label>
+        <label class="form-field"><span>Placements</span><input name="placements" class="mono" placeholder="edge-bare" /></label>
+        <div class="row-actions" style="grid-column:1/-1">
+          <button type="submit" class="pill-btn primary">Add rule</button>
+        </div>
+      </form>
+      <table class="data-table" style="margin-top:16px">
+        <thead><tr><th>Name</th><th>Match</th><th>On</th><th>Req</th><th>TTL</th><th></th></tr></thead>
+        <tbody>${ruleRows}</tbody>
+      </table>`,
+      `${rules.length} rules`,
+    )}`;
+
+  $("#tab-approvals")?.querySelectorAll("[data-appr-decide]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const decision = btn.getAttribute("data-appr-decide");
+      const totpEl = $(`[data-appr-totp="${CSS.escape(id)}"]`);
+      try {
+        await api(`/v1/approvals/${id}/decision`, {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            totp: totpEl ? totpEl.value.trim() : undefined,
+          }),
+        });
+        await renderApprovals(true);
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  $("#ruleForm")?.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const fd = new FormData(ev.target);
+    const match = {
+      tools: csvList(fd.get("tools")),
+      prefixes: csvList(fd.get("prefixes")),
+      backends: csvList(fd.get("backends")),
+      placements: csvList(fd.get("placements")),
+    };
+    try {
+      await api("/v1/authz/rules", {
+        method: "POST",
+        body: JSON.stringify({
+          name: fd.get("name"),
+          requirement: fd.get("requirement"),
+          ttlSeconds: Number(fd.get("ttlSeconds") || 180),
+          priority: Number(fd.get("priority") || 0),
+          match,
+        }),
+      });
+      await renderApprovals(true);
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  $("#tab-approvals")?.querySelectorAll("[data-rule-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/v1/authz/rules/${btn.getAttribute("data-rule-del")}`, {
+          method: "DELETE",
+        });
+        await renderApprovals(true);
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  $("#tab-approvals")?.querySelectorAll("[data-rule-toggle]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-rule-toggle");
+      const enabled = btn.getAttribute("data-enabled") !== "1";
+      try {
+        await api(`/v1/authz/rules/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        });
+        await renderApprovals(true);
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  $("#mfaBegin")?.addEventListener("click", async () => {
+    try {
+      const body = await api("/v1/operators/mfa/begin", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      lastMfaBeginSecret = body.secret || "";
+      await renderApprovals(true);
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  $("#mfaConfirm")?.addEventListener("click", async () => {
+    try {
+      await api("/v1/operators/mfa/confirm", {
+        method: "POST",
+        body: JSON.stringify({ totp: $("#mfaConfirmTotp")?.value?.trim() }),
+      });
+      lastMfaBeginSecret = "";
+      await renderApprovals(true);
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  $("#mfaDisable")?.addEventListener("click", async () => {
+    try {
+      await api("/v1/operators/mfa/disable", {
+        method: "POST",
+        body: JSON.stringify({ totp: $("#mfaDisableTotp")?.value?.trim() }),
+      });
+      await renderApprovals(true);
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
+
+  if (highlight) {
+    const el = $(`[data-approval-id="${CSS.escape(highlight)}"]`);
+    el?.scrollIntoView({ block: "center" });
+  }
+
+  const tickRemain = () => {
+    document.querySelectorAll("[data-remain]").forEach((el) => {
+      const exp = Date.parse(el.getAttribute("data-remain") || "");
+      const sec = Number.isFinite(exp)
+        ? Math.max(0, Math.ceil((exp - Date.now()) / 1000))
+        : 0;
+      el.textContent = `${sec}s`;
+    });
+  };
+  if (approvalsTick) clearInterval(approvalsTick);
+  approvalsTick = setInterval(tickRemain, 1000);
+
+  if (!approvalsPoll) {
+    approvalsPoll = setInterval(() => {
+      const tab =
+        document.querySelector(".tabs .seg-btn.active")?.dataset.tab;
+      if (tab === "approvals") void renderApprovals();
+    }, 2000);
+  }
+}
+
 async function refresh() {
   showErr("");
   const tab =
@@ -1619,6 +1965,8 @@ async function refresh() {
     if (tab === "backends") await renderBackends();
     if (tab === "projects") await renderProjects();
     if (tab === "devices") await renderDevices();
+    if (tab === "approvals") await renderApprovals(true);
+    else stopApprovalsPoll();
     if (tab === "audit") await renderAudit();
   } catch (e) {
     showErr(e.message);
@@ -1633,8 +1981,30 @@ document.querySelectorAll(".tabs .seg-btn, .tabs button").forEach((btn) => {
     document.querySelectorAll("main .panel").forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     $(`#tab-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "approvals") {
+      const id = approvalsDeepId();
+      if (!id) history.replaceState(null, "", "#approvals");
+    }
     void refresh();
   });
+});
+
+function activateTab(tab) {
+  const btn = document.querySelector(`.tabs .seg-btn[data-tab="${tab}"]`);
+  if (!btn) return;
+  document
+    .querySelectorAll(".tabs .seg-btn, .tabs button")
+    .forEach((b) => b.classList.remove("active", "on"));
+  document.querySelectorAll("main .panel").forEach((p) => p.classList.remove("active"));
+  btn.classList.add("active");
+  $(`#tab-${tab}`)?.classList.add("active");
+}
+
+window.addEventListener("hashchange", () => {
+  if (location.hash.startsWith("#approvals")) {
+    activateTab("approvals");
+    void refresh();
+  }
 });
 
 $("#saveToken").addEventListener("click", () => {
@@ -1643,4 +2013,5 @@ $("#saveToken").addEventListener("click", () => {
 });
 $("#refresh").addEventListener("click", () => void refresh());
 $("#token").value = token();
+if (location.hash.startsWith("#approvals")) activateTab("approvals");
 if (token()) void refresh();
