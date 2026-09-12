@@ -1834,9 +1834,11 @@ async function renderApprovals(force = false) {
       </div>
       <p class="muted push-status" id="pushStatus">${esc(
         lastPushNote ||
-          (vapidRes?.publicKey
-            ? "VAPID ready. Install Admin on a phone, then Enable push."
-            : ""),
+          (pushSubs.length
+            ? `${pushSubs.length} push subscription${pushSubs.length === 1 ? "" : "s"} on this workspace.`
+            : vapidRes?.publicKey
+              ? "VAPID ready. Install Admin on a phone, then Enable push."
+              : ""),
       )}</p>
       ${
         pushSubs.length

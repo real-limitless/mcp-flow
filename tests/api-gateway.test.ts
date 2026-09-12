@@ -376,6 +376,8 @@ describe("api + gateway", () => {
     expect(js).toContain("keyOnceSnips");
     expect(js).toContain("keyDynamicTools");
     expect(js).toContain("Dynamic tool discovery");
+    expect(js).toContain("Enable push");
+    expect(js).toContain("pushManager.subscribe");
 
     expect(html).toContain('rel="manifest"');
     expect(html).toContain("/admin/manifest.webmanifest");
