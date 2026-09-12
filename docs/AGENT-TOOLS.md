@@ -54,7 +54,7 @@ Typical sequence: `mf_status` → `mf_list_tools()` (or `{ q: "…" }`) → `mf_
 
 Typical sequence (eager key): `mf_status` → `mf_list_projects` → `mf_use_project` if needed → `mf_list_backends` → `mf_list_tools`.
 
-If a namespaced tool is gated, the same `tools/call` (or `mf_call_tool`) **waits** up to 3 minutes for a human in Admin → Approvals. Timeout returns `reason: "authz_timeout"` — tell the user to approve, then retry. Deny returns `authz_denied`. Discovery metas (`mf_status`, `mf_list_tools`, …) are never gated. Details: [AUTHZ-STEP-UP.md](./AUTHZ-STEP-UP.md).
+If a namespaced tool is gated, the same `tools/call` (or `mf_call_tool`) **waits** up to 3 minutes for a human in Admin → Approvals. Timeout returns `reason: "authz_timeout"` — tell the user to approve, then retry. Deny returns `authz_denied`. Discovery metas (`mf_status`, `mf_list_tools`, …) are never gated. Raise the harness `tools/call` timeout to at least the rule wait (SDK default is often 60s). Details: [AUTHZ-STEP-UP.md](./AUTHZ-STEP-UP.md).
 
 Session tokens exist for project-scoped `/mcp` calls. Do not paste them into docs.
 

@@ -1788,6 +1788,7 @@ async function renderApprovals(force = false) {
       <p class="muted" style="margin-bottom:12px">
         Extra gate after scopes / projects. Empty match is rejected. Discovery metas stay ungated.
         Wait default 180s (proxy idle timeout should be ≥ 4 minutes).
+        Many MCP clients abort at 60s — raise the client timeout or lower wait seconds.
       </p>
       <form id="ruleForm" class="form-grid">
         <label class="form-field"><span>Name</span><input name="name" required placeholder="Destructive github" /></label>

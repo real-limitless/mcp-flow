@@ -56,6 +56,8 @@ mcp-flow must:
 
 - Hold the original HTTP `tools/call` (default 180s) until approve, deny, or timeout.
 - Document Traefik/nginx/`respondingTimeouts` / Cloudflare so **idle timeout ≥ `ttlSeconds` + upstream runtime** (suggest ≥ 4 minutes). JSON streamable HTTP (`enableJsonResponse: true`) cannot SSE-ping during the wait, so proxy idle time is the real limit.
+
+The TypeScript MCP SDK (and many harnesses) also abort `tools/call` around **60 seconds** unless the client timeout is raised. Set the client timeout ≥ `ttlSeconds`, or lower the rule’s wait (e.g. 45s) so the hold finishes before the client gives up. A client abort marks the approval `expired` and does not run upstream.
 - Cap concurrent waiting approvals per workspace (32) so a stuck agent cannot pin the process.
 - Not hold a SQLite transaction for the 3 minutes — insert pending, commit, wait in memory, then decide + proxy.
 
