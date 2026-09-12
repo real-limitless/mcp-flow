@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import webpush from "web-push";
 import {
   deriveMasterKey,
   hashToken,
@@ -7,6 +8,7 @@ import {
   newId,
   seal,
   unseal,
+  safeEqualStr,
 } from "../crypto.js";
 import type {
   ApiKeyCreated,
@@ -32,6 +34,20 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
+import {
+  authzMatchHasConstraint,
+  clampAuthzTtl,
+  parseAuthzRequirement,
+  type Approval,
+  type ApprovalStatus,
+  type AuthzMatch,
+  type AuthzRequirement,
+  type AuthzRule,
+  type CreateAuthzRuleInput,
+  type UpdateAuthzRuleInput,
+} from "../authz/types.js";
+import { normalizeMatch } from "../authz/match.js";
+import { mintDecideToken, hashDecideToken } from "../authz/decide-token.js";
 import {
   DEFAULT_PLACEMENT,
   DEFAULT_WORKSPACE_POLICY,
@@ -128,6 +144,69 @@ CREATE TABLE IF NOT EXISTS project_sessions (
   revoked_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS authz_rules (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  priority INTEGER NOT NULL DEFAULT 0,
+  match_json TEXT NOT NULL,
+  requirement TEXT NOT NULL,
+  ttl_seconds INTEGER NOT NULL,
+  mfa_reuse_seconds INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  rule_id TEXT NOT NULL,
+  key_id TEXT NOT NULL,
+  tool TEXT NOT NULL,
+  arguments_json TEXT,
+  backend_slug TEXT,
+  status TEXT NOT NULL,
+  requirement TEXT NOT NULL,
+  mfa_satisfied_at TEXT,
+  decided_by_key_id TEXT,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  decided_at TEXT,
+  decide_token_hash TEXT
+);
+
+CREATE TABLE IF NOT EXISTS operator_mfa (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  operator_key_id TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'totp',
+  secret_enc TEXT NOT NULL,
+  enrolled_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(workspace_id, operator_key_id)
+);
+
+CREATE TABLE IF NOT EXISTS push_vapid (
+  workspace_id TEXT PRIMARY KEY,
+  public_key TEXT NOT NULL,
+  private_enc TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  operator_key_id TEXT NOT NULL DEFAULT '',
+  endpoint TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(endpoint)
+);
+
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
 CREATE INDEX IF NOT EXISTS idx_backends_ws ON backends(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON audit_events(workspace_id, ts DESC);
@@ -135,6 +214,10 @@ CREATE INDEX IF NOT EXISTS idx_devices_ws ON devices(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_devices_token ON devices(token_hash);
 CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_authz_rules_ws ON authz_rules(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_approvals_ws_status ON approvals(workspace_id, status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_operator_mfa_ws ON operator_mfa(workspace_id, operator_key_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_ws ON push_subscriptions(workspace_id);
 `;
 
 function nowIso(): string {
@@ -332,6 +415,131 @@ function mapAuditRow(r: Record<string, unknown>): AuditEvent {
   };
 }
 
+function clampPriority(raw: unknown, fallback = 0): number {
+  const n = Number(raw ?? fallback);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(1000, Math.max(-1000, Math.floor(n)));
+}
+
+function clampMfaReuse(raw: unknown): number {
+  const n = Number(raw ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(3600, Math.floor(n));
+}
+
+function rowAuthzRule(r: Record<string, unknown>): AuthzRule {
+  let match: AuthzMatch = {};
+  try {
+    match = normalizeMatch(
+      r.match_json ? JSON.parse(String(r.match_json)) : {},
+    );
+  } catch {
+    match = {};
+  }
+  const requirement =
+    parseAuthzRequirement(r.requirement) ?? "notify_approve";
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    name: String(r.name),
+    enabled: Boolean(r.enabled),
+    priority: Number(r.priority) || 0,
+    match,
+    requirement,
+    ttlSeconds: clampAuthzTtl(r.ttl_seconds),
+    mfaReuseSeconds: clampMfaReuse(r.mfa_reuse_seconds),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  };
+}
+
+function parseArgsJson(raw: unknown): Record<string, unknown> | null {
+  if (raw == null || raw === "") return null;
+  try {
+    const v = JSON.parse(String(raw));
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
+    return { value: v };
+  } catch {
+    return null;
+  }
+}
+
+function remainingSeconds(expiresAt: string, status: ApprovalStatus): number {
+  if (status !== "pending") return 0;
+  const ms = Date.parse(expiresAt) - Date.now();
+  if (!Number.isFinite(ms)) return 0;
+  return Math.max(0, Math.ceil(ms / 1000));
+}
+
+function rowApproval(
+  r: Record<string, unknown>,
+  redactArgs: boolean,
+): Approval {
+  const status = String(r.status) as ApprovalStatus;
+  const args = parseArgsJson(r.arguments_json);
+  const redacted =
+    redactArgs && args
+      ? (sanitizeForAudit(args) as Record<string, unknown>)
+      : args;
+  const requirement =
+    parseAuthzRequirement(r.requirement) ?? "notify_approve";
+  const expiresAt = String(r.expires_at);
+  return {
+    id: String(r.id),
+    workspaceId: String(r.workspace_id),
+    ruleId: String(r.rule_id),
+    keyId: String(r.key_id),
+    keyName: nullableStr(r.key_name),
+    keyPrefix: nullableStr(r.key_prefix),
+    tool: String(r.tool),
+    arguments: redacted,
+    backendSlug: r.backend_slug == null ? null : String(r.backend_slug),
+    status,
+    requirement,
+    mfaSatisfiedAt:
+      r.mfa_satisfied_at == null ? null : String(r.mfa_satisfied_at),
+    decidedByKeyId:
+      r.decided_by_key_id == null ? null : String(r.decided_by_key_id),
+    expiresAt,
+    createdAt: String(r.created_at),
+    decidedAt: r.decided_at == null ? null : String(r.decided_at),
+  };
+}
+
+export function toPublicApproval(
+  a: Approval,
+  extras?: { ruleName?: string | null },
+): Approval & { remainingSeconds: number; ruleName: string | null } {
+  return {
+    ...a,
+    arguments: a.arguments
+      ? (sanitizeForAudit(a.arguments) as Record<string, unknown>)
+      : null,
+    remainingSeconds: remainingSeconds(a.expiresAt, a.status),
+    ruleName: extras?.ruleName ?? null,
+  };
+}
+
+export interface PushSubscriptionPublic {
+  id: string;
+  endpointHint: string;
+  createdAt: string;
+}
+
+function endpointHint(endpoint: string): string {
+  try {
+    const u = new URL(endpoint);
+    const tail = u.pathname.slice(-10);
+    return `${u.host}…${tail}`;
+  } catch {
+    return `${endpoint.slice(0, 24)}…`;
+  }
+}
+
+const PUSH_SUB_CAP = 20;
+
 function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
   return {
     id: k.id,
@@ -447,7 +655,78 @@ export class Store {
       );
       CREATE INDEX IF NOT EXISTS idx_projects_ws ON projects(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_hash);
+      CREATE TABLE IF NOT EXISTS authz_rules (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        priority INTEGER NOT NULL DEFAULT 0,
+        match_json TEXT NOT NULL,
+        requirement TEXT NOT NULL,
+        ttl_seconds INTEGER NOT NULL,
+        mfa_reuse_seconds INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS approvals (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        rule_id TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        tool TEXT NOT NULL,
+        arguments_json TEXT,
+        backend_slug TEXT,
+        status TEXT NOT NULL,
+        requirement TEXT NOT NULL,
+        mfa_satisfied_at TEXT,
+        decided_by_key_id TEXT,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS operator_mfa (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        operator_key_id TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL DEFAULT 'totp',
+        secret_enc TEXT NOT NULL,
+        enrolled_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(workspace_id, operator_key_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_authz_rules_ws ON authz_rules(workspace_id);
+      CREATE INDEX IF NOT EXISTS idx_approvals_ws_status ON approvals(workspace_id, status, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_operator_mfa_ws ON operator_mfa(workspace_id, operator_key_id);
+      CREATE TABLE IF NOT EXISTS push_vapid (
+        workspace_id TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        private_enc TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        operator_key_id TEXT NOT NULL DEFAULT '',
+        endpoint TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(endpoint)
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_subs_ws ON push_subscriptions(workspace_id);
     `);
+
+    const apprCols = this.db
+      .prepare(`PRAGMA table_info(approvals)`)
+      .all() as Array<{ name: string }>;
+    if (
+      apprCols.length &&
+      !apprCols.some((c) => c.name === "decide_token_hash")
+    ) {
+      this.db.exec(`ALTER TABLE approvals ADD COLUMN decide_token_hash TEXT`);
+    }
   }
 
   close(): void {
@@ -1265,5 +1544,570 @@ export class Store {
       projectSlug: String(row.project_slug),
       projectSessionId: String(row.id),
     };
+  }
+
+  listAuthzRules(workspaceId: string): AuthzRule[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM authz_rules WHERE workspace_id = ? ORDER BY priority DESC, name ASC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map(rowAuthzRule);
+  }
+
+  getAuthzRule(workspaceId: string, id: string): AuthzRule | null {
+    const row = this.db
+      .prepare(`SELECT * FROM authz_rules WHERE id = ? AND workspace_id = ?`)
+      .get(id, workspaceId) as Record<string, unknown> | undefined;
+    return row ? rowAuthzRule(row) : null;
+  }
+
+  createAuthzRule(workspaceId: string, input: CreateAuthzRuleInput): AuthzRule {
+    const name = String(input.name ?? "").trim();
+    if (!name) throw new Error("name required");
+    const match = normalizeMatch(input.match);
+    if (!authzMatchHasConstraint(match)) {
+      throw new Error(
+        "authz rule match must include tools, prefixes, backends, placements, or keyIds",
+      );
+    }
+    const requirement = parseAuthzRequirement(input.requirement) ?? "notify_approve";
+    const now = nowIso();
+    const rec: AuthzRule = {
+      id: newId("azr"),
+      workspaceId,
+      name,
+      enabled: input.enabled !== false,
+      priority: clampPriority(input.priority, 0),
+      match,
+      requirement,
+      ttlSeconds: clampAuthzTtl(input.ttlSeconds),
+      mfaReuseSeconds: clampMfaReuse(input.mfaReuseSeconds),
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db
+      .prepare(
+        `INSERT INTO authz_rules (
+          id, workspace_id, name, enabled, priority, match_json, requirement,
+          ttl_seconds, mfa_reuse_seconds, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        rec.id,
+        rec.workspaceId,
+        rec.name,
+        rec.enabled ? 1 : 0,
+        rec.priority,
+        JSON.stringify(rec.match),
+        rec.requirement,
+        rec.ttlSeconds,
+        rec.mfaReuseSeconds,
+        rec.createdAt,
+        rec.updatedAt,
+      );
+    return rec;
+  }
+
+  updateAuthzRule(
+    workspaceId: string,
+    id: string,
+    input: UpdateAuthzRuleInput,
+  ): AuthzRule | null {
+    const existing = this.getAuthzRule(workspaceId, id);
+    if (!existing) return null;
+    const name =
+      input.name !== undefined ? String(input.name).trim() : existing.name;
+    if (!name) throw new Error("name required");
+    const match =
+      input.match !== undefined ? normalizeMatch(input.match) : existing.match;
+    if (!authzMatchHasConstraint(match)) {
+      throw new Error(
+        "authz rule match must include tools, prefixes, backends, placements, or keyIds",
+      );
+    }
+    const requirement =
+      input.requirement !== undefined
+        ? (parseAuthzRequirement(input.requirement) ?? existing.requirement)
+        : existing.requirement;
+    const updated: AuthzRule = {
+      ...existing,
+      name,
+      enabled:
+        input.enabled !== undefined ? Boolean(input.enabled) : existing.enabled,
+      priority:
+        input.priority !== undefined
+          ? clampPriority(input.priority, existing.priority)
+          : existing.priority,
+      match,
+      requirement,
+      ttlSeconds:
+        input.ttlSeconds !== undefined
+          ? clampAuthzTtl(input.ttlSeconds)
+          : existing.ttlSeconds,
+      mfaReuseSeconds:
+        input.mfaReuseSeconds !== undefined
+          ? clampMfaReuse(input.mfaReuseSeconds)
+          : existing.mfaReuseSeconds,
+      updatedAt: nowIso(),
+    };
+    this.db
+      .prepare(
+        `UPDATE authz_rules SET
+          name = ?, enabled = ?, priority = ?, match_json = ?, requirement = ?,
+          ttl_seconds = ?, mfa_reuse_seconds = ?, updated_at = ?
+         WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(
+        updated.name,
+        updated.enabled ? 1 : 0,
+        updated.priority,
+        JSON.stringify(updated.match),
+        updated.requirement,
+        updated.ttlSeconds,
+        updated.mfaReuseSeconds,
+        updated.updatedAt,
+        id,
+        workspaceId,
+      );
+    return updated;
+  }
+
+  deleteAuthzRule(workspaceId: string, id: string): boolean {
+    const res = this.db
+      .prepare(`DELETE FROM authz_rules WHERE id = ? AND workspace_id = ?`)
+      .run(id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  createApproval(input: {
+    workspaceId: string;
+    ruleId: string;
+    keyId: string;
+    tool: string;
+    arguments: Record<string, unknown> | null;
+    backendSlug: string | null;
+    requirement: AuthzRequirement;
+    ttlSeconds: number;
+  }): { approval: Approval; decideToken: string | null } {
+    const now = nowIso();
+    const ttl = clampAuthzTtl(input.ttlSeconds);
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    const id = newId("appr");
+    const minted = mintDecideToken();
+    this.db
+      .prepare(
+        `INSERT INTO approvals (
+          id, workspace_id, rule_id, key_id, tool, arguments_json, backend_slug,
+          status, requirement, mfa_satisfied_at, decided_by_key_id, expires_at,
+          created_at, decided_at, decide_token_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?, NULL, ?)`,
+      )
+      .run(
+        id,
+        input.workspaceId,
+        input.ruleId,
+        input.keyId,
+        input.tool,
+        input.arguments ? JSON.stringify(input.arguments) : null,
+        input.backendSlug,
+        input.requirement,
+        expiresAt,
+        now,
+        minted.hash,
+      );
+    return {
+      approval: this.getApproval(input.workspaceId, id, { redact: false })!,
+      decideToken: minted.token,
+    };
+  }
+
+  getApproval(
+    workspaceId: string,
+    id: string,
+    opts: { redact?: boolean } = {},
+  ): Approval | null {
+    const row = this.db
+      .prepare(
+        `SELECT a.*, k.name AS key_name, k.prefix AS key_prefix
+         FROM approvals a
+         LEFT JOIN api_keys k ON k.id = a.key_id
+         WHERE a.id = ? AND a.workspace_id = ?`,
+      )
+      .get(id, workspaceId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return rowApproval(row, opts.redact !== false);
+  }
+
+  listApprovals(
+    workspaceId: string,
+    opts: { status?: ApprovalStatus | "all"; limit?: number } = {},
+  ): Array<
+    Approval & { remainingSeconds: number; ruleName: string | null }
+  > {
+    this.expireOverdueApprovals(workspaceId);
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const status = opts.status && opts.status !== "all" ? opts.status : null;
+    const rows = (
+      status
+        ? (this.db
+            .prepare(
+              `SELECT a.*, k.name AS key_name, k.prefix AS key_prefix, r.name AS rule_name
+               FROM approvals a
+               LEFT JOIN api_keys k ON k.id = a.key_id
+               LEFT JOIN authz_rules r ON r.id = a.rule_id
+               WHERE a.workspace_id = ? AND a.status = ?
+               ORDER BY a.created_at DESC LIMIT ?`,
+            )
+            .all(workspaceId, status, limit) as Record<string, unknown>[])
+        : (this.db
+            .prepare(
+              `SELECT a.*, k.name AS key_name, k.prefix AS key_prefix, r.name AS rule_name
+               FROM approvals a
+               LEFT JOIN api_keys k ON k.id = a.key_id
+               LEFT JOIN authz_rules r ON r.id = a.rule_id
+               WHERE a.workspace_id = ?
+               ORDER BY a.created_at DESC LIMIT ?`,
+            )
+            .all(workspaceId, limit) as Record<string, unknown>[])
+    );
+    return rows.map((r) => {
+      const a = rowApproval(r, true);
+      return toPublicApproval(a, {
+        ruleName: r.rule_name == null ? null : String(r.rule_name),
+      });
+    });
+  }
+
+  countPendingApprovals(workspaceId: string): number {
+    this.expireOverdueApprovals(workspaceId);
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM approvals WHERE workspace_id = ? AND status = 'pending'`,
+      )
+      .get(workspaceId) as { n: number | bigint };
+    return Number(row.n);
+  }
+
+  decideApproval(
+    workspaceId: string,
+    id: string,
+    input: {
+      status: Extract<ApprovalStatus, "approved" | "denied">;
+      decidedByKeyId?: string | null;
+      mfaSatisfied?: boolean;
+    },
+  ): Approval | null {
+    const now = nowIso();
+    const res = this.db
+      .prepare(
+        `UPDATE approvals SET
+           status = ?, decided_by_key_id = ?, decided_at = ?,
+           mfa_satisfied_at = CASE WHEN ? = 1 THEN ? ELSE mfa_satisfied_at END,
+           decide_token_hash = NULL
+         WHERE id = ? AND workspace_id = ? AND status = 'pending'`,
+      )
+      .run(
+        input.status,
+        input.decidedByKeyId ?? null,
+        now,
+        input.mfaSatisfied ? 1 : 0,
+        input.mfaSatisfied ? now : null,
+        id,
+        workspaceId,
+      );
+    if (Number(res.changes) === 0) return null;
+    return this.getApproval(workspaceId, id, { redact: false });
+  }
+
+  expireApproval(workspaceId: string, id: string): Approval | null {
+    const now = nowIso();
+    const res = this.db
+      .prepare(
+        `UPDATE approvals SET status = 'expired', decided_at = ?
+         WHERE id = ? AND workspace_id = ? AND status = 'pending'`,
+      )
+      .run(now, id, workspaceId);
+    if (Number(res.changes) === 0) return null;
+    return this.getApproval(workspaceId, id, { redact: false });
+  }
+
+  expireOverdueApprovals(workspaceId: string): number {
+    const res = this.db
+      .prepare(
+        `UPDATE approvals SET status = 'expired', decided_at = ?
+         WHERE workspace_id = ? AND status = 'pending' AND expires_at < ?`,
+      )
+      .run(nowIso(), workspaceId, nowIso());
+    return Number(res.changes);
+  }
+
+  getOperatorMfa(
+    workspaceId: string,
+    operatorKeyId: string,
+  ): { enrolled: boolean; pending: boolean } {
+    const row = this.db
+      .prepare(
+        `SELECT enrolled_at FROM operator_mfa WHERE workspace_id = ? AND operator_key_id = ?`,
+      )
+      .get(workspaceId, operatorKeyId) as
+      | { enrolled_at: string | null }
+      | undefined;
+    if (!row) return { enrolled: false, pending: false };
+    return {
+      enrolled: Boolean(row.enrolled_at),
+      pending: !row.enrolled_at,
+    };
+  }
+
+  upsertOperatorMfaPending(
+    workspaceId: string,
+    operatorKeyId: string,
+    secretEnc: string,
+  ): void {
+    const now = nowIso();
+    const existing = this.db
+      .prepare(
+        `SELECT id FROM operator_mfa WHERE workspace_id = ? AND operator_key_id = ?`,
+      )
+      .get(workspaceId, operatorKeyId) as { id: string } | undefined;
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE operator_mfa SET secret_enc = ?, enrolled_at = NULL, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(secretEnc, now, existing.id);
+      return;
+    }
+    this.db
+      .prepare(
+        `INSERT INTO operator_mfa (
+          id, workspace_id, operator_key_id, kind, secret_enc, enrolled_at, created_at, updated_at
+        ) VALUES (?, ?, ?, 'totp', ?, NULL, ?, ?)`,
+      )
+      .run(newId("mfa"), workspaceId, operatorKeyId, secretEnc, now, now);
+  }
+
+  markOperatorMfaEnrolled(
+    workspaceId: string,
+    operatorKeyId: string,
+  ): boolean {
+    const now = nowIso();
+    const res = this.db
+      .prepare(
+        `UPDATE operator_mfa SET enrolled_at = ?, updated_at = ?
+         WHERE workspace_id = ? AND operator_key_id = ?`,
+      )
+      .run(now, now, workspaceId, operatorKeyId);
+    return Number(res.changes) > 0;
+  }
+
+  getOperatorMfaSecretEnc(
+    workspaceId: string,
+    operatorKeyId: string,
+  ): { secretEnc: string; enrolled: boolean } | null {
+    const row = this.db
+      .prepare(
+        `SELECT secret_enc, enrolled_at FROM operator_mfa
+         WHERE workspace_id = ? AND operator_key_id = ?`,
+      )
+      .get(workspaceId, operatorKeyId) as
+      | { secret_enc: string; enrolled_at: string | null }
+      | undefined;
+    if (!row) return null;
+    return { secretEnc: String(row.secret_enc), enrolled: Boolean(row.enrolled_at) };
+  }
+
+  deleteOperatorMfa(workspaceId: string, operatorKeyId: string): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM operator_mfa WHERE workspace_id = ? AND operator_key_id = ?`,
+      )
+      .run(workspaceId, operatorKeyId);
+    return Number(res.changes) > 0;
+  }
+
+  getPushVapid(workspaceId: string): {
+    publicKey: string;
+    privateKey: string;
+    subject: string;
+  } {
+    const row = this.db
+      .prepare(
+        `SELECT public_key, private_enc, subject FROM push_vapid WHERE workspace_id = ?`,
+      )
+      .get(workspaceId) as
+      | { public_key: string; private_enc: string; subject: string }
+      | undefined;
+    if (row) {
+      const privateKey = unseal<string>(this.masterKey, String(row.private_enc));
+      return {
+        publicKey: String(row.public_key),
+        privateKey,
+        subject: String(row.subject),
+      };
+    }
+    const keys = webpush.generateVAPIDKeys();
+    const subject = "mailto:mcp-flow@localhost";
+    this.db
+      .prepare(
+        `INSERT INTO push_vapid (workspace_id, public_key, private_enc, subject, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        workspaceId,
+        keys.publicKey,
+        seal(this.masterKey, keys.privateKey),
+        subject,
+        nowIso(),
+      );
+    return {
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      subject,
+    };
+  }
+
+  listPushSubscriptions(workspaceId: string): Array<{
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    createdAt: string;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, endpoint, p256dh, auth, created_at FROM push_subscriptions
+         WHERE workspace_id = ? ORDER BY created_at DESC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+      createdAt: String(r.created_at),
+    }));
+  }
+
+  listPushSubscriptionsPublic(workspaceId: string): PushSubscriptionPublic[] {
+    return this.listPushSubscriptions(workspaceId).map((s) => ({
+      id: s.id,
+      endpointHint: endpointHint(s.endpoint),
+      createdAt: s.createdAt,
+    }));
+  }
+
+  upsertPushSubscription(input: {
+    workspaceId: string;
+    operatorKeyId: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+  }): PushSubscriptionPublic {
+    const endpoint = String(input.endpoint ?? "").trim();
+    const p256dh = String(input.p256dh ?? "").trim();
+    const auth = String(input.auth ?? "").trim();
+    if (!endpoint.startsWith("https://") && !endpoint.startsWith("http://")) {
+      throw new Error("invalid push endpoint");
+    }
+    if (!p256dh || !auth) throw new Error("push keys required");
+    const existing = this.db
+      .prepare(`SELECT id FROM push_subscriptions WHERE endpoint = ?`)
+      .get(endpoint) as { id: string } | undefined;
+    const now = nowIso();
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?,
+           p256dh = ?, auth = ?, created_at = ? WHERE id = ?`,
+        )
+        .run(
+          input.workspaceId,
+          input.operatorKeyId,
+          p256dh,
+          auth,
+          now,
+          existing.id,
+        );
+      return {
+        id: existing.id,
+        endpointHint: endpointHint(endpoint),
+        createdAt: now,
+      };
+    }
+    const count = this.listPushSubscriptions(input.workspaceId).length;
+    if (count >= PUSH_SUB_CAP) {
+      throw new Error(`at most ${PUSH_SUB_CAP} push subscriptions per workspace`);
+    }
+    const id = newId("psub");
+    this.db
+      .prepare(
+        `INSERT INTO push_subscriptions (
+          id, workspace_id, operator_key_id, endpoint, p256dh, auth, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.workspaceId,
+        input.operatorKeyId,
+        endpoint,
+        p256dh,
+        auth,
+        now,
+      );
+    return { id, endpointHint: endpointHint(endpoint), createdAt: now };
+  }
+
+  deletePushSubscription(workspaceId: string, id: string): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM push_subscriptions WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  deletePushSubscriptionByEndpoint(
+    workspaceId: string,
+    endpoint: string,
+  ): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM push_subscriptions WHERE workspace_id = ? AND endpoint = ?`,
+      )
+      .run(workspaceId, endpoint);
+    return Number(res.changes) > 0;
+  }
+
+  lookupPushDecision(
+    id: string,
+    token: string,
+  ):
+    | { ok: true; approval: Approval }
+    | {
+        ok: false;
+        error: "not_found" | "invalid_token" | "not_pending";
+      } {
+    const row = this.db
+      .prepare(
+        `SELECT a.*, k.name AS key_name, k.prefix AS key_prefix, a.decide_token_hash AS decide_token_hash
+         FROM approvals a
+         LEFT JOIN api_keys k ON k.id = a.key_id
+         WHERE a.id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) return { ok: false, error: "not_found" };
+    const stored = String(row.decide_token_hash ?? "");
+    const got = hashDecideToken(token);
+    if (!stored || !safeEqualStr(stored, got)) {
+      return { ok: false, error: "invalid_token" };
+    }
+    const approval = rowApproval(row, true);
+    if (approval.status !== "pending") {
+      return { ok: false, error: "not_pending" };
+    }
+    return { ok: true, approval };
   }
 }

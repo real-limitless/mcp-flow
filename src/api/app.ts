@@ -17,7 +17,14 @@ import {
 } from "../catalog/sync.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
 import type { Config } from "../config.js";
-import { safeEqualStr } from "../crypto.js";
+import { globalApprovalWaiters } from "../authz/waiters.js";
+import {
+  parseAuthzRequirement,
+  requirementNeedsMfa,
+} from "../authz/types.js";
+import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
+import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
+import { seal, safeEqualStr } from "../crypto.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
@@ -141,24 +148,27 @@ export function createApp(
       return c.text("admin UI not found", 404);
     }
   });
-  app.get("/admin/app.js", (c) => {
-    if (!adminDir) return c.text("not found", 404);
+  const adminStatic: Record<string, string> = {
+    "app.js": "application/javascript; charset=utf-8",
+    "sw.js": "application/javascript; charset=utf-8",
+    "styles.css": "text/css; charset=utf-8",
+    "manifest.webmanifest": "application/manifest+json; charset=utf-8",
+    "icon.svg": "image/svg+xml",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+  };
+  app.get("/admin/:file", (c) => {
+    const file = c.req.param("file");
+    const type = adminStatic[file];
+    if (!type || !adminDir) return c.text("not found", 404);
     try {
-      const js = readFileSync(join(adminDir, "app.js"), "utf8");
-      return c.body(js, 200, {
-        "Content-Type": "application/javascript; charset=utf-8",
-      });
-    } catch {
-      return c.text("not found", 404);
-    }
-  });
-  app.get("/admin/styles.css", (c) => {
-    if (!adminDir) return c.text("not found", 404);
-    try {
-      const css = readFileSync(join(adminDir, "styles.css"), "utf8");
-      return c.body(css, 200, {
-        "Content-Type": "text/css; charset=utf-8",
-      });
+      const buf = readFileSync(join(adminDir, file));
+      const headers: Record<string, string> = { "Content-Type": type };
+      if (file === "sw.js") {
+        headers["Cache-Control"] = "no-cache";
+        headers["Service-Worker-Allowed"] = "/admin/";
+      }
+      return c.body(buf, 200, headers);
     } catch {
       return c.text("not found", 404);
     }
@@ -849,6 +859,390 @@ export function createApp(
     }
   });
 
+  admin.get("/authz/rules", (c) => {
+    const auth = c.get("auth");
+    return c.json({ rules: store.listAuthzRules(auth.workspaceId) });
+  });
+
+  admin.post("/authz/rules", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const rule = store.createAuthzRule(auth.workspaceId, {
+        name: String(body.name ?? ""),
+        enabled: body.enabled !== false,
+        priority: typeof body.priority === "number" ? body.priority : undefined,
+        match: (body.match ?? {}) as Record<string, unknown>,
+        requirement: parseAuthzRequirement(body.requirement) ?? undefined,
+        ttlSeconds: body.ttlSeconds as number | undefined,
+        mfaReuseSeconds: body.mfaReuseSeconds as number | undefined,
+      });
+      return c.json({ rule }, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.patch("/authz/rules/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    try {
+      const rule = store.updateAuthzRule(auth.workspaceId, c.req.param("id"), {
+        name: body.name !== undefined ? String(body.name) : undefined,
+        enabled: body.enabled !== undefined ? Boolean(body.enabled) : undefined,
+        priority: typeof body.priority === "number" ? body.priority : undefined,
+        match:
+          body.match !== undefined
+            ? (body.match as Record<string, unknown>)
+            : undefined,
+        requirement: parseAuthzRequirement(body.requirement) ?? undefined,
+        ttlSeconds: body.ttlSeconds as number | undefined,
+        mfaReuseSeconds: body.mfaReuseSeconds as number | undefined,
+      });
+      if (!rule) return c.json({ error: "not found" }, 404);
+      return c.json({ rule });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.delete("/authz/rules/:id", (c) => {
+    const auth = c.get("auth");
+    const ok = store.deleteAuthzRule(auth.workspaceId, c.req.param("id"));
+    if (!ok) return c.json({ error: "not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  admin.get("/approvals", (c) => {
+    const auth = c.get("auth");
+    const statusRaw = c.req.query("status");
+    const status =
+      statusRaw === "pending" ||
+      statusRaw === "approved" ||
+      statusRaw === "denied" ||
+      statusRaw === "expired" ||
+      statusRaw === "all"
+        ? statusRaw
+        : "pending";
+    const approvals = store.listApprovals(auth.workspaceId, { status });
+    return c.json({
+      approvals,
+      pendingCount: store.countPendingApprovals(auth.workspaceId),
+      waiting: globalApprovalWaiters.workspacePending(auth.workspaceId),
+    });
+  });
+
+  admin.post("/approvals/:id/decision", async (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      decision?: string;
+      totp?: string;
+    };
+    const decision =
+      body.decision === "approve" || body.decision === "deny"
+        ? body.decision
+        : null;
+    if (!decision) {
+      return c.json({ error: 'decision must be "approve" or "deny"' }, 400);
+    }
+
+    const approval = store.getApproval(auth.workspaceId, id, { redact: true });
+    if (!approval) return c.json({ error: "not found" }, 404);
+    if (approval.status !== "pending") {
+      return c.json(
+        { error: "approval is not pending", status: approval.status },
+        409,
+      );
+    }
+
+    if (decision === "approve" && requirementNeedsMfa(approval.requirement)) {
+      const op = operatorSubject(auth);
+      const mfa = store.getOperatorMfa(auth.workspaceId, op);
+      if (!mfa.enrolled) {
+        return c.json(
+          {
+            error: "enroll MFA first",
+            enroll: "/v1/operators/mfa/begin",
+          },
+          400,
+        );
+      }
+      const totp = String(body.totp ?? "").trim();
+      if (!totp) return c.json({ error: "totp required" }, 400);
+      const verified = verifyOperatorTotp(
+        store,
+        auth.workspaceId,
+        op,
+        totp,
+      );
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+
+    const nextStatus = decision === "approve" ? "approved" : "denied";
+    const updated = store.decideApproval(auth.workspaceId, id, {
+      status: nextStatus,
+      decidedByKeyId: auth.keyId ?? null,
+      mfaSatisfied: decision === "approve" && requirementNeedsMfa(approval.requirement),
+    });
+    if (!updated) {
+      return c.json(
+        { error: "approval is not pending", status: "expired" },
+        409,
+      );
+    }
+
+    const unblocked = globalApprovalWaiters.resolve(
+      id,
+      nextStatus === "approved" ? "approved" : "denied",
+    );
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId ?? null,
+      action: nextStatus === "approved" ? "authz.approve" : "authz.deny",
+      tool: approval.tool,
+      backendSlug: approval.backendSlug,
+      detail: {
+        approvalId: id,
+        decision: nextStatus,
+        unblocked,
+        requirement: approval.requirement,
+      },
+      ip: clientIp(c),
+    });
+    return c.json({
+      approval: store.getApproval(auth.workspaceId, id, { redact: true }),
+      unblocked,
+    });
+  });
+
+  admin.get("/operators/mfa", (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    return c.json(store.getOperatorMfa(auth.workspaceId, op));
+  });
+
+  admin.post("/operators/mfa/begin", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as {
+      replace?: boolean;
+      totp?: string;
+    };
+    const current = store.getOperatorMfa(auth.workspaceId, op);
+    if (current.enrolled && !body.replace) {
+      return c.json(
+        {
+          error: "already enrolled",
+          hint: 'POST with { "replace": true, "totp": "123456" } to rotate',
+        },
+        409,
+      );
+    }
+    if (current.enrolled && body.replace) {
+      const totp = String(body.totp ?? "").trim();
+      if (!totp) return c.json({ error: "totp required to replace" }, 400);
+      const verified = verifyOperatorTotp(
+        store,
+        auth.workspaceId,
+        op,
+        totp,
+      );
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+    const { base32 } = generateTotpSecret();
+    store.upsertOperatorMfaPending(
+      auth.workspaceId,
+      op,
+      seal(store.masterKey, { base32 }),
+    );
+    const account =
+      auth.kind === "admin"
+        ? "env-admin"
+        : (auth.keyName ?? auth.keyId ?? "operator");
+    return c.json({
+      pending: true,
+      secret: base32,
+      otpauthUrl: otpauthUrl({
+        issuer: "mcp-flow",
+        account,
+        base32,
+      }),
+    });
+  });
+
+  admin.post("/operators/mfa/confirm", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as { totp?: string };
+    const totp = String(body.totp ?? "").trim();
+    if (!totp) return c.json({ error: "totp required" }, 400);
+    const verified = verifyOperatorTotp(store, auth.workspaceId, op, totp, {
+      requireEnrolled: false,
+    });
+    if (!verified.ok) {
+      if (verified.error === "not_enrolled") {
+        return c.json({ error: "call /v1/operators/mfa/begin first" }, 400);
+      }
+      const status = verified.error === "locked" ? 429 : 401;
+      return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+    }
+    store.markOperatorMfaEnrolled(auth.workspaceId, op);
+    return c.json({ enrolled: true });
+  });
+
+  admin.post("/operators/mfa/disable", async (c) => {
+    const auth = c.get("auth");
+    const op = operatorSubject(auth);
+    const body = (await c.req.json().catch(() => ({}))) as { totp?: string };
+    const current = store.getOperatorMfa(auth.workspaceId, op);
+    if (!current.enrolled && !current.pending) {
+      return c.json({ ok: true, enrolled: false });
+    }
+    const totp = String(body.totp ?? "").trim();
+    if (current.enrolled) {
+      if (!totp) return c.json({ error: "totp required" }, 400);
+      const verified = verifyOperatorTotp(store, auth.workspaceId, op, totp);
+      if (!verified.ok) {
+        const status = verified.error === "locked" ? 429 : 401;
+        return c.json({ error: verified.error === "locked" ? "totp locked" : "invalid totp" }, status);
+      }
+    }
+    store.deleteOperatorMfa(auth.workspaceId, op);
+    return c.json({ ok: true, enrolled: false });
+  });
+
+  admin.get("/push/vapid", (c) => {
+    const auth = c.get("auth");
+    const vapid = store.getPushVapid(auth.workspaceId);
+    return c.json({
+      publicKey: vapid.publicKey,
+      subject: vapid.subject,
+    });
+  });
+
+  admin.get("/push/subscriptions", (c) => {
+    const auth = c.get("auth");
+    return c.json({
+      subscriptions: store.listPushSubscriptionsPublic(auth.workspaceId),
+    });
+  });
+
+  admin.post("/push/subscriptions", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+    try {
+      const sub = store.upsertPushSubscription({
+        workspaceId: auth.workspaceId,
+        operatorKeyId: operatorSubject(auth),
+        endpoint: String(body.endpoint ?? ""),
+        p256dh: String(body.keys?.p256dh ?? ""),
+        auth: String(body.keys?.auth ?? ""),
+      });
+      return c.json({ subscription: sub }, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.delete("/push/subscriptions/:id", (c) => {
+    const auth = c.get("auth");
+    const ok = store.deletePushSubscription(auth.workspaceId, c.req.param("id"));
+    if (!ok) return c.json({ error: "not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  app.post("/v1/approvals/:id/push-decision", async (c) => {
+    const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      decision?: string;
+      token?: string;
+    };
+    const decision =
+      body.decision === "approve" || body.decision === "deny"
+        ? body.decision
+        : null;
+    if (!decision) {
+      return c.json({ error: 'decision must be "approve" or "deny"' }, 400);
+    }
+    const token = String(body.token ?? "").trim();
+    if (!token) return c.json({ error: "token required" }, 400);
+    const looked = store.lookupPushDecision(id, token);
+    if (!looked.ok) {
+      const status =
+        looked.error === "not_found"
+          ? 404
+          : looked.error === "not_pending"
+            ? 409
+            : 401;
+      return c.json({ error: looked.error }, status);
+    }
+    if (
+      decision === "approve" &&
+      requirementNeedsMfa(looked.approval.requirement)
+    ) {
+      return c.json(
+        {
+          error: "mfa_required",
+          url: `/admin/#approvals/${id}`,
+        },
+        400,
+      );
+    }
+    const nextStatus = decision === "approve" ? "approved" : "denied";
+    const updated = store.decideApproval(looked.approval.workspaceId, id, {
+      status: nextStatus,
+      decidedByKeyId: null,
+    });
+    if (!updated) {
+      return c.json({ error: "not_pending", status: "expired" }, 409);
+    }
+    const unblocked = globalApprovalWaiters.resolve(
+      id,
+      nextStatus === "approved" ? "approved" : "denied",
+    );
+    store.writeAudit({
+      workspaceId: looked.approval.workspaceId,
+      keyId: null,
+      action: nextStatus === "approved" ? "authz.approve" : "authz.deny",
+      tool: looked.approval.tool,
+      backendSlug: looked.approval.backendSlug,
+      detail: {
+        approvalId: id,
+        decision: nextStatus,
+        unblocked,
+        via: "web_push",
+        requirement: looked.approval.requirement,
+      },
+      ip: clientIp(c),
+    });
+    return c.json({
+      ok: true,
+      approval: store.getApproval(looked.approval.workspaceId, id, {
+        redact: true,
+      }),
+      unblocked,
+    });
+  });
+
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
@@ -915,6 +1309,8 @@ export function createApp(
       edgeHub,
       edgeRouter,
       ip: clientIp(c),
+      abortSignal: c.req.raw.signal,
+      approveBaseUrl: new URL(c.req.url).origin,
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);

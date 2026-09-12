@@ -7,6 +7,7 @@ import { startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
+import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
 const program = new Command();
@@ -1193,6 +1194,156 @@ program
     console.log(JSON.stringify(report, null, 2));
     if (!report.dbOk) process.exit(1);
   });
+
+const collect = (v: string, acc: string[]) => {
+  acc.push(v);
+  return acc;
+};
+
+const authzCmd = program
+  .command("authz")
+  .description("Human-in-the-loop rules for gated tool calls");
+
+const authzRule = authzCmd.command("rule").description("Create, list, or delete rules");
+
+authzRule
+  .command("list")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    console.log(JSON.stringify({ rules: store.listAuthzRules(workspaceId) }, null, 2));
+    store.close();
+  });
+
+authzRule
+  .command("add")
+  .requiredOption("-n, --name <name>", "rule name")
+  .option("--tool <name>", "exact namespaced tool (repeatable)", collect, [] as string[])
+  .option("--prefix <prefix>", "tool prefix (repeatable)", collect, [] as string[])
+  .option("--backend <slug>", "backend slug (repeatable)", collect, [] as string[])
+  .option("--placement <mode>", "placement (repeatable)", collect, [] as string[])
+  .option("--requirement <req>", "notify_approve | mfa | mfa_and_approve", "notify_approve")
+  .option("--ttl <seconds>", "wait seconds (default 180)")
+  .option("--priority <n>", "tie-break after strictness", "0")
+  .option("--db <path>", "sqlite path")
+  .action(
+    (opts: {
+      name: string;
+      tool: string[];
+      prefix: string[];
+      backend: string[];
+      placement: string[];
+      requirement: string;
+      ttl?: string;
+      priority: string;
+      db?: string;
+    }) => {
+      const { store, workspaceId } = openStore(opts.db);
+      const rule = store.createAuthzRule(workspaceId, {
+        name: opts.name,
+        match: {
+          tools: opts.tool,
+          prefixes: opts.prefix,
+          backends: opts.backend,
+          placements: opts.placement,
+        },
+        requirement: parseAuthzRequirement(opts.requirement) ?? undefined,
+        ttlSeconds: opts.ttl ? Number(opts.ttl) : undefined,
+        priority: Number(opts.priority),
+      });
+      console.log(JSON.stringify({ rule }, null, 2));
+      store.close();
+    },
+  );
+
+authzRule
+  .command("delete")
+  .argument("<id>", "rule id")
+  .option("--db <path>", "sqlite path")
+  .action((id: string, opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    const ok = store.deleteAuthzRule(workspaceId, id);
+    store.close();
+    if (!ok) {
+      console.error("not found");
+      process.exit(1);
+    }
+    console.log(JSON.stringify({ ok: true, id }));
+  });
+
+const approvalsCmd = program
+  .command("approvals")
+  .description("List or decide pending gated tool calls");
+
+approvalsCmd
+  .command("list")
+  .option("--status <status>", "pending | approved | denied | expired | all", "pending")
+  .option("--db <path>", "sqlite path")
+  .action((opts: { status?: string; db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    const status = opts.status as
+      | "pending"
+      | "approved"
+      | "denied"
+      | "expired"
+      | "all";
+    console.log(
+      JSON.stringify({ approvals: store.listApprovals(workspaceId, { status }) }, null, 2),
+    );
+    store.close();
+  });
+
+approvalsCmd
+  .command("decide")
+  .argument("<id>", "approval id")
+  .option("--approve", "approve the waiting tools/call")
+  .option("--deny", "deny the waiting tools/call")
+  .option("--totp <code>", "TOTP when the rule requires MFA")
+  .option("--url <url>", "running gateway origin", process.env.MCP_FLOW_URL)
+  .option(
+    "--admin-token <token>",
+    "admin bearer (must hit the running process to unblock waiters)",
+    process.env.MCP_FLOW_ADMIN_TOKEN,
+  )
+  .action(
+    async (
+      id: string,
+      opts: {
+        approve?: boolean;
+        deny?: boolean;
+        totp?: string;
+        url?: string;
+        adminToken?: string;
+      },
+    ) => {
+      if (!!opts.approve === !!opts.deny) {
+        console.error("pass exactly one of --approve or --deny");
+        process.exit(1);
+      }
+      const origin = (opts.url || "http://127.0.0.1:8787").replace(/\/$/, "");
+      const token = opts.adminToken;
+      if (!token) {
+        console.error(
+          "approvals decide must POST to the running gateway. Set MCP_FLOW_ADMIN_TOKEN or --admin-token.",
+        );
+        process.exit(1);
+      }
+      const res = await fetch(`${origin}/v1/approvals/${id}/decision`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          decision: opts.approve ? "approve" : "deny",
+          totp: opts.totp,
+        }),
+      });
+      const text = await res.text();
+      console.log(text);
+      if (!res.ok) process.exit(1);
+    },
+  );
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : err);
