@@ -1631,10 +1631,80 @@ let approvalsPoll = null;
 let approvalsTick = null;
 let lastPendingSig = "";
 let lastMfaBeginSecret = "";
+let lastPushNote = "";
+let deferredInstallPrompt = null;
+let adminSwReg = null;
 
 function approvalsDeepId() {
   const m = /^#approvals\/([^/?#]+)/.exec(location.hash || "");
   return m ? decodeURIComponent(m[1]) : "";
+}
+
+function isIosSafari() {
+  const ua = navigator.userAgent || "";
+  return (
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+function pushCapabilityNote() {
+  if (!window.isSecureContext) {
+    return "Push needs HTTPS (or localhost). This origin is not a secure context.";
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return "This browser does not support Web Push.";
+  }
+  if (isIosSafari()) {
+    return "iPhone/iPad: Share → Add to Home Screen, open the installed Admin, then Enable push. Notification buttons may be missing — tap the banner to open Admin. TOTP is never in the payload.";
+  }
+  return "Enable push on this device. For notify_approve, Approve/Deny is on the notification. MFA still opens Admin — TOTP is never in the payload.";
+}
+
+async function ensureAdminServiceWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  if (adminSwReg) return adminSwReg;
+  adminSwReg = await navigator.serviceWorker.register("/admin/sw.js", {
+    scope: "/admin/",
+  });
+  return adminSwReg;
+}
+
+async function enablePushOnThisDevice() {
+  if (!window.isSecureContext) {
+    throw new Error("Push needs HTTPS (or localhost)");
+  }
+  if (!("Notification" in window) || !("PushManager" in window)) {
+    throw new Error("Web Push is not available in this browser");
+  }
+  const reg = await ensureAdminServiceWorker();
+  if (!reg) throw new Error("Service worker not available");
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Notification permission denied");
+  const vapid = await api("/v1/push/vapid");
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(vapid.publicKey),
+  });
+  const json = sub.toJSON();
+  await api("/v1/push/subscriptions", {
+    method: "POST",
+    body: JSON.stringify({
+      endpoint: json.endpoint,
+      keys: json.keys,
+    }),
+  });
 }
 
 function stopApprovalsPoll() {
@@ -1672,14 +1742,17 @@ function matchSummary(match) {
 
 async function renderApprovals(force = false) {
   const highlight = approvalsDeepId();
-  const [inbox, rulesRes, mfa] = await Promise.all([
+  const [inbox, rulesRes, mfa, vapidRes, subsRes] = await Promise.all([
     api("/v1/approvals?status=pending"),
     api("/v1/authz/rules"),
     api("/v1/operators/mfa"),
+    api("/v1/push/vapid").catch(() => null),
+    api("/v1/push/subscriptions").catch(() => ({ subscriptions: [] })),
   ]);
   const pending = inbox.approvals || [];
   const rules = rulesRes.rules || [];
   const enrolled = !!mfa?.enrolled;
+  const pushSubs = subsRes?.subscriptions || [];
   const sig = pending.map((a) => a.id).join(",");
   const focusIn =
     document.activeElement &&
@@ -1750,6 +1823,35 @@ async function renderApprovals(force = false) {
       "Inbox",
       `<div class="inbox-stack">${cards}</div>`,
       `${pending.length} pending · ${inbox.waiting ?? 0} waiting`,
+    )}
+    ${surface(
+      "This device",
+      `
+      <p class="muted">${esc(pushCapabilityNote())}</p>
+      <div class="row-actions" style="margin-top:10px">
+        <button type="button" class="pill-btn primary" id="pushEnable">Enable push</button>
+        <button type="button" class="pill-btn ghost" id="pwaInstall" ${deferredInstallPrompt ? "" : "hidden"}>Install Admin</button>
+      </div>
+      <p class="muted push-status" id="pushStatus">${esc(
+        lastPushNote ||
+          (vapidRes?.publicKey
+            ? "VAPID ready. Install Admin on a phone, then Enable push."
+            : ""),
+      )}</p>
+      ${
+        pushSubs.length
+          ? `<ul class="push-sub-list">${pushSubs
+              .map(
+                (s) => `
+            <li>
+              <span class="mono">${esc(s.endpointHint)}</span>
+              <button type="button" class="pill-btn ghost" data-push-del="${esc(s.id)}">Remove</button>
+            </li>`,
+              )
+              .join("")}</ul>`
+          : `<p class="muted" style="margin-top:10px">No push subscriptions on this workspace yet.</p>`
+      }`,
+      `${pushSubs.length} subscription${pushSubs.length === 1 ? "" : "s"}`,
     )}
     ${surface(
       "Operator MFA (TOTP)",
@@ -1929,6 +2031,42 @@ async function renderApprovals(force = false) {
     }
   });
 
+  $("#pushEnable")?.addEventListener("click", async () => {
+    try {
+      await enablePushOnThisDevice();
+      lastPushNote = "Push enabled on this device.";
+      await renderApprovals(true);
+    } catch (e) {
+      lastPushNote = e.message || String(e);
+      showErr(e.message);
+      const statusEl = $("#pushStatus");
+      if (statusEl) statusEl.textContent = lastPushNote;
+    }
+  });
+
+  $("#pwaInstall")?.addEventListener("click", async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    const btn = $("#pwaInstall");
+    if (btn) btn.hidden = true;
+  });
+
+  $("#tab-approvals")?.querySelectorAll("[data-push-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        await api(`/v1/push/subscriptions/${btn.getAttribute("data-push-del")}`, {
+          method: "DELETE",
+        });
+        lastPushNote = "Subscription removed.";
+        await renderApprovals(true);
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
   if (highlight) {
     const el = $(`[data-approval-id="${CSS.escape(highlight)}"]`);
     el?.scrollIntoView({ block: "center" });
@@ -2007,6 +2145,39 @@ window.addEventListener("hashchange", () => {
     void refresh();
   }
 });
+
+window.addEventListener("beforeinstallprompt", (ev) => {
+  ev.preventDefault();
+  deferredInstallPrompt = ev;
+  const btn = $("#pwaInstall");
+  if (btn) btn.hidden = false;
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  const btn = $("#pwaInstall");
+  if (btn) btn.hidden = true;
+});
+
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener("message", (ev) => {
+    const msg = ev.data || {};
+    if (msg.type === "authz-open" && msg.approvalId) {
+      history.replaceState(
+        null,
+        "",
+        `#approvals/${encodeURIComponent(msg.approvalId)}`,
+      );
+      activateTab("approvals");
+      void refresh();
+    }
+    if (msg.type === "authz-decided") {
+      activateTab("approvals");
+      void refresh();
+    }
+  });
+  void ensureAdminServiceWorker().catch(() => undefined);
+}
 
 $("#saveToken").addEventListener("click", () => {
   setToken($("#token").value.trim());

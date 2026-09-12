@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import webpush from "web-push";
 import {
   deriveMasterKey,
   hashToken,
@@ -7,6 +8,7 @@ import {
   newId,
   seal,
   unseal,
+  safeEqualStr,
 } from "../crypto.js";
 import type {
   ApiKeyCreated,
@@ -45,6 +47,7 @@ import {
   type UpdateAuthzRuleInput,
 } from "../authz/types.js";
 import { normalizeMatch } from "../authz/match.js";
+import { mintDecideToken, hashDecideToken } from "../authz/decide-token.js";
 import {
   DEFAULT_PLACEMENT,
   DEFAULT_WORKSPACE_POLICY,
@@ -169,7 +172,8 @@ CREATE TABLE IF NOT EXISTS approvals (
   decided_by_key_id TEXT,
   expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  decided_at TEXT
+  decided_at TEXT,
+  decide_token_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS operator_mfa (
@@ -184,6 +188,25 @@ CREATE TABLE IF NOT EXISTS operator_mfa (
   UNIQUE(workspace_id, operator_key_id)
 );
 
+CREATE TABLE IF NOT EXISTS push_vapid (
+  workspace_id TEXT PRIMARY KEY,
+  public_key TEXT NOT NULL,
+  private_enc TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  operator_key_id TEXT NOT NULL DEFAULT '',
+  endpoint TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(endpoint)
+);
+
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(token_hash);
 CREATE INDEX IF NOT EXISTS idx_backends_ws ON backends(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_audit_ws_ts ON audit_events(workspace_id, ts DESC);
@@ -194,6 +217,7 @@ CREATE INDEX IF NOT EXISTS idx_project_sessions_hash ON project_sessions(token_h
 CREATE INDEX IF NOT EXISTS idx_authz_rules_ws ON authz_rules(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_ws_status ON approvals(workspace_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operator_mfa_ws ON operator_mfa(workspace_id, operator_key_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_ws ON push_subscriptions(workspace_id);
 `;
 
 function nowIso(): string {
@@ -498,6 +522,24 @@ export function toPublicApproval(
   };
 }
 
+export interface PushSubscriptionPublic {
+  id: string;
+  endpointHint: string;
+  createdAt: string;
+}
+
+function endpointHint(endpoint: string): string {
+  try {
+    const u = new URL(endpoint);
+    const tail = u.pathname.slice(-10);
+    return `${u.host}…${tail}`;
+  } catch {
+    return `${endpoint.slice(0, 24)}…`;
+  }
+}
+
+const PUSH_SUB_CAP = 20;
+
 function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
   return {
     id: k.id,
@@ -656,7 +698,35 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_authz_rules_ws ON authz_rules(workspace_id);
       CREATE INDEX IF NOT EXISTS idx_approvals_ws_status ON approvals(workspace_id, status, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_operator_mfa_ws ON operator_mfa(workspace_id, operator_key_id);
+      CREATE TABLE IF NOT EXISTS push_vapid (
+        workspace_id TEXT PRIMARY KEY,
+        public_key TEXT NOT NULL,
+        private_enc TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS push_subscriptions (
+        id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        operator_key_id TEXT NOT NULL DEFAULT '',
+        endpoint TEXT NOT NULL,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(endpoint)
+      );
+      CREATE INDEX IF NOT EXISTS idx_push_subs_ws ON push_subscriptions(workspace_id);
     `);
+
+    const apprCols = this.db
+      .prepare(`PRAGMA table_info(approvals)`)
+      .all() as Array<{ name: string }>;
+    if (
+      apprCols.length &&
+      !apprCols.some((c) => c.name === "decide_token_hash")
+    ) {
+      this.db.exec(`ALTER TABLE approvals ADD COLUMN decide_token_hash TEXT`);
+    }
   }
 
   close(): void {
@@ -1619,18 +1689,19 @@ export class Store {
     backendSlug: string | null;
     requirement: AuthzRequirement;
     ttlSeconds: number;
-  }): Approval {
+  }): { approval: Approval; decideToken: string | null } {
     const now = nowIso();
     const ttl = clampAuthzTtl(input.ttlSeconds);
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
     const id = newId("appr");
+    const minted = mintDecideToken();
     this.db
       .prepare(
         `INSERT INTO approvals (
           id, workspace_id, rule_id, key_id, tool, arguments_json, backend_slug,
           status, requirement, mfa_satisfied_at, decided_by_key_id, expires_at,
-          created_at, decided_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?, NULL)`,
+          created_at, decided_at, decide_token_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, NULL, ?, ?, NULL, ?)`,
       )
       .run(
         id,
@@ -1643,8 +1714,12 @@ export class Store {
         input.requirement,
         expiresAt,
         now,
+        minted.hash,
       );
-    return this.getApproval(input.workspaceId, id, { redact: false })!;
+    return {
+      approval: this.getApproval(input.workspaceId, id, { redact: false })!,
+      decideToken: minted.token,
+    };
   }
 
   getApproval(
@@ -1728,7 +1803,8 @@ export class Store {
       .prepare(
         `UPDATE approvals SET
            status = ?, decided_by_key_id = ?, decided_at = ?,
-           mfa_satisfied_at = CASE WHEN ? = 1 THEN ? ELSE mfa_satisfied_at END
+           mfa_satisfied_at = CASE WHEN ? = 1 THEN ? ELSE mfa_satisfied_at END,
+           decide_token_hash = NULL
          WHERE id = ? AND workspace_id = ? AND status = 'pending'`,
       )
       .run(
@@ -1850,5 +1926,188 @@ export class Store {
       )
       .run(workspaceId, operatorKeyId);
     return Number(res.changes) > 0;
+  }
+
+  getPushVapid(workspaceId: string): {
+    publicKey: string;
+    privateKey: string;
+    subject: string;
+  } {
+    const row = this.db
+      .prepare(
+        `SELECT public_key, private_enc, subject FROM push_vapid WHERE workspace_id = ?`,
+      )
+      .get(workspaceId) as
+      | { public_key: string; private_enc: string; subject: string }
+      | undefined;
+    if (row) {
+      const privateKey = unseal<string>(this.masterKey, String(row.private_enc));
+      return {
+        publicKey: String(row.public_key),
+        privateKey,
+        subject: String(row.subject),
+      };
+    }
+    const keys = webpush.generateVAPIDKeys();
+    const subject = "mailto:mcp-flow@localhost";
+    this.db
+      .prepare(
+        `INSERT INTO push_vapid (workspace_id, public_key, private_enc, subject, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        workspaceId,
+        keys.publicKey,
+        seal(this.masterKey, keys.privateKey),
+        subject,
+        nowIso(),
+      );
+    return {
+      publicKey: keys.publicKey,
+      privateKey: keys.privateKey,
+      subject,
+    };
+  }
+
+  listPushSubscriptions(workspaceId: string): Array<{
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    createdAt: string;
+  }> {
+    const rows = this.db
+      .prepare(
+        `SELECT id, endpoint, p256dh, auth, created_at FROM push_subscriptions
+         WHERE workspace_id = ? ORDER BY created_at DESC`,
+      )
+      .all(workspaceId) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+      createdAt: String(r.created_at),
+    }));
+  }
+
+  listPushSubscriptionsPublic(workspaceId: string): PushSubscriptionPublic[] {
+    return this.listPushSubscriptions(workspaceId).map((s) => ({
+      id: s.id,
+      endpointHint: endpointHint(s.endpoint),
+      createdAt: s.createdAt,
+    }));
+  }
+
+  upsertPushSubscription(input: {
+    workspaceId: string;
+    operatorKeyId: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+  }): PushSubscriptionPublic {
+    const endpoint = String(input.endpoint ?? "").trim();
+    const p256dh = String(input.p256dh ?? "").trim();
+    const auth = String(input.auth ?? "").trim();
+    if (!endpoint.startsWith("https://") && !endpoint.startsWith("http://")) {
+      throw new Error("invalid push endpoint");
+    }
+    if (!p256dh || !auth) throw new Error("push keys required");
+    const existing = this.db
+      .prepare(`SELECT id FROM push_subscriptions WHERE endpoint = ?`)
+      .get(endpoint) as { id: string } | undefined;
+    const now = nowIso();
+    if (existing) {
+      this.db
+        .prepare(
+          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?,
+           p256dh = ?, auth = ?, created_at = ? WHERE id = ?`,
+        )
+        .run(
+          input.workspaceId,
+          input.operatorKeyId,
+          p256dh,
+          auth,
+          now,
+          existing.id,
+        );
+      return {
+        id: existing.id,
+        endpointHint: endpointHint(endpoint),
+        createdAt: now,
+      };
+    }
+    const count = this.listPushSubscriptions(input.workspaceId).length;
+    if (count >= PUSH_SUB_CAP) {
+      throw new Error(`at most ${PUSH_SUB_CAP} push subscriptions per workspace`);
+    }
+    const id = newId("psub");
+    this.db
+      .prepare(
+        `INSERT INTO push_subscriptions (
+          id, workspace_id, operator_key_id, endpoint, p256dh, auth, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.workspaceId,
+        input.operatorKeyId,
+        endpoint,
+        p256dh,
+        auth,
+        now,
+      );
+    return { id, endpointHint: endpointHint(endpoint), createdAt: now };
+  }
+
+  deletePushSubscription(workspaceId: string, id: string): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM push_subscriptions WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
+  deletePushSubscriptionByEndpoint(
+    workspaceId: string,
+    endpoint: string,
+  ): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM push_subscriptions WHERE workspace_id = ? AND endpoint = ?`,
+      )
+      .run(workspaceId, endpoint);
+    return Number(res.changes) > 0;
+  }
+
+  lookupPushDecision(
+    id: string,
+    token: string,
+  ):
+    | { ok: true; approval: Approval }
+    | {
+        ok: false;
+        error: "not_found" | "invalid_token" | "not_pending";
+      } {
+    const row = this.db
+      .prepare(
+        `SELECT a.*, k.name AS key_name, k.prefix AS key_prefix, a.decide_token_hash AS decide_token_hash
+         FROM approvals a
+         LEFT JOIN api_keys k ON k.id = a.key_id
+         WHERE a.id = ?`,
+      )
+      .get(id) as Record<string, unknown> | undefined;
+    if (!row) return { ok: false, error: "not_found" };
+    const stored = String(row.decide_token_hash ?? "");
+    const got = hashDecideToken(token);
+    if (!stored || !safeEqualStr(stored, got)) {
+      return { ok: false, error: "invalid_token" };
+    }
+    const approval = rowApproval(row, true);
+    if (approval.status !== "pending") {
+      return { ok: false, error: "not_pending" };
+    }
+    return { ok: true, approval };
   }
 }

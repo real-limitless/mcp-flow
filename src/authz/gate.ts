@@ -12,6 +12,7 @@ import {
   globalApprovalWaiters,
   type ApprovalWaiterMap,
 } from "./waiters.js";
+import { notifyApprovalPush } from "./push.js";
 
 export type AuthzDenyReason = "authz_denied" | "authz_timeout" | "authz_busy";
 
@@ -107,7 +108,7 @@ export async function runAuthzGate(opts: {
     };
   }
 
-  const approval = opts.store.createApproval({
+  const { approval, decideToken } = opts.store.createApproval({
     workspaceId: opts.workspaceId,
     ruleId: rule.id,
     keyId: opts.keyId ?? "",
@@ -136,6 +137,14 @@ export async function runAuthzGate(opts: {
     },
     ip: opts.ip,
   });
+
+  void notifyApprovalPush({
+    store: opts.store,
+    approval,
+    decideToken,
+    approveBaseUrl: opts.approveBaseUrl,
+    ttlSeconds: rule.ttlSeconds,
+  }).catch(() => undefined);
 
   const started = Date.now();
   const decision = await waiters.wait(approval.id, {

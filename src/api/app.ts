@@ -148,24 +148,27 @@ export function createApp(
       return c.text("admin UI not found", 404);
     }
   });
-  app.get("/admin/app.js", (c) => {
-    if (!adminDir) return c.text("not found", 404);
+  const adminStatic: Record<string, string> = {
+    "app.js": "application/javascript; charset=utf-8",
+    "sw.js": "application/javascript; charset=utf-8",
+    "styles.css": "text/css; charset=utf-8",
+    "manifest.webmanifest": "application/manifest+json; charset=utf-8",
+    "icon.svg": "image/svg+xml",
+    "icon-192.png": "image/png",
+    "icon-512.png": "image/png",
+  };
+  app.get("/admin/:file", (c) => {
+    const file = c.req.param("file");
+    const type = adminStatic[file];
+    if (!type || !adminDir) return c.text("not found", 404);
     try {
-      const js = readFileSync(join(adminDir, "app.js"), "utf8");
-      return c.body(js, 200, {
-        "Content-Type": "application/javascript; charset=utf-8",
-      });
-    } catch {
-      return c.text("not found", 404);
-    }
-  });
-  app.get("/admin/styles.css", (c) => {
-    if (!adminDir) return c.text("not found", 404);
-    try {
-      const css = readFileSync(join(adminDir, "styles.css"), "utf8");
-      return c.body(css, 200, {
-        "Content-Type": "text/css; charset=utf-8",
-      });
+      const buf = readFileSync(join(adminDir, file));
+      const headers: Record<string, string> = { "Content-Type": type };
+      if (file === "sw.js") {
+        headers["Cache-Control"] = "no-cache";
+        headers["Service-Worker-Allowed"] = "/admin/";
+      }
+      return c.body(buf, 200, headers);
     } catch {
       return c.text("not found", 404);
     }
@@ -1119,6 +1122,125 @@ export function createApp(
     }
     store.deleteOperatorMfa(auth.workspaceId, op);
     return c.json({ ok: true, enrolled: false });
+  });
+
+  admin.get("/push/vapid", (c) => {
+    const auth = c.get("auth");
+    const vapid = store.getPushVapid(auth.workspaceId);
+    return c.json({
+      publicKey: vapid.publicKey,
+      subject: vapid.subject,
+    });
+  });
+
+  admin.get("/push/subscriptions", (c) => {
+    const auth = c.get("auth");
+    return c.json({
+      subscriptions: store.listPushSubscriptionsPublic(auth.workspaceId),
+    });
+  });
+
+  admin.post("/push/subscriptions", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      endpoint?: string;
+      keys?: { p256dh?: string; auth?: string };
+    };
+    try {
+      const sub = store.upsertPushSubscription({
+        workspaceId: auth.workspaceId,
+        operatorKeyId: operatorSubject(auth),
+        endpoint: String(body.endpoint ?? ""),
+        p256dh: String(body.keys?.p256dh ?? ""),
+        auth: String(body.keys?.auth ?? ""),
+      });
+      return c.json({ subscription: sub }, 201);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.delete("/push/subscriptions/:id", (c) => {
+    const auth = c.get("auth");
+    const ok = store.deletePushSubscription(auth.workspaceId, c.req.param("id"));
+    if (!ok) return c.json({ error: "not found" }, 404);
+    return c.json({ ok: true });
+  });
+
+  app.post("/v1/approvals/:id/push-decision", async (c) => {
+    const id = c.req.param("id");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      decision?: string;
+      token?: string;
+    };
+    const decision =
+      body.decision === "approve" || body.decision === "deny"
+        ? body.decision
+        : null;
+    if (!decision) {
+      return c.json({ error: 'decision must be "approve" or "deny"' }, 400);
+    }
+    const token = String(body.token ?? "").trim();
+    if (!token) return c.json({ error: "token required" }, 400);
+    const looked = store.lookupPushDecision(id, token);
+    if (!looked.ok) {
+      const status =
+        looked.error === "not_found"
+          ? 404
+          : looked.error === "not_pending"
+            ? 409
+            : 401;
+      return c.json({ error: looked.error }, status);
+    }
+    if (
+      decision === "approve" &&
+      requirementNeedsMfa(looked.approval.requirement)
+    ) {
+      return c.json(
+        {
+          error: "mfa_required",
+          url: `/admin/#approvals/${id}`,
+        },
+        400,
+      );
+    }
+    const nextStatus = decision === "approve" ? "approved" : "denied";
+    const updated = store.decideApproval(looked.approval.workspaceId, id, {
+      status: nextStatus,
+      decidedByKeyId: null,
+    });
+    if (!updated) {
+      return c.json({ error: "not_pending", status: "expired" }, 409);
+    }
+    const unblocked = globalApprovalWaiters.resolve(
+      id,
+      nextStatus === "approved" ? "approved" : "denied",
+    );
+    store.writeAudit({
+      workspaceId: looked.approval.workspaceId,
+      keyId: null,
+      action: nextStatus === "approved" ? "authz.approve" : "authz.deny",
+      tool: looked.approval.tool,
+      backendSlug: looked.approval.backendSlug,
+      detail: {
+        approvalId: id,
+        decision: nextStatus,
+        unblocked,
+        via: "web_push",
+        requirement: looked.approval.requirement,
+      },
+      ip: clientIp(c),
+    });
+    return c.json({
+      ok: true,
+      approval: store.getApproval(looked.approval.workspaceId, id, {
+        redact: true,
+      }),
+      unblocked,
+    });
   });
 
   app.route("/v1", admin);

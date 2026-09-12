@@ -376,6 +376,27 @@ describe("api + gateway", () => {
     expect(js).toContain("keyOnceSnips");
     expect(js).toContain("keyDynamicTools");
     expect(js).toContain("Dynamic tool discovery");
+
+    expect(html).toContain('rel="manifest"');
+    expect(html).toContain("/admin/manifest.webmanifest");
+    const man = await fetch(`${gw.url}/admin/manifest.webmanifest`);
+    expect(man.status).toBe(200);
+    expect(man.headers.get("content-type") || "").toMatch(/manifest|json/);
+    const manBody = await man.text();
+    expect(manBody).toContain('"/admin/"');
+    expect(manBody).toContain("standalone");
+
+    const sw = await fetch(`${gw.url}/admin/sw.js`);
+    expect(sw.status).toBe(200);
+    expect(sw.headers.get("cache-control") || "").toMatch(/no-cache/i);
+    expect(sw.headers.get("service-worker-allowed")).toBe("/admin/");
+    const swBody = await sw.text();
+    expect(swBody).toContain("push-decision");
+    expect(swBody).toContain("authz-decided");
+
+    const icon = await fetch(`${gw.url}/admin/icon-192.png`);
+    expect(icon.status).toBe(200);
+    expect(icon.headers.get("content-type")).toBe("image/png");
   });
 
   it("operator mf_* key gets mf_admin_* and can use /v1", async () => {

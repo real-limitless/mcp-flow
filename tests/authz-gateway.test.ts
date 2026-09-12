@@ -11,6 +11,7 @@ import { z } from "zod";
 import { loadConfig } from "../src/config.js";
 import { startServer, type RunningServer } from "../src/server.js";
 import { fromBase32, totpCode } from "../src/authz/totp.js";
+import { Store } from "../src/db/store.js";
 
 const master = Buffer.alloc(32, 3).toString("base64");
 const admin = "test-admin-token-please-change";
@@ -368,5 +369,67 @@ describe("authz gateway hold", () => {
     expect(resultText(call)).toContain("echo:mfa-hi");
     expect(calls).toEqual(["mfa-hi"]);
     await client.close();
+  }, 20_000);
+
+  it("push-decision without admin bearer unblocks notify_approve", async () => {
+    const origCreate = Store.prototype.createApproval;
+    const tokens = new Map<string, string>();
+    Store.prototype.createApproval = function (input) {
+      const r = origCreate.call(this, input);
+      if (r.decideToken) tokens.set(r.approval.id, r.decideToken);
+      return r;
+    };
+    try {
+      const calls: string[] = [];
+      const upstream = await startUpstream(calls);
+      cleanups.push(upstream.close);
+      const gw = await bootGateway();
+      const base = gw.url;
+      await addEchoBackend(base, upstream.url);
+      const { token } = await mintAgent(base);
+
+      await fetch(`${base}/v1/authz/rules`, {
+        method: "POST",
+        headers: hdr,
+        body: JSON.stringify({
+          name: "echo-push",
+          match: { tools: ["up__echo"] },
+          requirement: "notify_approve",
+          ttlSeconds: 30,
+        }),
+      });
+
+      const client = await connectAgent(base, token);
+      const callP = client.callTool({
+        name: "up__echo",
+        arguments: { text: "from-push" },
+      });
+      const pending = await waitForPending(base, "up__echo");
+      const inbox = await fetch(`${base}/v1/approvals?status=pending`, {
+        headers: hdr,
+      });
+      const inboxText = await inbox.text();
+      expect(inboxText).not.toContain("apd_");
+      expect(inboxText).not.toContain(tokens.get(pending.id) || "missing-token");
+
+      const decideToken = tokens.get(pending.id);
+      expect(decideToken?.startsWith("apd_")).toBe(true);
+
+      const noAuth = await fetch(
+        `${base}/v1/approvals/${pending.id}/push-decision`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ decision: "approve", token: decideToken }),
+        },
+      );
+      expect(noAuth.status).toBe(200);
+      const call = await callP;
+      expect(resultText(call)).toContain("echo:from-push");
+      expect(calls).toEqual(["from-push"]);
+      await client.close();
+    } finally {
+      Store.prototype.createApproval = origCreate;
+    }
   }, 20_000);
 });
