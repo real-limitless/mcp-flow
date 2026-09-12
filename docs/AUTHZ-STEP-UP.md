@@ -1,11 +1,11 @@
 # Plan: step-up MFA and notify-then-approve for tool calls
 
-Status: **P7a + TOTP decide (P7b) implemented.** Webhook notify (P7c) and WebAuthn (P7d) are not. Gateway-first. Does not change catalog schema.
+Status: **P7a + TOTP decide (P7b) + Admin PWA / Web Push implemented.** Slack/ntfy webhook notify is not. Gateway-first. Does not change catalog schema.
 
 Operators should be able to pick **which tools** and **which rules** require a human in the loop before mcp-flow proxies the call:
 
 1. **MFA** — the human proves presence (TOTP / WebAuthn) before the call proceeds.
-2. **Notify-then-approve** — mcp-flow posts a notification; a human must **manually approve** (or deny) in Admin (or via a signed webhook callback). The upstream tool does **not** run until that happens.
+2. **Notify-then-approve** — mcp-flow posts a notification; a human must **manually approve** (or deny) from the Admin PWA (or later a signed webhook). The upstream tool does **not** run until that happens.
 
 These are extra gates **after** today’s allow/deny (key scopes, projects, dynamic working set). A tool that is out of scope is still denied; it never reaches MFA or an approval inbox.
 
@@ -149,12 +149,13 @@ Posted **immediately** when the wait starts (second 0), not after timeout.
 
 | Channel | Behavior |
 | --- | --- |
-| **Admin inbox** | Source of truth. New **Approvals** tab. Live pending + remaining seconds. |
-| **Webhook** | Optional `POST` JSON to an operator URL (Slack/n8n/ntfy). HMAC with a sealed workspace secret. Body: approval id, tool, key name/prefix, redacted args, remaining seconds, approve/deny URLs. **No upstream secrets.** |
+| **Admin inbox** | Source of truth. **Approvals** tab. Live pending + remaining seconds. |
+| **Admin PWA + Web Push** | Install `/admin/` on a phone. On pending, Web Push fires immediately. `notify_approve` includes Approve/Deny actions (one-time `apd_` token, hashed at rest). `mfa` / `mfa_and_approve` omit the token — tap opens Admin for TOTP. |
+| **Webhook** | Later. Optional `POST` JSON to Slack/n8n/ntfy. HMAC with a sealed workspace secret. |
 
 Email/SMS later. Do not add a mailer in v1.
 
-Webhook **approve/deny** (optional): signed POST back to `/v1/approvals/:id/decision`. Prefer Admin UI for MFA; webhook can do `notify_approve` without MFA. `mfa_*` requirements **must** complete in Admin (or `/approve`) so TOTP never goes through Slack.
+Web Push **approve/deny** uses public `POST /v1/approvals/:id/push-decision` with the one-time token from the notification payload (no admin bearer). Prefer Admin UI for MFA; push can do `notify_approve` without MFA. `mfa_*` requirements **must** complete in Admin so TOTP never goes through the notification.
 
 ## Data model
 
@@ -253,6 +254,7 @@ New tab **Approvals** (and a **Policy** subsection or Status card):
 - Approve / Deny (unblocks the waiting HTTP call immediately)
 - If requirement includes MFA: TOTP field **before** Approve enables
 - Deep link `#approvals/<id>` for notify URL
+- **This device**: Enable push (VAPID subscribe) and Install Admin. iOS needs Add to Home Screen before push. Localhost is a secure context; production needs HTTPS.
 
 **Status**
 
@@ -271,6 +273,14 @@ DELETE /v1/authz/rules/:id
 
 GET    /v1/approvals?status=pending
 POST   /v1/approvals/:id/decision   { "decision": "approve"|"deny", "totp"?: "123456" }
+
+GET    /v1/push/vapid                 // publicKey + subject only
+GET    /v1/push/subscriptions           // endpointHint only
+POST   /v1/push/subscriptions         { endpoint, keys: { p256dh, auth } }
+DELETE /v1/push/subscriptions/:id
+
+POST   /v1/approvals/:id/push-decision  { "decision": "approve"|"deny", "token": "apd_…" }
+                                     // no admin bearer; one-time hashed token from the push payload
 
 GET    /v1/operators/mfa
 POST   /v1/operators/mfa/begin      // secret once; { replace, totp } to rotate
@@ -292,10 +302,13 @@ Default workspace: **no rules**. Existing keys keep today’s behavior.
 
 ## Security
 
-- Approve/deny only with operator auth (admin token or admin key), never agent key
+- Approve/deny with operator auth (admin token or admin key), never agent key — except Web Push `push-decision`, which is a one-time `apd_` token hashed on the approval row
+- Decide tokens never appear on `GET /v1/approvals`, audit, or MFA push payloads
 - Args frozen at pending time; after approve, proxy those args (model cannot swap mid-wait)
-- TOTP secret sealed; never in audit, catalog, tool results, or webhooks
-- Approval webhook payloads redacted with `sanitizeForAudit`
+- TOTP secret sealed; never in audit, catalog, tool results, webhooks, or push payloads
+- Approval webhook/push payloads omit args or use `sanitizeForAudit` (push omits args)
+- VAPID private key sealed; `GET /v1/push/vapid` returns publicKey + subject only
+- Cap 20 push subscriptions per workspace; drop 404/410 endpoints
 - Enterprise: deny edge-bare stays independent; this is an extra gate
 - Rate-limit TOTP verify; lockout after N failures
 - Client abort / process restart: do not execute
@@ -307,7 +320,7 @@ Default workspace: **no rules**. Existing keys keep today’s behavior.
 | --- | --- | --- |
 | **P7a** | Rules + approvals; match engine; **hold `tools/call` up to 180s**; Admin inbox + REST decide; timeout/deny payloads; audit | Notify-then-approve without a resume protocol |
 | **P7b** | TOTP enroll + MFA on decide during the wait; `mfa` / `mfa_and_approve`; reuse window | Step-up during the same call |
-| **P7c** | Webhook notify + HMAC; one-time decide token for `notify_approve` only | Phone/Slack within the 3-minute window |
+| **P7c** | Admin PWA + Web Push (this slice). Slack/ntfy webhook + HMAC still later | Phone Approve/Deny inside the wait window |
 | **P7d** | WebAuthn; argument matchers; per-key extras | Harder policies |
 
 Do not block gateway fixes for this. Catalog schema unchanged.
@@ -322,10 +335,13 @@ Do not block gateway fixes for this. Catalog schema unchanged.
 - Late approve after timeout does not invoke upstream
 - Client abort: no upstream
 - Agent key cannot hit `/v1/approvals/:id/decision`
+- Push-decision without bearer unblocks `notify_approve`; MFA approve returns `mfa_required`
+- Bad decide token 401; used/expired 401/409; `GET /v1/approvals` has no `apd_`
+- VAPID GET has no private key; subscription list is `endpointHint` only
 - MFA required: approve without TOTP fails; waiter still running
 - Discovery metas still return immediately
 - Concurrent wait cap
-- Audit has actor key on pending/approve/timeout; no TOTP secret
+- Audit has actor key on pending/approve/timeout; no TOTP secret; push decide uses `via: "web_push"`
 
 ## Non-goals
 
@@ -334,5 +350,5 @@ Do not block gateway fixes for this. Catalog schema unchanged.
 - Letting the model approve via `mf_approve_*`
 - `mf_resume_call` in v1 (timeout → retry a new wait)
 - Multi-tenant SaaS IdP (self-hosted workspace operators)
-- Push/email providers in v1
+- Slack/ntfy/email providers in this slice (Admin PWA + Web Push is the phone path)
 - Catalog/McpGalleryEntry fields for authz

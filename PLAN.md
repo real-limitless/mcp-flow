@@ -278,5 +278,6 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 - [x] P5 edge-bare: workspace `allowEdgeBare` policy (default false)  
 - [x] P6 routing: tags / any-online / `mf_use_device` sticky + richer `mf_status`  
 - [x] P7a/P7b step-up: hold `tools/call`, Admin Approvals + TOTP decide ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md))
-- [ ] P7c webhook notify + signed decide for `notify_approve`  
+- [x] Admin PWA + Web Push for `notify_approve` (Install Admin, Enable push)
+- [ ] P7c webhook notify + signed decide for Slack/ntfy  
 
