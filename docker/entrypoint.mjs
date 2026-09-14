@@ -30,6 +30,13 @@ function parseEnvFile(text) {
 }
 
 mkdirSync(DATA, { recursive: true });
+mkdirSync(`${DATA}/npm-cache`, { recursive: true });
+if (!nonempty(process.env.MCP_FLOW_NPM_CACHE)) {
+  process.env.MCP_FLOW_NPM_CACHE = `${DATA}/npm-cache`;
+}
+if (!nonempty(process.env.npm_config_cache)) {
+  process.env.npm_config_cache = process.env.MCP_FLOW_NPM_CACHE;
+}
 const file = existsSync(SECRETS)
   ? parseEnvFile(readFileSync(SECRETS, "utf8"))
   : {};

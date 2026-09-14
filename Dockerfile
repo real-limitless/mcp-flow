@@ -12,8 +12,9 @@ ENV NODE_ENV=production \
     MCP_FLOW_HOST=0.0.0.0 \
     MCP_FLOW_PORT=8787 \
     MCP_FLOW_DB_PATH=/data/mcp-flow.db \
-    MCP_FLOW_DATA_DIR=/data
-RUN mkdir -p /data /app/catalog && chown node:node /data /app/catalog
+    MCP_FLOW_DATA_DIR=/data \
+    npm_config_cache=/data/npm-cache
+RUN mkdir -p /data /data/npm-cache /app/catalog && chown node:node /data /data/npm-cache /app/catalog
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /app/package.json /app/package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules
