@@ -448,9 +448,18 @@ export class UpstreamPool {
         backend: pub,
       };
     } catch (err) {
+      const base = err instanceof Error ? err.message : String(err);
+      const hdrs = this.store.decryptHeaders(backend);
+      const hasAuth = Object.keys(hdrs).some((k) =>
+        /^(authorization|x-api-key)$/i.test(k),
+      );
+      const hint =
+        !hasAuth && /authentication required|unauthorized|\b401\b/i.test(base)
+          ? `${base} (no sealed Authorization header — set apiKey or Authorization; Bearer is added automatically)`
+          : base;
       return {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: hint,
         backend: pub,
       };
     }

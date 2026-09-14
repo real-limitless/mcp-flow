@@ -4,6 +4,9 @@ import {
   parseHeaderFlags,
   parseHeadersBlob,
   compactSecretRecord,
+  normalizeAuthorizationValue,
+  normalizeUpstreamHeaders,
+  withAuthorizationToken,
 } from "../src/headers.js";
 
 describe("headers", () => {
@@ -56,5 +59,33 @@ describe("headers", () => {
         "X-Api-Key": " secret ",
       }),
     ).toEqual({ "X-Api-Key": "secret" });
+  });
+
+  it("prefixes Bearer on raw Authorization tokens", () => {
+    expect(normalizeAuthorizationValue("of_abc")).toBe("Bearer of_abc");
+    expect(normalizeAuthorizationValue("Bearer of_abc")).toBe("Bearer of_abc");
+    expect(normalizeAuthorizationValue("bearer of_abc")).toBe("Bearer of_abc");
+    expect(normalizeAuthorizationValue("Basic Zm9v")).toBe("Basic Zm9v");
+    expect(normalizeUpstreamHeaders({ authorization: "of_abc" })).toEqual({
+      Authorization: "Bearer of_abc",
+    });
+    expect(
+      normalizeUpstreamHeaders({
+        Authorization: "of_abc",
+        "X-Api-Key": "of_abc",
+      }),
+    ).toEqual({
+      Authorization: "Bearer of_abc",
+      "X-Api-Key": "of_abc",
+    });
+    expect(withAuthorizationToken(undefined, "of_abc")).toEqual({
+      Authorization: "Bearer of_abc",
+    });
+    expect(
+      withAuthorizationToken({ "X-Extra": "1" }, "of_abc"),
+    ).toEqual({
+      Authorization: "Bearer of_abc",
+      "X-Extra": "1",
+    });
   });
 });

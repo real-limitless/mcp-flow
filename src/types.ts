@@ -313,6 +313,11 @@ export interface CreateBackendInput {
   image?: string;
   command?: string[];
   headers?: Record<string, string>;
+  /**
+   * Convenience for remote HTTP MCP: sealed as Authorization (replaces
+   * headers.Authorization if both are sent). Raw tokens get a Bearer prefix.
+   */
+  apiKey?: string;
   env?: Record<string, string>;
   enabled?: boolean;
   toolAllowlist?: string[];
@@ -327,6 +332,8 @@ export interface UpdateBackendInput {
   image?: string | null;
   command?: string[] | null;
   headers?: Record<string, string> | null;
+  /** Merge into Authorization (Bearer prefixed). Does not clear other headers. */
+  apiKey?: string | null;
   env?: Record<string, string> | null;
   enabled?: boolean;
   toolAllowlist?: string[] | null;
