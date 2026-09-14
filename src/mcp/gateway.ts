@@ -26,6 +26,11 @@ import {
   toolEnabledInWorkingSet,
   toolMatchesHotPrefix,
 } from "../types.js";
+import {
+  asPlacementMode,
+  runAuthzGate,
+} from "../authz/gate.js";
+import type { AuthzEvalContext } from "../authz/match.js";
 import { ADMIN_META_TOOLS, handleAdminTool } from "./admin-tools.js";
 import {
   DYNAMIC_INSTRUCTIONS,
@@ -218,6 +223,10 @@ export interface GatewayDeps {
   edgeRouter?: EdgeRouter | null;
   /** Client IP for audit */
   ip?: string | null;
+  /** Client disconnect / abort for held tools/call */
+  abortSignal?: AbortSignal;
+  /** Origin for Admin approve deep links */
+  approveBaseUrl?: string | null;
 }
 
 export function createGatewayServer(deps: GatewayDeps): Server {
@@ -860,7 +869,45 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       }
       const parsed = parseNamespacedTool(innerName);
       const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
-      const result = await upstream.callTool(ctx.workspaceId, innerName, innerArgs);
+      const innerCtx: AuthzEvalContext = {
+        tool: innerName,
+        keyId: ctx.keyId,
+        backendSlug: ctxInfo.backendSlug,
+        placement: asPlacementMode(ctxInfo.placement),
+      };
+      const gate = await runAuthzGate({
+        store,
+        workspaceId: ctx.workspaceId,
+        keyId: ctx.keyId,
+        tool: innerName,
+        contexts: [
+          {
+            tool: "mf_call_tool",
+            keyId: ctx.keyId,
+            backendSlug: null,
+            placement: null,
+          },
+          innerCtx,
+        ],
+        args: innerArgs,
+        abortSignal: deps.abortSignal,
+        approveBaseUrl: deps.approveBaseUrl,
+        ip,
+      });
+      if (!gate.proceed) {
+        auditCall(gate.result, {
+          meta: true,
+          backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
+          placement: ctxInfo.placement,
+          deviceId: ctxInfo.deviceId,
+        });
+        return gate.result;
+      }
+      const result = await upstream.callTool(
+        ctx.workspaceId,
+        innerName,
+        gate.frozenArgs,
+      );
       auditCall(result, {
         meta: true,
         backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
@@ -888,7 +935,29 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         });
         return result;
       }
-      const result = await handleAdminTool(name, args, {
+      const adminGate = await runAuthzGate({
+        store,
+        workspaceId: ctx.workspaceId,
+        keyId: ctx.keyId,
+        tool: name,
+        contexts: [
+          {
+            tool: name,
+            keyId: ctx.keyId,
+            backendSlug: null,
+            placement: null,
+          },
+        ],
+        args,
+        abortSignal: deps.abortSignal,
+        approveBaseUrl: deps.approveBaseUrl,
+        ip,
+      });
+      if (!adminGate.proceed) {
+        auditCall(adminGate.result, { meta: true });
+        return adminGate.result;
+      }
+      const result = await handleAdminTool(name, adminGate.frozenArgs, {
         store,
         pool: upstream,
         cfg,
@@ -933,7 +1002,37 @@ export function createGatewayServer(deps: GatewayDeps): Server {
 
     const parsed = parseNamespacedTool(name);
     const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, name);
-    const result = await upstream.callTool(ctx.workspaceId, name, args);
+    const gate = await runAuthzGate({
+      store,
+      workspaceId: ctx.workspaceId,
+      keyId: ctx.keyId,
+      tool: name,
+      contexts: [
+        {
+          tool: name,
+          keyId: ctx.keyId,
+          backendSlug: ctxInfo.backendSlug,
+          placement: asPlacementMode(ctxInfo.placement),
+        },
+      ],
+      args,
+      abortSignal: deps.abortSignal,
+      approveBaseUrl: deps.approveBaseUrl,
+      ip,
+    });
+    if (!gate.proceed) {
+      auditCall(gate.result, {
+        backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
+        placement: ctxInfo.placement,
+        deviceId: ctxInfo.deviceId,
+      });
+      return gate.result;
+    }
+    const result = await upstream.callTool(
+      ctx.workspaceId,
+      name,
+      gate.frozenArgs,
+    );
     auditCall(result, {
       backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
       placement: ctxInfo.placement,
