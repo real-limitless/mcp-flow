@@ -51,3 +51,20 @@ export function formatHeadersHint(headers: Record<string, string>): string {
     .map((k) => `${k}=…`)
     .join("; ");
 }
+
+/**
+ * Drop blank names/values so we never seal `Authorization: ""` (or empty env).
+ * Returns undefined when nothing remains.
+ */
+export function compactSecretRecord(
+  rec: Record<string, string> | null | undefined,
+): Record<string, string> | undefined {
+  if (!rec) return undefined;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(rec)) {
+    const name = String(k).trim();
+    const value = String(v ?? "").trim();
+    if (name && value) out[name] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
+}

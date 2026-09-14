@@ -32,10 +32,19 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
+import { compactSecretRecord } from "../headers.js";
 import {
   DEFAULT_PLACEMENT,
   DEFAULT_WORKSPACE_POLICY,
 } from "../types.js";
+
+function sealSecretMap(
+  masterKey: Buffer,
+  rec: Record<string, string> | null | undefined,
+): string | null {
+  const compact = compactSecretRecord(rec ?? undefined);
+  return compact ? seal(masterKey, compact) : null;
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS workspaces (
@@ -696,10 +705,8 @@ export class Store {
       url: input.url ?? null,
       image: input.image ?? null,
       commandJson: input.command ? JSON.stringify(input.command) : null,
-      headersEnc: input.headers
-        ? seal(this.masterKey, input.headers)
-        : null,
-      envEnc: input.env ? seal(this.masterKey, input.env) : null,
+      headersEnc: sealSecretMap(this.masterKey, input.headers),
+      envEnc: sealSecretMap(this.masterKey, input.env),
       enabled: input.enabled ?? false,
       toolAllowlistJson: input.toolAllowlist
         ? JSON.stringify(input.toolAllowlist)
@@ -795,12 +802,14 @@ export class Store {
       headersEnc =
         input.headers === null
           ? null
-          : seal(this.masterKey, input.headers);
+          : sealSecretMap(this.masterKey, input.headers);
     }
     let envEnc = existing.envEnc;
     if (input.env !== undefined) {
       envEnc =
-        input.env === null ? null : seal(this.masterKey, input.env);
+        input.env === null
+          ? null
+          : sealSecretMap(this.masterKey, input.env);
     }
     const enabled =
       input.enabled !== undefined ? input.enabled : existing.enabled;
@@ -885,7 +894,7 @@ export class Store {
     if (!existing) return null;
     const current = this.decryptHeaders(existing);
     return this.updateBackend(workspaceId, existing.id, {
-      headers: { ...current, ...partial },
+      headers: compactSecretRecord({ ...current, ...partial }) ?? null,
     });
   }
 

@@ -85,6 +85,79 @@ async function startUpstream(): Promise<{ url: string; close: () => Promise<void
   };
 }
 
+async function startAuthUpstream(secret: string): Promise<{
+  url: string;
+  close: () => Promise<void>;
+  seen: { authorization?: string };
+}> {
+  const seen: { authorization?: string } = {};
+  const getServer = () => {
+    const server = new McpServer({ name: "auth-upstream", version: "1.0.0" });
+    server.registerTool(
+      "echo",
+      {
+        description: "Echo text",
+        inputSchema: { text: z.string() },
+      },
+      async ({ text }) => ({
+        content: [{ type: "text", text: `echo:${text}` }],
+      }),
+    );
+    return server;
+  };
+
+  const httpServer = createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/mcp") {
+      const header = req.headers.authorization;
+      seen.authorization = Array.isArray(header) ? header[0] : header;
+      if (
+        !seen.authorization ||
+        seen.authorization.trim() === "" ||
+        seen.authorization !== `Bearer ${secret}`
+      ) {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: "Authentication required" }));
+        return;
+      }
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const body = chunks.length
+        ? JSON.parse(Buffer.concat(chunks).toString("utf8"))
+        : undefined;
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      const server = getServer();
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+      res.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+
+  await new Promise<void>((resolve) =>
+    httpServer.listen(0, "127.0.0.1", resolve),
+  );
+  const addr = httpServer.address();
+  if (!addr || typeof addr === "string") throw new Error("no addr");
+  const url = `http://127.0.0.1:${addr.port}/mcp`;
+  return {
+    url,
+    seen,
+    close: () =>
+      new Promise((resolve, reject) =>
+        httpServer.close((err) => (err ? reject(err) : resolve())),
+      ),
+  };
+}
+
 async function bootGateway(): Promise<RunningServer> {
   const dir = mkdtempSync(join(tmpdir(), "mcp-flow-g-"));
   dirs.push(dir);
@@ -215,6 +288,105 @@ describe("api + gateway", () => {
     const res = await fetch(`${gw.url}/mcp`, { method: "POST" });
     expect(res.status).toBe(401);
   });
+
+  it("forwards sealed Authorization to streamable-http upstream", async () => {
+    const secret = "test-upstream-secret";
+    const upstream = await startAuthUpstream(secret);
+    cleanups.push(upstream.close);
+    const gw = await bootGateway();
+    const base = gw.url;
+
+    const emptyRes = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: "noauth",
+        url: upstream.url,
+        transport: "streamable-http",
+        headers: { Authorization: "" },
+        enabled: true,
+        placement: { mode: "remote" },
+      }),
+    });
+    expect(emptyRes.status).toBe(201);
+    const emptyJson = (await emptyRes.json()) as {
+      backend: { hasHeaders: boolean };
+    };
+    expect(emptyJson.backend.hasHeaders).toBe(false);
+
+    const missTest = await fetch(`${base}/v1/backends/noauth/test`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(missTest.status).toBe(502);
+    const missBody = (await missTest.json()) as { ok: boolean; error?: string };
+    expect(missBody.ok).toBe(false);
+    expect(String(missBody.error)).toContain("Authentication required");
+
+    const okRes = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: "authed",
+        url: upstream.url,
+        transport: "streamable-http",
+        headers: { Authorization: `Bearer ${secret}` },
+        enabled: true,
+        placement: { mode: "remote" },
+      }),
+    });
+    expect(okRes.status).toBe(201);
+
+    const okTest = await fetch(`${base}/v1/backends/authed/test`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(okTest.status).toBe(200);
+    const okBody = (await okTest.json()) as {
+      ok: boolean;
+      tools?: string[];
+    };
+    expect(okBody.ok).toBe(true);
+    expect(okBody.tools).toContain("echo");
+    expect(upstream.seen.authorization).toBe(`Bearer ${secret}`);
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "auth-agent" }),
+    });
+    const token = ((await keyRes.json()) as { key: { token: string } }).key
+      .token;
+    const client = new Client(
+      { name: "auth-harness", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
+    );
+    const tools = await client.listTools();
+    expect(tools.tools.map((t) => t.name)).toContain("authed__echo");
+    await client.close();
+  }, 60_000);
 
   it("enforces key scopes on tools/list and tools/call + audit", async () => {
     const upstream = await startUpstream();
@@ -376,6 +548,10 @@ describe("api + gateway", () => {
     expect(js).toContain("keyOnceSnips");
     expect(js).toContain("keyDynamicTools");
     expect(js).toContain("Dynamic tool discovery");
+    expect(js).toContain("beModeSeg");
+    expect(js).toContain("beTransportSeg");
+    expect(js).toContain("beAddForm");
+    expect(js).toContain("Empty rows are ignored");
   });
 
   it("operator mf_* key gets mf_admin_* and can use /v1", async () => {

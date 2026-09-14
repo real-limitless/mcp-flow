@@ -747,8 +747,8 @@ function collectKvPairs(root, rowSel, nameSel, valueSel) {
   const out = {};
   root.querySelectorAll(rowSel).forEach((row) => {
     const name = row.querySelector(nameSel)?.value?.trim();
-    const value = row.querySelector(valueSel)?.value ?? "";
-    if (name) out[name] = value;
+    const value = (row.querySelector(valueSel)?.value ?? "").trim();
+    if (name && value) out[name] = value;
   });
   return out;
 }
@@ -818,26 +818,165 @@ function parseCommandLine(raw) {
   return out;
 }
 
+const ALL_PLACEMENT_MODES = [
+  "remote",
+  "central-sandbox",
+  "edge-sandbox",
+  "edge-bare",
+];
+const REMOTE_TRANSPORTS = ["streamable-http", "sse"];
+const LOCAL_TRANSPORTS = ["stdio", "oci"];
+const BE_MODE_HINTS = {
+  remote: "HTTP/SSE upstream. Headers sealed at rest.",
+  "central-sandbox": "Spawn stdio/oci on the gateway host.",
+  "edge-sandbox": "Run on an enrolled edge device (sandbox cap required).",
+  "edge-bare": "Host process on edge — needs allowEdgeBare + device bare.",
+};
+
+let beLastRemoteTransport = "streamable-http";
+let beLastLocalTransport = "stdio";
+let beTransportKind = "";
+
+function allowedPlacementModes(modes) {
+  const have = modes || [];
+  return ALL_PLACEMENT_MODES.filter(
+    (m) => have.includes(m) || m === "remote" || m === "central-sandbox",
+  );
+}
+
+function deviceOptionsHtml(devices) {
+  if (!devices.length) {
+    return `<option value="">— enroll a device first —</option>`;
+  }
+  return devices
+    .map(
+      (d) =>
+        `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.status)}) · ${esc(d.id.slice(0, 8))}…</option>`,
+    )
+    .join("");
+}
+
+function placementSegHtml(modes, selected) {
+  const allowed = allowedPlacementModes(modes);
+  const current = allowed.includes(selected) ? selected : "remote";
+  return allowed
+    .map(
+      (m) =>
+        `<button type="button" class="seg-btn${m === current ? " active" : ""}" data-mode="${m}">${m}</button>`,
+    )
+    .join("");
+}
+
+function transportSegHtml(mode, selected) {
+  const remote = mode === "remote";
+  const opts = remote ? REMOTE_TRANSPORTS : LOCAL_TRANSPORTS;
+  const locked = mode === "edge-bare";
+  const current = locked
+    ? "stdio"
+    : opts.includes(selected)
+      ? selected
+      : opts[0];
+  return opts
+    .map(
+      (t) =>
+        `<button type="button" class="seg-btn${t === current ? " active" : ""}" data-transport="${t}"${locked && t !== "stdio" ? " disabled" : ""}>${t}</button>`,
+    )
+    .join("");
+}
+
+function setSegActive(root, attr, value) {
+  root?.querySelectorAll(".seg-btn").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute(attr) === value);
+  });
+}
+
+function wirePlacementSeg(seg) {
+  if (!seg) return;
+  seg.querySelectorAll("[data-mode]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.getAttribute("data-mode") || "remote";
+      const hidden = $("#beMode");
+      if (hidden) hidden.value = mode;
+      setSegActive(seg, "data-mode", mode);
+      syncBackendFormFields();
+    });
+  });
+}
+
+function wireTransportSeg(seg) {
+  if (!seg) return;
+  seg.querySelectorAll("[data-transport]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.disabled) return;
+      const v = btn.getAttribute("data-transport");
+      const hidden = $("#beTransport");
+      if (hidden) hidden.value = v;
+      const mode = $("#beMode")?.value || "remote";
+      if (mode === "remote") beLastRemoteTransport = v;
+      else beLastLocalTransport = v;
+      setSegActive(seg, "data-transport", v);
+      syncBackendFormFields();
+    });
+  });
+}
+
+function ensureTransportSeg(mode) {
+  const seg = $("#beTransportSeg");
+  const hidden = $("#beTransport");
+  if (!seg || !hidden) return;
+  const kind = mode === "remote" ? "remote" : "local";
+  if (beTransportKind !== kind || !seg.children.length) {
+    beTransportKind = kind;
+    const next =
+      mode === "remote"
+        ? beLastRemoteTransport
+        : mode === "edge-bare"
+          ? "stdio"
+          : beLastLocalTransport;
+    hidden.value = next;
+    seg.innerHTML = transportSegHtml(mode, next);
+    wireTransportSeg(seg);
+    return;
+  }
+  if (mode === "edge-bare") hidden.value = "stdio";
+  setSegActive(seg, "data-transport", hidden.value);
+  seg.querySelectorAll("[data-transport]").forEach((b) => {
+    b.disabled = mode === "edge-bare" && b.getAttribute("data-transport") !== "stdio";
+  });
+}
+
+function updatePlacementSeg(modes) {
+  const seg = $("#beModeSeg");
+  const hidden = $("#beMode");
+  if (!seg || !hidden) return;
+  const allowed = allowedPlacementModes(modes);
+  const current = [...seg.querySelectorAll("[data-mode]")].map((b) =>
+    b.getAttribute("data-mode"),
+  );
+  if (current.join(",") === allowed.join(",")) return;
+  if (!allowed.includes(hidden.value)) hidden.value = "remote";
+  seg.innerHTML = placementSegHtml(modes, hidden.value);
+  wirePlacementSeg(seg);
+}
+
+function updateDeviceSelect(devices) {
+  const sel = $("#beDevice");
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = deviceOptionsHtml(devices);
+  if (prev && [...sel.options].some((o) => o.value === prev)) {
+    sel.value = prev;
+  }
+}
+
 function syncBackendFormFields() {
   const mode = $("#beMode")?.value || "remote";
   const isRemote = mode === "remote";
   const isEdge = mode === "edge-sandbox" || mode === "edge-bare";
-  const localSel = $("#beLocalTransport");
-  if (localSel && !isRemote) {
-    [...localSel.options].forEach((opt) => {
-      if (mode === "edge-bare") {
-        opt.disabled = opt.value !== "stdio";
-      } else {
-        opt.disabled = false;
-      }
-    });
-    if (mode === "edge-bare" && localSel.value !== "stdio") {
-      localSel.value = "stdio";
-    }
-  }
-  const transport = isRemote
-    ? $("#beTransport")?.value || "streamable-http"
-    : localSel?.value || "stdio";
+
+  ensureTransportSeg(mode);
+
+  const transport = $("#beTransport")?.value || (isRemote ? "streamable-http" : "stdio");
   const isOci = transport === "oci";
   const isStdio = transport === "stdio" || mode === "edge-bare";
 
@@ -847,24 +986,14 @@ function syncBackendFormFields() {
   };
 
   show("#beFieldUrl", isRemote);
-  show("#beFieldRemoteTransport", isRemote);
   show("#beHdrEditor", isRemote);
   show("#beFieldDevice", isEdge);
-  show("#beFieldLocalTransport", !isRemote && mode !== "edge-bare");
   show("#beFieldCommand", !isRemote && isStdio);
   show("#beFieldImage", !isRemote && isOci);
   show("#beEnvEditor", !isRemote);
 
   const hint = $("#beModeHint");
-  if (hint) {
-    const hints = {
-      remote: "HTTP/SSE upstream. Headers sealed at rest.",
-      "central-sandbox": "Spawn stdio/oci on the gateway host.",
-      "edge-sandbox": "Run on an enrolled edge device (sandbox cap required).",
-      "edge-bare": "Host process on edge — needs allowEdgeBare + device bare.",
-    };
-    hint.textContent = hints[mode] || "";
-  }
+  if (hint) hint.textContent = BE_MODE_HINTS[mode] || "";
 }
 
 function backendEndpointCell(b) {
@@ -872,33 +1001,10 @@ function backendEndpointCell(b) {
   return `<td class="mono" title="${esc(label)}">${esc(truncateUrl(label, 40))}</td>`;
 }
 
-async function renderBackends() {
-  const [{ backends }, devicesRes, wsRes] = await Promise.all([
-    api("/v1/backends"),
-    api("/v1/devices").catch(() => ({ devices: [] })),
-    api("/v1/workspace").catch(() => ({ placementModes: ["remote", "central-sandbox"] })),
-  ]);
-  const devices = devicesRes.devices || [];
-  const modes = wsRes.placementModes || ["remote", "central-sandbox"];
-  const modeOpts = ["remote", "central-sandbox", "edge-sandbox", "edge-bare"]
-    .filter((m) => modes.includes(m) || m === "remote" || m === "central-sandbox")
-    .map((m) => `<option value="${m}">${m}</option>`)
-    .join("");
-
-  const deviceOpts =
-    devices.length === 0
-      ? `<option value="">— enroll a device first —</option>`
-      : devices
-          .map(
-            (d) =>
-              `<option value="${esc(d.id)}">${esc(d.name)} (${esc(d.status)}) · ${esc(d.id.slice(0, 8))}…</option>`,
-          )
-          .join("");
-
-  $("#tab-backends").innerHTML = `
-    ${surface(
-      "Add backend",
-      `
+function addBackendFormHtml(modes, devices) {
+  return surface(
+    "Add backend",
+    `
       <p class="muted" id="beModeHint" style="margin-bottom:12px">
         HTTP/SSE upstream. Headers sealed at rest.
       </p>
@@ -908,26 +1014,29 @@ async function renderBackends() {
           <input id="beSlug" placeholder="my-server" autocomplete="off" />
         </div>
         <div class="form-field">
-          <label class="field-label" for="beMode">Placement</label>
-          <select id="beMode">${modeOpts}</select>
+          <span class="field-label">Enabled</span>
+          <label class="form-check">
+            <input type="checkbox" id="beEnable" checked />
+            <span>enable on create</span>
+          </label>
         </div>
-        <div class="form-field" id="beFieldRemoteTransport">
-          <label class="field-label" for="beTransport">Transport</label>
-          <select id="beTransport">
-            <option value="streamable-http">streamable-http</option>
-            <option value="sse">sse</option>
-          </select>
+        <div class="form-field" style="grid-column: 1 / -1">
+          <span class="field-label">Placement</span>
+          <div class="seg role-seg" id="beModeSeg" role="group" aria-label="Placement">
+            ${placementSegHtml(modes, "remote")}
+          </div>
+          <input type="hidden" id="beMode" value="remote" />
         </div>
-        <div class="form-field" id="beFieldLocalTransport" hidden>
-          <label class="field-label" for="beLocalTransport">Transport</label>
-          <select id="beLocalTransport">
-            <option value="stdio">stdio</option>
-            <option value="oci">oci</option>
-          </select>
+        <div class="form-field" id="beFieldTransport" style="grid-column: 1 / -1">
+          <span class="field-label">Transport</span>
+          <div class="seg role-seg" id="beTransportSeg" role="group" aria-label="Transport">
+            ${transportSegHtml("remote", "streamable-http")}
+          </div>
+          <input type="hidden" id="beTransport" value="streamable-http" />
         </div>
-        <div class="form-field" id="beFieldDevice" hidden style="grid-column: span 2">
+        <div class="form-field" id="beFieldDevice" hidden style="grid-column: 1 / -1">
           <label class="field-label" for="beDevice">Edge device</label>
-          <select id="beDevice">${deviceOpts}</select>
+          <select id="beDevice">${deviceOptionsHtml(devices)}</select>
         </div>
         <div class="form-field" id="beFieldUrl" style="grid-column: 1 / -1">
           <label class="field-label" for="beUrl">URL</label>
@@ -944,22 +1053,18 @@ async function renderBackends() {
           <label class="field-label" for="beImageCmd" style="margin-top:10px">Image command (optional)</label>
           <input id="beImageCmd" class="mono" placeholder="node dist/index.js" autocomplete="off" />
         </div>
-        <div class="form-field">
-          <span class="field-label">Enabled</span>
-          <label class="form-check">
-            <input type="checkbox" id="beEnable" checked />
-            <span>enable on create</span>
-          </label>
-        </div>
       </div>
       <div class="hdr-editor" id="beHdrEditor">
         <div class="hdr-editor-head">
           <span class="field-label" style="margin:0">Request headers</span>
           <button type="button" class="pill-btn ghost" data-hdr-add>+ Add header</button>
         </div>
-        <div data-hdr-list class="hdr-list">
-          ${kvRowHtml("hdr", "Authorization", "", "Header-Name", "value (sealed)")}
-        </div>
+        <div data-hdr-list class="hdr-list"></div>
+        <p class="dim hdr-hint">
+          Empty rows are ignored. For bearer tokens use
+          <span class="mono">Authorization</span> =
+          <span class="mono">Bearer &lt;token&gt;</span>.
+        </p>
       </div>
       <div class="hdr-editor" id="beEnvEditor" hidden style="margin-top:12px">
         <div class="hdr-editor-head">
@@ -972,11 +1077,14 @@ async function renderBackends() {
         <button type="button" id="beCreate" class="pill-btn primary">Create backend</button>
       </div>
     `,
-      "remote · stdio · edge",
-    )}
-    ${surface(
-      "Backends",
-      `
+    "remote · stdio · edge",
+  );
+}
+
+function backendsTableHtml(backends) {
+  return surface(
+    "Backends",
+    `
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -1026,64 +1134,67 @@ async function renderBackends() {
         <pre id="beOut"></pre>
       </div>
     `,
-      `${backends.length} registered`,
-    )}`;
+    `${backends.length} registered`,
+  );
+}
 
+async function onCreateBackend() {
+  try {
+    const slug = $("#beSlug").value.trim();
+    if (!slug) throw new Error("slug required");
+    const mode = $("#beMode").value || "remote";
+    const enabled = $("#beEnable").checked;
+    const body = { slug, enabled, placement: { mode } };
+    const transport = $("#beTransport")?.value || (mode === "remote" ? "streamable-http" : "stdio");
+    body.transport = mode === "edge-bare" ? "stdio" : transport;
+
+    if (mode === "remote") {
+      const url = $("#beUrl").value.trim();
+      if (!url) throw new Error("url required");
+      body.url = url;
+      const headers = collectHeaderPairs($("#beHdrEditor") || document);
+      if (Object.keys(headers).length) body.headers = headers;
+    } else {
+      if (mode === "edge-sandbox" || mode === "edge-bare") {
+        const deviceId = $("#beDevice")?.value?.trim();
+        if (!deviceId) throw new Error("edge device required");
+        body.placement.deviceId = deviceId;
+      }
+      if (body.transport === "oci") {
+        const image = $("#beImage")?.value?.trim();
+        if (!image) throw new Error("image required for oci");
+        body.image = image;
+        const extra = parseCommandLine($("#beImageCmd")?.value || "");
+        if (extra.length) body.command = extra;
+      } else {
+        const command = parseCommandLine($("#beCommand")?.value || "");
+        if (!command.length) throw new Error("command required for stdio");
+        body.command = command;
+      }
+      const env = collectEnvPairs($("#beEnvEditor") || document);
+      if (Object.keys(env).length) body.env = env;
+    }
+
+    await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
+    await renderBackends();
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
+function wireBackendForm() {
+  beTransportKind = "";
   wireKvEditor($("#beHdrEditor"), "hdr");
   wireKvEditor($("#beEnvEditor"), "env");
-  $("#beMode")?.addEventListener("change", () => syncBackendFormFields());
-  $("#beLocalTransport")?.addEventListener("change", () => syncBackendFormFields());
+  wirePlacementSeg($("#beModeSeg"));
+  wireTransportSeg($("#beTransportSeg"));
+  $("#beCreate")?.addEventListener("click", () => void onCreateBackend());
   syncBackendFormFields();
+}
 
-  $("#beCreate")?.addEventListener("click", async () => {
-    try {
-      const slug = $("#beSlug").value.trim();
-      if (!slug) throw new Error("slug required");
-      const mode = $("#beMode").value || "remote";
-      const enabled = $("#beEnable").checked;
-      const body = { slug, enabled, placement: { mode } };
-
-      if (mode === "remote") {
-        const url = $("#beUrl").value.trim();
-        if (!url) throw new Error("url required");
-        body.url = url;
-        body.transport = $("#beTransport").value || "streamable-http";
-        const headers = collectHeaderPairs($("#beHdrEditor") || document);
-        if (Object.keys(headers).length) body.headers = headers;
-      } else {
-        const transport =
-          mode === "edge-bare"
-            ? "stdio"
-            : $("#beLocalTransport")?.value || "stdio";
-        body.transport = transport;
-        if (mode === "edge-sandbox" || mode === "edge-bare") {
-          const deviceId = $("#beDevice")?.value?.trim();
-          if (!deviceId) throw new Error("edge device required");
-          body.placement.deviceId = deviceId;
-        }
-        if (transport === "oci") {
-          const image = $("#beImage")?.value?.trim();
-          if (!image) throw new Error("image required for oci");
-          body.image = image;
-          const extra = parseCommandLine($("#beImageCmd")?.value || "");
-          if (extra.length) body.command = extra;
-        } else {
-          const command = parseCommandLine($("#beCommand")?.value || "");
-          if (!command.length) throw new Error("command required for stdio");
-          body.command = command;
-        }
-        const env = collectEnvPairs($("#beEnvEditor") || document);
-        if (Object.keys(env).length) body.env = env;
-      }
-
-      await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
-      await renderBackends();
-    } catch (e) {
-      showErr(e.message);
-    }
-  });
-
-  document.querySelectorAll("[data-test]").forEach((btn) => {
+function wireBackendTable(root) {
+  const scope = root || $("#beListMount") || document;
+  scope.querySelectorAll("[data-test]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
         const r = await api(`/v1/backends/${btn.getAttribute("data-test")}/test`, {
@@ -1099,7 +1210,7 @@ async function renderBackends() {
       }
     });
   });
-  document.querySelectorAll("[data-toggle]").forEach((btn) => {
+  scope.querySelectorAll("[data-toggle]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
         await api(`/v1/backends/${btn.getAttribute("data-toggle")}`, {
@@ -1112,7 +1223,7 @@ async function renderBackends() {
       }
     });
   });
-  document.querySelectorAll("[data-del]").forEach((btn) => {
+  scope.querySelectorAll("[data-del]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const slug = btn.getAttribute("data-slug") || "backend";
       if (!confirm(`Delete backend “${slug}”?`)) return;
@@ -1126,6 +1237,34 @@ async function renderBackends() {
       }
     });
   });
+}
+
+async function renderBackends() {
+  const [{ backends }, devicesRes, wsRes] = await Promise.all([
+    api("/v1/backends"),
+    api("/v1/devices").catch(() => ({ devices: [] })),
+    api("/v1/workspace").catch(() => ({ placementModes: ["remote", "central-sandbox"] })),
+  ]);
+  const devices = devicesRes.devices || [];
+  const modes = wsRes.placementModes || ["remote", "central-sandbox"];
+  const formMounted = Boolean($("#beAddForm"));
+
+  if (!formMounted) {
+    $("#tab-backends").innerHTML = `
+      <div id="beAddForm">${addBackendFormHtml(modes, devices)}</div>
+      <div id="beListMount"></div>
+    `;
+    wireBackendForm();
+  } else {
+    updatePlacementSeg(modes);
+    updateDeviceSelect(devices);
+  }
+
+  const list = $("#beListMount");
+  if (list) {
+    list.innerHTML = backendsTableHtml(backends);
+    wireBackendTable(list);
+  }
 }
 
 async function renderDevices() {

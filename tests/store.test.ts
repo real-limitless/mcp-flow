@@ -61,6 +61,32 @@ describe("store", () => {
     store.close();
   });
 
+  it("does not seal empty header or env values", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    const be = store.createBackend(ws.id, {
+      slug: "emptyhdr",
+      url: "https://example.com/mcp",
+      headers: { Authorization: "", "X-Empty": "   " },
+      env: { FOO: "" },
+      enabled: true,
+    });
+    expect(be.hasHeaders).toBe(false);
+    expect(be.hasEnv).toBe(false);
+    const raw = store.getBackend(ws.id, "emptyhdr")!;
+    expect(raw.headersEnc).toBeNull();
+    expect(raw.envEnc).toBeNull();
+
+    const patched = store.updateBackend(ws.id, "emptyhdr", {
+      headers: { Authorization: "Bearer kept", Unused: "" },
+    });
+    expect(patched?.hasHeaders).toBe(true);
+    expect(store.decryptHeaders(store.getBackend(ws.id, "emptyhdr")!)).toEqual({
+      Authorization: "Bearer kept",
+    });
+    store.close();
+  });
+
   it("rejects bad slugs", () => {
     const store = openStore();
     const ws = store.ensureWorkspace("default");

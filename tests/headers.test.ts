@@ -3,6 +3,7 @@ import {
   parseHeaderFlag,
   parseHeaderFlags,
   parseHeadersBlob,
+  compactSecretRecord,
 } from "../src/headers.js";
 
 describe("headers", () => {
@@ -42,5 +43,18 @@ describe("headers", () => {
       "x-api-key": "sekrit",
       "X-Extra": "1",
     });
+  });
+
+  it("compacts blank secret records", () => {
+    expect(compactSecretRecord(undefined)).toBeUndefined();
+    expect(compactSecretRecord(null)).toBeUndefined();
+    expect(compactSecretRecord({ Authorization: "" })).toBeUndefined();
+    expect(compactSecretRecord({ "": "x" })).toBeUndefined();
+    expect(
+      compactSecretRecord({
+        Authorization: "  ",
+        "X-Api-Key": " secret ",
+      }),
+    ).toEqual({ "X-Api-Key": "secret" });
   });
 });
