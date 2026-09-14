@@ -176,7 +176,7 @@ Stdio shim:
 MCP_FLOW_URL=http://127.0.0.1:8787/mcp MCP_FLOW_API_KEY=mf_… npx mcp-flow stdio
 ```
 
-Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. With `--dynamic-tools` on the key: also `mf_get_tool_schema`, `mf_enable_tools`, `mf_disable_tools`, `mf_call_tool`. Backend tools are `{slug}__{tool}`. See [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
+Meta tools: `mf_status`, `mf_list_projects`, `mf_use_project`, `mf_current_project`, `mf_list_backends`, `mf_list_tools`, `mf_use_device`. With `--dynamic-tools` on the key: also `mf_get_tool_schema`, `mf_enable_tools`, `mf_disable_tools`, `mf_call_tool`. Backend tools are `{slug}__{tool}`. Gated tools hold `tools/call` until Admin → Approvals or a Web Push Approve/Deny ([docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md)). See [docs/AGENT-TOOLS.md](docs/AGENT-TOOLS.md).
 
 ### Docker Compose
 
@@ -211,7 +211,7 @@ Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN
 
 ### Admin REST
 
-All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
+Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, except `POST /v1/approvals/:id/push-decision` (one-time decide token from a Web Push payload).
 
 | Method | Path | Notes |
 | --- | --- | --- |
@@ -223,6 +223,13 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 | `PATCH` | `/v1/backends/:id` | Update / enable |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
 | `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
+| `GET/POST/PATCH/DELETE` | `/v1/authz/rules` | Human-gate rules (match + MFA/approve) |
+| `GET` | `/v1/approvals` | Inbox (`?status=pending`) |
+| `POST` | `/v1/approvals/:id/decision` | Approve/deny the waiting `tools/call` (`totp` if required) |
+| `POST` | `/v1/approvals/:id/push-decision` | Public; one-time `apd_` token from Web Push (`notify_approve` only) |
+| `GET` | `/v1/push/vapid` | Web Push public key (private key sealed) |
+| `GET/POST/DELETE` | `/v1/push/subscriptions` | This-device push subscription (`endpointHint` on GET) |
+| `GET/POST` | `/v1/operators/mfa` | TOTP enroll (`/begin`, `/confirm`, `/disable`) |
 | `GET/POST/DELETE` | `/v1/devices` | Edge device enroll / list / revoke |
 | `WS` | `/v1/edge/connect` | Edge agent (device token) |
 | `GET` | `/admin/` | Operator admin UI |
@@ -235,7 +242,8 @@ All `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`.
 - GET payloads never include decrypted secrets
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)
 - Placement: `remote`, `central-sandbox`, `edge-sandbox`, `edge-bare` (bare needs workspace policy)
-- Admin UI at `/admin/` (browser holds admin token in sessionStorage)
+- Admin UI at `/admin/` (browser holds admin token in sessionStorage). Install as a PWA; Approvals → **Enable push** for phone Approve/Deny on `notify_approve`. HTTPS required except localhost; iPhone needs Add to Home Screen first. MFA still opens Admin.
+- Gated tools: Admin → **Approvals** holds the agent `tools/call` until approve/deny/timeout (default 180s). Set reverse-proxy idle timeout ≥ ~4 minutes. Many MCP clients abort at 60s — raise the client timeout or lower wait seconds. See [docs/AUTHZ-STEP-UP.md](./docs/AUTHZ-STEP-UP.md).
 
 ## Placement (P3–P6)
 
