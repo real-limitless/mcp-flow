@@ -7,6 +7,7 @@ import type {
   GalleryTransport,
   ToolsPreviewStatus,
 } from "../types.js";
+import { normalizeUpstreamHeaders } from "../../headers.js";
 
 export interface ToolsProbeResult {
   status: ToolsPreviewStatus;
@@ -93,7 +94,7 @@ export async function probeToolsList(
 
     let transportImpl: Transport;
     const requestInit: RequestInit = {
-      headers: { ...(opts.headers ?? {}) },
+      headers: { ...(normalizeUpstreamHeaders(opts.headers) ?? {}) },
       signal: AbortSignal.timeout(timeoutMs),
     };
 

@@ -364,6 +364,63 @@ describe("api + gateway", () => {
     expect(okBody.tools).toContain("echo");
     expect(upstream.seen.authorization).toBe(`Bearer ${secret}`);
 
+    const rawRes = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: "rawkey",
+        url: upstream.url,
+        transport: "streamable-http",
+        headers: { Authorization: secret },
+        enabled: true,
+        placement: { mode: "remote" },
+      }),
+    });
+    expect(rawRes.status).toBe(201);
+    const rawTest = await fetch(`${base}/v1/backends/rawkey/test`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(rawTest.status).toBe(200);
+    const rawBody = (await rawTest.json()) as { ok: boolean };
+    expect(rawBody.ok).toBe(true);
+    expect(upstream.seen.authorization).toBe(`Bearer ${secret}`);
+
+    const fieldRes = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        slug: "apikeyfield",
+        url: upstream.url,
+        transport: "streamable-http",
+        apiKey: secret,
+        enabled: true,
+        placement: { mode: "remote" },
+      }),
+    });
+    expect(fieldRes.status).toBe(201);
+    const fieldTest = await fetch(`${base}/v1/backends/apikeyfield/test`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+    });
+    expect(fieldTest.status).toBe(200);
+    expect(((await fieldTest.json()) as { ok: boolean }).ok).toBe(true);
+    expect(upstream.seen.authorization).toBe(`Bearer ${secret}`);
+
     const keyRes = await fetch(`${base}/v1/keys`, {
       method: "POST",
       headers: {
@@ -552,6 +609,8 @@ describe("api + gateway", () => {
     expect(js).toContain("beTransportSeg");
     expect(js).toContain("beAddForm");
     expect(js).toContain("Empty rows are ignored");
+    expect(js).toContain("beApiKey");
+    expect(js).toContain("Bearer added automatically");
     expect(js).toContain("Enable push");
     expect(js).toContain("pushManager.subscribe");
 

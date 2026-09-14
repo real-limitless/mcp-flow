@@ -71,6 +71,11 @@ export const ADMIN_META_TOOLS: Tool[] = [
         image: { type: "string" },
         command: { type: "array", items: { type: "string" } },
         headers: { type: "object", additionalProperties: { type: "string" } },
+        apiKey: {
+          type: "string",
+          description:
+            "Sealed as Authorization. Raw tokens get a Bearer prefix.",
+        },
         env: { type: "object", additionalProperties: { type: "string" } },
         enabled: { type: "boolean" },
         placement: {
@@ -106,6 +111,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
           type: ["object", "null"],
           additionalProperties: { type: "string" },
         },
+        apiKey: { type: ["string", "null"] },
         env: {
           type: ["object", "null"],
           additionalProperties: { type: "string" },

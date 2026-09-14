@@ -61,6 +61,34 @@ describe("store", () => {
     store.close();
   });
 
+  it("prefixes Bearer when sealing a raw Authorization token or apiKey", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    const raw = store.createBackend(ws.id, {
+      slug: "rawauth",
+      url: "https://example.com/mcp",
+      headers: { Authorization: "of_raw_token" },
+      enabled: true,
+    });
+    expect(raw.hasHeaders).toBe(true);
+    expect(store.decryptHeaders(store.getBackend(ws.id, "rawauth")!)).toEqual({
+      Authorization: "Bearer of_raw_token",
+    });
+
+    const viaKey = store.createBackend(ws.id, {
+      slug: "apikey",
+      url: "https://example.com/mcp",
+      apiKey: "of_via_field",
+      enabled: true,
+    });
+    expect(viaKey.hasHeaders).toBe(true);
+    expect(JSON.stringify(viaKey)).not.toContain("of_via_field");
+    expect(store.decryptHeaders(store.getBackend(ws.id, "apikey")!)).toEqual({
+      Authorization: "Bearer of_via_field",
+    });
+    store.close();
+  });
+
   it("does not seal empty header or env values", () => {
     const store = openStore();
     const ws = store.ensureWorkspace("default");

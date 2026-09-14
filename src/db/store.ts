@@ -34,7 +34,11 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
-import { compactSecretRecord } from "../headers.js";
+import {
+  compactSecretRecord,
+  normalizeUpstreamHeaders,
+  withAuthorizationToken,
+} from "../headers.js";
 import {
   authzMatchHasConstraint,
   clampAuthzTtl,
@@ -57,8 +61,12 @@ import {
 function sealSecretMap(
   masterKey: Buffer,
   rec: Record<string, string> | null | undefined,
+  kind: "headers" | "env" = "env",
 ): string | null {
-  const compact = compactSecretRecord(rec ?? undefined);
+  const compact =
+    kind === "headers"
+      ? normalizeUpstreamHeaders(rec)
+      : compactSecretRecord(rec ?? undefined);
   return compact ? seal(masterKey, compact) : null;
 }
 
@@ -984,8 +992,12 @@ export class Store {
       url: input.url ?? null,
       image: input.image ?? null,
       commandJson: input.command ? JSON.stringify(input.command) : null,
-      headersEnc: sealSecretMap(this.masterKey, input.headers),
-      envEnc: sealSecretMap(this.masterKey, input.env),
+      headersEnc: sealSecretMap(
+        this.masterKey,
+        withAuthorizationToken(input.headers, input.apiKey),
+        "headers",
+      ),
+      envEnc: sealSecretMap(this.masterKey, input.env, "env"),
       enabled: input.enabled ?? false,
       toolAllowlistJson: input.toolAllowlist
         ? JSON.stringify(input.toolAllowlist)
@@ -1077,18 +1089,29 @@ export class Store {
           : null
         : existing.commandJson;
     let headersEnc = existing.headersEnc;
-    if (input.headers !== undefined) {
-      headersEnc =
-        input.headers === null
-          ? null
-          : sealSecretMap(this.masterKey, input.headers);
+    if (input.headers !== undefined || input.apiKey !== undefined) {
+      if (input.headers === null && !input.apiKey) {
+        headersEnc = null;
+      } else {
+        const base =
+          input.headers === null
+            ? {}
+            : input.headers !== undefined
+              ? input.headers
+              : this.decryptHeaders(existing);
+        headersEnc = sealSecretMap(
+          this.masterKey,
+          withAuthorizationToken(base, input.apiKey),
+          "headers",
+        );
+      }
     }
     let envEnc = existing.envEnc;
     if (input.env !== undefined) {
       envEnc =
         input.env === null
           ? null
-          : sealSecretMap(this.masterKey, input.env);
+          : sealSecretMap(this.masterKey, input.env, "env");
     }
     const enabled =
       input.enabled !== undefined ? input.enabled : existing.enabled;
@@ -1155,7 +1178,8 @@ export class Store {
 
   decryptHeaders(b: BackendRecord): Record<string, string> {
     if (!b.headersEnc) return {};
-    return unseal<Record<string, string>>(this.masterKey, b.headersEnc);
+    const rec = unseal<Record<string, string>>(this.masterKey, b.headersEnc);
+    return normalizeUpstreamHeaders(rec) ?? {};
   }
 
   decryptEnv(b: BackendRecord): Record<string, string> {

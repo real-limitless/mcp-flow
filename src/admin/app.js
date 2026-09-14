@@ -1005,6 +1005,7 @@ function syncBackendFormFields() {
   };
 
   show("#beFieldUrl", isRemote);
+  show("#beFieldApiKey", isRemote);
   show("#beHdrEditor", isRemote);
   show("#beFieldDevice", isEdge);
   show("#beFieldCommand", !isRemote && isStdio);
@@ -1061,6 +1062,11 @@ function addBackendFormHtml(modes, devices) {
           <label class="field-label" for="beUrl">URL</label>
           <input id="beUrl" placeholder="https://mcp.example.com/mcp" autocomplete="off" />
         </div>
+        <div class="form-field" id="beFieldApiKey" style="grid-column: 1 / -1">
+          <label class="field-label" for="beApiKey">API key</label>
+          <input id="beApiKey" type="password" placeholder="of_…  (Bearer added automatically)" autocomplete="off" />
+          <span class="dim" style="font-size:11px;margin-top:4px">Sealed as Authorization. Extra headers below are optional.</span>
+        </div>
         <div class="form-field" id="beFieldCommand" hidden style="grid-column: 1 / -1">
           <label class="field-label" for="beCommand">Command</label>
           <input id="beCommand" class="mono" placeholder='npx -y @modelcontextprotocol/server-filesystem /tmp' autocomplete="off" />
@@ -1080,9 +1086,8 @@ function addBackendFormHtml(modes, devices) {
         </div>
         <div data-hdr-list class="hdr-list"></div>
         <p class="dim hdr-hint">
-          Empty rows are ignored. For bearer tokens use
-          <span class="mono">Authorization</span> =
-          <span class="mono">Bearer &lt;token&gt;</span>.
+          Empty rows are ignored. A raw API key is sent as
+          <span class="mono">Authorization: Bearer &lt;token&gt;</span>.
         </p>
       </div>
       <div class="hdr-editor" id="beEnvEditor" hidden style="margin-top:12px">
@@ -1172,6 +1177,8 @@ async function onCreateBackend() {
       if (!url) throw new Error("url required");
       body.url = url;
       const headers = collectHeaderPairs($("#beHdrEditor") || document);
+      const apiKey = $("#beApiKey")?.value?.trim();
+      if (apiKey) body.apiKey = apiKey;
       if (Object.keys(headers).length) body.headers = headers;
     } else {
       if (mode === "edge-sandbox" || mode === "edge-bare") {
@@ -1195,6 +1202,8 @@ async function onCreateBackend() {
     }
 
     await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
+    const apiKeyEl = $("#beApiKey");
+    if (apiKeyEl) apiKeyEl.value = "";
     await renderBackends();
   } catch (e) {
     showErr(e.message);

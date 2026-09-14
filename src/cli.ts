@@ -5,7 +5,7 @@ import { Store } from "./db/store.js";
 import { UpstreamPool } from "./mcp/upstream.js";
 import { startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
-import { parseHeaderFlags } from "./headers.js";
+import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
 import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
@@ -339,6 +339,10 @@ backendCmd
     },
     [] as string[],
   )
+  .option(
+    "--api-key <token>",
+    "sealed as Authorization (Bearer prefix added if the value has no scheme)",
+  )
   .option("--enable", "enable immediately", false)
   .option("--db <path>", "sqlite path")
   .action(
@@ -354,6 +358,7 @@ backendCmd
       placement?: string;
       deviceId?: string;
       header: string[];
+      apiKey?: string;
       enable?: boolean;
       db?: string;
     }) => {
@@ -427,6 +432,7 @@ backendCmd
           command: opts.command.length ? opts.command : undefined,
           transport,
           headers: Object.keys(headers).length ? headers : undefined,
+          apiKey: opts.apiKey,
           env: Object.keys(env).length ? env : undefined,
           toolAllowlist: opts.toolAllowlist.length
             ? opts.toolAllowlist
@@ -463,11 +469,21 @@ backendCmd
   )
   .option("--replace", "replace all headers instead of merge", false)
   .option("--clear", "remove all sealed headers", false)
+  .option(
+    "--api-key <token>",
+    "set Authorization (Bearer prefix added if the value has no scheme)",
+  )
   .option("--db <path>", "sqlite path")
   .action(
     (
       idOrSlug: string,
-      opts: { header: string[]; replace?: boolean; clear?: boolean; db?: string },
+      opts: {
+        header: string[];
+        replace?: boolean;
+        clear?: boolean;
+        apiKey?: string;
+        db?: string;
+      },
     ) => {
       const { store, workspaceId } = openStore(opts.db);
       try {
@@ -488,7 +504,7 @@ backendCmd
           console.log(JSON.stringify({ backend }, null, 2));
           return;
         }
-        if (!opts.header.length) {
+        if (!opts.header.length && !opts.apiKey) {
           const names = store.listBackendHeaderNames(workspaceId, idOrSlug);
           if (!names) {
             console.error("not found");
@@ -503,15 +519,21 @@ backendCmd
           );
           return;
         }
-        let partial: Record<string, string>;
+        let partial: Record<string, string> = {};
         try {
-          partial = parseHeaderFlags(opts.header);
+          if (opts.header.length) partial = parseHeaderFlags(opts.header);
         } catch (err) {
           console.error(err instanceof Error ? err.message : err);
           process.exit(1);
         }
+        if (opts.apiKey) {
+          partial = withAuthorizationToken(partial, opts.apiKey) ?? {};
+        }
         const backend = opts.replace
-          ? store.updateBackend(workspaceId, idOrSlug, { headers: partial })
+          ? store.updateBackend(workspaceId, idOrSlug, {
+              headers: partial,
+              apiKey: opts.apiKey,
+            })
           : store.mergeBackendHeaders(workspaceId, idOrSlug, partial);
         if (!backend) {
           console.error("not found");
@@ -862,6 +884,10 @@ catalogCmd
     },
     [] as string[],
   )
+  .option(
+    "--api-key <token>",
+    "sealed as Authorization (Bearer prefix added if the value has no scheme)",
+  )
   .option("--dir <path>", "catalog directory")
   .option("--db <path>", "sqlite path")
   .action(
@@ -871,6 +897,7 @@ catalogCmd
         slug?: string;
         enable?: boolean;
         header: string[];
+        apiKey?: string;
         dir?: string;
         db?: string;
       },
@@ -881,7 +908,9 @@ catalogCmd
         loadLocalGallery,
         searchRegistryLive,
       } = await import("./catalog/sync.js");
-      const { parseHeaderFlags } = await import("./headers.js");
+      const { parseHeaderFlags, withAuthorizationToken } = await import(
+        "./headers.js"
+      );
       const cfg = loadConfig({ dbPath: opts.db });
       requireSecrets(cfg);
       const catalogDir = opts.dir ?? defaultCatalogDir();
@@ -897,9 +926,10 @@ catalogCmd
         console.error("gallery entry not found");
         process.exit(1);
       }
-      const headers = opts.header.length
+      const parsed = opts.header.length
         ? parseHeaderFlags(opts.header)
         : undefined;
+      const headers = withAuthorizationToken(parsed, opts.apiKey);
       const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
