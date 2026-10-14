@@ -68,18 +68,14 @@ export function toolEffect(rules: PolicyRule[], scope: { agentId: string; projec
   return "conditional";
 }
 
+export const REACH_BATCH_MAX = 50;
+
 export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: UpstreamPool) {
   // GAP-1
   admin.get("/agents", (c) => {
     const ws = c.get("auth").workspaceId as string;
     const rows = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? ORDER BY name`).all(ws) as Array<Record<string, unknown>>;
     return c.json({ agents: rows.map((a) => agentRow(store, a)) });
-  });
-  admin.get("/agents/:id", (c) => {
-    const ws = c.get("auth").workspaceId as string;
-    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
-    if (!a) return c.json({ error: "not found" }, 404);
-    return c.json({ agent: agentRow(store, a) });
   });
 
   // GAP-2
@@ -107,24 +103,19 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
 
   // GAP-4: per-agent, per-project reach, plus live project sessions (ids only)
   // Security re-review 2 (a): human admin agents only (not the env token or legacy scopes.admin keys)
-  admin.get("/agents/:id/reach", async (c) => {
-    if (!c.get("humanAdmin")) return c.json({ error: "human_admin_required" }, 403);
-    const ws = c.get("auth").workspaceId as string;
+  type Catalog = Awaited<ReturnType<UpstreamPool["listNamespacedTools"]>>;
+  const loadCatalog = async (ws: string): Promise<{ catalog: Catalog; catalogError: string | null }> => {
+    try {
+      return { catalog: await pool.listNamespacedTools(ws), catalogError: null };
+    } catch {
+      return { catalog: [], catalogError: "backend tools unavailable" };
+    }
+  };
+  const reachFor = (ws: string, a: Record<string, unknown>, want: string | undefined, catalog: Catalog, rules: PolicyRule[]) => {
     const db = store.db;
-    const a = db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
-    if (!a) return c.json({ error: "not found" }, 404);
     const agentId = String(a.id);
     const agentProjects = agentRow(store, a).projects as string[];
-    const want = c.req.query("project");
     const slugs = want ? agentProjects.filter((p) => p === want) : agentProjects;
-    let catalog: Awaited<ReturnType<UpstreamPool["listNamespacedTools"]>> = [];
-    let catalogError: string | null = null;
-    try {
-      catalog = await pool.listNamespacedTools(ws);
-    } catch {
-      catalogError = "backend tools unavailable";
-    }
-    const rules = loadActiveRules(db, ws);
     const now = new Date().toISOString();
     const sessions = db.prepare(
       `SELECT id, key_id, project_id, created_at, expires_at FROM mcpflow_session
@@ -145,6 +136,46 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
         })),
       };
     });
-    return c.json({ agent: { id: agentId, name: a.name, kind: a.kind, status: a.status }, catalog_error: catalogError, projects });
+    return { agent: { id: agentId, name: a.name, kind: a.kind, status: a.status }, projects };
+  };
+
+  // Batch reach for the UI: GET /agents/reach?ids=a,b[&project=slug] (max REACH_BATCH_MAX ids).
+  // Registered before /agents/:id so "reach" is never taken as an agent id.
+  admin.get("/agents/reach", async (c) => {
+    if (!c.get("humanAdmin")) return c.json({ error: "human_admin_required" }, 403);
+    const ws = c.get("auth").workspaceId as string;
+    const raw = (c.req.query("ids") ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    const ids = [...new Set(raw)];
+    if (!ids.length) return c.json({ error: "ids is required (comma-separated agent ids)" }, 400);
+    if (ids.length > REACH_BATCH_MAX) return c.json({ error: `at most ${REACH_BATCH_MAX} ids per request` }, 400);
+    const { catalog, catalogError } = await loadCatalog(ws);
+    const rules = loadActiveRules(store.db, ws);
+    const get = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`);
+    const agents = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const a = get.get(ws, id) as Record<string, unknown> | undefined;
+      if (!a) notFound.push(id);
+      else agents.push({ ...reachFor(ws, a, c.req.query("project"), catalog, rules), catalog_error: catalogError });
+    }
+    return c.json({ agents, not_found: notFound, catalog_error: catalogError });
+  });
+
+  // GAP-1 detail (after /agents/reach)
+  admin.get("/agents/:id", (c) => {
+    const ws = c.get("auth").workspaceId as string;
+    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
+    if (!a) return c.json({ error: "not found" }, 404);
+    return c.json({ agent: agentRow(store, a) });
+  });
+
+  admin.get("/agents/:id/reach", async (c) => {
+    if (!c.get("humanAdmin")) return c.json({ error: "human_admin_required" }, 403);
+    const ws = c.get("auth").workspaceId as string;
+    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
+    if (!a) return c.json({ error: "not found" }, 404);
+    const { catalog, catalogError } = await loadCatalog(ws);
+    const r = reachFor(ws, a, c.req.query("project"), catalog, loadActiveRules(store.db, ws));
+    return c.json({ agent: r.agent, catalog_error: catalogError, projects: r.projects });
   });
 }

@@ -167,3 +167,27 @@ describe("admin UI read endpoints", () => {
     expect((await e.get(e.anaK.token, `/v1/agents/${e.bot}/reach`)).status).toBe(403);
   });
 });
+
+describe("batch reach", () => {
+  it("GET /v1/agents/reach?ids=a,b: same per-agent shape, not_found, capped, human admins only", async () => {
+    const e = await boot();
+    const single = (await (await e.get(e.chenK.token, `/v1/agents/${e.bot}/reach`)).json()) as { agent: unknown; projects: unknown };
+    const r = await e.get(e.chenK.token, `/v1/agents/reach?ids=${e.bot},${e.ana},${e.bot},agt_nope`);
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    e.noSecrets(text);
+    const body = JSON.parse(text) as { agents: Array<{ agent: { id: string }; projects: unknown }>; not_found: string[] };
+    expect(body.agents.map((a) => a.agent.id)).toEqual([e.bot, e.ana]); // deduped, in request order
+    expect(body.not_found).toEqual(["agt_nope"]);
+    expect(body.agents[0]!.agent).toEqual(single.agent);
+    expect(body.agents[0]!.projects).toEqual(single.projects);
+    expect((await e.get(e.chenK.token, "/v1/agents/reach")).status).toBe(400);
+    const many = Array.from({ length: 51 }, (_, i) => `agt_${i}`).join(",");
+    expect((await e.get(e.chenK.token, `/v1/agents/reach?ids=${many}`)).status).toBe(400);
+    expect((await e.get(ADMIN, `/v1/agents/reach?ids=${e.bot}`)).status).toBe(403);
+    expect((await e.get(e.anaK.token, `/v1/agents/reach?ids=${e.bot}`)).status).toBe(403);
+    expect((await fetch(`${e.gw.url}/v1/agents/reach?ids=${e.bot}`)).status).toBe(401);
+    // /agents/:id still works
+    expect((await e.get(ADMIN, `/v1/agents/${e.bot}`)).status).toBe(200);
+  });
+});
