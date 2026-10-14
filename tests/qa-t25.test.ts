@@ -1,5 +1,4 @@
-// QA T2.5 suite v3, synced from /workspace/mcp-flow-qa/qa-t25.test.ts. v1/v2 kept alongside.
-// Local adjustment: QA-j1 reads reach with a human admin agent key (env ADMIN token -> 403 since 4c25d71c).
+// QA T2.5 suite v5 (QA-owned copy). v1-v4 kept alongside; v5-only cases in qa-v5.test.ts.
 // Only change from QA's file: e5 asserts 404 (spec keeps no-existence-oracle 404 for non-approvers).
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
@@ -632,7 +631,7 @@ describe("QA-j GAP read endpoints (v3)", () => {
       const leaks = secrets.filter((x) => okBody.body.includes(x) || chen.body.includes(x));
       res[path] = { anon: anon.status, bot: bot.status, nonApprover: bob.status, chen: chen.status, admin: admin.status, leaks, bobBody: path.includes("/approvals/") ? bob.body.slice(0, 80) : undefined };
     }
-    // local adjustment (backend, 4c25d71c): reach is human-admin-agent only, so the env ADMIN token gets 403
+    // v4: reach is human-admin-agent only; env ADMIN token -> 403
     expect((await call(ADMIN, `/v1/agents/${e.bot}/reach`)).status).toBe(403);
     const reach = JSON.parse((await call(e.chenTok, `/v1/agents/${e.bot}/reach`)).body);
     const rules = JSON.parse((await call(e.chenTok, "/v1/policy/approvals/rules")).body);
@@ -652,4 +651,98 @@ describe("QA-j GAP read endpoints (v3)", () => {
     const effects = Object.fromEntries(reach.projects[0].tools.map((t: any) => [t.name, t.effect]));
     expect(effects).toEqual({ shell__echo: "allow", shell__run_command: "require_approval" });
   }, 20000);
+});
+
+
+// ======================= v4 additions =======================
+// Enumerated from src/api/app.ts + src/api/read-endpoints.ts (admin router, mounted at /v1) @ 78d38bb6
+const ADMIN_ROUTES: Array<[string, string]> = [
+  ["GET", "/workspace"], ["PATCH", "/workspace/policy"], ["POST", "/keys"], ["GET", "/keys"], ["PATCH", "/keys/x"], ["DELETE", "/keys/x"],
+  ["GET", "/backends"], ["GET", "/backends/x"], ["POST", "/backends"], ["PATCH", "/backends/x"], ["DELETE", "/backends/x"], ["POST", "/backends/x/test"],
+  ["GET", "/devices"], ["POST", "/devices"], ["PATCH", "/devices/x"], ["DELETE", "/devices/x"],
+  ["GET", "/catalog/search"], ["GET", "/catalog/entries/x"], ["POST", "/catalog/sync"], ["POST", "/catalog/install"],
+  ["GET", "/audit/calls"], ["GET", "/audit"], ["GET", "/projects"], ["GET", "/projects/x"], ["POST", "/projects"], ["PATCH", "/projects/x"], ["DELETE", "/projects/x"],
+  ["GET", "/authz/rules"], ["POST", "/authz/rules"], ["PATCH", "/authz/rules/x"], ["DELETE", "/authz/rules/x"],
+  ["GET", "/approvals"], ["POST", "/approvals/x/decision"],
+  ["GET", "/operators/mfa"], ["POST", "/operators/mfa/begin"], ["POST", "/operators/mfa/confirm"], ["POST", "/operators/mfa/disable"],
+  ["GET", "/push/vapid"], ["GET", "/push/subscriptions"], ["POST", "/push/subscriptions"], ["DELETE", "/push/subscriptions/x"],
+  ["GET", "/agents"], ["GET", "/policy/rules"], ["GET", "/backends/x/tools"], ["GET", "/agents/reach?ids=x"], ["GET", "/agents/x"], ["GET", "/agents/x/reach"],
+];
+
+describe("QA-v4 admin router auth matrix (V3-F2)", () => {
+  it("m1 every /v1 admin route: 401 none/bad token, 403 bot + non-admin human; no side effects", async () => {
+    const e = await boot();
+    const before = (e.db.prepare(`SELECT (SELECT count(*) FROM backends)+(SELECT count(*) FROM mcpflow_api_key)+(SELECT count(*) FROM projects) n`).get() as any).n;
+    const rows: string[] = [];
+    const bad: string[] = [];
+    for (const [m, path] of ADMIN_ROUTES) {
+      const go = async (tok: string | null) => (await fetch(`${e.gw.url}/v1${path}`, {
+        method: m, headers: { ...(tok ? { Authorization: `Bearer ${tok}` } : {}), "content-type": "application/json" },
+        body: m === "GET" || m === "DELETE" ? undefined : "{}",
+      })).status;
+      const r = { none: await go(null), bad: await go("mf_" + "q".repeat(40)), junk: await go("not-a-token"), bot: await go(e.botK.token), human: await go(e.bobK.token) };
+      rows.push(`${m} /v1${path}: none=${r.none} bad=${r.bad} junk=${r.junk} bot=${r.bot} nonAdminHuman=${r.human}`);
+      if (r.none !== 401 || r.bad !== 401 || r.junk !== 401 || r.bot !== 403 || r.human !== 403) bad.push(rows.at(-1)!);
+    }
+    const after = (e.db.prepare(`SELECT (SELECT count(*) FROM backends)+(SELECT count(*) FROM mcpflow_api_key)+(SELECT count(*) FROM projects) n`).get() as any).n;
+    console.log("QA-m1 routes=" + ADMIN_ROUTES.length + "\n" + rows.join("\n"));
+    expect(bad).toEqual([]);
+    expect(after).toBe(before);
+  }, 30000);
+});
+
+describe("QA-v4 batch reach GET /v1/agents/reach?ids=", () => {
+  it("r1 auth matrix, limits, edge ids, no leaks, equals single-id reach", async () => {
+    const up = await spyUpstream(["echo", "run_command"]);
+    const e = await boot();
+    e.rule("allow", ["echo"], 300, ["shell"]);
+    e.rule("require_approval", ["run_command"], 30, ["shell"]);
+    await gwWithBackends(e, { shell: up.url }, ["shell"]);
+    const id = e.gw.store.identity;
+    const extra: string[] = [];
+    for (let i = 0; i < 50; i++) extra.push(id.createAgent({ workspaceId: e.ws, name: `a${i}`, owner: "chen", kind: "grokbot", projects: i % 2 ? ["p1"] : [], createdBy: e.chen }));
+    const s = spy();
+    const p = e.gw.store.policy.enforce({ ctx: e.ctx(), args: { command: "deploy", token: "ghp_QASECRETQASECRETQASECRET1234567890" }, dispatch: s.dispatch });
+    const pid = await waitPending(e.db);
+    const sess = id.createSession({ agentId: e.bot, keyId: e.botK.keyId, keyExpiresAt: new Date(Date.now() + 86400e3).toISOString(), effectiveProjects: ["p1"] } as any, "p1");
+    const get = async (tok: string | null, q: string) => {
+      const r = await fetch(`${e.gw.url}/v1/agents/reach${q}`, { headers: tok ? { Authorization: `Bearer ${tok}` } : {} });
+      return { status: r.status, text: await r.text() };
+    };
+    const q1 = `?ids=${e.bot}`;
+    const auth = {
+      none: (await get(null, q1)).status, bad: (await get("mf_" + "z".repeat(40), q1)).status, bot: (await get(e.botK.token, q1)).status,
+      nonAdminHuman: (await get(e.bobK.token, q1)).status, envAdmin: (await get(ADMIN, q1)).status, humanAdmin: (await get(e.chenTok, q1)).status,
+    };
+    const one = await get(e.chenTok, q1);
+    const fifty = await get(e.chenTok, `?ids=${extra.join(",")}`);
+    const fiftyOne = await get(e.chenTok, `?ids=${[...extra, e.bot].join(",")}`);
+    const fiftyDupPlus = await get(e.chenTok, `?ids=${[...extra, extra[0]].join(",")}`); // 51 raw, 50 unique
+    const edge = {
+      empty: await get(e.chenTok, "?ids="), missing: await get(e.chenTok, ""), commas: await get(e.chenTok, "?ids=,,,"),
+      dup: await get(e.chenTok, `?ids=${e.bot},${e.bot}`), malformed: await get(e.chenTok, `?ids=${encodeURIComponent("'; DROP TABLE x;--,<script>,../../etc")}`),
+      unknown: await get(e.chenTok, "?ids=agt_000000000000000000000000"), huge: await get(e.chenTok, `?ids=${"a".repeat(20000)}`),
+    };
+    const summary = Object.fromEntries(Object.entries(edge).map(([k, v]) => [k, `${v.status} ${v.text.slice(0, 110)}`]));
+    const leakNeedles = [e.botK.token, e.chenTok, e.bobK.token, sess.token, ADMIN, "ghp_QASECRET", "token_hash", "key_hash", "secret", "ciphertext", "deploy"];
+    const leaks = leakNeedles.filter((n) => [one, fifty].some((r) => r.text.includes(n)));
+    const batch = JSON.parse(fifty.text);
+    let mismatches = 0;
+    for (const a of [...batch.agents, ...JSON.parse(one.text).agents]) {
+      const single = JSON.parse((await get(e.chenTok, "").then(() => fetch(`${e.gw.url}/v1/agents/${a.agent.id}/reach`, { headers: { Authorization: `Bearer ${e.chenTok}` } })).then((r) => r.text())));
+      const strip = (x: any) => JSON.stringify({ agent: x.agent, projects: x.projects });
+      if (strip(single) !== strip(a)) { mismatches++; if (mismatches < 3) console.log("QA-r1 mismatch", strip(single).slice(0, 300), "VS", strip(a).slice(0, 300)); }
+    }
+    console.log("QA-r1", JSON.stringify({ auth, one: one.status, fifty: [fifty.status, batch.agents?.length], fiftyOne: [fiftyOne.status, fiftyOne.text.slice(0, 80)], fiftyDupPlus: fiftyDupPlus.status, edge: summary, leaks, mismatches, sessionShown: one.text.includes(sess.sessionId) }));
+    await e.api(e.chenTok, `/${pid}/deny`, {}); await p;
+    expect(auth).toEqual({ none: 401, bad: 401, bot: 403, nonAdminHuman: 403, envAdmin: 403, humanAdmin: 200 });
+    expect(fifty.status).toBe(200); expect(batch.agents).toHaveLength(50);
+    expect(fiftyOne.status).toBe(400);
+    expect(edge.empty.status).toBe(400); expect(edge.missing.status).toBe(400);
+    expect(JSON.parse(edge.dup.text).agents).toHaveLength(1);
+    expect(JSON.parse(edge.unknown.text).not_found).toEqual(["agt_000000000000000000000000"]);
+    expect(edge.malformed.status).toBe(200);
+    expect(leaks).toEqual([]);
+    expect(mismatches).toBe(0);
+  }, 30000);
 });
