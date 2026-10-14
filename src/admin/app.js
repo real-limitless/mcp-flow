@@ -2271,7 +2271,21 @@ let paView = "pending";
 const paDetails = new Map(); // id -> { call, err, code, notice, hashCheck }
 // 404 = "not visible to you" (not stale): hide the item, no retry.
 const paHidden = new Set();
-let paListNotice = "";
+// V3-F1: decision notices (404 / 409 not_pending|expired) persist as
+// dismissible banners. List refreshes, the 8 s poll and later successful
+// decisions never clear them; only the user's "Dismiss" does.
+const paNotices = []; // { key, text }
+let paNoticeSeq = 0;
+function addPaNotice(text) {
+  if (!text || paNotices.some((n) => n.text === text)) return;
+  paNotices.push({ key: String(++paNoticeSeq), text });
+  if (paNotices.length > 5) paNotices.shift();
+}
+function paNoticesHtml() {
+  return paNotices
+    .map((n) => `<div class="pa-banner" role="status"><span>${esc(n.text)}</span><button type="button" class="pill-btn ghost" data-pa-dismiss="${esc(n.key)}">Dismiss</button></div>`)
+    .join("");
+}
 
 function approverToken() {
   return sessionStorage.getItem(APPROVER_TOKEN_KEY) || "";
@@ -2414,12 +2428,12 @@ async function loadPaDetail(id, notice = "") {
     if (e.code === "not_found") {
       paDetails.delete(id);
       paHidden.add(id);
-      paListNotice = "A call was removed: it isn't available to you.";
+      addPaNotice("A call was removed: it isn't available to you.");
       return;
     }
     if (e.code === "not_pending" || e.code === "expired") {
       paDetails.delete(id);
-      paListNotice = e.code === "expired" ? "A call expired (timeout counts as deny)." : "A call was already resolved.";
+      addPaNotice(e.code === "expired" ? "A call expired (timeout counts as deny)." : "A call was already resolved.");
       return;
     }
     paDetails.set(id, { call: null, err: e.message, code: e.code, notice, hashCheck: "unavailable" });
@@ -2574,7 +2588,7 @@ async function renderPolicyApprovals() {
   else body = list.map((c) => paCardHtml(c, paView === "pending" && c?.status === "pending")).join("");
   root.innerHTML = surface(
     "Call approvals",
-    authHtml + (paListNotice ? `<p class="pa-warn">${esc(paListNotice)}</p>` : "") + `<div class="pa-list">${body}</div>`,
+    authHtml + paNoticesHtml() + `<div class="pa-list">${body}</div>`,
     has && !loadErr ? `${list.length} ${paView}` : "",
   );
 
@@ -2591,6 +2605,13 @@ async function renderPolicyApprovals() {
     paDetails.clear();
     void renderPolicyApprovals();
   });
+  root.querySelectorAll("[data-pa-dismiss]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const i = paNotices.findIndex((n) => n.key === b.getAttribute("data-pa-dismiss"));
+      if (i >= 0) paNotices.splice(i, 1);
+      b.closest(".pa-banner")?.remove();
+    }),
+  );
   root.querySelectorAll("[data-pa-view]").forEach((b) =>
     b.addEventListener("click", () => {
       paView = b.getAttribute("data-pa-view");
@@ -2605,17 +2626,16 @@ async function renderPolicyApprovals() {
     try {
       await approverApi(`/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(body) });
       paDetails.delete(id);
-      paListNotice = "";
       showErr("");
     } catch (e) {
       if (e.code === "not_found") {
         paDetails.delete(id);
         paHidden.add(id);
-        paListNotice = e.message;
+        addPaNotice(e.message);
         showErr("");
       } else if (e.code === "not_pending" || e.code === "expired") {
         paDetails.delete(id);
-        paListNotice = e.code === "expired" ? "That call expired (timeout counts as deny)." : "That call was already resolved by another approver.";
+        addPaNotice(e.code === "expired" ? "That call expired (timeout counts as deny)." : "That call was already resolved by another approver.");
         showErr("");
       } else if (e.code === "args_mismatch" || e.code === "args_integrity") {
         paDetails.delete(id);
