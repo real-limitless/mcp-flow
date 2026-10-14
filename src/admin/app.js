@@ -2243,6 +2243,402 @@ async function renderApprovals(force = false) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// T2.3 Call approvals (per-call policy, /v1/policy/approvals)
+//
+// These routes authenticate a *human agent* (mf_… key or mf_sess_… session),
+// NOT the admin token, so this panel keeps its own approver credential in
+// sessionStorage. Only the documented endpoints are used:
+//   GET /pending, GET /history, GET /:id, POST /:id/approve|deny|approve-similar
+// ---------------------------------------------------------------------------
+const APPROVER_TOKEN_KEY = "mcp_flow_approver_token";
+const PA_BASE = "/v1/policy/approvals";
+let paPollTimer = null;
+let paView = "pending";
+
+function approverToken() {
+  return sessionStorage.getItem(APPROVER_TOKEN_KEY) || "";
+}
+
+async function approverApi(path, opts = {}) {
+  const t = approverToken();
+  if (!t) throw new Error("Set an approver key (human agent mf_… key or session) first");
+  const res = await fetch(`${PA_BASE}${path}`, {
+    ...opts,
+    headers: {
+      Authorization: `Bearer ${t}`,
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+    },
+  });
+  const text = await res.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch {
+    body = { raw: text };
+  }
+  if (!res.ok) {
+    const code = body.error || res.statusText || String(res.status);
+    const friendly = {
+      unauthorized: "Approver key rejected (401). Use a human agent key or session — the admin token is not accepted here.",
+      "approvers must be human agents": "This key belongs to a non-human agent; only human agents can approve.",
+      self_approval: "You can't approve your own call.",
+      not_approver: "You are not an approver for this call.",
+      not_found: "Call not found (or you are not an approver for it).",
+      not_pending: "Already decided by another approver.",
+      expired: "This call expired (a timeout counts as deny).",
+    }[code];
+    throw new Error(friendly || code);
+  }
+  return body;
+}
+
+function stopPolicyApprovalsPoll() {
+  if (paPollTimer) {
+    clearInterval(paPollTimer);
+    paPollTimer = null;
+  }
+}
+
+function fmtTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+}
+
+function fmtRemaining(iso) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return "";
+  if (ms <= 0) return "expired";
+  const s = Math.round(ms / 1000);
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s left` : `${s}s left`;
+}
+
+/**
+ * matched_rules item shape is ILLUSTRATIVE per the API doc. Render known-ish
+ * fields when present, otherwise fall back to readable JSON. Never assume.
+ */
+function matchedRulesHtml(rules) {
+  if (rules == null) return '<span class="muted">none reported</span>';
+  if (!Array.isArray(rules)) return `<pre class="audit-payload">${esc(prettyJson(rules))}</pre>`;
+  if (!rules.length) return '<span class="muted">none</span>';
+  return rules
+    .map((r) => {
+      if (r == null || typeof r !== "object") {
+        return `<div class="pa-rule"><span class="mono">${esc(String(r))}</span></div>`;
+      }
+      const id = r.rule_id ?? r.id ?? r.ruleId;
+      const name = r.name ?? r.rule_name;
+      const effect = r.effect ?? r.action ?? r.decision;
+      const version = r.version;
+      const known = new Set(["rule_id", "id", "ruleId", "name", "rule_name", "effect", "action", "decision", "version"]);
+      const extra = Object.fromEntries(Object.entries(r).filter(([k]) => !known.has(k)));
+      const head = [
+        effect != null ? `<span class="pill ${effect === "deny" ? "deny" : "warn"}">${esc(String(effect))}</span>` : "",
+        name != null ? `<span>${esc(String(name))}</span>` : "",
+        id != null ? `<span class="mono muted">${esc(String(id))}</span>` : "",
+        version != null ? `<span class="muted">v${esc(String(version))}</span>` : "",
+      ].filter(Boolean).join(" ");
+      const extraHtml = Object.keys(extra).length
+        ? `<pre class="audit-payload">${esc(prettyJson(extra))}</pre>`
+        : "";
+      return `<div class="pa-rule">${head || `<pre class="audit-payload">${esc(prettyJson(r))}</pre>`}${head ? extraHtml : ""}</div>`;
+    })
+    .join("");
+}
+
+function paStatusPill(st) {
+  const cls = { pending: "warn", approved: "on", denied: "deny", expired: "off", cancelled: "off" }[st] || "off";
+  return `<span class="pill ${cls}">${esc(st || "unknown")}</span>`;
+}
+
+function paCardHtml(c, actionable) {
+  const id = String(c?.id ?? "");
+  const agent = c?.agent && typeof c.agent === "object"
+    ? `${esc(c.agent.name ?? "")} <span class="mono muted">${esc(c.agent.id ?? "")}</span>`
+    : esc(c?.agent ?? "unknown agent");
+  const tool = c?.qualified_tool ?? [c?.backend_slug, c?.tool].filter(Boolean).join("__");
+  const args = c?.args_redacted;
+  return `
+    <article class="approval-card pa-card" data-pa-id="${esc(id)}">
+      <div class="approval-head">
+        <div>
+          <div class="mono pa-tool">${esc(tool || "unknown tool")}</div>
+          <div class="muted">${agent} · project <span class="mono">${esc(c?.project_id ?? "—")}</span> · ${esc(c?.placement ?? "")}</div>
+        </div>
+        <div class="pa-head-right">
+          ${paStatusPill(c?.status)}
+          ${c?.status === "pending" && c?.expires_at ? `<span class="muted nowrap" data-pa-exp="${esc(c.expires_at)}">${esc(fmtRemaining(c.expires_at))}</span>` : ""}
+        </div>
+      </div>
+      <div class="pa-reason"><span class="field-label">Reason</span>
+        ${c?.reason ? `<div>${esc(c.reason)}</div>` : '<div class="muted">No reason given</div>'}
+      </div>
+      <div class="audit-split">
+        <div class="audit-pane"><div class="audit-pane-head">Args (redacted)</div>
+          <pre class="audit-payload">${esc(args === undefined ? "—" : prettyJson(args))}</pre></div>
+        <div class="audit-pane"><div class="audit-pane-head">Matched rules</div>
+          <div class="audit-pane-body">${matchedRulesHtml(c?.matched_rules)}</div></div>
+      </div>
+      <div class="muted pa-meta">Requested ${esc(fmtTime(c?.created_at))}${c?.decided_at ? ` · decided ${esc(fmtTime(c.decided_at))} by <span class="mono">${esc(c.decided_by ?? "")}</span>` : ""}${c?.note ? ` · note: ${esc(c.note)}` : ""}${c?.grant_id ? ` · grant <span class="mono">${esc(c.grant_id)}</span>` : ""}</div>
+      ${actionable ? `
+      <div class="pa-actions">
+        <input type="text" class="pa-note" maxlength="500" placeholder="Note (optional, ≤500 chars)" />
+        <div class="row-actions">
+          <button type="button" class="pill-btn primary" data-pa-approve="${esc(id)}">Approve</button>
+          <button type="button" class="pill-btn danger" data-pa-deny="${esc(id)}">Deny</button>
+        </div>
+        <div class="row-actions pa-similar">
+          <span class="muted">Approve similar calls (same agent, project, backend, tool) for</span>
+          <input type="number" class="pa-minutes" min="1" max="60" step="1" value="15" aria-label="Minutes" /> <span class="muted">min</span>
+          <input type="number" class="pa-maxuses" min="1" step="1" placeholder="max uses" aria-label="Max uses" />
+          <label class="form-check"><input type="checkbox" class="pa-sameargs" /> same args only</label>
+          <button type="button" class="pill-btn ghost" data-pa-similar="${esc(id)}">Approve similar</button>
+        </div>
+        <p class="muted pa-hint">Grants never override a deny rule.</p>
+      </div>` : ""}
+    </article>`;
+}
+
+async function renderPolicyApprovals() {
+  const root = $("#tab-policy-approvals");
+  const has = !!approverToken();
+  let list = [];
+  let loadErr = "";
+  if (has) {
+    try {
+      if (paView === "pending") {
+        const r = await approverApi("/pending?limit=50");
+        list = Array.isArray(r?.pending) ? r.pending : [];
+      } else {
+        const r = await approverApi("/history?limit=50");
+        list = Array.isArray(r?.calls) ? r.calls : [];
+      }
+    } catch (e) {
+      loadErr = e.message;
+    }
+  }
+  const authHtml = `
+    <div class="auth-row pa-auth">
+      <input id="approverToken" type="password" placeholder="Approver key (human agent mf_… or mf_sess_…)" autocomplete="off" value="${has ? "••••••••" : ""}" />
+      <button id="saveApproverToken" type="button" class="pill-btn primary">Use key</button>
+      ${has ? '<button id="clearApproverToken" type="button" class="pill-btn ghost">Forget</button>' : ""}
+    </div>
+    <p class="muted">Per-call policy approvals use a human agent's key, not the admin token. Stored for this tab only.</p>
+    <nav class="seg pa-seg" aria-label="Approval view">
+      <button type="button" class="seg-btn ${paView === "pending" ? "active" : ""}" data-pa-view="pending">Pending</button>
+      <button type="button" class="seg-btn ${paView === "history" ? "active" : ""}" data-pa-view="history">History</button>
+    </nav>`;
+  let body;
+  if (!has) body = '<p class="audit-empty">Enter an approver key to load calls.</p>';
+  else if (loadErr) body = `<p class="err-inline">${esc(loadErr)}</p>`;
+  else if (!list.length) body = `<p class="audit-empty">${paView === "pending" ? "Nothing waiting on you." : "No history yet."}</p>`;
+  else body = list.map((c) => paCardHtml(c, paView === "pending" && c?.status === "pending")).join("");
+  root.innerHTML = surface(
+    "Call approvals",
+    authHtml + `<div class="pa-list">${body}</div>`,
+    has && !loadErr ? `${list.length} ${paView}` : "",
+  );
+
+  $("#saveApproverToken")?.addEventListener("click", () => {
+    const v = $("#approverToken").value.trim();
+    if (v && v !== "••••••••") sessionStorage.setItem(APPROVER_TOKEN_KEY, v);
+    void renderPolicyApprovals().catch((e) => showErr(e.message));
+  });
+  $("#clearApproverToken")?.addEventListener("click", () => {
+    sessionStorage.removeItem(APPROVER_TOKEN_KEY);
+    void renderPolicyApprovals();
+  });
+  root.querySelectorAll("[data-pa-view]").forEach((b) =>
+    b.addEventListener("click", () => {
+      paView = b.getAttribute("data-pa-view");
+      void renderPolicyApprovals();
+    }),
+  );
+
+  const decide = async (btn, path, body) => {
+    btn.disabled = true;
+    try {
+      await approverApi(path, { method: "POST", body: JSON.stringify(body) });
+      showErr("");
+    } catch (e) {
+      showErr(e.message);
+    }
+    await renderPolicyApprovals();
+  };
+  const noteOf = (btn) => {
+    const v = btn.closest(".pa-card")?.querySelector(".pa-note")?.value.trim();
+    return v ? { note: v } : {};
+  };
+  root.querySelectorAll("[data-pa-approve]").forEach((btn) =>
+    btn.addEventListener("click", () =>
+      decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-approve"))}/approve`, noteOf(btn))),
+  );
+  root.querySelectorAll("[data-pa-deny]").forEach((btn) =>
+    btn.addEventListener("click", () =>
+      decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-deny"))}/deny`, noteOf(btn))),
+  );
+  root.querySelectorAll("[data-pa-similar]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      const card = btn.closest(".pa-card");
+      const minutes = Number(card.querySelector(".pa-minutes").value);
+      if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
+        showErr("Minutes must be a whole number from 1 to 60");
+        return;
+      }
+      const body = { minutes, ...noteOf(btn) };
+      const mu = card.querySelector(".pa-maxuses").value.trim();
+      if (mu) {
+        const n = Number(mu);
+        if (!Number.isInteger(n) || n < 1) {
+          showErr("Max uses must be a whole number ≥ 1");
+          return;
+        }
+        body.max_uses = n;
+      }
+      if (card.querySelector(".pa-sameargs").checked) body.same_args_only = true;
+      void decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-similar"))}/approve-similar`, body);
+    }),
+  );
+
+  // Poll /pending every ~8 s while visible (doc suggests 5–10 s). Skip while
+  // the user is typing in a card so inputs aren't wiped.
+  stopPolicyApprovalsPoll();
+  if (has && paView === "pending") {
+    paPollTimer = setInterval(() => {
+      if (document.hidden) return;
+      const active = document.activeElement;
+      if (active && root.contains(active) && active.tagName === "INPUT") {
+        root.querySelectorAll("[data-pa-exp]").forEach((el) => {
+          el.textContent = fmtRemaining(el.getAttribute("data-pa-exp"));
+        });
+        return;
+      }
+      void renderPolicyApprovals().catch(() => undefined);
+    }, 8000);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// T3.4 Access map — which agent can reach which tool.
+//
+// Built ONLY from existing admin read endpoints:
+//   GET /v1/keys        (key scopes: projects, toolPrefixAllowlist, admin)
+//   GET /v1/projects    (project → backendSlugs, toolPrefixAllowlist)
+//   GET /v1/backends    (enabled, toolAllowlist)
+//   GET /v1/authz/rules (legacy authz rules: which calls need approval)
+//
+// DATA GAPS (no read endpoint exists; intentionally NOT created here):
+//   GAP-1: No REST list of agents (T1.1 `agents` table). Keys are the closest
+//          proxy, so rows are API keys, not agents; human/bot kind unknown.
+//   GAP-2: No REST list of per-call policy rules (T2.1 `policy_rules`, the
+//          rules behind /v1/policy/approvals). Only legacy /v1/authz/rules is
+//          shown; deny/require_approval from the new engine is not reflected.
+//   GAP-3: No endpoint lists a backend's discovered tools. Unless a backend
+//          has a toolAllowlist, the map can only say "all tools on <backend>".
+//   GAP-4: Session-level dynamicTools / project selection isn't resolvable
+//          server-side here; the map shows the static upper bound of reach.
+// ---------------------------------------------------------------------------
+function prefixOk(prefixes, name) {
+  return !prefixes || !prefixes.length || prefixes.some((p) => name.startsWith(p));
+}
+
+function accessCell(key, backend, projects, rules) {
+  const sc = key.scopes || {};
+  if (!backend.enabled) return { level: "off", label: "backend disabled", tools: [] };
+  const allowedProjects = sc.projects && sc.projects.length
+    ? projects.filter((p) => sc.projects.includes(p.slug))
+    : projects;
+  const viaProjects = allowedProjects.filter((p) => (p.backendSlugs || []).includes(backend.slug));
+  if (!viaProjects.length) return { level: "none", label: "—", tools: [] };
+  const keyPrefixes = sc.toolPrefixAllowlist;
+  const projPrefixSets = viaProjects.map((p) => p.toolPrefixAllowlist);
+  const known = Array.isArray(backend.toolAllowlist) && backend.toolAllowlist.length
+    ? backend.toolAllowlist.map((t) => `${backend.slug}__${t}`)
+    : null;
+  const ruleFor = (q) =>
+    rules.filter((r) => {
+      if (r.enabled === false) return false;
+      const m = r.match || {};
+      if (m.keyIds?.length && !m.keyIds.includes(key.id)) return false;
+      if (m.backends?.length && !m.backends.includes(backend.slug)) return false;
+      if (m.tools?.length || m.prefixes?.length) {
+        if (!q) {
+          // GAP-3: tool list unknown — rule may apply if it names this backend's namespace.
+          const ns = `${backend.slug}__`;
+          return (m.tools || []).some((t) => t.startsWith(ns)) ||
+            (m.prefixes || []).some((p) => p.startsWith(ns) || ns.startsWith(p));
+        }
+        return (m.tools || []).includes(q) || (m.prefixes || []).some((p) => q.startsWith(p));
+      }
+      return true;
+    });
+  const passes = (q) => prefixOk(keyPrefixes, q) && projPrefixSets.some((ps) => prefixOk(ps, q));
+  if (known) {
+    const tools = known.filter(passes).map((q) => ({ name: q, gated: ruleFor(q).length > 0 }));
+    if (!tools.length) return { level: "none", label: "filtered out", tools: [], via: viaProjects };
+    return { level: tools.some((t) => t.gated) ? "gated" : "full", label: `${tools.length} tool${tools.length === 1 ? "" : "s"}`, tools, via: viaProjects };
+  }
+  // GAP-3: tool names unknown — describe reach by prefix filters instead.
+  const filters = [...(keyPrefixes || []), ...projPrefixSets.flat().filter(Boolean)];
+  const scoped = filters.length > 0;
+  const prefixLive = !scoped || filters.some((f) => `${backend.slug}__`.startsWith(f) || f.startsWith(`${backend.slug}__`));
+  if (!prefixLive) return { level: "none", label: "filtered out", tools: [], via: viaProjects };
+  const gated = ruleFor(null).length > 0;
+  return {
+    level: gated ? "gated" : scoped ? "partial" : "full",
+    label: scoped ? "prefix-limited" : "all tools",
+    tools: [],
+    filters,
+    via: viaProjects,
+  };
+}
+
+async function renderAccessMap() {
+  const root = $("#tab-access-map");
+  const [{ keys }, { projects }, { backends }, rulesRes] = await Promise.all([
+    api("/v1/keys"),
+    api("/v1/projects").catch(() => ({ projects: [] })),
+    api("/v1/backends"),
+    api("/v1/authz/rules").catch(() => ({ rules: [] })),
+  ]);
+  const rules = Array.isArray(rulesRes?.rules) ? rulesRes.rules : [];
+  const live = (keys || []).filter((k) => !k.revokedAt);
+  const cls = { full: "on", partial: "accent", gated: "warn", none: "off", off: "off" };
+  const head = (backends || [])
+    .map((b) => `<th class="mono">${esc(b.slug)}${b.enabled ? "" : ' <span class="pill off">off</span>'}</th>`)
+    .join("");
+  const rows = live.map((k) => {
+    const cells = (backends || []).map((b) => {
+      const c = accessCell(k, b, projects || [], rules);
+      const title = [
+        c.via?.length ? `via ${c.via.map((p) => p.slug).join(", ")}` : "",
+        c.filters?.length ? `prefixes: ${c.filters.join(", ")}` : "",
+        c.tools?.length ? c.tools.map((t) => `${t.name}${t.gated ? " (approval)" : ""}`).join("\n") : "",
+      ].filter(Boolean).join("\n");
+      return `<td title="${esc(title)}"><span class="pill ${cls[c.level]}">${esc(c.label)}</span>${c.level === "gated" ? ' <span class="muted">approval</span>' : ""}</td>`;
+    }).join("");
+    return `<tr><td><div>${esc(k.name)}</div><div class="mono muted">${esc(k.prefix)}…</div></td>
+      <td>${k.scopes?.admin ? '<span class="pill vault">operator</span>' : '<span class="pill off">agent</span>'}</td>
+      ${cells}</tr>`;
+  }).join("");
+  const table = live.length && (backends || []).length
+    ? `<div class="table-wrap"><table class="data-table access-map"><thead><tr><th>Key (agent proxy)</th><th>Role</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`
+    : '<p class="audit-empty">Need at least one active key and one backend.</p>';
+  const legend = `<p class="row-actions">
+      <span class="pill on">all tools</span><span class="pill accent">prefix-limited</span>
+      <span class="pill warn">gated</span> <span class="muted">= an authz rule may require approval</span>
+      <span class="pill off">—</span> <span class="muted">= no project grants this backend</span></p>`;
+  const gaps = `<div class="once-callout"><strong>Partial picture.</strong>
+      <ul class="muted">
+        <li>Rows are API keys — there's no read endpoint for agents yet.</li>
+        <li>Per-call policy rules (deny / require approval) have no read endpoint; only legacy authz rules are shown.</li>
+        <li>Backend tool lists aren't exposed, so cells show "all tools" unless the backend has an allowlist.</li>
+      </ul></div>`;
+  root.innerHTML = surface("Access map", legend + table + gaps, `${live.length} keys × ${(backends || []).length} backends`);
+}
+
 async function refresh() {
   showErr("");
   const tab =
@@ -2257,6 +2653,9 @@ async function refresh() {
     if (tab === "approvals") await renderApprovals(true);
     else stopApprovalsPoll();
     if (tab === "audit") await renderAudit();
+    if (tab === "policy-approvals") await renderPolicyApprovals();
+    else stopPolicyApprovalsPoll();
+    if (tab === "access-map") await renderAccessMap();
   } catch (e) {
     showErr(e.message);
   }

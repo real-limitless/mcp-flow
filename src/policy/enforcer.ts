@@ -30,7 +30,10 @@ export type DenyReason =
   | "approval_timeout"
   | "cancelled"
   | "approval_busy"
-  | "dispatch_conflict";
+  | "dispatch_conflict"
+  | "unknown_tool"
+  | "unknown_backend"
+  | "no_active_project";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -99,6 +102,9 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   cancelled: "The pending call was cancelled.",
   approval_busy: "Too many calls are waiting for approval. Retry shortly.",
   dispatch_conflict: "This approved call was already dispatched.",
+  unknown_tool: "This tool is not in the backend's tool list (names must match exactly); nothing was dispatched.",
+  unknown_backend: "Unknown backend; nothing was dispatched.",
+  no_active_project: "No active project for this agent; nothing was dispatched.",
 };
 
 export class PolicyEnforcer {
@@ -125,6 +131,47 @@ export class PolicyEnforcer {
         .prepare(`SELECT count(*) AS n FROM mcpflow_pending_call WHERE workspace_id = ? AND status = 'pending'`)
         .get(workspaceId) as { n: number }
     ).n;
+  }
+
+  /**
+   * QA T2.5 F1/F2: a call refused by the gateway before policy runs (unknown backend, no active
+   * project, tool name not exactly in the backend catalog). Writes the decision + completion pair
+   * (Q6: gateway failure before dispatch = error/not_dispatched). Fails closed if audit is down.
+   */
+  refuseBeforePolicy(
+    ctx: Partial<CallContext> & { workspaceId: string; agentId: string; keyId: string },
+    reason: "unknown_tool" | "unknown_backend" | "no_active_project",
+    requested: string,
+    args: Record<string, unknown>,
+  ): CallToolResult {
+    const callId = newId("call");
+    const cols = {
+      call_id: callId,
+      workspace_id: ctx.workspaceId,
+      agent_id: ctx.agentId,
+      agent_name: ctx.agentName ?? null,
+      key_id: ctx.keyId,
+      key_prefix: ctx.keyPrefix ?? null,
+      project_id: ctx.projectId ?? null,
+      backend_slug: ctx.backendSlug ?? null,
+      // the caller's spelling, stored as data only (never used for matching)
+      tool: requested.slice(0, 512),
+      qualified_tool: null,
+      args_redacted: JSON.stringify(sanitizeForAudit(args ?? {})),
+      args_hash: argsHash(this.deps.keys.argsHmac, args ?? {}),
+    };
+    try {
+      this.tx(() => {
+        this.writeAudit({ event_type: "decision", ...cols, policy_decision: "deny", error_code: reason });
+        this.writeAudit({
+          event_type: "completion", ...cols, final_outcome: "error", result_status: "not_dispatched",
+          error_code: reason, latency_ms: 0,
+        });
+      });
+    } catch {
+      return policyDeniedResult({ reason: "audit_unavailable", tool: requested });
+    }
+    return policyDeniedResult({ reason, tool: requested });
   }
 
   async enforce(input: {
