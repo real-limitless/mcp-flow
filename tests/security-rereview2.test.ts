@@ -90,3 +90,32 @@ describe("I-3 session ids", () => {
       .run(bot, k.keyId, "p1", new Date(Date.now() + 3600e3).toISOString())).toThrow();
   });
 });
+
+describe("R2-1 / R2-2 idempotency scope", () => {
+  it("R2-1: a re-send on a rotated key with the same idempotency key replays, never runs again", async () => {
+    setup();
+    const pe = enforcer();
+    let runs = 0;
+    const d = async () => { runs++; return { content: [{ type: "text" as const, text: "ok" }] }; };
+    await pe.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "rot-1", dispatch: d });
+    const rotated = new AgentDirectory(db, keys).rotateKey(botKey, chen);
+    const r = await pe.enforce({ ctx: { ...ctx("echo"), keyId: rotated.keyId }, args: { x: 1 }, idempotencyKey: "rot-1", dispatch: d });
+    expect(runs).toBe(1);
+    expect(JSON.stringify(r)).toContain("ok");
+    // the DB enforces it too: a second row for (agent, key) on another key is refused
+    expect(() => db.prepare(`INSERT INTO mcpflow_call_outcome (call_id, workspace_id, agent_id, key_id, idempotency_key, args_hash) VALUES ('c_x',?,?,?,'rot-1','h')`)
+      .run(WS, bot, rotated.keyId)).toThrow(/UNIQUE/);
+  });
+
+  it("R2-2: same key + same args on a different tool or backend is idempotency_conflict, not a replay", async () => {
+    setup();
+    const pe = enforcer();
+    let runs = 0;
+    const d = async () => { runs++; return { content: [{ type: "text" as const, text: "ran" }] }; };
+    await pe.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "t-1", dispatch: d });
+    const otherBackend = { ...ctx("echo"), backendSlug: "gl", qualifiedTool: "gl__echo" };
+    expect(body(await pe.enforce({ ctx: otherBackend, args: { x: 1 }, idempotencyKey: "t-1", dispatch: d })).reason).toBe("idempotency_conflict");
+    expect(body(await pe.enforce({ ctx: ctx("merge"), args: { x: 1 }, idempotencyKey: "t-1", dispatch: d })).reason).toBe("idempotency_conflict");
+    expect(runs).toBe(1);
+  });
+});
