@@ -106,7 +106,9 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
   });
 
   // GAP-4: per-agent, per-project reach, plus live project sessions (ids only)
+  // Security re-review 2 (a): human admin agents only (not the env token or legacy scopes.admin keys)
   admin.get("/agents/:id/reach", async (c) => {
+    if (!c.get("humanAdmin")) return c.json({ error: "human_admin_required" }, 403);
     const ws = c.get("auth").workspaceId as string;
     const db = store.db;
     const a = db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;

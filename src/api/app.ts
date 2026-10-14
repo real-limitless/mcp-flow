@@ -69,6 +69,8 @@ import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 
 type Variables = {
   auth: AuthContext;
+  /** Set only when the admin caller is a human admin AGENT (not the env token or a legacy scopes.admin key) */
+  humanAdmin?: string;
 };
 
 function bearer(header: string | undefined): string | null {
@@ -205,6 +207,7 @@ export function createApp(
     if (agentRes.status === "ok" || agentRes.status === "forbidden") {
       if (!agentRes.agent.isAdmin || agentRes.agent.kind !== "human") return c.json({ error: "unauthorized" }, 401);
       c.set("auth", agentAuthContext(agentRes.agent, { mcpSessionId: null }));
+      c.set("humanAdmin", agentRes.agent.agentId);
       await next();
       return;
     }
