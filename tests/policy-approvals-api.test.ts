@@ -212,3 +212,59 @@ describe("policy approvals REST", () => {
     await h.done;
   });
 });
+
+describe("QA T2.5 v2", () => {
+  const refusals = () =>
+    gw.store.listAudit(ws, { limit: 100 }).filter((e) => e.action.startsWith("policy.approval.") && (e.detail as { ok?: boolean }).ok === false);
+
+  it("f1: args_mismatch / missing hash on approve and approve-similar are audited ok:false", async () => {
+    const h = await hold();
+    const wrong = "0".repeat(64);
+    expect((await api(anaTok, `/${h.id}/approve`, { args_sha256: wrong })).status).toBe(409);
+    expect((await api(anaTok, `/${h.id}/approve`, {})).status).toBe(400);
+    expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, args_sha256: wrong })).status).toBe(409);
+    const ev = refusals().map((e) => [e.action, (e.detail as { error: string }).error]);
+    expect(ev).toEqual(expect.arrayContaining([
+      ["policy.approval.approve", "args_mismatch"],
+      ["policy.approval.approve", "args_sha256_required"],
+      ["policy.approval.approve_similar", "args_mismatch"],
+    ]));
+    gw.store.policy.decide(h.id, chen, "denied");
+    await h.done;
+  });
+
+  it("P3: tampered stored args -> approve 409 args_integrity, audited, never approved or dispatched", async () => {
+    const h = await hold();
+    const good = await sha(anaTok, h.id);
+    const db = gw.store.db;
+    // tamper: swap in another hold's ciphertext (valid envelope, different args)
+    const h2 = await hold({ pr: 2 });
+    const ct = (db.prepare(`SELECT args_ciphertext FROM mcpflow_pending_call WHERE id = ?`).get(h2.id) as { args_ciphertext: Uint8Array }).args_ciphertext;
+    // simulate at-rest tampering by someone with raw DB access (bypasses the trigger)
+    db.exec("DROP TRIGGER mcpflow_pending_call_ciphertext");
+    db.prepare(`UPDATE mcpflow_pending_call SET args_ciphertext = ? WHERE id = ?`).run(ct, h.id);
+    const r = await api(anaTok, `/${h.id}/approve`, { args_sha256: good });
+    expect(r.status).toBe(409);
+    expect(((await r.json()) as { error: string }).error).toBe("args_integrity");
+    expect(refusals().some((e) => (e.detail as { error: string }).error === "args_integrity")).toBe(true);
+    expect((db.prepare(`SELECT status FROM mcpflow_pending_call WHERE id = ?`).get(h.id) as { status: string }).status).toBe("pending");
+    gw.store.policy.decide(h.id, chen, "denied");
+    gw.store.policy.decide(h2.id, chen, "denied");
+    await Promise.all([h.done, h2.done]);
+    expect(h.dispatched()).toBe(0);
+  });
+
+  it("Low: close() stops hold poll timers; no 'database is not open' after close", async () => {
+    const h = await hold();
+    expect(gw.store.policy.activeHoldTimers()).toBe(1);
+    const errors: unknown[] = [];
+    const onErr = (e: unknown) => errors.push(e);
+    process.on("uncaughtException", onErr);
+    gw.store.policy.close();
+    expect(gw.store.policy.activeHoldTimers()).toBe(0);
+    await new Promise((r) => setTimeout(r, 1500)); // > HOLD_POLL_MS
+    process.off("uncaughtException", onErr);
+    expect(errors).toEqual([]);
+    void h.done;
+  });
+});
