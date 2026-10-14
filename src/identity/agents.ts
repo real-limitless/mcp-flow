@@ -35,6 +35,8 @@ export type ResolveResult =
 
 export const KEY_TOKEN_PREFIX = "mf_";
 export const SESSION_TOKEN_PREFIX = "mf_sess_";
+/** Security I-3: session ids are not bearer tokens; a distinct prefix avoids confusing the two. */
+export const SESSION_ID_PREFIX = "sess_";
 export const LOOKUP_PREFIX_LEN = 12;
 export const DEFAULT_KEY_TTL_DAYS = 90;
 export const MAX_KEY_TTL_DAYS = 365;
@@ -286,7 +288,7 @@ export class AgentDirectory {
       throw new Error(`project not permitted for agent: ${projectId}`);
     }
     const token = SESSION_TOKEN_PREFIX + randomBytes(32).toString("base64url");
-    const sessionId = SESSION_TOKEN_PREFIX + randomBytes(12).toString("hex");
+    const sessionId = SESSION_ID_PREFIX + randomBytes(12).toString("hex");
     const now = this.clock();
     const expiresAt = new Date(Math.min(now + ttlMs, Date.parse(agent.keyExpiresAt))).toISOString();
     this.db
