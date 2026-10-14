@@ -98,7 +98,11 @@ async function boot() {
 describe("admin UI read endpoints", () => {
   it("GAP-1 GET /v1/agents: admins only, agents with projects and keys, no key material", async () => {
     const e = await boot();
-    for (const tok of [e.anaK.token, e.botK.token]) expect((await e.get(tok, "/v1/agents")).status).toBe(401);
+    for (const tok of [e.anaK.token, e.botK.token]) expect((await e.get(tok, "/v1/agents")).status).toBe(403);
+    // V3-F2: 401 only for a missing or bad token
+    expect((await fetch(`${e.gw.url}/v1/agents`)).status).toBe(401);
+    expect((await e.get("mf_" + "z".repeat(40), "/v1/agents")).status).toBe(401);
+    expect((await e.get("not-a-token", "/v1/agents")).status).toBe(401);
     for (const tok of [ADMIN, e.chenK.token]) {
       const r = await e.get(tok, "/v1/agents");
       expect(r.status).toBe(200);
@@ -123,8 +127,8 @@ describe("admin UI read endpoints", () => {
     const m = rules.find((x) => x.id === e.mergeRule)!;
     expect(m).toMatchObject({ active: true, current_version: 1, current: { effect: "require_approval", approvers: [e.ana], match_tools: ["merge"] } });
     expect(m.versions).toHaveLength(1);
-    expect((await e.get(e.botK.token, "/v1/policy/rules")).status).toBe(401);
-    expect((await e.get(e.anaK.token, "/v1/policy/rules")).status).toBe(401);
+    expect((await e.get(e.botK.token, "/v1/policy/rules")).status).toBe(403);
+    expect((await e.get(e.anaK.token, "/v1/policy/rules")).status).toBe(403);
     const mine = (await (await e.get(e.anaK.token, "/v1/policy/approvals/rules")).json()) as { rules: Array<{ id: string }> };
     expect(mine.rules.map((x) => x.id)).toEqual([e.mergeRule]);
     expect((await e.get(e.botK.token, "/v1/policy/approvals/rules")).status).toBe(403);
@@ -137,7 +141,7 @@ describe("admin UI read endpoints", () => {
     const body = (await r.json()) as { tools: Array<Record<string, unknown>> };
     expect(body.tools.map((t) => t.name)).toEqual(["shell__echo", "shell__merge", "shell__run_command", "shell__write"]);
     expect(body.tools[0]).toMatchObject({ upstream_name: "echo" });
-    expect((await e.get(e.botK.token, "/v1/backends/shell/tools")).status).toBe(401);
+    expect((await e.get(e.botK.token, "/v1/backends/shell/tools")).status).toBe(403);
     expect((await e.get(ADMIN, "/v1/backends/nope/tools")).status).toBe(404);
   });
 
@@ -160,6 +164,6 @@ describe("admin UI read endpoints", () => {
     expect(p1.sessions.length).toBeGreaterThanOrEqual(1);
     expect(Object.keys(p1.sessions[0] as object).sort()).toEqual(["created_at", "expires_at", "key_id", "session_id"]);
     expect((p1.sessions[0] as { session_id: string }).session_id).toMatch(/^sess_/); // I-3
-    expect((await e.get(e.anaK.token, `/v1/agents/${e.bot}/reach`)).status).toBe(401);
+    expect((await e.get(e.anaK.token, `/v1/agents/${e.bot}/reach`)).status).toBe(403);
   });
 });

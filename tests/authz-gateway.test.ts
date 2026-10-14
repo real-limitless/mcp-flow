@@ -221,7 +221,7 @@ describe("authz gateway hold", () => {
       },
       body: JSON.stringify({ decision: "approve" }),
     });
-    expect(agentDecide.status).toBe(401);
+    expect(agentDecide.status).toBe(403);
 
     const dec = await fetch(`${base}/v1/approvals/${pending.id}/decision`, {
       method: "POST",

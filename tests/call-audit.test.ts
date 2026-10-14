@@ -193,7 +193,7 @@ describe("T3.3 access: admin only", () => {
     const b = id.createAgent({ workspaceId: ws.id, name: "bot", owner: "chen", kind: "grokbot", projects: ["default"], createdBy: human });
     const bk = id.createKey({ agentId: b, createdBy: human });
     const get = (tok: string, q = "") => fetch(`${gw.url}/v1/audit/calls${q}`, { headers: { Authorization: `Bearer ${tok}` } });
-    expect((await get(bk.token)).status).toBe(401);
+    expect((await get(bk.token)).status).toBe(403);
     const r = await get(hk.token);
     expect(r.status).toBe(200);
     const body = (await r.json()) as { rows: unknown[] };
