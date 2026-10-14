@@ -2926,6 +2926,7 @@ async function loadReach(ids) {
   const notFound = [];
   const catalogErrors = new Set();
   let reachErr = "";
+  let needsHumanAdmin = false;
   const chunks = [];
   for (let i = 0; i < ids.length; i += REACH_BATCH_MAX) chunks.push(ids.slice(i, i + REACH_BATCH_MAX));
   let batchMissing = false;
@@ -2944,6 +2945,10 @@ async function loadReach(ids) {
         batchMissing = true;
         break;
       }
+      if (e.status === 403) {
+        needsHumanAdmin = true;
+        break;
+      }
       reachErr = e.message;
       for (const id of chunk) reach.set(id, { err: e.status === 403 ? "not permitted" : "unavailable" });
     }
@@ -2956,12 +2961,12 @@ async function loadReach(ids) {
         if (r?.catalog_error) catalogErrors.add(String(r.catalog_error));
       } catch (e) {
         if (e.status === 404) notFound.push(id);
-        else if (e.status === 403) reachErr = e.message;
+        else if (e.status === 403) needsHumanAdmin = true;
         reach.set(id, { err: e.status === 403 ? "not permitted" : e.status === 404 ? "not found" : "unavailable" });
       }
     }));
   }
-  return { reach, notFound, catalogErrors: [...catalogErrors], reachErr };
+  return { reach, notFound, catalogErrors: [...catalogErrors], reachErr, needsHumanAdmin };
 }
 
 async function renderAccessMap() {
@@ -2987,7 +2992,7 @@ async function renderAccessMap() {
       toolsBy.set(b.slug, { err: e.message, forbidden: e.status === 403 });
     }
   }));
-  const { reach, notFound, catalogErrors, reachErr } = await loadReach(agents.map((a) => a.id));
+  const { reach, notFound, catalogErrors, reachErr, needsHumanAdmin } = await loadReach(agents.map((a) => a.id));
 
   const head = bks.map((b) => {
     const t = toolsBy.get(b.slug);
@@ -3051,8 +3056,13 @@ async function renderAccessMap() {
       : '<p class="audit-empty">No policy rules.</p>';
   const limits = `<div class="once-callout"><strong>Limitation (GAP-4).</strong>
       <span class="muted">Reach is static per agent and project. "Conditional" means a rule depending on args decides at call time; the session's selected project and dynamic-tool enablement aren't modelled.</span></div>`;
+  // V4-F1: reach is human-admin only (403 human_admin_required, e.g. env admin
+  // token). Show one panel notice instead of a grid of per-cell errors.
+  const mapBody = needsHumanAdmin
+    ? '<div class="pa-banner" role="status"><span><strong>Access map needs a human admin key.</strong> This token can list agents and rules but not per-agent reach (403 human_admin_required).</span></div>'
+    : legend + warnings + table + limits;
   root.innerHTML =
-    surface("Access map", legend + warnings + table + limits, `${agents.length} agents × ${bks.length} backends`) +
+    surface("Access map", mapBody, `${agents.length} agents × ${bks.length} backends`) +
     surface("Policy rules", rulesHtml, `${rules.length} rules`);
 }
 
