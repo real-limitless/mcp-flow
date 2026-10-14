@@ -56,3 +56,47 @@ describe("M-5 refuse legacy keys on /mcp (cutover flag)", () => {
     });
   }
 });
+
+import { DatabaseSync } from "node:sqlite";
+import { applyConnectionPragmas, runMigrations } from "../src/db/migrations/index.js";
+import { AgentDirectory } from "../src/identity/agents.js";
+import { derivePolicyKeys } from "../src/identity/dev-keys.js";
+
+describe("R3-4 migration 0008 with pre-existing duplicate idempotency keys", () => {
+  it("does not fail; keeps the earliest row's key, de-keys later ones, leaves other agents alone, records a note", () => {
+    const db = new DatabaseSync(":memory:");
+    applyConnectionPragmas(db);
+    runMigrations(db, "0007_session_id_prefix");
+    const dir = new AgentDirectory(db, derivePolicyKeys("rr3"));
+    const WS = "ws_" + "c".repeat(24);
+    const chen = dir.bootstrapWorkspace(WS, { name: "chen", owner: "chen" });
+    const bot = dir.createAgent({ workspaceId: WS, name: "bot", owner: "chen", kind: "grokbot", projects: ["p1"], createdBy: chen });
+    const other = dir.createAgent({ workspaceId: WS, name: "other", owner: "chen", kind: "grokbot", projects: ["p1"], createdBy: chen });
+    const k1 = dir.createKey({ agentId: bot, createdBy: chen }).keyId;
+    const k2 = dir.createKey({ agentId: bot, createdBy: chen }).keyId;
+    dir.revokeKey(k1, chen, "rotate"); // max two live keys: revoke one to mint a third
+    const k3 = dir.createKey({ agentId: bot, createdBy: chen }).keyId;
+
+    const ko = dir.createKey({ agentId: other, createdBy: chen }).keyId;
+    const ins = db.prepare(`INSERT INTO mcpflow_call_outcome (call_id, workspace_id, agent_id, key_id, idempotency_key, args_hash, created_at) VALUES (?,?,?,?,?,'h',?)`);
+    ins.run("call_b", WS, bot, k2, "dup", "2026-10-01T00:00:02.000Z");
+    ins.run("call_a", WS, bot, k1, "dup", "2026-10-01T00:00:01.000Z"); // earliest: keeps the key
+    ins.run("call_c", WS, bot, k3, "dup", "2026-10-01T00:00:03.000Z");
+    ins.run("call_o", WS, other, ko, "dup", "2026-10-01T00:00:00.000Z"); // different agent: untouched
+    ins.run("call_u", WS, bot, k1, "uniq", "2026-10-01T00:00:04.000Z");
+    expect(() => runMigrations(db)).not.toThrow();
+    const keyOf = (id: string) => (db.prepare(`SELECT idempotency_key k FROM mcpflow_call_outcome WHERE call_id = ?`).get(id) as { k: string | null }).k;
+    expect([keyOf("call_a"), keyOf("call_b"), keyOf("call_c"), keyOf("call_o"), keyOf("call_u")]).toEqual(["dup", null, null, "dup", "uniq"]);
+    expect(JSON.parse((db.prepare(`SELECT note FROM mcpflow_migration_note WHERE migration_id='0008_idempotency_per_agent'`).get() as { note: string }).note)).toEqual({ dekeyed_duplicates: 2 });
+    // identity trigger is back, and the per-agent index is in force
+    expect(() => db.prepare(`UPDATE mcpflow_call_outcome SET idempotency_key='x' WHERE call_id='call_u'`).run()).toThrow(/immutable/);
+    expect(() => ins.run("call_d", WS, bot, k2, "dup", "2026-10-02T00:00:00.000Z")).toThrow(/UNIQUE/);
+  });
+
+  it("clean DB: no note row", () => {
+    const db = new DatabaseSync(":memory:");
+    applyConnectionPragmas(db);
+    runMigrations(db);
+    expect((db.prepare(`SELECT count(*) n FROM mcpflow_migration_note`).get() as { n: number }).n).toBe(0);
+  });
+});
