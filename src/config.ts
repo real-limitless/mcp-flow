@@ -16,6 +16,12 @@ export interface Config {
    * Never derived from request headers (Security T2.5 H-2). Unset = no absolute links are sent.
    */
   publicUrl?: string | null;
+  /**
+   * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
+   * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
+   * MCP_FLOW_REFUSE_LEGACY_MCP_KEYS=true. Default OFF; turning it on is a cutover step that needs Chen.
+   */
+  refuseLegacyMcpKeys?: boolean;
 }
 
 /** Validate MCP_FLOW_PUBLIC_URL: https origin (http only for localhost), no path/query/credentials. */
@@ -68,6 +74,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
     publicUrl:
       overrides.publicUrl !== undefined ? parsePublicUrl(overrides.publicUrl) : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL")),
+    refuseLegacyMcpKeys:
+      overrides.refuseLegacyMcpKeys ?? env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS", "false") === "true",
   };
 }
 

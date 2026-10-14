@@ -1338,6 +1338,12 @@ export function createApp(
       return c.json({ error: "agent has no permitted projects" }, 403);
     }
 
+    // Security M-5 (cutover flag, default off): legacy shared keys / legacy project sessions refused on /mcp
+    if (agentRes.status === "unknown" && cfg.refuseLegacyMcpKeys) {
+      const legacy = store.authenticateProjectSession(token) ?? store.authenticateApiKey(token);
+      if (legacy) return c.json({ error: "legacy keys are not accepted on /mcp; use an agent key" }, 403);
+      return c.json({ error: "invalid api key" }, 401);
+    }
     const sess =
       agentRes.status === "unknown" ? store.authenticateProjectSession(token) : null;
     /** Set when the gateway minted a fresh agent session id the client must echo back. */
