@@ -5,7 +5,7 @@ import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createApp } from "./api/app.js";
 import type { Config } from "./config.js";
-import { requireSecrets } from "./config.js";
+import { DEFAULT_SHUTDOWN_GRACE_MS, requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
 import { acquireGatewayLock } from "./db/gateway-lock.js";
 import { EdgeHub } from "./edge/hub.js";
@@ -35,6 +35,8 @@ export interface RunningServer {
    * as policy.shutdown), then close(): DB closed and lock released. Idempotent.
    */
   shutdown: (reason: string) => Promise<void>;
+  /** Second signal during shutdown: record in-flight calls as unknown, close DB, release lock (sync). */
+  forceStop: () => void;
   url: string;
 }
 
@@ -51,7 +53,12 @@ export function installSignalHandlers(
   let stopping = false;
   const handle = async (sig: NodeJS.Signals) => {
     if (stopping) {
-      console.error(`[mcp-flow] ${sig} again during shutdown; exiting now`);
+      console.error(`[mcp-flow] ${sig} again during shutdown; exiting now (in-flight calls recorded as unknown)`);
+      try {
+        gw.forceStop();
+      } catch (err) {
+        console.error(`[mcp-flow] forced stop failed: ${(err as Error).message}`);
+      }
       return exit(1);
     }
     stopping = true;
@@ -129,8 +136,15 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
 
   const app = createApp(store, cfg, pool, { edgeHub, edgeRouter });
 
+  // QA V51-F1: once shutdown starts, requests on still-open connections are refused cleanly (503)
+  let draining = false;
   const nodeServer = createAdaptorServer({
-    fetch: app.fetch,
+    fetch: (req: Request, ...rest: unknown[]) =>
+      draining
+        ? new Response(JSON.stringify({ error: "shutting_down", message: "The gateway is shutting down; retry after it restarts." }), {
+            status: 503, headers: { "content-type": "application/json", "retry-after": "5", connection: "close" },
+          })
+        : (app.fetch as (r: Request, ...a: unknown[]) => Response | Promise<Response>)(req, ...rest),
     hostname: cfg.host,
     port: cfg.port,
   });
@@ -227,6 +241,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   sweeper.unref();
 
   let closing: Promise<void> | undefined;
+  let shuttingDown: Promise<void> | undefined;
   const running: RunningServer = {
     store,
     pool,
@@ -257,23 +272,56 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
         nodeServer.close((err) => (err && (err as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING" ? reject(err) : resolve()));
       });
     })()),
-    shutdown: async (reason: string) => {
-      stopServing();
+    forceStop: () => {
+      draining = true;
       if (!lock || lock.owned()) {
-        try {
-          const rec = store.policy.recoverOrphans();
-          for (const [workspaceId, counts] of Object.entries(rec.byWorkspace)) {
-            store.writeAudit({ workspaceId, keyId: null, action: "policy.shutdown", detail: { ...counts, reason } });
-          }
-          if (rec.cancelled + rec.abandoned + rec.unknown > 0) {
-            console.error(`[mcp-flow] closed open holds at shutdown: ${JSON.stringify({ cancelled: rec.cancelled, abandoned: rec.abandoned, unknown: rec.unknown })}`);
-          }
-        } catch (err) {
-          console.error(`[mcp-flow] closing holds at shutdown failed: ${(err as Error).message}`);
+        for (const [workspaceId, unknown] of Object.entries(store.policy.markInflightUnknown())) {
+          store.writeAudit({ workspaceId, keyId: null, action: "policy.shutdown", detail: { forced: true, unknown } });
         }
       }
-      await running.close();
+      try {
+        store.close();
+      } catch {
+        /* already closed */
+      }
+      lock?.release();
     },
+    shutdown: (reason: string) => (shuttingDown ??= (async () => {
+      // QA V51-F1: drain instead of cut.
+      // 1) stop accepting: no new connections; new requests on open connections get 503; new calls refused
+      draining = true;
+      nodeServer.close();
+      (nodeServer as unknown as { closeIdleConnections?: () => void }).closeIdleConnections?.();
+      if (!lock || lock.owned()) {
+        try {
+          // 2) holds not yet dispatched: pending -> cancelled, approved-undispatched -> abandoned
+          const holds = store.policy.beginShutdown();
+          // 3) dispatched calls: bounded grace, then any still running -> outcome unknown + completion row
+          const graceMs = cfg.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
+          console.error(`[mcp-flow] draining ${store.policy.inflightCount()} in-flight call(s), grace ${graceMs} ms`);
+          const drain = await store.policy.drain(graceMs);
+          // 4) anything else left open (e.g. tracked outcomes) is closed out as on restart
+          const rest = store.policy.recoverOrphans();
+          const per: Record<string, { cancelled: number; abandoned: number; drained: number; unknown: number }> = {};
+          const slot = (ws: string) => (per[ws] ??= { cancelled: 0, abandoned: 0, drained: 0, unknown: 0 });
+          for (const [ws, c] of Object.entries(holds.byWorkspace)) { slot(ws).cancelled += c.cancelled; slot(ws).abandoned += c.abandoned; slot(ws).unknown += c.unknown; }
+          for (const [ws, c] of Object.entries(drain.byWorkspace)) { slot(ws).drained += c.drained; slot(ws).unknown += c.unknown; }
+          for (const [ws, c] of Object.entries(rest.byWorkspace)) { slot(ws).cancelled += c.cancelled; slot(ws).abandoned += c.abandoned; slot(ws).unknown += c.unknown; }
+          for (const [workspaceId, counts] of Object.entries(per)) {
+            store.writeAudit({ workspaceId, keyId: null, action: "policy.shutdown", detail: { ...counts, grace_ms: graceMs, reason } });
+          }
+          const tot = Object.values(per).reduce((a, c) => ({ cancelled: a.cancelled + c.cancelled, abandoned: a.abandoned + c.abandoned, drained: a.drained + c.drained, unknown: a.unknown + c.unknown }), { cancelled: 0, abandoned: 0, drained: 0, unknown: 0 });
+          console.error(`[mcp-flow] shutdown: ${JSON.stringify(tot)}`);
+          // 5) let held callers receive their 'cancelled' answer before connections are closed
+          for (let i = 0; i < 40 && store.policy.waiterCount() > 0; i++) await new Promise((r) => setTimeout(r, 25));
+          await new Promise((r) => setTimeout(r, 50));
+        } catch (err) {
+          console.error(`[mcp-flow] shutdown drain failed: ${(err as Error).message}`);
+        }
+      }
+      (nodeServer as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+      await running.close();
+    })()),
   };
   return running;
 }
