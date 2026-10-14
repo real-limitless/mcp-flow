@@ -44,6 +44,8 @@ export interface PendingNotice {
   approvers: string[];
   expiresAt: string;
   reasonToAgent: string | null;
+  /** Origin for approve links, when the request knows it */
+  approveBaseUrl?: string | null;
 }
 
 export type ApprovalNotifier = (n: PendingNotice) => Promise<void>;
@@ -107,6 +109,11 @@ export class PolicyEnforcer {
     this.clock = deps.clock ?? Date.now;
   }
 
+  /** T2.4: install the approver notifier (Web Push). */
+  setNotifier(notify: ApprovalNotifier | undefined): void {
+    this.deps.notify = notify;
+  }
+
   private iso(ms = this.clock()): string {
     return new Date(ms).toISOString();
   }
@@ -125,6 +132,7 @@ export class PolicyEnforcer {
     args: Record<string, unknown>;
     dispatch: (args: Record<string, unknown>) => Promise<CallToolResult>;
     signal?: AbortSignal;
+    approveBaseUrl?: string | null;
   }): Promise<CallToolResult> {
     const { ctx, args } = input;
     const db = this.deps.db;
@@ -228,6 +236,7 @@ export class PolicyEnforcer {
           pendingCallId: pc, workspaceId: ctx.workspaceId, agentId: ctx.agentId, agentName: ctx.agentName,
           projectId: ctx.projectId, backendSlug: ctx.backendSlug, tool: ctx.tool, argsRedacted: redacted,
           approvers: decision.approvers ?? [], expiresAt: expiresAt!, reasonToAgent: decision.rule?.reasonToAgent ?? null,
+          approveBaseUrl: input.approveBaseUrl ?? null,
         })
         .catch(() => undefined);
     }

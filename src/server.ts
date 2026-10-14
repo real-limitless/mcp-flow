@@ -1,4 +1,5 @@
 import type { Duplex } from "node:stream";
+import { createPendingCallNotifier } from "./policy/push-notify.js";
 import { createAdaptorServer } from "@hono/node-server";
 import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
@@ -114,6 +115,9 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   console.error(`  Edge:   ws://…/v1/edge/connect`);
   console.error(`  UI:     ${url}/admin/`);
   console.error(`  Health: ${url}/health`);
+
+  // T2.4: approver notification on one channel (Web Push)
+  store.policy.setNotifier(createPendingCallNotifier(store));
 
   // Timeout = deny even for holds whose waiter is gone (restart, crash): sweep overdue pending calls.
   const sweeper = setInterval(() => {

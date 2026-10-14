@@ -2053,6 +2053,8 @@ export class Store {
     endpoint: string;
     p256dh: string;
     auth: string;
+    /** T2.4: human approver agent that owns this device (agt_…); null = workspace operator device */
+    agentId?: string | null;
   }): PushSubscriptionPublic {
     const endpoint = String(input.endpoint ?? "").trim();
     const p256dh = String(input.p256dh ?? "").trim();
@@ -2068,12 +2070,13 @@ export class Store {
     if (existing) {
       this.db
         .prepare(
-          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?,
+          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?, agent_id = ?,
            p256dh = ?, auth = ?, created_at = ? WHERE id = ?`,
         )
         .run(
           input.workspaceId,
           input.operatorKeyId,
+          input.agentId ?? null,
           p256dh,
           auth,
           now,
@@ -2093,19 +2096,49 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO push_subscriptions (
-          id, workspace_id, operator_key_id, endpoint, p256dh, auth, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, workspace_id, operator_key_id, agent_id, endpoint, p256dh, auth, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.workspaceId,
         input.operatorKeyId,
+        input.agentId ?? null,
         endpoint,
         p256dh,
         auth,
         now,
       );
     return { id, endpointHint: endpointHint(endpoint), createdAt: now };
+  }
+
+  /** T2.4: subscriptions owned by the given human approver agents. */
+  listApproverPushSubscriptions(
+    workspaceId: string,
+    agentIds: string[],
+  ): Array<{ id: string; agentId: string; endpoint: string; p256dh: string; auth: string }> {
+    if (!agentIds.length) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT id, agent_id, endpoint, p256dh, auth FROM push_subscriptions
+          WHERE workspace_id = ? AND agent_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(workspaceId, JSON.stringify(agentIds)) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      agentId: String(r.agent_id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+    }));
+  }
+
+  /** Link an existing subscription to a human approver agent (trigger rejects non-humans). */
+  setPushSubscriptionAgent(workspaceId: string, id: string, agentId: string | null): boolean {
+    const res = this.db
+      .prepare(`UPDATE push_subscriptions SET agent_id = ? WHERE id = ? AND workspace_id = ?`)
+      .run(agentId, id, workspaceId);
+    return Number(res.changes) > 0;
   }
 
   deletePushSubscription(workspaceId: string, id: string): boolean {

@@ -312,6 +312,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       },
       args: callArgs,
       signal: deps.abortSignal,
+      approveBaseUrl: deps.approveBaseUrl ?? null,
       dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
     });
   };

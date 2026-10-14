@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { MIGRATION_0001 } from "./0001_agents_keys.js";
 import { MIGRATION_0002 } from "./0002_call_audit.js";
 import { MIGRATION_0003 } from "./0003_policy_pending.js";
+import { MIGRATION_0004 } from "./0004_push_approver.js";
 
 export interface Migration {
   id: string;
@@ -13,6 +14,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0001_agents_keys", sql: MIGRATION_0001 },
   { id: "0002_call_audit", sql: MIGRATION_0002 },
   { id: "0003_policy_pending", sql: MIGRATION_0003 },
+  { id: "0004_push_approver", sql: MIGRATION_0004 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
