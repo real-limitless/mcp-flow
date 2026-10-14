@@ -1,5 +1,4 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { policyDeniedResult } from "../policy/enforcer.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -291,19 +290,33 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     callArgs: Record<string, unknown>,
     project: Project | null,
   ): Promise<CallToolResult> => {
+    const who = {
+      workspaceId: ctx.workspaceId, agentId: ctx.agentId!, agentName: ctx.agentName ?? "",
+      keyId: ctx.keyId!, keyPrefix: ctx.keyPrefix ?? null, projectId: project?.slug,
+    };
+    if (!project) return store.policy.refuseBeforePolicy(who, "no_active_project", qualified, callArgs);
+    // QA T2.5 F1: resolve the caller's string EXACTLY against the live catalog. No trimming, case
+    // folding or Unicode normalization: anything not byte-identical to a listed tool is refused.
     const parsed = parseNamespacedTool(qualified);
     const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
-    if (!parsed || !backend || !project) {
-      return policyDeniedResult({
-        reason: "no_matching_rule",
-        tool: qualified,
-        message: !project
-          ? "No active project for this agent."
-          : `Unknown backend for ${qualified}; nothing was dispatched.`,
-      });
+    if (!parsed || !backend || backend.slug !== parsed.slug) {
+      return store.policy.refuseBeforePolicy(who, "unknown_backend", qualified, callArgs);
     }
-    const info = upstream.resolveCallContext(ctx.workspaceId, qualified);
-    const routed = namespaceTool(backend.slug, parsed.tool);
+    let catalog: NamespacedTool[];
+    try {
+      catalog = await upstream.listNamespacedTools(ctx.workspaceId);
+    } catch {
+      catalog = [];
+    }
+    const entry = catalog.find((t) => t.name === qualified);
+    const canonical = entry ? parseNamespacedTool(entry.name) : null;
+    if (!entry || !canonical || canonical.slug !== backend.slug || namespaceTool(canonical.slug, canonical.tool) !== qualified) {
+      return store.policy.refuseBeforePolicy({ ...who, backendSlug: backend.slug }, "unknown_tool", qualified, callArgs);
+    }
+    // from here on only the catalog's own name is used for policy and dispatch
+    const routed = entry.name;
+    const info = upstream.resolveCallContext(ctx.workspaceId, routed);
+    parsed.tool = canonical.tool;
     return store.policy.enforce({
       ctx: {
         workspaceId: ctx.workspaceId,
@@ -324,6 +337,19 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       approveBaseUrl: deps.approveBaseUrl ?? null,
       dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
     });
+  };
+
+  /** QA T2.5 F2: every refused upstream-call attempt by an agent also lands in mcpflow_call_audit. */
+  const agentEarlyRefuse = (qualified: string, callArgs: Record<string, unknown>, project: Project | null) => {
+    if (!ctx.agentId || !ctx.keyId || qualified.startsWith("mf_")) return;
+    const parsed = parseNamespacedTool(qualified);
+    const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
+    store.policy.refuseBeforePolicy(
+      { workspaceId: ctx.workspaceId, agentId: ctx.agentId, agentName: ctx.agentName ?? "", keyId: ctx.keyId,
+        keyPrefix: ctx.keyPrefix ?? null, projectId: project?.slug, backendSlug: backend?.slug },
+      !project ? "no_active_project" : backend && backend.slug === parsed?.slug ? "unknown_tool" : "unknown_backend",
+      qualified, callArgs,
+    );
   };
 
   const activeProject = (): Project | null =>
@@ -473,6 +499,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (!toolAllowedByScopes(name, ctx.scopes)) {
       const result = textResult("Tool not allowed by API key scopes", true);
       await auditCall(result, { denied: true, reason: "scope" });
+      agentEarlyRefuse(name, args, project);
       return result;
     }
 
@@ -482,6 +509,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         true,
       );
       await auditCall(result, { denied: true, reason: "project" });
+      agentEarlyRefuse(name, args, project);
       return result;
     }
 
@@ -973,6 +1001,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (name === "mf_call_tool") {
+      // no trimming: the exact-name resolver decides (QA T2.5 F1)
       if (typeof args.name !== "string") {
         const result = textResult("name required", true);
         await auditCall(result, { meta: true });
@@ -997,6 +1026,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (!toolAllowedByScopes(innerName, ctx.scopes)) {
+        agentEarlyRefuse(innerName, innerArgs, project);
         const result = textResult(
           "Tool not allowed by API key scopes",
           true,
@@ -1005,6 +1035,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (!toolAllowedByProject(innerName, project)) {
+        agentEarlyRefuse(innerName, innerArgs, project);
         const result = textResult(
           `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
           true,
@@ -1157,6 +1188,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         "Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools.",
         true,
       );
+      agentEarlyRefuse(name, args, project);
       await auditCall(result, { denied: true, reason: "dynamic_working_set" });
       return result;
     }
