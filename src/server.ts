@@ -7,6 +7,7 @@ import { createApp } from "./api/app.js";
 import type { Config } from "./config.js";
 import { requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
+import { acquireGatewayLock } from "./db/gateway-lock.js";
 import { EdgeHub } from "./edge/hub.js";
 import { encodeMsg, newMsgId } from "./edge/protocol.js";
 import { EdgeRouter } from "./edge/router.js";
@@ -33,7 +34,15 @@ export interface RunningServer {
 
 export async function startServer(cfg: Config): Promise<RunningServer> {
   requireSecrets(cfg);
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
+  // R2-4: exactly one gateway process per DB (recovery below assumes it); a second one refuses to start
+  const lock = acquireGatewayLock(cfg.dbPath);
+  let store: Store;
+  try {
+    store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
+  } catch (err) {
+    lock?.release();
+    throw err;
+  }
 
   // Security T2.5 R-1: close out holds orphaned by the previous process (single gateway per DB).
   try {
@@ -169,7 +178,10 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
       // Process-group kill is bounded below the time left after the drain.
       await pool.closeAll();
       store.close();
-      if (!drained) await Promise.race([drain, wait(left())]);
+      lock?.release();
+      await new Promise<void>((resolve, reject) => {
+        nodeServer.close((err) => (err ? reject(err) : resolve()));
+      });
     },
   };
 }
