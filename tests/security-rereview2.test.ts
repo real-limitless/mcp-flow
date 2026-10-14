@@ -18,7 +18,7 @@ import { adminErrorText } from "../src/mcp/admin-tools.js";
 import { loadConfig } from "../src/config.js";
 import { startServer } from "../src/server.js";
 import { acquireGatewayLock } from "../src/db/gateway-lock.js";
-import { writeFileSync, existsSync, utimesSync } from "node:fs";
+import { writeFileSync, existsSync, utimesSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 
 const WS = "ws_" + "e".repeat(24);
@@ -205,5 +205,43 @@ describe("R2-4 single gateway per DB", () => {
     expect(JSON.parse(readFileSync(lockPath, "utf8")).pid).toBe(process.pid);
     l2.release();
     expect(acquireGatewayLock(":memory:")).toBeNull();
+  });
+});
+
+describe("R2-6 retention covers outcome and pending-call tables", () => {
+  it("archives (0600, no ciphertext) and deletes resolved rows older than `before`; keeps open/recent/referenced ones", async () => {
+    setup();
+    const old = Date.parse("2025-06-10T00:00:00.000Z");
+    const peOld = enforcer({ clock: () => old });
+    await peOld.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "old-1", dispatch: async () => ({ content: [{ type: "text" as const, text: "r" }] }) });
+    void peOld.enforce({ ctx: ctx("merge"), args: { pr: 1 }, idempotencyKey: "old-2", asyncApproval: true, dispatch: async () => ({ content: [] }) });
+    await waitFor(() => notices.length === 1);
+    peOld.close();
+    enforcer().recoverOrphans(); // old hold -> cancelled
+    const pe = enforcer();
+    void pe.enforce({ ctx: ctx("merge"), args: { pr: 2 }, dispatch: async () => ({ content: [] }) }); // recent, open
+    await waitFor(() => notices.length === 2);
+    const count = (t: string) => (db.prepare(`SELECT count(*) n FROM ${t}`).get() as { n: number }).n;
+    expect(count("mcpflow_call_outcome")).toBe(2);
+    expect(count("mcpflow_pending_call")).toBe(2);
+    const archive = mkdtempSync(join(tmpdir(), "rr2-arch-")); tmp.push(archive);
+    const base = { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: chen, now: new Date("2026-10-14T00:00:00Z") };
+    const dry = runAuditRetention(db, base);
+    expect(dry.state).toEqual({ call_outcome: 2, pending_call: 1 });
+    expect(count("mcpflow_pending_call")).toBe(2);
+    const out = runAuditRetention(db, { ...base, execute: true });
+    expect(out.state).toEqual({ call_outcome: 2, pending_call: 1 });
+    expect(count("mcpflow_call_outcome")).toBe(0);
+    expect(count("mcpflow_pending_call")).toBe(1); // the recent open hold stays
+    const pf = out.files.find((f) => f.includes("pending_call_"))!;
+    const of = out.files.find((f) => f.includes("call_outcome_"))!;
+    expect(readFileSync(pf, "utf8")).not.toMatch(/ciphertext/);
+    expect(readFileSync(of, "utf8")).not.toMatch(/ciphertext/);
+    expect(statSync(pf).mode & 0o777).toBe(0o600);
+    // no-delete triggers are back
+    expect(() => db.prepare(`DELETE FROM mcpflow_pending_call`).run()).toThrow(/never deleted/);
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'mcpflow_call_outcome_no_delete'`).get()).toBeTruthy();
+    expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_audit WHERE lifecycle_action='state_retention'`).get() as { n: number }).n).toBe(1);
+    pe.close();
   });
 });

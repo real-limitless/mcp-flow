@@ -402,10 +402,10 @@ export class PolicyEnforcer {
           try {
             db.prepare(
               `INSERT INTO mcpflow_call_outcome (call_id, pending_call_id, workspace_id, agent_id, key_id, idempotency_key,
-                 qualified_tool, args_hash, async)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                 qualified_tool, args_hash, async, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             ).run(callId, pendingId, ctx.workspaceId, ctx.agentId, ctx.keyId, input.idempotencyKey ?? null,
-              ctx.qualifiedTool, hash, input.asyncApproval && pendingId ? 1 : 0);
+              ctx.qualifiedTool, hash, input.asyncApproval && pendingId ? 1 : 0, this.iso());
           } catch (err) {
             if (/UNIQUE/.test((err as Error).message)) out.duplicateKey = true;
             throw err;

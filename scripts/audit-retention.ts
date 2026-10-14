@@ -3,6 +3,8 @@
  *   tsx scripts/audit-retention.ts --workspace ws_… --before 2025-10-01T00:00:00.000Z --archive ./archive --actor agt_… [--execute] [--min-months 12]
  * DRY RUN by default: prints what would be archived/deleted. Nothing is written or deleted without --execute.
  * `before` must be ≥ --min-months (default 12) in the past. Lifecycle rows are never deleted.
+ * Also (R2-6) archives + deletes resolved call_outcome / pending_call rows older than `before`
+ * (never open holds, approved-undispatched holds, or holds a grant still references; no ciphertext archived).
  * Requires MCP_FLOW_DB_PATH. Take a DB backup first; Chen approval before any non-dev run.
  */
 import { DatabaseSync } from "node:sqlite";
