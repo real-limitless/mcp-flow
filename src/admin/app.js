@@ -2492,10 +2492,15 @@ function paFullArgsHtml(det) {
   const hashNote = det.hashCheck === "differs"
     ? ' <span class="pill deny">local hash differs</span>'
     : det.hashCheck === "match" ? ' <span class="pill on">hash verified</span>' : "";
+  // No crypto.subtle (plain HTTP, not localhost): approval stays allowed — the
+  // server requires args_sha256 and returns 409 on mismatch — but say so.
+  const noLocal = det.hashCheck === "unavailable"
+    ? '<p class="pa-warn pa-nolocal">Local hash check unavailable on plain HTTP — the server still verifies the hash.</p>'
+    : "";
   const blocked = det.ok ? "" : `<p class="pa-warn"><strong>${esc(det.msg)}</strong></p>`;
   return `${notice}
     <div class="pa-full ${det.ok ? "" : "pa-blocked"}"><span class="field-label">Exact payload that will run</span>${blocked}${hidden}
-      <div class="pa-hash"><span class="muted">args_sha256</span> <span class="mono">${esc(c.args_sha256)}</span>${hashNote}</div>
+      <div class="pa-hash"><span class="muted">args_sha256</span> <span class="mono">${esc(c.args_sha256)}</span>${hashNote}</div>${noLocal}
       <details class="pa-full-details" open><summary>Full args (approvers only)</summary>
         <pre class="audit-payload">${esc(prettyJson(c.args_full))}</pre></details>
     </div>`;
