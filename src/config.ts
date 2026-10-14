@@ -22,6 +22,21 @@ export interface Config {
    * MCP_FLOW_REFUSE_LEGACY_MCP_KEYS=true. Default OFF; turning it on is a cutover step that needs Chen.
    */
   refuseLegacyMcpKeys?: boolean;
+  /**
+   * QA V51-F1: on SIGTERM/SIGINT, how long dispatched calls may finish before they are recorded as
+   * outcome unknown. MCP_FLOW_SHUTDOWN_GRACE_MS, default 8000, clamped to 0..9000 so the whole
+   * shutdown fits inside Docker's default 10 s stop timeout.
+   */
+  shutdownGraceMs?: number;
+}
+
+export const DEFAULT_SHUTDOWN_GRACE_MS = 8000;
+export const MAX_SHUTDOWN_GRACE_MS = 9000;
+
+export function parseShutdownGraceMs(raw: string | number | undefined | null): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_SHUTDOWN_GRACE_MS;
+  return Math.min(MAX_SHUTDOWN_GRACE_MS, Math.max(0, Math.floor(n)));
 }
 
 /** R4-3: `true` (any case) or `1` is on; anything else (unset, false, 0, yes, typos) is off. */
@@ -82,6 +97,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       overrides.publicUrl !== undefined ? parsePublicUrl(overrides.publicUrl) : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL")),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
+    shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
   };
 }
 
