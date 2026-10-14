@@ -86,6 +86,7 @@ export const PROGRESS_INTERVAL_MS = 15_000;
 export const RESULT_TTL_MS = 24 * 3600_000;
 export const MAX_RESULT_BYTES = 256 * 1024;
 export const MAX_RESULT_TOTAL_BYTES = 64 * 1024 * 1024;
+export interface RecoveryCounts { cancelled: number; abandoned: number; unknown: number }
 export const MAX_RESULT_AGENT_BYTES = 8 * 1024 * 1024;
 
 /** Durable call state from the completion pair (Q6 mapping). */
@@ -615,7 +616,7 @@ export class PolicyEnforcer {
       const bytes = Buffer.byteLength(json, "utf8");
       this.deps.db
         .prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = ?, result_bytes = ?, result_truncated = ? WHERE call_id = ? AND result_purged_at IS NULL AND result_read_at IS NULL`)
-        .run(encryptArgs(this.deps.keys.argsEnc, JSON.parse(json)), bytes, truncated, callId);
+        .run(encryptArgs(this.deps.keys.resultEnc, JSON.parse(json)), bytes, truncated, callId);
       this.purgeResults();
     } catch (err) {
       console.error(`[mcp-flow] storing result for ${callId} failed: ${redactSecrets((err as Error).message)}`);
@@ -659,7 +660,12 @@ export class PolicyEnforcer {
   private readResult(callId: string, consume: boolean): CallToolResult | null {
     const row = this.deps.db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE call_id = ?`).get(callId) as { result_ciphertext: Uint8Array | null } | undefined;
     if (!row?.result_ciphertext) return null;
-    const res = decryptArgs(this.deps.keys.argsEnc, row.result_ciphertext) as unknown as CallToolResult;
+    let res: CallToolResult;
+    try {
+      res = decryptArgs(this.deps.keys.resultEnc, row.result_ciphertext) as unknown as CallToolResult;
+    } catch {
+      return null; // undecryptable (e.g. written under the pre-R2-7 key): fall back to the outcome summary
+    }
     if (consume) {
       this.deps.db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_read_at = ? WHERE call_id = ?`).run(this.iso(), callId);
     }
@@ -687,10 +693,15 @@ export class PolicyEnforcer {
    *  - dispatched, no completion    -> unknown (do not retry blindly)
    *  - tracked sync calls left open -> executed/not_executed from the audit trail, else unknown
    */
-  recoverOrphans(): { cancelled: number; abandoned: number; unknown: number } {
+  recoverOrphans(): RecoveryCounts & { byWorkspace: Record<string, RecoveryCounts> } {
     const db = this.deps.db;
     const now = this.iso();
-    const out = { cancelled: 0, abandoned: 0, unknown: 0 };
+    const out = { cancelled: 0, abandoned: 0, unknown: 0, byWorkspace: {} as Record<string, RecoveryCounts> };
+    // R2-7: per-workspace totals, so each workspace's policy.recover audit row carries only its own counts
+    const bump = (ws: string, k: keyof RecoveryCounts) => {
+      out[k]++;
+      (out.byWorkspace[ws] ??= { cancelled: 0, abandoned: 0, unknown: 0 })[k]++;
+    };
     const hasCompletion = (callId: string) =>
       Boolean(db.prepare(`SELECT 1 FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(callId));
     const complete = (callId: string, finalOutcome: string, resultStatus: string, errorCode: string, pc: string | null) => {
@@ -707,31 +718,31 @@ export class PolicyEnforcer {
       db.prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
         .run(state, finalOutcome, resultStatus, now, callId);
     this.tx(() => {
-      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'pending'`).all() as Array<{ id: string; call_id: string }>) {
+      for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'pending'`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
         db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = 'gateway restarted' WHERE id = ? AND status = 'pending'`).run(now, r.id);
         complete(r.call_id, "cancelled", "not_dispatched", "gateway_restart", r.id);
         setOutcome(r.call_id, "not_executed", "cancelled", "not_dispatched");
-        out.cancelled++;
+        bump(r.workspace_id, "cancelled");
       }
-      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL`).all() as Array<{ id: string; call_id: string }>) {
+      for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
         db.prepare(`UPDATE mcpflow_pending_call SET abandoned_at = ? WHERE id = ?`).run(now, r.id);
         complete(r.call_id, "error", "not_dispatched", "gateway_restart", r.id);
         setOutcome(r.call_id, "not_executed", "error", "not_dispatched");
-        out.abandoned++;
+        bump(r.workspace_id, "abandoned");
       }
-      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NOT NULL`).all() as Array<{ id: string; call_id: string }>) {
+      for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NOT NULL`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
         if (hasCompletion(r.call_id)) continue;
         complete(r.call_id, "error", "error", "outcome_unknown", r.id);
         setOutcome(r.call_id, "unknown", "error", "error");
-        out.unknown++;
+        bump(r.workspace_id, "unknown");
       }
-      for (const r of db.prepare(`SELECT call_id FROM mcpflow_call_outcome WHERE state = 'pending'`).all() as Array<{ call_id: string }>) {
+      for (const r of db.prepare(`SELECT call_id, workspace_id FROM mcpflow_call_outcome WHERE state = 'pending'`).all() as Array<{ call_id: string; workspace_id: string }>) {
         const c = db.prepare(`SELECT final_outcome, result_status FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(r.call_id) as { final_outcome: string; result_status: string } | undefined;
         if (c) setOutcome(r.call_id, outcomeState(c.final_outcome, c.result_status), c.final_outcome, c.result_status);
         else {
           complete(r.call_id, "error", "error", "outcome_unknown", null);
           setOutcome(r.call_id, "unknown", "error", "error");
-          out.unknown++;
+          bump(r.workspace_id, "unknown");
         }
       }
       // purge every resolved hold's encrypted args (now allowed for abandoned holds too)

@@ -10,6 +10,8 @@ export interface PolicyKeys {
   pepper: Buffer;
   /** AES-256-GCM key for pending_call.args_ciphertext */
   argsEnc: Buffer;
+  /** AES-256-GCM key for call_outcome.result_ciphertext (Security R2-7: separate HKDF label from args) */
+  resultEnc: Buffer;
   /** HMAC key for args_hash (audit + pending) */
   argsHmac: Buffer;
   /** Stored in args_key_ref / hash scheme ids; never the key itself */
@@ -27,6 +29,7 @@ export function derivePolicyKeys(raw: string): PolicyKeys {
   return {
     pepper: derive(raw, "key-pepper"),
     argsEnc: derive(raw, "args-enc"),
+    resultEnc: derive(raw, "result-enc"),
     argsHmac: derive(raw, "args-hmac"),
     keyRef: DEV_KEY_REF,
   };
