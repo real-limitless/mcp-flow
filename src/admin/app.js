@@ -2706,7 +2706,8 @@ async function renderPolicyApprovals() {
 }
 
 // ---------------------------------------------------------------------------
-// T3.4 Access map — which agent can reach which tool.
+// T3.4 Access map — which agent can reach which tool. (Legacy key-based
+// fallback below; used only when GET /v1/agents is unavailable.)
 //
 // Built ONLY from existing admin read endpoints:
 //   GET /v1/keys        (key scopes: projects, toolPrefixAllowlist, admin)
@@ -2780,7 +2781,123 @@ function accessCell(key, backend, projects, rules) {
   };
 }
 
+// ---- v2: agents × backends from the GAP-1..4 read endpoints (admin bearer) ----
+//   GET /v1/agents               (GAP-1) rows = real agents
+//   GET /v1/policy/rules         (GAP-2) new-engine rules (allow / require_approval / deny)
+//   GET /v1/backends/:id/tools   (GAP-3) discovered tools per backend (column totals)
+//   GET /v1/agents/:id/reach     per-tool effect computed server-side by the policy engine
+// GAP-4 limitation (still): reach is static per agent+project. It ignores args
+// ("conditional" = an arg-dependent rule decides) and doesn't model which
+// project a live session has selected or dynamicTools enablement.
+// Falls back to the key-based map below if /v1/agents isn't available.
+const REACH_EFFECTS = [
+  ["allow", "on", "allow"],
+  ["require_approval", "warn", "approval"],
+  ["conditional", "accent", "conditional"],
+  ["denied", "deny", "denied"],
+];
+
+function ruleVersionSummary(v) {
+  if (!v || typeof v !== "object") return `<pre class="audit-payload">${esc(prettyJson(v))}</pre>`;
+  const list = (x) => (Array.isArray(x) && x.length ? x.map((i) => `<span class="mono">${esc(typeof i === "string" ? i : JSON.stringify(i))}</span>`).join(", ") : '<span class="muted">any</span>');
+  return `agents ${list(v.match_agents)} · projects ${list(v.match_projects)} · backends ${list(v.match_backends)} · tools ${list(v.match_tools)}${Array.isArray(v.match_args) && v.match_args.length ? ` · args <span class="mono">${esc(JSON.stringify(v.match_args))}</span>` : ""}`;
+}
+
 async function renderAccessMap() {
+  let agentsRes;
+  try {
+    agentsRes = await api("/v1/agents");
+  } catch {
+    return renderAccessMapLegacy();
+  }
+  const root = $("#tab-access-map");
+  const agents = (Array.isArray(agentsRes?.agents) ? agentsRes.agents : []).filter((a) => !a?.revoked_at);
+  const [{ backends }, rulesRes] = await Promise.all([
+    api("/v1/backends"),
+    api("/v1/policy/rules").catch((e) => ({ rules: [], err: e.message })),
+  ]);
+  const bks = Array.isArray(backends) ? backends : [];
+  const toolsBy = new Map();
+  await Promise.all(bks.map(async (b) => {
+    try {
+      const r = await api(`/v1/backends/${encodeURIComponent(b.id)}/tools`);
+      toolsBy.set(b.slug, { tools: Array.isArray(r?.tools) ? r.tools : [] });
+    } catch (e) {
+      toolsBy.set(b.slug, { err: e.message });
+    }
+  }));
+  const reach = new Map();
+  await Promise.all(agents.map(async (a) => {
+    try {
+      reach.set(a.id, await api(`/v1/agents/${encodeURIComponent(a.id)}/reach`));
+    } catch (e) {
+      reach.set(a.id, { err: e.message });
+    }
+  }));
+
+  const head = bks.map((b) => {
+    const t = toolsBy.get(b.slug);
+    const n = t?.err ? '<span class="pill deny">tools unavailable</span>' : `<span class="muted">${t.tools.length} tools</span>`;
+    return `<th><span class="mono">${esc(b.slug)}</span>${b.enabled ? "" : ' <span class="pill off">off</span>'}<div>${n}</div></th>`;
+  }).join("");
+
+  const rows = agents.map((a) => {
+    const r = reach.get(a.id) || {};
+    // Union across the agent's projects; the strictest effect per tool is not
+    // assumed — each project's effect is listed in the tooltip.
+    const perTool = new Map(); // name -> [{project, effect}]
+    for (const p of Array.isArray(r.projects) ? r.projects : []) {
+      for (const t of Array.isArray(p?.tools) ? p.tools : []) {
+        if (!perTool.has(t.name)) perTool.set(t.name, []);
+        perTool.get(t.name).push({ project: p.project, effect: t.effect });
+      }
+    }
+    const projs = (Array.isArray(r.projects) ? r.projects : []).map((p) => p.project);
+    const cells = bks.map((b) => {
+      if (r.err) return `<td><span class="pill deny">${esc(r.err)}</span></td>`;
+      const ns = `${b.slug}__`;
+      const names = [...perTool.keys()].filter((n) => n.startsWith(ns));
+      if (!names.length) return '<td><span class="pill off">—</span></td>';
+      const counts = {};
+      for (const n of names) for (const { effect } of perTool.get(n)) counts[effect] = (counts[effect] || 0) + 1;
+      const pills = REACH_EFFECTS.filter(([k]) => counts[k]).map(([k, cls, label]) => `<span class="pill ${cls}">${counts[k]} ${label}</span>`).join(" ");
+      const other = Object.keys(counts).filter((k) => !REACH_EFFECTS.some(([e]) => e === k));
+      const title = names.sort().map((n) => `${n}: ${perTool.get(n).map((x) => `${x.effect} (${x.project})`).join(", ")}`).join("\n");
+      return `<td title="${esc(title)}"><div class="am-pills">${pills}${other.map((k) => ` <span class="pill off">${esc(k)}</span>`).join("")}</div></td>`;
+    }).join("");
+    return `<tr><td><div>${esc(a.name)}</div><div class="mono muted">${esc(a.id)}</div>
+        <div class="muted">${projs.length ? projs.map((p) => `<span class="pill accent">${esc(p)}</span>`).join(" ") : "no projects"}${r.catalog_error ? ` <span class="pill deny">${esc(r.catalog_error)}</span>` : ""}</div></td>
+      <td><span class="pill ${a.kind === "human" ? "vault" : "off"}">${esc(a.kind ?? "?")}</span>${a.is_admin ? ' <span class="pill vault">admin</span>' : ""}</td>
+      <td><span class="pill ${a.status === "active" ? "on" : "off"}">${esc(a.status ?? "?")}</span></td>
+      ${cells}</tr>`;
+  }).join("");
+
+  const table = agents.length && bks.length
+    ? `<div class="table-wrap"><table class="data-table access-map"><thead><tr><th>Agent</th><th>Kind</th><th>Status</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`
+    : '<p class="audit-empty">Need at least one agent and one backend.</p>';
+  const legend = `<p class="row-actions">${REACH_EFFECTS.map(([, cls, label]) => `<span class="pill ${cls}">${label}</span>`).join("")}
+      <span class="muted">counts = tool × project pairs · hover a cell for each tool · — = no reachable tools</span></p>`;
+
+  const rules = Array.isArray(rulesRes?.rules) ? rulesRes.rules : [];
+  const effCls = { allow: "on", require_approval: "warn", deny: "deny" };
+  const rulesHtml = rulesRes?.err
+    ? `<p class="pa-warn">Policy rules unavailable: ${esc(rulesRes.err)}</p>`
+    : rules.length
+      ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>Rule</th><th>Effect</th><th>Priority</th><th>Scope</th></tr></thead><tbody>${rules.map((rl) => {
+          const v = rl?.current || {};
+          return `<tr><td><div class="mono">${esc(rl?.id)}</div><div class="muted">${esc(v.description ?? "")} v${esc(rl?.current_version ?? v.version ?? "?")}</div>${rl?.active === false ? ' <span class="pill off">inactive</span>' : ""}</td>
+            <td><span class="pill ${effCls[v.effect] || "off"}">${esc(v.effect ?? "?")}</span></td>
+            <td>${esc(v.priority ?? "")}</td><td>${ruleVersionSummary(v)}</td></tr>`;
+        }).join("")}</tbody></table></div>`
+      : '<p class="audit-empty">No policy rules.</p>';
+  const limits = `<div class="once-callout"><strong>Limitation (GAP-4).</strong>
+      <span class="muted">Reach is static per agent and project. "Conditional" means a rule depending on args decides at call time; the session's selected project and dynamic-tool enablement aren't modelled.</span></div>`;
+  root.innerHTML =
+    surface("Access map", legend + table + limits, `${agents.length} agents × ${bks.length} backends`) +
+    surface("Policy rules", rulesHtml, `${rules.length} rules`);
+}
+
+async function renderAccessMapLegacy() {
   const root = $("#tab-access-map");
   const [{ keys }, { projects }, { backends }, rulesRes] = await Promise.all([
     api("/v1/keys"),
