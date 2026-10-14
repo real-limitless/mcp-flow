@@ -17,6 +17,9 @@ import { runAuditRetention } from "../src/audit/call-audit.js";
 import { adminErrorText } from "../src/mcp/admin-tools.js";
 import { loadConfig } from "../src/config.js";
 import { startServer } from "../src/server.js";
+import { acquireGatewayLock } from "../src/db/gateway-lock.js";
+import { writeFileSync, existsSync, utimesSync } from "node:fs";
+import { hostname } from "node:os";
 
 const WS = "ws_" + "e".repeat(24);
 const keys = derivePolicyKeys("rereview-dev-key");
@@ -160,5 +163,47 @@ describe("R2-7 key separation and per-workspace recovery audit", () => {
     pe.close();
     const rec = enforcer().recoverOrphans();
     expect(rec.byWorkspace).toEqual({ [WS]: { cancelled: 1, abandoned: 0, unknown: 0 } });
+  });
+});
+
+describe("R2-4 single gateway per DB", () => {
+  const cfgFor = async (dbPath: string) => {
+    const cfg = loadConfig({ dbPath, masterKeyRaw: Buffer.alloc(32, 9).toString("base64"), adminToken: "t-admin-lock", host: "127.0.0.1", allowPrivateUrls: true, workspaceName: "default" });
+    const probe = createServer();
+    await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+    cfg.port = (probe.address() as { port: number }).port;
+    await new Promise<void>((r) => probe.close(() => r()));
+    return cfg;
+  };
+
+  it("a second gateway on the same DB refuses to start; after close a new one starts", async () => {
+    const d = mkdtempSync(join(tmpdir(), "lock-")); tmp.push(d);
+    const dbPath = join(d, "t.db");
+    const a = await startServer(await cfgFor(dbPath));
+    expect(existsSync(`${dbPath}.gateway.lock`)).toBe(true);
+    await expect(startServer(await cfgFor(dbPath))).rejects.toThrow(/another mcp-flow gateway process holds/);
+    // the refused start did not run recovery against A's DB: A still serves
+    expect(a.store.db.prepare("SELECT 1 AS x").get()).toEqual({ x: 1 });
+    await a.close();
+    expect(existsSync(`${dbPath}.gateway.lock`)).toBe(false);
+    const b = await startServer(await cfgFor(dbPath));
+    await b.close();
+  });
+
+  it("takes over a stale lock (dead pid on this host, or no heartbeat for 30 s); refuses a live one", () => {
+    const d = mkdtempSync(join(tmpdir(), "lock-")); tmp.push(d);
+    const dbPath = join(d, "t.db");
+    const lockPath = `${dbPath}.gateway.lock`;
+    writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname(), started: "x" }));
+    const l1 = acquireGatewayLock(dbPath)!;
+    l1.release();
+    writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: "elsewhere", started: "x" }));
+    expect(() => acquireGatewayLock(dbPath)).toThrow(/another mcp-flow gateway/);
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+    const l2 = acquireGatewayLock(dbPath)!;
+    expect(JSON.parse(readFileSync(lockPath, "utf8")).pid).toBe(process.pid);
+    l2.release();
+    expect(acquireGatewayLock(":memory:")).toBeNull();
   });
 });
