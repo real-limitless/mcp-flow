@@ -12,6 +12,7 @@ import { Hono, type Context } from "hono";
 import type { Store } from "../db/store.js";
 import type { ResolvedAgent } from "../identity/agents.js";
 import { clientIp } from "../http/client-ip.js";
+import { listPolicyRules } from "./read-endpoints.js";
 import { canonicalJson } from "../policy/crypto.js";
 import { validateArgMatchers, type ArgMatcher } from "../policy/matchers.js";
 
@@ -148,6 +149,12 @@ export function policyApprovalsRouter(store: Store) {
       return "corrupt" as const;
     }
   };
+
+  // Rules where the caller is a listed approver (any version), so approvers can see why calls reach them
+  r.get("/rules", (c) => {
+    const me = c.get("approver");
+    return c.json({ rules: listPolicyRules(store, me.workspaceId, me.agentId) });
+  });
 
   r.get("/:id", (c) => {
     const id = c.req.param("id");

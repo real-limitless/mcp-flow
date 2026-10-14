@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { bodyLimit } from "hono/body-limit";
+import { registerReadEndpoints } from "./read-endpoints.js";
 import { policyApprovalsRouter } from "./policy-approvals.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import {
@@ -788,6 +789,8 @@ export function createApp(
       );
     }
   });
+
+  registerReadEndpoints(admin, store, pool);
 
   // T3.3: per-call audit log (mcpflow_call_audit), admin only
   admin.get("/audit/calls", (c) => {
