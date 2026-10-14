@@ -32,10 +32,25 @@ export interface RunningServer {
   url: string;
 }
 
-export async function startServer(cfg: Config): Promise<RunningServer> {
+export interface StartOptions {
+  /** R3-2: called when the DB lock is lost while serving. Default: log, stop accepting, exit(70). */
+  onLockLost?: (reason: string) => void;
+  lockHeartbeatMs?: number;
+}
+
+export async function startServer(cfg: Config, opts: StartOptions = {}): Promise<RunningServer> {
   requireSecrets(cfg);
   // R2-4: exactly one gateway process per DB (recovery below assumes it); a second one refuses to start
-  const lock = acquireGatewayLock(cfg.dbPath);
+  let stopServing: () => void = () => {};
+  const lock = await acquireGatewayLock(cfg.dbPath, {
+    heartbeatMs: opts.lockHeartbeatMs,
+    onLost: (reason) => {
+      console.error(`[mcp-flow] FATAL: lost the gateway DB lock (${reason}); another gateway owns this database. Stopping.`);
+      stopServing();
+      if (opts.onLockLost) opts.onLockLost(reason);
+      else process.exit(70);
+    },
+  });
   let store: Store;
   try {
     store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
@@ -72,6 +87,15 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   });
 
   const wss = new WebSocketServer({ noServer: true });
+  // R3-2 self-fencing: stop accepting new HTTP/WS work immediately when the lock is lost
+  stopServing = () => {
+    try {
+      nodeServer.close();
+      (nodeServer as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();
+    } catch {
+      /* already closed */
+    }
+  };
 
   nodeServer.on(
     "upgrade",
