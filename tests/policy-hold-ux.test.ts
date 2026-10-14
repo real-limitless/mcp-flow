@@ -143,8 +143,10 @@ describe("hold UX extras", () => {
     }
     expect(text(out)).toBe("ran:merge");
     expect(e.up.seen).toEqual([{ name: "merge", args: { pr: 2 } }]);
-    const again = await e.client.callTool({ name: "mf_pending_result", arguments: { pending_call_id: pc } });
-    expect(again.isError).toBe(true);
+    // second read: the result body is gone, but the durable outcome still says it ran (R-1)
+    const again = JSON.parse(text(await e.client.callTool({ name: "mf_pending_result", arguments: { pending_call_id: pc } })));
+    expect(again).toMatchObject({ code: "call_outcome", state: "executed", result_available: false });
+    expect(JSON.parse(text(await e.client.callTool({ name: "mf_pending_status", arguments: { pending_call_id: pc } })))).toMatchObject({ status: "approved", outcome: "executed", dispatched: true });
     // via mf_call_tool flag, then denied
     const r2 = await e.client.callTool({ name: "mf_call_tool", arguments: { name: "shell__merge", arguments: { pr: 3 }, async_approval: true } });
     const pc2 = JSON.parse(text(r2)).pending_call_id as string;

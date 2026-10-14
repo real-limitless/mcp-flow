@@ -291,7 +291,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     qualified: string,
     callArgs: Record<string, unknown>,
     project: Project | null,
-    hold: { asyncApproval?: boolean; onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void } = {},
+    hold: { asyncApproval?: boolean; idempotencyKey?: string | null; onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void } = {},
   ): Promise<CallToolResult> => {
     const who = {
       workspaceId: ctx.workspaceId, agentId: ctx.agentId!, agentName: ctx.agentName ?? "",
@@ -339,6 +339,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       signal: deps.abortSignal,
       approveBaseUrl: deps.approveBaseUrl ?? null,
       asyncApproval: hold.asyncApproval,
+      idempotencyKey: hold.idempotencyKey,
       onProgress: hold.onProgress,
       dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
     });
@@ -423,8 +424,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     // opt-in approval_pending early return (_meta["mcp-flow/approval"] = "async")
     const meta = (request.params._meta ?? {}) as Record<string, unknown>;
     const progressToken = meta.progressToken as string | number | undefined;
-    const holdOpts = (asyncApproval: boolean) => ({
+    const holdOpts = (asyncApproval: boolean, idempotencyKey?: unknown) => ({
       asyncApproval,
+      idempotencyKey: idempotencyKey == null ? undefined : String(idempotencyKey),
       onProgress:
         progressToken === undefined
           ? undefined
@@ -1048,7 +1050,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (ctx.agentId) {
-        const result = await agentPolicyCall(innerName, innerArgs, project, holdOpts(wantsAsync || args.async_approval === true));
+        const result = await agentPolicyCall(innerName, innerArgs, project, holdOpts(wantsAsync || args.async_approval === true, args.idempotency_key ?? meta["mcp-flow/idempotency_key"]));
         auditCall(result, { meta: true });
         return result;
       }
@@ -1172,7 +1174,10 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       const pid = String(args.pending_call_id ?? "");
       const st = ctx.agentId ? store.policy.pendingStatus(pid, ctx.agentId) : null;
       const result = st
-        ? textResult({ pending_call_id: pid, ...st })
+        ? textResult({
+            pending_call_id: pid, status: st.status, expires_at: st.expiresAt, outcome: st.outcome,
+            final_outcome: st.finalOutcome, result_status: st.resultStatus, dispatched: st.dispatched,
+          })
         : textResult("pending call not found for this agent", true);
       auditCall(result, { meta: true });
       return result;
@@ -1210,7 +1215,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (ctx.agentId) {
-      const result = await agentPolicyCall(name, args, project, holdOpts(wantsAsync));
+      const result = await agentPolicyCall(name, args, project, holdOpts(wantsAsync, meta["mcp-flow/idempotency_key"]));
       auditCall(result);
       return result;
     }

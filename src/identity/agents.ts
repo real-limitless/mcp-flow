@@ -52,7 +52,16 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export class AgentDirectory {
-  private cache = new Map<string, { at: number; version: number; result: ResolveResult }>();
+  private cache = new Map<string, { at: number; version: number; epoch: number; result: ResolveResult }>();
+
+  /** DB-side identity epoch (0006): changes made by any process invalidate every cache (Security T2.5 L-5). */
+  private dbEpoch(): number {
+    try {
+      return Number((this.db.prepare(`SELECT epoch FROM mcpflow_identity_epoch WHERE id = 1`).get() as { epoch: number } | undefined)?.epoch ?? -1);
+    } catch {
+      return -1;
+    }
+  }
   private version = 0;
 
   constructor(
@@ -238,10 +247,11 @@ export class AgentDirectory {
     const hash = this.hashSecret(token);
 
     const cached = this.cache.get(hash);
-    if (cached && cached.version === this.version && this.clock() - cached.at < RESOLVE_CACHE_MS) {
+    if (cached && cached.version === this.version && this.clock() - cached.at < RESOLVE_CACHE_MS && cached.epoch === this.dbEpoch() && cached.epoch !== -1) {
       return this.recheckExpiry(cached.result);
     }
 
+    const epochAtLookup = this.dbEpoch(); // read before the rows, so a concurrent change is never cached
     const known = this.db.prepare(`SELECT secret_hash FROM mcpflow_api_key WHERE prefix = ?`).get(prefix) as
       | { secret_hash: string }
       | undefined;
@@ -253,11 +263,11 @@ export class AgentDirectory {
       .prepare(`SELECT * FROM mcpflow_resolvable_key WHERE prefix = ?`)
       .get(prefix) as Record<string, unknown> | undefined;
     if (!row) {
-      this.cache.set(hash, { at: this.clock(), version: this.version, result: { status: "unauthorized" } });
+      this.cache.set(hash, { at: this.clock(), version: this.version, epoch: epochAtLookup, result: { status: "unauthorized" } });
       return { status: "unauthorized" };
     }
     const result = this.recheckExpiry(this.toResult(row));
-    this.cache.set(hash, { at: this.clock(), version: this.version, result });
+    this.cache.set(hash, { at: this.clock(), version: this.version, epoch: epochAtLookup, result });
     if (result.status === "ok") {
       this.db
         .prepare(`UPDATE mcpflow_api_key SET last_used_at = ?, last_used_ip = ? WHERE id = ?`)

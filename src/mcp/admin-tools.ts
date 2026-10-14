@@ -1,6 +1,7 @@
 /**
  * Operator MCP tools (mf_admin_*) — only for keys with scopes.admin.
  */
+import { redactSecrets } from "../audit/sanitize.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { installFromGallery } from "../catalog/install.js";
@@ -1030,6 +1031,14 @@ export async function handleAdminTool(
         return textResult(`Unknown admin tool: ${name}`, true);
     }
   } catch (err) {
-    return textResult(err instanceof Error ? err.message : String(err), true);
+    // Security T2.5 L-9: redact and cap; full detail stays in the server log
+    return textResult(adminErrorText(name, err), true);
   }
+}
+
+/** Security T2.5 L-9: redacted, capped error text for admin tools; full (redacted) detail is logged. */
+export function adminErrorText(tool: string, err: unknown): string {
+  const msg = redactSecrets(err instanceof Error ? err.message : String(err));
+  console.error(`[mcp-flow] admin tool ${tool} failed: ${msg}`);
+  return msg.length > 300 ? `${msg.slice(0, 300)}…` : msg;
 }

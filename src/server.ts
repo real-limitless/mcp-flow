@@ -34,6 +34,19 @@ export interface RunningServer {
 export async function startServer(cfg: Config): Promise<RunningServer> {
   requireSecrets(cfg);
   const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
+
+  // Security T2.5 R-1: close out holds orphaned by the previous process (single gateway per DB).
+  try {
+    const rec = store.policy.recoverOrphans();
+    if (rec.cancelled + rec.abandoned + rec.unknown > 0) {
+      console.error(`[mcp-flow] recovered orphaned holds: ${JSON.stringify(rec)}`);
+      for (const ws of store.db.prepare(`SELECT DISTINCT workspace_id FROM mcpflow_call_outcome UNION SELECT DISTINCT workspace_id FROM mcpflow_pending_call`).all() as Array<{ workspace_id: string }>) {
+        store.writeAudit({ workspaceId: ws.workspace_id, keyId: null, action: "policy.recover", detail: rec });
+      }
+    }
+  } catch (err) {
+    console.error(`[mcp-flow] orphan recovery failed: ${(err as Error).message}`);
+  }
   store.ensureWorkspace(cfg.workspaceName);
   const pool = new UpstreamPool(store);
   const edgeHub = new EdgeHub(store);
@@ -123,6 +136,7 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   const sweeper = setInterval(() => {
     try {
       store.policy.sweepExpired();
+      store.policy.purgeResults();
     } catch (err) {
       console.error(`[mcp-flow] pending sweeper: ${(err as Error).message}`);
     }

@@ -33,7 +33,9 @@ export type DenyReason =
   | "dispatch_conflict"
   | "unknown_tool"
   | "unknown_backend"
-  | "no_active_project";
+  | "no_active_project"
+  | "invalid_idempotency_key"
+  | "idempotency_conflict";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -62,6 +64,10 @@ export interface EnforcerDeps {
   clock?: () => number;
   /** Max concurrent holds per workspace */
   maxHolds?: number;
+  /** R-2 caps for stored results */
+  maxResultBytes?: number;
+  maxResultTotalBytes?: number;
+  resultTtlMs?: number;
   /** Progress notification interval while holding (default 15 s) */
   progressIntervalMs?: number;
   /** Max concurrent holds per agent (Security T2.5 L-1), default 8 */
@@ -75,7 +81,54 @@ type Resolution = "approved" | "denied" | "expired" | "cancelled";
 const newId = (p: string) => `${p}_${randomBytes(12).toString("hex")}`;
 export const HOLD_POLL_MS = 250;
 export const PROGRESS_INTERVAL_MS = 15_000;
-export const ASYNC_RESULT_TTL_MS = 15 * 60_000;
+export const RESULT_TTL_MS = 24 * 3600_000;
+export const MAX_RESULT_BYTES = 256 * 1024;
+export const MAX_RESULT_TOTAL_BYTES = 64 * 1024 * 1024;
+
+/** Durable call state from the completion pair (Q6 mapping). */
+export function outcomeState(finalOutcome: string, resultStatus: string): "executed" | "not_executed" | "unknown" {
+  if (resultStatus === "not_dispatched") return "not_executed";
+  if (finalOutcome === "executed") return "executed";
+  return "unknown"; // gateway failure after dispatch: the backend may or may not have acted
+}
+
+const OUTCOME_MESSAGES: Record<string, string> = {
+  executed: "The call ran. Its result was already read, purged, or lost in a restart. Do not re-send it.",
+  not_executed: "The call never reached the backend. It is safe to send again (as a new call).",
+  unknown: "The call was dispatched but its outcome is unknown. Do NOT retry blindly; check the backend first.",
+};
+
+export function outcomeSummary(row: Record<string, unknown>, replayed: boolean): CallToolResult {
+  return {
+    isError: row.state !== "executed",
+    content: [{ type: "text", text: JSON.stringify({
+      code: "call_outcome",
+      state: row.state,
+      final_outcome: row.final_outcome ?? null,
+      result_status: row.result_status ?? null,
+      pending_call_id: row.pending_call_id ?? null,
+      call_id: row.call_id,
+      result_available: false,
+      ...(replayed ? { replayed: true } : {}),
+      message: OUTCOME_MESSAGES[String(row.state)] ?? "",
+    }) }],
+  };
+}
+
+type EnforceInput = {
+  ctx: CallContext;
+  args: Record<string, unknown>;
+  dispatch: (args: Record<string, unknown>) => Promise<CallToolResult>;
+  signal?: AbortSignal;
+  approveBaseUrl?: string | null;
+  /** Opt-in: return approval_pending immediately instead of holding the request open */
+  asyncApproval?: boolean;
+  /** Called every progressIntervalMs while the request is held */
+  onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void;
+  /** Client-chosen key: a re-send with the same key never runs again (R-1) */
+  idempotencyKey?: string | null;
+};
+type CoreOut = { callId: string; tracked: boolean; earlyReturn: boolean; duplicateKey?: boolean };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function policyDeniedResult(p: {
@@ -113,6 +166,8 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   unknown_tool: "This tool is not in the backend's tool list (names must match exactly); nothing was dispatched.",
   unknown_backend: "Unknown backend; nothing was dispatched.",
   no_active_project: "No active project for this agent; nothing was dispatched.",
+  invalid_idempotency_key: "Idempotency keys are 1-128 printable ASCII characters; nothing was dispatched.",
+  idempotency_conflict: "This idempotency key was already used with different arguments; nothing was dispatched.",
 };
 
 export class PolicyEnforcer {
@@ -225,20 +280,39 @@ export class PolicyEnforcer {
     return { args, sha256: createHash("sha256").update(canonicalJson(args), "utf8").digest("hex") };
   }
 
-  async enforce(input: {
-    ctx: CallContext;
-    args: Record<string, unknown>;
-    dispatch: (args: Record<string, unknown>) => Promise<CallToolResult>;
-    signal?: AbortSignal;
-    approveBaseUrl?: string | null;
-    /** Opt-in: return approval_pending immediately instead of holding the request open */
-    asyncApproval?: boolean;
-    /** Called every progressIntervalMs while the request is held */
-    onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void;
-  }): Promise<CallToolResult> {
+  /**
+   * Public entry. Idempotency (Security T2.5 R-1): a call carrying an idempotency key is recorded
+   * durably; a re-send with the same key never runs again — it replays the stored outcome
+   * (or approval_pending), and a re-send with different args is refused.
+   */
+  async enforce(input: EnforceInput): Promise<CallToolResult> {
+    const key = input.idempotencyKey;
+    if (key !== undefined && key !== null) {
+      if (typeof key !== "string" || !/^[\x21-\x7e]{1,128}$/.test(key)) {
+        return policyDeniedResult({ reason: "invalid_idempotency_key", tool: input.ctx.qualifiedTool });
+      }
+      const prior = this.outcomeByKey(input.ctx.agentId, input.ctx.keyId, key);
+      if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args));
+    }
+    const out: CoreOut = { callId: newId("call"), tracked: false, earlyReturn: false };
+    let res: CallToolResult;
+    try {
+      res = await this.enforceCore(input, out);
+    } catch (err) {
+      if (out.duplicateKey && key) {
+        const prior = this.outcomeByKey(input.ctx.agentId, input.ctx.keyId, key);
+        if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args));
+      }
+      throw err;
+    }
+    if (out.tracked && !out.earlyReturn) this.storeResult(out.callId, res);
+    return res;
+  }
+
+  private async enforceCore(input: EnforceInput, out: CoreOut): Promise<CallToolResult> {
     const { ctx, args } = input;
     const db = this.deps.db;
-    const callId = newId("call");
+    const callId = out.callId;
     const started = this.clock();
     const redacted = sanitizeForAudit(args ?? {});
     const hash = argsHash(this.deps.keys.argsHmac, args);
@@ -300,8 +374,24 @@ export class PolicyEnforcer {
             this.iso(created), expiresAt,
           );
         }
+        // R-1: durable outcome row for idempotent calls and for async holds
+        if (input.idempotencyKey || (input.asyncApproval && pendingId)) {
+          out.tracked = true;
+          try {
+            db.prepare(
+              `INSERT INTO mcpflow_call_outcome (call_id, pending_call_id, workspace_id, agent_id, key_id, idempotency_key,
+                 qualified_tool, args_hash, async)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            ).run(callId, pendingId, ctx.workspaceId, ctx.agentId, ctx.keyId, input.idempotencyKey ?? null,
+              ctx.qualifiedTool, hash, input.asyncApproval && pendingId ? 1 : 0);
+          } catch (err) {
+            if (/UNIQUE/.test((err as Error).message)) out.duplicateKey = true;
+            throw err;
+          }
+        }
       });
     } catch {
+      if (out.duplicateKey) throw new Error("duplicate idempotency key");
       // nothing committed: no audit row, no hold, no dispatch
       return policyDeniedResult({ reason: "audit_unavailable", tool: ctx.qualifiedTool });
     }
@@ -410,10 +500,12 @@ export class PolicyEnforcer {
     // approval_pending early return (opt-in): the hold continues in the background; the agent
     // polls mf_pending_status and collects the outcome once with mf_pending_result.
     if (input.asyncApproval) {
+      out.earlyReturn = true;
       this.inflightAsync.add(pc);
       void rest(undefined)
-        .then((res) => this.storeAsyncResult(pc, ctx, res))
-        .catch(() => this.storeAsyncResult(pc, ctx, policyDeniedResult({ reason: "policy_unavailable", tool: ctx.qualifiedTool, pendingCallId: pc })));
+        .then((res) => this.storeResult(callId, res))
+        .catch(() => this.storeResult(callId, policyDeniedResult({ reason: "policy_unavailable", tool: ctx.qualifiedTool, pendingCallId: pc })))
+        .finally(() => this.inflightAsync.delete(pc));
       return {
         isError: true,
         content: [{
@@ -423,7 +515,7 @@ export class PolicyEnforcer {
             pending_call_id: pc,
             tool: ctx.qualifiedTool,
             expires_at: expiresAt,
-            message: "This call needs human approval. Poll mf_pending_status; when it is resolved, call mf_pending_result once to get the outcome. Do not re-send the call.",
+            message: "This call needs human approval. Poll mf_pending_status; when it is resolved, call mf_pending_result once to get the outcome. Do not re-send the call (a re-send with the same idempotency key replays this outcome).",
           }),
         }],
       };
@@ -446,35 +538,170 @@ export class PolicyEnforcer {
     }
   }
 
-  // ---------- approval_pending results (in memory only; never persisted) ----------
-
-  private readonly asyncResults = new Map<string, { agentId: string; keyId: string; result: CallToolResult; at: number }>();
+  // ---------- durable outcomes (Security T2.5 R-1/R-2; migration 0006) ----------
 
   private readonly inflightAsync = new Set<string>();
 
-  private storeAsyncResult(pc: string, ctx: CallContext, result: CallToolResult): void {
-    this.inflightAsync.delete(pc);
-    const now = this.clock();
-    for (const [k, v] of this.asyncResults) if (now - v.at > ASYNC_RESULT_TTL_MS) this.asyncResults.delete(k);
-    this.asyncResults.set(pc, { agentId: ctx.agentId, keyId: ctx.keyId, result, at: now });
+  private outcomeByKey(agentId: string, keyId: string, key: string): Record<string, unknown> | undefined {
+    return this.deps.db
+      .prepare(`SELECT * FROM mcpflow_call_outcome WHERE agent_id = ? AND key_id = ? AND idempotency_key = ?`)
+      .get(agentId, keyId, key) as Record<string, unknown> | undefined;
+  }
+
+  /** A re-send with a known idempotency key: never runs again. */
+  private replay(prior: Record<string, unknown>, hash: string): CallToolResult {
+    if (String(prior.args_hash) !== hash) {
+      return policyDeniedResult({
+        reason: "idempotency_conflict",
+        tool: String(prior.qualified_tool ?? ""),
+        message: "This idempotency key was already used with different arguments; nothing was dispatched.",
+      });
+    }
+    if (prior.state === "pending") {
+      return {
+        isError: true,
+        content: [{ type: "text", text: JSON.stringify({
+          code: prior.pending_call_id ? "approval_pending" : "in_progress",
+          pending_call_id: prior.pending_call_id ?? null,
+          call_id: prior.call_id,
+          replayed: true,
+          message: "This call is already in progress; it was not sent again.",
+        }) }],
+      };
+    }
+    const stored = this.readResult(String(prior.call_id), false);
+    if (stored) return stored;
+    return outcomeSummary(prior, true);
+  }
+
+  /** Persist a (capped, encrypted) result for a tracked call; enforce global caps. */
+  private storeResult(callId: string, result: CallToolResult): void {
+    try {
+      let json = JSON.stringify(result);
+      let truncated = 0;
+      const max = this.deps.maxResultBytes ?? MAX_RESULT_BYTES;
+      if (Buffer.byteLength(json, "utf8") > max) {
+        truncated = 1;
+        const text = (result.content ?? [])
+          .map((c) => (c && typeof c === "object" && (c as { type?: string }).type === "text" ? String((c as { text?: unknown }).text ?? "") : `[${(c as { type?: string })?.type ?? "content"} omitted]`))
+          .join("\n");
+        json = JSON.stringify({
+          isError: Boolean(result.isError),
+          content: [{ type: "text", text: `${text.slice(0, Math.floor(max / 2))}\n…[result truncated by mcp-flow]` }],
+        });
+      }
+      const bytes = Buffer.byteLength(json, "utf8");
+      this.deps.db
+        .prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = ?, result_bytes = ?, result_truncated = ? WHERE call_id = ? AND result_purged_at IS NULL AND result_read_at IS NULL`)
+        .run(encryptArgs(this.deps.keys.argsEnc, JSON.parse(json)), bytes, truncated, callId);
+      this.purgeResults();
+    } catch (err) {
+      console.error(`[mcp-flow] storing result for ${callId} failed: ${redactSecrets((err as Error).message)}`);
+    }
+  }
+
+  /** R-2: drop stored results past their TTL, then oldest-first until under the total byte cap. */
+  purgeResults(): number {
+    const db = this.deps.db;
+    const now = this.iso();
+    const cutoff = this.iso(this.clock() - (this.deps.resultTtlMs ?? RESULT_TTL_MS));
+    let n = Number(db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ?
+                                  WHERE result_ciphertext IS NOT NULL AND completed_at < ?`).run(now, cutoff).changes);
+    const cap = this.deps.maxResultTotalBytes ?? MAX_RESULT_TOTAL_BYTES;
+    let total = Number((db.prepare(`SELECT coalesce(sum(result_bytes),0) AS t FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL`).get() as { t: number }).t);
+    while (total > cap) {
+      const oldest = db.prepare(`SELECT call_id, result_bytes FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL ORDER BY completed_at, call_id LIMIT 1`).get() as { call_id: string; result_bytes: number } | undefined;
+      if (!oldest) break;
+      db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ? WHERE call_id = ?`).run(now, oldest.call_id);
+      total -= Number(oldest.result_bytes ?? 0);
+      n++;
+    }
+    return n;
+  }
+
+  private readResult(callId: string, consume: boolean): CallToolResult | null {
+    const row = this.deps.db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE call_id = ?`).get(callId) as { result_ciphertext: Uint8Array | null } | undefined;
+    if (!row?.result_ciphertext) return null;
+    const res = decryptArgs(this.deps.keys.argsEnc, row.result_ciphertext) as unknown as CallToolResult;
+    if (consume) {
+      this.deps.db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_read_at = ? WHERE call_id = ?`).run(this.iso(), callId);
+    }
+    return res;
   }
 
   /**
-   * One-time read of an approval_pending call's outcome, only by the same agent + key.
-   * "not_ready" while the hold is open; "gone" if unknown, already read, expired from memory, or not yours.
+   * mf_pending_result: one-time read of an approval_pending call's result, same agent + key only.
+   * After the read (or purge/restart) the durable outcome still says executed / not_executed / unknown.
    */
   takeAsyncResult(pc: string, agentId: string, keyId: string): CallToolResult | "not_ready" | "gone" {
-    const v = this.asyncResults.get(pc);
-    if (v && v.agentId === agentId && v.keyId === keyId) {
-      this.asyncResults.delete(pc);
-      return v.result;
-    }
-    if (v) return "gone";
     const row = this.deps.db
-      .prepare(`SELECT status, dispatched_at FROM mcpflow_pending_call WHERE id = ? AND agent_id = ? AND key_id = ?`)
-      .get(pc, agentId, keyId) as { status: string; dispatched_at: string | null } | undefined;
-    if (row && this.inflightAsync.has(pc)) return "not_ready";
-    return "gone";
+      .prepare(`SELECT * FROM mcpflow_call_outcome WHERE pending_call_id = ? AND agent_id = ? AND key_id = ?`)
+      .get(pc, agentId, keyId) as Record<string, unknown> | undefined;
+    if (!row) return "gone";
+    if (row.state === "pending" || this.inflightAsync.has(pc)) return "not_ready";
+    return this.readResult(String(row.call_id), true) ?? outcomeSummary(row, false);
+  }
+
+  /**
+   * Startup recovery (single gateway process per DB): every hold whose waiter died with the previous
+   * process is closed out so "ran" and "never ran" stay distinguishable, and encrypted args are purged.
+   *  - pending                      -> cancelled ('gateway restarted'), not_executed
+   *  - approved, never dispatched   -> abandoned (can never dispatch), not_executed
+   *  - dispatched, no completion    -> unknown (do not retry blindly)
+   *  - tracked sync calls left open -> executed/not_executed from the audit trail, else unknown
+   */
+  recoverOrphans(): { cancelled: number; abandoned: number; unknown: number } {
+    const db = this.deps.db;
+    const now = this.iso();
+    const out = { cancelled: 0, abandoned: 0, unknown: 0 };
+    const hasCompletion = (callId: string) =>
+      Boolean(db.prepare(`SELECT 1 FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(callId));
+    const complete = (callId: string, finalOutcome: string, resultStatus: string, errorCode: string, pc: string | null) => {
+      if (hasCompletion(callId)) return;
+      db.prepare(
+        `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id,
+           backend_slug, tool, qualified_tool, placement, device_id, args_hash, pending_call_id, final_outcome, result_status, error_code)
+         SELECT 'completion', call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id,
+           backend_slug, tool, qualified_tool, placement, device_id, args_hash, ?, ?, ?, ?
+           FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'decision'`,
+      ).run(pc, finalOutcome, resultStatus, errorCode, callId);
+    };
+    const setOutcome = (callId: string, state: string, finalOutcome: string, resultStatus: string) =>
+      db.prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
+        .run(state, finalOutcome, resultStatus, now, callId);
+    this.tx(() => {
+      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'pending'`).all() as Array<{ id: string; call_id: string }>) {
+        db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = 'gateway restarted' WHERE id = ? AND status = 'pending'`).run(now, r.id);
+        complete(r.call_id, "cancelled", "not_dispatched", "gateway_restart", r.id);
+        setOutcome(r.call_id, "not_executed", "cancelled", "not_dispatched");
+        out.cancelled++;
+      }
+      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL`).all() as Array<{ id: string; call_id: string }>) {
+        db.prepare(`UPDATE mcpflow_pending_call SET abandoned_at = ? WHERE id = ?`).run(now, r.id);
+        complete(r.call_id, "error", "not_dispatched", "gateway_restart", r.id);
+        setOutcome(r.call_id, "not_executed", "error", "not_dispatched");
+        out.abandoned++;
+      }
+      for (const r of db.prepare(`SELECT id, call_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NOT NULL`).all() as Array<{ id: string; call_id: string }>) {
+        if (hasCompletion(r.call_id)) continue;
+        complete(r.call_id, "error", "error", "outcome_unknown", r.id);
+        setOutcome(r.call_id, "unknown", "error", "error");
+        out.unknown++;
+      }
+      for (const r of db.prepare(`SELECT call_id FROM mcpflow_call_outcome WHERE state = 'pending'`).all() as Array<{ call_id: string }>) {
+        const c = db.prepare(`SELECT final_outcome, result_status FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(r.call_id) as { final_outcome: string; result_status: string } | undefined;
+        if (c) setOutcome(r.call_id, outcomeState(c.final_outcome, c.result_status), c.final_outcome, c.result_status);
+        else {
+          complete(r.call_id, "error", "error", "outcome_unknown", null);
+          setOutcome(r.call_id, "unknown", "error", "error");
+          out.unknown++;
+        }
+      }
+      // purge every resolved hold's encrypted args (now allowed for abandoned holds too)
+      db.prepare(`UPDATE mcpflow_pending_call SET args_ciphertext = NULL WHERE args_ciphertext IS NOT NULL AND status <> 'pending'
+                   AND NOT (status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL)`).run();
+    });
+    return out;
   }
 
   // ---------- approver actions (API for T2.3) ----------
@@ -569,12 +796,29 @@ export class PolicyEnforcer {
     return out;
   }
 
-  /** mf_pending_status: status only (0003 Q7 default; no stored result). */
-  pendingStatus(pendingCallId: string, agentId: string): { status: string; expiresAt: string } | null {
-    const r = this.deps.db
-      .prepare(`SELECT status, expires_at FROM mcpflow_pending_call WHERE id = ? AND agent_id = ?`)
-      .get(pendingCallId, agentId) as { status: string; expires_at: string } | undefined;
-    return r ? { status: r.status, expiresAt: r.expires_at } : null;
+  /**
+   * mf_pending_status: approval status plus the durable outcome (Security T2.5 R-1 supersedes the
+   * 0003 "status only" default): outcome = pending | executed | not_executed | unknown. No result body.
+   */
+  pendingStatus(pendingCallId: string, agentId: string): {
+    status: string; expiresAt: string; outcome: string; finalOutcome: string | null; resultStatus: string | null; dispatched: boolean;
+  } | null {
+    const db = this.deps.db;
+    const r = db
+      .prepare(`SELECT call_id, status, expires_at, dispatched_at, abandoned_at FROM mcpflow_pending_call WHERE id = ? AND agent_id = ?`)
+      .get(pendingCallId, agentId) as { call_id: string; status: string; expires_at: string; dispatched_at: string | null; abandoned_at: string | null } | undefined;
+    if (!r) return null;
+    const o = db.prepare(`SELECT state, final_outcome, result_status FROM mcpflow_call_outcome WHERE call_id = ?`).get(r.call_id) as
+      | { state: string; final_outcome: string | null; result_status: string | null } | undefined;
+    const c = o ?? (() => {
+      const a = db.prepare(`SELECT final_outcome, result_status FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(r.call_id) as
+        | { final_outcome: string; result_status: string } | undefined;
+      return a ? { state: outcomeState(a.final_outcome, a.result_status), final_outcome: a.final_outcome, result_status: a.result_status } : null;
+    })();
+    return {
+      status: r.status, expiresAt: r.expires_at, outcome: c?.state ?? "pending",
+      finalOutcome: c?.final_outcome ?? null, resultStatus: c?.result_status ?? null, dispatched: r.dispatched_at != null,
+    };
   }
 
   // ---------- internals ----------
@@ -637,7 +881,7 @@ export class PolicyEnforcer {
   private claimDispatch(pc: string): boolean {
     try {
       const r = this.deps.db
-        .prepare(`UPDATE mcpflow_pending_call SET dispatched_at = ? WHERE id = ? AND status = 'approved' AND dispatched_at IS NULL`)
+        .prepare(`UPDATE mcpflow_pending_call SET dispatched_at = ? WHERE id = ? AND status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL`)
         .run(this.iso(), pc);
       return Number(r.changes) === 1;
     } catch {
@@ -752,10 +996,21 @@ export class PolicyEnforcer {
 
   /** Completion rows are best effort after the fact: the decision row already committed. */
   private completion(callId: string, ctx: CallContext, cols: Record<string, unknown>): void {
+    // exactly one completion per call: recovery may already have closed this call out
+    if (this.deps.db.prepare(`SELECT 1 FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(callId)) return;
     try {
       this.writeAudit({ event_type: "completion", call_id: callId, ...this.ctxCols(ctx), ...cols });
     } catch (err) {
       console.error(`[mcp-flow] completion audit write failed for ${callId}: ${(err as Error).message}`);
+    }
+    try {
+      const fo = String(cols.final_outcome);
+      const rs = String(cols.result_status);
+      this.deps.db
+        .prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
+        .run(outcomeState(fo, rs), fo, rs, this.iso(), callId);
+    } catch (err) {
+      console.error(`[mcp-flow] outcome write failed for ${callId}: ${(err as Error).message}`);
     }
   }
 

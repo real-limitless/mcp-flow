@@ -264,7 +264,10 @@ describe("QA-e /v1/policy/approvals REST", () => {
     out.unknownGet = (await e.api(e.chenTok, `/pc_doesnotexist`)).status;
     out.unknownApprove = (await e.api(e.chenTok, `/pc_doesnotexist/approve`, {})).status;
     out.unknownDeny = (await e.api(e.chenTok, `/pc_doesnotexist/deny`, {})).status;
-    out.approve = (await e.api(e.chenTok, `/${id1}/approve`, {})).status;
+    // Security H-1 re-review: approve now requires the args_sha256 the approver saw (400 without it)
+    out.approveNoHash = (await e.api(e.chenTok, `/${id1}/approve`, {})).status;
+    const seen = ((await (await e.api(e.chenTok, `/${id1}`)).json()) as { args_sha256: string }).args_sha256;
+    out.approve = (await e.api(e.chenTok, `/${id1}/approve`, { args_sha256: seen })).status;
     await p1;
     out.approveAgain = (await e.api(e.chenTok, `/${id1}/approve`, {})).status;
     out.denyAfterApprove = (await e.api(e.chenTok, `/${id1}/deny`, {})).status;
@@ -282,7 +285,7 @@ describe("QA-e /v1/policy/approvals REST", () => {
     expect(s.calls).toHaveLength(1);
     expect(out).toMatchObject({
       list: 200, get: 200, history: 200, unauth: 401, unauthGet: 401, unauthApprove: 401, badToken: 401, adminToken: 401,
-      botNonHuman: 403, unknownGet: 404, unknownApprove: 404, unknownDeny: 404, approve: 200, approveAgain: 409,
+      approveNoHash: 400, botNonHuman: 403, unknownGet: 404, unknownApprove: 404, unknownDeny: 404, approve: 200, approveAgain: 409,
       denyAfterApprove: 409, deny: 200, denyAgain: 409, approveAfterDeny: 409, revokedKey: 401,
     });
     // spec decision (PM): non-approvers get 404, no existence oracle

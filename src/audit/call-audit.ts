@@ -185,87 +185,102 @@ export function runAuditRetention(
     throw new Error("before must be the first instant of a month, e.g. 2026-09-01T00:00:00.000Z");
   }
   const minMonths = opts.minMonths ?? DEFAULT_RETENTION_MONTHS;
+  // Security T2.5 R-4: the floor cannot be disabled or inverted
+  if (!Number.isInteger(minMonths) || minMonths < 1) throw new Error("minMonths must be an integer ≥ 1");
   const cutoff = retentionCutoff(opts.now ?? new Date(), minMonths);
   if (new Date(opts.before).getTime() > new Date(cutoff).getTime()) {
     throw new Error(`before (${opts.before}) is newer than the retention floor ${cutoff} (${minMonths} months)`);
   }
-  const rows = db
+  // L-7: count per month without loading rows; then process ONE month at a time (bounded memory),
+  // each in its own archive file and its own transaction.
+  const months = (db
     .prepare(
-      `SELECT ${CALL_AUDIT_COLUMNS.join(", ")} FROM mcpflow_call_audit
-        WHERE workspace_id = ? AND ts < ? AND event_type <> 'lifecycle' ORDER BY audit_id`,
+      `SELECT substr(ts, 1, 7) AS m, count(*) AS n FROM mcpflow_call_audit
+        WHERE workspace_id = ? AND ts < ? AND event_type <> 'lifecycle' GROUP BY m ORDER BY m`,
     )
-    .all(opts.workspaceId, opts.before) as Record<string, unknown>[];
-  const byMonth = new Map<string, Record<string, unknown>[]>();
-  for (const r of rows) {
-    const m = String(r.ts).slice(0, 7);
-    (byMonth.get(m) ?? byMonth.set(m, []).get(m)!).push(r);
-  }
+    .all(opts.workspaceId, opts.before) as Array<{ m: string; n: number }>);
   const archived: Record<string, number> = {};
-  for (const [m, list] of byMonth) archived[m] = list.length;
+  for (const { m, n } of months) archived[m] = Number(n);
   const finalName = (m: string) => join(opts.archiveDir, `call_audit_${opts.workspaceId}_${m}.jsonl`);
-  if (!execute) return { dryRun: true, archived, deleted: 0, files: [...byMonth.keys()].map(finalName) };
+  if (!execute) return { dryRun: true, archived, deleted: 0, files: months.map(({ m }) => finalName(m)) };
 
   mkdirSync(opts.archiveDir, { recursive: true, mode: 0o700 });
-  for (const m of byMonth.keys()) {
+  for (const { m } of months) {
     if (existsSync(finalName(m))) throw new Error(`EEXIST: archive already exists: ${finalName(m)}`);
   }
-  const temps: Array<[string, string]> = [];
-  const cleanup = () => {
-    for (const [t] of temps) rmSync(t, { force: true });
-  };
-  try {
-    for (const [m, list] of byMonth) {
-      const tmp = `${finalName(m)}.tmp-${randomBytes(6).toString("hex")}`;
-      const fd = openSync(tmp, "wx", 0o600);
-      temps.push([tmp, finalName(m)]);
-      try {
-        writeSync(fd, list.map((r) => JSON.stringify(r)).join("\n") + "\n");
-        fsyncSync(fd);
-      } finally {
-        closeSync(fd);
-      }
-    }
-    fsyncDir(opts.archiveDir);
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
-  const files = temps.map(([, f]) => f);
-  const maxId = rows.length ? Number(rows.at(-1)!.audit_id) : 0;
+  const files: string[] = [];
   let deleted = 0;
-  db.exec("BEGIN IMMEDIATE;");
-  try {
-    db.exec("DROP TRIGGER mcpflow_call_audit_no_delete;");
-    const res = db
-      .prepare(
-        `DELETE FROM mcpflow_call_audit
-          WHERE workspace_id = ? AND ts < ? AND audit_id <= ? AND event_type <> 'lifecycle'`,
-      )
-      .run(opts.workspaceId, opts.before, maxId);
-    deleted = Number(res.changes);
-    if (deleted !== rows.length) throw new Error(`retention mismatch: exported ${rows.length}, deleting ${deleted}`);
-    db.exec(CALL_AUDIT_NO_DELETE_TRIGGER);
-    db.prepare(
-      `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor, args_redacted)
-       VALUES ('lifecycle', ?, ?, 'audit_retention', ?, ?)`,
-    ).run(
-      `lc_${randomBytes(12).toString("hex")}`,
-      opts.workspaceId,
-      opts.actor,
-      JSON.stringify({ before: opts.before, deleted, archived, files }),
-    );
-    db.exec("COMMIT;");
-  } catch (err) {
+  for (const { m } of months) {
+    const from = `${m}-01T00:00:00.000Z`;
+    const [y, mo] = m.split("-").map(Number) as [number, number];
+    const to = new Date(Date.UTC(y, mo, 1)).toISOString();
+    const upper = to < opts.before ? to : opts.before;
+    const tmp = `${finalName(m)}.tmp-${randomBytes(6).toString("hex")}`;
+    let count = 0;
+    let maxId = 0;
+    const fd = openSync(tmp, "wx", 0o600);
     try {
-      db.exec("ROLLBACK;");
-    } catch {
-      /* keep the original error */
+      // stream the month in pages of 1000 rows
+      let after = 0;
+      for (;;) {
+        const page = db
+          .prepare(
+            `SELECT ${CALL_AUDIT_COLUMNS.join(", ")} FROM mcpflow_call_audit
+              WHERE workspace_id = ? AND ts >= ? AND ts < ? AND event_type <> 'lifecycle' AND audit_id > ?
+              ORDER BY audit_id LIMIT 1000`,
+          )
+          .all(opts.workspaceId, from, upper, after) as Record<string, unknown>[];
+        if (!page.length) break;
+        writeSync(fd, page.map((r) => JSON.stringify(r)).join("\n") + "\n");
+        count += page.length;
+        after = Number(page.at(-1)!.audit_id);
+        maxId = after;
+      }
+      fsyncSync(fd);
+    } catch (err) {
+      closeSync(fd);
+      rmSync(tmp, { force: true });
+      throw err;
     }
-    cleanup();
-    throw err;
+    closeSync(fd);
+    fsyncDir(opts.archiveDir);
+    db.exec("BEGIN IMMEDIATE;");
+    try {
+      db.exec("DROP TRIGGER mcpflow_call_audit_no_delete;");
+      const res = db
+        .prepare(
+          `DELETE FROM mcpflow_call_audit
+            WHERE workspace_id = ? AND ts >= ? AND ts < ? AND audit_id <= ? AND event_type <> 'lifecycle'`,
+        )
+        .run(opts.workspaceId, from, upper, maxId);
+      const n = Number(res.changes);
+      if (n !== count) throw new Error(`retention mismatch for ${m}: exported ${count}, deleting ${n}`);
+      db.exec(CALL_AUDIT_NO_DELETE_TRIGGER);
+      db.prepare(
+        `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor, args_redacted)
+         VALUES ('lifecycle', ?, ?, 'audit_retention', ?, ?)`,
+      ).run(
+        `lc_${randomBytes(12).toString("hex")}`,
+        opts.workspaceId,
+        opts.actor,
+        JSON.stringify({ before: opts.before, month: m, deleted: n, file: finalName(m) }),
+      );
+      db.exec("COMMIT;");
+      deleted += n;
+    } catch (err) {
+      try {
+        db.exec("ROLLBACK;");
+      } catch {
+        /* keep the original error */
+      }
+      rmSync(tmp, { force: true });
+      throw err;
+    }
+    renameSync(tmp, finalName(m));
+    fsyncDir(opts.archiveDir);
+    files.push(finalName(m));
+    archived[m] = count;
   }
-  for (const [t, f] of temps) renameSync(t, f);
-  fsyncDir(opts.archiveDir);
   return { dryRun: false, archived, deleted, files };
 }
 

@@ -78,6 +78,11 @@ const api = (tok: string, path: string, body?: unknown) =>
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
+/** H-1: approvers must echo the hash of the exact payload they were shown. */
+async function sha(tok: string, id: string): Promise<string> {
+  return ((await (await api(tok, `/${id}`)).json()) as { args_sha256: string }).args_sha256;
+}
+
 describe("policy approvals REST", () => {
   it("auth: no token / env admin / non-human agent refused", async () => {
     expect((await fetch(`${gw.url}/v1/policy/approvals/pending`)).status).toBe(401);
@@ -104,7 +109,7 @@ describe("policy approvals REST", () => {
 
   it("approve dispatches once; second decision is 409; audit_events row written", async () => {
     const h = await hold();
-    const r = await api(anaTok, `/${h.id}/approve`, { note: "lgtm" });
+    const r = await api(anaTok, `/${h.id}/approve`, { note: "lgtm", args_sha256: await sha(anaTok, h.id) });
     expect(r.status).toBe(200);
     const out = await h.done;
     expect(JSON.stringify(out)).toContain("merged");
@@ -131,7 +136,7 @@ describe("policy approvals REST", () => {
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 0 })).status).toBe(400);
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 61 })).status).toBe(400);
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, max_uses: 0 })).status).toBe(400);
-    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 10, max_uses: 1 });
+    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 10, max_uses: 1, args_sha256: await sha(anaTok, h.id) });
     expect(r.status).toBe(200);
     const body = (await r.json()) as { grant: { id: string; max_uses: number } };
     expect(body.grant.max_uses).toBe(1);
@@ -147,21 +152,44 @@ describe("policy approvals REST", () => {
   });
 
   it("no self-approval: a human agent cannot approve its own held call", async () => {
-    // make chen the caller of a held call by inserting directly (chen is listed approver)
-    const h = await hold();
-    gw.store.db.prepare(`UPDATE mcpflow_pending_call SET status='cancelled', decided_at=? WHERE id=?`).run(new Date().toISOString(), h.id);
-    await h.done;
-    const db = gw.store.db;
-    const pid = `pc_${randomBytes(12).toString("hex")}`;
-    const chenKey = (db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id=?`).get(chen) as { id: string }).id;
-    db.prepare(`INSERT INTO mcpflow_pending_call (id, call_id, workspace_id, agent_id, key_id, project_id, backend_slug, tool, args_hash, args_redacted, matched_rules, approvers, expires_at, args_ciphertext, args_key_ref)
-                VALUES (?, ?, ?, ?, ?, 'default', 'gh', 'merge', 'h', '{}', '[]', ?, ?, X'00', 'k1')`)
-      .run(pid, `call_${randomBytes(8).toString("hex")}`, ws, chen, chenKey, JSON.stringify([chen, ana]), new Date(Date.now() + 60_000).toISOString());
-    expect(((await (await api(chenTok, "/pending")).json()) as { pending: Array<{ id: string }> }).pending.map((p) => p.id)).not.toContain(pid);
-    const r = await api(chenTok, `/${pid}/approve`, {});
+    const chenKey = (gw.store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id=?`).get(chen) as { id: string }).id;
+    const c: CallContext = { ...ctx(), agentId: chen, agentName: "chen", keyId: chenKey };
+    let ran = 0;
+    const p = gw.store.policy.enforce({ ctx: c, args: { pr: 9 }, dispatch: async () => { ran++; return { content: [] }; } });
+    let pid = "";
+    for (let i = 0; i < 100 && !pid; i++) {
+      pid = (gw.store.db.prepare(`SELECT id FROM mcpflow_pending_call WHERE agent_id=? AND status='pending'`).get(chen) as { id: string } | undefined)?.id ?? "";
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(((await (await api(chenTok, "/pending")).json()) as { pending: Array<{ id: string }> }).pending.map((x) => x.id)).not.toContain(pid);
+    const r = await api(chenTok, `/${pid}/approve`, { args_sha256: await sha(chenTok, pid) });
     expect(r.status).toBe(403);
     expect(((await r.json()) as { error: string }).error).toBe("self_approval");
-    expect((await api(anaTok, `/${pid}/approve`, {})).status).toBe(200);
+    expect((await api(anaTok, `/${pid}/approve`, { args_sha256: await sha(anaTok, pid) })).status).toBe(200);
+    await p;
+    expect(ran).toBe(1);
+  });
+
+  it("Security H-1 (re-review): approve and approve-similar REQUIRE args_sha256 (400 without it)", async () => {
+    const h = await hold({ pr: 11 });
+    for (const path of ["approve", "approve-similar"]) {
+      const r = await api(anaTok, `/${h.id}/${path}`, { minutes: 5 });
+      expect(r.status).toBe(400);
+      expect(((await r.json()) as { error: string }).error).toBe("args_sha256_required");
+      expect((await api(anaTok, `/${h.id}/${path}`, { minutes: 5, args_sha256: "not-hex" })).status).toBe(400);
+    }
+    expect((await api(anaTok, `/${h.id}/deny`, {})).status).toBe(200); // deny needs no hash
+    await h.done;
+    expect(h.dispatched()).toBe(0);
+  });
+
+  it("Security R-6: approver responses are Cache-Control: no-store", async () => {
+    const h = await hold({ pr: 12 });
+    for (const path of [`/${h.id}`, "/pending", "/history"]) {
+      expect((await api(anaTok, path)).headers.get("cache-control")).toBe("no-store");
+    }
+    gw.store.policy.decide(h.id, chen, "denied");
+    await h.done;
   });
 
   it("Security H-1: GET shows full args + sha256; approve with a stale args_sha256 is 409; matching one approves", async () => {
@@ -179,7 +207,7 @@ describe("policy approvals REST", () => {
     const h = await hold({ pr: 7 });
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, same_args_only: false })).status).toBe(400);
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, same_args_only: false, match_args: [{ path: "$.pr", op: "regex", value: "(1+)+" }] })).status).toBe(400);
-    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5 });
+    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, args_sha256: await sha(anaTok, h.id) });
     expect(((await r.json()) as { grant: { same_args_only: boolean } }).grant.same_args_only).toBe(true);
     await h.done;
   });

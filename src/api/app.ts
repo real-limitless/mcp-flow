@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { bodyLimit } from "hono/body-limit";
 import { policyApprovalsRouter } from "./policy-approvals.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import {
@@ -1297,6 +1298,14 @@ export function createApp(
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
+  // Security T2.5 R-3: bound request bodies before anything (auth, progress peek, transport) reads them
+  app.use(
+    "/mcp",
+    bodyLimit({
+      maxSize: mcpMaxBodyBytes(),
+      onError: (c) => c.json({ jsonrpc: "2.0", error: { code: -32600, message: "request body too large" }, id: null }, 413),
+    }),
+  );
   app.all("/mcp", async (c) => {
     const token = bearer(c.req.header("authorization"));
     if (!token) {
@@ -1483,3 +1492,10 @@ export function createApp(
 export type AppType = ReturnType<typeof createApp>;
 
 export { toPublicBackend };
+
+/** Max /mcp request body (bytes), MCP_FLOW_MAX_BODY_BYTES, default 4 MiB, clamped 64 KiB..64 MiB. */
+export function mcpMaxBodyBytes(): number {
+  const n = Number(process.env.MCP_FLOW_MAX_BODY_BYTES ?? "");
+  if (Number.isFinite(n) && n >= 65_536 && n <= 67_108_864) return Math.floor(n);
+  return 4 * 1024 * 1024;
+}

@@ -13,6 +13,7 @@ const SECRET_KEY_RE =
  */
 const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted]"],
+  [/\b(Authorization\s*[:=]\s*["']?(?:token|bearer|basic|digest)\s+)[^\s"']+/gi, "$1[redacted]"],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]"],
   [/\bBasic\s+[A-Za-z0-9+/=]{8,}/g, "Basic [redacted]"],
   [/(:\/\/)[^\s:/@]+:[^\s@/]+@/g, "$1[redacted]@"],
@@ -29,6 +30,32 @@ const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
   [/\b([A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|DSN)[A-Za-z0-9_]*\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, "$1[redacted]"],
   [/(--(?:password|token|secret|api-key)[= ])\S+/gi, "$1[redacted]"],
 ];
+
+/** camelCase secret keys: apiToken, authToken, githubToken, accessKeyId, clientSecret, … */
+const CAMEL_SECRET_KEY_RE = /[a-z0-9](?:Token|Secret|Password|Passwd|ApiKey|AccessKey|PrivateKey|SecretKey|Credentials?)$|^(?:token|auth|pass|pw)[A-Z]/;
+
+/** Shannon entropy in bits per char. */
+function entropy(s: string): number {
+  const f = new Map<string, number>();
+  for (const ch of s) f.set(ch, (f.get(ch) ?? 0) + 1);
+  let h = 0;
+  for (const n of f.values()) {
+    const p = n / s.length;
+    h -= p * Math.log2(p);
+  }
+  return h;
+}
+
+/**
+ * Opaque high-entropy tokens under neutral keys ({"value":"<random>"}): a single 32-512 char
+ * base64/base64url-ish word with > 4.3 bits/char. Hex digests and UUIDs (≤ 4 bits/char) stay.
+ */
+function looksLikeOpaqueSecret(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 32 || t.length > 512 || !/^[A-Za-z0-9+/=_.-]+$/.test(t)) return false;
+  if (!/[0-9]/.test(t) || !/[A-Z]/.test(t) || !/[a-z]/.test(t)) return false;
+  return entropy(t) > 4.3;
+}
 
 /** Replace every embedded secret in a string (exported for tests and push payloads). */
 export function redactSecrets(s: string): string {
@@ -53,7 +80,11 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 function redactString(input: string, maxString: number): string {
   // scan the whole string (bounded) before truncating, so a secret past the cut is still caught
-  const s = redactSecrets(input.length > 1_048_576 ? input.slice(0, 1_048_576) : input);
+  // only the kept prefix is ever stored, so scan exactly that (plus a margin so a secret that
+  // straddles the cut is still caught); nothing beyond the margin is persisted
+  const keep = input.length > maxString ? input.slice(0, maxString + 4096) : input;
+  if (looksLikeOpaqueSecret(keep)) return "[redacted]";
+  const s = redactSecrets(keep);
   if (s.length <= maxString) return s;
   return `${s.slice(0, maxString)}…[truncated ${s.length} chars]`;
 }
@@ -126,7 +157,7 @@ function walk(
     const limit = Math.min(keys.length, 100);
     for (let i = 0; i < limit; i++) {
       const k = keys[i]!;
-      if (SECRET_KEY_RE.test(k)) {
+      if (SECRET_KEY_RE.test(k) || CAMEL_SECRET_KEY_RE.test(k)) {
         out[k] = "[redacted]";
         continue;
       }

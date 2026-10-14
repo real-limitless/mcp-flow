@@ -4,6 +4,7 @@ import { MIGRATION_0002 } from "./0002_call_audit.js";
 import { MIGRATION_0003 } from "./0003_policy_pending.js";
 import { MIGRATION_0004 } from "./0004_push_approver.js";
 import { MIGRATION_0005 } from "./0005_grant_revocation.js";
+import { MIGRATION_0006 } from "./0006_outcomes_epoch.js";
 
 export interface Migration {
   id: string;
@@ -17,6 +18,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0003_policy_pending", sql: MIGRATION_0003 },
   { id: "0004_push_approver", sql: MIGRATION_0004 },
   { id: "0005_grant_revocation", sql: MIGRATION_0005 },
+  { id: "0006_outcomes_epoch", sql: MIGRATION_0006 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
