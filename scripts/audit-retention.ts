@@ -26,6 +26,7 @@ const out = runAuditRetention(db, {
   archiveDir: arg("archive"),
   actor: arg("actor"),
   execute: process.argv.includes("--execute"),
+  // validated in runAuditRetention: integer ≥ 1 (NaN, 0 and negatives are rejected)
   minMonths: process.argv.includes("--min-months") ? Number(arg("min-months")) : undefined,
 });
 if (out.dryRun) console.error("DRY RUN: nothing written or deleted. Re-run with --execute after review.");

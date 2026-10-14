@@ -100,6 +100,10 @@ export const DYNAMIC_META_TOOLS: Tool[] = [
           type: "object",
           description: "Arguments for the upstream tool",
         },
+        idempotency_key: {
+          type: "string",
+          description: "Optional 1-128 char key. A re-send with the same key never runs twice; it replays the first call's outcome.",
+        },
         async_approval: {
           type: "boolean",
           description: "If the call needs human approval, return approval_pending immediately (poll mf_pending_status, then mf_pending_result) instead of waiting.",

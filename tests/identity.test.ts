@@ -95,14 +95,14 @@ describe("AgentDirectory (T1.3 resolution)", () => {
     expect(dir.resolveKey(k.token).status).toBe("unauthorized");
   });
 
-  it("cache entries live at most 30s", () => {
+  it("cache: a change made by another process (no in-process bump) applies on the next lookup (Security L-5)", () => {
     const k = dir.createKey({ agentId: bot("a"), createdBy: chen });
     expect(dir.resolveKey(k.token).status).toBe("ok");
-    // change state behind the directory's back (no bump): cached until TTL
+    // change state behind the directory's back: the DB epoch trigger invalidates the cache entry
     db.prepare(`UPDATE mcpflow_agent SET status='suspended' WHERE name='a'`).run();
-    expect(dir.resolveKey(k.token).status).toBe("ok");
-    now += RESOLVE_CACHE_MS + 1;
     expect(dir.resolveKey(k.token).status).toBe("unauthorized");
+    expect(RESOLVE_CACHE_MS).toBeLessThanOrEqual(5_000);
+    void now;
   });
 
   it("no projects in key ∩ agent is forbidden", () => {

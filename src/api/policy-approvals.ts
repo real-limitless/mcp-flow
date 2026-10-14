@@ -67,6 +67,9 @@ export function policyApprovalsRouter(store: Store) {
     if (res.agent.kind !== "human") return c.json({ error: "approvers must be human agents" }, 403);
     c.set("approver", res.agent);
     await next();
+    // Security T2.5 R-6: approver responses can carry unredacted args (args_full); never cache them
+    c.header("Cache-Control", "no-store");
+    c.header("Pragma", "no-cache");
   });
 
   const names = (rows: Array<Record<string, unknown>>) => {
@@ -161,22 +164,35 @@ export function policyApprovalsRouter(store: Store) {
     });
   });
 
-  /** Optional echo of the hash the approver saw; mismatch = 409 (never approve something unseen). */
+  /**
+   * REQUIRED echo of the hash the approver saw (Security T2.5 H-1 re-review): missing = 400,
+   * mismatch = 409. Approving is impossible without having fetched the exact payload.
+   */
   const checkEcho = (id: string, body: Record<string, unknown>): string | null => {
-    if (body.args_sha256 == null) return null;
+    if (typeof body.args_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(body.args_sha256)) return "args_sha256_required";
     const full = fullArgs(id);
     if (full === "corrupt") return "args_integrity";
     if (!full || full.sha256 !== String(body.args_sha256)) return "args_mismatch";
     return null;
   };
 
+  /** Already decided or past expiry: 409 before any body validation (the decision would fail anyway). */
+  const closed = (row: Record<string, unknown>): string | null =>
+    row.status !== "pending" ? "not_pending" : String(row.expires_at) <= new Date().toISOString() ? "expired" : null;
+
   const decideRoute = (decision: "approved" | "denied") => async (c: Context<Env>) => {
     const id = c.req.param("id")!;
-    if (!visible(c, id)) return c.json({ error: "not_found" }, 404);
+    const row = visible(c, id);
+    if (!row) return c.json({ error: "not_found" }, 404);
+    const shut = closed(row);
+    if (shut) {
+      audit(c, decision === "approved" ? "policy.approval.approve" : "policy.approval.deny", { pending_call_id: id, ok: false, error: shut });
+      return c.json({ error: shut }, 409);
+    }
     const body = (await c.req.json().catch(() => ({}))) as { note?: unknown; args_sha256?: unknown };
     if (decision === "approved") {
       const bad = checkEcho(id, body);
-      if (bad) return c.json({ error: bad }, 409);
+      if (bad) return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
     }
     const note = typeof body.note === "string" ? body.note.slice(0, 500) : undefined;
     const res = store.policy.decide(id, c.get("approver").agentId, decision, note);
@@ -192,7 +208,13 @@ export function policyApprovalsRouter(store: Store) {
   // POST /:id/approve-similar {minutes 1-60, max_uses?, same_args_only?, note?}
   r.post("/:id/approve-similar", async (c) => {
     const id = c.req.param("id");
-    if (!visible(c, id)) return c.json({ error: "not_found" }, 404);
+    const row = visible(c, id);
+    if (!row) return c.json({ error: "not_found" }, 404);
+    const shut = closed(row);
+    if (shut) {
+      audit(c, "policy.approval.approve_similar", { pending_call_id: id, ok: false, error: shut });
+      return c.json({ error: shut }, 409);
+    }
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const minutes = Number(body.minutes);
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
@@ -204,7 +226,7 @@ export function policyApprovalsRouter(store: Store) {
       if (!Number.isInteger(maxUses) || maxUses < 1) return c.json({ error: "max_uses must be a positive integer" }, 400);
     }
     const bad = checkEcho(id, body);
-    if (bad) return c.json({ error: bad }, 409);
+    if (bad) return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
     // Security T2.5 M-3: exact-args by default; broader grants need explicit match_args
     const sameArgsOnly = body.same_args_only !== false;
     let matchArgs: ArgMatcher[] | undefined;
