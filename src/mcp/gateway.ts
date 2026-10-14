@@ -49,6 +49,17 @@ import {
 
 const META_TOOLS: Tool[] = [
   {
+    name: "mf_pending_result",
+    description:
+      "One-time read of the outcome of a call that returned approval_pending (same agent key). Returns not_ready while it is still held.",
+    inputSchema: {
+      type: "object",
+      properties: { pending_call_id: { type: "string" } },
+      required: ["pending_call_id"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "mf_pending_status",
     description:
       "Status of a call held for human approval (pending_call_id from a policy result). Agent keys only.",
@@ -280,6 +291,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     qualified: string,
     callArgs: Record<string, unknown>,
     project: Project | null,
+    hold: { asyncApproval?: boolean; onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void } = {},
   ): Promise<CallToolResult> => {
     const who = {
       workspaceId: ctx.workspaceId, agentId: ctx.agentId!, agentName: ctx.agentName ?? "",
@@ -326,6 +338,8 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       args: callArgs,
       signal: deps.abortSignal,
       approveBaseUrl: deps.approveBaseUrl ?? null,
+      asyncApproval: hold.asyncApproval,
+      onProgress: hold.onProgress,
       dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
     });
   };
@@ -350,11 +364,17 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     project: Project | null,
   ): Promise<NamespacedTool[]> => {
     const all = await upstream.listNamespacedTools(ctx.workspaceId);
-    return all.filter(
+    const inScope = all.filter(
       (t) =>
         toolAllowedByScopes(t.name, ctx.scopes) &&
         toolAllowedByProject(t.name, project),
     );
+    // PM-approved: agents don't see tools policy would deny for every possible args.
+    // Display only; enforcement still runs on every call.
+    if (!ctx.agentId || !project) return inScope;
+    return store.policy.hideAlwaysDenied(inScope, {
+      workspaceId: ctx.workspaceId, agentId: ctx.agentId, projectId: project.slug,
+    });
   };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -398,7 +418,32 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     return { tools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    // hold UX: MCP progress notifications (when the client sent a progressToken) and the
+    // opt-in approval_pending early return (_meta["mcp-flow/approval"] = "async")
+    const meta = (request.params._meta ?? {}) as Record<string, unknown>;
+    const progressToken = meta.progressToken as string | number | undefined;
+    const holdOpts = (asyncApproval: boolean) => ({
+      asyncApproval,
+      onProgress:
+        progressToken === undefined
+          ? undefined
+          : (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => {
+              const total = Math.max(p.elapsedMs, Date.parse(p.expiresAt) - (Date.now() - p.elapsedMs));
+              void extra
+                .sendNotification({
+                  method: "notifications/progress",
+                  params: {
+                    progressToken,
+                    progress: Math.floor(p.elapsedMs / 1000),
+                    total: Math.ceil(total / 1000),
+                    message: `waiting for human approval (pending_call_id ${p.pendingCallId}, expires ${p.expiresAt})`,
+                  },
+                })
+                .catch(() => undefined);
+            },
+    });
+    const wantsAsync = meta["mcp-flow/approval"] === "async";
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     const started = Date.now();
@@ -1003,7 +1048,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (ctx.agentId) {
-        const result = await agentPolicyCall(innerName, innerArgs, project);
+        const result = await agentPolicyCall(innerName, innerArgs, project, holdOpts(wantsAsync || args.async_approval === true));
         auditCall(result, { meta: true });
         return result;
       }
@@ -1110,6 +1155,19 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
+    if (name === "mf_pending_result") {
+      const pid = String(args.pending_call_id ?? "");
+      const r = ctx.agentId && ctx.keyId ? store.policy.takeAsyncResult(pid, ctx.agentId, ctx.keyId) : "gone";
+      const result =
+        r === "not_ready"
+          ? textResult({ pending_call_id: pid, status: "not_ready" })
+          : r === "gone"
+            ? textResult("no result for this pending call (unknown, not yours, already read, or expired)", true)
+            : r;
+      auditCall(result, { meta: true });
+      return result;
+    }
+
     if (name === "mf_pending_status") {
       const pid = String(args.pending_call_id ?? "");
       const st = ctx.agentId ? store.policy.pendingStatus(pid, ctx.agentId) : null;
@@ -1152,7 +1210,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (ctx.agentId) {
-      const result = await agentPolicyCall(name, args, project);
+      const result = await agentPolicyCall(name, args, project, holdOpts(wantsAsync));
       auditCall(result);
       return result;
     }

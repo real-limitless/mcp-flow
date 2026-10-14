@@ -1390,9 +1390,24 @@ export function createApp(
       };
     }
 
+    // A tools/call that carries a progressToken gets an SSE response so hold progress
+    // notifications can reach the client; everything else keeps plain JSON responses.
+    let wantsStream = false;
+    if (c.req.method === "POST") {
+      try {
+        const peek = (await c.req.raw.clone().json()) as unknown;
+        const msgs = Array.isArray(peek) ? peek : [peek];
+        wantsStream = msgs.some((m) => {
+          const msg = m as { method?: string; params?: { _meta?: { progressToken?: unknown } } };
+          return msg?.method === "tools/call" && msg.params?._meta?.progressToken !== undefined;
+        });
+      } catch {
+        wantsStream = false;
+      }
+    }
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
-      enableJsonResponse: true,
+      enableJsonResponse: !wantsStream,
     });
     const server = createGatewayServer({
       store,

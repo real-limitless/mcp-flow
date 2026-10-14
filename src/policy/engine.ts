@@ -85,6 +85,26 @@ export function ruleMatches(rule: PolicyRule, ctx: CallContext, args: unknown): 
 
 const byPriority = (a: PolicyRule, b: PolicyRule) => a.priority - b.priority || a.ruleId.localeCompare(b.ruleId);
 
+/**
+ * True when policy denies this agent/project/backend/tool for EVERY possible args:
+ * an unconditional deny rule matches, or no allow/require_approval rule can ever match
+ * (project default deny). Used only to hide tools from listings, never to allow anything.
+ */
+export function alwaysDenied(
+  rules: PolicyRule[],
+  scope: { agentId: string; projectId: string; backendSlug: string; tool: string },
+): boolean {
+  const inScope = rules.filter(
+    (r) =>
+      anyGlob(r.matchAgents, scope.agentId) &&
+      anyGlob(r.matchProjects, scope.projectId) &&
+      anyGlob(r.matchBackends, scope.backendSlug) &&
+      anyGlob(r.matchTools, scope.tool),
+  );
+  if (inScope.some((r) => r.effect === "deny" && r.matchArgs.length === 0)) return true;
+  return !inScope.some((r) => r.effect !== "deny");
+}
+
 /** Throws on a malformed rule; the enforcer turns any throw into deny (fail closed). */
 export function evaluate(rules: PolicyRule[], ctx: CallContext, args: unknown): Decision {
   const matched = rules.filter((r) => ruleMatches(r, ctx, args)).sort(byPriority);

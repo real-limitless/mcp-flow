@@ -18,7 +18,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import type { PolicyKeys } from "../identity/dev-keys.js";
 import { argsHash, canonicalJson, decryptArgs, encryptArgs } from "./crypto.js";
-import { evaluate, loadActiveRules, type CallContext, type Decision, type PolicyRule } from "./engine.js";
+import { alwaysDenied, evaluate, loadActiveRules, type CallContext, type Decision, type PolicyRule } from "./engine.js";
 import { allArgsMatch, validateArgMatchers, type ArgMatcher } from "./matchers.js";
 
 export type DenyReason =
@@ -62,6 +62,8 @@ export interface EnforcerDeps {
   clock?: () => number;
   /** Max concurrent holds per workspace */
   maxHolds?: number;
+  /** Progress notification interval while holding (default 15 s) */
+  progressIntervalMs?: number;
   /** Max concurrent holds per agent (Security T2.5 L-1), default 8 */
   maxHoldsPerAgent?: number;
   /** Test hook: fail audit writes */
@@ -72,6 +74,8 @@ type Resolution = "approved" | "denied" | "expired" | "cancelled";
 
 const newId = (p: string) => `${p}_${randomBytes(12).toString("hex")}`;
 export const HOLD_POLL_MS = 250;
+export const PROGRESS_INTERVAL_MS = 15_000;
+export const ASYNC_RESULT_TTL_MS = 15 * 60_000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function policyDeniedResult(p: {
@@ -178,6 +182,26 @@ export class PolicyEnforcer {
     return policyDeniedResult({ reason, tool: requested });
   }
 
+  /** Drop tools that policy denies for every args (listing only; errors keep the tool listed). */
+  hideAlwaysDenied<T extends { backendSlug: string; upstreamName: string }>(
+    tools: T[],
+    who: { workspaceId: string; agentId: string; projectId: string },
+  ): T[] {
+    let rules: PolicyRule[];
+    try {
+      rules = loadActiveRules(this.deps.db, who.workspaceId);
+    } catch {
+      return tools;
+    }
+    return tools.filter((t) => {
+      try {
+        return !alwaysDenied(rules, { agentId: who.agentId, projectId: who.projectId, backendSlug: t.backendSlug, tool: t.upstreamName });
+      } catch {
+        return true;
+      }
+    });
+  }
+
   agentHolds(agentId: string): number {
     return (
       this.deps.db
@@ -207,6 +231,10 @@ export class PolicyEnforcer {
     dispatch: (args: Record<string, unknown>) => Promise<CallToolResult>;
     signal?: AbortSignal;
     approveBaseUrl?: string | null;
+    /** Opt-in: return approval_pending immediately instead of holding the request open */
+    asyncApproval?: boolean;
+    /** Called every progressIntervalMs while the request is held */
+    onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void;
   }): Promise<CallToolResult> {
     const { ctx, args } = input;
     const db = this.deps.db;
@@ -321,61 +349,132 @@ export class PolicyEnforcer {
         })
         .catch(() => undefined);
     }
-    const resolution = await this.waitFor(pc, expiresAt!, input.signal);
-    const row = db
-      .prepare(`SELECT status, decided_by, note FROM mcpflow_pending_call WHERE id = ?`)
-      .get(pc) as { status: string; decided_by: string | null; note: string | null };
-    const status = row?.status ?? resolution;
+    const rest = async (signal?: AbortSignal): Promise<CallToolResult> => {
+      const resolution = await this.waitFor(pc, expiresAt!, signal);
+      const row = db
+        .prepare(`SELECT status, decided_by, note FROM mcpflow_pending_call WHERE id = ?`)
+        .get(pc) as { status: string; decided_by: string | null; note: string | null };
+      const status = row?.status ?? resolution;
 
-    if (status === "approved") {
-      if (!this.claimDispatch(pc)) {
-        notDispatched("error", { error_code: "dispatch_conflict", approver: row.decided_by });
-        return policyDeniedResult({ reason: "dispatch_conflict", tool: ctx.qualifiedTool, pendingCallId: pc });
-      }
-      const stored = db.prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
-        args_ciphertext: Uint8Array | null;
-        args_hash: string;
-      };
-      let frozen: Record<string, unknown>;
-      try {
-        frozen = decryptArgs(this.deps.keys.argsEnc, stored.args_ciphertext!);
-        // Security T2.5 H-1: dispatch only the exact payload the approver was shown and approved
-        if (argsHash(this.deps.keys.argsHmac, frozen) !== stored.args_hash) throw new Error("args hash mismatch");
-      } catch {
-        // claimed but not sent: gateway failure before dispatch
-        notDispatched("error", { error_code: "args_decrypt_failed", approver: row.decided_by });
+      if (status === "approved") {
+        if (!this.claimDispatch(pc)) {
+          notDispatched("error", { error_code: "dispatch_conflict", approver: row.decided_by });
+          return policyDeniedResult({ reason: "dispatch_conflict", tool: ctx.qualifiedTool, pendingCallId: pc });
+        }
+        const stored = db.prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
+          args_ciphertext: Uint8Array | null;
+          args_hash: string;
+        };
+        let frozen: Record<string, unknown>;
+        try {
+          frozen = decryptArgs(this.deps.keys.argsEnc, stored.args_ciphertext!);
+          // Security T2.5 H-1: dispatch only the exact payload the approver was shown and approved
+          if (argsHash(this.deps.keys.argsHmac, frozen) !== stored.args_hash) throw new Error("args hash mismatch");
+        } catch {
+          // claimed but not sent: gateway failure before dispatch
+          notDispatched("error", { error_code: "args_decrypt_failed", approver: row.decided_by });
+          this.purge(pc);
+          return policyDeniedResult({ reason: "policy_unavailable", tool: ctx.qualifiedTool, pendingCallId: pc });
+        }
+        const res = await this.dispatchAndComplete(callId, ctx, decision, input.dispatch, frozen, started, {
+          pendingCallId: pc,
+          approver: row.decided_by,
+          approverNote: row.note,
+        });
         this.purge(pc);
-        return policyDeniedResult({ reason: "policy_unavailable", tool: ctx.qualifiedTool, pendingCallId: pc });
+        return res;
       }
-      const res = await this.dispatchAndComplete(callId, ctx, decision, input.dispatch, frozen, started, {
-        pendingCallId: pc,
-        approver: row.decided_by,
-        approverNote: row.note,
+
+      const map: Record<string, [string, DenyReason]> = {
+        denied: ["approval_denied", "approval_denied"],
+        expired: ["approval_expired", "approval_timeout"],
+        cancelled: ["cancelled", "cancelled"],
+      };
+      const [outcome, reason] = map[status] ?? ["cancelled", "cancelled"];
+      notDispatched(outcome, {
+        error_code: reason,
+        approver: status === "denied" ? row.decided_by : null,
+        approver_note: status === "denied" ? row.note : null,
       });
       this.purge(pc);
-      return res;
+      return policyDeniedResult({
+        reason,
+        tool: ctx.qualifiedTool,
+        ruleId: decision.rule?.ruleId,
+        ruleVersion: decision.rule?.version,
+        pendingCallId: pc,
+        note: status === "denied" ? row.note : null,
+      });
+    };
+
+    // approval_pending early return (opt-in): the hold continues in the background; the agent
+    // polls mf_pending_status and collects the outcome once with mf_pending_result.
+    if (input.asyncApproval) {
+      this.inflightAsync.add(pc);
+      void rest(undefined)
+        .then((res) => this.storeAsyncResult(pc, ctx, res))
+        .catch(() => this.storeAsyncResult(pc, ctx, policyDeniedResult({ reason: "policy_unavailable", tool: ctx.qualifiedTool, pendingCallId: pc })));
+      return {
+        isError: true,
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            code: "approval_pending",
+            pending_call_id: pc,
+            tool: ctx.qualifiedTool,
+            expires_at: expiresAt,
+            message: "This call needs human approval. Poll mf_pending_status; when it is resolved, call mf_pending_result once to get the outcome. Do not re-send the call.",
+          }),
+        }],
+      };
     }
 
-    const map: Record<string, [string, DenyReason]> = {
-      denied: ["approval_denied", "approval_denied"],
-      expired: ["approval_expired", "approval_timeout"],
-      cancelled: ["cancelled", "cancelled"],
-    };
-    const [outcome, reason] = map[status] ?? ["cancelled", "cancelled"];
-    notDispatched(outcome, {
-      error_code: reason,
-      approver: status === "denied" ? row.decided_by : null,
-      approver_note: status === "denied" ? row.note : null,
-    });
-    this.purge(pc);
-    return policyDeniedResult({
-      reason,
-      tool: ctx.qualifiedTool,
-      ruleId: decision.rule?.ruleId,
-      ruleVersion: decision.rule?.version,
-      pendingCallId: pc,
-      note: status === "denied" ? row.note : null,
-    });
+    // MCP progress notifications while the caller waits (every 15 s by default)
+    const progress = input.onProgress
+      ? setInterval(() => {
+          try {
+            input.onProgress!({ pendingCallId: pc, elapsedMs: this.clock() - started, expiresAt: expiresAt! });
+          } catch {
+            /* progress is best effort */
+          }
+        }, this.deps.progressIntervalMs ?? PROGRESS_INTERVAL_MS)
+      : undefined;
+    try {
+      return await rest(input.signal);
+    } finally {
+      if (progress) clearInterval(progress);
+    }
+  }
+
+  // ---------- approval_pending results (in memory only; never persisted) ----------
+
+  private readonly asyncResults = new Map<string, { agentId: string; keyId: string; result: CallToolResult; at: number }>();
+
+  private readonly inflightAsync = new Set<string>();
+
+  private storeAsyncResult(pc: string, ctx: CallContext, result: CallToolResult): void {
+    this.inflightAsync.delete(pc);
+    const now = this.clock();
+    for (const [k, v] of this.asyncResults) if (now - v.at > ASYNC_RESULT_TTL_MS) this.asyncResults.delete(k);
+    this.asyncResults.set(pc, { agentId: ctx.agentId, keyId: ctx.keyId, result, at: now });
+  }
+
+  /**
+   * One-time read of an approval_pending call's outcome, only by the same agent + key.
+   * "not_ready" while the hold is open; "gone" if unknown, already read, expired from memory, or not yours.
+   */
+  takeAsyncResult(pc: string, agentId: string, keyId: string): CallToolResult | "not_ready" | "gone" {
+    const v = this.asyncResults.get(pc);
+    if (v && v.agentId === agentId && v.keyId === keyId) {
+      this.asyncResults.delete(pc);
+      return v.result;
+    }
+    if (v) return "gone";
+    const row = this.deps.db
+      .prepare(`SELECT status, dispatched_at FROM mcpflow_pending_call WHERE id = ? AND agent_id = ? AND key_id = ?`)
+      .get(pc, agentId, keyId) as { status: string; dispatched_at: string | null } | undefined;
+    if (row && this.inflightAsync.has(pc)) return "not_ready";
+    return "gone";
   }
 
   // ---------- approver actions (API for T2.3) ----------
