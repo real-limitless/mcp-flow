@@ -11,6 +11,30 @@ export interface Config {
   workspaceName: string;
   /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
   policyDevKeyRaw?: string;
+  /**
+   * Public origin for links sent to humans (approve links in Web Push etc.), from MCP_FLOW_PUBLIC_URL.
+   * Never derived from request headers (Security T2.5 H-2). Unset = no absolute links are sent.
+   */
+  publicUrl?: string | null;
+}
+
+/** Validate MCP_FLOW_PUBLIC_URL: https origin (http only for localhost), no path/query/credentials. */
+export function parsePublicUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error("MCP_FLOW_PUBLIC_URL is not a valid URL");
+  }
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
+    throw new Error("MCP_FLOW_PUBLIC_URL must be https (http only for localhost)");
+  }
+  if (u.username || u.password || u.search || u.hash || (u.pathname && u.pathname !== "/")) {
+    throw new Error("MCP_FLOW_PUBLIC_URL must be a bare origin, e.g. https://mcp-flow.example");
+  }
+  return u.origin;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -42,6 +66,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       overrides.workspaceName ?? env("MCP_FLOW_WORKSPACE_NAME", "default")!,
     policyDevKeyRaw:
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
+    publicUrl:
+      overrides.publicUrl !== undefined ? parsePublicUrl(overrides.publicUrl) : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL")),
   };
 }
 

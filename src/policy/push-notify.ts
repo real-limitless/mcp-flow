@@ -26,7 +26,10 @@ export interface PendingPushPayload {
   argsSummary: string;
   expiresAt: string;
   reason: string | null;
-  url: string;
+  /** Absolute link from configured MCP_FLOW_PUBLIC_URL; null when unset (fail closed: no link) */
+  url: string | null;
+  /** Redaction/truncation hid part of the args: open the full view before deciding */
+  argsHidden: boolean;
   audience: "approver" | "workspace";
 }
 
@@ -40,8 +43,9 @@ export function buildPendingPayload(
   approveBaseUrl?: string | null,
 ): PendingPushPayload {
   const raw = JSON.stringify(n.argsRedacted ?? {});
-  const argsSummary = raw.length > ARGS_SUMMARY_MAX ? `${raw.slice(0, ARGS_SUMMARY_MAX)}…` : raw;
-  const base = (n.approveBaseUrl ?? approveBaseUrl ?? "").replace(/\/$/, "");
+  const argsSummary0 = raw.length > ARGS_SUMMARY_MAX ? `${raw.slice(0, ARGS_SUMMARY_MAX)}…` : raw;
+  // Security T2.5 H-2: only the configured origin; n.approveBaseUrl (request-derived) is ignored
+  const base = approveBaseUrl ? approveBaseUrl.replace(/\/$/, "") : null;
   return {
     title: "Approve tool call",
     body: `${n.agentName} · ${n.backendSlug}__${n.tool} · ${n.projectId}`,
@@ -51,10 +55,11 @@ export function buildPendingPayload(
     project: n.projectId,
     backend: n.backendSlug,
     tool: n.tool,
-    argsSummary,
+    argsSummary: argsSummary0,
     expiresAt: n.expiresAt,
     reason: n.reasonToAgent,
-    url: `${base}/admin/#pending/${n.pendingCallId}`,
+    url: base ? `${base}/admin/#pending/${n.pendingCallId}` : null,
+    argsHidden: Boolean(n.argsHidden),
     audience,
   };
 }

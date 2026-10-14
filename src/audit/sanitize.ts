@@ -1,10 +1,41 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
+/**
+ * Keys whose whole value is redacted. Deliberately narrower than "contains token/session"
+ * so benign keys (max_tokens, session_name) stay readable (Security T2.5 M-2).
+ */
 const SECRET_KEY_RE =
-  /secret|token|password|passwd|authorization|api[_-]?key|apikey|cookie|set-cookie|private[_-]?key|access[_-]?key|refresh[_-]?token|bearer|credential|session/i;
+  /secret|password|passwd|passphrase|^pwd$|^pass$|authorization|^auth$|api[_-]?key|apikey|cookie|private[_-]?key|access[_-]?key|refresh[_-]?token|access[_-]?token|id[_-]?token|(^|[_-])token$|^token|bearer|credential|session[_-]?(id|token|key|secret)$|^dsn$|database[_-]?url|connection[_-]?string/i;
 
-const SECRET_VALUE_RE =
-  /^(?:Bearer\s+\S+|sk-[A-Za-z0-9_-]{16,}|mf_[A-Za-z0-9_-]{16,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{20,})/i;
+/**
+ * Unanchored secret patterns: only the matched substring is replaced, so a command keeps its
+ * shape but loses the secret. All patterns are linear (no nested quantifiers).
+ */
+const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted]"],
+  [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]"],
+  [/\bBasic\s+[A-Za-z0-9+/=]{8,}/g, "Basic [redacted]"],
+  [/(:\/\/)[^\s:/@]+:[^\s@/]+@/g, "$1[redacted]@"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+  [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, "[redacted]"],
+  [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]"],
+  [/\bglpat-[A-Za-z0-9_-]{20,}/g, "[redacted]"],
+  [/\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, "[redacted]"],
+  [/\bsk-[A-Za-z0-9_-]{16,}/g, "[redacted]"],
+  [/\bmf_[A-Za-z0-9_-]{16,}/g, "[redacted]"],
+  [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]"],
+  [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "[redacted]"],
+  [/([?&;](?:access_token|refresh_token|id_token|token|api_key|apikey|key|secret|password|passwd|sig|signature|code)=)[^&#\s"']+/gi, "$1[redacted]"],
+  [/\b([A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|DSN)[A-Za-z0-9_]*\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, "$1[redacted]"],
+  [/(--(?:password|token|secret|api-key)[= ])\S+/gi, "$1[redacted]"],
+];
+
+/** Replace every embedded secret in a string (exported for tests and push payloads). */
+export function redactSecrets(s: string): string {
+  let out = s;
+  for (const [re, rep] of SECRET_SUBSTRING_RES) out = out.replace(re, rep);
+  return out;
+}
 
 const DEFAULT_MAX_BYTES = 65_536;
 const DEFAULT_MAX_STRING = 16_384;
@@ -20,8 +51,9 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function redactString(s: string, maxString: number): string {
-  if (SECRET_VALUE_RE.test(s.trim())) return "[redacted]";
+function redactString(input: string, maxString: number): string {
+  // scan the whole string (bounded) before truncating, so a secret past the cut is still caught
+  const s = redactSecrets(input.length > 1_048_576 ? input.slice(0, 1_048_576) : input);
   if (s.length <= maxString) return s;
   return `${s.slice(0, maxString)}…[truncated ${s.length} chars]`;
 }

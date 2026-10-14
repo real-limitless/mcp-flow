@@ -59,6 +59,7 @@ export function authzErrorResult(opts: {
   };
 }
 
+/** approveBaseUrl must be the configured MCP_FLOW_PUBLIC_URL, never request-derived (Security T2.5 H-2). */
 export function approveUrlFor(
   approveBaseUrl: string | null | undefined,
   approvalId: string,

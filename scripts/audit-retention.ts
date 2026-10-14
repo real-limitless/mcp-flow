@@ -1,6 +1,8 @@
 /**
  * Maintenance only (never run by the gateway): archive + delete call_audit rows older than a month boundary.
- *   tsx scripts/audit-retention.ts --workspace ws_… --before 2025-10-01T00:00:00.000Z --archive ./archive --actor agt_…
+ *   tsx scripts/audit-retention.ts --workspace ws_… --before 2025-10-01T00:00:00.000Z --archive ./archive --actor agt_… [--execute] [--min-months 12]
+ * DRY RUN by default: prints what would be archived/deleted. Nothing is written or deleted without --execute.
+ * `before` must be ≥ --min-months (default 12) in the past. Lifecycle rows are never deleted.
  * Requires MCP_FLOW_DB_PATH. Take a DB backup first; Chen approval before any non-dev run.
  */
 import { DatabaseSync } from "node:sqlite";
@@ -23,6 +25,9 @@ const out = runAuditRetention(db, {
   before: arg("before"),
   archiveDir: arg("archive"),
   actor: arg("actor"),
+  execute: process.argv.includes("--execute"),
+  minMonths: process.argv.includes("--min-months") ? Number(arg("min-months")) : undefined,
 });
+if (out.dryRun) console.error("DRY RUN: nothing written or deleted. Re-run with --execute after review.");
 console.log(JSON.stringify(out, null, 2));
 db.close();

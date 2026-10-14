@@ -136,7 +136,7 @@ describe("T3.1 retention maintenance path", () => {
     old("2025-10-01T00:00:00.000Z"); // kept
     const archive = mkdtempSync(join(tmpdir(), "mcpflow-arch-"));
     tmp.push(archive);
-    const out = runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen });
+    const out = runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true });
     expect(out.deleted).toBe(3);
     expect(out.archived).toEqual({ "2025-08": 1, "2025-09": 2 });
     expect(readFileSync(out.files[1]!, "utf8").trim().split("\n")).toHaveLength(2);
@@ -146,7 +146,7 @@ describe("T3.1 retention maintenance path", () => {
     expect(queryCallAudit(db, WS, { to: "2025-10-01T00:00:00.000Z" }).rows).toHaveLength(0);
     // never overwrites an existing archive
     old("2025-09-03T00:00:00.000Z");
-    expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen })).toThrow(/EEXIST/);
+    expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true })).toThrow(/EEXIST/);
     expect(queryCallAudit(db, WS, { to: "2025-10-01T00:00:00.000Z" }).rows).toHaveLength(1);
   });
 
@@ -154,7 +154,7 @@ describe("T3.1 retention maintenance path", () => {
     old("2025-08-15T00:00:00.000Z");
     const archive = mkdtempSync(join(tmpdir(), "mcpflow-arch-"));
     tmp.push(archive);
-    expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: "not-an-agent" })).toThrow();
+    expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: "not-an-agent", execute: true })).toThrow();
     expect(() => db.prepare(`DELETE FROM mcpflow_call_audit`).run()).toThrow(/append-only/);
     expect(queryCallAudit(db, WS, {}).rows.length).toBeGreaterThan(0);
     expect(existsSync(archive)).toBe(true);

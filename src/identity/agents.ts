@@ -39,7 +39,8 @@ export const LOOKUP_PREFIX_LEN = 12;
 export const DEFAULT_KEY_TTL_DAYS = 90;
 export const MAX_KEY_TTL_DAYS = 365;
 export const ROTATING_FORCED_EXPIRY_DAYS = 7;
-export const RESOLVE_CACHE_MS = 30_000;
+/** Short so a revoke made by another process applies within seconds (Security T2.5 L-5). */
+export const RESOLVE_CACHE_MS = 5_000;
 const HASH_SCHEME = "sha256-pepper$v1$";
 const DAY_MS = 86_400_000;
 
