@@ -2268,7 +2268,10 @@ let paView = "pending";
 // H-1: per-call detail from GET /:id (args_full + args_sha256), keyed by call id.
 // Approve / deny / approve-similar stay disabled until a detail for that id is
 // loaded and usable. Held in memory only; cleared on any stale/mismatch error.
-const paDetails = new Map(); // id -> { call, err, notice, hashCheck }
+const paDetails = new Map(); // id -> { call, err, code, notice, hashCheck }
+// 404 = "not visible to you" (not stale): hide the item, no retry.
+const paHidden = new Set();
+let paListNotice = "";
 
 function approverToken() {
   return sessionStorage.getItem(APPROVER_TOKEN_KEY) || "";
@@ -2299,7 +2302,8 @@ async function approverApi(path, opts = {}) {
       "approvers must be human agents": "This key belongs to a non-human agent; only human agents can approve.",
       self_approval: "You can't approve your own call.",
       not_approver: "You are not an approver for this call.",
-      not_found: "Call not found (or you are not an approver for it).",
+      not_found: "This call isn't available to you.",
+      args_sha256_required: "The request was missing a valid args hash (400). Nothing was approved — reload the call and try again.",
       not_pending: "Already decided by another approver.",
       args_mismatch: "The call's arguments changed since you reviewed them. Reloaded the exact payload — review it again before deciding.",
       args_integrity: "The stored payload failed its integrity check. Nothing will run; this call can't be approved.",
@@ -2354,7 +2358,7 @@ function matchedRulesHtml(rules) {
       const known = new Set(["rule_id", "id", "ruleId", "name", "rule_name", "effect", "action", "decision", "version"]);
       const extra = Object.fromEntries(Object.entries(r).filter(([k]) => !known.has(k)));
       const head = [
-        effect != null ? `<span class="pill ${effect === "deny" ? "deny" : "warn"}">${esc(String(effect))}</span>` : "",
+        effect != null ? `<span class="pill ${effect === "deny" ? "deny" : effect === "allow" ? "on" : "warn"}">${esc(String(effect))}</span>` : "",
         name != null ? `<span>${esc(String(name))}</span>` : "",
         id != null ? `<span class="mono muted">${esc(String(id))}</span>` : "",
         version != null ? `<span class="muted">v${esc(String(version))}</span>` : "",
@@ -2407,7 +2411,18 @@ async function loadPaDetail(id, notice = "") {
     }
     paDetails.set(id, { call, err: "", notice, hashCheck });
   } catch (e) {
-    paDetails.set(id, { call: null, err: e.message, notice, hashCheck: "unavailable" });
+    if (e.code === "not_found") {
+      paDetails.delete(id);
+      paHidden.add(id);
+      paListNotice = "A call was removed: it isn't available to you.";
+      return;
+    }
+    if (e.code === "not_pending" || e.code === "expired") {
+      paDetails.delete(id);
+      paListNotice = e.code === "expired" ? "A call expired (timeout counts as deny)." : "A call was already resolved.";
+      return;
+    }
+    paDetails.set(id, { call: null, err: e.message, code: e.code, notice, hashCheck: "unavailable" });
   }
 }
 
@@ -2415,12 +2430,19 @@ async function loadPaDetail(id, notice = "") {
 function paDetailState(id) {
   const d = paDetails.get(id);
   if (!d) return { ok: false, canDeny: false, msg: "Loading the exact payload…" };
+  if (d.err && d.code === "args_integrity") {
+    return { ...d, ok: false, canDeny: true, msg: "The stored args failed their integrity check. Nothing will run; approval is blocked — deny this call." };
+  }
   if (d.err) return { ...d, ok: false, canDeny: false, msg: `Couldn't load the exact payload: ${d.err}. Approval is blocked.` };
   const c = d.call || {};
   if (c.status && c.status !== "pending") {
     return { ...d, ok: false, canDeny: false, msg: `This call is now ${c.status}; nothing to decide.` };
   }
-  if (c.args_full === undefined || c.args_full === null) {
+  if (c.args_full === null) {
+    // Per Q&A: args_full null on GET /:id means resolved and purged.
+    return { ...d, ok: false, canDeny: false, msg: "This call was already resolved; its args were purged." };
+  }
+  if (c.args_full === undefined) {
     // Deny is still safe without the payload, but we only allow it once /:id loaded.
     return { ...d, ok: false, canDeny: true, msg: "The server didn't return the full args (args_full). Approval is blocked — you can still deny." };
   }
@@ -2516,7 +2538,7 @@ async function renderPolicyApprovals() {
     try {
       if (paView === "pending") {
         const r = await approverApi("/pending?limit=50");
-        list = Array.isArray(r?.pending) ? r.pending : [];
+        list = (Array.isArray(r?.pending) ? r.pending : []).filter((c) => !paHidden.has(String(c?.id ?? "")));
         const live = new Set(list.map((c) => String(c?.id ?? "")));
         for (const k of [...paDetails.keys()]) if (!live.has(k)) paDetails.delete(k);
         await Promise.all(
@@ -2525,6 +2547,7 @@ async function renderPolicyApprovals() {
             .filter((cid) => cid && !paDetails.has(cid))
             .map((cid) => loadPaDetail(cid)),
         );
+        list = list.filter((c) => !paHidden.has(String(c?.id ?? "")));
       } else {
         const r = await approverApi("/history?limit=50");
         list = Array.isArray(r?.calls) ? r.calls : [];
@@ -2551,7 +2574,7 @@ async function renderPolicyApprovals() {
   else body = list.map((c) => paCardHtml(c, paView === "pending" && c?.status === "pending")).join("");
   root.innerHTML = surface(
     "Call approvals",
-    authHtml + `<div class="pa-list">${body}</div>`,
+    authHtml + (paListNotice ? `<p class="pa-warn">${esc(paListNotice)}</p>` : "") + `<div class="pa-list">${body}</div>`,
     has && !loadErr ? `${list.length} ${paView}` : "",
   );
 
@@ -2582,11 +2605,24 @@ async function renderPolicyApprovals() {
     try {
       await approverApi(`/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(body) });
       paDetails.delete(id);
+      paListNotice = "";
       showErr("");
     } catch (e) {
-      if (["args_mismatch", "args_integrity", "not_pending", "expired", "not_found"].includes(e.code)) {
+      if (e.code === "not_found") {
+        paDetails.delete(id);
+        paHidden.add(id);
+        paListNotice = e.message;
+        showErr("");
+      } else if (e.code === "not_pending" || e.code === "expired") {
+        paDetails.delete(id);
+        paListNotice = e.code === "expired" ? "That call expired (timeout counts as deny)." : "That call was already resolved by another approver.";
+        showErr("");
+      } else if (e.code === "args_mismatch" || e.code === "args_integrity") {
         paDetails.delete(id);
         await loadPaDetail(id, e.message);
+        if (e.code === "args_integrity" && paDetails.get(id) && !paDetails.get(id).err) {
+          paDetails.set(id, { ...paDetails.get(id), err: e.message, code: "args_integrity" });
+        }
         showErr("");
       } else {
         showErr(e.message);
