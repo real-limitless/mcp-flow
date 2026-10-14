@@ -10,6 +10,7 @@ import { applyConnectionPragmas, runMigrations } from "../src/db/migrations/inde
 import { AgentDirectory } from "../src/identity/agents.js";
 import { derivePolicyKeys } from "../src/identity/dev-keys.js";
 import { PolicyEnforcer, type PendingNotice } from "../src/policy/enforcer.js";
+import { decryptArgs } from "../src/policy/crypto.js";
 import type { CallContext } from "../src/policy/engine.js";
 import { sanitizeForAudit } from "../src/audit/sanitize.js";
 import { runAuditRetention } from "../src/audit/call-audit.js";
@@ -136,5 +137,28 @@ describe("R2-3 per-agent result quota", () => {
     expect(kept(bot).n).toBe(1);
     expect(kept(bot2).t).toBeLessThanOrEqual(2500);
     expect(kept(bot2).n).toBeGreaterThan(0);
+  });
+});
+
+describe("R2-7 key separation and per-workspace recovery audit", () => {
+  it("results are encrypted under result-enc, not args-enc", async () => {
+    setup();
+    expect(keys.resultEnc.equals(keys.argsEnc)).toBe(false);
+    const pe = enforcer();
+    await pe.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "enc-1", dispatch: async () => ({ content: [{ type: "text" as const, text: "secret-ish" }] }) });
+    const ct = (db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE idempotency_key='enc-1'`).get() as { result_ciphertext: Uint8Array }).result_ciphertext;
+    expect(() => decryptArgs(keys.argsEnc, ct)).toThrow();
+    expect(JSON.stringify(decryptArgs(keys.resultEnc, ct))).toContain("secret-ish");
+  });
+
+  it("recoverOrphans reports per-workspace counts (only affected workspaces)", async () => {
+    setup();
+    new AgentDirectory(db, keys).bootstrapWorkspace("ws_" + "d".repeat(24), { name: "other", owner: "other" });
+    const pe = enforcer();
+    void pe.enforce({ ctx: ctx("merge"), args: { pr: 1 }, dispatch: async () => ({ content: [] }) });
+    await waitFor(() => notices.length === 1);
+    pe.close();
+    const rec = enforcer().recoverOrphans();
+    expect(rec.byWorkspace).toEqual({ [WS]: { cancelled: 1, abandoned: 0, unknown: 0 } });
   });
 });

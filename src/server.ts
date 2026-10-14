@@ -39,9 +39,10 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   try {
     const rec = store.policy.recoverOrphans();
     if (rec.cancelled + rec.abandoned + rec.unknown > 0) {
-      console.error(`[mcp-flow] recovered orphaned holds: ${JSON.stringify(rec)}`);
-      for (const ws of store.db.prepare(`SELECT DISTINCT workspace_id FROM mcpflow_call_outcome UNION SELECT DISTINCT workspace_id FROM mcpflow_pending_call`).all() as Array<{ workspace_id: string }>) {
-        store.writeAudit({ workspaceId: ws.workspace_id, keyId: null, action: "policy.recover", detail: rec });
+      console.error(`[mcp-flow] recovered orphaned holds: ${JSON.stringify({ cancelled: rec.cancelled, abandoned: rec.abandoned, unknown: rec.unknown })}`);
+      // R2-7: one row per affected workspace, with that workspace's own counts
+      for (const [workspaceId, counts] of Object.entries(rec.byWorkspace)) {
+        store.writeAudit({ workspaceId, keyId: null, action: "policy.recover", detail: { ...counts } });
       }
     }
   } catch (err) {

@@ -73,7 +73,7 @@ describe("R-1 durable outcomes, idempotency, restart recovery", () => {
     pe1.decide(pc, chen, "approved");
     await waitFor(() => (db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE pending_call_id=?`).get(pc) as { result_ciphertext: unknown }).result_ciphertext != null);
     const pe2 = enforcer(); // "restart"
-    expect(pe2.recoverOrphans()).toEqual({ cancelled: 0, abandoned: 0, unknown: 0 });
+    expect(pe2.recoverOrphans()).toMatchObject({ cancelled: 0, abandoned: 0, unknown: 0, byWorkspace: {} });
     const got = pe2.takeAsyncResult(pc, bot, botKey);
     expect((got as { content: Array<{ text: string }> }).content[0]!.text).toBe("merged");
     expect(body(pe2.takeAsyncResult(pc, bot, botKey) as never)).toMatchObject({ state: "executed", result_available: false });
