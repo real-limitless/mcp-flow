@@ -100,6 +100,10 @@ export const DYNAMIC_META_TOOLS: Tool[] = [
           type: "object",
           description: "Arguments for the upstream tool",
         },
+        async_approval: {
+          type: "boolean",
+          description: "If the call needs human approval, return approval_pending immediately (poll mf_pending_status, then mf_pending_result) instead of waiting.",
+        },
       },
       required: ["name"],
       additionalProperties: false,
