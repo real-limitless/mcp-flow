@@ -762,6 +762,7 @@ export class Store {
   }
 
   close(): void {
+    this.policy.close();
     this.db.close();
   }
 

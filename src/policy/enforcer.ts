@@ -172,6 +172,9 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
 
 export class PolicyEnforcer {
   private readonly waiters = new Map<string, (r: Resolution) => void>();
+  /** Timer teardown per open hold, so close() can stop polling a DB that is about to close. */
+  private readonly waitTimers = new Map<string, () => void>();
+  private closed = false;
   private readonly clock: () => number;
 
   constructor(private readonly deps: EnforcerDeps) {
@@ -179,6 +182,21 @@ export class PolicyEnforcer {
   }
 
   /** T2.4: install the approver notifier (Web Push). */
+  /**
+   * Stop all hold timers (QA v2 Low). Called by Store.close() before the DB closes. Open holds are
+   * left unresolved in this process; the next start's recoverOrphans() cancels them durably.
+   */
+  close(): void {
+    this.closed = true;
+    for (const stop of this.waitTimers.values()) stop();
+    this.waitTimers.clear();
+  }
+
+  /** Number of holds with live timers (tests). */
+  activeHoldTimers(): number {
+    return this.waitTimers.size;
+  }
+
   setNotifier(notify: ApprovalNotifier | undefined): void {
     this.deps.notify = notify;
   }
@@ -828,17 +846,26 @@ export class PolicyEnforcer {
       let done = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
       // DB-side changes (revoke cascade -> cancelled, another process deciding) are picked up by polling
+      const stopTimers = () => {
+        clearInterval(poll);
+        if (timer) clearTimeout(timer);
+        this.waitTimers.delete(pc);
+      };
       const poll = setInterval(() => {
-        const st = this.deps.db.prepare(`SELECT status FROM mcpflow_pending_call WHERE id = ?`).get(pc) as
-          | { status: string }
-          | undefined;
+        if (this.closed) return stopTimers();
+        let st: { status: string } | undefined;
+        try {
+          st = this.deps.db.prepare(`SELECT status FROM mcpflow_pending_call WHERE id = ?`).get(pc) as { status: string } | undefined;
+        } catch {
+          return stopTimers(); // DB gone: stop polling; restart recovery closes the hold
+        }
         if (st && st.status !== "pending") finish(st.status as Resolution);
       }, HOLD_POLL_MS);
+      this.waitTimers.set(pc, stopTimers);
       const finish = (r: Resolution) => {
         if (done) return;
         done = true;
-        clearInterval(poll);
-        if (timer) clearTimeout(timer);
+        stopTimers();
         this.waiters.delete(pc);
         signal?.removeEventListener("abort", onAbort);
         resolve(r);
@@ -850,6 +877,7 @@ export class PolicyEnforcer {
         finish("cancelled");
       };
       const onTimeout = async () => {
+        if (this.closed) return stopTimers();
         // the trigger refuses to expire before expires_at; retry briefly on clock skew
         for (let i = 0; i < 50 && !done; i++) {
           if (this.tryExpire(pc)) return finish("expired");
@@ -862,7 +890,8 @@ export class PolicyEnforcer {
       this.waiters.set(pc, finish);
       if (signal?.aborted) return onAbort();
       signal?.addEventListener("abort", onAbort, { once: true });
-      timer = setTimeout(() => void onTimeout(), Math.max(0, Date.parse(expiresAt) - this.clock()) + 5);
+      if (this.closed) return stopTimers();
+      timer = setTimeout(() => void onTimeout().catch(() => stopTimers()), Math.max(0, Date.parse(expiresAt) - this.clock()) + 5);
     });
   }
 
