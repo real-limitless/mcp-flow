@@ -12,6 +12,8 @@ import { Hono, type Context } from "hono";
 import type { Store } from "../db/store.js";
 import type { ResolvedAgent } from "../identity/agents.js";
 import { clientIp } from "../http/client-ip.js";
+import { canonicalJson } from "../policy/crypto.js";
+import { validateArgMatchers, type ArgMatcher } from "../policy/matchers.js";
 
 type Env = { Variables: { approver: ResolvedAgent } };
 
@@ -131,16 +133,51 @@ export function policyApprovalsRouter(store: Store) {
     return c.json({ calls: rows.map((x) => view(x, n)) });
   });
 
+  /**
+   * Security T2.5 H-1: the approver sees the exact payload that will run (decrypted from the
+   * ciphertext, unredacted) and its sha256; approve/approve-similar may echo args_sha256 back and
+   * are refused if it no longer matches. Dispatch re-verifies the keyed hash before sending.
+   */
+  const fullArgs = (id: string) => {
+    try {
+      return store.policy.approverArgs(id);
+    } catch {
+      return "corrupt" as const;
+    }
+  };
+
   r.get("/:id", (c) => {
-    const row = visible(c, c.req.param("id"));
+    const id = c.req.param("id");
+    const row = visible(c, id);
     if (!row) return c.json({ error: "not_found" }, 404);
-    return c.json(view(row, names([row])));
+    const full = fullArgs(id);
+    if (full === "corrupt") return c.json({ error: "args_integrity" }, 409);
+    const v = view(row, names([row]));
+    return c.json({
+      ...v,
+      args_full: full?.args ?? null,
+      args_sha256: full?.sha256 ?? null,
+      args_hidden_in_summary: full ? canonicalJson(full.args) !== canonicalJson(v.args_redacted) : false,
+    });
   });
+
+  /** Optional echo of the hash the approver saw; mismatch = 409 (never approve something unseen). */
+  const checkEcho = (id: string, body: Record<string, unknown>): string | null => {
+    if (body.args_sha256 == null) return null;
+    const full = fullArgs(id);
+    if (full === "corrupt") return "args_integrity";
+    if (!full || full.sha256 !== String(body.args_sha256)) return "args_mismatch";
+    return null;
+  };
 
   const decideRoute = (decision: "approved" | "denied") => async (c: Context<Env>) => {
     const id = c.req.param("id")!;
     if (!visible(c, id)) return c.json({ error: "not_found" }, 404);
-    const body = (await c.req.json().catch(() => ({}))) as { note?: unknown };
+    const body = (await c.req.json().catch(() => ({}))) as { note?: unknown; args_sha256?: unknown };
+    if (decision === "approved") {
+      const bad = checkEcho(id, body);
+      if (bad) return c.json({ error: bad }, 409);
+    }
     const note = typeof body.note === "string" ? body.note.slice(0, 500) : undefined;
     const res = store.policy.decide(id, c.get("approver").agentId, decision, note);
     audit(c, decision === "approved" ? "policy.approval.approve" : "policy.approval.deny", {
@@ -166,18 +203,35 @@ export function policyApprovalsRouter(store: Store) {
       maxUses = Number(body.max_uses);
       if (!Number.isInteger(maxUses) || maxUses < 1) return c.json({ error: "max_uses must be a positive integer" }, 400);
     }
+    const bad = checkEcho(id, body);
+    if (bad) return c.json({ error: bad }, 409);
+    // Security T2.5 M-3: exact-args by default; broader grants need explicit match_args
+    const sameArgsOnly = body.same_args_only !== false;
+    let matchArgs: ArgMatcher[] | undefined;
+    if (!sameArgsOnly) {
+      try {
+        matchArgs = validateArgMatchers(body.match_args);
+      } catch (err) {
+        return c.json({ error: `match_args: ${(err as Error).message}` }, 400);
+      }
+      if (!matchArgs.length) return c.json({ error: "match_args is required when same_args_only is false" }, 400);
+    }
     const res = store.policy.approveSimilar(id, c.get("approver").agentId, minutes, {
       maxUses,
-      sameArgsOnly: body.same_args_only === true,
+      matchArgs,
+      sameArgsOnly,
       note: typeof body.note === "string" ? body.note.slice(0, 500) : undefined,
     });
     audit(c, "policy.approval.approve_similar", {
-      pending_call_id: id, minutes, max_uses: maxUses ?? null, same_args_only: body.same_args_only === true,
+      pending_call_id: id, minutes, max_uses: maxUses ?? null, same_args_only: sameArgsOnly, match_args: matchArgs ?? null,
       ok: res.ok, ...(res.ok ? { grant_id: res.grantId } : { error: res.error }),
     });
-    if (!res.ok) return fail(c, res.error);
-    const g = db.prepare(`SELECT id, expires_at, max_uses FROM mcpflow_approval_grant WHERE id = ?`).get(res.grantId) as Record<string, unknown>;
-    return c.json({ ok: true, id, status: "approved", grant: g });
+    if (!res.ok) return res.error.startsWith("invalid match_args") ? c.json({ error: res.error }, 400) : fail(c, res.error);
+    const g = db.prepare(`SELECT id, expires_at, max_uses, match_args, args_hash IS NOT NULL AS same_args_only FROM mcpflow_approval_grant WHERE id = ?`).get(res.grantId) as Record<string, unknown>;
+    return c.json({
+      ok: true, id, status: "approved",
+      grant: { ...g, match_args: JSON.parse(String(g.match_args)), same_args_only: Boolean(g.same_args_only) },
+    });
   });
 
   return r;

@@ -66,7 +66,7 @@ describe("T2.4 Web Push approver notification", () => {
     const mine = sub(chen, "chen");
     sub(other, "lead");
     const r = recorder();
-    await createPendingCallNotifier(store, { sender: r.sender })(notice());
+    await createPendingCallNotifier(store, { sender: r.sender, approveBaseUrl: "https://mcp-flow.example" })(notice());
     expect(r.sent.map((s) => s.endpoint)).toEqual(["https://push.example/chen"]);
     const body = r.sent[0]!.body;
     expect(body).toMatchObject({

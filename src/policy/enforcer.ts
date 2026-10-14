@@ -12,14 +12,14 @@
  *     error gets; final_outcome='error' vs 'executed' is what tells a gateway failure from a backend one)
  *  - deny / approval_denied / approval_expired / cancelled : result_status='not_dispatched'
  */
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { sanitizeForAudit } from "../audit/sanitize.js";
+import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import type { PolicyKeys } from "../identity/dev-keys.js";
-import { argsHash, decryptArgs, encryptArgs } from "./crypto.js";
+import { argsHash, canonicalJson, decryptArgs, encryptArgs } from "./crypto.js";
 import { evaluate, loadActiveRules, type CallContext, type Decision, type PolicyRule } from "./engine.js";
-import { allArgsMatch, type ArgMatcher } from "./matchers.js";
+import { allArgsMatch, validateArgMatchers, type ArgMatcher } from "./matchers.js";
 
 export type DenyReason =
   | "rule_deny"
@@ -47,7 +47,9 @@ export interface PendingNotice {
   approvers: string[];
   expiresAt: string;
   reasonToAgent: string | null;
-  /** Origin for approve links, when the request knows it */
+  /** True when redaction/truncation changed what argsRedacted shows: approvers must open the full view */
+  argsHidden?: boolean;
+  /** Ignored for links (Security T2.5 H-2): links come only from configured MCP_FLOW_PUBLIC_URL */
   approveBaseUrl?: string | null;
 }
 
@@ -60,6 +62,8 @@ export interface EnforcerDeps {
   clock?: () => number;
   /** Max concurrent holds per workspace */
   maxHolds?: number;
+  /** Max concurrent holds per agent (Security T2.5 L-1), default 8 */
+  maxHoldsPerAgent?: number;
   /** Test hook: fail audit writes */
   auditFault?: () => boolean;
 }
@@ -174,6 +178,29 @@ export class PolicyEnforcer {
     return policyDeniedResult({ reason, tool: requested });
   }
 
+  agentHolds(agentId: string): number {
+    return (
+      this.deps.db
+        .prepare(`SELECT count(*) AS n FROM mcpflow_pending_call WHERE agent_id = ? AND status = 'pending'`)
+        .get(agentId) as { n: number }
+    ).n;
+  }
+
+  /**
+   * Approver view of a pending call (Security T2.5 H-1): the exact args that will run, decrypted
+   * from the ciphertext, plus a sha256 over their canonical JSON that approve/deny can echo back.
+   * Null once resolved (ciphertext purged).
+   */
+  approverArgs(pendingCallId: string): { args: Record<string, unknown>; sha256: string } | null {
+    const row = this.deps.db
+      .prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`)
+      .get(pendingCallId) as { args_ciphertext: Uint8Array | null; args_hash: string } | undefined;
+    if (!row?.args_ciphertext) return null;
+    const args = decryptArgs(this.deps.keys.argsEnc, row.args_ciphertext);
+    if (argsHash(this.deps.keys.argsHmac, args) !== row.args_hash) throw new Error("args hash mismatch");
+    return { args, sha256: createHash("sha256").update(canonicalJson(args), "utf8").digest("hex") };
+  }
+
   async enforce(input: {
     ctx: CallContext;
     args: Record<string, unknown>;
@@ -205,7 +232,13 @@ export class PolicyEnforcer {
       this.tx(() => {
         if (decision.decision === "require_approval") {
           grantId = this.claimGrant(ctx, args, hash, decision);
-          if (!grantId && this.holds(ctx.workspaceId) >= (this.deps.maxHolds ?? 32)) busy = true;
+          if (
+            !grantId &&
+            (this.holds(ctx.workspaceId) >= (this.deps.maxHolds ?? 32) ||
+              this.agentHolds(ctx.agentId) >= (this.deps.maxHoldsPerAgent ?? 8))
+          ) {
+            busy = true;
+          }
         }
         this.writeAudit({
           event_type: "decision",
@@ -283,6 +316,7 @@ export class PolicyEnforcer {
           pendingCallId: pc, workspaceId: ctx.workspaceId, agentId: ctx.agentId, agentName: ctx.agentName,
           projectId: ctx.projectId, backendSlug: ctx.backendSlug, tool: ctx.tool, argsRedacted: redacted,
           approvers: decision.approvers ?? [], expiresAt: expiresAt!, reasonToAgent: decision.rule?.reasonToAgent ?? null,
+          argsHidden: canonicalJson(redacted) !== canonicalJson(args ?? {}),
           approveBaseUrl: input.approveBaseUrl ?? null,
         })
         .catch(() => undefined);
@@ -298,12 +332,15 @@ export class PolicyEnforcer {
         notDispatched("error", { error_code: "dispatch_conflict", approver: row.decided_by });
         return policyDeniedResult({ reason: "dispatch_conflict", tool: ctx.qualifiedTool, pendingCallId: pc });
       }
-      const stored = db.prepare(`SELECT args_ciphertext FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
+      const stored = db.prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
         args_ciphertext: Uint8Array | null;
+        args_hash: string;
       };
       let frozen: Record<string, unknown>;
       try {
         frozen = decryptArgs(this.deps.keys.argsEnc, stored.args_ciphertext!);
+        // Security T2.5 H-1: dispatch only the exact payload the approver was shown and approved
+        if (argsHash(this.deps.keys.argsHmac, frozen) !== stored.args_hash) throw new Error("args hash mismatch");
       } catch {
         // claimed but not sent: gateway failure before dispatch
         notDispatched("error", { error_code: "args_decrypt_failed", approver: row.decided_by });
@@ -366,6 +403,24 @@ export class PolicyEnforcer {
     const db = this.deps.db;
     const pc = db.prepare(`SELECT * FROM mcpflow_pending_call WHERE id = ?`).get(pendingCallId) as Record<string, unknown> | undefined;
     if (!pc) return { ok: false, error: "not found" };
+    // Security T2.5 M-3: grants are bound to the exact args by default; a broader grant needs
+    // explicit, validated arg matchers chosen by the approver.
+    const sameArgsOnly = opts.sameArgsOnly !== false;
+    if (!sameArgsOnly) {
+      try {
+        opts.matchArgs = validateArgMatchers(opts.matchArgs ?? []);
+      } catch (err) {
+        return { ok: false, error: `invalid match_args: ${(err as Error).message}` };
+      }
+      if (!opts.matchArgs.length) return { ok: false, error: "invalid match_args: required when same_args_only is false" };
+      try {
+        if (!allArgsMatch(opts.matchArgs, decryptArgs(this.deps.keys.argsEnc, pc.args_ciphertext as Uint8Array))) {
+          return { ok: false, error: "invalid match_args: does not match the call being approved" };
+        }
+      } catch {
+        return { ok: false, error: "invalid match_args: could not be checked" };
+      }
+    }
     const overrides = (JSON.parse(String(pc.matched_rules)) as Array<{ rule_id: string; effect: string }>)
       .filter((r) => r.effect === "require_approval")
       .map((r) => r.rule_id);
@@ -387,7 +442,7 @@ export class PolicyEnforcer {
         ).run(
           grantId, pendingCallId, String(pc.workspace_id), String(pc.agent_id), String(pc.project_id),
           String(pc.backend_slug), String(pc.tool), JSON.stringify(opts.matchArgs ?? []),
-          opts.sameArgsOnly ? String(pc.args_hash) : null, JSON.stringify(overrides), deciderAgentId,
+          sameArgsOnly ? String(pc.args_hash) : null, JSON.stringify(overrides), deciderAgentId,
           this.iso(now), this.iso(now + Math.min(Math.max(minutes, 1), 60) * 60_000), opts.maxUses ?? null,
         );
         db.prepare(`UPDATE mcpflow_pending_call SET grant_id = ? WHERE id = ?`).run(grantId, pendingCallId);
@@ -518,7 +573,13 @@ export class PolicyEnforcer {
       const overrides = new Set(JSON.parse(String(g.overrides_rule_ids)) as string[]);
       if (!reqRules.every((r) => overrides.has(r))) continue;
       if (g.args_hash != null && g.args_hash !== hash) continue;
-      if (!allArgsMatch(JSON.parse(String(g.match_args)) as ArgMatcher[], args)) continue;
+      let ok = false;
+      try {
+        ok = allArgsMatch(JSON.parse(String(g.match_args)) as ArgMatcher[], args);
+      } catch {
+        ok = false; // matcher error = grant does not apply (fail closed to approval)
+      }
+      if (!ok) continue;
       const r = this.deps.db
         .prepare(
           `UPDATE mcpflow_approval_grant SET use_count = use_count + 1
@@ -554,7 +615,9 @@ export class PolicyEnforcer {
       finalOutcome = "error";
       resultStatus = "error";
       errorCode = "gateway_dispatch_failed";
-      result = { isError: true, content: [{ type: "text", text: `gateway error: ${(err as Error).message}` }] };
+      // Security T2.5 L-9: generic message to the agent; details (redacted) stay server-side
+      console.error(`[mcp-flow] gateway error on ${callId}: ${redactSecrets(String((err as Error)?.message ?? err))}`);
+      result = { isError: true, content: [{ type: "text", text: JSON.stringify({ code: "gateway_error", call_id: callId, message: "The gateway failed to reach the backend." }) }] };
     }
     this.completion(callId, ctx, {
       final_outcome: finalOutcome,

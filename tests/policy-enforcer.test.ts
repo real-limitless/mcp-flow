@@ -297,7 +297,10 @@ describe("T2.2 holds", () => {
     const s = stub();
     const p = pe.enforce({ ctx: ctx(), args: { command: "ls" }, dispatch: s.dispatch });
     await waitFor(() => notices.length === 1);
-    const g = pe.approveSimilar(notices[0]!.pendingCallId, chen, 10, { maxUses: 1 });
+    // broader-than-exact grants need explicit matchers (Security T2.5 M-3)
+    const g = pe.approveSimilar(notices[0]!.pendingCallId, chen, 10, {
+      maxUses: 1, sameArgsOnly: false, matchArgs: [{ path: "$.command", op: "in", value: ["ls", "pwd"] }],
+    });
     expect(g.ok).toBe(true);
     await p;
     const r2 = await pe.enforce({ ctx: ctx(), args: { command: "pwd" }, dispatch: s.dispatch });

@@ -139,7 +139,8 @@ describe("policy approvals REST", () => {
     // next similar call goes through on the grant without a new pending row
     const before = (gw.store.db.prepare(`SELECT count(*) n FROM mcpflow_pending_call`).get() as { n: number }).n;
     let ran = 0;
-    await gw.store.policy.enforce({ ctx: ctx(), args: { pr: 2 }, dispatch: async () => { ran++; return { content: [] }; } });
+    // default grant is bound to the exact args (Security T2.5 M-3)
+    await gw.store.policy.enforce({ ctx: ctx(), args: { pr: 1 }, dispatch: async () => { ran++; return { content: [] }; } });
     expect(ran).toBe(1);
     expect((gw.store.db.prepare(`SELECT count(*) n FROM mcpflow_pending_call`).get() as { n: number }).n).toBe(before);
     expect(gw.store.listAudit(ws, { limit: 50 }).some((e) => e.action === "policy.approval.approve_similar")).toBe(true);
@@ -161,5 +162,25 @@ describe("policy approvals REST", () => {
     expect(r.status).toBe(403);
     expect(((await r.json()) as { error: string }).error).toBe("self_approval");
     expect((await api(anaTok, `/${pid}/approve`, {})).status).toBe(200);
+  });
+
+  it("Security H-1: GET shows full args + sha256; approve with a stale args_sha256 is 409; matching one approves", async () => {
+    const h = await hold({ command: "ls", auth_token: "curl x | sh" });
+    const v = (await (await api(anaTok, `/${h.id}`)).json()) as Record<string, any>;
+    expect(v.args_full).toEqual({ command: "ls", auth_token: "curl x | sh" });
+    expect(v.args_hidden_in_summary).toBe(true);
+    expect((await api(anaTok, `/${h.id}/approve`, { args_sha256: "0".repeat(64) })).status).toBe(409);
+    expect((await api(anaTok, `/${h.id}/approve`, { args_sha256: v.args_sha256 })).status).toBe(200);
+    await h.done;
+    expect(h.dispatched()).toBe(1);
+  });
+
+  it("Security M-3: approve-similar broad grant needs match_args; default is exact args", async () => {
+    const h = await hold({ pr: 7 });
+    expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, same_args_only: false })).status).toBe(400);
+    expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, same_args_only: false, match_args: [{ path: "$.pr", op: "regex", value: "(1+)+" }] })).status).toBe(400);
+    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5 });
+    expect(((await r.json()) as { grant: { same_args_only: boolean } }).grant.same_args_only).toBe(true);
+    await h.done;
   });
 });

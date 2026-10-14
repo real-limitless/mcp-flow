@@ -3,7 +3,7 @@
  * The write path lives in the policy enforcer (decision + completion rows) and the
  * agent directory (lifecycle rows). This module never UPDATEs or DELETEs on the normal path.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
@@ -114,8 +114,8 @@ export function queryCallAudit(
 function csvCell(v: unknown): string {
   if (v == null) return "";
   let s = typeof v === "string" ? v : JSON.stringify(v);
-  // spreadsheet formula injection guard
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  // spreadsheet formula injection guard (strings only; leading whitespace and fullwidth forms too)
+  if (typeof v === "string" && /^[\s\u3000]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20\t\r\n]/.test(s)) s = `'${s}`;
   return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
@@ -142,23 +142,57 @@ export function exportCallAudit(
   return { body: lines.join("\r\n") + "\r\n", rows: rows.length, truncated, contentType: "text/csv; charset=utf-8" };
 }
 
+export const DEFAULT_RETENTION_MONTHS = 12;
+
+/** First instant (UTC) of the month `months` before `now`. */
+export function retentionCutoff(now: Date, months: number): string {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - months, 1));
+  return d.toISOString();
+}
+
+export interface RetentionResult {
+  dryRun: boolean;
+  archived: Record<string, number>;
+  deleted: number;
+  files: string[];
+}
+
 /**
  * Retention maintenance path (separate from the gateway request path):
- * 1) export every row older than `before` to <archiveDir>/call_audit_<YYYY-MM>.jsonl (one file per month)
- * 2) in ONE BEGIN IMMEDIATE txn: drop the no-delete trigger, delete exactly the exported rows,
- *    recreate the trigger, append a lifecycle row (audit_retention) — all or nothing.
- * `before` must be the first instant of a month (UTC).
+ * - dry run by default (counts only, nothing written or deleted); pass execute: true to act
+ * - `before` must be a month boundary AND at least `minMonths` (default 12) in the past
+ * - lifecycle rows (key/agent history) are never deleted
+ * - archives: <archiveDir>/call_audit_<ws>_<YYYY-MM>.jsonl, mode 0600, fsynced, written to a temp
+ *   name and renamed only after the delete commits; never overwrites; temps removed on failure
+ * - delete: ONE BEGIN IMMEDIATE txn: drop no-delete trigger, delete exactly the exported rows,
+ *   recreate trigger, append lifecycle row (audit_retention)
  */
 export function runAuditRetention(
   db: DatabaseSync,
-  opts: { workspaceId: string; before: string; archiveDir: string; actor: string },
-): { archived: Record<string, number>; deleted: number; files: string[] } {
+  opts: {
+    workspaceId: string;
+    before: string;
+    archiveDir: string;
+    actor: string;
+    execute?: boolean;
+    minMonths?: number;
+    now?: Date;
+  },
+): RetentionResult {
+  const execute = opts.execute === true; // dry run unless explicitly executed
+  if (!/^ws_[A-Za-z0-9_-]{1,64}$/.test(opts.workspaceId)) throw new Error("invalid workspace id");
   if (!/^\d{4}-\d{2}-01T00:00:00(\.000)?Z$/.test(opts.before)) {
     throw new Error("before must be the first instant of a month, e.g. 2026-09-01T00:00:00.000Z");
   }
+  const minMonths = opts.minMonths ?? DEFAULT_RETENTION_MONTHS;
+  const cutoff = retentionCutoff(opts.now ?? new Date(), minMonths);
+  if (new Date(opts.before).getTime() > new Date(cutoff).getTime()) {
+    throw new Error(`before (${opts.before}) is newer than the retention floor ${cutoff} (${minMonths} months)`);
+  }
   const rows = db
     .prepare(
-      `SELECT ${CALL_AUDIT_COLUMNS.join(", ")} FROM mcpflow_call_audit WHERE workspace_id = ? AND ts < ? ORDER BY audit_id`,
+      `SELECT ${CALL_AUDIT_COLUMNS.join(", ")} FROM mcpflow_call_audit
+        WHERE workspace_id = ? AND ts < ? AND event_type <> 'lifecycle' ORDER BY audit_id`,
     )
     .all(opts.workspaceId, opts.before) as Record<string, unknown>[];
   const byMonth = new Map<string, Record<string, unknown>[]>();
@@ -166,23 +200,47 @@ export function runAuditRetention(
     const m = String(r.ts).slice(0, 7);
     (byMonth.get(m) ?? byMonth.set(m, []).get(m)!).push(r);
   }
-  mkdirSync(opts.archiveDir, { recursive: true });
-  const files: string[] = [];
   const archived: Record<string, number> = {};
-  for (const [month, list] of byMonth) {
-    const file = join(opts.archiveDir, `call_audit_${opts.workspaceId}_${month}.jsonl`);
-    // flag 'wx': never overwrite an existing archive
-    writeFileSync(file, list.map((r) => JSON.stringify(r)).join("\n") + "\n", { flag: "wx" });
-    files.push(file);
-    archived[month] = list.length;
+  for (const [m, list] of byMonth) archived[m] = list.length;
+  const finalName = (m: string) => join(opts.archiveDir, `call_audit_${opts.workspaceId}_${m}.jsonl`);
+  if (!execute) return { dryRun: true, archived, deleted: 0, files: [...byMonth.keys()].map(finalName) };
+
+  mkdirSync(opts.archiveDir, { recursive: true, mode: 0o700 });
+  for (const m of byMonth.keys()) {
+    if (existsSync(finalName(m))) throw new Error(`EEXIST: archive already exists: ${finalName(m)}`);
   }
+  const temps: Array<[string, string]> = [];
+  const cleanup = () => {
+    for (const [t] of temps) rmSync(t, { force: true });
+  };
+  try {
+    for (const [m, list] of byMonth) {
+      const tmp = `${finalName(m)}.tmp-${randomBytes(6).toString("hex")}`;
+      const fd = openSync(tmp, "wx", 0o600);
+      temps.push([tmp, finalName(m)]);
+      try {
+        writeSync(fd, list.map((r) => JSON.stringify(r)).join("\n") + "\n");
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    }
+    fsyncDir(opts.archiveDir);
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+  const files = temps.map(([, f]) => f);
   const maxId = rows.length ? Number(rows.at(-1)!.audit_id) : 0;
   let deleted = 0;
   db.exec("BEGIN IMMEDIATE;");
   try {
     db.exec("DROP TRIGGER mcpflow_call_audit_no_delete;");
     const res = db
-      .prepare(`DELETE FROM mcpflow_call_audit WHERE workspace_id = ? AND ts < ? AND audit_id <= ?`)
+      .prepare(
+        `DELETE FROM mcpflow_call_audit
+          WHERE workspace_id = ? AND ts < ? AND audit_id <= ? AND event_type <> 'lifecycle'`,
+      )
       .run(opts.workspaceId, opts.before, maxId);
     deleted = Number(res.changes);
     if (deleted !== rows.length) throw new Error(`retention mismatch: exported ${rows.length}, deleting ${deleted}`);
@@ -198,8 +256,28 @@ export function runAuditRetention(
     );
     db.exec("COMMIT;");
   } catch (err) {
-    db.exec("ROLLBACK;");
+    try {
+      db.exec("ROLLBACK;");
+    } catch {
+      /* keep the original error */
+    }
+    cleanup();
     throw err;
   }
-  return { archived, deleted, files };
+  for (const [t, f] of temps) renameSync(t, f);
+  fsyncDir(opts.archiveDir);
+  return { dryRun: false, archived, deleted, files };
+}
+
+function fsyncDir(dir: string): void {
+  try {
+    const fd = openSync(dir, "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    /* some platforms cannot fsync a directory */
+  }
 }

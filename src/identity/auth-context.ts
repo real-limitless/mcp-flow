@@ -20,6 +20,8 @@ export function acceptClientSessionId(
   sid: string | null,
 ): boolean {
   if (!sid) return false;
+  // never let an agent ride a legacy key's sticky entry (Security T2.5 L-4)
+  if (sid.startsWith("key:")) return false;
   if (!sid.startsWith("agent:")) return true;
   return new RegExp(`^agent:${agent.agentId}:${agent.keyId}:[0-9a-f]{32}$`).test(sid);
 }
