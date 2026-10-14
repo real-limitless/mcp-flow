@@ -119,3 +119,22 @@ describe("R2-1 / R2-2 idempotency scope", () => {
     expect(runs).toBe(1);
   });
 });
+
+describe("R2-3 per-agent result quota", () => {
+  it("an agent flooding results evicts only its own; other agents' unread results survive", async () => {
+    setup();
+    const dir = new AgentDirectory(db, keys);
+    const bot2 = dir.createAgent({ workspaceId: WS, name: "bot2", owner: "chen", kind: "grokbot", projects: ["p1"], createdBy: chen });
+    const bot2Key = dir.createKey({ agentId: bot2, createdBy: chen }).keyId;
+    const pe = enforcer({ maxResultBytes: 1024, maxResultAgentBytes: 2500, maxResultTotalBytes: 1_000_000 });
+    const big = async () => ({ content: [{ type: "text" as const, text: "x".repeat(10_000) }] });
+    await pe.enforce({ ctx: ctx("echo"), args: { mine: 1 }, idempotencyKey: "a-1", dispatch: big });
+    for (let i = 0; i < 6; i++) {
+      await pe.enforce({ ctx: { ...ctx("echo"), agentId: bot2, agentName: "bot2", keyId: bot2Key }, args: { i }, idempotencyKey: `f-${i}`, dispatch: big });
+    }
+    const kept = (agent: string) => db.prepare(`SELECT coalesce(sum(result_bytes),0) t, count(*) n FROM mcpflow_call_outcome WHERE agent_id = ? AND result_ciphertext IS NOT NULL`).get(agent) as { t: number; n: number };
+    expect(kept(bot).n).toBe(1);
+    expect(kept(bot2).t).toBeLessThanOrEqual(2500);
+    expect(kept(bot2).n).toBeGreaterThan(0);
+  });
+});

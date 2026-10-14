@@ -67,6 +67,8 @@ export interface EnforcerDeps {
   /** R-2 caps for stored results */
   maxResultBytes?: number;
   maxResultTotalBytes?: number;
+  /** Security R2-3: per-agent cap on stored result bytes (one agent cannot evict others' results) */
+  maxResultAgentBytes?: number;
   resultTtlMs?: number;
   /** Progress notification interval while holding (default 15 s) */
   progressIntervalMs?: number;
@@ -84,6 +86,7 @@ export const PROGRESS_INTERVAL_MS = 15_000;
 export const RESULT_TTL_MS = 24 * 3600_000;
 export const MAX_RESULT_BYTES = 256 * 1024;
 export const MAX_RESULT_TOTAL_BYTES = 64 * 1024 * 1024;
+export const MAX_RESULT_AGENT_BYTES = 8 * 1024 * 1024;
 
 /** Durable call state from the completion pair (Q6 mapping). */
 export function outcomeState(finalOutcome: string, resultStatus: string): "executed" | "not_executed" | "unknown" {
@@ -626,6 +629,21 @@ export class PolicyEnforcer {
     const cutoff = this.iso(this.clock() - (this.deps.resultTtlMs ?? RESULT_TTL_MS));
     let n = Number(db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ?
                                   WHERE result_ciphertext IS NOT NULL AND completed_at < ?`).run(now, cutoff).changes);
+    // R2-3: per-agent quota first, so an agent over its share only evicts its own results
+    const agentCap = this.deps.maxResultAgentBytes ?? MAX_RESULT_AGENT_BYTES;
+    const over = db.prepare(`SELECT agent_id, sum(result_bytes) AS t FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL
+                              GROUP BY agent_id HAVING sum(result_bytes) > ?`).all(agentCap) as Array<{ agent_id: string; t: number }>;
+    for (const o of over) {
+      let t = Number(o.t);
+      const rows = db.prepare(`SELECT call_id, result_bytes FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL AND agent_id = ?
+                                ORDER BY completed_at, call_id`).all(o.agent_id) as Array<{ call_id: string; result_bytes: number }>;
+      for (const r of rows) {
+        if (t <= agentCap) break;
+        db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ? WHERE call_id = ?`).run(now, r.call_id);
+        t -= Number(r.result_bytes ?? 0);
+        n++;
+      }
+    }
     const cap = this.deps.maxResultTotalBytes ?? MAX_RESULT_TOTAL_BYTES;
     let total = Number((db.prepare(`SELECT coalesce(sum(result_bytes),0) AS t FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL`).get() as { t: number }).t);
     while (total > cap) {
