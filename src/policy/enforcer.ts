@@ -309,8 +309,8 @@ export class PolicyEnforcer {
       if (typeof key !== "string" || !/^[\x21-\x7e]{1,128}$/.test(key)) {
         return policyDeniedResult({ reason: "invalid_idempotency_key", tool: input.ctx.qualifiedTool });
       }
-      const prior = this.outcomeByKey(input.ctx.agentId, input.ctx.keyId, key);
-      if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args));
+      const prior = this.outcomeByKey(input.ctx.agentId, key);
+      if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args), input.ctx.qualifiedTool);
     }
     const out: CoreOut = { callId: newId("call"), tracked: false, earlyReturn: false };
     let res: CallToolResult;
@@ -318,8 +318,8 @@ export class PolicyEnforcer {
       res = await this.enforceCore(input, out);
     } catch (err) {
       if (out.duplicateKey && key) {
-        const prior = this.outcomeByKey(input.ctx.agentId, input.ctx.keyId, key);
-        if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args));
+        const prior = this.outcomeByKey(input.ctx.agentId, key);
+        if (prior) return this.replay(prior, argsHash(this.deps.keys.argsHmac, input.args), input.ctx.qualifiedTool);
       }
       throw err;
     }
@@ -560,19 +560,20 @@ export class PolicyEnforcer {
 
   private readonly inflightAsync = new Set<string>();
 
-  private outcomeByKey(agentId: string, keyId: string, key: string): Record<string, unknown> | undefined {
+  /** Security R2-1: scoped to the AGENT (survives key rotation); agent ids are server-derived. */
+  private outcomeByKey(agentId: string, key: string): Record<string, unknown> | undefined {
     return this.deps.db
-      .prepare(`SELECT * FROM mcpflow_call_outcome WHERE agent_id = ? AND key_id = ? AND idempotency_key = ?`)
-      .get(agentId, keyId, key) as Record<string, unknown> | undefined;
+      .prepare(`SELECT * FROM mcpflow_call_outcome WHERE agent_id = ? AND idempotency_key = ? ORDER BY created_at LIMIT 1`)
+      .get(agentId, key) as Record<string, unknown> | undefined;
   }
 
-  /** A re-send with a known idempotency key: never runs again. */
-  private replay(prior: Record<string, unknown>, hash: string): CallToolResult {
-    if (String(prior.args_hash) !== hash) {
+  /** A re-send with a known idempotency key: never runs again. R2-2: tool (incl. backend) must match too. */
+  private replay(prior: Record<string, unknown>, hash: string, qualifiedTool: string): CallToolResult {
+    if (String(prior.args_hash) !== hash || String(prior.qualified_tool ?? "") !== qualifiedTool) {
       return policyDeniedResult({
         reason: "idempotency_conflict",
-        tool: String(prior.qualified_tool ?? ""),
-        message: "This idempotency key was already used with different arguments; nothing was dispatched.",
+        tool: qualifiedTool,
+        message: "This idempotency key was already used for a different tool or different arguments; nothing was dispatched.",
       });
     }
     if (prior.state === "pending") {
