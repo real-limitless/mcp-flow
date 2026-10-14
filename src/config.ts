@@ -12,6 +12,8 @@ export interface Config {
   /** Public origin for the OAuth redirect URI. Empty when unset. */
   publicUrl: string;
   trustProxy: boolean;
+  /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
+  policyDevKeyRaw?: string;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -47,6 +49,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     ).replace(/\/$/, ""),
     trustProxy:
       overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
+    policyDevKeyRaw:
+      overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
   };
 }
 

@@ -40,6 +40,8 @@ import {
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
+import { AgentDirectory } from "../identity/agents.js";
+import { derivePolicyKeys } from "../identity/dev-keys.js";
 import {
   applyHeaderPatch,
   compactEnvRecord,
@@ -794,13 +796,23 @@ export class Store {
     (workspaceId: string, slug: string) => void
   >();
 
-  constructor(dbPath: string, masterKeyRaw: string) {
+  readonly identity: AgentDirectory;
+
+  constructor(
+    dbPath: string,
+    masterKeyRaw: string,
+    opts: { policyDevKeyRaw?: string } = {},
+  ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
     applyConnectionPragmas(this.db);
     this.db.exec(SCHEMA);
     this.migrate();
     runMigrations(this.db);
+    this.identity = new AgentDirectory(
+      this.db,
+      derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`),
+    );
   }
 
   private migrate(): void {

@@ -32,7 +32,7 @@ export interface RunningServer {
 
 export async function startServer(cfg: Config): Promise<RunningServer> {
   requireSecrets(cfg);
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
   store.ensureWorkspace(cfg.workspaceName);
   // raw approval arguments must not outlive a decision made while no gate was waiting
   store.sweepResolvedSealedApprovalArgs();
