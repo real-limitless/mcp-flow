@@ -47,7 +47,12 @@ async function api(path, opts = {}) {
     const code = body.error || res.statusText || String(res.status);
     // 401 = missing/bad token: unchanged (error shown, token prompt stays).
     // 403 = valid token that isn't permitted: report it, never clear the token.
-    const err = new Error(res.status === 403 ? notPermittedMsg(body.error) : code);
+    // 401: drop ONLY the admin token (memory + sessionStorage), re-prompt in
+    // place. No retry with the old token, no reload, tab kept.
+    if (res.status === 401 && token() === t) promptAdminToken();
+    const err = new Error(
+      res.status === 401 ? REPROMPT_MSG : res.status === 403 ? notPermittedMsg(body.error) : code,
+    );
     err.status = res.status;
     err.code = code;
     throw err;
@@ -91,6 +96,28 @@ function withIssues(tab, fn) {
       } else el?.remove();
     }
   };
+}
+
+const REPROMPT_MSG = "Expired or invalid key — enter it again";
+
+function promptAdminToken() {
+  sessionStorage.removeItem(TOKEN_KEY);
+  const input = $("#token");
+  if (input) {
+    input.value = "";
+    input.placeholder = "Admin token — expired or invalid, enter it again";
+  }
+  let msg = $("#tokenMsg");
+  if (!msg) {
+    msg = document.createElement("p");
+    msg.id = "tokenMsg";
+    msg.className = "pa-warn";
+    msg.setAttribute("role", "alert");
+    $(".auth-row")?.after(msg);
+  }
+  msg.textContent = REPROMPT_MSG;
+  msg.hidden = false;
+  input?.focus();
 }
 
 function notPermittedMsg(code) {
@@ -2313,6 +2340,7 @@ const APPROVER_TOKEN_KEY = "mcp_flow_approver_token";
 const PA_BASE = "/v1/policy/approvals";
 let paPollTimer = null;
 let paView = "pending";
+let paReprompt = false;
 // H-1: per-call detail from GET /:id (args_full + args_sha256), keyed by call id.
 // Approve / deny / approve-similar stay disabled until a detail for that id is
 // loaded and usable. Held in memory only; cleared on any stale/mismatch error.
@@ -2359,8 +2387,15 @@ async function approverApi(path, opts = {}) {
   }
   if (!res.ok) {
     const code = body.error || res.statusText || String(res.status);
+    // 401: drop ONLY the approver key; the admin token is untouched.
+    if (res.status === 401 && approverToken() === t) {
+      sessionStorage.removeItem(APPROVER_TOKEN_KEY);
+      paDetails.clear();
+      paReprompt = true;
+      stopPolicyApprovalsPoll();
+    }
     const friendly = {
-      unauthorized: "Approver key rejected (401). Use a human agent key or session — the admin token is not accepted here.",
+      unauthorized: `${REPROMPT_MSG}. (Approver key rejected — use a human agent key or session; the admin token isn't accepted here.)`,
       "approvers must be human agents": "This key belongs to a non-human agent; only human agents can approve.",
       self_approval: "You can't approve your own call.",
       not_approver: "You are not an approver for this call.",
@@ -2623,11 +2658,12 @@ async function renderPolicyApprovals() {
       loadErr = e.message;
     }
   }
+  const hasNow = !!approverToken(); // may have been cleared by a 401 above
   const authHtml = `
     <div class="auth-row pa-auth">
-      <input id="approverToken" type="password" placeholder="Approver key (human agent mf_… or mf_sess_…)" autocomplete="off" value="${has ? "••••••••" : ""}" />
+      <input id="approverToken" type="password" placeholder="Approver key (human agent mf_… or mf_sess_…)" autocomplete="off" value="${hasNow ? "••••••••" : ""}" />
       <button id="saveApproverToken" type="button" class="pill-btn primary">Use key</button>
-      ${has ? '<button id="clearApproverToken" type="button" class="pill-btn ghost">Forget</button>' : ""}
+      ${hasNow ? '<button id="clearApproverToken" type="button" class="pill-btn ghost">Forget</button>' : ""}
     </div>
     <p class="muted">Per-call policy approvals use a human agent's key, not the admin token. Stored for this tab only.</p>
     <nav class="seg pa-seg" aria-label="Approval view">
@@ -2635,14 +2671,15 @@ async function renderPolicyApprovals() {
       <button type="button" class="seg-btn ${paView === "history" ? "active" : ""}" data-pa-view="history">History</button>
     </nav>`;
   let body;
-  if (!has) body = '<p class="audit-empty">Enter an approver key to load calls.</p>';
+  if (!hasNow && paReprompt) body = `<p class="pa-warn" role="alert">${esc(REPROMPT_MSG)}</p>`;
+  else if (!hasNow) body = '<p class="audit-empty">Enter an approver key to load calls.</p>';
   else if (loadErr) body = `<p class="err-inline">${esc(loadErr)}</p>`;
   else if (!list.length) body = `<p class="audit-empty">${paView === "pending" ? "Nothing waiting on you." : "No history yet."}</p>`;
   else body = list.map((c) => paCardHtml(c, paView === "pending" && c?.status === "pending")).join("");
   root.innerHTML = surface(
     "Call approvals",
     authHtml + paNoticesHtml() + `<div class="pa-list">${body}</div>`,
-    has && !loadErr ? `${list.length} ${paView}` : "",
+    hasNow && !loadErr ? `${list.length} ${paView}` : "",
   );
 
   $("#saveApproverToken")?.addEventListener("click", () => {
@@ -2650,6 +2687,7 @@ async function renderPolicyApprovals() {
     if (v && v !== "••••••••") {
       sessionStorage.setItem(APPROVER_TOKEN_KEY, v);
       paDetails.clear();
+      paReprompt = false;
     }
     void renderPolicyApprovals().catch((e) => showErr(e.message));
   });
@@ -2763,7 +2801,7 @@ async function renderPolicyApprovals() {
   // Poll /pending every ~8 s while visible (doc suggests 5–10 s). Skip while
   // the user is typing in a card so inputs aren't wiped.
   stopPolicyApprovalsPoll();
-  if (has && paView === "pending") {
+  if (hasNow && paView === "pending") {
     paPollTimer = setInterval(() => {
       if (document.hidden) return;
       const active = document.activeElement;
@@ -3165,7 +3203,9 @@ renderAccessMapLegacy = withIssues("access-map", renderAccessMapLegacy);
 
 $("#saveToken").addEventListener("click", () => {
   setToken($("#token").value.trim());
-  void refresh();
+  const msg = $("#tokenMsg");
+  if (msg) msg.hidden = true;
+  void refresh(); // re-renders the current tab with the new key
 });
 $("#refresh").addEventListener("click", () => void refresh());
 $("#token").value = token();
