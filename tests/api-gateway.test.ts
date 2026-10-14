@@ -673,7 +673,7 @@ describe("api + gateway", () => {
     const deniedRest = await fetch(`${base}/v1/backends`, {
       headers: { Authorization: `Bearer ${agentToken}` },
     });
-    expect(deniedRest.status).toBe(401);
+    expect(deniedRest.status).toBe(403);
 
     const opClient = new Client(
       { name: "ops", version: "1.0.0" },

@@ -205,7 +205,8 @@ export function createApp(
       ? store.identity.resolveSession(token)
       : store.identity.resolveKey(token, clientIp(c));
     if (agentRes.status === "ok" || agentRes.status === "forbidden") {
-      if (!agentRes.agent.isAdmin || agentRes.agent.kind !== "human") return c.json({ error: "unauthorized" }, 401);
+      // QA V3-F2: authenticated but not a human admin -> 403 (401 stays for missing/bad tokens)
+      if (!agentRes.agent.isAdmin || agentRes.agent.kind !== "human") return c.json({ error: "forbidden" }, 403);
       c.set("auth", agentAuthContext(agentRes.agent, { mcpSessionId: null }));
       c.set("humanAdmin", agentRes.agent.agentId);
       await next();
@@ -226,6 +227,7 @@ export function createApp(
       await next();
       return;
     }
+    if (key) return c.json({ error: "forbidden" }, 403); // valid legacy key without scopes.admin
 
     return c.json({ error: "unauthorized" }, 401);
   });
