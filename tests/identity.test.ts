@@ -234,7 +234,7 @@ describe("gateway stamps the agent on every request", () => {
 
     const used = JSON.parse(text(await ca.callTool({ name: "mf_use_project", arguments: { project: "gb_devops" } })));
     expect(used.ok).toBe(true);
-    expect(used.mcpSessionId).toBe(`agent:${a}:${ka.keyId}`);
+    expect(used.mcpSessionId).toMatch(new RegExp(`^agent:${a}:${ka.keyId}:[0-9a-f]{32}$`));
     expect(used.sessionToken.startsWith("mf_sess_")).toBe(true);
 
     const cs = await connect(gw.url, used.sessionToken);
@@ -260,5 +260,72 @@ describe("gateway stamps the agent on every request", () => {
     const lStatus = JSON.parse(text(await cl.callTool({ name: "mf_status", arguments: {} })));
     expect(lStatus.agent).toBeNull();
     expect(lStatus.keyName).toBe("Bot_Engineer_Alex");
+  });
+});
+
+describe("agent session ids (T1.1 §3.5)", () => {
+  it("are random per client, returned in Mcp-Session-Id, and not shared across clients", async () => {
+    const gw = await boot();
+    const ws = gw.store.ensureWorkspace("default");
+    gw.store.createProject(ws.id, { slug: "gb_devops", title: "DevOps" });
+    gw.store.createProject(ws.id, { slug: "wiki", title: "Wiki" });
+    const id = gw.store.identity;
+    const human = id.bootstrapWorkspace(ws.id, { name: "chen", owner: "chen" });
+    const a = id.createAgent({ workspaceId: ws.id, name: "bot", owner: "chen", kind: "grokbot", projects: ["gb_devops", "wiki"], createdBy: human });
+    const k = id.createKey({ agentId: a, createdBy: human });
+
+    // two concurrent clients on the same key
+    const [c1, c2] = await Promise.all([connect(gw.url, k.token), connect(gw.url, k.token)]);
+    const [u1, u2] = await Promise.all([
+      c1.callTool({ name: "mf_use_project", arguments: { project: "gb_devops", mintSessionToken: false } }),
+      c2.callTool({ name: "mf_use_project", arguments: { project: "wiki", mintSessionToken: false } }),
+    ]);
+    const s1 = JSON.parse(text(u1)).mcpSessionId as string;
+    const s2 = JSON.parse(text(u2)).mcpSessionId as string;
+    expect(s1).not.toBe(s2);
+    // each client keeps its own binding (the SDK echoes Mcp-Session-Id)
+    const st1 = JSON.parse(text(await c1.callTool({ name: "mf_status", arguments: {} })));
+    const st2 = JSON.parse(text(await c2.callTool({ name: "mf_status", arguments: {} })));
+    expect(st1.project.slug).toBe("gb_devops");
+    expect(st2.project.slug).toBe("wiki");
+
+    // a client that doesn't echo gets a fresh id every time and no inherited binding
+    const raw = async (headers: Record<string, string> = {}) =>
+      fetch(`${gw.url}/mcp`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${k.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", ...headers },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "mf_status", arguments: {} } }),
+      });
+    const r1 = await raw();
+    const r2 = await raw();
+    const h1 = r1.headers.get("mcp-session-id")!;
+    const h2 = r2.headers.get("mcp-session-id")!;
+    expect(h1).toMatch(new RegExp(`^agent:${a}:${k.keyId}:[0-9a-f]{32}$`));
+    expect(h2).not.toBe(h1);
+    const body = await r1.json() as { result: { content: Array<{ text: string }> } };
+    // no inherited binding: falls back to the agent's first permitted project, never c2's "wiki"
+    expect(JSON.parse(body.result.content[0]!.text).project.slug).toBe("gb_devops");
+
+    // the old deterministic id (and another key's id) is not accepted as a binding
+    const guess = await raw({ "mcp-session-id": `agent:${a}:${k.keyId}` });
+    expect(guess.headers.get("mcp-session-id")).not.toBe(`agent:${a}:${k.keyId}`);
+    const gBody = await guess.json() as { result: { content: Array<{ text: string }> } };
+    expect(JSON.parse(gBody.result.content[0]!.text).project.slug).toBe("gb_devops");
+    const k2 = id.createKey({ agentId: a, createdBy: human });
+    const stolen = await fetch(`${gw.url}/mcp`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${k2.token}`, "Content-Type": "application/json", Accept: "application/json, text/event-stream", "mcp-session-id": s2 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "mf_status", arguments: {} } }),
+    });
+    expect(stolen.headers.get("mcp-session-id")).not.toBe(s2);
+    const sBody = await stolen.json() as { result: { content: Array<{ text: string }> } };
+    expect(JSON.parse(sBody.result.content[0]!.text).project.slug).toBe("gb_devops"); // not c2's "wiki"
+  });
+
+  it("ids carry 128 bits of randomness", async () => {
+    const { newAgentSessionId } = await import("../src/identity/auth-context.js");
+    const ids = new Set(Array.from({ length: 2000 }, () => newAgentSessionId({ agentId: "agt_x", keyId: "key_y" })));
+    expect(ids.size).toBe(2000);
+    for (const sid of [...ids].slice(0, 5)) expect(sid).toMatch(/^agent:agt_x:key_y:[0-9a-f]{32}$/);
   });
 });

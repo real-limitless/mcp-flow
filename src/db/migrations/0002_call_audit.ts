@@ -4,6 +4,8 @@
  * Q6 (Database, 2026-10-14): the completion CHECKs are kept exactly as written:
  *   - gateway failure before dispatch: final_outcome='error', result_status='not_dispatched'
  *   - gateway failure after dispatch:  final_outcome='error', result_status='error' (no 'unknown' in enum)
+ *   A gateway failure after dispatch is recorded as result_status='error' (same value a backend
+ *   error gets); final_outcome='error' (gateway) vs 'executed' (backend) is what tells them apart.
  *   - backend error/timeout:           final_outcome='executed', result_status='error'|'timeout'
  * Retention never deletes on the normal path; see the maintenance path (T3.1 retention, later).
  */

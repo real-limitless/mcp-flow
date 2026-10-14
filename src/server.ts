@@ -115,7 +115,16 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   console.error(`  UI:     ${url}/admin/`);
   console.error(`  Health: ${url}/health`);
 
-  let closed = false;
+  // Timeout = deny even for holds whose waiter is gone (restart, crash): sweep overdue pending calls.
+  const sweeper = setInterval(() => {
+    try {
+      store.policy.sweepExpired();
+    } catch (err) {
+      console.error(`[mcp-flow] pending sweeper: ${(err as Error).message}`);
+    }
+  }, 30_000);
+  sweeper.unref();
+
   return {
     store,
     pool,
@@ -123,14 +132,7 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
     edgeRouter,
     url,
     close: async () => {
-      if (closed) return;
-      closed = true;
-      const started = Date.now();
-      const left = () =>
-        Math.max(0, SHUTDOWN_BUDGET_MS - (Date.now() - started));
-      const wait = (ms: number) =>
-        new Promise<void>((resolve) => setTimeout(resolve, ms));
-
+      clearInterval(sweeper);
       edgeHub.closeAll();
       const edgeClosed = new Promise<void>((resolve) => wss.close(() => resolve()));
       // Stop accepting. Drain in-flight HTTP for up to 8s, inside the 10s budget.

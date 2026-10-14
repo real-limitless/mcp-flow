@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { agentAuthContext, agentSessionKey } from "../identity/auth-context.js";
+import {
+  acceptClientSessionId,
+  agentAuthContext,
+  newAgentSessionId,
+} from "../identity/auth-context.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -1274,8 +1278,17 @@ export function createApp(
 
     const sess =
       agentRes.status === "unknown" ? store.authenticateProjectSession(token) : null;
+    /** Set when the gateway minted a fresh agent session id the client must echo back. */
+    let issuedSessionId: string | null = null;
     if (agentRes.status === "ok") {
       const agent = agentRes.agent;
+      let agentSid: string;
+      if (acceptClientSessionId(agent, mcpSessionId)) {
+        agentSid = mcpSessionId!;
+      } else {
+        agentSid = newAgentSessionId(agent);
+        issuedSessionId = agentSid;
+      }
       let projectId: string | null = null;
       let projectSlug: string | null = null;
       if (agent.sessionProject) {
@@ -1284,9 +1297,7 @@ export function createApp(
         projectId = p.id;
         projectSlug = p.slug;
       } else {
-        const sticky = globalSessionProjects.get(
-          mcpSessionId || agentSessionKey(agent),
-        );
+        const sticky = globalSessionProjects.get(agentSid);
         if (
           sticky &&
           sticky.keyId === agent.keyId &&
@@ -1296,7 +1307,7 @@ export function createApp(
           projectSlug = sticky.projectSlug;
         }
       }
-      auth = agentAuthContext(agent, { mcpSessionId, projectId, projectSlug });
+      auth = agentAuthContext(agent, { mcpSessionId: agentSid, projectId, projectSlug });
     } else if (sess) {
       auth = {
         kind: "project_session",
@@ -1358,9 +1369,20 @@ export function createApp(
       void server.close().catch(() => undefined);
     };
 
+    // Fresh per-client agent session id (T1.1 §3.5); clients echo it as Mcp-Session-Id.
+    // Copy headers: the node adaptor may cache the original Response's init.
+    const outHeaders = new Headers(response.headers);
+    if (issuedSessionId) outHeaders.set("mcp-session-id", issuedSessionId);
+
     if (!response.body) {
       cleanup();
-      return response;
+      return issuedSessionId
+        ? new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: outHeaders,
+          })
+        : response;
     }
 
     const reader = response.body.getReader();
@@ -1388,7 +1410,7 @@ export function createApp(
     return new Response(stream, {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: outHeaders,
     });
   });
 

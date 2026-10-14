@@ -1,4 +1,5 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { policyDeniedResult } from "../policy/enforcer.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -41,12 +42,24 @@ import {
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
+  namespaceTool,
   parseNamespacedTool,
   UpstreamPool,
   type NamespacedTool,
 } from "./upstream.js";
 
 const META_TOOLS: Tool[] = [
+  {
+    name: "mf_pending_status",
+    description:
+      "Status of a call held for human approval (pending_call_id from a policy result). Agent keys only.",
+    inputSchema: {
+      type: "object",
+      properties: { pending_call_id: { type: "string" } },
+      required: ["pending_call_id"],
+      additionalProperties: false,
+    },
+  },
   {
     name: "mf_list_backends",
     description:
@@ -181,7 +194,6 @@ function filterTools(
 
 function stickySessionId(auth: AuthContext): string | null {
   if (auth.mcpSessionId) return auth.mcpSessionId;
-  if (auth.agentId && auth.keyId) return `agent:${auth.agentId}:${auth.keyId}`;
   return auth.keyId ? `key:${auth.keyId}` : null;
 }
 
@@ -212,6 +224,16 @@ function resolveActiveProject(
   if (slug) {
     const p = store.getProjectBySlug(auth.workspaceId, slug);
     if (p && keyMayUseProject(auth.scopes, p.slug)) return p;
+  }
+  if (auth.agentId) {
+    // Agents never fall back to a project outside key ∩ agent projects (T1.1 §3.4).
+    const allowed = auth.effectiveProjects ?? [];
+    if (def && allowed.includes(def.slug)) return def;
+    for (const s of allowed) {
+      const p = store.getProjectBySlug(auth.workspaceId, s);
+      if (p) return p;
+    }
+    return null;
   }
   return def;
 }
@@ -249,6 +271,50 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   );
 
   const edgeEnabled = Boolean(edgeHub);
+
+  /**
+   * T2.2: per-agent policy enforcement before any byte reaches a backend or edge device.
+   * Matches on the routing-resolved (backend slug, backend tool), never on the caller's spelling.
+   * Legacy (non-agent) keys keep the existing authz gate until the T1.4 cutover.
+   */
+  const agentPolicyCall = async (
+    qualified: string,
+    callArgs: Record<string, unknown>,
+    project: Project | null,
+  ): Promise<CallToolResult> => {
+    const parsed = parseNamespacedTool(qualified);
+    const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
+    if (!parsed || !backend || !project) {
+      return policyDeniedResult({
+        reason: "no_matching_rule",
+        tool: qualified,
+        message: !project
+          ? "No active project for this agent."
+          : `Unknown backend for ${qualified}; nothing was dispatched.`,
+      });
+    }
+    const info = upstream.resolveCallContext(ctx.workspaceId, qualified);
+    const routed = namespaceTool(backend.slug, parsed.tool);
+    return store.policy.enforce({
+      ctx: {
+        workspaceId: ctx.workspaceId,
+        agentId: ctx.agentId!,
+        agentName: ctx.agentName ?? "",
+        keyId: ctx.keyId!,
+        keyPrefix: ctx.keyPrefix ?? null,
+        sessionId: ctx.projectSessionId ?? null,
+        projectId: project.slug,
+        backendSlug: backend.slug,
+        tool: parsed.tool,
+        qualifiedTool: routed,
+        placement: info.placement,
+        deviceId: info.deviceId,
+      },
+      args: callArgs,
+      signal: deps.abortSignal,
+      dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
+    });
+  };
 
   const activeProject = (): Project | null =>
     resolveActiveProject(store, ctx);
@@ -904,6 +970,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
+      if (ctx.agentId) {
+        const result = await agentPolicyCall(innerName, innerArgs, project);
+        auditCall(result, { meta: true });
+        return result;
+      }
       const parsed = parseNamespacedTool(innerName);
       const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
       const innerCtx: AuthzEvalContext = {
@@ -1007,6 +1078,16 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
+    if (name === "mf_pending_status") {
+      const pid = String(args.pending_call_id ?? "");
+      const st = ctx.agentId ? store.policy.pendingStatus(pid, ctx.agentId) : null;
+      const result = st
+        ? textResult({ pending_call_id: pid, ...st })
+        : textResult("pending call not found for this agent", true);
+      auditCall(result, { meta: true });
+      return result;
+    }
+
     if (name.startsWith("mf_")) {
       const result = textResult(`Unknown meta tool: ${name}`, true);
       auditCall(result, { meta: true });
@@ -1037,6 +1118,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
+    if (ctx.agentId) {
+      const result = await agentPolicyCall(name, args, project);
+      auditCall(result);
+      return result;
+    }
     const parsed = parseNamespacedTool(name);
     const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, name);
     const gate = await runAuthzGate({
