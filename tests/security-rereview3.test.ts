@@ -275,3 +275,35 @@ describe("R4-3 MCP_FLOW_REFUSE_LEGACY_MCP_KEYS parsing + startup log", () => {
     });
   }
 });
+
+describe("QA V5-F1 /mcp audit trail", () => {
+  for (const on of [false, true]) {
+    it(`flag ${on ? "ON" : "OFF"}: refused legacy keys and successful connects are audited (no secrets)`, async () => {
+      const gw = await boot(on ? { refuseLegacyMcpKeys: true } : {});
+      const ws = gw.store.ensureWorkspace("default").id;
+      const legacy = gw.store.createApiKey(ws, "legacy-ops", { projects: ["*"] } as never);
+      const id = gw.store.identity;
+      const chen = id.bootstrapWorkspace(ws, { name: "chen", owner: "chen" });
+      const bot = id.createAgent({ workspaceId: ws, name: "bot", owner: "chen", kind: "grokbot", projects: ["p1"], createdBy: chen });
+      const bk = id.createKey({ agentId: bot, createdBy: chen });
+      expect((await init(gw, legacy.token)).status).toBe(on ? 403 : 200);
+      expect((await init(gw, bk.token)).status).toBe(200);
+      expect((await init(gw, "mf_" + "q".repeat(40))).status).toBe(401);
+      const ev = gw.store.listAudit(ws, { limit: 100 }).filter((e) => e.action.startsWith("mcp."));
+      const text = JSON.stringify(ev);
+      expect(text).not.toContain(legacy.token);
+      expect(text).not.toContain(bk.token);
+      const refused = ev.filter((e) => e.action === "mcp.legacy_key_refused");
+      const connects = ev.filter((e) => e.action === "mcp.connect");
+      if (on) {
+        expect(refused).toHaveLength(1);
+        expect(refused[0]!.detail).toMatchObject({ via: "legacy_api_key", key_name: "legacy-ops" });
+        expect(connects.map((e) => (e.detail as { via: string }).via)).toEqual(["agent_key"]);
+      } else {
+        expect(refused).toHaveLength(0);
+        expect(connects.map((e) => (e.detail as { via: string }).via).sort()).toEqual(["agent_key", "legacy_api_key"]);
+      }
+      expect(connects.every((e) => e.keyId)).toBe(true);
+    });
+  }
+});

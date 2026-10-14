@@ -1341,7 +1341,21 @@ export function createApp(
     // Security M-5 (cutover flag, default off): legacy shared keys / legacy project sessions refused on /mcp
     if (agentRes.status === "unknown" && cfg.refuseLegacyMcpKeys) {
       const legacy = store.authenticateProjectSession(token) ?? store.authenticateApiKey(token);
-      if (legacy) return c.json({ error: "legacy keys are not accepted on /mcp; use an agent key" }, 403);
+      if (legacy) {
+        // QA V5-F1: the refusal leaves a trail (key id + name, never the secret)
+        try {
+          store.writeAudit({
+            workspaceId: legacy.workspaceId,
+            keyId: legacy.keyId ?? null,
+            action: "mcp.legacy_key_refused",
+            detail: { via: "projectSessionId" in legacy ? "legacy_project_session" : "legacy_api_key", key_name: legacy.keyName ?? null },
+            ip: clientIp(c),
+          });
+        } catch (err) {
+          console.error(`[mcp-flow] audit write failed for mcp.legacy_key_refused: ${(err as Error).message}`);
+        }
+        return c.json({ error: "legacy keys are not accepted on /mcp; use an agent key" }, 403);
+      }
       return c.json({ error: "invalid api key" }, 401);
     }
     const sess =
@@ -1416,10 +1430,12 @@ export function createApp(
     // A tools/call that carries a progressToken gets an SSE response so hold progress
     // notifications can reach the client; everything else keeps plain JSON responses.
     let wantsStream = false;
+    let isInitialize = false;
     if (c.req.method === "POST") {
       try {
         const peek = (await c.req.raw.clone().json()) as unknown;
         const msgs = Array.isArray(peek) ? peek : [peek];
+        isInitialize = msgs.some((m) => (m as { method?: string })?.method === "initialize");
         wantsStream = msgs.some((m) => {
           const msg = m as { method?: string; params?: { _meta?: { progressToken?: unknown } } };
           return msg?.method === "tools/call" && msg.params?._meta?.progressToken !== undefined;
@@ -1447,6 +1463,26 @@ export function createApp(
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);
     if (c.req.method === "DELETE") forgetMcpSession(mcpSessionId, auth.keyId);
+
+    // QA V5-F1: audit each successful MCP connect (initialize), with who connected and how
+    if (isInitialize && response.status < 400) {
+      try {
+        store.writeAudit({
+          workspaceId: auth.workspaceId,
+          keyId: auth.keyId ?? null,
+          action: "mcp.connect",
+          detail: {
+            auth_kind: auth.kind,
+            key_name: auth.keyName ?? null,
+            project: auth.projectSlug ?? null,
+            via: agentRes.status === "ok" ? (agentRes.agent.sessionId ? "agent_session" : "agent_key") : sess ? "legacy_project_session" : "legacy_api_key",
+          },
+          ip: clientIp(c),
+        });
+      } catch (err) {
+        console.error(`[mcp-flow] audit write failed for mcp.connect: ${(err as Error).message}`);
+      }
+    }
 
     const cleanup = () => {
       void transport.close().catch(() => undefined);
