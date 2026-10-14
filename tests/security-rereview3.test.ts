@@ -239,3 +239,39 @@ describe("R4-1 lock heartbeat + ownership re-check before recovery", () => {
     expect(nonceAt(`${dbPath}.gateway.lock`)).toBe("other");
   });
 });
+
+import { vi } from "vitest";
+import { parseBoolFlag } from "../src/config.js";
+
+describe("R4-3 MCP_FLOW_REFUSE_LEGACY_MCP_KEYS parsing + startup log", () => {
+  it("true / TRUE / True / 1 are on; everything else is off", () => {
+    for (const v of ["true", "TRUE", "True", "1", " true "]) expect(parseBoolFlag(v)).toBe(true);
+    for (const v of [undefined, "", "false", "0", "yes", "on", "truthy", "2"]) expect(parseBoolFlag(v)).toBe(false);
+    const prev = process.env.MCP_FLOW_REFUSE_LEGACY_MCP_KEYS;
+    try {
+      for (const [v, want] of [["TRUE", true], ["1", true], ["false", false]] as const) {
+        process.env.MCP_FLOW_REFUSE_LEGACY_MCP_KEYS = v;
+        expect(loadConfig({ masterKeyRaw: "x", adminToken: "y" }).refuseLegacyMcpKeys).toBe(want);
+      }
+      delete process.env.MCP_FLOW_REFUSE_LEGACY_MCP_KEYS;
+      expect(loadConfig({ masterKeyRaw: "x", adminToken: "y" }).refuseLegacyMcpKeys).toBe(false);
+    } finally {
+      if (prev === undefined) delete process.env.MCP_FLOW_REFUSE_LEGACY_MCP_KEYS;
+      else process.env.MCP_FLOW_REFUSE_LEGACY_MCP_KEYS = prev;
+    }
+  });
+
+  for (const on of [false, true]) {
+    it(`startup logs the resolved value (${on ? "ON" : "OFF"})`, async () => {
+      const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+      try {
+        await boot(on ? { refuseLegacyMcpKeys: true } : {});
+        const lines = spy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS resolved to"));
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain(on ? "ON" : "OFF");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  }
+});

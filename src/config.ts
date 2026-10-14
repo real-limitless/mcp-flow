@@ -24,6 +24,12 @@ export interface Config {
   refuseLegacyMcpKeys?: boolean;
 }
 
+/** R4-3: `true` (any case) or `1` is on; anything else (unset, false, 0, yes, typos) is off. */
+export function parseBoolFlag(raw: string | undefined | null): boolean {
+  const v = (raw ?? "").trim();
+  return v === "1" || v.toLowerCase() === "true";
+}
+
 /** Validate MCP_FLOW_PUBLIC_URL: https origin (http only for localhost), no path/query/credentials. */
 export function parsePublicUrl(raw: string | undefined | null): string | null {
   if (!raw) return null;
@@ -75,7 +81,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     publicUrl:
       overrides.publicUrl !== undefined ? parsePublicUrl(overrides.publicUrl) : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL")),
     refuseLegacyMcpKeys:
-      overrides.refuseLegacyMcpKeys ?? env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS", "false") === "true",
+      overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
   };
 }
 

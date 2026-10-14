@@ -61,6 +61,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     throw err;
   }
 
+  // R4-3: log the resolved cutover flag
+  console.error(`[mcp-flow] MCP_FLOW_REFUSE_LEGACY_MCP_KEYS resolved to ${cfg.refuseLegacyMcpKeys ? "ON (legacy keys refused on /mcp)" : "OFF (legacy keys accepted on /mcp)"}`);
   opts.afterLock?.();
   // R4-1: re-check ownership right before recovery (a concurrent starter may have replaced our lock)
   if (lock && !lock.owned()) {
