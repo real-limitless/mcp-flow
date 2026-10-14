@@ -143,7 +143,12 @@ describe("admin UI read endpoints", () => {
 
   it("GAP-4 GET /v1/agents/:id/reach: per-project tool effect and live sessions, no tokens", async () => {
     const e = await boot();
-    const r = await e.get(ADMIN, `/v1/agents/${e.bot}/reach`);
+    // human admin agents only: the env break-glass token (and legacy scopes.admin keys) get 403
+    expect((await e.get(ADMIN, `/v1/agents/${e.bot}/reach`)).status).toBe(403);
+    const legacy = e.gw.store.createApiKey(e.ws, "ops", { admin: true });
+    expect((await e.get(legacy.token, `/v1/agents/${e.bot}`)).status).toBe(200); // still an admin elsewhere
+    expect((await e.get(legacy.token, `/v1/agents/${e.bot}/reach`)).status).toBe(403);
+    const r = await e.get(e.chenK.token, `/v1/agents/${e.bot}/reach`);
     expect(r.status).toBe(200);
     const text = await r.text();
     e.noSecrets(text);
@@ -154,6 +159,7 @@ describe("admin UI read endpoints", () => {
     });
     expect(p1.sessions.length).toBeGreaterThanOrEqual(1);
     expect(Object.keys(p1.sessions[0] as object).sort()).toEqual(["created_at", "expires_at", "key_id", "session_id"]);
+    expect((p1.sessions[0] as { session_id: string }).session_id).toMatch(/^sess_/); // I-3
     expect((await e.get(e.anaK.token, `/v1/agents/${e.bot}/reach`)).status).toBe(401);
   });
 });
