@@ -307,3 +307,84 @@ describe("QA V5-F1 /mcp audit trail", () => {
     });
   }
 });
+
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { randomBytes as rb } from "node:crypto";
+import { installSignalHandlers } from "../src/server.js";
+
+describe("QA V5-F2 SIGTERM / SIGINT graceful shutdown", () => {
+  it("handler: stops serving, cancels open holds (audited), closes the DB, releases the lock, exits 0", async () => {
+    const gw = await boot();
+    const dbPath = (gw.store.db as unknown as { location?: () => string }).location?.() ?? "";
+    const ws = gw.store.ensureWorkspace("default").id;
+    const id = gw.store.identity;
+    const chen = id.bootstrapWorkspace(ws, { name: "chen", owner: "chen" });
+    const bot = id.createAgent({ workspaceId: ws, name: "bot", owner: "chen", kind: "grokbot", projects: ["p1"], createdBy: chen });
+    const botKey = id.createKey({ agentId: bot, createdBy: chen }).keyId;
+    const db = gw.store.db;
+    const rid = `rule_${rb(12).toString("hex")}`;
+    db.exec("BEGIN IMMEDIATE;");
+    db.prepare(`INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (?,?,?)`).run(rid, ws, chen);
+    db.prepare(`INSERT INTO mcpflow_policy_rule_version (rule_id, version, description, match_tools, effect, approvers, approval_timeout_s, created_by)
+                VALUES (?,1,'t','["merge"]','require_approval',?,300,?)`).run(rid, JSON.stringify([chen]), chen);
+    db.prepare(`UPDATE mcpflow_policy_rule SET current_version=1 WHERE id=?`).run(rid);
+    db.exec("COMMIT;");
+    void gw.store.policy.enforce({
+      ctx: { workspaceId: ws, agentId: bot, agentName: "bot", keyId: botKey, keyPrefix: null, sessionId: null, projectId: "p1", backendSlug: "gh", tool: "merge", qualifiedTool: "gh__merge", placement: "remote", deviceId: null },
+      args: { pr: 1 }, dispatch: async () => ({ content: [] }),
+    });
+    for (let i = 0; i < 100 && !db.prepare(`SELECT 1 FROM mcpflow_pending_call WHERE status='pending'`).get(); i++) await new Promise((r) => setTimeout(r, 10));
+    const pc = db.prepare(`SELECT id FROM mcpflow_pending_call WHERE status='pending'`).get() as { id: string };
+    expect(pc).toBeTruthy();
+    const lockPath = `${dbPath}.gateway.lock`;
+    expect(existsSync(lockPath)).toBe(true);
+    const codes: number[] = [];
+    const h = installSignalHandlers(gw, { exit: (c) => codes.push(c) });
+    try {
+      expect(process.listeners("SIGTERM")).toContain(process.listeners("SIGTERM").at(-1));
+      await h.handle("SIGTERM");
+    } finally {
+      h.remove();
+    }
+    expect(codes).toEqual([0]);
+    expect(existsSync(lockPath)).toBe(false);
+    expect(() => db.prepare("SELECT 1").get()).toThrow(); // DB closed
+    await expect(fetch(`${gw.url}/health`)).rejects.toThrow();
+    // reopen read-only to check the hold was closed durably and audited
+    const { DatabaseSync: DB } = await import("node:sqlite");
+    const ro = new DB(dbPath);
+    expect((ro.prepare(`SELECT status FROM mcpflow_pending_call WHERE id=?`).get(pc.id) as { status: string }).status).toBe("cancelled");
+    expect((ro.prepare(`SELECT count(*) n FROM audit_events WHERE action='policy.shutdown'`).get() as { n: number }).n).toBe(1);
+    ro.close();
+  });
+
+  for (const sig of ["SIGTERM", "SIGINT"] as const) {
+    it(`real process: ${sig} to \`serve\` exits 0 and removes the lock file`, async () => {
+      const d = mkdtempSync(join(tmpdir(), "rr5-sig-")); tmp.push(d);
+      const dbPath = join(d, "t.db");
+      const probe = createServer();
+      await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+      const port = (probe.address() as { port: number }).port;
+      await new Promise<void>((r) => probe.close(() => r()));
+      const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "serve", "--db", dbPath, "--port", String(port), "--host", "127.0.0.1"], {
+        env: { ...process.env, MCP_FLOW_MASTER_KEY: Buffer.alloc(32, 7).toString("base64"), MCP_FLOW_ADMIN_TOKEN: "sig-admin-" + rb(8).toString("hex") },
+        stdio: ["ignore", "ignore", "pipe"],
+      });
+      let stderr = "";
+      child.stderr!.on("data", (b) => { stderr += String(b); });
+      const exited = new Promise<number | null>((r) => child.on("exit", (code) => r(code)));
+      let up = false;
+      for (let i = 0; i < 200 && !up; i++) {
+        up = await fetch(`http://127.0.0.1:${port}/health`).then((r) => r.ok, () => false);
+        if (!up) await new Promise((r) => setTimeout(r, 50));
+      }
+      expect(up).toBe(true);
+      expect(existsSync(`${dbPath}.gateway.lock`)).toBe(true);
+      child.kill(sig);
+      expect(await exited).toBe(0);
+      expect(existsSync(`${dbPath}.gateway.lock`)).toBe(false);
+      expect(stderr).toContain(`${sig}: shutting down`);
+    }, 30000);
+  }
+});

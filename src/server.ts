@@ -29,7 +29,44 @@ export interface RunningServer {
   edgeHub: EdgeHub;
   edgeRouter: EdgeRouter;
   close: () => Promise<void>;
+  /**
+   * QA V5-F2: graceful stop (SIGTERM/SIGINT). Stops accepting, closes this process's open holds
+   * durably (pending -> cancelled, approved-undispatched -> abandoned, in-flight -> unknown; audited
+   * as policy.shutdown), then close(): DB closed and lock released. Idempotent.
+   */
+  shutdown: (reason: string) => Promise<void>;
   url: string;
+}
+
+/**
+ * QA V5-F2: SIGTERM / SIGINT -> gw.shutdown() then exit(0) (exit(1) if shutdown failed).
+ * A second signal while shutting down exits(1) immediately. Returns { handle, remove } (handle for tests).
+ */
+export function installSignalHandlers(
+  gw: RunningServer,
+  opts: { exit?: (code: number) => void; signals?: NodeJS.Signals[] } = {},
+): { handle: (sig: NodeJS.Signals) => Promise<void>; remove: () => void } {
+  const exit = opts.exit ?? ((code: number) => process.exit(code));
+  const signals = opts.signals ?? ["SIGTERM", "SIGINT"];
+  let stopping = false;
+  const handle = async (sig: NodeJS.Signals) => {
+    if (stopping) {
+      console.error(`[mcp-flow] ${sig} again during shutdown; exiting now`);
+      return exit(1);
+    }
+    stopping = true;
+    console.error(`[mcp-flow] ${sig}: shutting down (closing holds, DB and lock)`);
+    try {
+      await gw.shutdown(sig);
+      exit(0);
+    } catch (err) {
+      console.error(`[mcp-flow] shutdown failed: ${(err as Error).message}`);
+      exit(1);
+    }
+  };
+  const listener = (sig: NodeJS.Signals) => void handle(sig);
+  for (const s of signals) process.on(s, listener);
+  return { handle, remove: () => { for (const s of signals) process.off(s, listener); } };
 }
 
 export interface StartOptions {
@@ -189,13 +226,14 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   }, 30_000);
   sweeper.unref();
 
-  return {
+  let closing: Promise<void> | undefined;
+  const running: RunningServer = {
     store,
     pool,
     edgeHub,
     edgeRouter,
     url,
-    close: async () => {
+    close: () => (closing ??= (async () => {
       clearInterval(sweeper);
       edgeHub.closeAll();
       const edgeClosed = new Promise<void>((resolve) => wss.close(() => resolve()));
@@ -216,8 +254,26 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       store.close();
       lock?.release();
       await new Promise<void>((resolve, reject) => {
-        nodeServer.close((err) => (err ? reject(err) : resolve()));
+        nodeServer.close((err) => (err && (err as NodeJS.ErrnoException).code !== "ERR_SERVER_NOT_RUNNING" ? reject(err) : resolve()));
       });
+    })()),
+    shutdown: async (reason: string) => {
+      stopServing();
+      if (!lock || lock.owned()) {
+        try {
+          const rec = store.policy.recoverOrphans();
+          for (const [workspaceId, counts] of Object.entries(rec.byWorkspace)) {
+            store.writeAudit({ workspaceId, keyId: null, action: "policy.shutdown", detail: { ...counts, reason } });
+          }
+          if (rec.cancelled + rec.abandoned + rec.unknown > 0) {
+            console.error(`[mcp-flow] closed open holds at shutdown: ${JSON.stringify({ cancelled: rec.cancelled, abandoned: rec.abandoned, unknown: rec.unknown })}`);
+          }
+        } catch (err) {
+          console.error(`[mcp-flow] closing holds at shutdown failed: ${(err as Error).message}`);
+        }
+      }
+      await running.close();
     },
   };
+  return running;
 }

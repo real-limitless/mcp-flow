@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { loadConfig, requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
 import { UpstreamPool } from "./mcp/upstream.js";
-import { startServer } from "./server.js";
+import { installSignalHandlers, startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
@@ -29,17 +29,8 @@ program
       host: opts.host,
       dbPath: opts.db,
     });
-    const running = await startServer(cfg);
-    let stopping = false;
-    const stop = () => {
-      if (stopping) return;
-      stopping = true;
-      void running.close().finally(() => {
-        process.exit(0);
-      });
-    };
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    const gw = await startServer(cfg);
+    installSignalHandlers(gw); // QA V5-F2: docker stop / Ctrl-C close holds, DB and lock
   });
 
 program
