@@ -29,7 +29,7 @@ export type ResolveResult =
   /** Token is ours but not usable: inactive/expired/revoked key or agent, bad secret */
   | { status: "unauthorized" }
   /** Valid identity but no project in key ∩ agent */
-  | { status: "forbidden"; reason: "no_projects" }
+  | { status: "forbidden"; reason: "no_projects"; agent: ResolvedAgent }
   /** Not an agent-directory token: caller may try the legacy key path */
   | { status: "unknown" };
 
@@ -330,22 +330,22 @@ export class AgentDirectory {
     const keyId = String(row.key_id);
     const agentId = String(row.agent_id);
     const effectiveProjects = this.effectiveProjects(keyId, agentId);
-    if (!effectiveProjects.length) return { status: "forbidden", reason: "no_projects" };
-    return {
-      status: "ok",
-      agent: {
-        agentId,
-        agentName: String(row.agent_name),
-        owner: String(row.owner),
-        kind: String(row.kind) as AgentKind,
-        isAdmin: Number(row.is_admin) === 1,
-        workspaceId: String(row.workspace_id),
-        keyId,
-        keyPrefix: String(row.prefix),
-        keyExpiresAt: String(row.expires_at),
-        effectiveProjects,
-      },
+    const agent: ResolvedAgent = {
+      agentId,
+      agentName: String(row.agent_name),
+      owner: String(row.owner),
+      kind: String(row.kind) as AgentKind,
+      isAdmin: Number(row.is_admin) === 1,
+      workspaceId: String(row.workspace_id),
+      keyId,
+      keyPrefix: String(row.prefix),
+      keyExpiresAt: String(row.expires_at),
+      effectiveProjects,
     };
+    // forbidden still carries the identity: the gateway refuses it, but non-project
+    // surfaces (approvals, admin) may accept e.g. a human approver with no projects.
+    if (!effectiveProjects.length) return { status: "forbidden", reason: "no_projects", agent };
+    return { status: "ok", agent };
   }
 
   private recheckExpiry(result: ResolveResult): ResolveResult {
