@@ -354,6 +354,15 @@ export interface AuthContext {
   mcpSessionId?: string | null;
   /** Project session row id when auth is mf_sess_* */
   projectSessionId?: string | null;
+  /** T1.3: resolved agent (null/undefined for legacy keys) */
+  agentId?: string | null;
+  agentName?: string | null;
+  agentOwner?: string | null;
+  agentKind?: string | null;
+  keyPrefix?: string | null;
+  keyExpiresAt?: string | null;
+  /** key.projects ∩ agent.projects (project slugs) */
+  effectiveProjects?: string[] | null;
 }
 
 export type AuditAction =

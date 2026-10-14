@@ -32,7 +32,7 @@ export interface RunningServer {
 
 export async function startServer(cfg: Config): Promise<RunningServer> {
   requireSecrets(cfg);
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
   store.ensureWorkspace(cfg.workspaceName);
   const pool = new UpstreamPool(store);
   const edgeHub = new EdgeHub(store);

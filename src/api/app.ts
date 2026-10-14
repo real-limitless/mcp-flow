@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { agentAuthContext, agentSessionKey } from "../identity/auth-context.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -1260,8 +1261,43 @@ export function createApp(
 
     let auth: AuthContext;
 
-    const sess = store.authenticateProjectSession(token);
-    if (sess) {
+    // T1.3: per-agent identity first (mcpflow_* tables); legacy keys fall through.
+    const agentRes = token.startsWith("mf_sess_")
+      ? store.identity.resolveSession(token)
+      : store.identity.resolveKey(token, clientIp(c));
+    if (agentRes.status === "unauthorized") {
+      return c.json({ error: "invalid api key" }, 401);
+    }
+    if (agentRes.status === "forbidden") {
+      return c.json({ error: "agent has no permitted projects" }, 403);
+    }
+
+    const sess =
+      agentRes.status === "unknown" ? store.authenticateProjectSession(token) : null;
+    if (agentRes.status === "ok") {
+      const agent = agentRes.agent;
+      let projectId: string | null = null;
+      let projectSlug: string | null = null;
+      if (agent.sessionProject) {
+        const p = store.getProjectBySlug(agent.workspaceId, agent.sessionProject);
+        if (!p) return c.json({ error: "session project not found" }, 403);
+        projectId = p.id;
+        projectSlug = p.slug;
+      } else {
+        const sticky = globalSessionProjects.get(
+          mcpSessionId || agentSessionKey(agent),
+        );
+        if (
+          sticky &&
+          sticky.keyId === agent.keyId &&
+          agent.effectiveProjects.includes(sticky.projectSlug)
+        ) {
+          projectId = sticky.projectId;
+          projectSlug = sticky.projectSlug;
+        }
+      }
+      auth = agentAuthContext(agent, { mcpSessionId, projectId, projectSlug });
+    } else if (sess) {
       auth = {
         kind: "project_session",
         workspaceId: sess.workspaceId,

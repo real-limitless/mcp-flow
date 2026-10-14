@@ -9,6 +9,8 @@ export interface Config {
   adminToken: string;
   allowPrivateUrls: boolean;
   workspaceName: string;
+  /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
+  policyDevKeyRaw?: string;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -38,6 +40,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       env("MCP_FLOW_ALLOW_PRIVATE_URLS", "false") === "true",
     workspaceName:
       overrides.workspaceName ?? env("MCP_FLOW_WORKSPACE_NAME", "default")!,
+    policyDevKeyRaw:
+      overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
   };
 }
 

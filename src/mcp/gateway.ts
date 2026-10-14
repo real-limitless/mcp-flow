@@ -180,7 +180,9 @@ function filterTools(
 }
 
 function stickySessionId(auth: AuthContext): string | null {
-  return auth.mcpSessionId || (auth.keyId ? `key:${auth.keyId}` : null);
+  if (auth.mcpSessionId) return auth.mcpSessionId;
+  if (auth.agentId && auth.keyId) return `agent:${auth.agentId}:${auth.keyId}`;
+  return auth.keyId ? `key:${auth.keyId}` : null;
 }
 
 function workingSetFor(auth: AuthContext): Set<string> {
@@ -502,6 +504,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
+      if (ctx.agentId && !(ctx.effectiveProjects ?? []).includes(slug)) {
+        // T1.1 §3.4: project outside key ∩ agent projects -> 403
+        const result = textResult(
+          { error: "forbidden", status: 403, message: `project not permitted for agent: ${slug}` },
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
       if (!keyMayUseProject(ctx.scopes, slug)) {
         const result = textResult(
           `key cannot use project: ${slug}`,
@@ -517,9 +528,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       // Bind MCP session sticky when we have a session id
-      const sid =
-        ctx.mcpSessionId ||
-        (ctx.keyId ? `key:${ctx.keyId}` : null);
+      const sid = stickySessionId(ctx);
       if (sid && ctx.keyId) {
         globalSessionProjects.set(sid, {
           projectId: target.id,
@@ -536,7 +545,23 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       let sessionMeta: Record<string, unknown> | undefined;
       const mint =
         args.mintSessionToken !== false && Boolean(ctx.keyId);
-      if (mint && ctx.keyId) {
+      if (mint && ctx.keyId && ctx.agentId) {
+        const sess = store.identity.createSession(
+          {
+            agentId: ctx.agentId,
+            keyId: ctx.keyId,
+            keyExpiresAt: ctx.keyExpiresAt ?? new Date().toISOString(),
+            effectiveProjects: ctx.effectiveProjects ?? [],
+          },
+          target.slug,
+        );
+        sessionToken = sess.token;
+        sessionMeta = {
+          sessionId: sess.sessionId,
+          expiresAt: sess.expiresAt,
+          token: sess.token,
+        };
+      } else if (mint && ctx.keyId) {
         const sess = store.createProjectSession(
           ctx.workspaceId,
           ctx.keyId,
@@ -594,6 +619,18 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         keyId: ctx.keyId ?? null,
         keyName: ctx.keyName ?? null,
         scopes: ctx.scopes ?? null,
+        agent: ctx.agentId
+          ? {
+              id: ctx.agentId,
+              name: ctx.agentName ?? null,
+              owner: ctx.agentOwner ?? null,
+              kind: ctx.agentKind ?? null,
+              keyId: ctx.keyId ?? null,
+              keyPrefix: ctx.keyPrefix ?? null,
+              keyExpiresAt: ctx.keyExpiresAt ?? null,
+              effectiveProjects: ctx.effectiveProjects ?? [],
+            }
+          : null,
         project: project
           ? { slug: project.slug, backendSlugs: project.backendSlugs }
           : null,

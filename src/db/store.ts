@@ -35,6 +35,8 @@ import type {
 } from "../types.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
+import { AgentDirectory } from "../identity/agents.js";
+import { derivePolicyKeys } from "../identity/dev-keys.js";
 import {
   compactSecretRecord,
   normalizeUpstreamHeaders,
@@ -607,13 +609,23 @@ export class Store {
   readonly db: DatabaseSync;
   readonly masterKey: Buffer;
 
-  constructor(dbPath: string, masterKeyRaw: string) {
+  readonly identity: AgentDirectory;
+
+  constructor(
+    dbPath: string,
+    masterKeyRaw: string,
+    opts: { policyDevKeyRaw?: string } = {},
+  ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
     applyConnectionPragmas(this.db);
     this.db.exec(SCHEMA);
     this.migrate();
     runMigrations(this.db);
+    this.identity = new AgentDirectory(
+      this.db,
+      derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`),
+    );
   }
 
   private migrate(): void {
