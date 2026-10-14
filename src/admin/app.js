@@ -27,7 +27,11 @@ function showErr(msg) {
 
 async function api(path, opts = {}) {
   const t = token();
-  if (!t) throw new Error("Set admin token first");
+  if (!t) {
+    const err = new Error("Set admin token first");
+    err.code = "no_token";
+    throw err;
+  }
   const res = await fetch(path, {
     ...opts,
     headers: {
@@ -2323,7 +2327,8 @@ async function renderApprovals(force = false) {
     approvalsPoll = setInterval(() => {
       const tab =
         document.querySelector(".tabs .seg-btn.active")?.dataset.tab;
-      if (tab === "approvals") void renderApprovals();
+      // While the 401 re-prompt is up (no token), skip the poll silently.
+      if (tab === "approvals" && token()) void renderApprovals().catch(() => undefined);
     }, 2000);
   }
 }
@@ -3133,7 +3138,9 @@ async function refresh() {
       const panel = $(`#tab-${tab}`);
       if (panel) panel.innerHTML = surface("Not permitted", `<p class="pa-warn">${esc(e.message)}</p>`);
     }
-    showErr(e.message);
+    // While the 401 re-prompt is showing, don't add a "Set admin token first" error.
+    const reprompting = !!$("#tokenMsg") && !$("#tokenMsg").hidden;
+    if (!(e.code === "no_token" && reprompting)) showErr(e.message);
   }
 }
 
