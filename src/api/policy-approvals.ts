@@ -199,7 +199,11 @@ export function policyApprovalsRouter(store: Store) {
     const body = (await c.req.json().catch(() => ({}))) as { note?: unknown; args_sha256?: unknown };
     if (decision === "approved") {
       const bad = checkEcho(id, body);
-      if (bad) return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
+      if (bad) {
+        // QA v2 f1: refused approvals (missing hash, mismatch, integrity) are audited too
+        audit(c, "policy.approval.approve", { pending_call_id: id, ok: false, error: bad });
+        return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
+      }
     }
     const note = typeof body.note === "string" ? body.note.slice(0, 500) : undefined;
     const res = store.policy.decide(id, c.get("approver").agentId, decision, note);
@@ -233,7 +237,10 @@ export function policyApprovalsRouter(store: Store) {
       if (!Number.isInteger(maxUses) || maxUses < 1) return c.json({ error: "max_uses must be a positive integer" }, 400);
     }
     const bad = checkEcho(id, body);
-    if (bad) return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
+    if (bad) {
+      audit(c, "policy.approval.approve_similar", { pending_call_id: id, ok: false, error: bad });
+      return c.json({ error: bad }, bad === "args_sha256_required" ? 400 : 409);
+    }
     // Security T2.5 M-3: exact-args by default; broader grants need explicit match_args
     const sameArgsOnly = body.same_args_only !== false;
     let matchArgs: ArgMatcher[] | undefined;
