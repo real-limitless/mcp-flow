@@ -45,12 +45,18 @@ async function api(path, opts = {}) {
   }
   if (!res.ok) {
     const code = body.error || res.statusText || String(res.status);
-    const err = new Error(code);
+    // 401 = missing/bad token: unchanged (error shown, token prompt stays).
+    // 403 = valid token that isn't permitted: report it, never clear the token.
+    const err = new Error(res.status === 403 ? notPermittedMsg(body.error) : code);
     err.status = res.status;
     err.code = code;
     throw err;
   }
   return body;
+}
+
+function notPermittedMsg(code) {
+  return `Not permitted (403${code ? `: ${code}` : ""}). Your key is valid but isn't allowed to do this; you're still signed in.`;
 }
 
 function esc(s) {
@@ -2327,7 +2333,7 @@ async function approverApi(path, opts = {}) {
       args_integrity: "The stored payload failed its integrity check. Nothing will run; this call can't be approved.",
       expired: "This call expired (a timeout counts as deny).",
     }[code];
-    const err = new Error(friendly || code);
+    const err = new Error(friendly || (res.status === 403 ? notPermittedMsg(code) : code));
     err.code = code;
     err.status = res.status;
     throw err;
@@ -3031,6 +3037,11 @@ async function refresh() {
     else stopPolicyApprovalsPoll();
     if (tab === "access-map") await renderAccessMap();
   } catch (e) {
+    if (e.status === 403) {
+      // Panel-level "not permitted"; token is kept (no logout).
+      const panel = $(`#tab-${tab}`);
+      if (panel) panel.innerHTML = surface("Not permitted", `<p class="pa-warn">${esc(e.message)}</p>`);
+    }
     showErr(e.message);
   }
 }
