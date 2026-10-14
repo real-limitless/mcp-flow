@@ -2372,10 +2372,22 @@ function paStatusPill(st) {
   return `<span class="pill ${cls}">${esc(st || "unknown")}</span>`;
 }
 
+// Mirrors src/policy/crypto.ts exactly: JSON.stringify(sortDeep(v)). Keys
+// sorted recursively by default Array.prototype.sort (UTF-16 code units),
+// array order kept, no whitespace, JS number formatting, no Unicode
+// normalization, standard JSON.stringify escaping. Hashed as UTF-8, lowercase hex.
+function sortDeep(v) {
+  if (Array.isArray(v)) return v.map(sortDeep);
+  if (v && typeof v === "object") {
+    const out = {};
+    for (const k of Object.keys(v).sort()) out[k] = sortDeep(v[k]);
+    return out;
+  }
+  return v;
+}
+
 function canonicalJson(v) {
-  if (v === null || typeof v !== "object") return JSON.stringify(v);
-  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
-  return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(",")}}`;
+  return JSON.stringify(sortDeep(v));
 }
 
 /** Advisory client-side check; the server is authoritative (409 args_mismatch). */
@@ -2391,7 +2403,7 @@ async function loadPaDetail(id, notice = "") {
     let hashCheck = "unavailable";
     if (call && call.args_full != null && typeof call.args_sha256 === "string") {
       const h = await sha256Hex(canonicalJson(call.args_full)).catch(() => null);
-      hashCheck = h == null ? "unavailable" : h === call.args_sha256.toLowerCase() ? "match" : "differs";
+      hashCheck = h == null ? "unavailable" : h === call.args_sha256 ? "match" : "differs";
     }
     paDetails.set(id, { call, err: "", notice, hashCheck });
   } catch (e) {
@@ -2412,8 +2424,12 @@ function paDetailState(id) {
     // Deny is still safe without the payload, but we only allow it once /:id loaded.
     return { ...d, ok: false, canDeny: true, msg: "The server didn't return the full args (args_full). Approval is blocked — you can still deny." };
   }
-  if (typeof c.args_sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(c.args_sha256)) {
+  if (typeof c.args_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(c.args_sha256)) {
     return { ...d, ok: false, canDeny: true, msg: "The server didn't return a valid args_sha256. Approval is blocked — you can still deny." };
+  }
+  if (d.hashCheck === "differs") {
+    // R2-5: the payload shown doesn't hash to what the server will run. Fail closed.
+    return { ...d, ok: false, canDeny: true, showPayload: true, msg: "The payload shown doesn't match the server's args_sha256 (local hash differs). Approval is blocked — you can still deny." };
   }
   return { ...d, ok: true, canDeny: true, msg: "" };
 }
@@ -2421,7 +2437,7 @@ function paDetailState(id) {
 function paFullArgsHtml(det) {
   const c = det?.call;
   const notice = det?.notice ? `<p class="pa-warn">${esc(det.notice)}</p>` : "";
-  if (!det?.ok) {
+  if (!det?.ok && !det?.showPayload) {
     return `${notice}<div class="pa-full pa-blocked"><span class="field-label">Exact payload</span><p class="pa-warn">${esc(det?.msg || "")}</p></div>`;
   }
   const hidden = c.args_hidden_in_summary
@@ -2430,8 +2446,9 @@ function paFullArgsHtml(det) {
   const hashNote = det.hashCheck === "differs"
     ? ' <span class="pill deny">local hash differs</span>'
     : det.hashCheck === "match" ? ' <span class="pill on">hash verified</span>' : "";
+  const blocked = det.ok ? "" : `<p class="pa-warn"><strong>${esc(det.msg)}</strong></p>`;
   return `${notice}
-    <div class="pa-full"><span class="field-label">Exact payload that will run</span>${hidden}
+    <div class="pa-full ${det.ok ? "" : "pa-blocked"}"><span class="field-label">Exact payload that will run</span>${blocked}${hidden}
       <div class="pa-hash"><span class="muted">args_sha256</span> <span class="mono">${esc(c.args_sha256)}</span>${hashNote}</div>
       <details class="pa-full-details" open><summary>Full args (approvers only)</summary>
         <pre class="audit-payload">${esc(prettyJson(c.args_full))}</pre></details>
