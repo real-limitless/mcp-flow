@@ -41,7 +41,8 @@ import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import { AgentDirectory } from "../identity/agents.js";
-import { derivePolicyKeys } from "../identity/dev-keys.js";
+import { derivePolicyKeys, type PolicyKeys } from "../identity/dev-keys.js";
+import { PolicyEnforcer } from "../policy/enforcer.js";
 import {
   applyHeaderPatch,
   compactEnvRecord,
@@ -797,6 +798,8 @@ export class Store {
   >();
 
   readonly identity: AgentDirectory;
+  readonly policy: PolicyEnforcer;
+  readonly policyKeys: PolicyKeys;
 
   constructor(
     dbPath: string,
@@ -809,10 +812,9 @@ export class Store {
     this.db.exec(SCHEMA);
     this.migrate();
     runMigrations(this.db);
-    this.identity = new AgentDirectory(
-      this.db,
-      derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`),
-    );
+    this.policyKeys = derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`);
+    this.identity = new AgentDirectory(this.db, this.policyKeys);
+    this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys });
   }
 
   private migrate(): void {
