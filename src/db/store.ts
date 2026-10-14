@@ -34,6 +34,7 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
+import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import {
   compactSecretRecord,
   normalizeUpstreamHeaders,
@@ -609,10 +610,10 @@ export class Store {
   constructor(dbPath: string, masterKeyRaw: string) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
-    this.db.exec("PRAGMA journal_mode = WAL;");
-    this.db.exec("PRAGMA foreign_keys = ON;");
+    applyConnectionPragmas(this.db);
     this.db.exec(SCHEMA);
     this.migrate();
+    runMigrations(this.db);
   }
 
   private migrate(): void {

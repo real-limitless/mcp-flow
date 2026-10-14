@@ -1,0 +1,36 @@
+-- Starter policy (T2.1 §6) — NOT APPLIED by the migration runner.
+-- Apply only after Chen approves, via an ops script, with real agt_/rule_ ids substituted.
+-- Default for every project is deny; these allow rules reproduce today's behaviour.
+--
+-- :ws        workspace id (ws_…)
+-- :chen      Chen's human agent id (agt_…)
+-- :rule_*    fresh rule_<24hex> ids
+--
+-- BEGIN IMMEDIATE;
+-- INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (:rule_gh_read, :ws, :chen);
+-- INSERT INTO mcpflow_policy_rule_version (rule_id, version, priority, description, match_backends, effect, created_by)
+--   VALUES (:rule_gh_read, 1, 100, 'gh-github / gh-repos read tools', '["gh-github","gh-repos"]', 'allow', :chen);
+-- UPDATE mcpflow_policy_rule SET current_version = 1 WHERE id = :rule_gh_read;
+--
+-- INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (:rule_repo_write, :ws, :chen);
+-- INSERT INTO mcpflow_policy_rule_version (rule_id, version, priority, description, match_backends, match_tools,
+--   effect, approval_timeout_s, approvers, reason_to_agent, created_by)
+--   VALUES (:rule_repo_write, 1, 50, 'gh-repos writes need a human', '["gh-repos"]',
+--   '["write_file","move","delete"]', 'require_approval', 300, json_array(:chen), 'Repo writes need Chen', :chen);
+-- UPDATE mcpflow_policy_rule SET current_version = 1 WHERE id = :rule_repo_write;
+--
+-- INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (:rule_shell, :ws, :chen);
+-- INSERT INTO mcpflow_policy_rule_version (rule_id, version, priority, description, match_backends,
+--   effect, approval_timeout_s, approvers, reason_to_agent, created_by)
+--   VALUES (:rule_shell, 1, 50, 'gh-repos-shell needs a human', '["gh-repos-shell"]',
+--   'require_approval', 300, json_array(:chen), 'Shell commands need Chen', :chen);
+-- UPDATE mcpflow_policy_rule SET current_version = 1 WHERE id = :rule_shell;
+--
+-- INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (:rule_secret_args, :ws, :chen);
+-- INSERT INTO mcpflow_policy_rule_version (rule_id, version, priority, description, match_args, effect, created_by)
+--   VALUES (:rule_secret_args, 1, 10, 'Secrets in a command',
+--   '[{"path":"$.command","op":"regex","value":"(ghp_|mf_|AKIA)"}]', 'deny', :chen);
+-- UPDATE mcpflow_policy_rule SET current_version = 1 WHERE id = :rule_secret_args;
+-- COMMIT;
+--
+-- edge-bare placement deny is enforced by workspace policy today (allowEdgeBare=false).
