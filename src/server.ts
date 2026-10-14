@@ -36,6 +36,8 @@ export interface StartOptions {
   /** R3-2: called when the DB lock is lost while serving. Default: log, stop accepting, exit(70). */
   onLockLost?: (reason: string) => void;
   lockHeartbeatMs?: number;
+  /** Test hook: runs after the lock is taken and the DB is open, before the pre-recovery ownership check. */
+  afterLock?: () => void;
 }
 
 export async function startServer(cfg: Config, opts: StartOptions = {}): Promise<RunningServer> {
@@ -57,6 +59,14 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   } catch (err) {
     lock?.release();
     throw err;
+  }
+
+  opts.afterLock?.();
+  // R4-1: re-check ownership right before recovery (a concurrent starter may have replaced our lock)
+  if (lock && !lock.owned()) {
+    lock.release();
+    store.close();
+    throw new Error(`lost the gateway DB lock ${lock.path} before recovery; another gateway owns this database`);
   }
 
   // Security T2.5 R-1: close out holds orphaned by the previous process (single gateway per DB).

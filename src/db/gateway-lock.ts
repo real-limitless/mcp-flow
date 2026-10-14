@@ -21,7 +21,8 @@ import { closeSync, linkSync, openSync, readFileSync, readlinkSync, renameSync, 
 import { hostname } from "node:os";
 import { randomBytes } from "node:crypto";
 
-export const LOCK_HEARTBEAT_MS = 10_000;
+/** R4-1: 3 s heartbeat (lock loss detected within ~3 s); stale stays at 30 s = 10 missed beats. */
+export const LOCK_HEARTBEAT_MS = 3_000;
 export const LOCK_STALE_MS = 30_000;
 export const LOCK_SETTLE_MS = 150;
 
@@ -37,6 +38,8 @@ export interface LockBody {
 export interface GatewayLock {
   path: string;
   nonce: string;
+  /** R4-1: true while the lock file still carries our nonce (checked right before recovery). */
+  owned(): boolean;
   release(): void;
 }
 
@@ -184,6 +187,9 @@ function startHeartbeat(path: string, nonce: string, opts: LockOptions): Gateway
   return {
     path,
     nonce,
+    owned() {
+      return !released && readBody(path)?.nonce === nonce;
+    },
     release() {
       if (released) return;
       released = true;

@@ -200,3 +200,42 @@ describe("R3-3 hostname + pid alone is not trusted", () => {
     l.release();
   });
 });
+
+import { LOCK_HEARTBEAT_MS, LOCK_STALE_MS } from "../src/db/gateway-lock.js";
+
+describe("R4-1 lock heartbeat + ownership re-check before recovery", () => {
+  it("heartbeat is 3 s; stale threshold is 30 s (10 missed beats)", () => {
+    expect(LOCK_HEARTBEAT_MS).toBe(3_000);
+    expect(LOCK_STALE_MS).toBe(30_000);
+    expect(LOCK_STALE_MS / LOCK_HEARTBEAT_MS).toBeGreaterThanOrEqual(5);
+  });
+
+  it("owned() tracks the nonce in the file", async () => {
+    const { dbPath, lockPath } = lockDir();
+    const l = (await acquireGatewayLock(dbPath, { settleMs: 1 }))!;
+    expect(l.owned()).toBe(true);
+    writeFileSync(lockPath, JSON.stringify({ nonce: "x", pid: 2, host: "b", started: "now" }));
+    expect(l.owned()).toBe(false);
+    l.release();
+    expect(nonceAt(lockPath)).toBe("x");
+  });
+
+  it("startServer refuses (no recovery) if the lock was replaced after acquisition", async () => {
+    const d = mkdtempSync(join(tmpdir(), "rr4-")); tmp.push(d);
+    const dbPath = join(d, "t.db");
+    const cfg = loadConfig({ dbPath, masterKeyRaw: Buffer.alloc(32, 5).toString("base64"), adminToken: "rr4-admin", host: "127.0.0.1", allowPrivateUrls: true, workspaceName: "default" });
+    cfg.port = 0;
+    let recovered = false;
+    const { PolicyEnforcer } = await import("../src/policy/enforcer.js");
+    const orig = PolicyEnforcer.prototype.recoverOrphans;
+    PolicyEnforcer.prototype.recoverOrphans = function (this: InstanceType<typeof PolicyEnforcer>) { recovered = true; return orig.call(this); };
+    try {
+      await expect(startServer(cfg, { afterLock: () => writeFileSync(`${dbPath}.gateway.lock`, JSON.stringify({ nonce: "other", pid: 2, host: "b", started: "now" })) }))
+        .rejects.toThrow(/lost the gateway DB lock .* before recovery/);
+    } finally {
+      PolicyEnforcer.prototype.recoverOrphans = orig;
+    }
+    expect(recovered).toBe(false);
+    expect(nonceAt(`${dbPath}.gateway.lock`)).toBe("other");
+  });
+});
