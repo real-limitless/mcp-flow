@@ -1,6 +1,7 @@
 /**
  * Operator MCP tools (mf_admin_*) — only for keys with scopes.admin.
  */
+import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { installFromGallery } from "../catalog/install.js";
 import { readEntryFile } from "../catalog/shard.js";
@@ -258,6 +259,55 @@ export const ADMIN_META_TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: { allowEdgeBare: { type: "boolean" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_query_audit",
+    description:
+      "Query the append-only per-call audit log (agent, decision, outcome, latency). Newest first; pass next_cursor to page. Admin only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "ISO time, inclusive" },
+        to: { type: "string", description: "ISO time, exclusive" },
+        agent_id: { type: "string" },
+        key_id: { type: "string" },
+        project_id: { type: "string" },
+        backend_slug: { type: "string" },
+        tool: { type: "string" },
+        event_type: { type: "string", enum: ["decision", "completion", "lifecycle"] },
+        policy_decision: { type: "string", enum: ["allow", "deny", "require_approval"] },
+        final_outcome: { type: "string" },
+        call_id: { type: "string" },
+        pending_call_id: { type: "string" },
+        limit: { type: "number", description: "1-500, default 100" },
+        cursor: { type: "number" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_export_audit",
+    description: "Export the per-call audit log as CSV or JSON (oldest first, max 10000 rows, redacted). Admin only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "ISO time, inclusive" },
+        to: { type: "string", description: "ISO time, exclusive" },
+        agent_id: { type: "string" },
+        key_id: { type: "string" },
+        project_id: { type: "string" },
+        backend_slug: { type: "string" },
+        tool: { type: "string" },
+        event_type: { type: "string", enum: ["decision", "completion", "lifecycle"] },
+        policy_decision: { type: "string", enum: ["allow", "deny", "require_approval"] },
+        final_outcome: { type: "string" },
+        call_id: { type: "string" },
+        pending_call_id: { type: "string" },
+        format: { type: "string", enum: ["csv", "json"] },
+        max_rows: { type: "number" },
+      },
       additionalProperties: false,
     },
   },
@@ -833,6 +883,32 @@ export async function handleAdminTool(
         if (!ws) return textResult("not found", true);
         audit("workspace.policy", { via: "mf_admin", policy: ws.policy });
         return textResult({ workspace: ws });
+      }
+
+      case "mf_admin_query_audit": {
+        const out = queryCallAudit(store.db, wsId, callAuditFilterFrom(args), {
+          limit: args.limit == null ? undefined : Number(args.limit),
+          cursor: args.cursor == null ? undefined : Number(args.cursor),
+        });
+        return textResult({ rows: out.rows, next_cursor: out.nextCursor });
+      }
+
+      case "mf_admin_export_audit": {
+        const format = args.format === "json" ? "json" : "csv";
+        const out = exportCallAudit(
+          store.db,
+          wsId,
+          callAuditFilterFrom(args),
+          format,
+          args.max_rows == null ? undefined : Number(args.max_rows),
+        );
+        audit("audit.export", { via: "mf_admin", format, rows: out.rows, truncated: out.truncated });
+        return {
+          content: [
+            { type: "text", text: JSON.stringify({ format, rows: out.rows, truncated: out.truncated }) },
+            { type: "text", text: out.body },
+          ],
+        };
       }
 
       case "mf_admin_list_audit": {

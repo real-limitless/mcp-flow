@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import {
   acceptClientSessionId,
   agentAuthContext,
@@ -193,6 +194,18 @@ export function createApp(
       await next();
       return;
     }
+
+    // T1.3 agent key or session of a human admin agent (agent.is_admin)
+    const agentRes = token.startsWith("mf_sess_")
+      ? store.identity.resolveSession(token)
+      : store.identity.resolveKey(token, clientIp(c));
+    if (agentRes.status === "ok") {
+      if (!agentRes.agent.isAdmin) return c.json({ error: "unauthorized" }, 401);
+      c.set("auth", agentAuthContext(agentRes.agent, { mcpSessionId: null }));
+      await next();
+      return;
+    }
+    if (agentRes.status !== "unknown") return c.json({ error: "unauthorized" }, 401);
 
     // Operator agent key (scopes.admin)
     const key = store.authenticateApiKey(token);
@@ -772,6 +785,36 @@ export function createApp(
         400,
       );
     }
+  });
+
+  // T3.3: per-call audit log (mcpflow_call_audit), admin only
+  admin.get("/audit/calls", (c) => {
+    const auth = c.get("auth");
+    const q = c.req.query();
+    const filter = callAuditFilterFrom(q);
+    const format = q.format;
+    if (format === "csv" || format === "json") {
+      const out = exportCallAudit(store.db, auth.workspaceId, filter, format, q.max_rows ? Number(q.max_rows) : undefined);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "audit.export",
+        detail: { via: "rest", format, rows: out.rows, truncated: out.truncated },
+        ip: clientIp(c),
+      });
+      return new Response(out.body, {
+        headers: {
+          "content-type": out.contentType,
+          "content-disposition": `attachment; filename="call-audit.${format}"`,
+          "x-mcp-flow-truncated": String(out.truncated),
+        },
+      });
+    }
+    const page = queryCallAudit(store.db, auth.workspaceId, filter, {
+      limit: q.limit ? Number(q.limit) : undefined,
+      cursor: q.cursor ? Number(q.cursor) : undefined,
+    });
+    return c.json({ rows: page.rows, next_cursor: page.nextCursor });
   });
 
   admin.get("/audit", (c) => {
