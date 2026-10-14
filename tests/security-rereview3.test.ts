@@ -100,3 +100,103 @@ describe("R3-4 migration 0008 with pre-existing duplicate idempotency keys", () 
     expect((db.prepare(`SELECT count(*) n FROM mcpflow_migration_note`).get() as { n: number }).n).toBe(0);
   });
 });
+
+import { readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { acquireGatewayLock, lockIdentity } from "../src/db/gateway-lock.js";
+
+const lockDir = () => {
+  const d = mkdtempSync(join(tmpdir(), "rr3-lock-")); tmp.push(d);
+  const dbPath = join(d, "t.db");
+  return { dbPath, lockPath: `${dbPath}.gateway.lock` };
+};
+const staleLock = (lockPath: string, nonce: string) => {
+  writeFileSync(lockPath, JSON.stringify({ nonce, pid: 99999999, host: "gone", bootId: null, pidNs: null, started: "x" }));
+  const old = new Date(Date.now() - 120_000);
+  utimesSync(lockPath, old, old);
+};
+const nonceAt = (p: string) => JSON.parse(readFileSync(p, "utf8")).nonce as string;
+
+describe("R3-1 stale-lock takeover race: only one starter wins", () => {
+  it("B judged the lock stale, but A replaced it first: B puts A's lock back and loses", async () => {
+    const { dbPath, lockPath } = lockDir();
+    staleLock(lockPath, "stale");
+    const aBody = JSON.stringify({ nonce: "A-fresh", pid: 1, host: "a", bootId: null, pidNs: null, started: "now" });
+    // between B's staleness check and B's rename, A takes over (fresh lock with its own nonce)
+    await expect(acquireGatewayLock(dbPath, { settleMs: 1, hooks: { beforeRename: () => writeFileSync(lockPath, aBody) } }))
+      .rejects.toThrow(/another mcp-flow gateway/);
+    expect(nonceAt(lockPath)).toBe("A-fresh"); // A's lock restored, untouched
+  });
+
+  it("a winner whose fresh lock is replaced before the settle read-back loses (no two holders)", async () => {
+    const { dbPath, lockPath } = lockDir();
+    staleLock(lockPath, "stale");
+    await expect(acquireGatewayLock(dbPath, { settleMs: 20, hooks: {
+      afterCreate: () => writeFileSync(lockPath, JSON.stringify({ nonce: "B", pid: 2, host: "b", bootId: null, pidNs: null, started: "now" })),
+    } })).rejects.toThrow(/another mcp-flow gateway/);
+    expect(nonceAt(lockPath)).toBe("B");
+  });
+
+  it("the lock file carries a random nonce; the acquirer reads its own nonce back", async () => {
+    const { dbPath, lockPath } = lockDir();
+    const l = (await acquireGatewayLock(dbPath, { settleMs: 1 }))!;
+    expect(l.nonce).toMatch(/^[0-9a-f]{32}$/);
+    expect(nonceAt(lockPath)).toBe(l.nonce);
+    l.release();
+  });
+});
+
+describe("R3-2 heartbeat self-fencing", () => {
+  it("lock module: when another process owns the file, the old holder does NOT refresh it and calls onLost", async () => {
+    const { dbPath, lockPath } = lockDir();
+    const lost: string[] = [];
+    const l = (await acquireGatewayLock(dbPath, { settleMs: 1, heartbeatMs: 20, onLost: (r) => lost.push(r) }))!;
+    writeFileSync(lockPath, JSON.stringify({ nonce: "new-owner", pid: 2, host: "b", bootId: null, pidNs: null, started: "now" }));
+    const past = new Date(Date.now() - 120_000);
+    utimesSync(lockPath, past, past);
+    await new Promise((r) => setTimeout(r, 120));
+    expect(lost).toHaveLength(1);
+    expect(lost[0]).toMatch(/taken over/);
+    expect(statSync(lockPath).mtimeMs).toBeLessThan(Date.now() - 60_000); // not refreshed by us
+    expect(nonceAt(lockPath)).toBe("new-owner");
+    l.release(); // must not delete the new owner's lock
+    expect(nonceAt(lockPath)).toBe("new-owner");
+  });
+
+  it("server: losing the lock stops serving and calls the exit handler", async () => {
+    const d = mkdtempSync(join(tmpdir(), "rr3-srv-")); tmp.push(d);
+    const dbPath = join(d, "t.db");
+    const cfg = loadConfig({ dbPath, masterKeyRaw: Buffer.alloc(32, 5).toString("base64"), adminToken: "rr3-admin", host: "127.0.0.1", allowPrivateUrls: true, workspaceName: "default" });
+    const probe = createServer();
+    await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
+    cfg.port = (probe.address() as { port: number }).port;
+    await new Promise<void>((r) => probe.close(() => r()));
+    const lost: string[] = [];
+    const gw = await startServer(cfg, { lockHeartbeatMs: 20, onLockLost: (r) => lost.push(r) });
+    cleanups.push(() => gw.close());
+    expect((await fetch(`${gw.url}/health`).catch(() => null))?.status ?? 0).toBeGreaterThan(0);
+    writeFileSync(`${dbPath}.gateway.lock`, JSON.stringify({ nonce: "other", pid: 2, host: "b", bootId: null, pidNs: null, started: "now" }));
+    await new Promise((r) => setTimeout(r, 150));
+    expect(lost).toHaveLength(1);
+    await expect(fetch(`${gw.url}/health`)).rejects.toThrow(); // no longer accepting connections
+  });
+});
+
+describe("R3-3 hostname + pid alone is not trusted", () => {
+  it("fresh lock with our hostname and our pid but a different boot id / pid namespace is NOT stale", async () => {
+    const { dbPath, lockPath } = lockDir();
+    writeFileSync(lockPath, JSON.stringify({ nonce: "other-ctr", pid: process.pid, host: lockIdentity().host, bootId: "other-boot", pidNs: "pid:[1]", started: "x" }));
+    await expect(acquireGatewayLock(dbPath, { settleMs: 1 })).rejects.toThrow(/another mcp-flow gateway/);
+    writeFileSync(lockPath, JSON.stringify({ nonce: "other-ctr", pid: 99999999, host: lockIdentity().host, started: "x" })); // dead-looking pid, no ns info
+    await expect(acquireGatewayLock(dbPath, { settleMs: 1 })).rejects.toThrow(/another mcp-flow gateway/);
+  });
+
+  it("same host + boot id + pid namespace and a dead pid IS stale (fast takeover still works locally)", async () => {
+    const id = lockIdentity();
+    if (!id.bootId || !id.pidNs) return; // non-Linux: only the mtime rule applies
+    const { dbPath, lockPath } = lockDir();
+    writeFileSync(lockPath, JSON.stringify({ nonce: "dead", pid: 2 ** 22 + 4321, ...id, started: "x" }));
+    const l = (await acquireGatewayLock(dbPath, { settleMs: 1 }))!;
+    expect(nonceAt(lockPath)).toBe(l.nonce);
+    l.release();
+  });
+});

@@ -17,7 +17,7 @@ import { runAuditRetention } from "../src/audit/call-audit.js";
 import { adminErrorText } from "../src/mcp/admin-tools.js";
 import { loadConfig } from "../src/config.js";
 import { startServer } from "../src/server.js";
-import { acquireGatewayLock } from "../src/db/gateway-lock.js";
+import { acquireGatewayLock, lockIdentity } from "../src/db/gateway-lock.js";
 import { writeFileSync, existsSync, utimesSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 
@@ -190,21 +190,21 @@ describe("R2-4 single gateway per DB", () => {
     await b.close();
   });
 
-  it("takes over a stale lock (dead pid on this host, or no heartbeat for 30 s); refuses a live one", () => {
+  it("takes over a stale lock (dead pid in our host/boot/pid-namespace, or no heartbeat for 30 s); refuses a live one", async () => {
     const d = mkdtempSync(join(tmpdir(), "lock-")); tmp.push(d);
     const dbPath = join(d, "t.db");
     const lockPath = `${dbPath}.gateway.lock`;
-    writeFileSync(lockPath, JSON.stringify({ pid: 2 ** 22 + 12345, host: hostname(), started: "x" }));
-    const l1 = acquireGatewayLock(dbPath)!;
+    writeFileSync(lockPath, JSON.stringify({ nonce: "old", pid: 2 ** 22 + 12345, ...lockIdentity(), started: "x" }));
+    const l1 = (await acquireGatewayLock(dbPath, { settleMs: 1 }))!;
     l1.release();
-    writeFileSync(lockPath, JSON.stringify({ pid: process.ppid, host: "elsewhere", started: "x" }));
-    expect(() => acquireGatewayLock(dbPath)).toThrow(/another mcp-flow gateway/);
+    writeFileSync(lockPath, JSON.stringify({ nonce: "live", pid: process.ppid, host: "elsewhere", started: "x" }));
+    await expect(acquireGatewayLock(dbPath, { settleMs: 1 })).rejects.toThrow(/another mcp-flow gateway/);
     const old = new Date(Date.now() - 60_000);
     utimesSync(lockPath, old, old);
-    const l2 = acquireGatewayLock(dbPath)!;
+    const l2 = (await acquireGatewayLock(dbPath, { settleMs: 1 }))!;
     expect(JSON.parse(readFileSync(lockPath, "utf8")).pid).toBe(process.pid);
     l2.release();
-    expect(acquireGatewayLock(":memory:")).toBeNull();
+    expect(await acquireGatewayLock(":memory:")).toBeNull();
   });
 });
 
