@@ -1,0 +1,28 @@
+/**
+ * Maintenance only (never run by the gateway): archive + delete call_audit rows older than a month boundary.
+ *   tsx scripts/audit-retention.ts --workspace ws_… --before 2025-10-01T00:00:00.000Z --archive ./archive --actor agt_…
+ * Requires MCP_FLOW_DB_PATH. Take a DB backup first; Chen approval before any non-dev run.
+ */
+import { DatabaseSync } from "node:sqlite";
+import { applyConnectionPragmas } from "../src/db/migrations/index.js";
+import { runAuditRetention } from "../src/audit/call-audit.js";
+
+function arg(name: string): string {
+  const i = process.argv.indexOf(`--${name}`);
+  const v = i >= 0 ? process.argv[i + 1] : undefined;
+  if (!v) throw new Error(`--${name} is required`);
+  return v;
+}
+
+const dbPath = process.env.MCP_FLOW_DB_PATH;
+if (!dbPath) throw new Error("MCP_FLOW_DB_PATH is required");
+const db = new DatabaseSync(dbPath);
+applyConnectionPragmas(db);
+const out = runAuditRetention(db, {
+  workspaceId: arg("workspace"),
+  before: arg("before"),
+  archiveDir: arg("archive"),
+  actor: arg("actor"),
+});
+console.log(JSON.stringify(out, null, 2));
+db.close();

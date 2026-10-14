@@ -11,6 +11,10 @@
  */
 import { NOW, idCheckNullable, jsonArrayCheck } from "./sql-helpers.js";
 
+/** Shared with the retention maintenance path, which must recreate it byte-for-byte. */
+export const CALL_AUDIT_NO_DELETE_TRIGGER = `CREATE TRIGGER mcpflow_call_audit_no_delete BEFORE DELETE ON mcpflow_call_audit
+BEGIN SELECT RAISE(ABORT, 'mcpflow_call_audit is append-only (DELETE rejected)'); END;`;
+
 export const MIGRATION_0002 = `
 CREATE TABLE mcpflow_call_audit (
   audit_id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +80,5 @@ BEGIN SELECT RAISE(ABORT, 'an agent cannot approve its own call'); END;
 CREATE TRIGGER mcpflow_call_audit_no_update BEFORE UPDATE ON mcpflow_call_audit
 BEGIN SELECT RAISE(ABORT, 'mcpflow_call_audit is append-only (UPDATE rejected)'); END;
 
-CREATE TRIGGER mcpflow_call_audit_no_delete BEFORE DELETE ON mcpflow_call_audit
-BEGIN SELECT RAISE(ABORT, 'mcpflow_call_audit is append-only (DELETE rejected)'); END;
+${CALL_AUDIT_NO_DELETE_TRIGGER}
 `;
