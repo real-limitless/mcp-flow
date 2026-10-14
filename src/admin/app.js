@@ -2,6 +2,16 @@ const $ = (s) => document.querySelector(s);
 const errEl = $("#err");
 const TOKEN_KEY = "mcp_flow_admin_token";
 
+// R-5: credentials live in sessionStorage at most, never localStorage. Purge
+// any leftover copies an older build (or another tab) may have written.
+try {
+  for (const k of ["mcp_flow_admin_token", "mcp_flow_approver_token", "mcp_flow_harness_url"]) {
+    globalThis.localStorage?.removeItem(k);
+  }
+} catch {
+  /* storage may be blocked; nothing to purge */
+}
+
 function token() {
   return sessionStorage.getItem(TOKEN_KEY) || "";
 }
@@ -2255,6 +2265,10 @@ const APPROVER_TOKEN_KEY = "mcp_flow_approver_token";
 const PA_BASE = "/v1/policy/approvals";
 let paPollTimer = null;
 let paView = "pending";
+// H-1: per-call detail from GET /:id (args_full + args_sha256), keyed by call id.
+// Approve / deny / approve-similar stay disabled until a detail for that id is
+// loaded and usable. Held in memory only; cleared on any stale/mismatch error.
+const paDetails = new Map(); // id -> { call, err, notice, hashCheck }
 
 function approverToken() {
   return sessionStorage.getItem(APPROVER_TOKEN_KEY) || "";
@@ -2287,9 +2301,14 @@ async function approverApi(path, opts = {}) {
       not_approver: "You are not an approver for this call.",
       not_found: "Call not found (or you are not an approver for it).",
       not_pending: "Already decided by another approver.",
+      args_mismatch: "The call's arguments changed since you reviewed them. Reloaded the exact payload — review it again before deciding.",
+      args_integrity: "The stored payload failed its integrity check. Nothing will run; this call can't be approved.",
       expired: "This call expired (a timeout counts as deny).",
     }[code];
-    throw new Error(friendly || code);
+    const err = new Error(friendly || code);
+    err.code = code;
+    err.status = res.status;
+    throw err;
   }
   return body;
 }
@@ -2353,6 +2372,72 @@ function paStatusPill(st) {
   return `<span class="pill ${cls}">${esc(st || "unknown")}</span>`;
 }
 
+function canonicalJson(v) {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  return `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canonicalJson(v[k])}`).join(",")}}`;
+}
+
+/** Advisory client-side check; the server is authoritative (409 args_mismatch). */
+async function sha256Hex(text) {
+  if (!globalThis.crypto?.subtle) return null;
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function loadPaDetail(id, notice = "") {
+  try {
+    const call = await approverApi(`/${encodeURIComponent(id)}`);
+    let hashCheck = "unavailable";
+    if (call && call.args_full != null && typeof call.args_sha256 === "string") {
+      const h = await sha256Hex(canonicalJson(call.args_full)).catch(() => null);
+      hashCheck = h == null ? "unavailable" : h === call.args_sha256.toLowerCase() ? "match" : "differs";
+    }
+    paDetails.set(id, { call, err: "", notice, hashCheck });
+  } catch (e) {
+    paDetails.set(id, { call: null, err: e.message, notice, hashCheck: "unavailable" });
+  }
+}
+
+/** Derive what the card may do from the GET /:id result. Fail closed. */
+function paDetailState(id) {
+  const d = paDetails.get(id);
+  if (!d) return { ok: false, canDeny: false, msg: "Loading the exact payload…" };
+  if (d.err) return { ...d, ok: false, canDeny: false, msg: `Couldn't load the exact payload: ${d.err}. Approval is blocked.` };
+  const c = d.call || {};
+  if (c.status && c.status !== "pending") {
+    return { ...d, ok: false, canDeny: false, msg: `This call is now ${c.status}; nothing to decide.` };
+  }
+  if (c.args_full === undefined || c.args_full === null) {
+    // Deny is still safe without the payload, but we only allow it once /:id loaded.
+    return { ...d, ok: false, canDeny: true, msg: "The server didn't return the full args (args_full). Approval is blocked — you can still deny." };
+  }
+  if (typeof c.args_sha256 !== "string" || !/^[0-9a-f]{64}$/i.test(c.args_sha256)) {
+    return { ...d, ok: false, canDeny: true, msg: "The server didn't return a valid args_sha256. Approval is blocked — you can still deny." };
+  }
+  return { ...d, ok: true, canDeny: true, msg: "" };
+}
+
+function paFullArgsHtml(det) {
+  const c = det?.call;
+  const notice = det?.notice ? `<p class="pa-warn">${esc(det.notice)}</p>` : "";
+  if (!det?.ok) {
+    return `${notice}<div class="pa-full pa-blocked"><span class="field-label">Exact payload</span><p class="pa-warn">${esc(det?.msg || "")}</p></div>`;
+  }
+  const hidden = c.args_hidden_in_summary
+    ? '<p class="pa-warn"><strong>Heads up:</strong> some of these args are hidden in the redacted summary. Review the full payload below before approving.</p>'
+    : "";
+  const hashNote = det.hashCheck === "differs"
+    ? ' <span class="pill deny">local hash differs</span>'
+    : det.hashCheck === "match" ? ' <span class="pill on">hash verified</span>' : "";
+  return `${notice}
+    <div class="pa-full"><span class="field-label">Exact payload that will run</span>${hidden}
+      <div class="pa-hash"><span class="muted">args_sha256</span> <span class="mono">${esc(c.args_sha256)}</span>${hashNote}</div>
+      <details class="pa-full-details" open><summary>Full args (approvers only)</summary>
+        <pre class="audit-payload">${esc(prettyJson(c.args_full))}</pre></details>
+    </div>`;
+}
+
 function paCardHtml(c, actionable) {
   const id = String(c?.id ?? "");
   const agent = c?.agent && typeof c.agent === "object"
@@ -2360,6 +2445,9 @@ function paCardHtml(c, actionable) {
     : esc(c?.agent ?? "unknown agent");
   const tool = c?.qualified_tool ?? [c?.backend_slug, c?.tool].filter(Boolean).join("__");
   const args = c?.args_redacted;
+  const det = actionable ? paDetailState(id) : null;
+  const ready = !!det?.ok;
+  const dis = ready ? "" : "disabled";
   return `
     <article class="approval-card pa-card" data-pa-id="${esc(id)}">
       <div class="approval-head">
@@ -2381,22 +2469,23 @@ function paCardHtml(c, actionable) {
         <div class="audit-pane"><div class="audit-pane-head">Matched rules</div>
           <div class="audit-pane-body">${matchedRulesHtml(c?.matched_rules)}</div></div>
       </div>
+      ${actionable ? paFullArgsHtml(det) : ""}
       <div class="muted pa-meta">Requested ${esc(fmtTime(c?.created_at))}${c?.decided_at ? ` · decided ${esc(fmtTime(c.decided_at))} by <span class="mono">${esc(c.decided_by ?? "")}</span>` : ""}${c?.note ? ` · note: ${esc(c.note)}` : ""}${c?.grant_id ? ` · grant <span class="mono">${esc(c.grant_id)}</span>` : ""}</div>
       ${actionable ? `
       <div class="pa-actions">
-        <input type="text" class="pa-note" maxlength="500" placeholder="Note (optional, ≤500 chars)" />
+        <input type="text" class="pa-note" maxlength="500" placeholder="Note (optional, ≤500 chars)" ${dis} />
         <div class="row-actions">
-          <button type="button" class="pill-btn primary" data-pa-approve="${esc(id)}">Approve</button>
-          <button type="button" class="pill-btn danger" data-pa-deny="${esc(id)}">Deny</button>
+          <button type="button" class="pill-btn primary" data-pa-approve="${esc(id)}" ${dis}>Approve exact payload</button>
+          <button type="button" class="pill-btn danger" data-pa-deny="${esc(id)}" ${det?.canDeny ? "" : "disabled"}>Deny</button>
         </div>
         <div class="row-actions pa-similar">
           <span class="muted">Approve similar calls (same agent, project, backend, tool) for</span>
-          <input type="number" class="pa-minutes" min="1" max="60" step="1" value="15" aria-label="Minutes" /> <span class="muted">min</span>
-          <input type="number" class="pa-maxuses" min="1" step="1" placeholder="max uses" aria-label="Max uses" />
-          <label class="form-check"><input type="checkbox" class="pa-sameargs" /> same args only</label>
-          <button type="button" class="pill-btn ghost" data-pa-similar="${esc(id)}">Approve similar</button>
+          <input type="number" class="pa-minutes" min="1" max="60" step="1" value="15" aria-label="Minutes" ${dis} /> <span class="muted">min</span>
+          <input type="number" class="pa-maxuses" min="1" step="1" placeholder="max uses" aria-label="Max uses" ${dis} />
+          <label class="form-check" title="Broader grants need match_args matchers, which this UI doesn't offer yet"><input type="checkbox" class="pa-sameargs" checked disabled /> exact same args only</label>
+          <button type="button" class="pill-btn ghost" data-pa-similar="${esc(id)}" ${dis}>Approve similar</button>
         </div>
-        <p class="muted pa-hint">Grants never override a deny rule.</p>
+        <p class="muted pa-hint">Scope: same agent, project, backend and tool, with exactly these args (hash above). Grants never override a deny rule.</p>
       </div>` : ""}
     </article>`;
 }
@@ -2411,6 +2500,14 @@ async function renderPolicyApprovals() {
       if (paView === "pending") {
         const r = await approverApi("/pending?limit=50");
         list = Array.isArray(r?.pending) ? r.pending : [];
+        const live = new Set(list.map((c) => String(c?.id ?? "")));
+        for (const k of [...paDetails.keys()]) if (!live.has(k)) paDetails.delete(k);
+        await Promise.all(
+          list
+            .map((c) => String(c?.id ?? ""))
+            .filter((cid) => cid && !paDetails.has(cid))
+            .map((cid) => loadPaDetail(cid)),
+        );
       } else {
         const r = await approverApi("/history?limit=50");
         list = Array.isArray(r?.calls) ? r.calls : [];
@@ -2443,11 +2540,15 @@ async function renderPolicyApprovals() {
 
   $("#saveApproverToken")?.addEventListener("click", () => {
     const v = $("#approverToken").value.trim();
-    if (v && v !== "••••••••") sessionStorage.setItem(APPROVER_TOKEN_KEY, v);
+    if (v && v !== "••••••••") {
+      sessionStorage.setItem(APPROVER_TOKEN_KEY, v);
+      paDetails.clear();
+    }
     void renderPolicyApprovals().catch((e) => showErr(e.message));
   });
   $("#clearApproverToken")?.addEventListener("click", () => {
     sessionStorage.removeItem(APPROVER_TOKEN_KEY);
+    paDetails.clear();
     void renderPolicyApprovals();
   });
   root.querySelectorAll("[data-pa-view]").forEach((b) =>
@@ -2457,37 +2558,69 @@ async function renderPolicyApprovals() {
     }),
   );
 
-  const decide = async (btn, path, body) => {
-    btn.disabled = true;
+  // Never retries or auto-approves: on a stale/mismatch error we drop the
+  // cached detail, refetch GET /:id and make the human review again.
+  const decide = async (btn, id, action, body) => {
+    btn.closest(".pa-card")?.querySelectorAll("button, input").forEach((el) => { el.disabled = true; });
     try {
-      await approverApi(path, { method: "POST", body: JSON.stringify(body) });
+      await approverApi(`/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify(body) });
+      paDetails.delete(id);
       showErr("");
     } catch (e) {
-      showErr(e.message);
+      if (["args_mismatch", "args_integrity", "not_pending", "expired", "not_found"].includes(e.code)) {
+        paDetails.delete(id);
+        await loadPaDetail(id, e.message);
+        showErr("");
+      } else {
+        showErr(e.message);
+      }
     }
     await renderPolicyApprovals();
+  };
+  const readyHash = (id) => {
+    const st = paDetailState(id);
+    if (!st.ok) {
+      showErr(st.msg || "Approval blocked: exact payload not loaded");
+      return null;
+    }
+    return st.call.args_sha256;
   };
   const noteOf = (btn) => {
     const v = btn.closest(".pa-card")?.querySelector(".pa-note")?.value.trim();
     return v ? { note: v } : {};
   };
   root.querySelectorAll("[data-pa-approve]").forEach((btn) =>
-    btn.addEventListener("click", () =>
-      decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-approve"))}/approve`, noteOf(btn))),
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-pa-approve");
+      const args_sha256 = readyHash(id);
+      if (!args_sha256) return;
+      void decide(btn, id, "approve", { ...noteOf(btn), args_sha256 });
+    }),
   );
   root.querySelectorAll("[data-pa-deny]").forEach((btn) =>
-    btn.addEventListener("click", () =>
-      decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-deny"))}/deny`, noteOf(btn))),
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-pa-deny");
+      if (!paDetailState(id).canDeny) {
+        showErr("Load the exact payload before deciding");
+        return;
+      }
+      void decide(btn, id, "deny", noteOf(btn));
+    }),
   );
   root.querySelectorAll("[data-pa-similar]").forEach((btn) =>
     btn.addEventListener("click", () => {
       const card = btn.closest(".pa-card");
+      const id = btn.getAttribute("data-pa-similar");
+      const args_sha256 = readyHash(id);
+      if (!args_sha256) return;
       const minutes = Number(card.querySelector(".pa-minutes").value);
       if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
         showErr("Minutes must be a whole number from 1 to 60");
         return;
       }
-      const body = { minutes, ...noteOf(btn) };
+      // Exact-args grant only (API default; sent explicitly). Broader grants
+      // need same_args_only:false + match_args, which this UI doesn't build.
+      const body = { minutes, same_args_only: true, args_sha256, ...noteOf(btn) };
       const mu = card.querySelector(".pa-maxuses").value.trim();
       if (mu) {
         const n = Number(mu);
@@ -2497,8 +2630,7 @@ async function renderPolicyApprovals() {
         }
         body.max_uses = n;
       }
-      if (card.querySelector(".pa-sameargs").checked) body.same_args_only = true;
-      void decide(btn, `/${encodeURIComponent(btn.getAttribute("data-pa-similar"))}/approve-similar`, body);
+      void decide(btn, id, "approve-similar", body);
     }),
   );
 
