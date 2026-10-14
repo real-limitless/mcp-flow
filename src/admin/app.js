@@ -55,6 +55,44 @@ async function api(path, opts = {}) {
   return body;
 }
 
+// Secondary requests in a panel: never let a failure look like "empty".
+// soft() records the failure for that panel; withIssues() renders a banner at
+// the top of the panel after each render (403 = "not permitted").
+const panelIssues = new Map(); // tab -> [{ label, text }]
+async function soft(tab, label, promise, fallback) {
+  try {
+    return await promise;
+  } catch (e) {
+    if (e.status === 401) throw e; // 401 handled by the re-prompt path
+    const text = e.status === 403 ? "not permitted (403)" : `failed to load (${e.message})`;
+    if (!panelIssues.has(tab)) panelIssues.set(tab, []);
+    panelIssues.get(tab).push({ label, text });
+    return fallback();
+  }
+}
+function withIssues(tab, fn) {
+  return async (...args) => {
+    panelIssues.set(tab, []);
+    try {
+      return await fn(...args);
+    } finally {
+      const panel = $(`#tab-${tab}`);
+      const issues = panelIssues.get(tab) || [];
+      let el = panel?.querySelector(":scope > .sec-issues");
+      if (panel && issues.length) {
+        if (!el) {
+          el = document.createElement("div");
+          el.className = "sec-issues";
+          panel.prepend(el);
+        }
+        el.innerHTML = issues
+          .map((i) => `<p class="pa-banner" role="status"><span><strong>${esc(i.label)}:</strong> ${esc(i.text)} — shown below as unavailable, not empty.</span></p>`)
+          .join("");
+      } else el?.remove();
+    }
+  };
+}
+
 function notPermittedMsg(code) {
   return `Not permitted (403${code ? `: ${code}` : ""}). Your key is valid but isn't allowed to do this; you're still signed in.`;
 }
@@ -307,12 +345,12 @@ async function renderStatus() {
   const { workspace, placementModes } = await api("/v1/workspace");
   const health = await fetch("/health").then((r) => r.json());
   const [pendingRes, mfa] = await Promise.all([
-    api("/v1/approvals?status=pending").catch(() => ({
+    soft("status", "Pending approvals", api("/v1/approvals?status=pending"), () => ({
       approvals: [],
       pendingCount: 0,
       waiting: 0,
     })),
-    api("/v1/operators/mfa").catch(() => ({ enrolled: false })),
+    soft("status", "Operator MFA", api("/v1/operators/mfa"), () => ({ enrolled: false })),
   ]);
   const pendingN = pendingRes.pendingCount ?? pendingRes.approvals?.length ?? 0;
   const waitingN = pendingRes.waiting ?? 0;
@@ -460,7 +498,7 @@ function formatKeyProjects(scopes) {
 async function renderKeys() {
   const [{ keys }, projRes] = await Promise.all([
     api("/v1/keys"),
-    api("/v1/projects").catch(() => ({ projects: [] })),
+    soft("keys", "Projects", api("/v1/projects"), () => ({ projects: [] })),
   ]);
   const projects = projRes.projects || [];
 
@@ -1290,8 +1328,8 @@ function wireBackendTable(root) {
 async function renderBackends() {
   const [{ backends }, devicesRes, wsRes] = await Promise.all([
     api("/v1/backends"),
-    api("/v1/devices").catch(() => ({ devices: [] })),
-    api("/v1/workspace").catch(() => ({ placementModes: ["remote", "central-sandbox"] })),
+    soft("backends", "Devices", api("/v1/devices"), () => ({ devices: [] })),
+    soft("backends", "Workspace placement modes", api("/v1/workspace"), () => ({ placementModes: ["remote", "central-sandbox"] })),
   ]);
   const devices = devicesRes.devices || [];
   const modes = wsRes.placementModes || ["remote", "central-sandbox"];
@@ -1914,8 +1952,8 @@ async function renderApprovals(force = false) {
     api("/v1/approvals?status=pending"),
     api("/v1/authz/rules"),
     api("/v1/operators/mfa"),
-    api("/v1/push/vapid").catch(() => null),
-    api("/v1/push/subscriptions").catch(() => ({ subscriptions: [] })),
+    soft("approvals", "Web Push key", api("/v1/push/vapid"), () => null),
+    soft("approvals", "Push subscriptions", api("/v1/push/subscriptions"), () => ({ subscriptions: [] })),
   ]);
   const pending = inbox.approvals || [];
   const rules = rulesRes.rules || [];
@@ -2899,7 +2937,7 @@ async function renderAccessMap() {
   const agents = (Array.isArray(agentsRes?.agents) ? agentsRes.agents : []).filter((a) => !a?.revoked_at);
   const [{ backends }, rulesRes] = await Promise.all([
     api("/v1/backends"),
-    api("/v1/policy/rules").catch((e) => ({ rules: [], err: e.message })),
+    api("/v1/policy/rules").catch((e) => ({ rules: [], err: e.status === 403 ? "not permitted (403)" : e.message })),
   ]);
   const bks = Array.isArray(backends) ? backends : [];
   const toolsBy = new Map();
@@ -2908,14 +2946,14 @@ async function renderAccessMap() {
       const r = await api(`/v1/backends/${encodeURIComponent(b.id)}/tools`);
       toolsBy.set(b.slug, { tools: Array.isArray(r?.tools) ? r.tools : [] });
     } catch (e) {
-      toolsBy.set(b.slug, { err: e.message });
+      toolsBy.set(b.slug, { err: e.message, forbidden: e.status === 403 });
     }
   }));
   const { reach, notFound, catalogErrors, reachErr } = await loadReach(agents.map((a) => a.id));
 
   const head = bks.map((b) => {
     const t = toolsBy.get(b.slug);
-    const n = t?.err ? '<span class="pill deny">tools unavailable</span>' : `<span class="muted">${t.tools.length} tools</span>`;
+    const n = t?.err ? `<span class="pill deny">${t.forbidden ? "tools not permitted" : "tools unavailable"}</span>` : `<span class="muted">${t.tools.length} tools</span>`;
     return `<th><span class="mono">${esc(b.slug)}</span>${b.enabled ? "" : ' <span class="pill off">off</span>'}<div>${n}</div></th>`;
   }).join("");
 
@@ -2984,9 +3022,9 @@ async function renderAccessMapLegacy() {
   const root = $("#tab-access-map");
   const [{ keys }, { projects }, { backends }, rulesRes] = await Promise.all([
     api("/v1/keys"),
-    api("/v1/projects").catch(() => ({ projects: [] })),
+    soft("access-map", "Projects", api("/v1/projects"), () => ({ projects: [] })),
     api("/v1/backends"),
-    api("/v1/authz/rules").catch(() => ({ rules: [] })),
+    soft("access-map", "Authz rules", api("/v1/authz/rules"), () => ({ rules: [] })),
   ]);
   const rules = Array.isArray(rulesRes?.rules) ? rulesRes.rules : [];
   const live = (keys || []).filter((k) => !k.revokedAt);
@@ -3118,6 +3156,13 @@ if (navigator.serviceWorker) {
   void ensureAdminServiceWorker().catch(() => undefined);
 }
 
+// Wrap renderers so secondary-request failures surface as a panel banner.
+renderStatus = withIssues("status", renderStatus);
+renderKeys = withIssues("keys", renderKeys);
+renderBackends = withIssues("backends", renderBackends);
+renderApprovals = withIssues("approvals", renderApprovals);
+renderAccessMapLegacy = withIssues("access-map", renderAccessMapLegacy);
+
 $("#saveToken").addEventListener("click", () => {
   setToken($("#token").value.trim());
   void refresh();
@@ -3126,3 +3171,4 @@ $("#refresh").addEventListener("click", () => void refresh());
 $("#token").value = token();
 if (location.hash.startsWith("#approvals")) activateTab("approvals");
 if (token()) void refresh();
+
