@@ -44,7 +44,11 @@ async function api(path, opts = {}) {
     body = { raw: text };
   }
   if (!res.ok) {
-    throw new Error(body.error || res.statusText || String(res.status));
+    const code = body.error || res.statusText || String(res.status);
+    const err = new Error(code);
+    err.status = res.status;
+    err.code = code;
+    throw err;
   }
   return body;
 }
@@ -2823,6 +2827,56 @@ function ruleVersionSummary(v) {
   return `agents ${list(v.match_agents)} · projects ${list(v.match_projects)} · backends ${list(v.match_backends)} · tools ${list(v.match_tools)}${Array.isArray(v.match_args) && v.match_args.length ? ` · args <span class="mono">${esc(JSON.stringify(v.match_args))}</span>` : ""}`;
 }
 
+const REACH_BATCH_MAX = 50;
+
+/**
+ * Batch reach: GET /v1/agents/reach?ids=… in chunks of 50 (human admins only).
+ * Falls back to per-agent GET /v1/agents/:id/reach only if the batch route is
+ * missing (404). Returns reach per id plus not_found ids and catalog errors.
+ */
+async function loadReach(ids) {
+  const reach = new Map();
+  const notFound = [];
+  const catalogErrors = new Set();
+  let reachErr = "";
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += REACH_BATCH_MAX) chunks.push(ids.slice(i, i + REACH_BATCH_MAX));
+  let batchMissing = false;
+  for (const chunk of chunks) {
+    try {
+      const r = await api(`/v1/agents/reach?ids=${chunk.map(encodeURIComponent).join(",")}`);
+      for (const item of Array.isArray(r?.agents) ? r.agents : []) {
+        const id = item?.agent?.id;
+        if (id) reach.set(id, item);
+        if (item?.catalog_error) catalogErrors.add(String(item.catalog_error));
+      }
+      for (const id of Array.isArray(r?.not_found) ? r.not_found : []) notFound.push(String(id));
+      if (r?.catalog_error) catalogErrors.add(String(r.catalog_error));
+    } catch (e) {
+      if (e.status === 404) {
+        batchMissing = true;
+        break;
+      }
+      reachErr = e.message;
+      for (const id of chunk) reach.set(id, { err: e.status === 403 ? "not permitted" : "unavailable" });
+    }
+  }
+  if (batchMissing) {
+    await Promise.all(ids.map(async (id) => {
+      try {
+        const r = await api(`/v1/agents/${encodeURIComponent(id)}/reach`);
+        reach.set(id, r);
+        if (r?.catalog_error) catalogErrors.add(String(r.catalog_error));
+      } catch (e) {
+        if (e.status === 404) notFound.push(id);
+        else if (e.status === 403) reachErr = e.message;
+        reach.set(id, { err: e.status === 403 ? "not permitted" : e.status === 404 ? "not found" : "unavailable" });
+      }
+    }));
+  }
+  return { reach, notFound, catalogErrors: [...catalogErrors], reachErr };
+}
+
 async function renderAccessMap() {
   let agentsRes;
   try {
@@ -2846,14 +2900,7 @@ async function renderAccessMap() {
       toolsBy.set(b.slug, { err: e.message });
     }
   }));
-  const reach = new Map();
-  await Promise.all(agents.map(async (a) => {
-    try {
-      reach.set(a.id, await api(`/v1/agents/${encodeURIComponent(a.id)}/reach`));
-    } catch (e) {
-      reach.set(a.id, { err: e.message });
-    }
-  }));
+  const { reach, notFound, catalogErrors, reachErr } = await loadReach(agents.map((a) => a.id));
 
   const head = bks.map((b) => {
     const t = toolsBy.get(b.slug);
@@ -2892,6 +2939,11 @@ async function renderAccessMap() {
       ${cells}</tr>`;
   }).join("");
 
+  const warnings = [
+    reachErr ? `<p class="pa-warn">Reach unavailable: ${esc(reachErr)}</p>` : "",
+    catalogErrors.length ? `<p class="pa-warn"><strong>Tool catalog warning:</strong> ${esc(catalogErrors.join("; "))} — reach may be incomplete.</p>` : "",
+    notFound.length ? `<p class="pa-warn">Agents not found by the reach endpoint: ${notFound.map((i) => `<span class="mono">${esc(i)}</span>`).join(", ")}</p>` : "",
+  ].join("");
   const table = agents.length && bks.length
     ? `<div class="table-wrap"><table class="data-table access-map"><thead><tr><th>Agent</th><th>Kind</th><th>Status</th>${head}</tr></thead><tbody>${rows}</tbody></table></div>`
     : '<p class="audit-empty">Need at least one agent and one backend.</p>';
@@ -2913,7 +2965,7 @@ async function renderAccessMap() {
   const limits = `<div class="once-callout"><strong>Limitation (GAP-4).</strong>
       <span class="muted">Reach is static per agent and project. "Conditional" means a rule depending on args decides at call time; the session's selected project and dynamic-tool enablement aren't modelled.</span></div>`;
   root.innerHTML =
-    surface("Access map", legend + table + limits, `${agents.length} agents × ${bks.length} backends`) +
+    surface("Access map", legend + warnings + table + limits, `${agents.length} agents × ${bks.length} backends`) +
     surface("Policy rules", rulesHtml, `${rules.length} rules`);
 }
 
