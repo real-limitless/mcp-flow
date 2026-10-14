@@ -35,7 +35,8 @@ export type DenyReason =
   | "unknown_backend"
   | "no_active_project"
   | "invalid_idempotency_key"
-  | "idempotency_conflict";
+  | "idempotency_conflict"
+  | "gateway_shutting_down";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -172,10 +173,14 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   no_active_project: "No active project for this agent; nothing was dispatched.",
   invalid_idempotency_key: "Idempotency keys are 1-128 printable ASCII characters; nothing was dispatched.",
   idempotency_conflict: "This idempotency key was already used with different arguments; nothing was dispatched.",
+  gateway_shutting_down: "The gateway is shutting down; nothing was dispatched. Retry after it restarts.",
 };
 
 export class PolicyEnforcer {
   private readonly waiters = new Map<string, (r: Resolution) => void>();
+  /** Dispatched calls not yet completed (QA V51-F1 shutdown drain). */
+  private readonly inflight = new Map<string, { ctx: CallContext; started: number; pendingCallId: string | null; decision: Decision; promise: Promise<CallToolResult> }>();
+  private draining = false;
   /** Timer teardown per open hold, so close() can stop polling a DB that is about to close. */
   private readonly waitTimers = new Map<string, () => void>();
   private closed = false;
@@ -194,6 +199,79 @@ export class PolicyEnforcer {
     this.closed = true;
     for (const stop of this.waitTimers.values()) stop();
     this.waitTimers.clear();
+  }
+
+  /**
+   * QA V51-F1 step 1: stop taking new calls, and close this process's holds that have not been
+   * dispatched (pending -> cancelled, approved-undispatched -> abandoned). Dispatched calls keep running.
+   */
+  beginShutdown(): RecoveryCounts & { byWorkspace: Record<string, RecoveryCounts> } {
+    this.draining = true;
+    return this.recoverOrphans({ holdsOnly: true, note: "gateway shutdown" });
+  }
+
+  waiterCount(): number {
+    return this.waiters.size;
+  }
+
+  /** Forced stop (second signal): record every still-running dispatched call as outcome unknown, now. */
+  markInflightUnknown(): Record<string, number> {
+    const n: Record<string, number> = {};
+    for (const [callId, e] of [...this.inflight.entries()]) {
+      this.completion(callId, e.ctx, {
+        final_outcome: "error", result_status: "error", error_code: "shutdown_unknown",
+        latency_ms: this.clock() - e.started, rule_id: e.decision.rule?.ruleId ?? null,
+        rule_version: e.decision.rule?.version ?? null, pending_call_id: e.pendingCallId,
+      });
+      this.inflight.delete(callId);
+      n[e.ctx.workspaceId] = (n[e.ctx.workspaceId] ?? 0) + 1;
+    }
+    return n;
+  }
+
+  inflightCount(): number {
+    return this.inflight.size;
+  }
+
+  /**
+   * QA V51-F1 step 2: wait up to graceMs for dispatched calls to finish (their normal completion is
+   * written). Calls still running after the grace period get a completion row now (error/error,
+   * error_code shutdown_unknown -> outcome unknown): they may or may not have run.
+   */
+  async drain(graceMs: number): Promise<{ drained: number; unknown: number; byWorkspace: Record<string, { drained: number; unknown: number }> }> {
+    const snapshot = [...this.inflight.entries()];
+    const byWorkspace: Record<string, { drained: number; unknown: number }> = {};
+    const slot = (ws: string) => (byWorkspace[ws] ??= { drained: 0, unknown: 0 });
+    if (snapshot.length) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        Promise.allSettled(snapshot.map(([, e]) => e.promise)),
+        new Promise<void>((r) => { timer = setTimeout(r, Math.max(0, graceMs)); }),
+      ]);
+      if (timer) clearTimeout(timer);
+    }
+    let drained = 0;
+    let unknown = 0;
+    for (const [callId, e] of snapshot) {
+      if (!this.inflight.has(callId)) {
+        drained++;
+        slot(e.ctx.workspaceId).drained++;
+        continue;
+      }
+      this.completion(callId, e.ctx, {
+        final_outcome: "error",
+        result_status: "error",
+        error_code: "shutdown_unknown",
+        latency_ms: this.clock() - e.started,
+        rule_id: e.decision.rule?.ruleId ?? null,
+        rule_version: e.decision.rule?.version ?? null,
+        pending_call_id: e.pendingCallId,
+      });
+      this.inflight.delete(callId);
+      unknown++;
+      slot(e.ctx.workspaceId).unknown++;
+    }
+    return { drained, unknown, byWorkspace };
   }
 
   /** Number of holds with live timers (tests). */
@@ -225,7 +303,7 @@ export class PolicyEnforcer {
    */
   refuseBeforePolicy(
     ctx: Partial<CallContext> & { workspaceId: string; agentId: string; keyId: string },
-    reason: "unknown_tool" | "unknown_backend" | "no_active_project",
+    reason: "unknown_tool" | "unknown_backend" | "no_active_project" | "gateway_shutting_down",
     requested: string,
     args: Record<string, unknown>,
   ): CallToolResult {
@@ -308,6 +386,10 @@ export class PolicyEnforcer {
    * (or approval_pending), and a re-send with different args is refused.
    */
   async enforce(input: EnforceInput): Promise<CallToolResult> {
+    // QA V51-F1: once shutdown starts, new calls are refused cleanly (audited, nothing dispatched)
+    if (this.draining) {
+      return this.refuseBeforePolicy(input.ctx, "gateway_shutting_down", input.ctx.qualifiedTool, input.args ?? {});
+    }
     const key = input.idempotencyKey;
     if (key !== undefined && key !== null) {
       if (typeof key !== "string" || !/^[\x21-\x7e]{1,128}$/.test(key)) {
@@ -693,7 +775,7 @@ export class PolicyEnforcer {
    *  - dispatched, no completion    -> unknown (do not retry blindly)
    *  - tracked sync calls left open -> executed/not_executed from the audit trail, else unknown
    */
-  recoverOrphans(): RecoveryCounts & { byWorkspace: Record<string, RecoveryCounts> } {
+  recoverOrphans(opts: { holdsOnly?: boolean; note?: string } = {}): RecoveryCounts & { byWorkspace: Record<string, RecoveryCounts> } {
     const db = this.deps.db;
     const now = this.iso();
     const out = { cancelled: 0, abandoned: 0, unknown: 0, byWorkspace: {} as Record<string, RecoveryCounts> };
@@ -717,19 +799,21 @@ export class PolicyEnforcer {
     const setOutcome = (callId: string, state: string, finalOutcome: string, resultStatus: string) =>
       db.prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
         .run(state, finalOutcome, resultStatus, now, callId);
+    const restartCode = opts.holdsOnly ? "gateway_shutdown" : "gateway_restart";
     this.tx(() => {
       for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'pending'`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
-        db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = 'gateway restarted' WHERE id = ? AND status = 'pending'`).run(now, r.id);
-        complete(r.call_id, "cancelled", "not_dispatched", "gateway_restart", r.id);
+        db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = ? WHERE id = ? AND status = 'pending'`).run(now, opts.note ?? 'gateway restarted', r.id);
+        complete(r.call_id, "cancelled", "not_dispatched", restartCode, r.id);
         setOutcome(r.call_id, "not_executed", "cancelled", "not_dispatched");
         bump(r.workspace_id, "cancelled");
       }
       for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NULL AND abandoned_at IS NULL`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
         db.prepare(`UPDATE mcpflow_pending_call SET abandoned_at = ? WHERE id = ?`).run(now, r.id);
-        complete(r.call_id, "error", "not_dispatched", "gateway_restart", r.id);
+        complete(r.call_id, "error", "not_dispatched", restartCode, r.id);
         setOutcome(r.call_id, "not_executed", "error", "not_dispatched");
         bump(r.workspace_id, "abandoned");
       }
+      if (!opts.holdsOnly) {
       for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'approved' AND dispatched_at IS NOT NULL`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
         if (hasCompletion(r.call_id)) continue;
         complete(r.call_id, "error", "error", "outcome_unknown", r.id);
@@ -744,6 +828,7 @@ export class PolicyEnforcer {
           setOutcome(r.call_id, "unknown", "error", "error");
           bump(r.workspace_id, "unknown");
         }
+      }
       }
       // purge every resolved hold's encrypted args (now allowed for abandoned holds too)
       db.prepare(`UPDATE mcpflow_pending_call SET args_ciphertext = NULL WHERE args_ciphertext IS NOT NULL AND status <> 'pending'
@@ -993,7 +1078,23 @@ export class PolicyEnforcer {
     return null;
   }
 
-  private async dispatchAndComplete(
+  private dispatchAndComplete(
+    callId: string,
+    ctx: CallContext,
+    decision: Decision,
+    dispatch: (a: Record<string, unknown>) => Promise<CallToolResult>,
+    args: Record<string, unknown>,
+    started: number,
+    extra: { grantId?: string | null; pendingCallId?: string; approver?: string | null; approverNote?: string | null },
+  ): Promise<CallToolResult> {
+    // QA V51-F1: track dispatched calls so shutdown can drain them (or record them as unknown)
+    const p = this.dispatchAndCompleteInner(callId, ctx, decision, dispatch, args, started, extra);
+    this.inflight.set(callId, { ctx, started, pendingCallId: extra.pendingCallId ?? null, decision, promise: p });
+    void p.finally(() => this.inflight.delete(callId)).catch(() => {});
+    return p;
+  }
+
+  private async dispatchAndCompleteInner(
     callId: string,
     ctx: CallContext,
     decision: Decision,
