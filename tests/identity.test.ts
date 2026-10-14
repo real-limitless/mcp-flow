@@ -107,7 +107,7 @@ describe("AgentDirectory (T1.3 resolution)", () => {
 
   it("no projects in key ∩ agent is forbidden", () => {
     const k = dir.createKey({ agentId: bot("a", []), createdBy: chen });
-    expect(dir.resolveKey(k.token)).toEqual({ status: "forbidden", reason: "no_projects" });
+    expect(dir.resolveKey(k.token)).toMatchObject({ status: "forbidden", reason: "no_projects" });
   });
 
   it("key projects must be a subset of agent projects", () => {

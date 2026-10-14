@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { policyApprovalsRouter } from "./policy-approvals.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import {
   acceptClientSessionId,
@@ -199,8 +200,8 @@ export function createApp(
     const agentRes = token.startsWith("mf_sess_")
       ? store.identity.resolveSession(token)
       : store.identity.resolveKey(token, clientIp(c));
-    if (agentRes.status === "ok") {
-      if (!agentRes.agent.isAdmin) return c.json({ error: "unauthorized" }, 401);
+    if (agentRes.status === "ok" || agentRes.status === "forbidden") {
+      if (!agentRes.agent.isAdmin || agentRes.agent.kind !== "human") return c.json({ error: "unauthorized" }, 401);
       c.set("auth", agentAuthContext(agentRes.agent, { mcpSessionId: null }));
       await next();
       return;
@@ -1292,6 +1293,7 @@ export function createApp(
     });
   });
 
+  app.route("/v1/policy/approvals", policyApprovalsRouter(store));
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
