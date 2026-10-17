@@ -7,7 +7,13 @@ import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
 import { connectOci } from "./runners/oci.js";
-import { connectStdioCommand } from "./runners/stdio.js";
+import {
+  armStdioReap,
+  connectStdioCommand,
+  disarmStdioReap,
+  killLiveStdio,
+  STDIO_GROUP_KILL_BUDGET_MS,
+} from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 
 export interface NamespacedTool extends Tool {
@@ -43,7 +49,55 @@ interface PooledClient {
   deviceId?: string;
 }
 
+/** Re-list tools on the open client after this age. Do not reconnect. */
 const TOOL_CACHE_MS = 30_000;
+
+/**
+ * How long closeAll waits for an in-flight connect before killing the spawn.
+ * 10s shutdown − 8s drain − process-group kill. A slow npx install or a hung
+ * initialize cannot stretch shutdown past that budget.
+ */
+export const INFLIGHT_CLOSE_DEADLINE_MS = Math.max(
+  0,
+  10_000 - 8_000 - STDIO_GROUP_KILL_BUDGET_MS,
+);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const TRANSPORT_ERRNO = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "EPIPE",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ECONNABORTED",
+  "EAI_AGAIN",
+]);
+
+/**
+ * Socket and stdio disconnects. Not tool errors.
+ * JSON-RPC -32000 is also used for ordinary request failures, so the code
+ * alone is not enough — the message has to say the connection died.
+ */
+export function isTransportOrConnectionError(err: unknown): boolean {
+  if (typeof err === "string") return transportMessage(err);
+  if (!err || typeof err !== "object") return false;
+  const code = (err as { code?: unknown }).code;
+  if (typeof code === "string") {
+    if (TRANSPORT_ERRNO.has(code) || code.startsWith("UND_ERR_")) return true;
+  }
+  const message = err instanceof Error ? err.message : String(err);
+  return transportMessage(message);
+}
+
+function transportMessage(message: string): boolean {
+  return /connection closed|not connected|econnreset|econnrefused|\bepipe\b|socket hang up|fetch failed|broken pipe|other side closed|process exited/i.test(
+    message,
+  );
+}
 
 function parsePlacement(backend: BackendRecord): Placement {
   try {
@@ -55,7 +109,17 @@ function parsePlacement(backend: BackendRecord): Placement {
 
 export class UpstreamPool {
   private pool = new Map<string, PooledClient>();
+  /** In-flight connect, one per backend. Removed when the attempt settles. */
+  private inflight = new Map<string, Promise<PooledClient>>();
+  private refreshInflight = new Map<string, Promise<void>>();
+  private closingEntries = new WeakMap<PooledClient, Promise<void>>();
+  /** Close already started; getClient waits so a replacement cannot overlap. */
+  private retiring = new Map<string, Promise<void>>();
   private edgeRouter: EdgeRouter | null = null;
+  private closing = false;
+  private drain: Promise<void> | null = null;
+  /** Bumped by closeAll so a connect that finishes late cannot rejoin the pool. */
+  private generation = 0;
 
   constructor(private store: Store) {}
 
@@ -63,25 +127,70 @@ export class UpstreamPool {
     this.edgeRouter = router;
   }
 
-  async closeAll(): Promise<void> {
-    const entries = [...this.pool.values()];
-    this.pool.clear();
-    await Promise.allSettled(
-      entries.map(async (e) => {
+  private closeEntry(entry: PooledClient): Promise<void> {
+    const pending = this.closingEntries.get(entry);
+    if (pending) return pending;
+    const job = (async () => {
+      try {
+        await entry.client.close();
+      } catch {
+        /* ignore */
+      }
+      if (entry.dispose) {
         try {
-          await e.client.close();
+          await entry.dispose();
         } catch {
           /* ignore */
         }
-        if (e.dispose) {
-          try {
-            await e.dispose();
-          } catch {
-            /* ignore */
-          }
-        }
-      }),
-    );
+      }
+    })();
+    this.closingEntries.set(entry, job);
+    return job;
+  }
+
+  async closeAll(): Promise<void> {
+    if (this.drain) return this.drain;
+    this.drain = this.drainPool().finally(() => {
+      this.drain = null;
+    });
+    return this.drain;
+  }
+
+  private async drainPool(): Promise<void> {
+    this.closing = true;
+    this.generation += 1;
+    try {
+      const pending = [...this.inflight.values()];
+      this.inflight.clear();
+      const entries = [...this.pool.values()];
+      this.pool.clear();
+
+      let pendingSettled = pending.length === 0;
+      const pendingDone = Promise.allSettled(pending).then(() => {
+        pendingSettled = true;
+      });
+      // Close clients we already have while the connect deadline runs.
+      const closingKnown = Promise.allSettled(
+        entries.map((entry) => this.closeEntry(entry)),
+      );
+
+      const stopPending = async () => {
+        if (pendingSettled) return;
+        await Promise.race([pendingDone, sleep(INFLIGHT_CLOSE_DEADLINE_MS)]);
+        if (pendingSettled) return;
+        armStdioReap();
+        await killLiveStdio();
+      };
+
+      await Promise.all([closingKnown, stopPending()]);
+
+      const late = [...this.pool.values()];
+      this.pool.clear();
+      await Promise.allSettled(late.map((entry) => this.closeEntry(entry)));
+    } finally {
+      disarmStdioReap();
+      this.closing = false;
+    }
   }
 
   invalidate(backendId?: string): void {
@@ -89,12 +198,37 @@ export class UpstreamPool {
       void this.closeAll();
       return;
     }
-    const e = this.pool.get(backendId);
-    if (e) {
-      this.pool.delete(backendId);
-      void e.client.close().catch(() => undefined);
-      if (e.dispose) void e.dispose().catch(() => undefined);
-    }
+    void this.retire(backendId);
+  }
+
+  /**
+   * Drop a backend and finish closing its client before any replacement spawn.
+   * Callers that only need a best-effort drop can ignore the promise; getClient waits.
+   */
+  private retire(backendId: string): Promise<void> {
+    const current = this.retiring.get(backendId);
+    if (current) return current;
+    const entry = this.pool.get(backendId);
+    const pending = this.inflight.get(backendId);
+    if (entry) this.pool.delete(backendId);
+    if (pending) this.inflight.delete(backendId);
+    const job = (async () => {
+      if (pending) {
+        try {
+          const next = await pending;
+          if (this.pool.get(backendId) === next) this.pool.delete(backendId);
+          if (next !== entry) await this.closeEntry(next);
+        } catch {
+          /* connect failed; nothing new to keep */
+        }
+      }
+      if (entry) await this.closeEntry(entry);
+    })();
+    this.retiring.set(backendId, job);
+    void job.finally(() => {
+      if (this.retiring.get(backendId) === job) this.retiring.delete(backendId);
+    });
+    return job;
   }
 
   private async connectRemote(backend: BackendRecord): Promise<PooledClient> {
@@ -129,16 +263,25 @@ export class UpstreamPool {
       transport = new StreamableHTTPClientTransport(url, { requestInit });
     }
 
-    await client.connect(transport);
-    const listed = await client.listTools();
-    return {
-      backendId: backend.id,
-      client,
-      transport,
-      tools: listed.tools ?? [],
-      fetchedAt: Date.now(),
-      placementMode: "remote",
-    };
+    try {
+      await client.connect(transport);
+      const listed = await client.listTools();
+      return {
+        backendId: backend.id,
+        client,
+        transport,
+        tools: listed.tools ?? [],
+        fetchedAt: Date.now(),
+        placementMode: "remote",
+      };
+    } catch (err) {
+      try {
+        await client.close();
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    }
   }
 
   private async connectCentralSandbox(
@@ -217,29 +360,67 @@ export class UpstreamPool {
     throw new Error(`placement ${mode} is not implemented`);
   }
 
-  private async getClient(backend: BackendRecord): Promise<PooledClient> {
-    const existing = this.pool.get(backend.id);
-    if (existing && Date.now() - existing.fetchedAt < TOOL_CACHE_MS) {
-      return existing;
-    }
-    if (existing) {
-      this.pool.delete(backend.id);
-      try {
-        await existing.client.close();
-      } catch {
-        /* ignore */
+  private refreshTools(entry: PooledClient): Promise<void> {
+    const current = this.refreshInflight.get(entry.backendId);
+    if (current) return current;
+    const job = (async () => {
+      const listed = await entry.client.listTools();
+      entry.tools = listed.tools ?? [];
+      entry.fetchedAt = Date.now();
+    })();
+    this.refreshInflight.set(entry.backendId, job);
+    void job.finally(() => {
+      if (this.refreshInflight.get(entry.backendId) === job) {
+        this.refreshInflight.delete(entry.backendId);
       }
-      if (existing.dispose) {
-        try {
-          await existing.dispose();
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    });
+    return job;
+  }
+
+  private async connectAndStore(backend: BackendRecord): Promise<PooledClient> {
+    const generation = this.generation;
     const entry = await this.connect(backend);
+    if (this.closing || generation !== this.generation) {
+      await this.closeEntry(entry);
+      throw new Error("upstream pool is closing");
+    }
+    const previous = this.pool.get(backend.id);
+    if (previous && previous !== entry) {
+      await this.closeEntry(previous);
+    }
+    if (this.closing) {
+      await this.closeEntry(entry);
+      throw new Error("upstream pool is closing");
+    }
     this.pool.set(backend.id, entry);
     return entry;
+  }
+
+  private async getClient(backend: BackendRecord): Promise<PooledClient> {
+    const retiring = this.retiring.get(backend.id);
+    if (retiring) await retiring;
+    if (this.closing) throw new Error("upstream pool is closing");
+
+    const existing = this.pool.get(backend.id);
+    if (existing) {
+      if (Date.now() - existing.fetchedAt >= TOOL_CACHE_MS) {
+        await this.refreshTools(existing);
+      }
+      return existing;
+    }
+
+    const pending = this.inflight.get(backend.id);
+    if (pending) return pending;
+
+    const promise = this.connectAndStore(backend);
+    this.inflight.set(backend.id, promise);
+    try {
+      return await promise;
+    } finally {
+      if (this.inflight.get(backend.id) === promise) {
+        this.inflight.delete(backend.id);
+      }
+    }
   }
 
   async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {
@@ -297,6 +478,7 @@ export class UpstreamPool {
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
             err instanceof Error ? err.message : err,
           );
+          if (isTransportOrConnectionError(err)) await this.retire(backend.id);
         }
       }),
     );
@@ -377,7 +559,7 @@ export class UpstreamPool {
       });
       return result as CallToolResult;
     } catch (err) {
-      this.invalidate(backend.id);
+      if (isTransportOrConnectionError(err)) await this.retire(backend.id);
       return {
         isError: true,
         content: [
@@ -439,14 +621,26 @@ export class UpstreamPool {
           backend: pub,
         };
       }
-      this.invalidate(backend.id);
-      const pooled = await this.getClient(backend);
-      return {
-        ok: true,
-        toolCount: pooled.tools.length,
-        tools: pooled.tools.map((t) => t.name),
-        backend: pub,
-      };
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const pooled = await this.getClient(backend);
+          return {
+            ok: true,
+            toolCount: pooled.tools.length,
+            tools: pooled.tools.map((t) => t.name),
+            backend: pub,
+          };
+        } catch (err) {
+          lastErr = err;
+          if (attempt === 0 && isTransportOrConnectionError(err)) {
+            await this.retire(backend.id);
+            continue;
+          }
+          throw err;
+        }
+      }
+      throw lastErr;
     } catch (err) {
       const base = err instanceof Error ? err.message : String(err);
       const hdrs = this.store.decryptHeaders(backend);

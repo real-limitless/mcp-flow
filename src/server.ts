@@ -9,7 +9,17 @@ import { Store } from "./db/store.js";
 import { EdgeHub } from "./edge/hub.js";
 import { encodeMsg, newMsgId } from "./edge/protocol.js";
 import { EdgeRouter } from "./edge/router.js";
-import { UpstreamPool } from "./mcp/upstream.js";
+import { STDIO_GROUP_KILL_BUDGET_MS } from "./mcp/runners/stdio.js";
+import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
+
+/** Stop accepting and let in-flight requests finish, then close upstreams. */
+export const SHUTDOWN_BUDGET_MS = 10_000;
+export const SHUTDOWN_DRAIN_MS = Math.min(
+  8_000,
+  SHUTDOWN_BUDGET_MS -
+    STDIO_GROUP_KILL_BUDGET_MS -
+    INFLIGHT_CLOSE_DEADLINE_MS,
+);
 
 export interface RunningServer {
   store: Store;
@@ -105,6 +115,7 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   console.error(`  UI:     ${url}/admin/`);
   console.error(`  Health: ${url}/health`);
 
+  let closed = false;
   return {
     store,
     pool,
@@ -112,13 +123,32 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
     edgeRouter,
     url,
     close: async () => {
+      if (closed) return;
+      closed = true;
+      const started = Date.now();
+      const left = () =>
+        Math.max(0, SHUTDOWN_BUDGET_MS - (Date.now() - started));
+      const wait = (ms: number) =>
+        new Promise<void>((resolve) => setTimeout(resolve, ms));
+
       edgeHub.closeAll();
-      await new Promise<void>((resolve) => wss.close(() => resolve()));
+      const edgeClosed = new Promise<void>((resolve) => wss.close(() => resolve()));
+      // Stop accepting. Drain in-flight HTTP for up to 8s, inside the 10s budget.
+      let drained = false;
+      const drain = new Promise<void>((resolve) => {
+        nodeServer.close(() => {
+          drained = true;
+          resolve();
+        });
+      });
+      const drainBudget = Math.min(SHUTDOWN_DRAIN_MS, left());
+      await Promise.race([drain, wait(drainBudget)]);
+      await edgeClosed;
+
+      // Process-group kill is bounded below the time left after the drain.
       await pool.closeAll();
       store.close();
-      await new Promise<void>((resolve, reject) => {
-        nodeServer.close((err) => (err ? reject(err) : resolve()));
-      });
+      if (!drained) await Promise.race([drain, wait(left())]);
     },
   };
 }
