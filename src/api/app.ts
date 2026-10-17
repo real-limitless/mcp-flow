@@ -1315,7 +1315,7 @@ export function createApp(
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);
-    if (c.req.method === "DELETE") forgetMcpSession(mcpSessionId);
+    if (c.req.method === "DELETE") forgetMcpSession(mcpSessionId, auth.keyId);
 
     const cleanup = () => {
       void transport.close().catch(() => undefined);

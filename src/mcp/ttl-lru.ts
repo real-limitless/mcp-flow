@@ -43,6 +43,17 @@ export class TtlLru<T> {
     return row.value;
   }
 
+  /** Read without refreshing recency. Drops the row if it has expired. */
+  peek(key: string): T | undefined {
+    const row = this.rows.get(key);
+    if (!row) return undefined;
+    if (row.exp <= Date.now()) {
+      this.rows.delete(key);
+      return undefined;
+    }
+    return row.value;
+  }
+
   delete(key: string): void {
     this.rows.delete(key);
   }

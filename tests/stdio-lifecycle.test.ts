@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { STDIO_GROUP_KILL_BUDGET_MS } from "../src/mcp/runners/stdio.js";
-import { UpstreamPool } from "../src/mcp/upstream.js";
+import {
+  INFLIGHT_CLOSE_DEADLINE_MS,
+  UpstreamPool,
+} from "../src/mcp/upstream.js";
 import { SHUTDOWN_BUDGET_MS, SHUTDOWN_DRAIN_MS, startServer } from "../src/server.js";
 import type { BackendRecord } from "../src/types.js";
 
@@ -233,6 +236,19 @@ function alivePids(spawnDir: string): number[] {
 
 function poolSize(pool: UpstreamPool): number {
   return (pool as unknown as { pool: Map<string, unknown> }).pool.size;
+}
+
+function writeHungServer(dir: string, spawnDir: string): string {
+  const path = join(dir, "fixture-hung.mjs");
+  const code = `import { mkdirSync, writeFileSync } from "node:fs";
+process.on("SIGTERM", () => {});
+const spawnDir = ${JSON.stringify(spawnDir)};
+mkdirSync(spawnDir, { recursive: true });
+writeFileSync(spawnDir + "/" + String(process.pid), "1");
+setInterval(() => {}, 1e9);
+`;
+  writeFileSync(path, code);
+  return path;
 }
 
 function writeExitServer(dir: string, spawnDir: string): string {
@@ -478,6 +494,32 @@ describe("stdio process lifecycle", () => {
       store.close();
     }
   });
+
+  it("kills a hung initialize at the close deadline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writeHungServer(dir, spawnDir);
+    const { pool, store, workspaceId } = setupPool(script, spawnDir);
+    const listed = pool.listNamespacedTools(workspaceId);
+    try {
+      const spawned = await until(() => alivePids(spawnDir).length === 1, 2_000);
+      expect(spawned).toBe(true);
+      const started = Date.now();
+      await Promise.all([pool.closeAll(), listed]);
+      const elapsed = Date.now() - started;
+      expect(elapsed).toBeGreaterThanOrEqual(INFLIGHT_CLOSE_DEADLINE_MS);
+      expect(elapsed).toBeLessThan(
+        INFLIGHT_CLOSE_DEADLINE_MS + STDIO_GROUP_KILL_BUDGET_MS + 1_000,
+      );
+      expect(alivePids(spawnDir)).toHaveLength(0);
+      expect(poolSize(pool)).toBe(0);
+      await expect(listed).resolves.toEqual([]);
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
 });
 
 describe("shutdown budget", () => {
@@ -488,6 +530,11 @@ describe("shutdown budget", () => {
     expect(SHUTDOWN_DRAIN_MS + STDIO_GROUP_KILL_BUDGET_MS).toBeLessThanOrEqual(
       SHUTDOWN_BUDGET_MS,
     );
+    expect(
+      SHUTDOWN_DRAIN_MS +
+        INFLIGHT_CLOSE_DEADLINE_MS +
+        STDIO_GROUP_KILL_BUDGET_MS,
+    ).toBeLessThanOrEqual(SHUTDOWN_BUDGET_MS);
 
     const dir = mkdtempSync(join(tmpdir(), "mcp-flow-stop-"));
     dirs.push(dir);

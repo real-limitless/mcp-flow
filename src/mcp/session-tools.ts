@@ -70,8 +70,15 @@ export class SessionToolSetMap {
     return this.set(sessionId, { keyId, names: [] });
   }
 
-  /** Remove the session entirely (MCP session close). */
-  delete(sessionId: string): void {
+  /**
+   * Remove the session. When keyId is set, delete only if it owns the row,
+   * the same check get() uses.
+   */
+  delete(sessionId: string, keyId?: string | null): void {
+    if (keyId) {
+      const row = this.rows.peek(sessionId);
+      if (!row || row.keyId !== keyId) return;
+    }
     this.rows.delete(sessionId);
   }
 
@@ -91,9 +98,15 @@ export class SessionToolSetMap {
 /** Process-wide map shared by HTTP app + gateway */
 export const globalSessionToolSets = new SessionToolSetMap();
 
-/** Drop sticky project and dynamic tool state when an MCP session ends. */
-export function forgetMcpSession(sessionId: string | null | undefined): void {
-  if (!sessionId) return;
-  globalSessionProjects.clear(sessionId);
-  globalSessionToolSets.delete(sessionId);
+/**
+ * Drop sticky project and dynamic tool state when an MCP session ends.
+ * keyId must own each row, matching get(); a different key cannot clear it.
+ */
+export function forgetMcpSession(
+  sessionId: string | null | undefined,
+  keyId?: string | null,
+): void {
+  if (!sessionId || !keyId) return;
+  globalSessionProjects.clearIfOwner(sessionId, keyId);
+  globalSessionToolSets.delete(sessionId, keyId);
 }

@@ -37,6 +37,14 @@ export class SessionProjectMap {
     this.rows.delete(sessionId);
   }
 
+  /** Drop the row only when it belongs to this key. */
+  clearIfOwner(sessionId: string, keyId: string): boolean {
+    const row = this.rows.peek(sessionId);
+    if (!row || row.keyId !== keyId) return false;
+    this.rows.delete(sessionId);
+    return true;
+  }
+
   sweep(): void {
     this.rows.sweep();
   }

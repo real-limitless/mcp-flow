@@ -7,7 +7,13 @@ import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
 import { connectOci } from "./runners/oci.js";
-import { connectStdioCommand } from "./runners/stdio.js";
+import {
+  armStdioReap,
+  connectStdioCommand,
+  disarmStdioReap,
+  killLiveStdio,
+  STDIO_GROUP_KILL_BUDGET_MS,
+} from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 
 export interface NamespacedTool extends Tool {
@@ -46,6 +52,20 @@ interface PooledClient {
 /** Re-list tools on the open client after this age. Do not reconnect. */
 const TOOL_CACHE_MS = 30_000;
 
+/**
+ * How long closeAll waits for an in-flight connect before killing the spawn.
+ * 10s shutdown − 8s drain − process-group kill. A slow npx install or a hung
+ * initialize cannot stretch shutdown past that budget.
+ */
+export const INFLIGHT_CLOSE_DEADLINE_MS = Math.max(
+  0,
+  10_000 - 8_000 - STDIO_GROUP_KILL_BUDGET_MS,
+);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 const TRANSPORT_ERRNO = new Set([
   "ECONNRESET",
   "ECONNREFUSED",
@@ -57,7 +77,11 @@ const TRANSPORT_ERRNO = new Set([
   "EAI_AGAIN",
 ]);
 
-/** JSON-RPC ConnectionClosed, plus socket and stdio disconnects. Not tool errors. */
+/**
+ * Socket and stdio disconnects. Not tool errors.
+ * JSON-RPC -32000 is also used for ordinary request failures, so the code
+ * alone is not enough — the message has to say the connection died.
+ */
 export function isTransportOrConnectionError(err: unknown): boolean {
   if (typeof err === "string") return transportMessage(err);
   if (!err || typeof err !== "object") return false;
@@ -65,7 +89,6 @@ export function isTransportOrConnectionError(err: unknown): boolean {
   if (typeof code === "string") {
     if (TRANSPORT_ERRNO.has(code) || code.startsWith("UND_ERR_")) return true;
   }
-  if (code === -32000) return true;
   const message = err instanceof Error ? err.message : String(err);
   return transportMessage(message);
 }
@@ -95,6 +118,8 @@ export class UpstreamPool {
   private edgeRouter: EdgeRouter | null = null;
   private closing = false;
   private drain: Promise<void> | null = null;
+  /** Bumped by closeAll so a connect that finishes late cannot rejoin the pool. */
+  private generation = 0;
 
   constructor(private store: Store) {}
 
@@ -133,23 +158,37 @@ export class UpstreamPool {
 
   private async drainPool(): Promise<void> {
     this.closing = true;
+    this.generation += 1;
     try {
       const pending = [...this.inflight.values()];
       this.inflight.clear();
       const entries = [...this.pool.values()];
       this.pool.clear();
-      await Promise.allSettled(pending);
+
+      let pendingSettled = pending.length === 0;
+      const pendingDone = Promise.allSettled(pending).then(() => {
+        pendingSettled = true;
+      });
+      // Close clients we already have while the connect deadline runs.
+      const closingKnown = Promise.allSettled(
+        entries.map((entry) => this.closeEntry(entry)),
+      );
+
+      const stopPending = async () => {
+        if (pendingSettled) return;
+        await Promise.race([pendingDone, sleep(INFLIGHT_CLOSE_DEADLINE_MS)]);
+        if (pendingSettled) return;
+        armStdioReap();
+        await killLiveStdio();
+      };
+
+      await Promise.all([closingKnown, stopPending()]);
+
       const late = [...this.pool.values()];
       this.pool.clear();
-      const seen = new Set<PooledClient>();
-      const all: PooledClient[] = [];
-      for (const entry of [...entries, ...late]) {
-        if (seen.has(entry)) continue;
-        seen.add(entry);
-        all.push(entry);
-      }
-      await Promise.allSettled(all.map((entry) => this.closeEntry(entry)));
+      await Promise.allSettled(late.map((entry) => this.closeEntry(entry)));
     } finally {
+      disarmStdioReap();
       this.closing = false;
     }
   }
@@ -339,8 +378,9 @@ export class UpstreamPool {
   }
 
   private async connectAndStore(backend: BackendRecord): Promise<PooledClient> {
+    const generation = this.generation;
     const entry = await this.connect(backend);
-    if (this.closing) {
+    if (this.closing || generation !== this.generation) {
       await this.closeEntry(entry);
       throw new Error("upstream pool is closing");
     }

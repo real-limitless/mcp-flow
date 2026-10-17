@@ -10,13 +10,15 @@ import { EdgeHub } from "./edge/hub.js";
 import { encodeMsg, newMsgId } from "./edge/protocol.js";
 import { EdgeRouter } from "./edge/router.js";
 import { STDIO_GROUP_KILL_BUDGET_MS } from "./mcp/runners/stdio.js";
-import { UpstreamPool } from "./mcp/upstream.js";
+import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
 
 /** Stop accepting and let in-flight requests finish, then close upstreams. */
 export const SHUTDOWN_BUDGET_MS = 10_000;
 export const SHUTDOWN_DRAIN_MS = Math.min(
   8_000,
-  SHUTDOWN_BUDGET_MS - STDIO_GROUP_KILL_BUDGET_MS,
+  SHUTDOWN_BUDGET_MS -
+    STDIO_GROUP_KILL_BUDGET_MS -
+    INFLIGHT_CLOSE_DEADLINE_MS,
 );
 
 export interface RunningServer {

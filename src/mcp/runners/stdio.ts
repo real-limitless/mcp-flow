@@ -186,9 +186,35 @@ interface StdioInternals {
  * the whole process group. The SDK close path only signals the direct child,
  * which leaves grandchildren (shell and node under npm/npx) running.
  */
+const liveStdio = new Set<GroupedStdioClientTransport>();
+let stdioReapArmed = false;
+
+/** While armed, a spawn closes itself. closeAll sets this at the connect deadline. */
+export function armStdioReap(): void {
+  stdioReapArmed = true;
+}
+
+export function disarmStdioReap(): void {
+  stdioReapArmed = false;
+}
+
+/** Close every stdio transport that has spawned but may not be in the pool yet. */
+export async function killLiveStdio(): Promise<void> {
+  await Promise.allSettled([...liveStdio].map((transport) => transport.close()));
+}
+
 class GroupedStdioClientTransport extends StdioClientTransport {
   private groupClose: Promise<void> | null = null;
   private leaderPid: number | null = null;
+  private tracked = false;
+  private retired = false;
+
+  private track(): void {
+    if (this.retired || this.tracked) return;
+    this.tracked = true;
+    liveStdio.add(this);
+    if (stdioReapArmed) void this.close();
+  }
 
   override start(): Promise<void> {
     const self = this as unknown as StdioInternals;
@@ -213,11 +239,13 @@ class GroupedStdioClientTransport extends StdioClientTransport {
       });
       self._process = child;
       if (detached && child.pid) this.leaderPid = child.pid;
+      if (child.pid) this.track();
       child.on("error", (error: Error) => {
         reject(error);
         self.onerror?.(error);
       });
       child.on("spawn", () => {
+        this.track();
         resolve();
       });
       child.on("close", () => {
@@ -246,6 +274,8 @@ class GroupedStdioClientTransport extends StdioClientTransport {
   }
 
   override async close(): Promise<void> {
+    this.retired = true;
+    liveStdio.delete(this);
     if (this.groupClose) return this.groupClose;
     this.groupClose = (async () => {
       const pid = this.leaderPid;
@@ -285,14 +315,10 @@ async function connectOnce(
   try {
     await client.connect(transport);
     const listed = await client.listTools();
-    const leader = transport.pid;
     return {
       client,
       transport,
       tools: listed.tools ?? [],
-      dispose: leader
-        ? () => killProcessGroup(leader, process.platform !== "win32")
-        : undefined,
     };
   } catch (err) {
     try {

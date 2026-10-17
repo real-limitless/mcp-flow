@@ -13,8 +13,10 @@ const maps: Array<{ stop(): void }> = [];
 
 afterEach(() => {
   while (maps.length) maps.pop()!.stop();
-  globalSessionProjects.clear("sess-close");
-  globalSessionToolSets.delete("sess-close");
+  for (const id of ["sess-close", "sess-owned", "sess-split"]) {
+    globalSessionProjects.clear(id);
+    globalSessionToolSets.delete(id);
+  }
 });
 
 const project = {
@@ -57,9 +59,36 @@ describe("session maps", () => {
 
     globalSessionProjects.set("sess-close", project);
     globalSessionToolSets.add("sess-close", "key-a", ["up__echo"]);
-    forgetMcpSession("sess-close");
+    forgetMcpSession("sess-close", "key-a");
     expect(globalSessionProjects.get("sess-close")).toBeNull();
     expect(globalSessionToolSets.get("sess-close", "key-a").size).toBe(0);
     expect(globalSessionToolSets.size).toBe(0);
+  });
+
+  it("does not let one key delete another key's session", () => {
+    globalSessionProjects.set("sess-owned", project);
+    globalSessionToolSets.add("sess-owned", "key-a", ["up__echo"]);
+
+    forgetMcpSession("sess-owned");
+    forgetMcpSession("sess-owned", "key-b");
+    expect(globalSessionProjects.get("sess-owned")?.keyId).toBe("key-a");
+    expect(globalSessionToolSets.get("sess-owned", "key-a")).toEqual(
+      new Set(["up__echo"]),
+    );
+
+    globalSessionToolSets.add("sess-split", "key-b", ["up__other"]);
+    forgetMcpSession("sess-owned", "key-a");
+    expect(globalSessionProjects.get("sess-owned")).toBeNull();
+    expect(globalSessionToolSets.get("sess-owned", "key-a").size).toBe(0);
+    expect(globalSessionToolSets.get("sess-split", "key-b")).toEqual(
+      new Set(["up__other"]),
+    );
+
+    forgetMcpSession("sess-split", "key-a");
+    expect(globalSessionToolSets.get("sess-split", "key-b")).toEqual(
+      new Set(["up__other"]),
+    );
+    forgetMcpSession("sess-split", "key-b");
+    expect(globalSessionToolSets.get("sess-split", "key-b").size).toBe(0);
   });
 });
