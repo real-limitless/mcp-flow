@@ -66,7 +66,11 @@ export function buildStdioEnv(
   };
 }
 
-const GROUP_KILL_GRACE_MS = 2_000;
+/** SIGTERM grace before SIGKILL. Kept under 2s so an 8s request drain still fits in a 10s shutdown. */
+export const STDIO_GROUP_KILL_GRACE_MS = 1_000;
+const STDIO_GROUP_KILL_FOLLOWUP_MS = 250;
+export const STDIO_GROUP_KILL_BUDGET_MS =
+  STDIO_GROUP_KILL_GRACE_MS + STDIO_GROUP_KILL_FOLLOWUP_MS;
 
 interface ProcStat {
   state: string;
@@ -156,13 +160,13 @@ async function killProcessGroup(
     group ? livingGroupMembers(pid).length > 0 : isLiving(pid);
   signalTree(pid, "SIGTERM", group);
   const started = Date.now();
-  while (lingering() && Date.now() - started < GROUP_KILL_GRACE_MS) {
+  while (lingering() && Date.now() - started < STDIO_GROUP_KILL_GRACE_MS) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
   if (!lingering()) return;
   signalTree(pid, "SIGKILL", group);
   const killedAt = Date.now();
-  while (lingering() && Date.now() - killedAt < 500) {
+  while (lingering() && Date.now() - killedAt < STDIO_GROUP_KILL_FOLLOWUP_MS) {
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
 }

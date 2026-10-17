@@ -3,42 +3,50 @@
  * Keyed by mcp-session-id when the client supports Streamable HTTP sessions;
  * also supports synthetic ids from X-MCP-Flow-Session header.
  */
+import { SESSION_MAP_MAX, TtlLru } from "./ttl-lru.js";
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+export interface SessionProject {
+  projectId: string;
+  projectSlug: string;
+  keyId: string;
+}
+
 export class SessionProjectMap {
-  private readonly map = new Map<
-    string,
-    { projectId: string; projectSlug: string; keyId: string; exp: number }
-  >();
+  private readonly rows: TtlLru<SessionProject>;
+
+  constructor(maxEntries = SESSION_MAP_MAX, sweepMs = 60_000) {
+    this.rows = new TtlLru<SessionProject>(maxEntries, sweepMs);
+  }
 
   set(
     sessionId: string,
-    opts: { projectId: string; projectSlug: string; keyId: string },
-    ttlMs = 24 * 60 * 60 * 1000,
+    opts: SessionProject,
+    ttlMs = SESSION_TTL_MS,
   ): void {
-    this.map.set(sessionId, {
-      ...opts,
-      exp: Date.now() + ttlMs,
-    });
+    this.rows.set(sessionId, { ...opts }, ttlMs);
   }
 
-  get(
-    sessionId: string | null | undefined,
-  ): { projectId: string; projectSlug: string; keyId: string } | null {
+  get(sessionId: string | null | undefined): SessionProject | null {
     if (!sessionId) return null;
-    const row = this.map.get(sessionId);
-    if (!row) return null;
-    if (row.exp < Date.now()) {
-      this.map.delete(sessionId);
-      return null;
-    }
-    return {
-      projectId: row.projectId,
-      projectSlug: row.projectSlug,
-      keyId: row.keyId,
-    };
+    return this.rows.get(sessionId) ?? null;
   }
 
   clear(sessionId: string): void {
-    this.map.delete(sessionId);
+    this.rows.delete(sessionId);
+  }
+
+  sweep(): void {
+    this.rows.sweep();
+  }
+
+  get size(): number {
+    return this.rows.size;
+  }
+
+  stop(): void {
+    this.rows.stop();
   }
 }
 

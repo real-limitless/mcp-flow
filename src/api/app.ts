@@ -36,6 +36,7 @@ import {
   mergeApiKeyScopes,
 } from "../mcp/admin-tools.js";
 import { globalSessionProjects } from "../mcp/session-project.js";
+import { forgetMcpSession } from "../mcp/session-tools.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
   assertBackendShape,
@@ -1314,6 +1315,7 @@ export function createApp(
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);
+    if (c.req.method === "DELETE") forgetMcpSession(mcpSessionId);
 
     const cleanup = () => {
       void transport.close().catch(() => undefined);

@@ -2,25 +2,32 @@
  * In-memory MCP session → enabled namespaced tools (dynamicTools working set).
  * Keyed like SessionProjectMap: mcp-session-id or synthetic key:${keyId}.
  */
+import { globalSessionProjects } from "./session-project.js";
+import { SESSION_MAP_MAX, TtlLru } from "./ttl-lru.js";
+
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface ToolRow {
+  keyId: string;
+  names: Set<string>;
+}
+
 export class SessionToolSetMap {
-  private readonly map = new Map<
-    string,
-    { keyId: string; names: Set<string>; exp: number }
-  >();
+  private readonly rows: TtlLru<ToolRow>;
+
+  constructor(maxEntries = SESSION_MAP_MAX, sweepMs = 60_000) {
+    this.rows = new TtlLru<ToolRow>(maxEntries, sweepMs);
+  }
 
   set(
     sessionId: string,
     opts: { keyId: string; names: Iterable<string> },
-    ttlMs = 24 * 60 * 60 * 1000,
+    ttlMs = SESSION_TTL_MS,
   ): Set<string> {
     const names = new Set(
       [...opts.names].map((n) => String(n).trim()).filter(Boolean),
     );
-    this.map.set(sessionId, {
-      keyId: opts.keyId,
-      names,
-      exp: Date.now() + ttlMs,
-    });
+    this.rows.set(sessionId, { keyId: opts.keyId, names }, ttlMs);
     return new Set(names);
   }
 
@@ -29,12 +36,8 @@ export class SessionToolSetMap {
     keyId?: string | null,
   ): Set<string> {
     if (!sessionId || !keyId) return new Set();
-    const row = this.map.get(sessionId);
+    const row = this.rows.get(sessionId);
     if (!row || row.keyId !== keyId) return new Set();
-    if (row.exp < Date.now()) {
-      this.map.delete(sessionId);
-      return new Set();
-    }
     return new Set(row.names);
   }
 
@@ -42,7 +45,7 @@ export class SessionToolSetMap {
     sessionId: string,
     keyId: string,
     names: Iterable<string>,
-    ttlMs = 24 * 60 * 60 * 1000,
+    ttlMs = SESSION_TTL_MS,
   ): Set<string> {
     const current = this.get(sessionId, keyId);
     for (const n of names) {
@@ -56,7 +59,7 @@ export class SessionToolSetMap {
     sessionId: string,
     keyId: string,
     names: Iterable<string>,
-    ttlMs = 24 * 60 * 60 * 1000,
+    ttlMs = SESSION_TTL_MS,
   ): Set<string> {
     const current = this.get(sessionId, keyId);
     for (const n of names) current.delete(String(n));
@@ -66,7 +69,31 @@ export class SessionToolSetMap {
   clear(sessionId: string, keyId: string): Set<string> {
     return this.set(sessionId, { keyId, names: [] });
   }
+
+  /** Remove the session entirely (MCP session close). */
+  delete(sessionId: string): void {
+    this.rows.delete(sessionId);
+  }
+
+  sweep(): void {
+    this.rows.sweep();
+  }
+
+  get size(): number {
+    return this.rows.size;
+  }
+
+  stop(): void {
+    this.rows.stop();
+  }
 }
 
 /** Process-wide map shared by HTTP app + gateway */
 export const globalSessionToolSets = new SessionToolSetMap();
+
+/** Drop sticky project and dynamic tool state when an MCP session ends. */
+export function forgetMcpSession(sessionId: string | null | undefined): void {
+  if (!sessionId) return;
+  globalSessionProjects.clear(sessionId);
+  globalSessionToolSets.delete(sessionId);
+}
