@@ -43,6 +43,7 @@ interface PooledClient {
   deviceId?: string;
 }
 
+/** Re-list tools on the open client after this age. Do not reconnect. */
 const TOOL_CACHE_MS = 30_000;
 
 function parsePlacement(backend: BackendRecord): Placement {
@@ -55,7 +56,13 @@ function parsePlacement(backend: BackendRecord): Placement {
 
 export class UpstreamPool {
   private pool = new Map<string, PooledClient>();
+  /** In-flight connect, one per backend. Removed when the attempt settles. */
+  private inflight = new Map<string, Promise<PooledClient>>();
+  private refreshInflight = new Map<string, Promise<void>>();
+  private closingEntries = new WeakMap<PooledClient, Promise<void>>();
   private edgeRouter: EdgeRouter | null = null;
+  private closing = false;
+  private drain: Promise<void> | null = null;
 
   constructor(private store: Store) {}
 
@@ -63,25 +70,56 @@ export class UpstreamPool {
     this.edgeRouter = router;
   }
 
-  async closeAll(): Promise<void> {
-    const entries = [...this.pool.values()];
-    this.pool.clear();
-    await Promise.allSettled(
-      entries.map(async (e) => {
+  private closeEntry(entry: PooledClient): Promise<void> {
+    const pending = this.closingEntries.get(entry);
+    if (pending) return pending;
+    const job = (async () => {
+      try {
+        await entry.client.close();
+      } catch {
+        /* ignore */
+      }
+      if (entry.dispose) {
         try {
-          await e.client.close();
+          await entry.dispose();
         } catch {
           /* ignore */
         }
-        if (e.dispose) {
-          try {
-            await e.dispose();
-          } catch {
-            /* ignore */
-          }
-        }
-      }),
-    );
+      }
+    })();
+    this.closingEntries.set(entry, job);
+    return job;
+  }
+
+  async closeAll(): Promise<void> {
+    if (this.drain) return this.drain;
+    this.drain = this.drainPool().finally(() => {
+      this.drain = null;
+    });
+    return this.drain;
+  }
+
+  private async drainPool(): Promise<void> {
+    this.closing = true;
+    try {
+      const pending = [...this.inflight.values()];
+      this.inflight.clear();
+      const entries = [...this.pool.values()];
+      this.pool.clear();
+      await Promise.allSettled(pending);
+      const late = [...this.pool.values()];
+      this.pool.clear();
+      const seen = new Set<PooledClient>();
+      const all: PooledClient[] = [];
+      for (const entry of [...entries, ...late]) {
+        if (seen.has(entry)) continue;
+        seen.add(entry);
+        all.push(entry);
+      }
+      await Promise.allSettled(all.map((entry) => this.closeEntry(entry)));
+    } finally {
+      this.closing = false;
+    }
   }
 
   invalidate(backendId?: string): void {
@@ -89,11 +127,20 @@ export class UpstreamPool {
       void this.closeAll();
       return;
     }
-    const e = this.pool.get(backendId);
-    if (e) {
+    const entry = this.pool.get(backendId);
+    if (entry) {
       this.pool.delete(backendId);
-      void e.client.close().catch(() => undefined);
-      if (e.dispose) void e.dispose().catch(() => undefined);
+      void this.closeEntry(entry);
+    }
+    const pending = this.inflight.get(backendId);
+    if (pending) {
+      this.inflight.delete(backendId);
+      void pending
+        .then((next) => {
+          if (this.pool.get(backendId) === next) this.pool.delete(backendId);
+          return this.closeEntry(next);
+        })
+        .catch(() => undefined);
     }
   }
 
@@ -217,29 +264,64 @@ export class UpstreamPool {
     throw new Error(`placement ${mode} is not implemented`);
   }
 
-  private async getClient(backend: BackendRecord): Promise<PooledClient> {
-    const existing = this.pool.get(backend.id);
-    if (existing && Date.now() - existing.fetchedAt < TOOL_CACHE_MS) {
-      return existing;
-    }
-    if (existing) {
-      this.pool.delete(backend.id);
-      try {
-        await existing.client.close();
-      } catch {
-        /* ignore */
+  private refreshTools(entry: PooledClient): Promise<void> {
+    const current = this.refreshInflight.get(entry.backendId);
+    if (current) return current;
+    const job = (async () => {
+      const listed = await entry.client.listTools();
+      entry.tools = listed.tools ?? [];
+      entry.fetchedAt = Date.now();
+    })();
+    this.refreshInflight.set(entry.backendId, job);
+    void job.finally(() => {
+      if (this.refreshInflight.get(entry.backendId) === job) {
+        this.refreshInflight.delete(entry.backendId);
       }
-      if (existing.dispose) {
-        try {
-          await existing.dispose();
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    });
+    return job;
+  }
+
+  private async connectAndStore(backend: BackendRecord): Promise<PooledClient> {
     const entry = await this.connect(backend);
+    if (this.closing) {
+      await this.closeEntry(entry);
+      throw new Error("upstream pool is closing");
+    }
+    const previous = this.pool.get(backend.id);
+    if (previous && previous !== entry) {
+      await this.closeEntry(previous);
+    }
+    if (this.closing) {
+      await this.closeEntry(entry);
+      throw new Error("upstream pool is closing");
+    }
     this.pool.set(backend.id, entry);
     return entry;
+  }
+
+  private async getClient(backend: BackendRecord): Promise<PooledClient> {
+    if (this.closing) throw new Error("upstream pool is closing");
+
+    const existing = this.pool.get(backend.id);
+    if (existing) {
+      if (Date.now() - existing.fetchedAt >= TOOL_CACHE_MS) {
+        await this.refreshTools(existing);
+      }
+      return existing;
+    }
+
+    const pending = this.inflight.get(backend.id);
+    if (pending) return pending;
+
+    const promise = this.connectAndStore(backend);
+    this.inflight.set(backend.id, promise);
+    try {
+      return await promise;
+    } finally {
+      if (this.inflight.get(backend.id) === promise) {
+        this.inflight.delete(backend.id);
+      }
+    }
   }
 
   async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {

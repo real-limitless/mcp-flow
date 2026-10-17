@@ -1,13 +1,16 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
+  type StdioServerParameters,
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import type { PassThrough } from "node:stream";
 
 export interface StdioRunResult {
   client: Client;
@@ -63,13 +66,200 @@ export function buildStdioEnv(
   };
 }
 
+const GROUP_KILL_GRACE_MS = 2_000;
+
+interface ProcStat {
+  state: string;
+  ppid: number;
+  pgrp: number;
+}
+
+function procStat(pid: number): ProcStat | null {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const rest = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+    const state = rest[0];
+    const ppid = Number(rest[1]);
+    const pgrp = Number(rest[2]);
+    if (!state || !Number.isInteger(ppid) || !Number.isInteger(pgrp)) return null;
+    return { state, ppid, pgrp };
+  } catch {
+    return null;
+  }
+}
+
+function isLiving(pid: number): boolean {
+  if (process.platform === "linux") {
+    const stat = procStat(pid);
+    return stat !== null && stat.state !== "Z";
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Non-zombie members of a process group. The leader's pid is the pgid. */
+function livingGroupMembers(pgid: number): number[] {
+  if (process.platform !== "linux") return isLiving(pgid) ? [pgid] : [];
+  let names: string[];
+  try {
+    names = readdirSync("/proc");
+  } catch {
+    return isLiving(pgid) ? [pgid] : [];
+  }
+  const out: number[] = [];
+  for (const name of names) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
+    const stat = procStat(pid);
+    if (stat && stat.pgrp === pgid && stat.state !== "Z") out.push(pid);
+  }
+  return out;
+}
+
+function signalTree(pid: number, signal: NodeJS.Signals, group: boolean): void {
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return;
+  const target = group ? -pid : pid;
+  try {
+    process.kill(target, signal);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (!group || (code !== "ESRCH" && code !== "EINVAL" && code !== "EPERM")) {
+      return;
+    }
+    try {
+      process.kill(pid, signal);
+    } catch {
+      /* already gone */
+    }
+  }
+}
+
+/**
+ * SIGTERM the process (and, when it leads a group, every member), then
+ * SIGKILL anything still running after the grace period.
+ */
+async function killProcessGroup(
+  pid: number,
+  group = process.platform !== "win32",
+): Promise<void> {
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return;
+  if (group && process.platform === "linux") {
+    const stat = procStat(pid);
+    // A live pid that is not our child is not the session we spawned.
+    if (stat && (stat.ppid !== process.pid || stat.pgrp !== pid)) return;
+  }
+  const lingering = () =>
+    group ? livingGroupMembers(pid).length > 0 : isLiving(pid);
+  signalTree(pid, "SIGTERM", group);
+  const started = Date.now();
+  while (lingering() && Date.now() - started < GROUP_KILL_GRACE_MS) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  if (!lingering()) return;
+  signalTree(pid, "SIGKILL", group);
+  const killedAt = Date.now();
+  while (lingering() && Date.now() - killedAt < 500) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+interface StdioInternals {
+  _process?: ChildProcess;
+  _serverParams: StdioServerParameters;
+  _stderrStream: PassThrough | null;
+  _readBuffer: { append(chunk: Buffer): void };
+  processReadBuffer(): void;
+  onerror?: (error: Error) => void;
+  onclose?: () => void;
+}
+
+/**
+ * Stdio transport that starts the backend in its own session and tears down
+ * the whole process group. The SDK close path only signals the direct child,
+ * which leaves grandchildren (shell and node under npm/npx) running.
+ */
+class GroupedStdioClientTransport extends StdioClientTransport {
+  private groupClose: Promise<void> | null = null;
+  private leaderPid: number | null = null;
+
+  override start(): Promise<void> {
+    const self = this as unknown as StdioInternals;
+    if (self._process) {
+      throw new Error(
+        "StdioClientTransport already started! If using Client class, note that connect() calls start() automatically.",
+      );
+    }
+    const detached = process.platform !== "win32";
+    return new Promise((resolve, reject) => {
+      const params = self._serverParams;
+      const child = spawn(params.command, params.args ?? [], {
+        env: {
+          ...getDefaultEnvironment(),
+          ...params.env,
+        },
+        stdio: ["pipe", "pipe", params.stderr ?? "inherit"],
+        shell: false,
+        windowsHide: process.platform === "win32",
+        cwd: params.cwd,
+        detached,
+      });
+      self._process = child;
+      if (detached && child.pid) this.leaderPid = child.pid;
+      child.on("error", (error: Error) => {
+        reject(error);
+        self.onerror?.(error);
+      });
+      child.on("spawn", () => {
+        resolve();
+      });
+      child.on("close", () => {
+        self._process = undefined;
+        self.onclose?.();
+      });
+      child.stdin?.on("error", (error: Error) => {
+        self.onerror?.(error);
+      });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        try {
+          self._readBuffer.append(chunk);
+          self.processReadBuffer();
+        } catch (error) {
+          self.onerror?.(error instanceof Error ? error : new Error(String(error)));
+          void this.close();
+        }
+      });
+      child.stdout?.on("error", (error: Error) => {
+        self.onerror?.(error);
+      });
+      if (self._stderrStream && child.stderr) {
+        child.stderr.pipe(self._stderrStream);
+      }
+    });
+  }
+
+  override async close(): Promise<void> {
+    if (this.groupClose) return this.groupClose;
+    this.groupClose = (async () => {
+      const pid = this.leaderPid;
+      this.leaderPid = null;
+      if (pid) await killProcessGroup(pid, true);
+      await super.close();
+    })();
+    return this.groupClose;
+  }
+}
+
 async function connectOnce(
   command: string[],
   env: Record<string, string>,
   cwd?: string,
 ): Promise<StdioRunResult> {
   const [cmd, ...args] = command;
-  const transport = new StdioClientTransport({
+  const transport = new GroupedStdioClientTransport({
     command: cmd!,
     args,
     env,
@@ -91,10 +281,14 @@ async function connectOnce(
   try {
     await client.connect(transport);
     const listed = await client.listTools();
+    const leader = transport.pid;
     return {
       client,
       transport,
       tools: listed.tools ?? [],
+      dispose: leader
+        ? () => killProcessGroup(leader, process.platform !== "win32")
+        : undefined,
     };
   } catch (err) {
     try {

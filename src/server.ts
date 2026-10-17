@@ -105,6 +105,7 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   console.error(`  UI:     ${url}/admin/`);
   console.error(`  Health: ${url}/health`);
 
+  let closed = false;
   return {
     store,
     pool,
@@ -112,6 +113,8 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
     edgeRouter,
     url,
     close: async () => {
+      if (closed) return;
+      closed = true;
       edgeHub.closeAll();
       await new Promise<void>((resolve) => wss.close(() => resolve()));
       await pool.closeAll();
