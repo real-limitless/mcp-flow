@@ -538,7 +538,8 @@ export class PolicyEnforcer {
     // 3) deny
     if (decision.decision === "deny" || busy || noApprover) {
       const reason: DenyReason = busy ? "approval_busy" : noApprover ? "no_active_approver" : (decision.reason as DenyReason);
-      notDispatched("denied", { error_code: reason });
+      // db-t2.1 §10: no_active_approver at hold time is recorded as cancelled/not_dispatched
+      notDispatched(noApprover ? "cancelled" : "denied", { error_code: reason });
       return policyDeniedResult({
         reason,
         tool: ctx.qualifiedTool,
