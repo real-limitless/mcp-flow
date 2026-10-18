@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEFAULT_SHUTDOWN_GRACE_MS, MAX_SHUTDOWN_GRACE_MS, loadConfig, parseShutdownGraceMs } from "../src/config.js";
-import { HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS, SHUTDOWN_CLOSE_RESERVE_MS, heldCallerWaitMs, installSignalHandlers, startServer, type RunningServer } from "../src/server.js";
+import { HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS, SHUTDOWN_CLOSE_RESERVE_MS, SHUTDOWN_HEADROOM_MS, SHUTDOWN_OVERHEAD_ALLOWANCE_MS, SHUTDOWN_WORST_CASE_MS, heldCallerWaitMs, installSignalHandlers, startServer, type RunningServer } from "../src/server.js";
 import type { CallContext } from "../src/policy/engine.js";
 
 const tmp: string[] = [];
@@ -63,14 +63,15 @@ function inspect(dbPath: string) {
 }
 
 describe("QA V51-F1 shutdown drain", () => {
-  it("config: grace defaults to 8000 ms, configurable, clamped below the 10 s stop timeout", () => {
-    expect(DEFAULT_SHUTDOWN_GRACE_MS).toBe(8000);
-    expect(parseShutdownGraceMs(undefined)).toBe(8000);
-    expect(parseShutdownGraceMs("abc")).toBe(8000);
+  it("config: grace defaults to 7000 ms (V53 headroom), configurable, clamped below the 10 s stop timeout", () => {
+    expect(DEFAULT_SHUTDOWN_GRACE_MS).toBe(7000);
+    expect(parseShutdownGraceMs(undefined)).toBe(7000);
+    expect(parseShutdownGraceMs("abc")).toBe(7000);
     expect(parseShutdownGraceMs("2500")).toBe(2500);
-    expect(parseShutdownGraceMs("60000")).toBe(8000);
-    expect(parseShutdownGraceMs("9000")).toBe(8000);
-    expect(MAX_SHUTDOWN_GRACE_MS).toBe(8000);
+    expect(parseShutdownGraceMs("60000")).toBe(7000);
+    expect(parseShutdownGraceMs("9000")).toBe(7000);
+    expect(parseShutdownGraceMs("8000")).toBe(7000);
+    expect(MAX_SHUTDOWN_GRACE_MS).toBe(7000);
     expect(parseShutdownGraceMs("-5")).toBe(0);
     const prev = process.env.MCP_FLOW_SHUTDOWN_GRACE_MS;
     process.env.MCP_FLOW_SHUTDOWN_GRACE_MS = "3000";
@@ -87,6 +88,15 @@ describe("QA V51-F1 shutdown drain", () => {
     // after a full max-grace drain the held-caller wait shrinks so the close reserve still fits
     expect(heldCallerWaitMs(MAX_SHUTDOWN_GRACE_MS)).toBe(0);
     expect(MAX_SHUTDOWN_GRACE_MS + heldCallerWaitMs(MAX_SHUTDOWN_GRACE_MS) + SHUTDOWN_CLOSE_RESERVE_MS).toBeLessThanOrEqual(SHUTDOWN_BUDGET_MS);
+    // V53 headroom: worst case (max grace + close reserve + overhead allowance) keeps >= 1 s unused
+    expect(SHUTDOWN_HEADROOM_MS).toBeGreaterThanOrEqual(1000);
+    expect(SHUTDOWN_WORST_CASE_MS).toBe(MAX_SHUTDOWN_GRACE_MS + SHUTDOWN_CLOSE_RESERVE_MS + SHUTDOWN_OVERHEAD_ALLOWANCE_MS);
+    expect(SHUTDOWN_BUDGET_MS - SHUTDOWN_WORST_CASE_MS).toBeGreaterThanOrEqual(SHUTDOWN_HEADROOM_MS);
+    // the held-caller wait never eats into the headroom, at any point of the drain
+    for (let e = 0; e <= SHUTDOWN_BUDGET_MS; e += 250) {
+      const w = heldCallerWaitMs(e);
+      if (w > 0) expect(e + w).toBeLessThanOrEqual(SHUTDOWN_BUDGET_MS - SHUTDOWN_CLOSE_RESERVE_MS - SHUTDOWN_OVERHEAD_ALLOWANCE_MS - SHUTDOWN_HEADROOM_MS);
+    }
     // default-length drain that ends early leaves the full held-caller wait
     expect(heldCallerWaitMs(3000)).toBe(HELD_CALLER_WAIT_MAX_MS);
     expect(heldCallerWaitMs(SHUTDOWN_BUDGET_MS)).toBe(0);
