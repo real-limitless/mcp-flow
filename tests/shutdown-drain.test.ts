@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_SHUTDOWN_GRACE_MS, loadConfig, parseShutdownGraceMs } from "../src/config.js";
-import { installSignalHandlers, startServer, type RunningServer } from "../src/server.js";
+import { DEFAULT_SHUTDOWN_GRACE_MS, MAX_SHUTDOWN_GRACE_MS, loadConfig, parseShutdownGraceMs } from "../src/config.js";
+import { HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS, SHUTDOWN_CLOSE_RESERVE_MS, heldCallerWaitMs, installSignalHandlers, startServer, type RunningServer } from "../src/server.js";
 import type { CallContext } from "../src/policy/engine.js";
 
 const tmp: string[] = [];
@@ -68,7 +68,9 @@ describe("QA V51-F1 shutdown drain", () => {
     expect(parseShutdownGraceMs(undefined)).toBe(8000);
     expect(parseShutdownGraceMs("abc")).toBe(8000);
     expect(parseShutdownGraceMs("2500")).toBe(2500);
-    expect(parseShutdownGraceMs("60000")).toBe(9000);
+    expect(parseShutdownGraceMs("60000")).toBe(8000);
+    expect(parseShutdownGraceMs("9000")).toBe(8000);
+    expect(MAX_SHUTDOWN_GRACE_MS).toBe(8000);
     expect(parseShutdownGraceMs("-5")).toBe(0);
     const prev = process.env.MCP_FLOW_SHUTDOWN_GRACE_MS;
     process.env.MCP_FLOW_SHUTDOWN_GRACE_MS = "3000";
@@ -77,6 +79,17 @@ describe("QA V51-F1 shutdown drain", () => {
     } finally {
       if (prev === undefined) delete process.env.MCP_FLOW_SHUTDOWN_GRACE_MS; else process.env.MCP_FLOW_SHUTDOWN_GRACE_MS = prev;
     }
+  });
+
+  it("budget: max grace + held-caller wait + upstream close reserve fit in the 10 s stop timeout", () => {
+    expect(SHUTDOWN_BUDGET_MS).toBe(10_000);
+    expect(heldCallerWaitMs(0)).toBe(HELD_CALLER_WAIT_MAX_MS);
+    // after a full max-grace drain the held-caller wait shrinks so the close reserve still fits
+    expect(heldCallerWaitMs(MAX_SHUTDOWN_GRACE_MS)).toBe(0);
+    expect(MAX_SHUTDOWN_GRACE_MS + heldCallerWaitMs(MAX_SHUTDOWN_GRACE_MS) + SHUTDOWN_CLOSE_RESERVE_MS).toBeLessThanOrEqual(SHUTDOWN_BUDGET_MS);
+    // default-length drain that ends early leaves the full held-caller wait
+    expect(heldCallerWaitMs(3000)).toBe(HELD_CALLER_WAIT_MAX_MS);
+    expect(heldCallerWaitMs(SHUTDOWN_BUDGET_MS)).toBe(0);
   });
 
   it("a call that finishes inside the grace period completes normally (executed/ok, drained:1); new calls are refused", async () => {
