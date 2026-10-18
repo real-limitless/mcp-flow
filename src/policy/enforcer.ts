@@ -105,6 +105,9 @@ const OUTCOME_MESSAGES: Record<string, string> = {
 };
 
 /** Read error codes on call_audit 'result_read' rows (db-t2.1-pending-result; result_none added for "no result stored"). */
+/** System actors on call_audit 'result_purge' rows (0012 CHECK pins each to its reason). */
+export const PURGE_ACTOR = { expired: "system:sweeper", quota: "system:quota" } as const;
+
 export type ResultReadError = "result_not_ready" | "result_purged" | "result_forbidden" | "result_undecryptable" | "result_none";
 
 export function outcomeSummary(
@@ -807,7 +810,10 @@ export class PolicyEnforcer {
     return n;
   }
 
-  /** Purge one stored result and write its call_audit 'result_purge' row (same transaction as the caller). */
+  /**
+   * Purge one stored result and write its call_audit 'result_purge' row (same transaction as the caller):
+   * actor = PURGE_ACTOR[reason] (system actor, never an agt_ id), error_code = purged:<reason>, agent_id = owner.
+   */
   private purgeOne(callId: string, reason: "expired" | "quota", nowIso: string): boolean {
     const db = this.deps.db;
     const r = db
@@ -817,10 +823,10 @@ export class PolicyEnforcer {
     if (Number(r.changes) !== 1) return false;
     if (this.deps.auditFault?.()) throw new Error("audit write failed (fault injected)");
     db.prepare(
-      `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, pending_call_id, qualified_tool, error_code)
-       SELECT 'result_purge', o.call_id, o.workspace_id, o.agent_id, a.name, o.key_id, o.pending_call_id, o.qualified_tool, ?
+      `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, pending_call_id, qualified_tool, actor, error_code)
+       SELECT 'result_purge', o.call_id, o.workspace_id, o.agent_id, a.name, o.key_id, o.pending_call_id, o.qualified_tool, ?, ?
          FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id WHERE o.call_id = ?`,
-    ).run(`purged:${reason}`, callId);
+    ).run(PURGE_ACTOR[reason], `purged:${reason}`, callId);
     return true;
   }
 

@@ -133,7 +133,7 @@ describe("T3.1 retention maintenance path", () => {
     old("2025-08-15T00:00:00.000Z");
     old("2025-09-02T00:00:00.000Z");
     db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, actor) VALUES ('2025-08-20T00:00:00.000Z', 'result_read', 'call_rr', ?, ?, ?)`).run(WS, bot, chen);
-    db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, error_code) VALUES ('2025-08-21T00:00:00.000Z', 'result_purge', 'call_rr', ?, ?, 'purged:expired')`).run(WS, bot);
+    db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, actor, error_code) VALUES ('2025-08-21T00:00:00.000Z', 'result_purge', 'call_rr', ?, ?, 'system:sweeper', 'purged:expired')`).run(WS, bot);
     const before = db.prepare(`SELECT * FROM mcpflow_call_audit ORDER BY audit_id`).all();
     const archive = mkdtempSync(join(tmpdir(), "mcpflow-arch-"));
     tmp.push(archive);

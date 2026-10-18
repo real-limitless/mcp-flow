@@ -124,7 +124,18 @@ describe("24 h window from store time", () => {
     const r = pe.takeAsyncResult(pc, bot);
     expect(JSON.stringify(r)).not.toContain("late");
     expect(JSON.parse(txt(r))).toMatchObject({ code: "call_outcome", state: "executed", error_code: "result_purged", reason: "purged:expired" });
-    expect(db.prepare(`SELECT error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).all()).toEqual([{ error_code: "purged:expired" }]);
+    expect(db.prepare(`SELECT actor, agent_id, error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).all())
+      .toEqual([{ actor: "system:sweeper", agent_id: bot, error_code: "purged:expired" }]);
+  });
+
+  it("the periodic sweep also purges as system:sweeper with reason expired", async () => {
+    const pe = new PolicyEnforcer({ db, keys, resultTtlMs: 50 });
+    await heldResult(pe, "swept");
+    await new Promise((res) => setTimeout(res, 100));
+    expect(pe.purgeResults()).toBe(1);
+    expect(db.prepare(`SELECT result_purge_reason FROM mcpflow_call_outcome WHERE result_purged_at IS NOT NULL`).all()).toEqual([{ result_purge_reason: "expired" }]);
+    expect(db.prepare(`SELECT actor, agent_id, error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).all())
+      .toEqual([{ actor: "system:sweeper", agent_id: bot, error_code: "purged:expired" }]);
   });
 });
 
@@ -155,6 +166,8 @@ describe("quota purge (§12): never refuses a store; per-agent evicts own oldest
     expect(db.prepare(`SELECT error_code FROM mcpflow_call_audit WHERE event_type = 'result_read' ORDER BY audit_id DESC LIMIT 1`).get()).toEqual({ error_code: "result_purged" });
     expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_audit WHERE event_type = 'result_purge' AND error_code = 'purged:quota' AND agent_id = ?`).get(bot) as { n: number }).n)
       .toBe(evicted.length);
+    expect(db.prepare(`SELECT DISTINCT actor, error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).all())
+      .toEqual([{ actor: "system:quota", error_code: "purged:quota" }]);
   });
 
   it("global cap: the oldest results overall go first, whoever owns them", async () => {
