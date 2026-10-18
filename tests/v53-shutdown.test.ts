@@ -8,16 +8,16 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
+import { cliServeArgs, isolatedServeCwd } from "./helpers/serve-cli.js";
 import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { startServer, type RunningServer } from "../src/server.js";
 import type { BackendRecord } from "../src/types.js";
 
-const REPO = resolve(__dirname, "..");
 const MASTER = Buffer.alloc(32, 9).toString("base64");
 const tmp: string[] = [];
 const procs: ChildProcess[] = [];
@@ -132,8 +132,8 @@ function seed(n: number, modes: string[] = []) {
 /** The real CLI (`serve`), with real signal handling, in one node process. */
 async function serve(dbPath: string, env: Record<string, string> = {}) {
   const port = await freePort();
-  const p = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "serve"], {
-    cwd: REPO,
+  const p = spawn(process.execPath, cliServeArgs(), {
+    cwd: isolatedServeCwd(dirname(dbPath)),
     env: { ...process.env, MCP_FLOW_DB_PATH: dbPath, MCP_FLOW_MASTER_KEY: MASTER, MCP_FLOW_ADMIN_TOKEN: randomBytes(24).toString("hex"), MCP_FLOW_PORT: String(port), MCP_FLOW_HOST: "127.0.0.1", ...env },
     stdio: ["ignore", "pipe", "pipe"],
   });
