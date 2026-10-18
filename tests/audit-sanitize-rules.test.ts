@@ -149,3 +149,89 @@ describe("bounded cost", () => {
     expect(Date.now() - t).toBeLessThan(2000);
   });
 });
+
+describe("A0 review follow-ups", () => {
+  it("name/value pairs redact the sibling value (Dokploy env arrays)", () => {
+    const env = [
+      { name: "DB_PASS", value: "pw-1" },
+      { key: "STRIPE_KEY", value: "pw-2" },
+      { variable: "GH_CREDENTIALS", value: "pw-3" },
+      { env: "SMTP_AUTH", val: "pw-4" },
+      { Name: "MCP_FLOW_MASTER_KEY", Value: "pw-5" },
+      { name: " JWT_KEY ", value: "pw-6", type: "secret" },
+      { name: "HOST", value: "db.internal" },
+      { key: "KEY_COUNT", value: "5" },
+    ];
+    const out = sanitizeForAudit({ env, compose: { environment: [{ name: "POSTGRES_PWD", value: "pw-7" }] } }) as {
+      env: Array<Record<string, unknown>>; compose: { environment: Array<Record<string, unknown>> };
+    };
+    const s = JSON.stringify(out);
+    for (let i = 1; i <= 7; i++) expect(s).not.toContain(`pw-${i}`);
+    expect(out.env[0]).toEqual({ name: "DB_PASS", value: R });
+    expect(out.env[5]).toEqual({ name: " JWT_KEY ", value: R, type: "secret" });
+    expect(out.env[6]).toEqual({ name: "HOST", value: "db.internal" });
+    expect(out.env[7]).toEqual({ key: "KEY_COUNT", value: "5" });
+    expect(out.compose.environment[0]).toEqual({ name: "POSTGRES_PWD", value: R });
+  });
+
+  it.each([
+    ["postgres://u:p@ss@h/db", `postgres://${R}@h/db`],
+    ["redis://:p@ss@w0rd@cache:6379/0", `redis://${R}@cache:6379/0`],
+    ["https://u:a@b@c@host?x=1 then mail me@x.y", `https://${R}@host?x=1 then mail me@x.y`],
+    ["amqp://u:p@ss@mq#frag", `amqp://${R}@mq#frag`],
+  ])("userinfo ends at the last @ of the authority: %s", (input, want) => expect(redactSecrets(input)).toBe(want));
+
+  it("_TOKENS is a secret suffix except token counts and limits", () => {
+    for (const n of ["API_TOKENS", "slack_tokens", "GH_TOKENS"]) expect(isSecretName(n)).toBe(true);
+    for (const n of ["max_tokens", "MAX_TOKENS", "model_max_tokens", "max_output_tokens", "max_new_tokens",
+      "max_completion_tokens", "prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens"])
+      expect(isSecretName(n)).toBe(false);
+    expect(redactSecrets("API_TOKENS=a,b")).toBe(`API_TOKENS=${R}`);
+    expect(sanitizeForAudit({ usage: { prompt_tokens: 3, total_tokens: 5 }, max_tokens: 9 }))
+      .toEqual({ usage: { prompt_tokens: 3, total_tokens: 5 }, max_tokens: 9 });
+  });
+
+  it("PEM blocks: terminated, unterminated (fail closed), several, and non-key PEM kept", () => {
+    const k = "-----BEGIN RSA PRIVATE KEY-----\nMIIfake\n-----END RSA PRIVATE KEY-----";
+    expect(redactSecrets(`a ${k} b ${k} c`)).toBe(`a ${R} b ${R} c`);
+    expect(redactSecrets("x -----BEGIN PRIVATE KEY-----\nMIIfake-truncated")).toBe(`x ${R}`);
+    const cert = "-----BEGIN CERTIFICATE-----\nMIIcert\n-----END CERTIFICATE-----";
+    expect(redactSecrets(cert)).toBe(cert);
+    expect(redactSecrets(`-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn\n-----END CERTIFICATE-----\nmore\n-----END OPENSSH PRIVATE KEY----- tail`)).toBe(`${R} tail`);
+  });
+
+  it("PEM scan is linear on repeated unterminated BEGIN headers", () => {
+    const s = "-----BEGIN RSA PRIVATE KEY-----\n".repeat(20_000) + "x".repeat(100_000);
+    const t = Date.now();
+    expect(redactSecrets(s)).toBe(R);
+    const s2 = "-----BEGIN RSA PRIVATE KEY----- -----END CERT-----".repeat(10_000);
+    redactSecrets(s2);
+    redactSecrets("-----BEGIN ".repeat(50_000));
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+
+  it.each([
+    ["mysql -u root -phunter2 app", `mysql -u root -p${R} app`],
+    ["mysqldump -h db -p'p w' app > x.sql", `mysqldump -h db -p${R} app > x.sql`],
+    ["mariadb -uroot -p\"pw\" -e 'select 1'", `mariadb -uroot -p${R} -e 'select 1'`],
+  ])("mysql -p<password>: %s", (input, want) => expect(redactSecrets(input)).toBe(want));
+
+  it("mysql negatives: -p alone prompts, -P is the port, other tools keep -p", () => {
+    for (const s of ["mysql -u root -p app", "mysql -h db -P3306 -u x", "mkdir -p /tmp/x", "ssh -p 2222 host"])
+      expect(redactSecrets(s)).toBe(s);
+  });
+
+  it("a literal \\n inside a value does not cut it short unless a new pair follows", () => {
+    expect(redactSecrets("DB_PASS=ab\\ncd ef")).toBe(`DB_PASS=${R}`);
+    expect(redactSecrets("DB_PASS=ab\\nNEXT=1")).toBe(`DB_PASS=${R}\\nNEXT=1`);
+    expect(redactSecrets("DB_PASS=ab\\n\\nNEXT=1")).toBe(`DB_PASS=${R}\\n\\nNEXT=1`);
+    expect(redactSecrets(`{"env":"DB_PASS=ab\\nB=2"}`)).toBe(`{"env":"DB_PASS=${R}\\nB=2"}`);
+  });
+
+  it("literal-escape scan stays linear", () => {
+    const t = Date.now();
+    redactSecrets("DB_PASS=" + "\\n".repeat(200_000) + "x");
+    redactSecrets("DB_PASS=" + "\\nx".repeat(100_000));
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+});

@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../src/db/store.js";
+import { loadConfig } from "../src/config.js";
+import { startServer } from "../src/server.js";
 
 const master = Buffer.alloc(32, 21).toString("base64");
 const otherMaster = Buffer.alloc(32, 22).toString("base64");
@@ -72,8 +74,9 @@ describe("approvals.arguments_json at rest", () => {
     for (const id of [denied.id, expired.id]) {
       const raw = String(rawArgs(store, id));
       expect(raw.startsWith("enc:v1:")).toBe(false);
+      expect(raw.startsWith("san:v1:")).toBe(true);
       expect(raw).not.toContain(SECRET);
-      expect(JSON.parse(raw)).toEqual({ cmd: "DB_PASS=[redacted]", password: "[redacted]", n: 1 });
+      expect(JSON.parse(raw.slice("san:v1:".length))).toEqual({ cmd: "DB_PASS=[redacted]", password: "[redacted]", n: 1 });
       expect(store.getApproval(ws.id, id, { redact: false })?.arguments).toEqual({ cmd: "DB_PASS=[redacted]", password: "[redacted]", n: 1 });
     }
     store.close();
@@ -131,6 +134,86 @@ describe("approvals.arguments_json at rest", () => {
     store.close();
   });
 
+  it("the gate's read fails closed: unreadable or already-retired args are never handed out", () => {
+    const { store, path } = open();
+    const { ws, make } = setup(store);
+    const a = make();
+    const b = make();
+    const c = make();
+    store.decideApproval(ws.id, a.id, { status: "approved" });
+    store.decideApproval(ws.id, b.id, { status: "approved" });
+    // c stays pending: not approved
+    expect(store.consumeApprovedArguments(ws.id, c.id)).toEqual({ ok: false, reason: "not_approved" });
+    // first read gets the raw args and retires them in the same transaction; a second read fails
+    expect(store.consumeApprovedArguments(ws.id, a.id)).toEqual({ ok: true, args: { cmd: `DB_PASS=${SECRET} ./run`, password: SECRET, n: 1 } });
+    expect(String(rawArgs(store, a.id)).startsWith("san:v1:")).toBe(true);
+    expect(store.consumeApprovedArguments(ws.id, a.id)).toEqual({ ok: false, reason: "retired" });
+    store.close();
+    // b sealed under a different master key: unreadable, and the blob is left as is
+    const { store: other } = open(otherMaster, path);
+    const before = rawArgs(other, b.id);
+    expect(other.consumeApprovedArguments(ws.id, b.id)).toEqual({ ok: false, reason: "unreadable" });
+    expect(other.retireApprovalArguments(ws.id, b.id)).toBe(false);
+    expect(rawArgs(other, b.id)).toBe(before);
+    other.close();
+  });
+
+  it("legacy plaintext approved rows still dispatch through the gate read, unchanged at rest", () => {
+    const { store } = open();
+    const { ws, rule, key } = setup(store);
+    const legacy = JSON.stringify({ cmd: "echo hi" });
+    store.db.prepare(
+      `INSERT INTO approvals (id, workspace_id, rule_id, key_id, tool, arguments_json, backend_slug, status,
+         requirement, expires_at, created_at)
+       VALUES ('appr_legacy_ok', ?, ?, ?, 'up__run', ?, 'up', 'approved', 'notify_approve', ?, ?)`,
+    ).run(ws.id, rule.id, key.id, legacy, new Date(Date.now() + 60_000).toISOString(), new Date().toISOString());
+    expect(store.consumeApprovedArguments(ws.id, "appr_legacy_ok")).toEqual({ ok: true, args: { cmd: "echo hi" } });
+    expect(rawArgs(store, "appr_legacy_ok")).toBe(legacy);
+    // corrupt legacy JSON fails closed too
+    store.db.prepare(`UPDATE approvals SET arguments_json = '{not json' WHERE id = 'appr_legacy_ok'`).run();
+    expect(store.consumeApprovedArguments(ws.id, "appr_legacy_ok")).toEqual({ ok: false, reason: "unreadable" });
+    store.close();
+  });
+
+  it("status change and retire commit together: a failed retire rolls the decision back", () => {
+    const { store } = open();
+    const { ws, make } = setup(store);
+    const a = make();
+    store.db.exec(`CREATE TRIGGER no_retire BEFORE UPDATE OF arguments_json ON approvals
+      BEGIN SELECT RAISE(ABORT, 'retire blocked'); END`);
+    expect(() => store.decideApproval(ws.id, a.id, { status: "denied" })).toThrow(/retire blocked/);
+    expect(store.getApproval(ws.id, a.id)?.status).toBe("pending");
+    expect(() => store.expireApproval(ws.id, a.id)).toThrow(/retire blocked/);
+    expect(store.getApproval(ws.id, a.id)?.status).toBe("pending");
+    store.db.exec(`DROP TRIGGER no_retire`);
+    expect(store.decideApproval(ws.id, a.id, { status: "denied" })?.status).toBe("denied");
+    expect(String(rawArgs(store, a.id)).startsWith("san:v1:")).toBe(true);
+    store.close();
+  });
+
+  it("startup sweep retires sealed args on resolved rows only; legacy and pending rows untouched", () => {
+    const { store, path } = open();
+    const { ws, rule, key, make } = setup(store);
+    const approved = make();
+    const pending = make();
+    store.decideApproval(ws.id, approved.id, { status: "approved" });
+    const legacy = JSON.stringify({ password: SECRET });
+    store.db.prepare(
+      `INSERT INTO approvals (id, workspace_id, rule_id, key_id, tool, arguments_json, backend_slug, status,
+         requirement, expires_at, created_at)
+       VALUES ('appr_legacy_sw', ?, ?, ?, 'up__run', ?, 'up', 'denied', 'notify_approve', ?, ?)`,
+    ).run(ws.id, rule.id, key.id, legacy, new Date().toISOString(), new Date().toISOString());
+    const pendingBefore = rawArgs(store, pending.id);
+    expect(store.sweepResolvedSealedApprovalArgs()).toBe(1);
+    expect(String(rawArgs(store, approved.id)).startsWith("san:v1:")).toBe(true);
+    expect(String(rawArgs(store, approved.id))).not.toContain(SECRET);
+    expect(rawArgs(store, pending.id)).toBe(pendingBefore);
+    expect(rawArgs(store, "appr_legacy_sw")).toBe(legacy);
+    expect(store.sweepResolvedSealedApprovalArgs()).toBe(0);
+    store.close();
+    void path;
+  });
+
   it("a wrong master key yields no arguments, never ciphertext", () => {
     const { store, path } = open();
     const { ws, make } = setup(store);
@@ -141,5 +224,23 @@ describe("approvals.arguments_json at rest", () => {
     expect(got?.arguments).toBeNull();
     expect(JSON.stringify(other.listApprovals(ws.id))).not.toContain("enc:v1:");
     other.close();
+  });
+
+  it("the gateway runs the sweep at startup", async () => {
+    const { store, path } = open();
+    const { ws, make } = setup(store);
+    const a = make();
+    store.decideApproval(ws.id, a.id, { status: "approved" });
+    store.close();
+    const cfg = loadConfig({
+      dbPath: path, masterKeyRaw: master, adminToken: "test-admin-token-please-change",
+      host: "127.0.0.1", port: 0 as unknown as number, allowPrivateUrls: true, workspaceName: "default",
+    });
+    const running = await startServer(cfg);
+    try {
+      expect(String(rawArgs(running.store, a.id)).startsWith("san:v1:")).toBe(true);
+    } finally {
+      await running.close();
+    }
   });
 });

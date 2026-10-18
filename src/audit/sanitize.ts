@@ -12,11 +12,14 @@ const SECRET_KEY_RE =
  * shape but loses the secret. All patterns are linear (no nested quantifiers).
  */
 const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted]"],
   [/\b(Authorization\s*[:=]\s*["']?(?:token|bearer|basic|digest)\s+)[^\s"']+/gi, "$1[redacted]"],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]"],
-  // URL userinfo in any scheme, empty user or password included (redis://:pw@h, https://tok@h)
-  [/(\b[A-Za-z][A-Za-z0-9+.-]*:\/\/)[^\s/?#@"'<>\\]*@/g, "$1[redacted]@"],
+  // URL userinfo in any scheme, empty user or password included (redis://:pw@h, https://tok@h).
+  // The run is greedy, so it ends at the LAST '@' before / ? # or whitespace (p@ss@host).
+  // Linear: the scheme is bounded and runs cannot overlap (each one stops at the next '/').
+  [/(\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/)[^\s/?#"'<>\\]*@/g, "$1[redacted]@"],
+  // mysql/mariadb -p<password> (no space; "-p" alone prompts and is left alone)
+  [/(\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb(?:-dump|-admin)?)\b[^\n]{0,2000}?\s-p)(?:'[^'\n]*'|"[^"\n]*"|[^\s'"]+)/g, "$1[redacted]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]"],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, "[redacted]"],
   [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]"],
@@ -68,11 +71,16 @@ function looksLikeOpaqueSecret(s: string): boolean {
  *    PRIVATE_KEY/ACCESS_KEY/API_KEY, a TOKEN segment, DATABASE_URL or CONNECTION_STRING.
  * Known false positives (accepted, audit text only loses the value): *_KEY names that are not
  * secrets (PRIMARY_KEY, SORT_KEY, PUBLIC_KEY, IDEMPOTENCY_KEY), PWD=/cwd in env dumps, prose
- * like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable), and
- * plural *_TOKENS is not either (max_tokens stays readable).
+ * like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable).
+ * *_TOKENS is a secret name (API_TOKENS) except token counts and limits: max_tokens,
+ * *_max_tokens, max_*_tokens, and min/num/total/prompt/completion/input/output/cached/
+ * reasoning_tokens stay readable.
  */
 const SECRET_NAME_SUFFIX_RE =
-  /[_.-](?:PASS|PWD|PASSWD|PASSWORD|KEYS?|SECRETS?|TOKEN|AUTH|CREDENTIALS?|PASSPHRASE)$/i;
+  /[_.-](?:PASS|PWD|PASSWD|PASSWORD|KEYS?|SECRETS?|TOKENS?|AUTH|CREDENTIALS?|PASSPHRASE)$/i;
+/** *_TOKENS names that are counts or limits, not secrets (max_tokens, max_output_tokens, …). */
+const TOKEN_COUNT_NAME_RE =
+  /(?:^|[_.-])(?:max(?:[_.-][a-z]+)?|min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$/i;
 const SECRET_NAME_BARE_RE =
   /^(?:PASS|PASSWD|PASSWORD|PWD|SECRETS?|TOKEN|AUTH|AUTHORIZATION|CREDENTIALS?|PASSPHRASE|APIKEY|BEARER|COOKIE|DSN)$/i;
 const SECRET_NAME_CONTAINS_RE =
@@ -81,6 +89,7 @@ const SECRET_NAME_CONTAINS_RE =
 /** True when a key or variable name names a secret (see the rules above). */
 export function isSecretName(name: string): boolean {
   if (name.length > 256) return false;
+  if (TOKEN_COUNT_NAME_RE.test(name)) return false;
   return (
     SECRET_NAME_SUFFIX_RE.test(name) ||
     SECRET_NAME_BARE_RE.test(name) ||
@@ -97,12 +106,32 @@ export function isSecretName(name: string): boolean {
 const ASSIGN_RE =
   /(^|\\["'nrt]|[^A-Za-z0-9_.\\])((?:\\?["'])?)([A-Za-z_][A-Za-z0-9_.-]{0,127})\2[ \t]*[=:][ \t]*/g;
 
-/** Index of the end of the line starting at i: a real CR/LF or a literal \n / \r escape. */
+/**
+ * True when a literal \n / \r escape at j ends a line of escaped text: what follows is the end,
+ * another escape or quote, or the next NAME= / NAME: pair. Otherwise the escape is taken as part
+ * of the value (a password containing "\n" is not cut short). Bounded lookahead.
+ */
+const NEXT_PAIR_RE = /[A-Za-z_][A-Za-z0-9_.-]{0,127}[ \t]*[=:]/y;
+function escapedLineBreakAt(s: string, k: number): boolean {
+  if (k >= s.length) return true;
+  const c = s[k];
+  if (c === "\\" || c === '"' || c === "'" || c === "\n" || c === "\r" || c === "#") return true;
+  NEXT_PAIR_RE.lastIndex = k;
+  return NEXT_PAIR_RE.test(s);
+}
+
+/** Index of the end of the line starting at i: a real CR/LF or a literal \n / \r line break. */
 function lineEnd(s: string, i: number): number {
   for (let j = i; j < s.length; j++) {
     const c = s.charCodeAt(j);
     if (c === 10 || c === 13) return j;
-    if (c === 92 /* \ */ && (s[j + 1] === "n" || s[j + 1] === "r")) return j;
+    if (c === 92 /* \ */ && (s[j + 1] === "n" || s[j + 1] === "r")) {
+      // skip the whole run of escapes once, so the scan stays linear
+      let k = j;
+      while (k < s.length - 1 && s[k] === "\\" && (s[k + 1] === "n" || s[k + 1] === "r")) k += 2;
+      if (escapedLineBreakAt(s, k)) return j;
+      j = k - 1;
+    }
   }
   return s.length;
 }
@@ -166,6 +195,44 @@ function redactAssignments(s: string): string {
   return last === 0 ? s : out + s.slice(last);
 }
 
+const PEM_BEGIN_RE = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----/y;
+const PEM_END_RE = /-----END [A-Z ]{0,40}PRIVATE KEY-----/y;
+
+/**
+ * PEM private key blocks. Linear: indexOf BEGIN, then indexOf END from there; each position is
+ * scanned once. An unterminated BEGIN redacts to the end of the string (fail closed).
+ */
+function redactPem(s: string): string {
+  let out = "";
+  let last = 0;
+  let from = 0;
+  for (;;) {
+    const b = s.indexOf("-----BEGIN ", from);
+    if (b < 0) break;
+    PEM_BEGIN_RE.lastIndex = b;
+    if (!PEM_BEGIN_RE.test(s)) {
+      from = b + 1;
+      continue;
+    }
+    let e = PEM_BEGIN_RE.lastIndex;
+    let end = -1;
+    for (;;) {
+      const x = s.indexOf("-----END ", e);
+      if (x < 0) break;
+      PEM_END_RE.lastIndex = x;
+      if (PEM_END_RE.test(s)) {
+        end = PEM_END_RE.lastIndex;
+        break;
+      }
+      e = x + 1;
+    }
+    out += s.slice(last, b) + "[redacted]";
+    if (end < 0) return out;
+    last = from = end;
+  }
+  return last === 0 ? s : out + s.slice(last);
+}
+
 /** "Basic <base64>" credentials; plain words ("Basic authentication") are left alone. */
 function redactBasic(s: string): string {
   return s.replace(/\bBasic\s+([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/gi, (all, tok: string) =>
@@ -175,7 +242,7 @@ function redactBasic(s: string): string {
 
 /** Replace every embedded secret in a string (exported for tests and push payloads). */
 export function redactSecrets(s: string): string {
-  let out = s;
+  let out = redactPem(s);
   for (const [re, rep] of SECRET_SUBSTRING_RES) out = out.replace(re, rep);
   out = redactBasic(out);
   return redactAssignments(out);
@@ -241,6 +308,10 @@ export function sanitizeForAudit(
   }
 }
 
+/** Fields that name a variable in a name/value pair, and the sibling fields holding its value. */
+const PAIR_NAME_FIELD_RE = /^(?:name|key|variable|var|env|env_?name|variable_?name|key_?name)$/i;
+const PAIR_VALUE_FIELD_RE = /^(?:value|val|values|default|default_?value|secret_?value|data|content|text)$/i;
+
 function walk(
   value: unknown,
   depth: number,
@@ -272,9 +343,19 @@ function walk(
     const out: Record<string, unknown> = {};
     const keys = Object.keys(value);
     const limit = Math.min(keys.length, 100);
+    // name/value pairs (Dokploy/Docker/k8s env arrays): {"name":"DB_PASS","value":"x"}
+    const secretPair = keys.some((k) => {
+      const v = value[k];
+      return PAIR_NAME_FIELD_RE.test(k) && typeof v === "string" && isSecretName(v.trim());
+    });
     for (let i = 0; i < limit; i++) {
       const k = keys[i]!;
-      if (SECRET_KEY_RE.test(k) || CAMEL_SECRET_KEY_RE.test(k) || isSecretName(k)) {
+      if (
+        SECRET_KEY_RE.test(k) ||
+        CAMEL_SECRET_KEY_RE.test(k) ||
+        isSecretName(k) ||
+        (secretPair && PAIR_VALUE_FIELD_RE.test(k))
+      ) {
         out[k] = "[redacted]";
         continue;
       }
