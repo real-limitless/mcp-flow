@@ -324,6 +324,31 @@ class GroupedStdioClientTransport extends StdioClientTransport {
   }
 }
 
+/** Redacted backend stderr kept for an init error (characters). */
+const STDERR_TAIL_KEEP = 12_000;
+/** Backend stderr included in an init error (characters). */
+const STDERR_TAIL_MAX = 8_000;
+
+/** Keeps the last `keep` characters written (memory bounded at 2x keep). */
+export function boundedTail(keep: number): { write: (s: string) => void; text: () => string } {
+  let buf = "";
+  return {
+    write: (s: string) => {
+      buf += s;
+      if (buf.length > 2 * keep) buf = buf.slice(-keep);
+    },
+    text: () => buf.slice(-keep),
+  };
+}
+
+/**
+ * Init-error stderr tail from already-redacted text: redacted again (an armor END whose BEGIN
+ * was cut off redacts everything before it), then cut to STDERR_TAIL_MAX.
+ */
+export function stderrTailForError(redacted: string): string {
+  return redactSecrets(redacted.trim()).slice(-STDERR_TAIL_MAX);
+}
+
 async function connectOnce(
   command: string[],
   env: Record<string, string>,
@@ -339,13 +364,19 @@ async function connectOnce(
     stderr: "pipe",
   });
 
-  const errBuf: string[] = [];
   // backend stderr is passed through to ours, redacted line by line
   const passthrough = lineRedactor((s) => process.stderr.write(s));
+  // the tail kept for the init error is redacted as it streams (the whole stream, with the
+  // key-block state carried across lines), and only the redacted text is capped, so a cut can
+  // never drop a BEGIN marker and expose the key lines after it. A private key block left open
+  // is redacted to the end of the stream (no line-count reset here).
+  const errTail = boundedTail(STDERR_TAIL_KEEP);
+  const tailRedactor = lineRedactor(errTail.write, undefined, Infinity);
+  let initDone = false; // the tail is only used for an init error
   transport.stderr?.on("data", (chunk: Buffer | string) => {
     const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    errBuf.push(s);
     passthrough.push(s);
+    if (!initDone) tailRedactor.push(s);
   });
   transport.stderr?.on("end", () => passthrough.flush());
   transport.stderr?.on("close", () => passthrough.flush());
@@ -360,6 +391,7 @@ async function connectOnce(
     const opts = timeoutMs ? { timeout: timeoutMs } : undefined;
     await client.connect(transport, opts);
     const listed = await client.listTools(undefined, opts);
+    initDone = true;
     return {
       client,
       transport,
@@ -372,7 +404,8 @@ async function connectOnce(
       /* ignore */
     }
     passthrough.flush();
-    const tail = redactSecrets(errBuf.join("").trim().slice(-12000)).slice(-8000);
+    tailRedactor.flush();
+    const tail = stderrTailForError(errTail.text());
     const msg = redactLog(err);
     throw new Error(tail ? `${msg}\n--- stderr ---\n${tail}` : msg);
   }
