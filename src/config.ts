@@ -40,6 +40,11 @@ export interface Config {
    * Whole calls per minute per agent_id; 0 or unset = off (default).
    */
   rateLimitPerMin?: number;
+  /**
+   * V53-F4: bound for a backend's initialize + first tools/list (MCP_FLOW_BACKEND_INIT_TIMEOUT_MS,
+   * default 20000, clamped 1000..120000). A backend past it is closed and fails fast for a cooldown.
+   */
+  backendInitTimeoutMs?: number;
 }
 
 /**
@@ -53,6 +58,16 @@ export function parseShutdownGraceMs(raw: string | number | undefined | null): n
   const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
   if (!Number.isFinite(n)) return DEFAULT_SHUTDOWN_GRACE_MS;
   return Math.min(MAX_SHUTDOWN_GRACE_MS, Math.max(0, Math.floor(n)));
+}
+
+export const DEFAULT_BACKEND_INIT_TIMEOUT_MS = 20_000;
+export const MIN_BACKEND_INIT_TIMEOUT_MS = 1_000;
+export const MAX_BACKEND_INIT_TIMEOUT_MS = 120_000;
+
+export function parseBackendInitTimeoutMs(raw: string | number | undefined | null): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_BACKEND_INIT_TIMEOUT_MS;
+  return Math.min(MAX_BACKEND_INIT_TIMEOUT_MS, Math.max(MIN_BACKEND_INIT_TIMEOUT_MS, Math.floor(n)));
 }
 
 export const DEFAULT_JOURNAL_SIZE_LIMIT_MB = 64;
@@ -127,6 +142,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
     journalSizeLimitBytes: overrides.journalSizeLimitBytes ?? parseJournalSizeLimitBytes(env("MCP_FLOW_JOURNAL_SIZE_LIMIT_MB")),
     rateLimitPerMin: overrides.rateLimitPerMin ?? parseRateLimitPerMin(env("MCP_FLOW_RATE_LIMIT_PER_MIN")),
+    backendInitTimeoutMs: parseBackendInitTimeoutMs(overrides.backendInitTimeoutMs ?? env("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS")),
   };
 }
 

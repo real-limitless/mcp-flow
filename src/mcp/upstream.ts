@@ -4,6 +4,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { DEFAULT_BACKEND_INIT_TIMEOUT_MS } from "../config.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
@@ -96,6 +97,46 @@ function transportMessage(message: string): boolean {
   );
 }
 
+/**
+ * V53-F4: a backend that did not finish initialize + tools/list within the init timeout, or is in
+ * the fail-fast cooldown after one. Typed so the gateway returns backend_unavailable instead of
+ * waiting (QA v5.3/v5.4: one hung backend made every agent call wait ~60 s).
+ */
+export class BackendUnavailableError extends Error {
+  readonly code = "backend_unavailable";
+  constructor(
+    readonly backendSlug: string,
+    readonly cause_: "init_timeout" | "cooling_down",
+    readonly retryAfterMs: number,
+  ) {
+    super(
+      cause_ === "init_timeout"
+        ? `backend ${backendSlug} did not initialize in time (backend_unavailable)`
+        : `backend ${backendSlug} is unavailable after an init timeout; retry in ${retryAfterMs} ms (backend_unavailable)`,
+    );
+    this.name = "BackendUnavailableError";
+  }
+}
+
+/** SDK request timeout (McpError RequestTimeout -32001). */
+function isRequestTimeout(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  return code === -32001 || /request timed out/i.test(message);
+}
+
+export interface UpstreamPoolOptions {
+  /** Bound for a backend's initialize + first tools/list, and for a tools/list refresh (ms). */
+  initTimeoutMs?: number;
+  /** How long a workspace listing waits for one backend before omitting it from that listing (ms). */
+  listWaitMs?: number;
+  /** After an init timeout the backend fails fast (no respawn) for this long (ms). */
+  stuckCooldownMs?: number;
+}
+
+export const DEFAULT_LIST_WAIT_MS = 5_000;
+export const DEFAULT_STUCK_COOLDOWN_MS = 30_000;
+
 function parsePlacement(backend: BackendRecord): Placement {
   try {
     return JSON.parse(backend.placementJson) as Placement;
@@ -118,7 +159,28 @@ export class UpstreamPool {
   /** Bumped by closeAll so a connect that finishes late cannot rejoin the pool. */
   private generation = 0;
 
-  constructor(private store: Store) {}
+  private readonly initTimeoutMs: number;
+  private readonly listWaitMs: number;
+  private readonly stuckCooldownMs: number;
+  /** V53-F4: backendId -> time until which the backend fails fast after an init timeout. */
+  private stuckUntil = new Map<string, number>();
+
+  constructor(
+    private store: Store,
+    opts: UpstreamPoolOptions = {},
+  ) {
+    this.initTimeoutMs = opts.initTimeoutMs ?? DEFAULT_BACKEND_INIT_TIMEOUT_MS;
+    this.listWaitMs = Math.min(opts.listWaitMs ?? DEFAULT_LIST_WAIT_MS, this.initTimeoutMs);
+    this.stuckCooldownMs = opts.stuckCooldownMs ?? DEFAULT_STUCK_COOLDOWN_MS;
+  }
+
+  private markStuck(backend: BackendRecord): BackendUnavailableError {
+    this.stuckUntil.set(backend.id, Date.now() + this.stuckCooldownMs);
+    console.error(
+      `[mcp-flow] backend ${backend.slug} did not initialize within ${this.initTimeoutMs} ms; failing fast for ${this.stuckCooldownMs} ms`,
+    );
+    return new BackendUnavailableError(backend.slug, "init_timeout", this.stuckCooldownMs);
+  }
 
   setEdgeRouter(router: EdgeRouter | null): void {
     this.edgeRouter = router;
@@ -270,8 +332,9 @@ export class UpstreamPool {
     }
 
     try {
-      await client.connect(transport);
-      const listed = await client.listTools();
+      const opts = { timeout: this.initTimeoutMs };
+      await client.connect(transport, opts);
+      const listed = await client.listTools(undefined, opts);
       return {
         backendId: backend.id,
         client,
@@ -303,6 +366,7 @@ export class UpstreamPool {
       const run = await connectStdioCommand({
         command: pub.command,
         env,
+        timeoutMs: this.initTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -324,6 +388,7 @@ export class UpstreamPool {
         command: pub.command,
         env,
         sandbox: pub.sandbox,
+        timeoutMs: this.initTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -370,16 +435,18 @@ export class UpstreamPool {
     const current = this.refreshInflight.get(entry.backendId);
     if (current) return current;
     const job = (async () => {
-      const listed = await entry.client.listTools();
+      const listed = await entry.client.listTools(undefined, { timeout: this.initTimeoutMs });
       entry.tools = listed.tools ?? [];
       entry.fetchedAt = Date.now();
     })();
     this.refreshInflight.set(entry.backendId, job);
-    void job.finally(() => {
+    // then(f, f), not finally(): a failed refresh (V53-F4 timeout) must not become an unhandled rejection
+    const done = () => {
       if (this.refreshInflight.get(entry.backendId) === job) {
         this.refreshInflight.delete(entry.backendId);
       }
-    });
+    };
+    job.then(done, done);
     return job;
   }
 
@@ -410,7 +477,14 @@ export class UpstreamPool {
     const existing = this.pool.get(backend.id);
     if (existing) {
       if (Date.now() - existing.fetchedAt >= TOOL_CACHE_MS) {
-        await this.refreshTools(existing);
+        try {
+          await this.refreshTools(existing);
+        } catch (err) {
+          if (!isRequestTimeout(err)) throw err;
+          // V53-F4: an open client that stopped answering tools/list is retired, not waited on
+          void this.retire(backend.id);
+          throw this.markStuck(backend);
+        }
       }
       return existing;
     }
@@ -418,7 +492,36 @@ export class UpstreamPool {
     const pending = this.inflight.get(backend.id);
     if (pending) return pending;
 
-    const promise = this.connectAndStore(backend);
+    // V53-F4: fail fast (no respawn) during the cooldown after an init timeout
+    const until = this.stuckUntil.get(backend.id);
+    if (until !== undefined) {
+      if (Date.now() < until) {
+        throw new BackendUnavailableError(backend.slug, "cooling_down", until - Date.now());
+      }
+      this.stuckUntil.delete(backend.id);
+    }
+
+    // The SDK timeouts bound initialize + tools/list; the backstop also covers a spawn that never
+    // gets that far. A timed-out attempt is typed so every waiter sees backend_unavailable.
+    const promise = (async () => {
+      const attempt = this.connectAndStore(backend);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const backstop = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new BackendUnavailableError(backend.slug, "init_timeout", 0)), this.initTimeoutMs + 2_000);
+      });
+      try {
+        return await Promise.race([attempt, backstop]);
+      } catch (err) {
+        if (err instanceof BackendUnavailableError || isRequestTimeout(err)) {
+          // a connect that still succeeds later (backstop case) is pooled and clears the cooldown
+          attempt.then(() => this.stuckUntil.delete(backend.id), () => {});
+          throw this.markStuck(backend);
+        }
+        throw err;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    })();
     this.inflight.set(backend.id, promise);
     try {
       return await promise;
@@ -429,62 +532,87 @@ export class UpstreamPool {
     }
   }
 
+  /** Namespaced, allowlisted tools of one backend. Throws on failure (BackendUnavailableError when stuck). */
+  private async toolsOf(backend: BackendRecord): Promise<NamespacedTool[]> {
+    const placement = parsePlacement(backend);
+    let tools: Tool[];
+    if (placement.mode === "edge-sandbox" || placement.mode === "edge-bare") {
+      if (!this.edgeRouter) return [];
+      tools = await this.edgeRouter.listTools(backend);
+    } else {
+      tools = (await this.getClient(backend)).tools;
+    }
+    const allow = backend.toolAllowlistJson
+      ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
+      : null;
+    const out: NamespacedTool[] = [];
+    for (const t of tools) {
+      if (allow && !allow.has(t.name)) continue;
+      out.push({
+        ...t,
+        name: namespaceTool(backend.slug, t.name),
+        description: t.description
+          ? `[${backend.slug}] ${t.description}`
+          : `[${backend.slug}] ${t.name}`,
+        upstreamName: t.name,
+        backendSlug: backend.slug,
+        backendId: backend.id,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * V53-F4: tools of ONE backend, for routing an agent call. Never waits on other backends.
+   * A disabled backend lists nothing. Waits at most the init timeout, then throws
+   * BackendUnavailableError (also at once during the cooldown).
+   */
+  async listBackendTools(workspaceId: string, backend: BackendRecord): Promise<NamespacedTool[]> {
+    if (!backend.enabled || backend.workspaceId !== workspaceId) return [];
+    try {
+      return await this.toolsOf(backend);
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) throw err;
+      if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+      throw err;
+    }
+  }
+
+  /**
+   * All enabled backends' tools. V53-F4: each backend gets at most listWaitMs; a backend that is not
+   * ready by then (still starting, stuck, or cooling down) is left out of this listing and its
+   * connect continues in the background, bounded by the init timeout.
+   */
   async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {
     const backends = this.store.listEnabledBackends(workspaceId);
     const out: NamespacedTool[] = [];
 
     await Promise.all(
       backends.map(async (backend) => {
-        const placement = parsePlacement(backend);
+        const job = this.toolsOf(backend);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const notReady = Symbol("not-ready");
         try {
-          if (
-            placement.mode === "edge-sandbox" ||
-            placement.mode === "edge-bare"
-          ) {
-            if (!this.edgeRouter) return;
-            const tools = await this.edgeRouter.listTools(backend);
-            const allow = backend.toolAllowlistJson
-              ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
-              : null;
-            for (const t of tools) {
-              if (allow && !allow.has(t.name)) continue;
-              out.push({
-                ...t,
-                name: namespaceTool(backend.slug, t.name),
-                description: t.description
-                  ? `[${backend.slug}] ${t.description}`
-                  : `[${backend.slug}] ${t.name}`,
-                upstreamName: t.name,
-                backendSlug: backend.slug,
-                backendId: backend.id,
-              });
-            }
+          const got = await Promise.race([
+            job,
+            new Promise<typeof notReady>((resolve) => {
+              timer = setTimeout(() => resolve(notReady), this.listWaitMs);
+            }),
+          ]);
+          if (got === notReady) {
+            job.catch(() => {}); // settles later (pooled, or typed failure); nothing to wait for here
+            console.error(`[mcp-flow] tools/list: backend ${backend.slug} not ready after ${this.listWaitMs} ms; omitted from this listing`);
             return;
           }
-
-          const pooled = await this.getClient(backend);
-          const allow = backend.toolAllowlistJson
-            ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
-            : null;
-          for (const t of pooled.tools) {
-            if (allow && !allow.has(t.name)) continue;
-            out.push({
-              ...t,
-              name: namespaceTool(backend.slug, t.name),
-              description: t.description
-                ? `[${backend.slug}] ${t.description}`
-                : `[${backend.slug}] ${t.name}`,
-              upstreamName: t.name,
-              backendSlug: backend.slug,
-              backendId: backend.id,
-            });
-          }
+          out.push(...got);
         } catch (err) {
           console.error(
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
             err instanceof Error ? err.message : err,
           );
-          if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+          if (!(err instanceof BackendUnavailableError) && isTransportOrConnectionError(err)) await this.retire(backend.id);
+        } finally {
+          if (timer) clearTimeout(timer);
         }
       }),
     );

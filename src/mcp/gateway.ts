@@ -41,6 +41,7 @@ import {
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
+  BackendUnavailableError,
   namespaceTool,
   parseNamespacedTool,
   UpstreamPool,
@@ -308,10 +309,27 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (!parsed || !backend || backend.slug !== parsed.slug) {
       return store.policy.refuseBeforePolicy(who, "unknown_backend", qualified, callArgs);
     }
+    // V53-F4: resolve against the target backend only, so a stuck backend elsewhere in the
+    // workspace never delays this call; a stuck target gets a typed backend_unavailable refusal.
     let catalog: NamespacedTool[];
     try {
-      catalog = await upstream.listNamespacedTools(ctx.workspaceId);
-    } catch {
+      catalog = await upstream.listBackendTools(ctx.workspaceId, backend);
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) {
+        const res = store.policy.refuseBeforePolicy({ ...who, backendSlug: backend.slug }, "backend_unavailable", qualified, callArgs);
+        const first = res.content[0] as { type: string; text: string };
+        try {
+          const payload = JSON.parse(first.text) as Record<string, unknown>;
+          if (payload.reason === "backend_unavailable") {
+            payload.backend = backend.slug;
+            payload.retry_after_ms = err.retryAfterMs;
+            first.text = JSON.stringify(payload);
+          }
+        } catch {
+          /* keep the refusal as written */
+        }
+        return res;
+      }
       catalog = [];
     }
     const entry = catalog.find((t) => t.name === qualified);

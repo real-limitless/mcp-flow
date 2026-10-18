@@ -39,10 +39,13 @@ export async function connectOci(opts: {
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
+  /** V53-F4: bound for initialize + first tools/list (ms). */
+  timeoutMs?: number;
 }): Promise<StdioRunResult> {
   return connectStdioCommand({
     command: [containerRuntime(), ...ociRunArgs(opts)],
     env: {},
+    timeoutMs: opts.timeoutMs,
   });
 }
 

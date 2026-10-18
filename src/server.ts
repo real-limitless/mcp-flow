@@ -150,7 +150,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     console.error(`[mcp-flow] orphan recovery failed: ${(err as Error).message}`);
   }
   store.ensureWorkspace(cfg.workspaceName);
-  const pool = new UpstreamPool(store);
+  const pool = new UpstreamPool(store, { initTimeoutMs: cfg.backendInitTimeoutMs });
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);
   pool.setEdgeRouter(edgeRouter);

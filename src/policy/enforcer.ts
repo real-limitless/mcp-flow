@@ -39,7 +39,8 @@ export type DenyReason =
   | "idempotency_conflict"
   | "gateway_shutting_down"
   | "no_active_approver"
-  | "rate_limited";
+  | "rate_limited"
+  | "backend_unavailable";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -192,6 +193,7 @@ const CANCEL_MESSAGES: Record<string, string> = {
 const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   rule_deny: "This call is denied by policy.",
   rate_limited: "Too many tool calls from this agent; nothing was run. Retry after retry_after_ms.",
+  backend_unavailable: "The backend did not finish starting in time; nothing was run. Retry after retry_after_ms.",
   no_matching_rule: "No policy rule allows this call (project default is deny).",
   policy_unavailable: "Policy could not be evaluated; the gateway fails closed.",
   audit_unavailable: "The audit log is unavailable; the gateway fails closed.",
@@ -367,7 +369,7 @@ export class PolicyEnforcer {
    */
   refuseBeforePolicy(
     ctx: Partial<CallContext> & { workspaceId: string; agentId: string; keyId: string },
-    reason: "unknown_tool" | "unknown_backend" | "no_active_project" | "gateway_shutting_down" | "rate_limited",
+    reason: "unknown_tool" | "unknown_backend" | "no_active_project" | "gateway_shutting_down" | "rate_limited" | "backend_unavailable",
     requested: string,
     args: Record<string, unknown>,
   ): CallToolResult {
