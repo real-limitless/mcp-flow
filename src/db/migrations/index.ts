@@ -11,6 +11,7 @@ import { MIGRATION_0009 } from "./0009_agent_bootstrap_session_guard.js";
 import { MIGRATION_0010 } from "./0010_policy_grant.js";
 import { MIGRATION_0011 } from "./0011_policy_v10.js";
 import { MIGRATION_0012 } from "./0012_call_outcome_v11.js";
+import { MIGRATION_0013 } from "./0013_call_audit_purge_actor.js";
 
 export interface Migration {
   id: string;
@@ -31,6 +32,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0010_policy_grant", sql: MIGRATION_0010 },
   { id: "0011_policy_v10", sql: MIGRATION_0011 },
   { id: "0012_call_outcome_v11", sql: MIGRATION_0012 },
+  { id: "0013_call_audit_purge_actor", sql: MIGRATION_0013 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
