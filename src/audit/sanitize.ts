@@ -18,6 +18,8 @@ const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
   // The run is greedy, so it ends at the LAST '@' before / ? # or whitespace (p@ss@host).
   // Linear: the scheme is bounded and runs cannot overlap (each one stops at the next '/').
   [/(\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/)[^\s/?#"'<>\\]*@/g, "$1[redacted]@"],
+  // scheme-less fallback for longer or unusual schemes; same last-'@' rule, linear (runs stop at '/')
+  [/:\/\/[^\s/?#"'<>\\]*@/g, "://[redacted]@"],
   // mysql/mariadb -p<password> (no space; "-p" alone prompts and is left alone)
   [/(\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb(?:-dump|-admin)?)\b[^\n]{0,2000}?\s-p)(?:'[^'\n]*'|"[^"\n]*"|[^\s'"]+)/g, "$1[redacted]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]"],
@@ -73,14 +75,15 @@ function looksLikeOpaqueSecret(s: string): boolean {
  * secrets (PRIMARY_KEY, SORT_KEY, PUBLIC_KEY, IDEMPOTENCY_KEY), PWD=/cwd in env dumps, prose
  * like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable).
  * *_TOKENS is a secret name (API_TOKENS) except token counts and limits: max_tokens,
- * *_max_tokens, max_*_tokens, and min/num/total/prompt/completion/input/output/cached/
- * reasoning_tokens stay readable.
+ * *_max_tokens, max_{input,output,completion,prompt,new,context}_tokens, and
+ * min/num/total/prompt/completion/input/output/cached/reasoning_tokens stay readable
+ * (MAX_ACCESS_TOKENS, max_refresh_tokens are secret names).
  */
 const SECRET_NAME_SUFFIX_RE =
   /[_.-](?:PASS|PWD|PASSWD|PASSWORD|KEYS?|SECRETS?|TOKENS?|AUTH|CREDENTIALS?|PASSPHRASE)$/i;
 /** *_TOKENS names that are counts or limits, not secrets (max_tokens, max_output_tokens, …). */
 const TOKEN_COUNT_NAME_RE =
-  /(?:^|[_.-])(?:max(?:[_.-][a-z]+)?|min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$/i;
+  /(?:^|[_.-])(?:max(?:[_.-](?:input|output|completion|prompt|new|context))?|min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$/i;
 const SECRET_NAME_BARE_RE =
   /^(?:PASS|PASSWD|PASSWORD|PWD|SECRETS?|TOKEN|AUTH|AUTHORIZATION|CREDENTIALS?|PASSPHRASE|APIKEY|BEARER|COOKIE|DSN)$/i;
 const SECRET_NAME_CONTAINS_RE =
@@ -310,7 +313,8 @@ export function sanitizeForAudit(
 
 /** Fields that name a variable in a name/value pair, and the sibling fields holding its value. */
 const PAIR_NAME_FIELD_RE = /^(?:name|key|variable|var|env|env_?name|variable_?name|key_?name)$/i;
-const PAIR_VALUE_FIELD_RE = /^(?:value|val|values|default|default_?value|secret_?value|data|content|text)$/i;
+const PAIR_VALUE_FIELD_RE =
+  /^(?:value|val|values|value_?from|env_?value|default|default_?value|secret_?value|data|content|text)$/i;
 
 function walk(
   value: unknown,

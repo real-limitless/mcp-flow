@@ -235,3 +235,38 @@ describe("A0 review follow-ups", () => {
     expect(Date.now() - t).toBeLessThan(1000);
   });
 });
+
+describe("A0 second-round follow-ups", () => {
+  it("token-count carve-out lists count words only", () => {
+    for (const n of ["MAX_ACCESS_TOKENS", "max_refresh_tokens", "max_api_tokens", "MAX_GH_TOKENS", "app_max_secret_tokens"])
+      expect(isSecretName(n)).toBe(true);
+    for (const n of ["max_tokens", "max_input_tokens", "max_output_tokens", "max_completion_tokens", "max_prompt_tokens",
+      "max_new_tokens", "max_context_tokens", "model_max_tokens", "MAX-OUTPUT-TOKENS"])
+      expect(isSecretName(n)).toBe(false);
+    expect(redactSecrets("MAX_ACCESS_TOKENS=a,b")).toBe(`MAX_ACCESS_TOKENS=${R}`);
+    expect(sanitizeForAudit({ max_refresh_tokens: "x", max_new_tokens: 7 })).toEqual({ max_refresh_tokens: R, max_new_tokens: 7 });
+  });
+
+  it("userinfo is redacted after schemes longer than 32 chars", () => {
+    const scheme = "x" + "a".repeat(40);
+    expect(redactSecrets(`${scheme}://u:p@ss@host/db`)).toBe(`${scheme}://${R}@host/db`);
+    expect(redactSecrets("weird_scheme!://tok@h")).toBe(`weird_scheme!://${R}@h`);
+    expect(redactSecrets(`${scheme}://host/path@x`)).toBe(`${scheme}://host/path@x`);
+  });
+
+  it("userinfo scan stays linear (long schemes, many '://', long runs)", () => {
+    const t = Date.now();
+    redactSecrets("a".repeat(200_000) + "://" + "b".repeat(200_000));
+    redactSecrets("://".repeat(100_000));
+    redactSecrets("x.".repeat(100_000) + "://u@h");
+    redactSecrets("://" + "@".repeat(200_000));
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+
+  it("valueFrom and envName/envValue pairs", () => {
+    expect(sanitizeForAudit({ name: "DB_PASS", valueFrom: { secretKeyRef: { name: "db", key: "pw" } } }))
+      .toEqual({ name: "DB_PASS", valueFrom: R });
+    expect(sanitizeForAudit({ envName: "STRIPE_KEY", envValue: "pw-x" })).toEqual({ envName: "STRIPE_KEY", envValue: R });
+    expect(sanitizeForAudit({ envName: "HOST", envValue: "db" })).toEqual({ envName: "HOST", envValue: "db" });
+  });
+});
