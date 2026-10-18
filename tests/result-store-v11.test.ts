@@ -93,6 +93,30 @@ describe("audited reads (owner or active human admin)", () => {
     ]);
   });
 
+  it("R5-4: repeated not_ready polls are coalesced per (call, reader); every serve and terminal error is still one row", async () => {
+    const pe = new PolicyEnforcer({ db, keys });
+    const r = await pe.enforce({ ctx: ctx("merge"), args: { pr: 9 }, asyncApproval: true, dispatch: async () => ({ content: [{ type: "text", text: "done" }] }) });
+    const pc = JSON.parse(txt(r)).pending_call_id as string;
+    for (let i = 0; i < 50; i++) expect(pe.takeAsyncResult(pc, bot)).toBe("not_ready");
+    for (let i = 0; i < 20; i++) expect(pe.takeAsyncResult(pc, chen)).toBe("not_ready"); // the admin polls too
+    for (let i = 0; i < 3; i++) expect(pe.takeAsyncResult(pc, bot2)).toBe("gone"); // forbidden: each attempt audited
+    expect(reads()).toEqual([
+      { actor: bot, agent_id: bot, key_id: botKey, error_code: "result_not_ready" },
+      { actor: chen, agent_id: bot, key_id: botKey, error_code: "result_not_ready" },
+      { actor: bot2, agent_id: bot, key_id: botKey, error_code: "result_forbidden" },
+      { actor: bot2, agent_id: bot, key_id: botKey, error_code: "result_forbidden" },
+      { actor: bot2, agent_id: bot, key_id: botKey, error_code: "result_forbidden" },
+    ]);
+    pe.decide(pc, chen, "approved");
+    await waitFor(() => (db.prepare(`SELECT result_stored_at FROM mcpflow_call_outcome WHERE pending_call_id = ?`).get(pc) as { result_stored_at: string | null }).result_stored_at != null);
+    expect(txt(pe.takeAsyncResult(pc, bot))).toBe("done");
+    expect(txt(pe.takeAsyncResult(pc, bot))).toBe("done");
+    expect(reads().slice(5)).toEqual([
+      { actor: bot, agent_id: bot, key_id: botKey, error_code: null },
+      { actor: bot, agent_id: bot, key_id: botKey, error_code: null },
+    ]);
+  });
+
   it("not_ready is audited; a read whose audit row cannot be written returns nothing (fail closed)", async () => {
     let fail = false;
     const pe = new PolicyEnforcer({ db, keys, auditFault: () => fail });

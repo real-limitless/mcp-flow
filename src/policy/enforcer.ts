@@ -921,7 +921,16 @@ export class PolicyEnforcer {
             errorCode = "result_undecryptable"; // e.g. written under an older result key
           }
         }
-        this.writeAudit({
+        // Security R5-4: repeated not_ready polls are coalesced, one row per (call, reader) per not_ready
+        // stretch: skipped when this reader's latest result_read row for the call is already not_ready.
+        // Every serve and every terminal error (purged, forbidden, undecryptable, none) is still one row each.
+        const coalesce =
+          errorCode === "result_not_ready" &&
+          (db.prepare(
+            `SELECT error_code FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'result_read' AND actor = ?
+              ORDER BY audit_id DESC LIMIT 1`,
+          ).get(String(row.call_id), reader) as { error_code: string | null } | undefined)?.error_code === "result_not_ready";
+        if (!coalesce) this.writeAudit({
           event_type: "result_read",
           call_id: String(row.call_id),
           workspace_id: row.workspace_id ?? null,
