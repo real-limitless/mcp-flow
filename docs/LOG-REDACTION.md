@@ -7,7 +7,8 @@ mcp-flow redacts a stdio backend's stderr on two paths:
 - **Init-error tail** (the thrown startup error, the tool result built from it, and the
   audit_events row that records that result): a second line redactor feeds a bounded buffer
   (12000 characters kept; memory about 24000 characters, which one write can briefly exceed by
-  up to about 64 KiB). When a backend fails to start, that buffer
+  up to about 128 KiB: a write can be a whole line, up to maxPending (64 KiB) plus one incoming
+  chunk). When a backend fails to start, that buffer
   is redacted again as a whole and cut to 8000 characters. Only redacted text is ever cut.
 
 ## Fail-closed rules
@@ -28,3 +29,10 @@ Live passthrough writes each line as soon as it is complete. If a backend prints
 already been written to the gateway's stderr; only the END line itself is redacted. The
 init-error tail, the tool result and audit_events are not affected (the second pass redacts
 the run). Keep backend stderr out of shared log sinks if a backend may print key material.
+
+## Not redacted: agent names
+
+Where the agent identity tables exist (governance schema), `mcpflow_agent.name` is an identity
+field: it is stored as the admin entered it and is not redacted, so do not put secrets in agent
+names. Copies of the name in audit rows (the call_audit `agent_name` column and lifecycle details)
+are sanitized on write.
