@@ -112,8 +112,18 @@ export function runMigrations(db: DatabaseSync, upTo?: string, opts: RunMigratio
         );
         db.exec("COMMIT;");
       } catch (err) {
-        db.exec("ROLLBACK;");
-        throw new Error(`migration ${m.id} failed: ${(err as Error).message}`);
+        // QA v5.6 §5: on a full disk (SQLITE_FULL / IOERR) SQLite may already have rolled the
+        // transaction back; a bare ROLLBACK then throws "no transaction is active" and hid the real
+        // error. Roll back only an open transaction, and never let a rollback failure replace it.
+        let rollback = "";
+        if (db.isTransaction) {
+          try {
+            db.exec("ROLLBACK;");
+          } catch (rbErr) {
+            rollback = ` (rollback also failed: ${(rbErr as Error).message})`;
+          }
+        }
+        throw new Error(`migration ${m.id} failed: ${(err as Error).message}${rollback}`, { cause: err });
       }
       applied.push(m.id);
     }
