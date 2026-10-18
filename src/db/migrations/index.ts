@@ -13,10 +13,13 @@ import { MIGRATION_0011 } from "./0011_policy_v10.js";
 import { MIGRATION_0012 } from "./0012_call_outcome_v11.js";
 import { MIGRATION_0013 } from "./0013_call_audit_purge_actor.js";
 import { MIGRATION_0014 } from "./0014_agent_bootstrap_upd_scope.js";
+import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
   id: string;
   sql: string;
+  /** Runs before BEGIN IMMEDIATE when the migration is pending; throw to refuse (nothing applied). */
+  preflight?: (db: DatabaseSync, deps?: PreflightDeps) => void;
 }
 
 /** Ordered, append-only list. Never edit a shipped migration; add a new one. */
@@ -33,7 +36,12 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0010_policy_grant", sql: MIGRATION_0010 },
   { id: "0011_policy_v10", sql: MIGRATION_0011 },
   { id: "0012_call_outcome_v11", sql: MIGRATION_0012 },
-  { id: "0013_call_audit_purge_actor", sql: MIGRATION_0013 },
+  {
+    id: "0013_call_audit_purge_actor",
+    sql: MIGRATION_0013,
+    // Database ops: full call_audit rebuild under the write lock; disk check + row count/ETA log.
+    preflight: tableRebuildPreflight("0013_call_audit_purge_actor", "mcpflow_call_audit"),
+  },
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
 ];
 
@@ -65,7 +73,12 @@ export function applyConnectionPragmas(db: DatabaseSync, opts: ConnectionPragmaO
  * Apply pending migrations, each in its own BEGIN IMMEDIATE transaction.
  * This is the only place mcpflow_* DDL runs; the request path never runs DDL.
  */
-export function runMigrations(db: DatabaseSync, upTo?: string): string[] {
+export interface RunMigrationsOptions {
+  /** Injected into each migration's preflight (tests: fake free space / log sink / env). */
+  preflight?: PreflightDeps;
+}
+
+export function runMigrations(db: DatabaseSync, upTo?: string, opts: RunMigrationsOptions = {}): string[] {
   // Security R5-6: table rebuilds (0010, 0012, 0013) rely on RENAME updating FK references in other
   // tables, which needs legacy_alter_table OFF (the SQLite default). Pin it rather than assume it.
   db.exec("PRAGMA legacy_alter_table = OFF;");
@@ -83,6 +96,7 @@ export function runMigrations(db: DatabaseSync, upTo?: string): string[] {
   const applied: string[] = [];
   for (const m of MIGRATIONS) {
     if (!done.has(m.id)) {
+      m.preflight?.(db, opts.preflight);
       db.exec("BEGIN IMMEDIATE;");
       try {
         db.exec(m.sql);
