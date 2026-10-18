@@ -295,8 +295,12 @@ export interface BackendPublic {
   command: string[] | null;
   /** True when sealed headers exist — values never returned */
   hasHeaders: boolean;
+  /** Sealed header names. Values are never returned. */
+  headerNames: string[];
   /** True when sealed env exists — values never returned */
   hasEnv: boolean;
+  /** Sealed env names. Values are never returned. */
+  envKeys: string[];
   enabled: boolean;
   toolAllowlist: string[] | null;
   placement: Placement;
@@ -334,7 +338,17 @@ export interface UpdateBackendInput {
   headers?: Record<string, string> | null;
   /** Merge into Authorization (Bearer prefixed). Does not clear other headers. */
   apiKey?: string | null;
-  env?: Record<string, string> | null;
+  /**
+   * Env patch. Default `envMode` is `merge`: non-empty values set that key and
+   * every other key stays sealed. `null` deletes one key. `""` keeps it.
+   * `envMode: "replace"` swaps the whole map. `env: null` clears every key.
+   * Values are write-only and are never returned.
+   */
+  env?: Record<string, string | null> | null;
+  /** `merge` (default) or `replace`. */
+  envMode?: "merge" | "replace";
+  /** Env names to delete. Ignored when `env` is null or `envMode` is `replace`. */
+  unsetEnv?: string[];
   enabled?: boolean;
   toolAllowlist?: string[] | null;
   placement?: Placement;

@@ -25,8 +25,10 @@ import {
 import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
 import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
 import { seal, safeEqualStr } from "../crypto.js";
+import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import { parseEnvMode } from "../db/env-patch.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
@@ -472,6 +474,9 @@ export function createApp(
     const body = (await c.req.json()) as UpdateBackendInput;
     const existing = store.getBackend(auth.workspaceId, c.req.param("id"));
     if (!existing) return c.json({ error: "not found" }, 404);
+    if (parseEnvMode(body.envMode) === "invalid") {
+      return c.json({ error: "envMode must be merge or replace" }, 400);
+    }
 
     if (body.url) {
       try {
@@ -518,6 +523,10 @@ export function createApp(
       backendSlug: backend.slug,
       placement: backend.placement.mode,
       deviceId: backend.placement.deviceId ?? null,
+      detail: backendUpdateAuditDetail(
+        store.backendUpdateSnapshot(existing),
+        body,
+      ),
       ip: clientIp(c),
     });
     return c.json({ backend });

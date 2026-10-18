@@ -34,6 +34,7 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
+import { applyEnvPatch } from "./env-patch.js";
 import {
   compactSecretRecord,
   normalizeUpstreamHeaders,
@@ -681,7 +682,9 @@ export function toPublicBackend(b: BackendRecord): BackendPublic {
     image: b.image,
     command: b.commandJson ? (JSON.parse(b.commandJson) as string[]) : null,
     hasHeaders: Boolean(b.headersEnc),
+    headerNames: [],
     hasEnv: Boolean(b.envEnc),
+    envKeys: [],
     enabled: b.enabled,
     toolAllowlist: b.toolAllowlistJson
       ? (JSON.parse(b.toolAllowlistJson) as string[])
@@ -1125,7 +1128,7 @@ export class Store {
         rec.updatedAt,
       );
     this.addBackendToDefaultProject(workspaceId, slug);
-    return toPublicBackend(rec);
+    return this.publish(rec);
   }
 
   listBackends(workspaceId: string): BackendPublic[] {
@@ -1134,7 +1137,7 @@ export class Store {
         `SELECT * FROM backends WHERE workspace_id = ? ORDER BY slug ASC`,
       )
       .all(workspaceId) as Record<string, unknown>[];
-    return rows.map((r) => toPublicBackend(rowBackend(r)));
+    return rows.map((r) => this.publish(rowBackend(r)));
   }
 
   getBackend(
@@ -1156,7 +1159,33 @@ export class Store {
     idOrSlug: string,
   ): BackendPublic | null {
     const b = this.getBackend(workspaceId, idOrSlug);
-    return b ? toPublicBackend(b) : null;
+    return b ? this.publish(b) : null;
+  }
+
+  /** Public view plus sealed key names. Values are never included. */
+  private publish(rec: BackendRecord): BackendPublic {
+    return {
+      ...toPublicBackend(rec),
+      envKeys: Object.keys(this.decryptEnv(rec)).sort(),
+      headerNames: Object.keys(this.decryptHeaders(rec)).sort(),
+    };
+  }
+
+  /** Snapshot for an audit entry. Includes env values only in memory, never logged. */
+  backendUpdateSnapshot(rec: BackendRecord) {
+    return {
+      title: rec.title,
+      transport: rec.transport,
+      url: rec.url,
+      image: rec.image,
+      enabled: rec.enabled,
+      commandJson: rec.commandJson,
+      placementJson: rec.placementJson,
+      sandboxJson: rec.sandboxJson,
+      toolAllowlistJson: rec.toolAllowlistJson,
+      env: this.decryptEnv(rec),
+      headerNames: Object.keys(this.decryptHeaders(rec)),
+    };
   }
 
   updateBackend(
@@ -1198,11 +1227,17 @@ export class Store {
       }
     }
     let envEnc = existing.envEnc;
-    if (input.env !== undefined) {
-      envEnc =
-        input.env === null
-          ? null
-          : sealSecretMap(this.masterKey, input.env, "env");
+    const touchesEnv =
+      input.env !== undefined ||
+      (input.unsetEnv ?? []).some((name) => name.trim() !== "");
+    if (touchesEnv) {
+      const envPatch = applyEnvPatch(this.decryptEnv(existing), input);
+      if (envPatch.next !== undefined) {
+        envEnc =
+          envPatch.next === null
+            ? null
+            : sealSecretMap(this.masterKey, envPatch.next, "env");
+      }
     }
     const enabled =
       input.enabled !== undefined ? input.enabled : existing.enabled;

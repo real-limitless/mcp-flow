@@ -195,6 +195,27 @@ Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
 | **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
 
+### Edge only
+
+`docker-compose.edge.yaml` runs just the edge agent and connects it to an mcp-flow server that is already up. It does not start the gateway, bootstrap, or any other service. Set two variables — nothing in the file is a real address or token:
+
+| Variable | Meaning |
+| --- | --- |
+| `MCP_FLOW_URL` | Base URL of the existing server, for example `https://mcp-flow.example` |
+| `MCP_FLOW_DEVICE_TOKEN` | Device token from enroll (shown once). Placeholder: `replace-with-device-token` |
+
+Optional: `MCP_FLOW_EDGE_NAME` (default `edge`).
+
+Plain Compose, from a fresh checkout:
+
+```bash
+MCP_FLOW_URL=https://mcp-flow.example \
+MCP_FLOW_DEVICE_TOKEN=replace-with-device-token \
+docker compose -f docker-compose.edge.yaml up --build -d
+```
+
+Dokploy: create a compose application from `docker-compose.edge.yaml` and set `MCP_FLOW_URL` and `MCP_FLOW_DEVICE_TOKEN` in that application's environment. Dokploy interpolates those variables into the edge service. Do not commit the token. After the container is healthy it dials `MCP_FLOW_URL` with the device token and shows up as an online device on the server.
+
 Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. The compose **edge** agent starts with the stack (device `compose-edge` should show **online**). It includes `git`, `gh`, `/repos` (clone many projects here), and persisted `gh` login.
 
 Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-edge`, enable):
@@ -220,7 +241,7 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 | `DELETE` | `/v1/keys/:id` | Revoke |
 | `POST` | `/v1/backends` | Create (GET redacts sealed headers/env) |
 | `GET` | `/v1/backends` | List (redacted) |
-| `PATCH` | `/v1/backends/:id` | Update / enable |
+| `PATCH` | `/v1/backends/:id` | Update / enable. `env` merges per key (`envMode=replace` swaps the map; `unsetEnv` or a null value deletes one key). Responses list `envKeys` and `headerNames` only — values are never returned. |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
 | `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
 | `GET/POST/PATCH/DELETE` | `/v1/authz/rules` | Human-gate rules (match + MFA/approve) |

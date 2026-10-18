@@ -9,7 +9,9 @@ import {
   loadLocalGallery,
   searchRegistryLive,
 } from "../catalog/sync.js";
+import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Config } from "../config.js";
+import { parseEnvMode } from "../db/env-patch.js";
 import type { Store } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
@@ -96,7 +98,8 @@ export const ADMIN_META_TOOLS: Tool[] = [
   },
   {
     name: "mf_admin_update_backend",
-    description: "Patch backend by id or slug. Requires admin key.",
+    description:
+      "Patch backend by id or slug. env merges per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode=replace to swap the map). Secret values are write-only. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -114,7 +117,20 @@ export const ADMIN_META_TOOLS: Tool[] = [
         apiKey: { type: ["string", "null"] },
         env: {
           type: ["object", "null"],
-          additionalProperties: { type: "string" },
+          additionalProperties: { type: ["string", "null"] },
+          description:
+            "Per-key merge by default. Null deletes that key. Empty string keeps the sealed value.",
+        },
+        envMode: {
+          type: "string",
+          enum: ["merge", "replace"],
+          description:
+            "merge (default) keeps omitted keys. replace swaps the whole env map.",
+        },
+        unsetEnv: {
+          type: "array",
+          items: { type: "string" },
+          description: "Env names to delete. Ignored when envMode is replace.",
         },
         placement: { type: "object" },
       },
@@ -627,6 +643,9 @@ export async function handleAdminTool(
         if (!existing) return textResult("not found", true);
         const body = { ...args } as UpdateBackendInput & { idOrSlug?: string };
         delete (body as { idOrSlug?: string }).idOrSlug;
+        if (parseEnvMode(body.envMode) === "invalid") {
+          return textResult("envMode must be merge or replace", true);
+        }
         if (body.url) {
           try {
             await assertSafeUrl(body.url, cfg.allowPrivateUrls);
@@ -660,7 +679,13 @@ export async function handleAdminTool(
         pool.invalidate(existing.id);
         audit(
           "backend.update",
-          { via: "mf_admin" },
+          {
+            via: "mf_admin",
+            ...backendUpdateAuditDetail(
+              store.backendUpdateSnapshot(existing),
+              body,
+            ),
+          },
           { backendSlug: backend.slug },
         );
         return textResult({ backend });
