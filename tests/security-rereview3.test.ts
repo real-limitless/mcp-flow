@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { cliServeArgs, isolatedServeCwd } from "./helpers/serve-cli.js";
 import { loadConfig } from "../src/config.js";
 import { startServer, type RunningServer } from "../src/server.js";
 
@@ -367,7 +368,8 @@ describe("QA V5-F2 SIGTERM / SIGINT graceful shutdown", () => {
       await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
       const port = (probe.address() as { port: number }).port;
       await new Promise<void>((r) => probe.close(() => r()));
-      const child = spawn(process.execPath, ["--import", "tsx", "src/cli.ts", "serve", "--db", dbPath, "--port", String(port), "--host", "127.0.0.1"], {
+      const child = spawn(process.execPath, cliServeArgs("--db", dbPath, "--port", String(port), "--host", "127.0.0.1"), {
+        cwd: isolatedServeCwd(d),
         env: { ...process.env, MCP_FLOW_MASTER_KEY: Buffer.alloc(32, 7).toString("base64"), MCP_FLOW_ADMIN_TOKEN: "sig-admin-" + rb(8).toString("hex") },
         stdio: ["ignore", "ignore", "pipe"],
       });
