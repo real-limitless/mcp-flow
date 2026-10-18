@@ -34,13 +34,13 @@ describe("Leak A: private key armor beyond '… PRIVATE KEY-----'", () => {
     expect(redactSecrets(`ok -----BEGIN PGP PRIVATE KEY BLOCK-----\nlQ${M}`)).toBe("ok [redacted]");
   });
 
-  it("an END whose BEGIN was cut off redacts everything before it", () => {
-    const out = redactSecrets(`${M}1\n${M}2\n-----END PGP PRIVATE KEY BLOCK-----\nafter`);
+  it("an END whose BEGIN was cut off redacts the key-body run before it", () => {
+    const out = redactSecrets(`${M}1${"A".repeat(48)}\n${M}2${"B".repeat(48)}\n-----END PGP PRIVATE KEY BLOCK-----\nafter`);
     expect(out).toBe("[redacted]\nafter");
     expect(out).not.toContain(M);
-    // after a complete block, a second orphan END redacts back to the first block's end
-    const two = redactSecrets(`a -----BEGIN RSA PRIVATE KEY-----\nk\n-----END RSA PRIVATE KEY----- mid ${M} -----END RSA PRIVATE KEY----- z`);
-    expect(two).toBe("a [redacted][redacted] z");
+    // a second, stray END with plain text before it on the same line: only the marker goes
+    const two = redactSecrets(`a -----BEGIN RSA PRIVATE KEY-----\nk\n-----END RSA PRIVATE KEY----- mid text -----END RSA PRIVATE KEY----- z`);
+    expect(two).toBe("a [redacted] mid text [redacted] z");
   });
 
   it("public key blocks, signatures and certificates are kept", () => {
