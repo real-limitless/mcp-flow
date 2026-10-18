@@ -129,33 +129,32 @@ describe("T3.1 retention maintenance path", () => {
       .run(ts, `call_${randomBytes(6).toString("hex")}`, WS, bot);
   }
 
-  it("archives per month, deletes in one txn, restores the trigger and logs a lifecycle row", () => {
+  it("T2.1 §12: retention never deletes call_audit rows (old decisions, result_read, result_purge); it only appends its own lifecycle row", () => {
     old("2025-08-15T00:00:00.000Z");
     old("2025-09-02T00:00:00.000Z");
-    old("2025-09-30T23:59:59.999Z");
-    old("2025-10-01T00:00:00.000Z"); // kept
+    db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, actor) VALUES ('2025-08-20T00:00:00.000Z', 'result_read', 'call_rr', ?, ?, ?)`).run(WS, bot, chen);
+    db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, error_code) VALUES ('2025-08-21T00:00:00.000Z', 'result_purge', 'call_rr', ?, ?, 'purged:expired')`).run(WS, bot);
+    const before = db.prepare(`SELECT * FROM mcpflow_call_audit ORDER BY audit_id`).all();
     const archive = mkdtempSync(join(tmpdir(), "mcpflow-arch-"));
     tmp.push(archive);
     const out = runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true });
-    expect(out.deleted).toBe(3);
-    expect(out.archived).toEqual({ "2025-08": 1, "2025-09": 2 });
-    expect(readFileSync(out.files[1]!, "utf8").trim().split("\n")).toHaveLength(2);
+    expect(out).toMatchObject({ dryRun: false, state: { call_outcome: 0 } });
+    const after = db.prepare(`SELECT * FROM mcpflow_call_audit ORDER BY audit_id`).all() as Array<Record<string, unknown>>;
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(after.slice(before.length).map((r) => r.lifecycle_action)).toEqual(["state_retention"]);
+    expect(out.files.every((f) => !f.includes("call_audit_"))).toBe(true);
     expect(() => db.prepare(`DELETE FROM mcpflow_call_audit`).run()).toThrow(/append-only/);
-    const lc = queryCallAudit(db, WS, { eventType: "lifecycle" }).rows.find((r) => r.lifecycle_action === "audit_retention");
-    expect(lc).toBeTruthy();
-    expect(queryCallAudit(db, WS, { to: "2025-10-01T00:00:00.000Z" }).rows).toHaveLength(0);
     // never overwrites an existing archive
-    old("2025-09-03T00:00:00.000Z");
     expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-10-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true })).toThrow(/EEXIST/);
-    expect(queryCallAudit(db, WS, { to: "2025-10-01T00:00:00.000Z" }).rows).toHaveLength(1);
   });
 
-  it("a failure inside the txn rolls back and keeps the trigger", () => {
+  it("a failure inside the txn rolls back and keeps the triggers", () => {
     old("2025-08-15T00:00:00.000Z");
     const archive = mkdtempSync(join(tmpdir(), "mcpflow-arch-"));
     tmp.push(archive);
     expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: "not-an-agent", execute: true })).toThrow();
     expect(() => db.prepare(`DELETE FROM mcpflow_call_audit`).run()).toThrow(/append-only/);
+    expect(db.prepare(`SELECT name FROM sqlite_master WHERE name = 'mcpflow_call_outcome_no_delete'`).get()).toBeTruthy();
     expect(queryCallAudit(db, WS, {}).rows.length).toBeGreaterThan(0);
     expect(existsSync(archive)).toBe(true);
   });
