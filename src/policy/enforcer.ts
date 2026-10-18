@@ -889,7 +889,8 @@ export class PolicyEnforcer {
           .prepare(
             `SELECT o.*, a.name AS owner_name,
                     (strftime('%Y-%m-%dT%H:%M:%fZ','now') < o.result_expires_at) AS db_window_open,
-                    EXISTS (SELECT 1 FROM mcpflow_agent r WHERE r.id = ? AND r.is_admin = 1 AND r.kind = 'human' AND r.status = 'active') AS reader_admin
+                    EXISTS (SELECT 1 FROM mcpflow_agent r WHERE r.id = ? AND r.is_admin = 1 AND r.kind = 'human' AND r.status = 'active'
+                                   AND r.workspace_id = o.workspace_id) AS reader_admin -- R5-3: admins of the result's own workspace only
                FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id
               WHERE ${where.pendingCallId ? "o.pending_call_id = ?" : "o.call_id = ?"}`,
           )

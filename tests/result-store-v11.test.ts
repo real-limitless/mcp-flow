@@ -77,6 +77,22 @@ describe("audited reads (owner or active human admin)", () => {
     ]);
   });
 
+  it("R5-3: an active human admin of ANOTHER workspace can't read the result (same answer as unknown; audited forbidden)", async () => {
+    const WS2 = "ws_" + "8".repeat(24);
+    const eve = dir.bootstrapWorkspace(WS2, { name: "eve", owner: "eve" }); // active human admin, but of WS2
+    const pe = new PolicyEnforcer({ db, keys });
+    const pc = await heldResult(pe, "ws1-secret");
+    const r = pe.takeAsyncResult(pc, eve);
+    expect(r).toBe("gone");
+    expect(JSON.stringify(r)).not.toContain("ws1-secret");
+    expect(pe.takeAsyncResult(`pc_${"0".repeat(24)}`, eve)).toBe("gone"); // identical to an unknown id
+    expect(txt(pe.takeAsyncResult(pc, chen))).toBe("ws1-secret"); // the owner workspace's admin still can
+    expect(reads()).toEqual([
+      { actor: eve, agent_id: bot, key_id: botKey, error_code: "result_forbidden" },
+      { actor: chen, agent_id: bot, key_id: botKey, error_code: null },
+    ]);
+  });
+
   it("not_ready is audited; a read whose audit row cannot be written returns nothing (fail closed)", async () => {
     let fail = false;
     const pe = new PolicyEnforcer({ db, keys, auditFault: () => fail });
