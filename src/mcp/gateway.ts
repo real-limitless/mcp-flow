@@ -1177,6 +1177,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         ? textResult({
             pending_call_id: pid, status: st.status, expires_at: st.expiresAt, outcome: st.outcome,
             final_outcome: st.finalOutcome, result_status: st.resultStatus, dispatched: st.dispatched,
+            ...(st.cancelReason ? { cancel_reason: st.cancelReason } : {}),
           })
         : textResult("pending call not found for this agent", true);
       auditCall(result, { meta: true });
