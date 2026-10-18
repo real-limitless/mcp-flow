@@ -139,6 +139,45 @@ describe("24 h window from store time", () => {
   });
 });
 
+describe("read gate uses the DB clock (same clock as the 0012 expiry trigger)", () => {
+  it("enforcer clock behind the DB clock: once SQLite says expired the read is refused; no purge until both clocks agree", async () => {
+    let skew = 0;
+    const pe = new PolicyEnforcer({ db, keys, resultTtlMs: 50, clock: () => Date.now() + skew });
+    const pc = await heldResult(pe, "secret-result");
+    await new Promise((res) => setTimeout(res, 100)); // DB clock: expired
+    skew = -3_600_000; // the gateway clock is an hour behind: it still thinks the window is open
+    const exp = (db.prepare(`SELECT result_expires_at e FROM mcpflow_call_outcome WHERE pending_call_id = ?`).get(pc) as { e: string }).e;
+    expect(new Date(Date.now() + skew).toISOString() < exp).toBe(true);
+    const r = pe.takeAsyncResult(pc, bot);
+    expect(JSON.stringify(r)).not.toContain("secret-result");
+    expect(JSON.parse(txt(r))).toMatchObject({ error_code: "result_purged", reason: "purged:expired" });
+    expect(reads().at(-1)).toMatchObject({ actor: bot, error_code: "result_purged" });
+    // the admin is refused too
+    expect(JSON.stringify(pe.takeAsyncResult(pc, chen))).not.toContain("secret-result");
+    // purge needs both clocks: neither the read nor the sweep purged it yet
+    expect(pe.purgeResults()).toBe(0);
+    expect(db.prepare(`SELECT result_ciphertext IS NOT NULL AS kept, result_purged_at FROM mcpflow_call_outcome WHERE pending_call_id = ?`).get(pc))
+      .toEqual({ kept: 1, result_purged_at: null });
+    expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).get() as { n: number }).n).toBe(0);
+    // once the gateway clock agrees, the sweep purges it (system:sweeper, expired)
+    skew = 0;
+    expect(pe.purgeResults()).toBe(1);
+    expect(db.prepare(`SELECT actor, error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge'`).all())
+      .toEqual([{ actor: "system:sweeper", error_code: "purged:expired" }]);
+  });
+
+  it("enforcer clock ahead of the DB clock: the DB window decides; no early purge, no audit_unavailable", async () => {
+    let skew = 0;
+    const pe = new PolicyEnforcer({ db, keys, resultTtlMs: 3_600_000, clock: () => Date.now() + skew });
+    const pc = await heldResult(pe, "still-valid");
+    skew = 2 * 3_600_000; // the gateway thinks the window closed an hour ago; SQLite does not
+    const r = pe.takeAsyncResult(pc, bot);
+    expect(txt(r)).toBe("still-valid");
+    expect(reads().at(-1)).toMatchObject({ actor: bot, error_code: null });
+    expect(pe.purgeResults()).toBe(0);
+  });
+});
+
 describe("quota purge (§12): never refuses a store; per-agent evicts own oldest; global evicts oldest overall", () => {
   const run = async (pe: PolicyEnforcer, who: "bot" | "bot2", i: number) => {
     const c = who === "bot" ? ctx("echo") : ctx("echo", bot2, bot2Key, "bot2");
