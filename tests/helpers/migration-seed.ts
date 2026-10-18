@@ -69,3 +69,27 @@ export function integrityOk(d: DatabaseSync): boolean {
   const r = d.prepare("PRAGMA integrity_check").all() as Array<Record<string, string>>;
   return r.length === 1 && Object.values(r[0]!)[0] === "ok";
 }
+
+/** Normalized schema (type, name, sql) for up/down/up comparisons. */
+export function schemaSnapshot(d: DatabaseSync): string[] {
+  return (d.prepare(`SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name`).all() as Array<{ type: string; name: string; sql: string }>)
+    .map((r) => `${r.type}|${r.name}|${r.sql.replace(/\s+/g, " ").trim()}`);
+}
+
+/** Apply a manual DOWN script in one transaction and forget the migration id. */
+export function rollback(d: DatabaseSync, migrationId: string, downSql: string): void {
+  d.exec("BEGIN IMMEDIATE;");
+  try {
+    d.exec(downSql);
+    d.prepare(`DELETE FROM mcpflow_schema_migrations WHERE id = ?`).run(migrationId);
+    d.exec("COMMIT;");
+  } catch (err) {
+    d.exec("ROLLBACK;");
+    throw err;
+  }
+}
+
+/** Insert a legacy mf_sess_ session the way pre-0009 code did (only possible before 0009). */
+export function seedLegacySession(d: DatabaseSync, agent: string, key: string): string {
+  return seedSession(d, agent, key, "mf_sess_");
+}
