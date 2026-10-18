@@ -6,6 +6,10 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { PolicyKeys } from "./dev-keys.js";
 import { auditActor, auditText } from "../audit/call-audit-cols.js";
+import { sanitizeForAudit } from "../audit/sanitize.js";
+
+/** revoked_reason is operator free text: stored redacted and capped (SecOPS block of afcbc646, MUST 2). */
+export const REVOKE_REASON_MAX = 2048;
 
 export type AgentKind = "grokbot" | "cloud_agent" | "human" | "service";
 
@@ -201,7 +205,7 @@ export class AgentDirectory {
           `UPDATE mcpflow_api_key SET status = 'revoked', revoked_at = ?, revoked_by = ?, revoked_reason = ?
            WHERE id = ? AND status <> 'revoked'`,
         )
-        .run(nowIso(), by, reason, keyId);
+        .run(nowIso(), by, auditText(reason, REVOKE_REASON_MAX), keyId);
       changed = Number(res.changes) === 1;
       if (changed) this.lifecycle(this.keyWorkspace(keyId), by, "key_revoke", { keyId, reason });
     });
@@ -230,7 +234,7 @@ export class AgentDirectory {
           `UPDATE mcpflow_agent SET status = 'revoked', revoked_at = ?, revoked_by = ?, revoked_reason = ?
            WHERE id = ? AND status <> 'revoked'`,
         )
-        .run(nowIso(), by, reason, agentId);
+        .run(nowIso(), by, auditText(reason, REVOKE_REASON_MAX), agentId);
       changed = Number(res.changes) === 1;
       if (changed) this.lifecycle(this.agentWorkspace(agentId), by, "agent_revoke", { agentId, reason });
     });
@@ -400,7 +404,8 @@ export class AgentDirectory {
         (detail.keyId as string | undefined) ?? null,
         auditText(action),
         auditActor(actor), // SecOPS 7: shape-checked on write
-        JSON.stringify(detail),
+        // free text in the detail (revoke reasons, agent names) is redacted like every other audit detail
+        JSON.stringify(sanitizeForAudit(detail)),
       );
   }
 
