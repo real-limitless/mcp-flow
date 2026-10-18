@@ -2,7 +2,8 @@
  * SecOPS item 7 (governance side): mcpflow_call_audit text columns are sanitized on WRITE
  * (the table is append-only; existing rows are never rewritten). Same style as audit_events'
  * auditIdent (A0 6aa270c8): embedded secrets redacted, control characters replaced, capped at 256.
- * - free text (qualified_tool, tool, agent_name, error_code): auditText
+ * - free text (qualified_tool, tool, agent_name, error_code; approver_note capped at 2048): auditText
+ * - identifiers (key_prefix, placement, device_id, backend_slug, project_id): shape-checked, else "[invalid]"
  * - actor: shape-checked id (agt_<24 hex> or a system actor); anything else is refused without
  *   echoing the value (the 0013 CHECK would refuse it too, but with the value in no message).
  */
@@ -30,12 +31,47 @@ export function auditActor(v: unknown): string | null {
   return v as string;
 }
 
-const TEXT_COLS = ["qualified_tool", "tool", "agent_name", "error_code"] as const;
+/** Free-text columns and their caps (approver_note is a human's deny note: longer cap). */
+export const CALL_AUDIT_NOTE_MAX = 2048;
+const TEXT_COLS: Readonly<Record<string, number>> = {
+  qualified_tool: CALL_AUDIT_TEXT_MAX,
+  tool: CALL_AUDIT_TEXT_MAX,
+  agent_name: CALL_AUDIT_TEXT_MAX,
+  error_code: CALL_AUDIT_TEXT_MAX,
+  approver_note: CALL_AUDIT_NOTE_MAX,
+};
+
+/**
+ * Identifier columns: kept only when they have the shape the code mints, else "[invalid]" (never free
+ * text, so a token passed by mistake is not stored). Same rule as audit_events' auditKeyId/auditSlug.
+ * - key_prefix: the 12 base64url characters after "mf_" (LOOKUP_PREFIX_LEN; 8-16 accepted)
+ * - placement: one of the PlacementMode values
+ * - device_id: an identifier (dev_<24 hex> when minted; letters, digits, _ . : -, max 64)
+ * - backend_slug / project_id: a slug, as createBackend / createProject validate it
+ */
+const ID_COLS: Readonly<Record<string, RegExp>> = {
+  key_prefix: /^[A-Za-z0-9_-]{8,16}$/,
+  placement: /^(?:remote|central-sandbox|edge-sandbox|edge-bare)$/,
+  device_id: /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/,
+  backend_slug: /^[a-z][a-z0-9_-]{0,63}$/,
+  project_id: /^[a-z][a-z0-9_-]{0,63}$/,
+};
+
+export const CALL_AUDIT_INVALID = "[invalid]";
+
+/** Identifier column: null / "" -> null, a well-shaped id as is, anything else "[invalid]". */
+export function auditIdCol(col: keyof typeof ID_COLS | string, v: unknown): string | null {
+  if (v == null || v === "") return null;
+  const re = ID_COLS[col];
+  if (!re) throw new Error("unknown call_audit id column");
+  return typeof v === "string" && re.test(v) ? v : CALL_AUDIT_INVALID;
+}
 
 /** Sanitize a call_audit column map before INSERT (only the columns present are touched). */
 export function sanitizeCallAuditCols<T extends Record<string, unknown>>(cols: T): T {
   const out: Record<string, unknown> = { ...cols };
-  for (const k of TEXT_COLS) if (k in out) out[k] = auditText(out[k]);
+  for (const [k, max] of Object.entries(TEXT_COLS)) if (k in out) out[k] = auditText(out[k], max);
+  for (const k of Object.keys(ID_COLS)) if (k in out) out[k] = auditIdCol(k, out[k]);
   if ("actor" in out) out.actor = auditActor(out.actor);
   return out as T;
 }

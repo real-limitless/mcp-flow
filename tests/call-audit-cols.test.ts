@@ -2,7 +2,9 @@
 import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it } from "vitest";
-import { auditActor, auditText, CALL_AUDIT_TEXT_MAX, sanitizeCallAuditCols } from "../src/audit/call-audit-cols.js";
+import {
+  auditActor, auditIdCol, auditText, CALL_AUDIT_INVALID, CALL_AUDIT_NOTE_MAX, CALL_AUDIT_TEXT_MAX, sanitizeCallAuditCols,
+} from "../src/audit/call-audit-cols.js";
 import { applyConnectionPragmas, runMigrations } from "../src/db/migrations/index.js";
 import { AgentDirectory } from "../src/identity/agents.js";
 import { derivePolicyKeys } from "../src/identity/dev-keys.js";
@@ -129,3 +131,66 @@ describe("enforcer writes (enforcer.ts refuse / decision / completion / purge)",
     noSecrets();
   });
 });
+
+describe("SecOPS afcbc646 SHOULD 3/4: approver_note text column, identifier shape checks", () => {
+  it("identifier columns keep minted shapes and turn anything else into [invalid] without echo", () => {
+    const good = {
+      key_prefix: "Ab3_-xYz09Qw", placement: "edge-bare", device_id: `dev_${"0".repeat(24)}`,
+      backend_slug: "gh-repos_shell", project_id: "gb_devops",
+    };
+    expect(sanitizeCallAuditCols(good)).toEqual(good);
+    const bad = sanitizeCallAuditCols({
+      key_prefix: "Bearer FAKEB3ARERVALUE123", placement: "remote\nGH_TOKEN=FAKEAPIKEY77", device_id: "dev Bearer FAKEB3ARERVALUE123",
+      backend_slug: "gh?token=FAKEQS0TOKEN9", project_id: "P1;DB_PASS=FAKEDBPASS1",
+    });
+    expect(Object.values(bad)).toEqual(Array(5).fill(CALL_AUDIT_INVALID));
+    expect(sanitizeCallAuditCols({ key_prefix: null, device_id: "", project_id: undefined })).toEqual({ key_prefix: null, device_id: null, project_id: null });
+    expect(auditIdCol("placement", 42)).toBe(CALL_AUDIT_INVALID);
+  });
+
+  it("approver_note: redacted, control characters replaced, capped at 2048", () => {
+    const out = sanitizeCallAuditCols({ approver_note: `no, DB_PASS=FAKEDBPASS1\n${"n".repeat(5000)}` });
+    expect(out.approver_note).not.toContain("FAKEDBPASS1");
+    expect(out.approver_note!.length).toBe(CALL_AUDIT_NOTE_MAX + 1);
+    expect(sanitizeCallAuditCols({ approver_note: "short\u0007note" }).approver_note).toBe("short?note");
+  });
+
+  it("enforcer writes: refused call with malformed ids, and a denied approval with a secret in the note", async () => {
+    const pe = new PolicyEnforcer({ db, keys });
+    const ctx = (over: Partial<CallContext> = {}): CallContext => ({
+      workspaceId: WS, agentId: bot, agentName: "bot", keyId: botKey, keyPrefix: "Bearer FAKEB3ARERVALUE123", sessionId: null,
+      projectId: "p1", backendSlug: "gh?token=FAKEQS0TOKEN9", tool: "echo", qualifiedTool: "gh__echo", placement: "remote", deviceId: null, ...over,
+    });
+    pe.refuseBeforePolicy(ctx(), "unknown_backend", "x__echo", {});
+    const r0 = db.prepare(`SELECT key_prefix, backend_slug, project_id, placement FROM mcpflow_call_audit WHERE event_type='decision'`).get() as Record<string, string>;
+    expect(r0).toMatchObject({ key_prefix: CALL_AUDIT_INVALID, backend_slug: CALL_AUDIT_INVALID, project_id: "p1" });
+
+    const id = `rule_${randomBytes(12).toString("hex")}`;
+    db.exec("BEGIN IMMEDIATE;");
+    db.prepare(`INSERT INTO mcpflow_policy_rule (id, workspace_id, created_by) VALUES (?,?,?)`).run(id, WS, chen);
+    db.prepare(`INSERT INTO mcpflow_policy_rule_version (rule_id, version, description, match_tools, effect, approvers, approval_timeout_s, created_by)
+                VALUES (?,1,'t','["merge"]','require_approval',?,30,?)`).run(id, JSON.stringify([chen]), chen);
+    db.prepare(`UPDATE mcpflow_policy_rule SET current_version=1 WHERE id=?`).run(id);
+    db.exec("COMMIT;");
+    const p = pe.enforce({
+      ctx: ctx({ tool: "merge", qualifiedTool: "gh__merge", keyPrefix: "Ab3_-xYz09Qw", backendSlug: "gh" }), args: {},
+      dispatch: async () => ({ content: [{ type: "text", text: "ok" }] }),
+    });
+    let pc: { id: string } | undefined;
+    for (let i = 0; i < 300 && !pc; i++) {
+      pc = db.prepare(`SELECT id FROM mcpflow_pending_call WHERE status='pending'`).get() as { id: string } | undefined;
+      if (!pc) await new Promise((res) => setTimeout(res, 10));
+    }
+    expect(pc).toBeDefined();
+    pe.decide(pc!.id, chen, "denied", `denied, API_KEY=FAKEAPIKEY77\n${"w".repeat(3000)}`);
+    await p;
+    const c = db.prepare(`SELECT approver_note, key_prefix, backend_slug FROM mcpflow_call_audit WHERE event_type='completion' ORDER BY audit_id DESC LIMIT 1`).get() as Record<string, string>;
+    expect(c.key_prefix).toBe("Ab3_-xYz09Qw");
+    expect(c.backend_slug).toBe("gh");
+    expect(c.approver_note.length).toBe(CALL_AUDIT_NOTE_MAX + 1);
+    expect(c.approver_note).not.toContain("\n");
+    // the audit table never carries the fake values (mcpflow_pending_call.note is the decision record)
+    noSecrets();
+  });
+});
+
