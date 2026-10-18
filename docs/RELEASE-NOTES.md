@@ -22,3 +22,13 @@ The first gateway start on this release applies migration `0013_call_audit_purge
 - **Audit trail.** 0013 sets every `result_purge` row's actor to `system:sweeper` or `system:quota` (based on
   its reason) and writes one `mcpflow_migration_note` row `{"null_backfilled": N, "agt_actor_overwritten": M}`.
   M counts purge rows that carried an `agt_` actor before; those actors are replaced, so check the note if M > 0.
+
+## Next deploy: backend startup (QA v5.5)
+
+- A backend that takes longer than `MCP_FLOW_BACKEND_INIT_TIMEOUT_MS` (default 20 s) to start is no longer
+  killed and respawned in a loop. Callers stop waiting at that point and get `backend_unavailable`
+  (`retry_after_ms`), but the init keeps going and the backend serves calls once it's ready (one spawn).
+- New `MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS` (default 300 s): the ceiling for a truly hung init. Past it the
+  spawn is killed and retries back off from 30 s to at most 10 min. A backend that exits or errors during
+  init backs off from 1 s to at most 60 s instead of respawning on every call.
+- Invalid or out-of-range values for either timeout are now logged at startup instead of being replaced silently.

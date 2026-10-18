@@ -155,6 +155,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   const pool = new UpstreamPool(store, {
     allowPrivateUrls: cfg.allowPrivateUrls,
     initTimeoutMs: cfg.backendInitTimeoutMs,
+    initHardTimeoutMs: cfg.backendInitHardTimeoutMs,
   });
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);

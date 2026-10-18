@@ -15,9 +15,16 @@ import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_BACKEND_INIT_TIMEOUT_MS, loadConfig, parseBackendInitTimeoutMs } from "../src/config.js";
+import {
+  DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS,
+  DEFAULT_BACKEND_INIT_TIMEOUT_MS,
+  loadConfig,
+  parseBackendInitHardTimeoutMs,
+  parseBackendInitTimeoutMs,
+  timeoutEnvWarning,
+} from "../src/config.js";
 import { Store } from "../src/db/store.js";
-import { BackendUnavailableError, UpstreamPool } from "../src/mcp/upstream.js";
+import { BackendUnavailableError, backoffMs, UpstreamPool, type UpstreamPoolOptions } from "../src/mcp/upstream.js";
 import { saveRuleVersion } from "../src/policy/rule-input.js";
 import type { BackendRecord } from "../src/types.js";
 
@@ -56,7 +63,7 @@ afterEach(async () => {
   while (tmp.length) rmSync(tmp.pop()!, { recursive: true, force: true });
 });
 
-/** Raw JSON-RPC stdio MCP server. argv: <spawnDir> <name> [mode]; mode: hang-init | slow-init:<ms> | hang-relist. One grandchild. */
+/** Raw JSON-RPC stdio MCP server. argv: <spawnDir> <name> [mode]; mode: hang-init | exit-init | slow-init:<ms> | hang-relist. One grandchild. */
 function writeBackend(dir: string): string {
   const path = join(dir, "fixture-mcp-f4.mjs");
   writeFileSync(path, `import { createInterface } from "node:readline";
@@ -72,6 +79,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   let m; try { m = JSON.parse(line); } catch { return; }
   if (m.method === "initialize") {
     if (mode === "hang-init") return;
+    if (mode === "exit-init") process.exit(3);
     const reply = () => send({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name, version: "1" } } });
     return void (slow ? setTimeout(reply, slow) : reply());
   }
@@ -151,7 +159,8 @@ describe("V53-F4 QA repro: one backend never initializes", () => {
   it("agent calls to the healthy backend do not wait; the stuck one gets a typed backend_unavailable; listing is bounded", async () => {
     const INIT = 2000;
     const w = seed(["", "hang-init"]);
-    const s = await serve(w.dbPath, { MCP_FLOW_BACKEND_INIT_TIMEOUT_MS: String(INIT) });
+    // a truly hung init: the hard ceiling (here = the caller wait) kills it and starts the backoff
+    const s = await serve(w.dbPath, { MCP_FLOW_BACKEND_INIT_TIMEOUT_MS: String(INIT), MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS: String(INIT) });
     const c = await mcpClient(s.port, w.botToken, true);
 
     // QA: 60065 ms then 60055 ms
@@ -169,6 +178,7 @@ describe("V53-F4 QA repro: one backend never initializes", () => {
     expect(Number(p1.retry_after_ms)).toBeGreaterThan(0);
     expect(b1.ms).toBeLessThan(INIT + 2_500);
     // during the cooldown it fails at once and does not respawn
+    expect(await until(() => /backend s2 did not initialize within the 2000 ms hard ceiling/.test(s.log()), 3_000)).toBe(true);
     const spawnsBefore = markers(w.spawnDir, "s2").length;
     const b2 = await timed(c, "s2__echo", { v: 2 });
     expect(JSON.parse(b2.r)).toMatchObject({ reason: "backend_unavailable", backend: "s2" });
@@ -197,7 +207,7 @@ describe("V53-F4 QA repro: one backend never initializes", () => {
     s.p.kill("SIGTERM");
     expect(await s.exited).toBe(0);
     expect(await until(() => survivors(w.spawnDir).length === 0, 1_500)).toBe(true);
-    expect(s.log()).toMatch(/backend s2 did not initialize within 2000 ms/);
+    expect(s.log()).toMatch(/backend s2 did not initialize within the 2000 ms hard ceiling; stopped it; next attempt in \d+ ms \(failure 1\)/);
 
     const db = new DatabaseSync(w.dbPath);
     try {
@@ -215,7 +225,7 @@ describe("V53-F4 QA repro: one backend never initializes", () => {
 });
 
 describe("V53-F4 pool: init timeout, cooldown, bounded listing", () => {
-  function pool(modes: string[], opts: { initTimeoutMs: number; listWaitMs?: number; stuckCooldownMs?: number }) {
+  function pool(modes: string[], opts: UpstreamPoolOptions) {
     const w = seed(modes);
     const store = new Store(w.dbPath, MASTER);
     const p = new UpstreamPool(store, opts);
@@ -224,8 +234,8 @@ describe("V53-F4 pool: init timeout, cooldown, bounded listing", () => {
     return { ...w, store, p, backend };
   }
 
-  it("after the cooldown the stuck backend is tried again (one new spawn), then fails typed again", async () => {
-    const x = pool(["hang-init"], { initTimeoutMs: 1000, stuckCooldownMs: 600 });
+  it("after the cooldown the stuck backend is tried again (one new spawn), then fails typed again; the backoff doubles", async () => {
+    const x = pool(["hang-init"], { initTimeoutMs: 3000, initHardTimeoutMs: 1000, stuckCooldownMs: 600 });
     const t = Date.now();
     await expect(x.p.listBackendTools(x.ws, x.backend("s1"))).rejects.toMatchObject({ code: "backend_unavailable", cause_: "init_timeout" });
     expect(Date.now() - t).toBeLessThan(2_500);
@@ -235,6 +245,11 @@ describe("V53-F4 pool: init timeout, cooldown, bounded listing", () => {
     await expect(x.p.listBackendTools(x.ws, x.backend("s1"))).rejects.toBeInstanceOf(BackendUnavailableError);
     expect(markers(x.spawnDir)).toHaveLength(2);
     expect(await until(() => survivors(x.spawnDir).length === 0, 2_000)).toBe(true);
+    // second consecutive hard-ceiling failure: 2x the first backoff, so no tight respawn loop
+    const err = (await x.p.listBackendTools(x.ws, x.backend("s1")).catch((e) => e)) as BackendUnavailableError;
+    expect(err.cause_).toBe("cooling_down");
+    expect(err.retryAfterMs).toBeGreaterThan(900);
+    expect(markers(x.spawnDir)).toHaveLength(2);
   }, 20_000);
 
   it("a slow but healthy backend is left out of a listing that cannot wait, then appears; no cooldown", async () => {
@@ -272,6 +287,81 @@ describe("V53-F4 pool: init timeout, cooldown, bounded listing", () => {
   }, 20_000);
 });
 
+describe("QA v5.5 item 1: slow cold start keeps its spawn; crash / hung init back off", () => {
+  function pool(modes: string[], opts: UpstreamPoolOptions = {}) {
+    const w = seed(modes);
+    const store = new Store(w.dbPath, MASTER);
+    const p = new UpstreamPool(store, opts);
+    const changed: string[] = [];
+    p.onToolsChanged((_ws, slug) => changed.push(slug));
+    cleanups.push(async () => { await p.closeAll(); store.close(); });
+    const backend = (slug: string) => store.getBackend(w.ws, slug) as BackendRecord;
+    return { ...w, store, p, backend, changed };
+  }
+
+  it("a 25 s cold start (default 20 s caller wait) eventually serves calls with ONE spawn, no kill / respawn churn", async () => {
+    const x = pool(["slow-init:25000"]); // defaults: caller wait 20 s, hard ceiling 300 s
+    const t0 = Date.now();
+    const first = (await x.p.listBackendTools(x.ws, x.backend("s1")).catch((e) => e)) as BackendUnavailableError;
+    expect(first).toBeInstanceOf(BackendUnavailableError);
+    expect(first.cause_).toBe("starting");
+    expect(first.retryAfterMs).toBeGreaterThan(0);
+    const waited = Date.now() - t0;
+    expect(waited).toBeGreaterThanOrEqual(19_500);
+    expect(waited).toBeLessThan(21_500);
+    // callers after the wait fail fast while init continues in the background
+    const t1 = Date.now();
+    await expect(x.p.listBackendTools(x.ws, x.backend("s1"))).rejects.toMatchObject({ cause_: "starting" });
+    expect(Date.now() - t1).toBeLessThan(200);
+    expect(survivors(x.spawnDir, "s1").length).toBeGreaterThan(0); // the spawn was NOT killed
+    let okAt = 0;
+    while (Date.now() - t0 < 32_000) {
+      const r = await x.p.listBackendTools(x.ws, x.backend("s1")).catch(() => null);
+      if (r) {
+        expect(r.map((n) => n.name)).toEqual(["s1__echo"]);
+        okAt = Date.now() - t0;
+        break;
+      }
+      await sleep(500);
+    }
+    expect(okAt).toBeGreaterThan(24_000);
+    expect(okAt).toBeLessThan(27_500);
+    expect(markers(x.spawnDir, "s1")).toHaveLength(1);
+    expect(x.p.spawnCount.get(x.backend("s1").id)).toBe(1);
+    expect(x.changed).toEqual(["s1"]); // late arrival announced once (-> tools/list_changed)
+    const r = await x.p.callTool(x.ws, "s1__echo", { v: 7 });
+    expect(r.isError).toBeFalsy();
+  }, 45_000);
+
+  it("scaled: callers stop waiting at the soft timeout, the init finishes at 1.5 s and is pooled (no respawn)", async () => {
+    const x = pool(["slow-init:1500"], { initTimeoutMs: 500 });
+    await expect(x.p.listBackendTools(x.ws, x.backend("s1"))).rejects.toMatchObject({ cause_: "starting" });
+    expect(await until(() => x.changed.length === 1, 3_000)).toBe(true);
+    expect((await x.p.listBackendTools(x.ws, x.backend("s1"))).map((n) => n.name)).toEqual(["s1__echo"]);
+    expect(markers(x.spawnDir, "s1")).toHaveLength(1);
+  }, 20_000);
+
+  it("a backend that exits during init is respawned with exponential backoff (bounded, typed), never in a tight loop", async () => {
+    const x = pool(["exit-init"], { crashBackoffMs: 200, crashBackoffMaxMs: 800 });
+    const causes = new Set<string>();
+    const t0 = Date.now();
+    while (Date.now() - t0 < 2_500) {
+      const e = await x.p.listBackendTools(x.ws, x.backend("s1")).catch((err) => err);
+      causes.add(e instanceof BackendUnavailableError ? e.cause_ : "raw");
+      await sleep(20);
+    }
+    // attempts at ~0, 0.2, 0.6, 1.4, 2.2 s => at most 5 (6 with timing slack) instead of ~100
+    const n = markers(x.spawnDir, "s1").length;
+    expect(n).toBeGreaterThanOrEqual(3);
+    expect(n).toBeLessThanOrEqual(6);
+    expect(causes.has("cooling_down")).toBe(true);
+    expect([...causes].every((c) => ["cooling_down", "init_failed"].includes(c))).toBe(true); // always typed for agents
+    expect(backoffMs(1, 200, 800)).toBe(200);
+    expect(backoffMs(3, 200, 800)).toBe(800);
+    expect(backoffMs(9, 200, 800)).toBe(800);
+  }, 20_000);
+});
+
 describe("V53-F4 config", () => {
   it("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS: default 20 s, clamped to 1..120 s", () => {
     expect(DEFAULT_BACKEND_INIT_TIMEOUT_MS).toBe(20_000);
@@ -280,6 +370,17 @@ describe("V53-F4 config", () => {
     expect(parseBackendInitTimeoutMs("5")).toBe(1_000);
     expect(parseBackendInitTimeoutMs("500000")).toBe(120_000);
     expect(parseBackendInitTimeoutMs("7500")).toBe(7_500);
+    // QA v5.5: the hard ceiling (default 300 s, never below the caller wait, max 30 min)
+    expect(DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS).toBe(300_000);
+    expect(parseBackendInitHardTimeoutMs(undefined, 20_000)).toBe(300_000);
+    expect(parseBackendInitHardTimeoutMs("1000", 20_000)).toBe(20_000);
+    expect(parseBackendInitHardTimeoutMs("9999999", 20_000)).toBe(1_800_000);
+    expect(parseBackendInitHardTimeoutMs("60000", 20_000)).toBe(60_000);
+    // QA v5.5 note: invalid / clamped values are warned about, valid ones are not
+    expect(timeoutEnvWarning("X", "abc", 20_000)).toMatch(/not a number; using 20000 ms/);
+    expect(timeoutEnvWarning("X", "0", 1_000)).toMatch(/out of range/);
+    expect(timeoutEnvWarning("X", "7500", 7_500)).toBeNull();
+    expect(timeoutEnvWarning("X", undefined, 20_000)).toBeNull();
     const prev = process.env.MCP_FLOW_BACKEND_INIT_TIMEOUT_MS;
     process.env.MCP_FLOW_BACKEND_INIT_TIMEOUT_MS = "3000";
     try {
