@@ -31,4 +31,6 @@ The first gateway start on this release applies migration `0013_call_audit_purge
 - New `MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS` (default 300 s): the ceiling for a truly hung init. Past it the
   spawn is killed and retries back off from 30 s to at most 10 min. A backend that exits or errors during
   init backs off from 1 s to at most 60 s instead of respawning on every call.
+- Clients that listed tools before a slow backend was ready get `notifications/tools/list_changed` when its
+  tools arrive (on the MCP GET event stream).
 - Invalid or out-of-range values for either timeout are now logged at startup instead of being replaced silently.

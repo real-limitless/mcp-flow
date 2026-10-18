@@ -281,6 +281,20 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     },
   );
 
+  // QA v5.5 item 2: tools.listChanged is advertised, so tell this client when a backend of its
+  // workspace finishes a late init (it was left out of an earlier listing) or its tool set changes.
+  // Delivered on the client's standalone GET SSE stream; a request-scoped server is closed (and
+  // unsubscribed) when its response ends.
+  const unsubscribeToolsChanged = upstream.onToolsChanged?.((workspaceId) => {
+    if (workspaceId !== ctx.workspaceId) return;
+    void server.sendToolListChanged().catch(() => undefined);
+  });
+  const priorOnClose = server.onclose;
+  server.onclose = () => {
+    unsubscribeToolsChanged?.();
+    priorOnClose?.();
+  };
+
   const edgeEnabled = Boolean(edgeHub);
 
   /**

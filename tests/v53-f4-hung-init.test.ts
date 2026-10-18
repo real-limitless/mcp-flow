@@ -25,6 +25,7 @@ import {
 } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { BackendUnavailableError, backoffMs, UpstreamPool, type UpstreamPoolOptions } from "../src/mcp/upstream.js";
+import { ToolListChangedNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import { saveRuleVersion } from "../src/policy/rule-input.js";
 import type { BackendRecord } from "../src/types.js";
 
@@ -360,6 +361,30 @@ describe("QA v5.5 item 1: slow cold start keeps its spawn; crash / hung init bac
     expect(backoffMs(3, 200, 800)).toBe(800);
     expect(backoffMs(9, 200, 800)).toBe(800);
   }, 20_000);
+});
+
+describe("QA v5.5 item 2: notifications/tools/list_changed when a late backend's tools arrive", () => {
+  it("a client that listed before the slow backend was ready gets list_changed, then sees its tools", async () => {
+    const w = seed(["", "slow-init:3000"]);
+    const s = await serve(w.dbPath, { MCP_FLOW_BACKEND_INIT_TIMEOUT_MS: "1000" });
+    const c = await mcpClient(s.port, w.botToken, true);
+    const got: number[] = [];
+    c.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      got.push(Date.now());
+    });
+    const t = Date.now();
+    const early = (await c.listTools(undefined, { timeout: 30_000 })).tools.map((x) => x.name);
+    expect(Date.now() - t).toBeLessThan(2_500);
+    expect(early).toContain("s1__echo");
+    expect(early).not.toContain("s2__echo");
+    expect(await until(() => got.length > 0, 8_000)).toBe(true);
+    const later = (await c.listTools(undefined, { timeout: 30_000 })).tools.map((x) => x.name);
+    expect(later).toContain("s2__echo");
+    expect((await timed(c, "s2__echo", { v: 5 })).r).toBe("s2:echo:5");
+    expect(markers(w.spawnDir, "s2")).toHaveLength(1);
+    s.p.kill("SIGTERM");
+    expect(await s.exited).toBe(0);
+  }, 40_000);
 });
 
 describe("V53-F4 config", () => {
