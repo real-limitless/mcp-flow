@@ -234,6 +234,44 @@ describe("authz gateway hold", () => {
     await client.close();
   }, 20_000);
 
+  it("approved call gets the raw arguments; at rest they are sealed, then sanitized", async () => {
+    const calls: string[] = [];
+    const upstream = await startUpstream(calls);
+    cleanups.push(upstream.close);
+    const gw = await bootGateway();
+    const base = gw.url;
+    await addEchoBackend(base, upstream.url);
+    const { token } = await mintAgent(base);
+    const ruleRes = await fetch(`${base}/v1/authz/rules`, {
+      method: "POST",
+      headers: hdr,
+      body: JSON.stringify({ name: "echo-gate", match: { tools: ["up__echo"] }, requirement: "notify_approve", ttlSeconds: 30 }),
+    });
+    expect(ruleRes.status).toBe(201);
+    const client = await connectAgent(base, token);
+    const text = "DB_PASS=fake-pw-at-rest run";
+    const callP = client.callTool({ name: "up__echo", arguments: { text } });
+    const pending = await waitForPending(base, "up__echo");
+    const rawOf = () =>
+      String((gw.store.db.prepare(`SELECT arguments_json FROM approvals WHERE id = ?`).get(pending.id) as { arguments_json: unknown }).arguments_json);
+    expect(rawOf().startsWith("enc:v1:")).toBe(true);
+    expect(rawOf()).not.toContain("fake-pw-at-rest");
+    const dec = await fetch(`${base}/v1/approvals/${pending.id}/decision`, {
+      method: "POST",
+      headers: hdr,
+      body: JSON.stringify({ decision: "approve" }),
+    });
+    expect(dec.status).toBe(200);
+    expect(JSON.stringify(await dec.json())).not.toContain("fake-pw-at-rest");
+    const call = await callP;
+    expect(resultText(call)).toContain(`echo:${text}`);
+    expect(calls).toEqual([text]);
+    expect(rawOf()).not.toContain("enc:v1:");
+    expect(rawOf()).not.toContain("fake-pw-at-rest");
+    expect(JSON.parse(rawOf())).toEqual({ text: "DB_PASS=[redacted]" });
+    await client.close();
+  }, 20_000);
+
   it("deny and timeout never hit upstream; late approve is a no-op", async () => {
     const calls: string[] = [];
     const upstream = await startUpstream(calls);

@@ -182,6 +182,8 @@ export async function runAuthzGate(opts: {
     });
     const frozen =
       row?.arguments && typeof row.arguments === "object" ? row.arguments : opts.args;
+    // the raw arguments are consumed now; keep only the sanitized form at rest
+    opts.store.retireApprovalArguments(opts.workspaceId, approval.id);
     return { proceed: true, frozenArgs: frozen };
   }
 

@@ -490,12 +490,49 @@ function remainingSeconds(expiresAt: string, status: ApprovalStatus): number {
   return Math.max(0, Math.ceil(ms / 1000));
 }
 
+/**
+ * approvals.arguments_json at rest. New rows hold the raw call arguments sealed with the master
+ * key ("enc:v1:" + seal(...)); once the approval resolves they are replaced by the
+ * audit-sanitized JSON. Rows written before this change hold plain JSON and are read as is
+ * (they are never rewritten here).
+ */
+const APPROVAL_ARGS_ENC_PREFIX = "enc:v1:";
+
+function sealApprovalArgs(
+  masterKey: Buffer,
+  args: Record<string, unknown> | null,
+): string | null {
+  return args ? APPROVAL_ARGS_ENC_PREFIX + seal(masterKey, args) : null;
+}
+
+function isSealedApprovalArgs(raw: unknown): raw is string {
+  return typeof raw === "string" && raw.startsWith(APPROVAL_ARGS_ENC_PREFIX);
+}
+
+function openApprovalArgs(
+  masterKey: Buffer,
+  raw: unknown,
+): Record<string, unknown> | null {
+  if (!isSealedApprovalArgs(raw)) return parseArgsJson(raw);
+  try {
+    const v = unseal<unknown>(masterKey, raw.slice(APPROVAL_ARGS_ENC_PREFIX.length));
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return v as Record<string, unknown>;
+    }
+    return { value: v };
+  } catch {
+    // wrong master key or a corrupt blob: never surface ciphertext as arguments
+    return null;
+  }
+}
+
 function rowApproval(
   r: Record<string, unknown>,
   redactArgs: boolean,
+  masterKey: Buffer,
 ): Approval {
   const status = String(r.status) as ApprovalStatus;
-  const args = parseArgsJson(r.arguments_json);
+  const args = openApprovalArgs(masterKey, r.arguments_json);
   const redacted =
     redactArgs && args
       ? (sanitizeForAudit(args) as Record<string, unknown>)
@@ -1742,7 +1779,7 @@ export class Store {
         input.ruleId,
         input.keyId,
         input.tool,
-        input.arguments ? JSON.stringify(input.arguments) : null,
+        sealApprovalArgs(this.masterKey, input.arguments),
         input.backendSlug,
         input.requirement,
         expiresAt,
@@ -1769,7 +1806,7 @@ export class Store {
       )
       .get(id, workspaceId) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return rowApproval(row, opts.redact !== false);
+    return rowApproval(row, opts.redact !== false, this.masterKey);
   }
 
   listApprovals(
@@ -1805,7 +1842,7 @@ export class Store {
             .all(workspaceId, limit) as Record<string, unknown>[])
     );
     return rows.map((r) => {
-      const a = rowApproval(r, true);
+      const a = rowApproval(r, true, this.masterKey);
       return toPublicApproval(a, {
         ruleName: r.rule_name == null ? null : String(r.rule_name),
       });
@@ -1850,7 +1887,33 @@ export class Store {
         workspaceId,
       );
     if (Number(res.changes) === 0) return null;
+    // approved arguments are still needed by the waiting gate, which retires them after use
+    if (input.status === "denied") this.retireApprovalArguments(workspaceId, id);
     return this.getApproval(workspaceId, id, { redact: false });
+  }
+
+  /**
+   * Replace a resolved approval's sealed raw arguments with their audit-sanitized form, so raw
+   * values do not outlive the decision. Only rows sealed by this version are touched; plain
+   * legacy rows and pending approvals are left alone. Returns true when a row was rewritten.
+   */
+  retireApprovalArguments(workspaceId: string, id: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT arguments_json FROM approvals
+         WHERE id = ? AND workspace_id = ? AND status != 'pending'`,
+      )
+      .get(id, workspaceId) as { arguments_json: unknown } | undefined;
+    if (!row || !isSealedApprovalArgs(row.arguments_json)) return false;
+    const args = openApprovalArgs(this.masterKey, row.arguments_json);
+    const safe = args ? JSON.stringify(sanitizeForAudit(args)) : null;
+    const res = this.db
+      .prepare(
+        `UPDATE approvals SET arguments_json = ?
+         WHERE id = ? AND workspace_id = ? AND arguments_json = ?`,
+      )
+      .run(safe, id, workspaceId, row.arguments_json);
+    return Number(res.changes) > 0;
   }
 
   expireApproval(workspaceId: string, id: string): Approval | null {
@@ -1862,16 +1925,26 @@ export class Store {
       )
       .run(now, id, workspaceId);
     if (Number(res.changes) === 0) return null;
+    this.retireApprovalArguments(workspaceId, id);
     return this.getApproval(workspaceId, id, { redact: false });
   }
 
   expireOverdueApprovals(workspaceId: string): number {
+    const now = nowIso();
+    const sealed = this.db
+      .prepare(
+        `SELECT id FROM approvals
+         WHERE workspace_id = ? AND status = 'pending' AND expires_at < ?
+           AND arguments_json LIKE '${APPROVAL_ARGS_ENC_PREFIX}%'`,
+      )
+      .all(workspaceId, now) as Array<{ id: string }>;
     const res = this.db
       .prepare(
         `UPDATE approvals SET status = 'expired', decided_at = ?
          WHERE workspace_id = ? AND status = 'pending' AND expires_at < ?`,
       )
-      .run(nowIso(), workspaceId, nowIso());
+      .run(now, workspaceId, now);
+    for (const r of sealed) this.retireApprovalArguments(workspaceId, String(r.id));
     return Number(res.changes);
   }
 
@@ -2137,7 +2210,7 @@ export class Store {
     if (!stored || !safeEqualStr(stored, got)) {
       return { ok: false, error: "invalid_token" };
     }
-    const approval = rowApproval(row, true);
+    const approval = rowApproval(row, true, this.masterKey);
     if (approval.status !== "pending") {
       return { ok: false, error: "not_pending" };
     }
