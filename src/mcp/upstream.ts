@@ -16,6 +16,7 @@ import {
   killLiveStdio,
 } from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
+import { redactLog } from "../log/redact-lines.js";
 
 export interface NamespacedTool extends Tool {
   /** Original upstream tool name */
@@ -608,7 +609,7 @@ export class UpstreamPool {
         } catch (err) {
           console.error(
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
-            err instanceof Error ? err.message : err,
+            redactLog(err),
           );
           if (!(err instanceof BackendUnavailableError) && isTransportOrConnectionError(err)) await this.retire(backend.id);
         } finally {

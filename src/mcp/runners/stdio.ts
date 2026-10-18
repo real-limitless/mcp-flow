@@ -11,6 +11,8 @@ import {
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { PassThrough } from "node:stream";
+import { redactSecrets } from "../../audit/sanitize.js";
+import { lineRedactor, redactLog } from "../../log/redact-lines.js";
 
 export interface StdioRunResult {
   client: Client;
@@ -338,11 +340,15 @@ async function connectOnce(
   });
 
   const errBuf: string[] = [];
+  // backend stderr is passed through to ours, redacted line by line
+  const passthrough = lineRedactor((s) => process.stderr.write(s));
   transport.stderr?.on("data", (chunk: Buffer | string) => {
     const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
     errBuf.push(s);
-    process.stderr.write(s);
+    passthrough.push(s);
   });
+  transport.stderr?.on("end", () => passthrough.flush());
+  transport.stderr?.on("close", () => passthrough.flush());
 
   const client = new Client(
     { name: "mcp-flow-stdio", version: "0.1.0" },
@@ -365,8 +371,9 @@ async function connectOnce(
     } catch {
       /* ignore */
     }
-    const tail = errBuf.join("").trim().slice(-8000);
-    const msg = err instanceof Error ? err.message : String(err);
+    passthrough.flush();
+    const tail = redactSecrets(errBuf.join("").trim().slice(-12000)).slice(-8000);
+    const msg = redactLog(err);
     throw new Error(tail ? `${msg}\n--- stderr ---\n${tail}` : msg);
   }
 }
@@ -391,7 +398,7 @@ export async function connectStdioCommand(opts: {
     }
     const cache = env.npm_config_cache || resolveNpmCacheDir();
     console.error(
-      `[mcp-flow] npx extract looks corrupt (${msg.split("\n")[0]}); clearing ${npxExtractStore(cache)} and retrying`,
+      `[mcp-flow] npx extract looks corrupt (${redactLog(msg.split("\n")[0])}); clearing ${npxExtractStore(cache)} and retrying`,
     );
     clearNpxExtractStore(cache);
     return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);

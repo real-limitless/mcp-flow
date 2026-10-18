@@ -33,7 +33,7 @@ import type {
   Workspace,
   WorkspacePolicy,
 } from "../types.js";
-import { sanitizeForAudit } from "../audit/sanitize.js";
+import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import { AgentDirectory } from "../identity/agents.js";
 import { derivePolicyKeys, type PolicyKeys } from "../identity/dev-keys.js";
@@ -472,6 +472,39 @@ function rowAuthzRule(r: Record<string, unknown>): AuthzRule {
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
   };
+}
+
+/**
+ * audit_events identifier columns (action, tool, placement, device_id): embedded
+ * secrets redacted, control characters replaced, length capped. They are not covered by the
+ * detail sanitizer and can carry caller-supplied text (a tool name like "x?token=...").
+ */
+function auditIdent(v: string | null | undefined, max = 256): string | null {
+  if (v == null) return null;
+  const s = redactSecrets(String(v).slice(0, max * 4)).replace(/[\u0000-\u001f\u007f]/g, "?");
+  return s.length > max ? `${s.slice(0, max)}…` : s;
+}
+
+/**
+ * audit_events.key_id: an API key id (key_ + lowercase alphanumerics, as newId("key") mints
+ * key_<24 hex>) or "[invalid]". Never free text, so a token passed by mistake is not stored.
+ */
+function auditKeyId(v: string | null | undefined): string | null {
+  if (v == null || v === "") return v ?? null;
+  return /^key_[0-9a-z]{1,32}$/.test(String(v)) ? String(v) : "[invalid]";
+}
+
+/** audit_events.backend_slug: a backend slug ([a-z][a-z0-9_-]{0,63}) or "[invalid]". */
+function auditSlug(v: string | null | undefined): string | null {
+  if (v == null || v === "") return null;
+  return /^[a-z][a-z0-9_-]{0,63}$/.test(String(v)) ? String(v) : "[invalid]";
+}
+
+/** audit_events.ip: an IPv4/IPv6 literal (optional %zone) or "[invalid]"; never free text. */
+function auditIp(v: string | null | undefined): string | null {
+  if (v == null || v === "") return null;
+  const s = String(v).trim();
+  return s.length <= 80 && /^[0-9A-Fa-f:.]{2,45}(?:%[A-Za-z0-9_.-]{1,32})?$/.test(s) ? s : "[invalid]";
 }
 
 function parseArgsJson(raw: unknown): Record<string, unknown> | null {
@@ -940,14 +973,14 @@ export class Store {
         newId("aud"),
         nowIso(),
         input.workspaceId,
-        input.keyId ?? null,
-        input.action,
-        input.backendSlug ?? null,
-        input.tool ?? null,
-        input.placement ?? null,
-        input.deviceId ?? null,
+        auditKeyId(input.keyId),
+        auditIdent(input.action) ?? "",
+        auditSlug(input.backendSlug),
+        auditIdent(input.tool),
+        auditIdent(input.placement),
+        auditIdent(input.deviceId),
         detailJson,
-        input.ip ?? null,
+        auditIp(input.ip),
       );
   }
 

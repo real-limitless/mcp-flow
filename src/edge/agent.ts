@@ -3,6 +3,7 @@ import WebSocket from "ws";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { connectOci } from "../mcp/runners/oci.js";
 import { connectStdioCommand } from "../mcp/runners/stdio.js";
+import { redactLog } from "../log/redact-lines.js";
 import {
   decodeMsg,
   encodeMsg,
@@ -46,7 +47,7 @@ export async function runEdgeAgent(opts: {
           payload: { name: opts.name },
         }),
       );
-      console.error(`[edge] connected to ${wsUrl}`);
+      console.error(`[edge] connected to ${redactLog(wsUrl)}`);
     });
 
     const heartbeat = setInterval(() => {
@@ -82,7 +83,7 @@ export async function runEdgeAgent(opts: {
           );
         } catch (err) {
           const error = err instanceof Error ? err.message : String(err);
-          console.error(`[edge] rpc ${msg.method} failed:`, error);
+          console.error(`[edge] rpc ${redactLog(msg.method)} failed:`, redactLog(error));
           ws.send(
             encodeMsg({
               v: 1,
@@ -102,7 +103,7 @@ export async function runEdgeAgent(opts: {
     });
 
     ws.on("error", (err) => {
-      console.error("[edge] ws error:", err.message);
+      console.error("[edge] ws error:", redactLog(err));
     });
   };
 
