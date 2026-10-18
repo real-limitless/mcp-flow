@@ -44,7 +44,7 @@ describe("0013 up/down/up from a 1a90e2bc (0012) database", () => {
     ];
     expect(rows(d)).toEqual(up);
     expect(seq(d)).toBe(503);
-    expect(notes(d)).toEqual([{ result_purge_rows_actor_backfilled: 2 }]);
+    expect(notes(d)).toEqual([{ null_backfilled: 2, agt_actor_overwritten: 0 }]);
     expect((d.prepare(`SELECT sql FROM sqlite_master WHERE name = 'mcpflow_call_audit_no_delete'`).get() as { sql: string }).sql.trim())
       .toBe(CALL_AUDIT_NO_DELETE_TRIGGER.trim().replace(/;$/, ""));
     expect(fkClean(d)).toEqual([]);
@@ -58,7 +58,7 @@ describe("0013 up/down/up from a 1a90e2bc (0012) database", () => {
     runMigrations(d, ID);
     expect(rows(d)).toEqual(up);
     expect(seq(d)).toBe(503);
-    expect(notes(d)).toEqual([{ result_purge_rows_actor_backfilled: 2 }, { result_purge_rows_actor_backfilled: 2 }]);
+    expect(notes(d)).toEqual([{ null_backfilled: 2, agt_actor_overwritten: 0 }, { null_backfilled: 2, agt_actor_overwritten: 0 }]);
     expect(fkClean(d)).toEqual([]);
     expect(integrityOk(d)).toBe(true);
   });
@@ -69,6 +69,36 @@ describe("0013 up/down/up from a 1a90e2bc (0012) database", () => {
     runMigrations(d);
     expect(callAuditSchema(d)).toEqual(callAuditSchema(fresh));
     expect(callAuditSchema(fresh).length).toBeGreaterThan(5);
+    expect(notes(fresh)).toEqual([]);
+  });
+});
+
+describe("0013 note counts overwritten agt_ actors (Database review of f9388505; dbdocs-test/r5/edge.py)", () => {
+  it("a 0012 purge row with an agt_ actor becomes the system actor and is counted as agt_actor_overwritten", () => {
+    const { d, ws, chen, bot, k, call } = at0012();
+    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, key_id, actor, error_code) VALUES ('result_purge', ?, ?, ?, ?, ?, 'purged:quota')`).run(call, ws, bot, k, chen);
+    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, key_id, actor, error_code) VALUES ('result_purge', ?, ?, ?, ?, ?, 'purged:expired')`).run(call, ws, bot, k, bot);
+    runMigrations(d, ID);
+    expect(d.prepare(`SELECT actor, error_code FROM mcpflow_call_audit WHERE event_type = 'result_purge' ORDER BY audit_id`).all()).toEqual([
+      { actor: "system:sweeper", error_code: "purged:expired" },
+      { actor: "system:quota", error_code: "purged:quota" },
+      { actor: "system:quota", error_code: "purged:quota" },
+      { actor: "system:sweeper", error_code: "purged:expired" },
+    ]);
+    expect(notes(d)).toEqual([{ null_backfilled: 2, agt_actor_overwritten: 2 }]);
+  });
+
+  it("edge.py shape: only an agt_ purge row (no NULLs) still writes a note", () => {
+    const d = openAt("0012_call_outcome_v11");
+    const { ws, chen } = seedWorkspace(d);
+    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, actor, error_code) VALUES ('result_purge', 'x', ?, ?, ?, 'purged:quota')`).run(ws, chen, chen);
+    runMigrations(d, ID);
+    expect(d.prepare(`SELECT actor FROM mcpflow_call_audit`).all()).toEqual([{ actor: "system:quota" }]);
+    expect(notes(d)).toEqual([{ null_backfilled: 0, agt_actor_overwritten: 1 }]);
+  });
+
+  it("rows that already carry their system actor are neither counted nor noted", () => {
+    const fresh = openAt();
     expect(notes(fresh)).toEqual([]);
   });
 });
