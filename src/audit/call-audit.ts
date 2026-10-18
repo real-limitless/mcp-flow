@@ -8,6 +8,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSy
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { auditActor } from "./call-audit-cols.js";
 import { incrementalVacuum, type IncrementalVacuumResult } from "../db/maintenance.js";
 
 export interface CallAuditFilter {
@@ -271,7 +272,7 @@ function retainOutcomes(
     db.prepare(
       `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor, args_redacted)
        VALUES ('lifecycle', ?, ?, 'state_retention', ?, ?)`,
-    ).run(`lc_${randomBytes(12).toString("hex")}`, ws, opts.actor, JSON.stringify({ before, call_outcome: n, file }));
+    ).run(`lc_${randomBytes(12).toString("hex")}`, ws, auditActor(opts.actor), JSON.stringify({ before, call_outcome: n, file }));
     db.exec("COMMIT;");
   } catch (err) {
     try {

@@ -12,6 +12,7 @@
  *     error gets; final_outcome='error' vs 'executed' is what tells a gateway failure from a backend one)
  *  - deny / approval_denied / approval_expired / cancelled : result_status='not_dispatched'
  */
+import { sanitizeCallAuditCols } from "../audit/call-audit-cols.js";
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { AgentRateLimiter } from "./rate-limit.js";
@@ -870,11 +871,14 @@ export class PolicyEnforcer {
       .run(nowIso, reason, callId);
     if (Number(r.changes) !== 1) return false;
     if (this.deps.auditFault?.()) throw new Error("audit write failed (fault injected)");
-    db.prepare(
-      `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, pending_call_id, qualified_tool, actor, error_code)
-       SELECT 'result_purge', o.call_id, o.workspace_id, o.agent_id, a.name, o.key_id, o.pending_call_id, o.qualified_tool, ?, ?
-         FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id WHERE o.call_id = ?`,
-    ).run(PURGE_ACTOR[reason], `purged:${reason}`, callId);
+    // read then write through writeAudit, so agent_name / qualified_tool are sanitized like any write (SecOPS 7)
+    const o = db
+      .prepare(
+        `SELECT o.call_id, o.workspace_id, o.agent_id, a.name AS agent_name, o.key_id, o.pending_call_id, o.qualified_tool
+           FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id WHERE o.call_id = ?`,
+      )
+      .get(callId) as Record<string, unknown>;
+    this.writeAudit({ event_type: "result_purge", ...o, actor: PURGE_ACTOR[reason], error_code: `purged:${reason}` });
     return true;
   }
 
@@ -993,13 +997,18 @@ export class PolicyEnforcer {
       Boolean(db.prepare(`SELECT 1 FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(callId));
     const complete = (callId: string, finalOutcome: string, resultStatus: string, errorCode: string, pc: string | null) => {
       if (hasCompletion(callId)) return;
-      db.prepare(
-        `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id,
-           backend_slug, tool, qualified_tool, placement, device_id, args_hash, pending_call_id, final_outcome, result_status, error_code)
-         SELECT 'completion', call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id,
-           backend_slug, tool, qualified_tool, placement, device_id, args_hash, ?, ?, ?, ?
-           FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'decision'`,
-      ).run(pc, finalOutcome, resultStatus, errorCode, callId);
+      // copy the decision row's context through writeAudit (sanitized on write, SecOPS 7)
+      const d = db
+        .prepare(
+          `SELECT call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id,
+             backend_slug, tool, qualified_tool, placement, device_id, args_hash
+             FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'decision'`,
+        )
+        .get(callId) as Record<string, unknown> | undefined;
+      if (!d) return;
+      this.writeAudit({
+        event_type: "completion", ...d, pending_call_id: pc, final_outcome: finalOutcome, result_status: resultStatus, error_code: errorCode,
+      });
     };
     const setOutcome = (callId: string, state: string, finalOutcome: string, resultStatus: string) =>
       db.prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
@@ -1389,8 +1398,10 @@ export class PolicyEnforcer {
     }
   }
 
-  private writeAudit(cols: Record<string, unknown>): void {
+  /** Every enforcer call_audit write goes through here: text columns sanitized + actor shape-checked (SecOPS 7). */
+  private writeAudit(raw: Record<string, unknown>): void {
     if (this.deps.auditFault?.()) throw new Error("audit write failed (fault injected)");
+    const cols = sanitizeCallAuditCols(raw);
     const keys = Object.keys(cols);
     this.deps.db
       .prepare(`INSERT INTO mcpflow_call_audit (${keys.join(", ")}) VALUES (${keys.map(() => "?").join(", ")})`)
