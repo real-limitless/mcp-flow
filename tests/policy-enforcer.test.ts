@@ -479,3 +479,36 @@ describe("T2.1 v10 holds", () => {
     ]);
   });
 });
+
+describe("T2.1 v10 cancel_reason set by the gateway", () => {
+  beforeEach(setup);
+  const reason = () => db.prepare(`SELECT status, note, cancel_reason FROM mcpflow_pending_call`).get() as Record<string, unknown>;
+
+  it("client disconnect -> cancel_reason client_disconnected", async () => {
+    rule({ effect: "require_approval", timeoutS: 30 });
+    const ac = new AbortController();
+    const p = pe.enforce({ ctx: ctx(), args: {}, dispatch: stub().dispatch, signal: ac.signal });
+    await waitFor(() => notices.length === 1);
+    ac.abort();
+    await p;
+    expect(reason()).toEqual({ status: "cancelled", note: "client disconnected", cancel_reason: "client_disconnected" });
+  });
+
+  it("shutdown -> cancel_reason shutdown", async () => {
+    rule({ effect: "require_approval", timeoutS: 30 });
+    const p = pe.enforce({ ctx: ctx(), args: {}, dispatch: stub().dispatch });
+    await waitFor(() => notices.length === 1);
+    pe.beginShutdown();
+    await p;
+    expect(reason()).toEqual({ status: "cancelled", note: "gateway shutdown", cancel_reason: "shutdown" });
+  });
+
+  it("restart recovery -> cancel_reason shutdown", async () => {
+    rule({ effect: "require_approval", timeoutS: 30 });
+    void pe.enforce({ ctx: ctx(), args: {}, dispatch: stub().dispatch }).catch(() => undefined);
+    await waitFor(() => notices.length === 1);
+    pe.close();
+    new PolicyEnforcer({ db, keys }).recoverOrphans();
+    expect(reason()).toEqual({ status: "cancelled", note: "gateway restarted", cancel_reason: "shutdown" });
+  });
+});
