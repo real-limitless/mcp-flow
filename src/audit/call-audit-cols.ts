@@ -11,7 +11,12 @@ import { redactSecrets } from "./sanitize.js";
 
 export const CALL_AUDIT_TEXT_MAX = 256;
 
-/** Redact secrets, replace control characters with "?", cap at max (+ "…"). Idempotent. */
+/**
+ * Redact secrets, replace control characters with "?", cap at max (+ "…"). Idempotent for
+ * single-line text. For multi-line text a second pass can redact more, never less: once a line
+ * break became "?", a redacted value runs to the end of the text (e.g. a pending-call note, already
+ * sanitized, copied into call_audit.approver_note keeps only the text up to the redacted value).
+ */
 export function auditText(v: unknown, max = CALL_AUDIT_TEXT_MAX): string | null {
   if (v == null) return null;
   const s = redactSecrets(String(v).slice(0, max * 4)).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, "?");
