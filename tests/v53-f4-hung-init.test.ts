@@ -387,6 +387,32 @@ describe("QA v5.5 item 2: notifications/tools/list_changed when a late backend's
   }, 40_000);
 });
 
+describe("QA v5.5 notes", () => {
+  it("A: a listing scoped to some backends neither waits on nor spawns a stuck backend outside them", async () => {
+    const w = seed(["", "hang-init"]);
+    const store = new Store(w.dbPath, MASTER);
+    const p = new UpstreamPool(store, { initTimeoutMs: 3000 });
+    cleanups.push(async () => { await p.closeAll(); store.close(); });
+    const t = Date.now();
+    const names = (await p.listNamespacedTools(w.ws, new Set(["s1"]))).map((n) => n.name);
+    expect(names).toEqual(["s1__echo"]);
+    expect(Date.now() - t).toBeLessThan(1_500);
+    expect(markers(w.spawnDir, "s2")).toHaveLength(0);
+  }, 20_000);
+
+  it('B: backend slugs containing "__" are refused at create', () => {
+    const d = mkdtempSync(join(tmpdir(), "v55b-")); tmp.push(d);
+    const store = new Store(join(d, "t.db"), MASTER);
+    try {
+      const ws = store.ensureWorkspace("default").id;
+      expect(() => store.createBackend(ws, { slug: "a__b", transport: "stdio", command: ["x"], enabled: true } as never)).toThrow(/must not contain "__"/);
+      expect(() => store.createBackend(ws, { slug: "a_b", transport: "stdio", command: ["x"], enabled: true } as never)).not.toThrow();
+    } finally {
+      store.close();
+    }
+  });
+});
+
 describe("V53-F4 config", () => {
   it("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS: default 20 s, clamped to 1..120 s", () => {
     expect(DEFAULT_BACKEND_INIT_TIMEOUT_MS).toBe(20_000);

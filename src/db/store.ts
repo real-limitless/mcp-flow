@@ -1025,6 +1025,11 @@ export class Store {
         "slug must be lowercase alphanumeric/underscore/hyphen, start with a letter",
       );
     }
+    // QA v5.5 note B: "__" separates backend and tool in namespaced names (slug__tool), so a slug
+    // containing it could collide with another backend's tool and misroute legacy calls
+    if (slug.includes("__")) {
+      throw new Error('slug must not contain "__" (it separates backend and tool names)');
+    }
     const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
     const transport = input.transport ?? "streamable-http";
     const ts = nowIso();

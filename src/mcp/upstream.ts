@@ -739,8 +739,9 @@ export class UpstreamPool {
    * ready by then (still starting, stuck, or cooling down) is left out of this listing and its
    * connect continues in the background, bounded by the init timeout.
    */
-  async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {
-    const backends = this.store.listEnabledBackends(workspaceId);
+  async listNamespacedTools(workspaceId: string, onlySlugs?: ReadonlySet<string>): Promise<NamespacedTool[]> {
+    // QA v5.5 note A: a caller scoped to a project never waits on (or starts) backends outside it
+    const backends = this.store.listEnabledBackends(workspaceId).filter((b) => !onlySlugs || onlySlugs.has(b.slug));
     const out: NamespacedTool[] = [];
 
     await Promise.all(

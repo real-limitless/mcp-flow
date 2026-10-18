@@ -399,7 +399,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   const catalogInScope = async (
     project: Project | null,
   ): Promise<NamespacedTool[]> => {
-    const all = await upstream.listNamespacedTools(ctx.workspaceId);
+    // QA v5.5 note A: only the project's backends are listed (and waited on); toolAllowedByProject
+    // below would drop the others anyway
+    const all = await upstream.listNamespacedTools(ctx.workspaceId, project ? new Set(project.backendSlugs) : undefined);
     const inScope = all.filter(
       (t) =>
         toolAllowedByScopes(t.name, ctx.scopes) &&
