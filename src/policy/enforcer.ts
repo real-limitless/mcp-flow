@@ -781,7 +781,7 @@ export class PolicyEnforcer {
   /**
    * Startup recovery (single gateway process per DB): every hold whose waiter died with the previous
    * process is closed out so "ran" and "never ran" stay distinguishable, and encrypted args are purged.
-   *  - pending                      -> cancelled ('gateway restarted'), not_executed
+   *  - pending                      -> cancelled ('gateway restarted', cancel_reason 'shutdown'), not_executed
    *  - approved, never dispatched   -> abandoned (can never dispatch), not_executed
    *  - dispatched, no completion    -> unknown (do not retry blindly)
    *  - tracked sync calls left open -> executed/not_executed from the audit trail, else unknown
@@ -813,7 +813,8 @@ export class PolicyEnforcer {
     const restartCode = opts.holdsOnly ? "gateway_shutdown" : "gateway_restart";
     this.tx(() => {
       for (const r of db.prepare(`SELECT id, call_id, workspace_id FROM mcpflow_pending_call WHERE status = 'pending'`).all() as Array<{ id: string; call_id: string; workspace_id: string }>) {
-        db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = ? WHERE id = ? AND status = 'pending'`).run(now, opts.note ?? 'gateway restarted', r.id);
+        // 0011: a hold cut off by shutdown or by a restart after one is cancel_reason 'shutdown'
+        db.prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = ?, cancel_reason = 'shutdown' WHERE id = ? AND status = 'pending'`).run(now, opts.note ?? 'gateway restarted', r.id);
         complete(r.call_id, "cancelled", "not_dispatched", restartCode, r.id);
         setOutcome(r.call_id, "not_executed", "cancelled", "not_dispatched");
         bump(r.workspace_id, "cancelled");
@@ -998,7 +999,8 @@ export class PolicyEnforcer {
       };
       const onAbort = () => {
         this.deps.db
-          .prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = 'client disconnected' WHERE id = ? AND status = 'pending'`)
+          .prepare(`UPDATE mcpflow_pending_call SET status = 'cancelled', decided_at = ?, note = 'client disconnected',
+                      cancel_reason = 'client_disconnected' WHERE id = ? AND status = 'pending'`)
           .run(this.iso(), pc);
         finish("cancelled");
       };
