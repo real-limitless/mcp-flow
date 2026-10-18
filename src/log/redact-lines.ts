@@ -74,6 +74,20 @@ function closesPem(line: string): boolean {
   return secretArmorMarkers(line).some((mk) => !mk.begin);
 }
 
+/** Canonical END marker written in place of a key armor END line when keepEndMarker is set. */
+export const KEPT_END_MARKER = "-----END PRIVATE KEY-----";
+
+export interface LineRedactorOptions {
+  /**
+   * Write a line holding a key armor END marker (that does not open a new block) as the bare
+   * KEPT_END_MARKER instead of [redacted]; the rest of that line is dropped. For a buffer that
+   * gets a second, whole-text redactSecrets pass (the init-error tail): a stray END whose BEGIN
+   * never appeared stays visible there, so the pass can redact the key-body lines this
+   * redactor already wrote before the END arrived. Never use it for output shown as-is.
+   */
+  keepEndMarker?: boolean;
+}
+
 /**
  * Line-buffered redaction for a passthrough stream (a backend's stderr): complete lines are
  * redacted and written; a partial line waits for its newline so a secret split across chunks
@@ -86,6 +100,10 @@ function closesPem(line: string): boolean {
  *   lines pass without ending it, and the first other line is written normally.
  * - PuTTY .ppk: the N lines after "Private-Lines: N" are written as [redacted] (a count over
  *   PPK_MAX_PRIVATE_LINES redacts that many, then the body state); Private-MAC is redacted.
+ * - Limit: output is written line by line and cannot be taken back. A stray END marker whose
+ *   BEGIN never appeared (cut off, or never printed) is redacted, but the key-body lines
+ *   before it were already written; on live stderr they stay printed. Buffers that are
+ *   re-redacted as a whole (keepEndMarker) do catch them.
  * - A partial line longer than maxPending is cut at its last whitespace, keeping a tail of at
  *   most PENDING_TAIL_MAX. If what was written ends in a secret NAME= / NAME: (or Bearer …)
  *   with no value, or in a value that may continue, the rest of that line is suppressed as
@@ -95,7 +113,9 @@ export function lineRedactor(
   write: (s: string) => void,
   maxPending = 64 * 1024,
   maxPemLines = PEM_MAX_LINES,
+  opts: LineRedactorOptions = {},
 ): { push: (chunk: string) => void; flush: () => void } {
+  const keepEnd = opts.keepEndMarker === true;
   let pending = "";
   let pemLines = 0; // > 0 while inside a private key block
   let body = false; // past the line cap of an unclosed block: redact key-body-shaped lines
@@ -104,6 +124,12 @@ export function lineRedactor(
   let skipLine = false; // suppress until the next newline
 
   const redactedLine = (l: string) => write(l.endsWith("\n") ? "[redacted]\n" : "[redacted]");
+  /** keepEndMarker: an END line (not reopening a block) becomes the bare marker. */
+  const endLine = (l: string): boolean => {
+    if (!keepEnd || !closesPem(l) || opensPem(l)) return false;
+    write(l.endsWith("\n") ? `${KEPT_END_MARKER}\n` : KEPT_END_MARKER);
+    return true;
+  };
 
   /** One more line of a block (or of PuTTY private lines) consumed. */
   const countLine = () => {
@@ -119,7 +145,7 @@ export function lineRedactor(
 
   const line = (l: string) => {
     if (pemLines > 0) {
-      redactedLine(l);
+      if (!endLine(l)) redactedLine(l);
       if (opensPem(l)) pemLines = 1; // END then a new BEGIN on one line
       else if (closesPem(l)) pemLines = 0;
       else countLine();
@@ -136,7 +162,7 @@ export function lineRedactor(
         return;
       }
       if (closesPem(l) && !opensPem(l)) {
-        redactedLine(l);
+        if (!endLine(l)) redactedLine(l);
         body = false;
         return;
       }
@@ -146,6 +172,7 @@ export function lineRedactor(
       }
       body = false; // first other line (or a new BEGIN): normal handling below
     }
+    if (endLine(l)) return; // stray END (keepEndMarker): the second pass redacts the run before it
     write(redactSecrets(l));
     if (opensPem(l)) {
       pemLines = 1;
@@ -221,7 +248,9 @@ export function lineRedactor(
     },
     flush() {
       if (pending) {
-        if (pemLines > 0 || ppkLeft > 0 || (body && isArmorBodyLine(pending))) write("[redacted]");
+        if (endLine(pending)) {
+          /* bare END marker written */
+        } else if (pemLines > 0 || ppkLeft > 0 || (body && isArmorBodyLine(pending))) write("[redacted]");
         else write(redactSecrets(pending));
       }
       pending = "";
