@@ -145,6 +145,8 @@ export function policyDeniedResult(p: {
   pendingCallId?: string | null;
   message?: string | null;
   note?: string | null;
+  /** 0011 pending_call.cancel_reason, when a hold was cancelled */
+  cancelReason?: string | null;
 }): CallToolResult {
   const payload: Record<string, unknown> = {
     code: "policy_denied",
@@ -155,9 +157,19 @@ export function policyDeniedResult(p: {
   if (p.ruleVersion != null) payload.rule_version = p.ruleVersion;
   if (p.pendingCallId) payload.pending_call_id = p.pendingCallId;
   if (p.note) payload.note = p.note;
-  payload.message = p.message ?? DEFAULT_MESSAGES[p.reason];
+  if (p.cancelReason) payload.cancel_reason = p.cancelReason;
+  payload.message = p.message ?? (p.cancelReason && CANCEL_MESSAGES[p.cancelReason]) ?? DEFAULT_MESSAGES[p.reason];
   return { isError: true, content: [{ type: "text", text: JSON.stringify(payload) }] };
 }
+
+const CANCEL_MESSAGES: Record<string, string> = {
+  agent_suspended: "The pending call was cancelled because the calling agent was suspended.",
+  agent_revoked: "The pending call was cancelled because the calling agent was revoked.",
+  key_revoked: "The pending call was cancelled because the API key was revoked.",
+  no_active_approver: "The pending call was cancelled because no listed approver is an active human any more.",
+  client_disconnected: "The pending call was cancelled because the client disconnected.",
+  shutdown: "The pending call was cancelled because the gateway shut down; nothing was dispatched.",
+};
 
 const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   rule_deny: "This call is denied by policy.",
@@ -557,8 +569,8 @@ export class PolicyEnforcer {
     const rest = async (signal?: AbortSignal): Promise<CallToolResult> => {
       const resolution = await this.waitFor(pc, expiresAt!, signal);
       const row = db
-        .prepare(`SELECT status, decided_by, note FROM mcpflow_pending_call WHERE id = ?`)
-        .get(pc) as { status: string; decided_by: string | null; note: string | null };
+        .prepare(`SELECT status, decided_by, note, cancel_reason FROM mcpflow_pending_call WHERE id = ?`)
+        .get(pc) as { status: string; decided_by: string | null; note: string | null; cancel_reason: string | null };
       const status = row?.status ?? resolution;
 
       if (status === "approved") {
@@ -595,9 +607,12 @@ export class PolicyEnforcer {
         expired: ["approval_expired", "approval_timeout"],
         cancelled: ["cancelled", "cancelled"],
       };
-      const [outcome, reason] = map[status] ?? ["cancelled", "cancelled"];
+      let [outcome, reason] = map[status] ?? ["cancelled", "cancelled"];
+      // 0011: DB-side cancels (revoke/suspend cascades, last approver gone) carry cancel_reason
+      const cancelReason = status === "cancelled" ? (row?.cancel_reason ?? null) : null;
+      if (cancelReason === "no_active_approver") reason = "no_active_approver";
       notDispatched(outcome, {
-        error_code: reason,
+        error_code: cancelReason === "no_active_approver" || !cancelReason ? reason : cancelReason,
         approver: status === "denied" ? row.decided_by : null,
         approver_note: status === "denied" ? row.note : null,
       });
@@ -609,6 +624,7 @@ export class PolicyEnforcer {
         ruleVersion: decision.rule?.version,
         pendingCallId: pc,
         note: status === "denied" ? row.note : null,
+        cancelReason,
       });
     };
 
@@ -947,11 +963,12 @@ export class PolicyEnforcer {
    */
   pendingStatus(pendingCallId: string, agentId: string): {
     status: string; expiresAt: string; outcome: string; finalOutcome: string | null; resultStatus: string | null; dispatched: boolean;
+    cancelReason: string | null;
   } | null {
     const db = this.deps.db;
     const r = db
-      .prepare(`SELECT call_id, status, expires_at, dispatched_at, abandoned_at FROM mcpflow_pending_call WHERE id = ? AND agent_id = ?`)
-      .get(pendingCallId, agentId) as { call_id: string; status: string; expires_at: string; dispatched_at: string | null; abandoned_at: string | null } | undefined;
+      .prepare(`SELECT call_id, status, expires_at, dispatched_at, abandoned_at, cancel_reason FROM mcpflow_pending_call WHERE id = ? AND agent_id = ?`)
+      .get(pendingCallId, agentId) as { call_id: string; status: string; expires_at: string; dispatched_at: string | null; abandoned_at: string | null; cancel_reason: string | null } | undefined;
     if (!r) return null;
     const o = db.prepare(`SELECT state, final_outcome, result_status FROM mcpflow_call_outcome WHERE call_id = ?`).get(r.call_id) as
       | { state: string; final_outcome: string | null; result_status: string | null } | undefined;
@@ -963,6 +980,7 @@ export class PolicyEnforcer {
     return {
       status: r.status, expiresAt: r.expires_at, outcome: c?.state ?? "pending",
       finalOutcome: c?.final_outcome ?? null, resultStatus: c?.result_status ?? null, dispatched: r.dispatched_at != null,
+      cancelReason: r.cancel_reason ?? null,
     };
   }
 

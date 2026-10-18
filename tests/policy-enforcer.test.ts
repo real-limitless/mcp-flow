@@ -512,3 +512,38 @@ describe("T2.1 v10 cancel_reason set by the gateway", () => {
     expect(reason()).toEqual({ status: "cancelled", note: "gateway restarted", cancel_reason: "shutdown" });
   });
 });
+
+describe("T2.1 v10 waiting holds notice DB-side cancels", () => {
+  beforeEach(setup);
+
+  it("last approver suspended -> policy_denied no_active_approver", async () => {
+    const ana = dir.createAgent({ workspaceId: WS, name: "ana", owner: "chen", kind: "human", projects: ["gb_devops"], createdBy: chen });
+    rule({ effect: "require_approval", timeoutS: 30, approvers: [ana] });
+    const s = stub();
+    const p = pe.enforce({ ctx: ctx(), args: {}, dispatch: s.dispatch });
+    await waitFor(() => notices.length === 1);
+    db.prepare(`UPDATE mcpflow_agent SET status = 'suspended' WHERE id = ?`).run(ana);
+    const r = payload(await p);
+    expect(r).toMatchObject({ code: "policy_denied", reason: "no_active_approver", cancel_reason: "no_active_approver" });
+    expect(s.calls).toHaveLength(0);
+    expect(rows().at(-1)).toMatchObject({ event_type: "completion", final_outcome: "cancelled", error_code: "no_active_approver" });
+  });
+
+  it("key revoked / agent suspended while held -> policy_denied cancelled with cancel_reason", async () => {
+    for (const [act, want] of [
+      [() => db.prepare(`UPDATE mcpflow_api_key SET status = 'revoked', revoked_at = ?, revoked_by = ?, revoked_reason = 't' WHERE id = ?`).run(new Date().toISOString(), chen, botKey), "key_revoked"],
+      [() => db.prepare(`UPDATE mcpflow_agent SET status = 'suspended' WHERE id = ?`).run(bot), "agent_suspended"],
+    ] as const) {
+      setup();
+      rule({ effect: "require_approval", timeoutS: 30 });
+      const s = stub();
+      const p = pe.enforce({ ctx: ctx(), args: {}, dispatch: s.dispatch });
+      await waitFor(() => notices.length === 1);
+      act();
+      expect(payload(await p)).toMatchObject({ code: "policy_denied", reason: "cancelled", cancel_reason: want });
+      expect(s.calls).toHaveLength(0);
+      expect(rows().at(-1)).toMatchObject({ event_type: "completion", final_outcome: "cancelled", error_code: want });
+      expect(pe.pendingStatus(pendingId(), bot)).toMatchObject({ status: "cancelled", cancelReason: want });
+    }
+  });
+});
