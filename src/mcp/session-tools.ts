@@ -3,7 +3,7 @@
  * Keyed like SessionProjectMap: mcp-session-id or synthetic key:${keyId}.
  */
 import { globalSessionProjects } from "./session-project.js";
-import { SESSION_MAP_MAX, TtlLru } from "./ttl-lru.js";
+import { SESSION_MAP_PER_KEY_MAX, TtlLru } from "./ttl-lru.js";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -15,8 +15,19 @@ interface ToolRow {
 export class SessionToolSetMap {
   private readonly rows: TtlLru<ToolRow>;
 
-  constructor(maxEntries = SESSION_MAP_MAX, sweepMs = 60_000) {
-    this.rows = new TtlLru<ToolRow>(maxEntries, sweepMs);
+  /** maxPerKey: working sets kept per API key (R5-1: partitioned by key; one key can't evict another's) */
+  constructor(maxPerKey = SESSION_MAP_PER_KEY_MAX, sweepMs = 60_000, maxKeys?: number) {
+    this.rows = new TtlLru<ToolRow>(maxPerKey, sweepMs, { ownerOf: (v) => v.keyId, maxOwners: maxKeys });
+  }
+
+  /** True when a live working set for this session id belongs to a different key (R5-2). */
+  ownedByOther(sessionId: string, keyId: string): boolean {
+    const o = this.rows.ownerOfKey(sessionId);
+    return o !== undefined && o !== keyId;
+  }
+
+  sizeForKey(keyId: string): number {
+    return this.rows.sizeOf(keyId);
   }
 
   set(
@@ -93,6 +104,15 @@ export class SessionToolSetMap {
   stop(): void {
     this.rows.stop();
   }
+}
+
+/**
+ * Security R5-2: true when this session id is already bound (project or tool set) by another key.
+ * The /mcp entry refuses such a request; set() also refuses (SessionIdInUseError) as a backstop.
+ */
+export function sessionIdOwnedByOther(sessionId: string | null | undefined, keyId: string | null | undefined): boolean {
+  if (!sessionId || !keyId) return false;
+  return globalSessionProjects.ownedByOther(sessionId, keyId) || globalSessionToolSets.ownedByOther(sessionId, keyId);
 }
 
 /** Process-wide map shared by HTTP app + gateway */

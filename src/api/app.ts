@@ -45,7 +45,7 @@ import {
   mergeApiKeyScopes,
 } from "../mcp/admin-tools.js";
 import { globalSessionProjects } from "../mcp/session-project.js";
-import { forgetMcpSession } from "../mcp/session-tools.js";
+import { forgetMcpSession, sessionIdOwnedByOther } from "../mcp/session-tools.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
   assertBackendShape,
@@ -1425,6 +1425,12 @@ export function createApp(
         projectSlug:
           sticky && sticky.keyId === key.keyId ? sticky.projectSlug : null,
       };
+    }
+
+    // Security R5-2: a session id already bound (sticky project / tool set) by another key is refused,
+    // never re-bound. The client reconnects without Mcp-Session-Id and gets a fresh id.
+    if (auth.mcpSessionId && sessionIdOwnedByOther(auth.mcpSessionId, auth.keyId)) {
+      return c.json({ error: "Mcp-Session-Id is bound to another key; reconnect without it to get a fresh session id" }, 409);
     }
 
     // A tools/call that carries a progressToken gets an SSE response so hold progress
