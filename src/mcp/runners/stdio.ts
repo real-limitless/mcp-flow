@@ -187,6 +187,8 @@ interface StdioInternals {
  * which leaves grandchildren (shell and node under npm/npx) running.
  */
 const liveStdio = new Set<GroupedStdioClientTransport>();
+/** Leader pids (= pgids) of every group spawned here, until a group kill finds it empty. */
+const spawnedGroups = new Set<number>();
 let stdioReapArmed = false;
 
 /** While armed, a spawn closes itself. closeAll sets this at the connect deadline. */
@@ -196,6 +198,27 @@ export function armStdioReap(): void {
 
 export function disarmStdioReap(): void {
   stdioReapArmed = false;
+}
+
+/**
+ * V53-F1: last-resort synchronous kill for a forced stop. SIGKILL every process group this
+ * process spawned that still has a living member (pooled, connecting, or mid-close), so a
+ * forced exit never leaves stdio backends or their children behind.
+ */
+export function killLiveStdioSync(): number {
+  let signalled = 0;
+  for (const pgid of [...spawnedGroups]) {
+    const leader = process.platform === "linux" ? procStat(pgid) : null;
+    // A living leader that is not our child means the pid was reused: not our group.
+    const reused = leader !== null && leader.state !== "Z" && (leader.ppid !== process.pid || leader.pgrp !== pgid);
+    if (reused || livingGroupMembers(pgid).length === 0) {
+      spawnedGroups.delete(pgid);
+      continue;
+    }
+    signalTree(pgid, "SIGKILL", process.platform !== "win32");
+    signalled++;
+  }
+  return signalled;
 }
 
 /** Close every stdio transport that has spawned but may not be in the pool yet. */
@@ -238,7 +261,10 @@ class GroupedStdioClientTransport extends StdioClientTransport {
         detached,
       });
       self._process = child;
-      if (detached && child.pid) this.leaderPid = child.pid;
+      if (detached && child.pid) {
+        this.leaderPid = child.pid;
+        spawnedGroups.add(child.pid);
+      }
       if (child.pid) this.track();
       child.on("error", (error: Error) => {
         reject(error);
@@ -280,7 +306,10 @@ class GroupedStdioClientTransport extends StdioClientTransport {
     this.groupClose = (async () => {
       const pid = this.leaderPid;
       this.leaderPid = null;
-      if (pid) await killProcessGroup(pid, true);
+      if (pid) {
+        await killProcessGroup(pid, true);
+        if (livingGroupMembers(pid).length === 0) spawnedGroups.delete(pid);
+      }
       await super.close();
     })();
     return this.groupClose;

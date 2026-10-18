@@ -142,16 +142,35 @@ describe("QA V51-F1 shutdown drain", () => {
     expect(db.completions).toHaveLength(1);
   });
 
-  it("second signal during the drain: in-flight recorded unknown immediately, lock released, exit 1", async () => {
+  it("V53-F1: a second signal during the drain is ignored; cleanup continues and the call drains normally (exit 0)", async () => {
     const { gw, dbPath, ctx } = await boot(5000);
     const c = slowCall(gw, ctx, 1500);
     for (let i = 0; i < 100 && !c.state.started; i++) await sleep(5);
     const codes: number[] = [];
     const h = installSignalHandlers(gw, { exit: (x) => codes.push(x), signals: [] });
-    void h.handle("SIGTERM");
+    const first = h.handle("SIGTERM");
     await sleep(50);
-    await h.handle("SIGTERM");
-    expect(codes).toEqual([1]);
+    await h.handle("SIGTERM"); // returns at once, does not exit
+    await h.handle("SIGINT");
+    expect(codes).toEqual([]);
+    expect(existsSync(`${dbPath}.gateway.lock`)).toBe(true); // still draining, lock still held
+    await first;
+    expect(codes).toEqual([0]);
+    expect(existsSync(`${dbPath}.gateway.lock`)).toBe(false);
+    const res = (await c.p) as { content: Array<{ text: string }> };
+    expect(res.content[0]!.text).toBe("done");
+    const db = inspect(dbPath);
+    expect(db.completions).toEqual([{ final_outcome: "executed", result_status: "ok", error_code: null }]);
+    expect(db.shutdown).toHaveLength(1);
+    expect(db.shutdown[0]).toMatchObject({ drained: 1, unknown: 0 });
+    expect(db.shutdown.some((d) => d.forced === true)).toBe(false);
+  });
+
+  it("forceStop (not wired to signals) still records in-flight unknown, closes the DB and releases the lock", async () => {
+    const { gw, dbPath, ctx } = await boot(5000);
+    const c = slowCall(gw, ctx, 1500);
+    for (let i = 0; i < 100 && !c.state.started; i++) await sleep(5);
+    gw.forceStop();
     expect(existsSync(`${dbPath}.gateway.lock`)).toBe(false);
     const db = inspect(dbPath);
     expect(db.completions).toEqual([{ final_outcome: "error", result_status: "error", error_code: "shutdown_unknown" }]);

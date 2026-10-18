@@ -11,7 +11,7 @@ import { acquireGatewayLock } from "./db/gateway-lock.js";
 import { EdgeHub } from "./edge/hub.js";
 import { encodeMsg, newMsgId } from "./edge/protocol.js";
 import { EdgeRouter } from "./edge/router.js";
-import { STDIO_GROUP_KILL_BUDGET_MS } from "./mcp/runners/stdio.js";
+import { STDIO_GROUP_KILL_BUDGET_MS, killLiveStdioSync } from "./mcp/runners/stdio.js";
 import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
 
 /** Docker's 10 s stop timeout: drain + upstream close (connect deadline + process-group kill) fit inside. */
@@ -48,14 +48,19 @@ export interface RunningServer {
    * as policy.shutdown), then close(): DB closed and lock released. Idempotent.
    */
   shutdown: (reason: string) => Promise<void>;
-  /** Second signal during shutdown: record in-flight calls as unknown, close DB, release lock (sync). */
+  /**
+   * Last-resort synchronous stop (not wired to signals; V53-F1): SIGKILL every stdio process group,
+   * record in-flight calls as unknown, close the DB, release the lock.
+   */
   forceStop: () => void;
   url: string;
 }
 
 /**
  * QA V5-F2: SIGTERM / SIGINT -> gw.shutdown() then exit(0) (exit(1) if shutdown failed).
- * A second signal while shutting down exits(1) immediately. Returns { handle, remove } (handle for tests).
+ * V53-F1 (as on DEVELOPMENT 83382388): a second signal while shutting down is ignored and cleanup
+ * continues, so stdio backends and their process groups are still reaped. The shutdown is
+ * bounded by the 10 s budget on its own. Returns { handle, remove } (handle for tests).
  */
 export function installSignalHandlers(
   gw: RunningServer,
@@ -66,13 +71,8 @@ export function installSignalHandlers(
   let stopping = false;
   const handle = async (sig: NodeJS.Signals) => {
     if (stopping) {
-      console.error(`[mcp-flow] ${sig} again during shutdown; exiting now (in-flight calls recorded as unknown)`);
-      try {
-        gw.forceStop();
-      } catch (err) {
-        console.error(`[mcp-flow] forced stop failed: ${(err as Error).message}`);
-      }
-      return exit(1);
+      console.error(`[mcp-flow] ${sig} again during shutdown; ignored, still cleaning up (bounded by the 10 s budget)`);
+      return;
     }
     stopping = true;
     console.error(`[mcp-flow] ${sig}: shutting down (closing holds, DB and lock)`);
@@ -274,6 +274,11 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     })()),
     forceStop: () => {
       draining = true;
+      try {
+        killLiveStdioSync();
+      } catch (err) {
+        console.error(`[mcp-flow] forced stop: process-group kill failed: ${(err as Error).message}`);
+      }
       if (!lock || lock.owned()) {
         for (const [workspaceId, unknown] of Object.entries(store.policy.markInflightUnknown())) {
           store.writeAudit({ workspaceId, keyId: null, action: "policy.shutdown", detail: { forced: true, unknown } });
