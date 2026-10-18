@@ -8,6 +8,7 @@ import { STDIO_GROUP_KILL_BUDGET_MS } from "../src/mcp/runners/stdio.js";
 import {
   INFLIGHT_CLOSE_DEADLINE_MS,
   UpstreamPool,
+  type UpstreamPoolOptions,
 } from "../src/mcp/upstream.js";
 import { SHUTDOWN_BUDGET_MS, SHUTDOWN_DRAIN_MS, startServer } from "../src/server.js";
 import type { BackendRecord } from "../src/types.js";
@@ -270,7 +271,7 @@ function harness(pool: UpstreamPool): PoolHarness {
   return pool as unknown as PoolHarness;
 }
 
-function setupPool(script: string, spawnDir: string): {
+function setupPool(script: string, spawnDir: string, poolOpts: UpstreamPoolOptions = {}): {
   pool: UpstreamPool;
   store: Store;
   workspaceId: string;
@@ -289,7 +290,7 @@ function setupPool(script: string, spawnDir: string): {
   const backend = store.getBackend(ws.id, "fix");
   if (!backend) throw new Error("backend missing");
   spawnDirs.push(spawnDir);
-  return { pool: new UpstreamPool(store), store, workspaceId: ws.id, backend };
+  return { pool: new UpstreamPool(store, poolOpts), store, workspaceId: ws.id, backend };
 }
 
 function marker(spawnDir: string): { pid: number; child: number } {
@@ -398,15 +399,19 @@ describe("stdio process lifecycle", () => {
     }
   });
 
-  it("clears a failed connect so a later getClient can spawn again", async () => {
+  it("clears a failed connect so a later getClient can spawn again (after the crash backoff)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
     dirs.push(dir);
     const spawnDir = join(dir, "spawns");
     const script = writeExitServer(dir, spawnDir);
-    const { pool, store, workspaceId } = setupPool(script, spawnDir);
+    const { pool, store, workspaceId } = setupPool(script, spawnDir, { crashBackoffMs: 200 });
     try {
       await expect(pool.listNamespacedTools(workspaceId)).resolves.toEqual([]);
       expect(readdirSync(spawnDir)).toHaveLength(1);
+      // QA v5.5: inside the backoff window there is no respawn
+      await expect(pool.listNamespacedTools(workspaceId)).resolves.toEqual([]);
+      expect(readdirSync(spawnDir)).toHaveLength(1);
+      await new Promise((r) => setTimeout(r, 250));
       await expect(pool.listNamespacedTools(workspaceId)).resolves.toEqual([]);
       expect(readdirSync(spawnDir)).toHaveLength(2);
     } finally {

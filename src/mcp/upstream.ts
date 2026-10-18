@@ -4,7 +4,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import { DEFAULT_BACKEND_INIT_TIMEOUT_MS } from "../config.js";
+import { DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS, DEFAULT_BACKEND_INIT_TIMEOUT_MS } from "../config.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
@@ -103,17 +103,31 @@ function transportMessage(message: string): boolean {
  * the fail-fast cooldown after one. Typed so the gateway returns backend_unavailable instead of
  * waiting (QA v5.3/v5.4: one hung backend made every agent call wait ~60 s).
  */
+export type BackendUnavailableCause =
+  /** still initializing past the caller wait; the init continues in the background */
+  | "starting"
+  /** the attempt hit the hard ceiling and was killed; backing off */
+  | "init_timeout"
+  /** the process exited / errored during init; backing off */
+  | "init_failed"
+  /** in the backoff window after init_timeout / init_failed */
+  | "cooling_down";
+
 export class BackendUnavailableError extends Error {
   readonly code = "backend_unavailable";
   constructor(
     readonly backendSlug: string,
-    readonly cause_: "init_timeout" | "cooling_down",
+    readonly cause_: BackendUnavailableCause,
     readonly retryAfterMs: number,
   ) {
     super(
-      cause_ === "init_timeout"
-        ? `backend ${backendSlug} did not initialize in time (backend_unavailable)`
-        : `backend ${backendSlug} is unavailable after an init timeout; retry in ${retryAfterMs} ms (backend_unavailable)`,
+      cause_ === "starting"
+        ? `backend ${backendSlug} is still starting; retry in ${retryAfterMs} ms (backend_unavailable)`
+        : cause_ === "init_timeout"
+          ? `backend ${backendSlug} did not initialize in time (backend_unavailable)`
+          : cause_ === "init_failed"
+            ? `backend ${backendSlug} failed to start; retry in ${retryAfterMs} ms (backend_unavailable)`
+            : `backend ${backendSlug} is unavailable after a failed start; retry in ${retryAfterMs} ms (backend_unavailable)`,
     );
     this.name = "BackendUnavailableError";
   }
@@ -127,16 +141,42 @@ function isRequestTimeout(err: unknown): boolean {
 }
 
 export interface UpstreamPoolOptions {
-  /** Bound for a backend's initialize + first tools/list, and for a tools/list refresh (ms). */
+  /**
+   * How long a caller waits for a backend that is still starting (ms), and the bound for a
+   * tools/list refresh on an open client. Past it the caller gets backend_unavailable ("starting");
+   * the init itself is NOT cut off (QA v5.5: a 25 s cold start must come up, not loop).
+   */
   initTimeoutMs?: number;
+  /** Absolute ceiling for one init attempt (ms); past it the spawn is killed and the backend backs off. */
+  initHardTimeoutMs?: number;
   /** How long a workspace listing waits for one backend before omitting it from that listing (ms). */
   listWaitMs?: number;
-  /** After an init timeout the backend fails fast (no respawn) for this long (ms). */
+  /** First backoff after a hard-ceiling timeout (ms); doubles per consecutive failure up to stuckBackoffMaxMs. */
   stuckCooldownMs?: number;
+  stuckBackoffMaxMs?: number;
+  /** First backoff after a process exit / error during init (ms); doubles up to crashBackoffMaxMs. */
+  crashBackoffMs?: number;
+  crashBackoffMaxMs?: number;
 }
 
 export const DEFAULT_LIST_WAIT_MS = 5_000;
 export const DEFAULT_STUCK_COOLDOWN_MS = 30_000;
+export const DEFAULT_STUCK_BACKOFF_MAX_MS = 600_000;
+export const DEFAULT_CRASH_BACKOFF_MS = 1_000;
+export const DEFAULT_CRASH_BACKOFF_MAX_MS = 60_000;
+/** retry_after_ms suggested to a caller that gave up on a backend that is still starting. */
+export const STARTING_RETRY_MS = 5_000;
+
+/** Exponential backoff: base * 2^(failures-1), capped. */
+export function backoffMs(failures: number, base: number, max: number): number {
+  return Math.min(max, base * 2 ** Math.min(Math.max(failures, 1) - 1, 30));
+}
+
+interface BackendHealth {
+  failures: number;
+  until: number;
+  cause: "init_timeout" | "init_failed";
+}
 
 function parsePlacement(backend: BackendRecord): Placement {
   try {
@@ -161,26 +201,73 @@ export class UpstreamPool {
   private generation = 0;
 
   private readonly initTimeoutMs: number;
+  private readonly initHardTimeoutMs: number;
   private readonly listWaitMs: number;
   private readonly stuckCooldownMs: number;
-  /** V53-F4: backendId -> time until which the backend fails fast after an init timeout. */
-  private stuckUntil = new Map<string, number>();
+  private readonly stuckBackoffMaxMs: number;
+  private readonly crashBackoffMs: number;
+  private readonly crashBackoffMaxMs: number;
+  /** QA v5.5: backendId -> consecutive init failures and the end of the current backoff window. */
+  private health = new Map<string, BackendHealth>();
+  /** Start time of the in-flight init attempt (callers wait until start + initTimeoutMs at most). */
+  private attemptStart = new Map<string, number>();
+  /** Backends whose current attempt was given up on by a caller or omitted from a listing. */
+  private lateAttempt = new Set<string>();
+  private toolsChangedListeners = new Set<(workspaceId: string, backendSlug: string) => void>();
+  /** Last record seen per pooled backend id (workspace + slug for tools-changed events). */
+  private backendRecords = new Map<string, BackendRecord>();
+  /** Number of init attempts started per backend id (tests / diagnostics). */
+  readonly spawnCount = new Map<string, number>();
 
   constructor(
     private store: Store,
     opts: UpstreamPoolOptions = {},
   ) {
     this.initTimeoutMs = opts.initTimeoutMs ?? DEFAULT_BACKEND_INIT_TIMEOUT_MS;
+    // config clamps hard >= soft; a pool built with hard < soft simply fails callers at the hard ceiling
+    this.initHardTimeoutMs = opts.initHardTimeoutMs ?? Math.max(this.initTimeoutMs, DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS);
     this.listWaitMs = Math.min(opts.listWaitMs ?? DEFAULT_LIST_WAIT_MS, this.initTimeoutMs);
     this.stuckCooldownMs = opts.stuckCooldownMs ?? DEFAULT_STUCK_COOLDOWN_MS;
+    this.stuckBackoffMaxMs = Math.max(this.stuckCooldownMs, opts.stuckBackoffMaxMs ?? DEFAULT_STUCK_BACKOFF_MAX_MS);
+    this.crashBackoffMs = opts.crashBackoffMs ?? DEFAULT_CRASH_BACKOFF_MS;
+    this.crashBackoffMaxMs = Math.max(this.crashBackoffMs, opts.crashBackoffMaxMs ?? DEFAULT_CRASH_BACKOFF_MAX_MS);
   }
 
-  private markStuck(backend: BackendRecord): BackendUnavailableError {
-    this.stuckUntil.set(backend.id, Date.now() + this.stuckCooldownMs);
+  /**
+   * QA v5.5 item 2: subscribe to "this backend's tools changed" (a late init finished, or a refresh
+   * returned a different tool set). The gateway turns it into notifications/tools/list_changed.
+   */
+  onToolsChanged(fn: (workspaceId: string, backendSlug: string) => void): () => void {
+    this.toolsChangedListeners.add(fn);
+    return () => {
+      this.toolsChangedListeners.delete(fn);
+    };
+  }
+
+  private emitToolsChanged(backend: BackendRecord): void {
+    for (const fn of [...this.toolsChangedListeners]) {
+      try {
+        fn(backend.workspaceId, backend.slug);
+      } catch {
+        /* a listener failure never affects the pool */
+      }
+    }
+  }
+
+  /** Record a failed init attempt; returns the typed error for the caller that owned it. */
+  private recordFailure(backend: BackendRecord, cause: "init_timeout" | "init_failed"): BackendUnavailableError {
+    const failures = (this.health.get(backend.id)?.failures ?? 0) + 1;
+    const delay =
+      cause === "init_timeout"
+        ? backoffMs(failures, this.stuckCooldownMs, this.stuckBackoffMaxMs)
+        : backoffMs(failures, this.crashBackoffMs, this.crashBackoffMaxMs);
+    this.health.set(backend.id, { failures, until: Date.now() + delay, cause });
     console.error(
-      `[mcp-flow] backend ${backend.slug} did not initialize within ${this.initTimeoutMs} ms; failing fast for ${this.stuckCooldownMs} ms`,
+      cause === "init_timeout"
+        ? `[mcp-flow] backend ${backend.slug} did not initialize within the ${this.initHardTimeoutMs} ms hard ceiling; stopped it; next attempt in ${delay} ms (failure ${failures})`
+        : `[mcp-flow] backend ${backend.slug} failed during init; next attempt in ${delay} ms (failure ${failures})`,
     );
-    return new BackendUnavailableError(backend.slug, "init_timeout", this.stuckCooldownMs);
+    return new BackendUnavailableError(backend.slug, cause, delay);
   }
 
   setEdgeRouter(router: EdgeRouter | null): void {
@@ -228,6 +315,10 @@ export class UpstreamPool {
   private async drainPool(): Promise<void> {
     this.closing = true;
     this.generation += 1;
+    // QA v5.5 note: no backoff / attempt state survives closeAll
+    this.health.clear();
+    this.attemptStart.clear();
+    this.lateAttempt.clear();
     try {
       const pending = [...this.inflight.values()];
       this.inflight.clear();
@@ -333,7 +424,8 @@ export class UpstreamPool {
     }
 
     try {
-      const opts = { timeout: this.initTimeoutMs };
+      // QA v5.5: the attempt itself is bounded by the hard ceiling; callers stop waiting much earlier
+      const opts = { timeout: this.initHardTimeoutMs };
       await client.connect(transport, opts);
       const listed = await client.listTools(undefined, opts);
       return {
@@ -367,7 +459,7 @@ export class UpstreamPool {
       const run = await connectStdioCommand({
         command: pub.command,
         env,
-        timeoutMs: this.initTimeoutMs,
+        timeoutMs: this.initHardTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -389,7 +481,7 @@ export class UpstreamPool {
         command: pub.command,
         env,
         sandbox: pub.sandbox,
-        timeoutMs: this.initTimeoutMs,
+        timeoutMs: this.initHardTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -437,8 +529,12 @@ export class UpstreamPool {
     if (current) return current;
     const job = (async () => {
       const listed = await entry.client.listTools(undefined, { timeout: this.initTimeoutMs });
+      const names = (t: Tool[]) => t.map((x) => x.name).sort().join("\n");
+      const changed = names(entry.tools) !== names(listed.tools ?? []);
       entry.tools = listed.tools ?? [];
       entry.fetchedAt = Date.now();
+      const backend = this.backendRecords.get(entry.backendId);
+      if (changed && backend && this.pool.get(entry.backendId) === entry) this.emitToolsChanged(backend);
     })();
     this.refreshInflight.set(entry.backendId, job);
     // then(f, f), not finally(): a failed refresh (V53-F4 timeout) must not become an unhandled rejection
@@ -484,52 +580,106 @@ export class UpstreamPool {
           if (!isRequestTimeout(err)) throw err;
           // V53-F4: an open client that stopped answering tools/list is retired, not waited on
           void this.retire(backend.id);
-          throw this.markStuck(backend);
+          throw this.recordFailure(backend, "init_timeout");
         }
       }
       return existing;
     }
 
-    const pending = this.inflight.get(backend.id);
-    if (pending) return pending;
-
-    // V53-F4: fail fast (no respawn) during the cooldown after an init timeout
-    const until = this.stuckUntil.get(backend.id);
-    if (until !== undefined) {
-      if (Date.now() < until) {
-        throw new BackendUnavailableError(backend.slug, "cooling_down", until - Date.now());
+    let pending = this.inflight.get(backend.id);
+    if (!pending) {
+      // QA v5.5: fail fast (no respawn) inside the backoff window after a failed attempt
+      const h = this.health.get(backend.id);
+      if (h && Date.now() < h.until) {
+        throw new BackendUnavailableError(backend.slug, "cooling_down", h.until - Date.now());
       }
-      this.stuckUntil.delete(backend.id);
+      pending = this.startAttempt(backend);
     }
+    return this.waitForAttempt(backend, pending);
+  }
 
-    // The SDK timeouts bound initialize + tools/list; the backstop also covers a spawn that never
-    // gets that far. A timed-out attempt is typed so every waiter sees backend_unavailable.
+  /**
+   * One init attempt, shared by every caller. It runs until it succeeds, the process exits/errors
+   * (backoff 1 s, 2 s, ... 60 s) or the hard ceiling (killed; backoff 30 s, 60 s, ... 10 min).
+   * Callers giving up never cut it short (QA v5.5 item 1).
+   */
+  private startAttempt(backend: BackendRecord): Promise<PooledClient> {
+    const generation = this.generation;
+    this.spawnCount.set(backend.id, (this.spawnCount.get(backend.id) ?? 0) + 1);
+    this.backendRecords.set(backend.id, backend);
     const promise = (async () => {
       const attempt = this.connectAndStore(backend);
       let timer: ReturnType<typeof setTimeout> | undefined;
+      // backstop for a spawn that never reaches the SDK request timeouts
       const backstop = new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new BackendUnavailableError(backend.slug, "init_timeout", 0)), this.initTimeoutMs + 2_000);
+        timer = setTimeout(() => reject(new BackendUnavailableError(backend.slug, "init_timeout", 0)), this.initHardTimeoutMs + 2_000);
       });
       try {
-        return await Promise.race([attempt, backstop]);
+        const entry = await Promise.race([attempt, backstop]);
+        this.health.delete(backend.id);
+        if (this.lateAttempt.delete(backend.id)) this.emitToolsChanged(backend);
+        return entry;
       } catch (err) {
+        this.lateAttempt.delete(backend.id);
+        if (this.closing || generation !== this.generation) throw err; // shutdown, not a backend failure
         if (err instanceof BackendUnavailableError || isRequestTimeout(err)) {
-          // a connect that still succeeds later (backstop case) is pooled and clears the cooldown
-          attempt.then(() => this.stuckUntil.delete(backend.id), () => {});
-          throw this.markStuck(backend);
+          // backstop case: a connect that still succeeds later is pooled and clears the backoff
+          attempt.then(
+            () => {
+              this.health.delete(backend.id);
+              this.emitToolsChanged(backend);
+            },
+            () => {},
+          );
+          throw this.recordFailure(backend, "init_timeout");
         }
+        this.recordFailure(backend, "init_failed");
         throw err;
       } finally {
         if (timer) clearTimeout(timer);
       }
     })();
     this.inflight.set(backend.id, promise);
-    try {
-      return await promise;
-    } finally {
+    this.attemptStart.set(backend.id, Date.now());
+    const done = () => {
       if (this.inflight.get(backend.id) === promise) {
         this.inflight.delete(backend.id);
+        this.attemptStart.delete(backend.id);
       }
+    };
+    promise.then(done, done);
+    return promise;
+  }
+
+  /** Wait for the shared attempt, but never past attempt start + initTimeoutMs. */
+  private async waitForAttempt(backend: BackendRecord, attempt: Promise<PooledClient>): Promise<PooledClient> {
+    const started = this.attemptStart.get(backend.id) ?? Date.now();
+    const remaining = started + this.initTimeoutMs - Date.now();
+    const giveUp = (): never => {
+      attempt.catch(() => {}); // settles later: pooled (then list_changed) or a recorded failure
+      if (!this.lateAttempt.has(backend.id)) {
+        this.lateAttempt.add(backend.id);
+        console.error(
+          `[mcp-flow] backend ${backend.slug} still initializing after ${this.initTimeoutMs} ms; callers get backend_unavailable while it continues (hard ceiling ${this.initHardTimeoutMs} ms)`,
+        );
+      }
+      const hardLeft = Math.max(1, started + this.initHardTimeoutMs - Date.now());
+      throw new BackendUnavailableError(backend.slug, "starting", Math.min(STARTING_RETRY_MS, hardLeft));
+    };
+    if (remaining <= 0) return giveUp();
+    const notReady = Symbol("not-ready");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const got = await Promise.race([
+        attempt,
+        new Promise<typeof notReady>((resolve) => {
+          timer = setTimeout(() => resolve(notReady), remaining);
+        }),
+      ]);
+      if (got === notReady) return giveUp();
+      return got;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
@@ -575,6 +725,11 @@ export class UpstreamPool {
     } catch (err) {
       if (err instanceof BackendUnavailableError) throw err;
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+      // QA v5.5: an init that exited / errored is typed for agents too (not "unknown_tool")
+      const h = this.health.get(backend.id);
+      if (h?.cause === "init_failed" && Date.now() < h.until) {
+        throw new BackendUnavailableError(backend.slug, "init_failed", h.until - Date.now());
+      }
       throw err;
     }
   }
@@ -602,6 +757,8 @@ export class UpstreamPool {
           ]);
           if (got === notReady) {
             job.catch(() => {}); // settles later (pooled, or typed failure); nothing to wait for here
+            // QA v5.5 item 2: when this backend's init finishes, clients get tools/list_changed
+            if (this.inflight.has(backend.id)) this.lateAttempt.add(backend.id);
             console.error(`[mcp-flow] tools/list: backend ${backend.slug} not ready after ${this.listWaitMs} ms; omitted from this listing`);
             return;
           }

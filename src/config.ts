@@ -41,10 +41,17 @@ export interface Config {
    */
   rateLimitPerMin?: number;
   /**
-   * V53-F4: bound for a backend's initialize + first tools/list (MCP_FLOW_BACKEND_INIT_TIMEOUT_MS,
-   * default 20000, clamped 1000..120000). A backend past it is closed and fails fast for a cooldown.
+   * QA v5.5: how long a CALLER waits for a backend that is still starting (MCP_FLOW_BACKEND_INIT_TIMEOUT_MS,
+   * default 20000, clamped 1000..120000). Past it the caller gets backend_unavailable (reason
+   * "starting") but the backend is NOT killed: its init continues and later calls succeed.
    */
   backendInitTimeoutMs?: number;
+  /**
+   * QA v5.5: absolute ceiling for one init attempt (MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS, default
+   * 300000, clamped to backendInitTimeoutMs..1800000). Past it the spawn is killed and the backend
+   * backs off exponentially (30 s, 60 s, ... capped at 10 min) before the next attempt.
+   */
+  backendInitHardTimeoutMs?: number;
 }
 
 /**
@@ -68,6 +75,28 @@ export function parseBackendInitTimeoutMs(raw: string | number | undefined | nul
   const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
   if (!Number.isFinite(n)) return DEFAULT_BACKEND_INIT_TIMEOUT_MS;
   return Math.min(MAX_BACKEND_INIT_TIMEOUT_MS, Math.max(MIN_BACKEND_INIT_TIMEOUT_MS, Math.floor(n)));
+}
+
+export const DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS = 300_000;
+export const MAX_BACKEND_INIT_HARD_TIMEOUT_MS = 1_800_000;
+
+/** Hard init ceiling: unset/invalid -> 300000; clamped to [soft, 1800000] (never below the caller wait). */
+export function parseBackendInitHardTimeoutMs(raw: string | number | undefined | null, softMs: number): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  const v = Number.isFinite(n) ? Math.floor(n) : DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS;
+  return Math.min(MAX_BACKEND_INIT_HARD_TIMEOUT_MS, Math.max(softMs, v));
+}
+
+/**
+ * QA v5.5 note: an invalid or out-of-range timeout used to be replaced silently. Returns a warning
+ * line (no value echoed beyond the env name and the value used) when raw is set and was not used as-is.
+ */
+export function timeoutEnvWarning(name: string, raw: string | undefined, used: number): string | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `[mcp-flow] ${name} is not a number; using ${used} ms`;
+  if (Math.floor(n) !== used) return `[mcp-flow] ${name} out of range or not whole; using ${used} ms`;
+  return null;
 }
 
 export const DEFAULT_JOURNAL_SIZE_LIMIT_MB = 64;
@@ -118,6 +147,19 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   );
   mkdirSync(dirname(dbPath), { recursive: true });
 
+  const initSoftRaw = env("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS");
+  const initHardRaw = env("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS");
+  const backendInitTimeoutMs = parseBackendInitTimeoutMs(overrides.backendInitTimeoutMs ?? initSoftRaw);
+  const backendInitHardTimeoutMs = parseBackendInitHardTimeoutMs(overrides.backendInitHardTimeoutMs ?? initHardRaw, backendInitTimeoutMs);
+  if (overrides.backendInitTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS", initSoftRaw, backendInitTimeoutMs);
+    if (w) console.error(w);
+  }
+  if (overrides.backendInitHardTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS", initHardRaw, backendInitHardTimeoutMs);
+    if (w) console.error(w);
+  }
+
   const masterKeyRaw =
     overrides.masterKeyRaw ?? env("MCP_FLOW_MASTER_KEY") ?? "";
   const adminToken = overrides.adminToken ?? env("MCP_FLOW_ADMIN_TOKEN") ?? "";
@@ -142,7 +184,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
     journalSizeLimitBytes: overrides.journalSizeLimitBytes ?? parseJournalSizeLimitBytes(env("MCP_FLOW_JOURNAL_SIZE_LIMIT_MB")),
     rateLimitPerMin: overrides.rateLimitPerMin ?? parseRateLimitPerMin(env("MCP_FLOW_RATE_LIMIT_PER_MIN")),
-    backendInitTimeoutMs: parseBackendInitTimeoutMs(overrides.backendInitTimeoutMs ?? env("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS")),
+    backendInitTimeoutMs,
+    backendInitHardTimeoutMs,
   };
 }
 
