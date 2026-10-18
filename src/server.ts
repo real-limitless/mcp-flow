@@ -13,6 +13,7 @@ import { encodeMsg, newMsgId } from "./edge/protocol.js";
 import { EdgeRouter } from "./edge/router.js";
 import { STDIO_GROUP_KILL_BUDGET_MS, killLiveStdioSync } from "./mcp/runners/stdio.js";
 import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
+import { redactLog } from "./log/redact-lines.js";
 
 /** Docker's 10 s stop timeout: drain + upstream close (connect deadline + process-group kill) fit inside. */
 export const SHUTDOWN_BUDGET_MS = 10_000;
@@ -88,7 +89,7 @@ export function installSignalHandlers(
       await gw.shutdown(sig);
       exit(0);
     } catch (err) {
-      console.error(`[mcp-flow] shutdown failed: ${(err as Error).message}`);
+      console.error(`[mcp-flow] shutdown failed: ${redactLog(err)}`);
       exit(1);
     }
   };
@@ -147,7 +148,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       }
     }
   } catch (err) {
-    console.error(`[mcp-flow] orphan recovery failed: ${(err as Error).message}`);
+    console.error(`[mcp-flow] orphan recovery failed: ${redactLog(err)}`);
   }
   store.ensureWorkspace(cfg.workspaceName);
   // raw approval arguments must not outlive a decision made while no gate was waiting
@@ -281,7 +282,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       store.policy.sweepExpired();
       store.policy.purgeResults();
     } catch (err) {
-      console.error(`[mcp-flow] pending sweeper: ${(err as Error).message}`);
+      console.error(`[mcp-flow] pending sweeper: ${redactLog(err)}`);
     }
   }, 30_000);
   sweeper.unref();
@@ -310,7 +311,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       try {
         killLiveStdioSync();
       } catch (err) {
-        console.error(`[mcp-flow] forced stop: process-group kill failed: ${(err as Error).message}`);
+        console.error(`[mcp-flow] forced stop: process-group kill failed: ${redactLog(err)}`);
       }
       if (!lock || lock.owned()) {
         for (const [workspaceId, unknown] of Object.entries(store.policy.markInflightUnknown())) {
@@ -361,7 +362,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
           const flush = Math.min(50, Math.max(0, waitUntil - Date.now()));
           if (flush > 0) await new Promise((r) => setTimeout(r, flush));
         } catch (err) {
-          console.error(`[mcp-flow] shutdown drain failed: ${(err as Error).message}`);
+          console.error(`[mcp-flow] shutdown drain failed: ${redactLog(err)}`);
         }
       }
       (nodeServer as unknown as { closeAllConnections?: () => void }).closeAllConnections?.();

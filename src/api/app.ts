@@ -66,6 +66,7 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
+import { redactLog } from "../log/redact-lines.js";
 
 type Variables = {
   auth: AuthContext;
@@ -1352,7 +1353,7 @@ export function createApp(
             ip: clientIp(c),
           });
         } catch (err) {
-          console.error(`[mcp-flow] audit write failed for mcp.legacy_key_refused: ${(err as Error).message}`);
+          console.error(`[mcp-flow] audit write failed for mcp.legacy_key_refused: ${redactLog(err)}`);
         }
         return c.json({ error: "legacy keys are not accepted on /mcp; use an agent key" }, 403);
       }
@@ -1486,7 +1487,7 @@ export function createApp(
           ip: clientIp(c),
         });
       } catch (err) {
-        console.error(`[mcp-flow] audit write failed for mcp.connect: ${(err as Error).message}`);
+        console.error(`[mcp-flow] audit write failed for mcp.connect: ${redactLog(err)}`);
       }
     }
 

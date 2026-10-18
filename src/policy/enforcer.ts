@@ -22,6 +22,7 @@ import type { PolicyKeys } from "../identity/dev-keys.js";
 import { argsHash, canonicalJson, decryptArgs, encryptArgs } from "./crypto.js";
 import { alwaysDenied, evaluate, loadActiveRules, type CallContext, type Decision, type PolicyRule } from "./engine.js";
 import { allArgsMatch, validateArgMatchers, type ArgMatcher } from "./matchers.js";
+import { redactLog } from "../log/redact-lines.js";
 
 export type DenyReason =
   | "rule_deny"
@@ -1385,7 +1386,7 @@ export class PolicyEnforcer {
     try {
       this.writeAudit({ event_type: "completion", call_id: callId, ...this.ctxCols(ctx), ...cols });
     } catch (err) {
-      console.error(`[mcp-flow] completion audit write failed for ${callId}: ${(err as Error).message}`);
+      console.error(`[mcp-flow] completion audit write failed for ${callId}: ${redactLog(err)}`);
     }
     try {
       const fo = String(cols.final_outcome);
@@ -1394,7 +1395,7 @@ export class PolicyEnforcer {
         .prepare(`UPDATE mcpflow_call_outcome SET state = ?, final_outcome = ?, result_status = ?, completed_at = ? WHERE call_id = ? AND state = 'pending'`)
         .run(outcomeState(fo, rs), fo, rs, this.iso(), callId);
     } catch (err) {
-      console.error(`[mcp-flow] outcome write failed for ${callId}: ${(err as Error).message}`);
+      console.error(`[mcp-flow] outcome write failed for ${callId}: ${redactLog(err)}`);
     }
   }
 
