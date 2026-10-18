@@ -16,6 +16,7 @@ import {
 import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
+import { redactLog } from "./log/redact-lines.js";
 const program = new Command();
 
 program
@@ -395,7 +396,7 @@ backendCmd
         headers = parseHeaderFlags(opts.header);
         env = parseHeaderFlags(opts.env);
       } catch (err) {
-        console.error(err instanceof Error ? err.message : err);
+        console.error(redactLog(err));
         process.exit(1);
       }
       const transport = opts.transport as
@@ -443,7 +444,7 @@ backendCmd
             ),
           });
         } catch (err) {
-          console.error(err instanceof Error ? err.message : err);
+          console.error(redactLog(err));
           process.exit(1);
         }
         if ((opts.clientId || opts.clientSecret || opts.scope) && !opts.oauth) {
@@ -559,7 +560,7 @@ backendCmd
         try {
           if (opts.header.length) partial = parseHeaderFlags(opts.header);
         } catch (err) {
-          console.error(err instanceof Error ? err.message : err);
+          console.error(redactLog(err));
           process.exit(1);
         }
         if (opts.apiKey) {
@@ -1294,7 +1295,7 @@ dbCmd
       const out = await convertToIncrementalVacuum(cfg.dbPath, { check: opts.check, pragmas: { journalSizeLimitBytes: cfg.journalSizeLimitBytes } });
       console.log(JSON.stringify({ dbPath: cfg.dbPath, ...out }, null, 2));
     } catch (err) {
-      console.error(`[mcp-flow] db vacuum: ${(err as Error).message}`);
+      console.error(`[mcp-flow] db vacuum: ${redactLog(err)}`);
       process.exit(1);
     }
   });
@@ -1603,6 +1604,6 @@ approvalsCmd
   );
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(redactLog(err));
   process.exit(1);
 });
