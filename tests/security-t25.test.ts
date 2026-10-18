@@ -198,7 +198,7 @@ describe("M-3 approve-similar grants are narrow and die with the rule", () => {
                 VALUES (?,2,'tightened','["run"]','require_approval',?,30,?)`).run(rid, JSON.stringify([chen]), chen);
     db.prepare(`UPDATE mcpflow_policy_rule SET current_version=2 WHERE id=?`).run(rid);
     db.exec("COMMIT;");
-    expect(db.prepare(`SELECT revoked_reason FROM mcpflow_approval_grant WHERE id=?`).get(gid)).toMatchObject({ revoked_reason: `rule changed: ${rid}` });
+    expect(db.prepare(`SELECT revoked_reason FROM mcpflow_policy_grant WHERE id=?`).get(gid)).toMatchObject({ revoked_reason: `rule changed: ${rid}` });
     // granter suspension
     const ana = dir.createAgent({ workspaceId: WS, name: "ana", owner: "ana", kind: "human", projects: [], createdBy: chen });
     rule("require_approval", ["other"]);
@@ -216,7 +216,7 @@ describe("M-3 approve-similar grants are narrow and die with the rule", () => {
     const g2 = pe.approveSimilar(notices[1]!.pendingCallId, ana, 10) as { ok: true; grantId: string };
     await p;
     dir.suspendAgent(ana, chen);
-    expect(db.prepare(`SELECT revoked_reason FROM mcpflow_approval_grant WHERE id=?`).get(g2.grantId)).toMatchObject({ revoked_reason: "granter no longer active" });
+    expect(db.prepare(`SELECT revoked_reason FROM mcpflow_policy_grant WHERE id=?`).get(g2.grantId)).toMatchObject({ revoked_reason: "granter no longer active" });
   });
 });
 

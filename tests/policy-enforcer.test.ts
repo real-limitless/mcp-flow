@@ -292,14 +292,14 @@ describe("T2.2 holds", () => {
     expect(s.calls).toHaveLength(0);
   });
 
-  it("approve-similar grant: later identical-scope calls run without a hold, up to max_uses; never overrides deny", async () => {
+  it("approve-similar grant: later matching calls run without a hold (no use limit, 0010); never overrides deny", async () => {
     rule({ effect: "require_approval", timeoutS: 30 });
     const s = stub();
     const p = pe.enforce({ ctx: ctx(), args: { command: "ls" }, dispatch: s.dispatch });
     await waitFor(() => notices.length === 1);
     // broader-than-exact grants need explicit matchers (Security T2.5 M-3)
     const g = pe.approveSimilar(notices[0]!.pendingCallId, chen, 10, {
-      maxUses: 1, sameArgsOnly: false, matchArgs: [{ path: "$.command", op: "in", value: ["ls", "pwd"] }],
+      sameArgsOnly: false, matchArgs: [{ path: "$.command", op: "in", value: ["ls", "pwd"] }],
     });
     expect(g.ok).toBe(true);
     await p;
@@ -307,7 +307,10 @@ describe("T2.2 holds", () => {
     expect(r2.isError).toBeFalsy();
     expect(s.calls).toHaveLength(2);
     expect(rows().filter((r) => r.event_type === "decision").at(-1)!.grant_id).toBe(g.ok ? g.grantId : null);
-    // use exhausted -> holds again
+    // no use limit: the grant keeps applying until it expires or is revoked
+    expect((await pe.enforce({ ctx: ctx(), args: { command: "ls" }, dispatch: s.dispatch })).isError).toBeFalsy();
+    expect(s.calls).toHaveLength(3);
+    // args outside the grant's matchers -> holds again
     const p3 = pe.enforce({ ctx: ctx(), args: {}, dispatch: s.dispatch });
     await waitFor(() => notices.length === 2);
     pe.decide(notices[1]!.pendingCallId, chen, "denied");
@@ -319,7 +322,7 @@ describe("T2.2 holds", () => {
     await p4;
     rule({ effect: "deny" });
     expect(payload(await pe.enforce({ ctx: ctx(), args: {}, dispatch: s.dispatch })).reason).toBe("rule_deny");
-    expect(s.calls).toHaveLength(3);
+    expect(s.calls).toHaveLength(4);
   });
 
   it("a grant for another tool or agent does not apply", async () => {

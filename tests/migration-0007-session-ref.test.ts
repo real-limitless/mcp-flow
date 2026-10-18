@@ -1,7 +1,7 @@
 /** 0007 fix: pending_call rows that reference a session survive the mcpflow_session rebuild. */
 import { describe, expect, it } from "vitest";
 import { runMigrations } from "../src/db/migrations/index.js";
-import { fkClean, integrityOk, openAt, seedAgent, seedKey, seedPending, seedSession, seedWorkspace } from "./helpers/migration-seed.js";
+import { fkClean, integrityOk, openAt, seedAgent, seedKey, seedLegacySession, seedPending, seedWorkspace } from "./helpers/migration-seed.js";
 
 describe("0007_session_id_prefix with session refs", () => {
   it("migrates when a pending_call references a session; refs restored, FK and integrity clean", () => {
@@ -9,8 +9,8 @@ describe("0007_session_id_prefix with session refs", () => {
     const { ws, chen } = seedWorkspace(d);
     const bot = seedAgent(d, ws, "bot", chen);
     const k = seedKey(d, bot, chen);
-    const s1 = seedSession(d, bot, k);
-    const s2 = seedSession(d, bot, k);
+    const s1 = seedLegacySession(d, bot, k); // pre-0007 rows are legacy
+    const s2 = seedLegacySession(d, bot, k);
     const p1 = seedPending(d, { ws, agent: bot, key: k, approvers: [chen], session: s1 });
     const p2 = seedPending(d, { ws, agent: bot, key: k, approvers: [chen], session: s2 });
     const p3 = seedPending(d, { ws, agent: bot, key: k, approvers: [chen], session: null });

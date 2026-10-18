@@ -8,6 +8,7 @@ import { MIGRATION_0006 } from "./0006_outcomes_epoch.js";
 import { MIGRATION_0007 } from "./0007_session_id_prefix.js";
 import { MIGRATION_0008 } from "./0008_idempotency_per_agent.js";
 import { MIGRATION_0009 } from "./0009_agent_bootstrap_session_guard.js";
+import { MIGRATION_0010 } from "./0010_policy_grant.js";
 
 export interface Migration {
   id: string;
@@ -25,6 +26,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0007_session_id_prefix", sql: MIGRATION_0007 },
   { id: "0008_idempotency_per_agent", sql: MIGRATION_0008 },
   { id: "0009_agent_bootstrap_session_guard", sql: MIGRATION_0009 },
+  { id: "0010_policy_grant", sql: MIGRATION_0010 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;

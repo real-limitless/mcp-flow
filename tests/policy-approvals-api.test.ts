@@ -131,15 +131,18 @@ describe("policy approvals REST", () => {
     expect(h.dispatched()).toBe(0);
   });
 
-  it("approve-similar validates input and creates a capped grant used by the next call", async () => {
+  it("approve-similar validates input and creates a grant used by the next call (max_uses rejected, 0010)", async () => {
     const h = await hold();
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 0 })).status).toBe(400);
     expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 61 })).status).toBe(400);
-    expect((await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, max_uses: 0 })).status).toBe(400);
-    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 10, max_uses: 1, args_sha256: await sha(anaTok, h.id) });
+    const mu = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 5, max_uses: 1, args_sha256: await sha(anaTok, h.id) });
+    expect(mu.status).toBe(400);
+    expect(((await mu.json()) as { error: string }).error).toMatch(/max_uses is not supported/);
+    const r = await api(anaTok, `/${h.id}/approve-similar`, { minutes: 10, args_sha256: await sha(anaTok, h.id) });
     expect(r.status).toBe(200);
-    const body = (await r.json()) as { grant: { id: string; max_uses: number } };
-    expect(body.grant.max_uses).toBe(1);
+    const body = (await r.json()) as { grant: Record<string, unknown> };
+    expect(body.grant).toHaveProperty("created_at");
+    expect(body.grant).not.toHaveProperty("max_uses");
     await h.done;
     // next similar call goes through on the grant without a new pending row
     const before = (gw.store.db.prepare(`SELECT count(*) n FROM mcpflow_pending_call`).get() as { n: number }).n;

@@ -2627,7 +2627,6 @@ function paCardHtml(c, actionable) {
         <div class="row-actions pa-similar">
           <span class="muted">Approve similar calls (same agent, project, backend, tool) for</span>
           <input type="number" class="pa-minutes" min="1" max="60" step="1" value="15" aria-label="Minutes" ${dis} /> <span class="muted">min</span>
-          <input type="number" class="pa-maxuses" min="1" step="1" placeholder="max uses" aria-label="Max uses" ${dis} />
           <label class="form-check" title="Broader grants need match_args matchers, which this UI doesn't offer yet"><input type="checkbox" class="pa-sameargs" checked disabled /> exact same args only</label>
           <button type="button" class="pill-btn ghost" data-pa-similar="${esc(id)}" ${dis}>Approve similar</button>
         </div>
@@ -2790,15 +2789,6 @@ async function renderPolicyApprovals() {
       // Exact-args grant only (API default; sent explicitly). Broader grants
       // need same_args_only:false + match_args, which this UI doesn't build.
       const body = { minutes, same_args_only: true, args_sha256, ...noteOf(btn) };
-      const mu = card.querySelector(".pa-maxuses").value.trim();
-      if (mu) {
-        const n = Number(mu);
-        if (!Number.isInteger(n) || n < 1) {
-          showErr("Max uses must be a whole number ≥ 1");
-          return;
-        }
-        body.max_uses = n;
-      }
       void decide(btn, id, "approve-similar", body);
     }),
   );

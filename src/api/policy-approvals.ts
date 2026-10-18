@@ -216,7 +216,7 @@ export function policyApprovalsRouter(store: Store) {
   r.post("/:id/approve", decideRoute("approved"));
   r.post("/:id/deny", decideRoute("denied"));
 
-  // POST /:id/approve-similar {minutes 1-60, max_uses?, same_args_only?, note?}
+  // POST /:id/approve-similar {minutes 1-60, same_args_only?, note?} (0010: no use limit; max_uses is rejected)
   r.post("/:id/approve-similar", async (c) => {
     const id = c.req.param("id");
     const row = visible(c, id);
@@ -231,10 +231,8 @@ export function policyApprovalsRouter(store: Store) {
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > 60) {
       return c.json({ error: "minutes must be an integer 1-60" }, 400);
     }
-    let maxUses: number | undefined;
     if (body.max_uses != null) {
-      maxUses = Number(body.max_uses);
-      if (!Number.isInteger(maxUses) || maxUses < 1) return c.json({ error: "max_uses must be a positive integer" }, 400);
+      return c.json({ error: "max_uses is not supported: grants have no use limit (they expire after minutes)" }, 400);
     }
     const bad = checkEcho(id, body);
     if (bad) {
@@ -253,17 +251,16 @@ export function policyApprovalsRouter(store: Store) {
       if (!matchArgs.length) return c.json({ error: "match_args is required when same_args_only is false" }, 400);
     }
     const res = store.policy.approveSimilar(id, c.get("approver").agentId, minutes, {
-      maxUses,
       matchArgs,
       sameArgsOnly,
       note: typeof body.note === "string" ? body.note.slice(0, 500) : undefined,
     });
     audit(c, "policy.approval.approve_similar", {
-      pending_call_id: id, minutes, max_uses: maxUses ?? null, same_args_only: sameArgsOnly, match_args: matchArgs ?? null,
+      pending_call_id: id, minutes, same_args_only: sameArgsOnly, match_args: matchArgs ?? null,
       ok: res.ok, ...(res.ok ? { grant_id: res.grantId } : { error: res.error }),
     });
     if (!res.ok) return res.error.startsWith("invalid match_args") ? c.json({ error: res.error }, 400) : fail(c, res.error);
-    const g = db.prepare(`SELECT id, expires_at, max_uses, match_args, args_hash IS NOT NULL AS same_args_only FROM mcpflow_approval_grant WHERE id = ?`).get(res.grantId) as Record<string, unknown>;
+    const g = db.prepare(`SELECT id, created_at, expires_at, match_args, args_hash IS NOT NULL AS same_args_only FROM mcpflow_policy_grant WHERE id = ?`).get(res.grantId) as Record<string, unknown>;
     return c.json({
       ok: true, id, status: "approved",
       grant: { ...g, match_args: JSON.parse(String(g.match_args)), same_args_only: Boolean(g.same_args_only) },

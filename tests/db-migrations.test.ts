@@ -149,7 +149,7 @@ describe("connection and runner", () => {
     for (const t of [
       "mcpflow_workspace", "mcpflow_agent", "mcpflow_api_key", "mcpflow_session",
       "mcpflow_call_audit", "mcpflow_policy_rule", "mcpflow_policy_rule_version",
-      "mcpflow_pending_call", "mcpflow_approval_grant",
+      "mcpflow_pending_call", "mcpflow_policy_grant",
     ]) expect(strict).toContain(t);
   });
 
@@ -480,17 +480,17 @@ describe("approval grants", () => {
     decide(db, pc, "approved", chen);
   });
 
-  function grant(o: { by?: string; agent?: string; tool?: string; maxUses?: number | null; minutes?: number } = {}) {
+  // 0010: mcpflow_policy_grant (created_at, no max_uses/use_count)
+  function grant(o: { by?: string; agent?: string; tool?: string; minutes?: number; createdAt?: Date } = {}) {
     const g = id("grt");
-    const now = new Date();
+    const now = o.createdAt ?? new Date();
     db.prepare(
-      `INSERT INTO mcpflow_approval_grant (id, source_pending_call_id, workspace_id, agent_id, project_id,
-         backend_slug, tool, overrides_rule_ids, granted_by, granted_at, expires_at, max_uses)
-       VALUES (?, ?, ?, ?, 'gb_devops', 'gh-repos-shell', ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO mcpflow_policy_grant (id, source_pending_call_id, workspace_id, agent_id, project_id,
+         backend_slug, tool, overrides_rule_ids, granted_by, created_at, expires_at)
+       VALUES (?, ?, ?, ?, 'gb_devops', 'gh-repos-shell', ?, ?, ?, ?, ?)`,
     ).run(
       g, pc, ws, o.agent ?? bot, o.tool ?? "run_command", JSON.stringify([id("rule")]),
       o.by ?? chen, now.toISOString(), new Date(now.getTime() + (o.minutes ?? 30) * 60_000).toISOString(),
-      o.maxUses === undefined ? 2 : o.maxUses,
     );
     return g;
   }
@@ -502,21 +502,26 @@ describe("approval grants", () => {
     expect(() => grant()).not.toThrow();
   });
 
-  it("scope immutable, use_count +1 only, max_uses enforced, revoke terminal", () => {
+  it("snapshot immutable, revoke terminal, never deleted", () => {
     const g = grant();
-    expect(() => db.prepare(`UPDATE mcpflow_approval_grant SET tool='x' WHERE id=?`).run(g)).toThrow(/immutable/);
-    expect(() => db.prepare(`UPDATE mcpflow_approval_grant SET use_count=2 WHERE id=?`).run(g)).toThrow(/increments/);
-    db.prepare(`UPDATE mcpflow_approval_grant SET use_count=use_count+1 WHERE id=?`).run(g);
-    db.prepare(`UPDATE mcpflow_approval_grant SET use_count=use_count+1 WHERE id=?`).run(g);
-    expect(() => db.prepare(`UPDATE mcpflow_approval_grant SET use_count=use_count+1 WHERE id=?`).run(g)).toThrow(/CHECK/);
-    db.prepare(`UPDATE mcpflow_approval_grant SET revoked_at=?, revoked_by=?, revoked_reason='r' WHERE id=?`).run(iso(), chen, g);
-    expect(() => db.prepare(`UPDATE mcpflow_approval_grant SET revoked_at=NULL, revoked_by=NULL WHERE id=?`).run(g)).toThrow(/terminal/);
-    expect(() => db.prepare(`DELETE FROM mcpflow_approval_grant WHERE id=?`).run(g)).toThrow(/never deleted/);
+    expect(() => db.prepare(`UPDATE mcpflow_policy_grant SET tool='x' WHERE id=?`).run(g)).toThrow(/immutable/);
+    expect(() => db.prepare(`UPDATE mcpflow_policy_grant SET expires_at=? WHERE id=?`).run(iso(DAY), g)).toThrow(/immutable/);
+    db.prepare(`UPDATE mcpflow_policy_grant SET revoked_at=?, revoked_by=?, revoked_reason='r' WHERE id=?`).run(iso(), chen, g);
+    expect(() => db.prepare(`UPDATE mcpflow_policy_grant SET revoked_at=NULL, revoked_by=NULL WHERE id=?`).run(g)).toThrow(/terminal/);
+    expect(() => db.prepare(`DELETE FROM mcpflow_policy_grant WHERE id=?`).run(g)).toThrow(/never deleted/);
   });
 
-  it("a revoked grant cannot be used", () => {
-    const g = grant({ maxUses: null });
-    db.prepare(`UPDATE mcpflow_approval_grant SET revoked_at=?, revoked_by=?, revoked_reason='r' WHERE id=?`).run(iso(), chen, g);
-    expect(() => db.prepare(`UPDATE mcpflow_approval_grant SET use_count=use_count+1 WHERE id=?`).run(g)).toThrow(/not live/);
+  it("only live (unrevoked, unexpired) grants are in mcpflow_live_policy_grant; no use limit", () => {
+    const live = grant();
+    const revoked = grant();
+    db.prepare(`UPDATE mcpflow_policy_grant SET revoked_at=?, revoked_by=?, revoked_reason='r' WHERE id=?`).run(iso(), chen, revoked);
+    const expired = grant({ createdAt: new Date(Date.now() - 20 * 60_000), minutes: 10 });
+    const ids = (db.prepare(`SELECT id FROM mcpflow_live_policy_grant`).all() as Array<{ id: string }>).map((r) => r.id);
+    expect(ids).toContain(live);
+    expect(ids).not.toContain(revoked);
+    expect(ids).not.toContain(expired);
+    const cols = (db.prepare(`PRAGMA table_info(mcpflow_policy_grant)`).all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).not.toContain("max_uses");
+    expect(cols).not.toContain("use_count");
   });
 });
