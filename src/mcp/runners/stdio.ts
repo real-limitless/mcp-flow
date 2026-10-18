@@ -373,6 +373,7 @@ async function connectOnce(
   command: string[],
   env: Record<string, string>,
   cwd?: string,
+  timeoutMs?: number,
 ): Promise<StdioRunResult> {
   const [cmd, ...args] = command;
   const transport = new GroupedStdioClientTransport({
@@ -407,8 +408,11 @@ async function connectOnce(
     { capabilities: {} },
   );
   try {
-    await client.connect(transport);
-    const listed = await client.listTools();
+    // V53-F4: initialize and the first tools/list are bounded (SDK default is 60 s); on timeout the
+    // client is closed below, which kills the backend's process group.
+    const opts = timeoutMs ? { timeout: timeoutMs } : undefined;
+    await client.connect(transport, opts);
+    const listed = await client.listTools(undefined, opts);
     initDone = true;
     return {
       client,
@@ -433,13 +437,15 @@ export async function connectStdioCommand(opts: {
   command: string[];
   env: Record<string, string>;
   cwd?: string;
+  /** V53-F4: bound for initialize + first tools/list (ms). */
+  timeoutMs?: number;
 }): Promise<StdioRunResult> {
   if (!opts.command.length) {
     throw new Error("stdio command is empty");
   }
   const env = buildStdioEnv(opts.env);
   try {
-    return await connectOnce(opts.command, env, opts.cwd);
+    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!isNpxLikeCommand(opts.command) || !isNpxCacheCorruption(msg)) {
@@ -450,7 +456,7 @@ export async function connectStdioCommand(opts: {
       `[mcp-flow] npx extract looks corrupt (${redactLog(msg.split("\n")[0])}); clearing ${npxExtractStore(cache)} and retrying`,
     );
     clearNpxExtractStore(cache);
-    return await connectOnce(opts.command, env, opts.cwd);
+    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
   }
 }
 

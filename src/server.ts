@@ -154,6 +154,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   store.sweepResolvedSealedApprovalArgs();
   const pool = new UpstreamPool(store, {
     allowPrivateUrls: cfg.allowPrivateUrls,
+    initTimeoutMs: cfg.backendInitTimeoutMs,
   });
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);
