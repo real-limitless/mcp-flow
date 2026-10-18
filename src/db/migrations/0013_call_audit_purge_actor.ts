@@ -5,15 +5,22 @@
  * other actor is still an agt_ id. This is a new migration rather than an edit of 0012, because DBs
  * that already ran 0012 from 1a90e2bc (QA) never re-run it.
  * call_audit is rebuilt again (rows, audit_ids and the sqlite_sequence high-water mark kept; indexes
- * and triggers recreated verbatim from 0012). Existing purge rows (actor NULL under 0012) are
- * backfilled from their error_code; the count is recorded in mcpflow_migration_note.
+ * and triggers recreated verbatim from 0012). Every existing purge row gets the system actor for its
+ * error_code. What that changed is recorded in mcpflow_migration_note as
+ * {null_backfilled, agt_actor_overwritten}: 1a90e2bc wrote NULL actors, but the 0012 CHECK also
+ * allowed an agt_ actor on a purge row, and such an actor is replaced (counted, never silently).
  * DOWN restores the 0012 table and sets purge-row actors back to NULL (the reason stays in error_code).
  */
 export const MIGRATION_0013 = `
 -- 0013_call_audit_purge_actor: result_purge rows carry a system actor matching the purge reason
+-- every purge row's actor is set from its reason; record what that changed (Database review of f9388505):
+-- null_backfilled = actor was NULL (as 1a90e2bc wrote them), agt_actor_overwritten = an agt_ actor was replaced
 INSERT INTO mcpflow_migration_note (migration_id, note)
-SELECT '0013_call_audit_purge_actor', json_object('result_purge_rows_actor_backfilled', count(*))
-  FROM mcpflow_call_audit WHERE event_type = 'result_purge' AND actor IS NULL HAVING count(*) > 0;
+SELECT '0013_call_audit_purge_actor',
+       json_object('null_backfilled', sum(actor IS NULL),
+                   'agt_actor_overwritten', sum(actor IS NOT NULL AND substr(actor, 1, 7) <> 'system:'))
+  FROM mcpflow_call_audit WHERE event_type = 'result_purge'
+HAVING sum(actor IS NULL OR substr(actor, 1, 7) <> 'system:') > 0;
 DROP TRIGGER mcpflow_call_audit_approver_human;
 DROP TRIGGER mcpflow_call_audit_no_self_approval;
 DROP TRIGGER mcpflow_call_audit_no_update;
