@@ -187,7 +187,10 @@ describe("SecOPS afcbc646 SHOULD 3/4: approver_note text column, identifier shap
     const c = db.prepare(`SELECT approver_note, key_prefix, backend_slug FROM mcpflow_call_audit WHERE event_type='completion' ORDER BY audit_id DESC LIMIT 1`).get() as Record<string, string>;
     expect(c.key_prefix).toBe("Ab3_-xYz09Qw");
     expect(c.backend_slug).toBe("gh");
-    expect(c.approver_note.length).toBe(CALL_AUDIT_NOTE_MAX + 1);
+    // the note was already sanitized in mcpflow_pending_call (ed022746); the second pass (\n now "?")
+    // redacts to the end, so the copy is shorter: over-redaction, never a leak
+    expect(c.approver_note).toBe("denied, API_KEY=[redacted]");
+    expect(c.approver_note.length).toBeLessThanOrEqual(CALL_AUDIT_NOTE_MAX + 1);
     expect(c.approver_note).not.toContain("\n");
     // the audit table never carries the fake values (mcpflow_pending_call.note is the decision record)
     noSecrets();
