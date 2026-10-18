@@ -232,3 +232,44 @@ describe("V53-F2 HTTP drain covers legacy-key calls (they bypass the enforcer)",
     expect(await until(() => survivors(w.spawnDir).length === 0, 1_000)).toBe(true);
   }, 30_000);
 });
+
+describe("V53-F3 a crashed stdio backend's own children are reaped", () => {
+  it("QA crash-orphan repro: crash x3 with reconnects, then closeAll: no leader or grandchild survives", async () => {
+    const w = seed(1);
+    const store = new Store(w.dbPath, MASTER);
+    const { UpstreamPool } = await import("../src/mcp/upstream.js");
+    const pool = new UpstreamPool(store);
+    cleanups.push(async () => { await pool.closeAll(); store.close(); });
+    expect(text(await pool.callTool(w.ws, "s1__echo", { v: 1 }))).toBe("echo");
+    for (let i = 0; i < 3; i++) {
+      const crashedLeader = markers(w.spawnDir).at(-1)!;
+      await pool.callTool(w.ws, "s1__crash", {});
+      // the crashed leader's grandchild goes as soon as the leader exits, before any reconnect
+      expect(await until(() => !alive(crashedLeader.pid) && !alive(crashedLeader.child), 2_000)).toBe(true);
+      await sleep(50);
+      await pool.callTool(w.ws, "s1__echo", {}).catch(() => null); // may hit the dead client once
+      expect(text(await pool.callTool(w.ws, "s1__echo", {}))).toBe("echo");
+    }
+    expect(markers(w.spawnDir)).toHaveLength(4);
+    expect(survivors(w.spawnDir)).toHaveLength(2); // only the live backend and its grandchild
+    await pool.closeAll();
+    expect(await until(() => survivors(w.spawnDir).length === 0, 1_500)).toBe(true);
+  }, 30_000);
+
+  it("closeEntry reaps the group even when the transport already shut down (Client dropped it)", async () => {
+    const w = seed(1);
+    const store = new Store(w.dbPath, MASTER);
+    const { UpstreamPool } = await import("../src/mcp/upstream.js");
+    const pool = new UpstreamPool(store);
+    cleanups.push(async () => { await pool.closeAll(); store.close(); });
+    expect(text(await pool.callTool(w.ws, "s1__echo", {}))).toBe("echo");
+    const m = markers(w.spawnDir)[0]!;
+    // Kill only the leader (as an OOM kill would); the grandchild stays in the group.
+    process.kill(m.pid, "SIGKILL");
+    // wait until node has reaped it (not just a zombie) and the SDK Client has dropped its transport
+    expect(await until(() => procStat(m.pid) === null, 2_000)).toBe(true);
+    await sleep(200);
+    await pool.closeAll();
+    expect(await until(() => !alive(m.child), 1_500)).toBe(true);
+  }, 30_000);
+});

@@ -274,6 +274,12 @@ class GroupedStdioClientTransport extends StdioClientTransport {
         this.track();
         resolve();
       });
+      // V53-F3: when the leader exits on its own (crash), reap the rest of its process group now.
+      // The SDK Client drops its transport on close, so a later client.close() never reaches
+      // close() here and the group kill would otherwise never run.
+      child.on("exit", () => {
+        if (this.leaderPid !== null) void this.close();
+      });
       child.on("close", () => {
         self._process = undefined;
         self.onclose?.();

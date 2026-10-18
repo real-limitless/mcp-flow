@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -135,6 +136,15 @@ export class UpstreamPool {
         await entry.client.close();
       } catch {
         /* ignore */
+      }
+      // V53-F3: Client.close() skips the transport once it has already closed (backend crashed),
+      // so close a stdio transport directly too; its group kill is idempotent.
+      if (entry.transport instanceof StdioClientTransport) {
+        try {
+          await entry.transport.close();
+        } catch {
+          /* ignore */
+        }
       }
       if (entry.dispose) {
         try {
