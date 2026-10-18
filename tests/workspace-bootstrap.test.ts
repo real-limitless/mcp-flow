@@ -21,6 +21,7 @@ import { AgentDirectory } from "../src/identity/agents.js";
 import { derivePolicyKeys } from "../src/identity/dev-keys.js";
 
 const ROOT = join(__dirname, "..");
+const SIDE_EFFECT_ROUTES = new Set(["POST /v1/catalog/sync"]);
 const srcFiles = (dir: string): string[] =>
   readdirSync(dir).flatMap((f) => {
     const p = join(dir, f);
@@ -86,13 +87,19 @@ describe("(a) workspace creation is ops-only", () => {
       const evil = { workspace_id: "ws_" + "e".repeat(24), workspaceId: "ws_" + "e".repeat(24), workspace: "evil", name: "evil", workspaceName: "evil", owner: "evil" };
       const withTimeout = <T>(p: Promise<T>) => Promise.race([p.catch(() => null), new Promise((r) => setTimeout(() => r(null), 3000))]);
 
+      const catalogMeta = () => readFileSync(join(ROOT, "catalog/meta.json"), "utf8");
+      const metaBefore = catalogMeta();
       // API: the routes of the real app, enumerated from Hono
       const app = createApp(gw.store, cfg, gw.pool);
       const routes = [...new Map(app.routes.filter((r) => r.path !== "/*" && r.path !== "*" && r.method !== "OPTIONS").map((r) => [`${r.method} ${r.path}`, r])).values()];
       expect(routes.length).toBeGreaterThan(20);
+      expect(routes.filter((r) => SIDE_EFFECT_ROUTES.has(`${r.method} ${r.path}`))).toHaveLength(SIDE_EFFECT_ROUTES.size);
       let calls = 0;
       for (const r of routes) {
         if (r.path === "/mcp") continue; // MCP is exercised below with a real client
+        // the one route with outside side effects: pulls the public registry and rewrites the repo's catalog/.
+        // It creates no workspace (the static scan above covers every writer and caller).
+        if (SIDE_EFFECT_ROUTES.has(`${r.method} ${r.path}`)) continue;
         const path = r.path.replace(/:([A-Za-z_]+)(\{[^}]*\})?/g, (_m, n: string) => (/work|ws/i.test(n) ? evil.workspace_id : `x_${n}`)).replace(/\*/g, "x");
         const methods = r.method === "ALL" ? ["GET", "POST"] : [r.method];
         for (const m of methods) for (const tok of [null, botTok, chenTok]) {
@@ -120,6 +127,7 @@ describe("(a) workspace creation is ops-only", () => {
       expect([...toolNames].some((n) => n.startsWith("mf_"))).toBe(true);
       expect([...toolNames].filter((n) => /workspace/i.test(n) && /create|bootstrap|new|add/i.test(n))).toEqual([]);
       expect(counts()).toEqual(before);
+      expect(catalogMeta()).toBe(metaBefore); // the test itself must not touch the repo
     }, 120_000);
   });
 });
