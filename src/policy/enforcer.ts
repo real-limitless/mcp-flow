@@ -14,6 +14,7 @@
  */
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { AgentRateLimiter } from "./rate-limit.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import type { PolicyKeys } from "../identity/dev-keys.js";
@@ -37,7 +38,8 @@ export type DenyReason =
   | "invalid_idempotency_key"
   | "idempotency_conflict"
   | "gateway_shutting_down"
-  | "no_active_approver";
+  | "no_active_approver"
+  | "rate_limited";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -78,6 +80,10 @@ export interface EnforcerDeps {
   maxHoldsPerAgent?: number;
   /** Test hook: fail audit writes */
   auditFault?: () => boolean;
+  /** PM: per-agent tools/call rate limit (MCP_FLOW_RATE_LIMIT_PER_MIN); 0/undefined = off */
+  rateLimitPerMin?: number;
+  /** cap on tracked rate-limit buckets (default 10 000) */
+  rateLimitMaxBuckets?: number;
 }
 
 type Resolution = "approved" | "denied" | "expired" | "cancelled";
@@ -185,6 +191,7 @@ const CANCEL_MESSAGES: Record<string, string> = {
 
 const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   rule_deny: "This call is denied by policy.",
+  rate_limited: "Too many tool calls from this agent; nothing was run. Retry after retry_after_ms.",
   no_matching_rule: "No policy rule allows this call (project default is deny).",
   policy_unavailable: "Policy could not be evaluated; the gateway fails closed.",
   audit_unavailable: "The audit log is unavailable; the gateway fails closed.",
@@ -212,8 +219,39 @@ export class PolicyEnforcer {
   private closed = false;
   private readonly clock: () => number;
 
+  /** PM: per-agent token buckets; null when the rate limit is off */
+  readonly rateLimiter: AgentRateLimiter | null;
+
   constructor(private readonly deps: EnforcerDeps) {
     this.clock = deps.clock ?? Date.now;
+    this.rateLimiter = deps.rateLimitPerMin && deps.rateLimitPerMin > 0
+      ? new AgentRateLimiter(deps.rateLimitPerMin, { maxBuckets: deps.rateLimitMaxBuckets, clock: this.clock })
+      : null;
+  }
+
+  /**
+   * PM: per-agent rate limit, checked first on every agent tools/call (before any other refusal, so
+   * refusals can't be used to flood the audit log either). Over the limit: audited deny
+   * (error_code rate_limited) + denied/not_dispatched completion, and nothing is dispatched.
+   * Returns null when the call may proceed (or the limit is off).
+   */
+  rateLimit(
+    ctx: Partial<CallContext> & { workspaceId: string; agentId: string; keyId: string },
+    requested: string,
+    args: Record<string, unknown>,
+  ): CallToolResult | null {
+    if (!this.rateLimiter) return null;
+    const t = this.rateLimiter.take(ctx.agentId);
+    if (t.ok) return null;
+    const res = this.refuseBeforePolicy(ctx, "rate_limited", requested, args);
+    const text = (res.content[0] as { text: string }).text;
+    const payload = JSON.parse(text) as Record<string, unknown>;
+    if (payload.reason === "rate_limited") {
+      payload.retry_after_ms = t.retryAfterMs;
+      payload.limit_per_min = this.rateLimiter.perMinute;
+      (res.content[0] as { text: string }).text = JSON.stringify(payload);
+    }
+    return res;
   }
 
   /** T2.4: install the approver notifier (Web Push). */
@@ -329,7 +367,7 @@ export class PolicyEnforcer {
    */
   refuseBeforePolicy(
     ctx: Partial<CallContext> & { workspaceId: string; agentId: string; keyId: string },
-    reason: "unknown_tool" | "unknown_backend" | "no_active_project" | "gateway_shutting_down",
+    reason: "unknown_tool" | "unknown_backend" | "no_active_project" | "gateway_shutting_down" | "rate_limited",
     requested: string,
     args: Record<string, unknown>,
   ): CallToolResult {
@@ -353,7 +391,8 @@ export class PolicyEnforcer {
       this.tx(() => {
         this.writeAudit({ event_type: "decision", ...cols, policy_decision: "deny", error_code: reason });
         this.writeAudit({
-          event_type: "completion", ...cols, final_outcome: "error", result_status: "not_dispatched",
+          // a rate-limited call is a deny (final_outcome denied); the others are gateway errors (Q6)
+          event_type: "completion", ...cols, final_outcome: reason === "rate_limited" ? "denied" : "error", result_status: "not_dispatched",
           error_code: reason, latency_ms: 0,
         });
       });

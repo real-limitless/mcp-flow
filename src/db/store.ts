@@ -617,7 +617,7 @@ export class Store {
   constructor(
     dbPath: string,
     masterKeyRaw: string,
-    opts: { policyDevKeyRaw?: string; journalSizeLimitBytes?: number } = {},
+    opts: { policyDevKeyRaw?: string; journalSizeLimitBytes?: number; rateLimitPerMin?: number } = {},
   ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
@@ -627,7 +627,7 @@ export class Store {
     runMigrations(this.db);
     this.policyKeys = derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`);
     this.identity = new AgentDirectory(this.db, this.policyKeys);
-    this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys });
+    this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys, rateLimitPerMin: opts.rateLimitPerMin });
   }
 
   private migrate(): void {

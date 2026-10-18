@@ -297,6 +297,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       workspaceId: ctx.workspaceId, agentId: ctx.agentId!, agentName: ctx.agentName ?? "",
       keyId: ctx.keyId!, keyPrefix: ctx.keyPrefix ?? null, projectId: project?.slug,
     };
+    // PM: per-agent rate limit first, so no refusal path can be used to flood the audit log either
+    const limited = store.policy.rateLimit(who, qualified, callArgs);
+    if (limited) return limited;
     if (!project) return store.policy.refuseBeforePolicy(who, "no_active_project", qualified, callArgs);
     // QA T2.5 F1: resolve the caller's string EXACTLY against the live catalog. No trimming, case
     // folding or Unicode normalization: anything not byte-identical to a listed tool is refused.

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { parseRateLimitPerMin } from "./policy/rate-limit.js";
 
 export interface Config {
   host: string;
@@ -34,6 +35,11 @@ export interface Config {
    * 1..4096; unset/invalid = default). Bounds the WAL file kept on disk after checkpoints.
    */
   journalSizeLimitBytes: number;
+  /**
+   * PM: per-agent tools/call rate limit (token bucket, in memory), MCP_FLOW_RATE_LIMIT_PER_MIN.
+   * Whole calls per minute per agent_id; 0 or unset = off (default).
+   */
+  rateLimitPerMin?: number;
 }
 
 export const DEFAULT_SHUTDOWN_GRACE_MS = 8000;
@@ -116,6 +122,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
     journalSizeLimitBytes: overrides.journalSizeLimitBytes ?? parseJournalSizeLimitBytes(env("MCP_FLOW_JOURNAL_SIZE_LIMIT_MB")),
+    rateLimitPerMin: overrides.rateLimitPerMin ?? parseRateLimitPerMin(env("MCP_FLOW_RATE_LIMIT_PER_MIN")),
   };
 }
 
