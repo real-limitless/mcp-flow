@@ -32,9 +32,9 @@ const callAuditSchema = (d: D) => schemaSnapshot(d).filter((s) => s.includes("mc
 describe("0013 up/down/up from a 1a90e2bc (0012) database", () => {
   it("backfills purge-row actors from the reason; keeps rows, ids and the sequence; down restores 0012; FK/integrity clean", () => {
     const { d, chen } = at0012();
-    expect(MIGRATIONS.at(-1)!.id).toBe(ID);
+    expect(MIGRATIONS.map((m) => m.id)).toContain(ID);
     const before = schemaSnapshot(d);
-    runMigrations(d);
+    runMigrations(d, ID);
     const up = [
       { audit_id: 3, event_type: "decision", actor: null, error_code: null },
       { audit_id: 4, event_type: "decision", actor: null, error_code: null },
@@ -55,7 +55,7 @@ describe("0013 up/down/up from a 1a90e2bc (0012) database", () => {
     expect(seq(d)).toBe(503);
     expect(rows(d)).toEqual(up.map((r) => (r.event_type === "result_purge" ? { ...r, actor: null } : r)));
 
-    runMigrations(d);
+    runMigrations(d, ID);
     expect(rows(d)).toEqual(up);
     expect(seq(d)).toBe(503);
     expect(notes(d)).toEqual([{ result_purge_rows_actor_backfilled: 2 }, { result_purge_rows_actor_backfilled: 2 }]);
