@@ -475,7 +475,7 @@ describe("T2.1 v10 holds", () => {
     expect(db.prepare(`SELECT count(*) n FROM mcpflow_pending_call`).get()).toEqual({ n: 0 });
     expect(rows().map((x) => [x.event_type, x.policy_decision, x.final_outcome, x.error_code])).toEqual([
       ["decision", "require_approval", null, "no_active_approver"],
-      ["completion", null, "denied", "no_active_approver"],
+      ["completion", null, "cancelled", "no_active_approver"],
     ]);
   });
 });
