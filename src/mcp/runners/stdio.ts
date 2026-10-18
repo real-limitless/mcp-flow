@@ -66,8 +66,8 @@ export function buildStdioEnv(
   };
 }
 
-/** SIGTERM grace before SIGKILL. Kept under 2s so an 8s request drain still fits in a 10s shutdown. */
-export const STDIO_GROUP_KILL_GRACE_MS = 1_000;
+/** SIGTERM grace before SIGKILL. With the 250 ms follow-up the group kill takes at most 1 s (V53 headroom). */
+export const STDIO_GROUP_KILL_GRACE_MS = 750;
 const STDIO_GROUP_KILL_FOLLOWUP_MS = 250;
 export const STDIO_GROUP_KILL_BUDGET_MS =
   STDIO_GROUP_KILL_GRACE_MS + STDIO_GROUP_KILL_FOLLOWUP_MS;

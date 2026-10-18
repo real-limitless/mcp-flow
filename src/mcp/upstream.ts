@@ -13,7 +13,6 @@ import {
   connectStdioCommand,
   disarmStdioReap,
   killLiveStdio,
-  STDIO_GROUP_KILL_BUDGET_MS,
 } from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 
@@ -54,14 +53,11 @@ interface PooledClient {
 const TOOL_CACHE_MS = 30_000;
 
 /**
- * How long closeAll waits for an in-flight connect before killing the spawn.
- * 10s shutdown − 8s drain − process-group kill. A slow npx install or a hung
- * initialize cannot stretch shutdown past that budget.
+ * How long closeAll waits for an in-flight connect before killing the spawn. A slow npx install or a
+ * hung initialize cannot stretch shutdown past the budget: 7 s max grace + this + the 1 s group kill
+ * leaves >= 1 s of the 10 s stop budget (V53 headroom; asserted in server.ts and tests).
  */
-export const INFLIGHT_CLOSE_DEADLINE_MS = Math.max(
-  0,
-  10_000 - 8_000 - STDIO_GROUP_KILL_BUDGET_MS,
-);
+export const INFLIGHT_CLOSE_DEADLINE_MS = 500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

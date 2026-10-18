@@ -61,7 +61,7 @@ afterEach(async () => {
 });
 
 /**
- * Raw JSON-RPC stdio MCP server. argv: <spawnDir> [modes], modes "+"-joined:
+ * Raw JSON-RPC stdio MCP server. argv: <spawnDir> [modes] [name], modes "+"-joined:
  * ignore-term (leader ignores SIGTERM), hang-init-on-respawn (2nd+ spawn never answers initialize).
  * Spawns one grandchild in its own process group (inherited), like npx -> sh -> node.
  */
@@ -74,7 +74,7 @@ const [, , spawnDir, mode = ""] = process.argv;
 const modes = new Set(mode.split("+"));
 if (modes.has("ignore-term")) process.on("SIGTERM", () => {});
 mkdirSync(spawnDir, { recursive: true });
-const flag = spawnDir + "/../respawn.flag";
+const flag = spawnDir + "/../respawn-" + (process.argv[4] ?? "x") + ".flag";
 const hang = modes.has("hang-init-on-respawn") && existsSync(flag);
 writeFileSync(flag, "1");
 const gc = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1e9)"], { stdio: "ignore" });
@@ -122,7 +122,7 @@ function seed(n: number, modes: string[] = []) {
   const store = new Store(dbPath, MASTER);
   const ws = store.ensureWorkspace("default").id;
   for (let i = 1; i <= n; i++) {
-    store.createBackend(ws, { slug: `s${i}`, transport: "stdio", command: [process.execPath, script, spawnDir, modes[i - 1] ?? ""], enabled: true, placement: { mode: "central-sandbox" } });
+    store.createBackend(ws, { slug: `s${i}`, transport: "stdio", command: [process.execPath, script, spawnDir, modes[i - 1] ?? "", `s${i}`], enabled: true, placement: { mode: "central-sandbox" } });
   }
   const legacy = store.createApiKey(ws, "legacy", { projects: ["*"] } as never).token;
   store.close();
@@ -272,4 +272,34 @@ describe("V53-F3 a crashed stdio backend's own children are reaped", () => {
     await pool.closeAll();
     expect(await until(() => !alive(m.child), 1_500)).toBe(true);
   }, 30_000);
+});
+
+describe("V53 headroom: worst-case shutdown keeps >= 1 s of the 10 s stop budget", () => {
+  it("QA W3b: max grace + legacy hang + backends ignoring SIGTERM + hung respawn connect stops in < 9 s", async () => {
+    const { MAX_SHUTDOWN_GRACE_MS } = await import("../src/config.js");
+    const { SHUTDOWN_BUDGET_MS, SHUTDOWN_HEADROOM_MS } = await import("../src/server.js");
+    const w = seed(4, ["ignore-term", "ignore-term", "ignore-term", "hang-init-on-respawn+ignore-term"]);
+    const s = await serve(w.dbPath, { MCP_FLOW_SHUTDOWN_GRACE_MS: "60000" }); // clamped to the max
+    const c = await mcpClient(s.port, w.legacy);
+    for (const b of ["s1", "s2", "s3", "s4"]) expect(await call(c, `${b}__echo`)).toBe("echo");
+    const hang = call(c, "s1__hang"); // in flight for the whole grace
+    void call(c, "s4__crash");
+    expect(await until(() => markers(w.spawnDir).length === 4 && survivors(w.spawnDir).length === 6, 3_000)).toBe(true);
+    // the next calls hit the dead backend, then respawn it; the respawn hangs in initialize
+    void call(c, "s4__echo");
+    await sleep(200);
+    void call(c, "s4__echo");
+    expect(await until(() => markers(w.spawnDir).length === 5, 3_000)).toBe(true);
+    await sleep(200);
+    const t0 = Date.now();
+    s.p.kill("SIGTERM");
+    const done = await s.exited;
+    const stopMs = done.at - t0;
+    console.error(`[v53 headroom] W3b stopMs=${stopMs} headroom=${SHUTDOWN_BUDGET_MS - stopMs}`);
+    expect(done.code).toBe(0);
+    expect(stopMs).toBeGreaterThanOrEqual(MAX_SHUTDOWN_GRACE_MS - 100); // the grace really was used
+    expect(stopMs).toBeLessThanOrEqual(SHUTDOWN_BUDGET_MS - SHUTDOWN_HEADROOM_MS);
+    expect(await hang).toMatch(/^ERR/);
+    expect(await until(() => survivors(w.spawnDir).length === 0, 1_000)).toBe(true);
+  }, 40_000);
 });

@@ -525,7 +525,7 @@ describe("stdio process lifecycle", () => {
 describe("shutdown budget", () => {
   it("finishes within 10s when a stdio child ignores SIGTERM", async () => {
     expect(SHUTDOWN_BUDGET_MS).toBeLessThanOrEqual(10_000);
-    expect(SHUTDOWN_DRAIN_MS).toBeLessThanOrEqual(8_000);
+    expect(SHUTDOWN_DRAIN_MS).toBeLessThanOrEqual(7_000);
     expect(STDIO_GROUP_KILL_BUDGET_MS).toBeLessThan(2_000);
     expect(SHUTDOWN_DRAIN_MS + STDIO_GROUP_KILL_BUDGET_MS).toBeLessThanOrEqual(
       SHUTDOWN_BUDGET_MS,

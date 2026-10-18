@@ -42,8 +42,12 @@ export interface Config {
   rateLimitPerMin?: number;
 }
 
-export const DEFAULT_SHUTDOWN_GRACE_MS = 8000;
-export const MAX_SHUTDOWN_GRACE_MS = 8000;
+/**
+ * V53 headroom: max grace 7000 ms, so the worst case (full grace + connect deadline + process-group
+ * kill + overhead) leaves >= 1 s of the 10 s Docker stop budget (see SHUTDOWN_HEADROOM_MS in server.ts).
+ */
+export const DEFAULT_SHUTDOWN_GRACE_MS = 7000;
+export const MAX_SHUTDOWN_GRACE_MS = 7000;
 
 export function parseShutdownGraceMs(raw: string | number | undefined | null): number {
   const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);

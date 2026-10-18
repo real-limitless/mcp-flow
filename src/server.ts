@@ -5,7 +5,7 @@ import type { WebSocket } from "ws";
 import { WebSocketServer } from "ws";
 import { createApp } from "./api/app.js";
 import type { Config } from "./config.js";
-import { DEFAULT_SHUTDOWN_GRACE_MS, requireSecrets } from "./config.js";
+import { DEFAULT_SHUTDOWN_GRACE_MS, MAX_SHUTDOWN_GRACE_MS, requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
 import { acquireGatewayLock } from "./db/gateway-lock.js";
 import { EdgeHub } from "./edge/hub.js";
@@ -26,14 +26,22 @@ export const SHUTDOWN_DRAIN_MS = Math.min(
 export const SHUTDOWN_CLOSE_RESERVE_MS = INFLIGHT_CLOSE_DEADLINE_MS + STDIO_GROUP_KILL_BUDGET_MS;
 /** Held callers get at most this long to receive their 'cancelled' answer. */
 export const HELD_CALLER_WAIT_MAX_MS = 1000;
-const SHUTDOWN_MARGIN_MS = 150;
+/** V53: unused stop budget kept in the worst case (QA v5.3 measured ~160 ms with grace 8000). */
+export const SHUTDOWN_HEADROOM_MS = 1000;
+/** Allowance for work outside the timed steps (audit writes, recovery, socket and DB close). */
+export const SHUTDOWN_OVERHEAD_ALLOWANCE_MS = 500;
+/** Worst case by construction: max grace, no held-caller wait left, full close reserve. */
+export const SHUTDOWN_WORST_CASE_MS = MAX_SHUTDOWN_GRACE_MS + SHUTDOWN_CLOSE_RESERVE_MS + SHUTDOWN_OVERHEAD_ALLOWANCE_MS;
+if (SHUTDOWN_WORST_CASE_MS + SHUTDOWN_HEADROOM_MS > SHUTDOWN_BUDGET_MS) {
+  throw new Error("shutdown constants leave less than SHUTDOWN_HEADROOM_MS of the stop budget");
+}
 
 /**
  * How long shutdown may still wait for held callers, given the time already spent: never more than
  * HELD_CALLER_WAIT_MAX_MS, and never into the time reserved for closing upstreams.
  */
 export function heldCallerWaitMs(elapsedMs: number): number {
-  return Math.max(0, Math.min(HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS - SHUTDOWN_CLOSE_RESERVE_MS - SHUTDOWN_MARGIN_MS - elapsedMs));
+  return Math.max(0, Math.min(HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS - SHUTDOWN_CLOSE_RESERVE_MS - SHUTDOWN_OVERHEAD_ALLOWANCE_MS - SHUTDOWN_HEADROOM_MS - elapsedMs));
 }
 
 export interface RunningServer {
