@@ -1,13 +1,13 @@
 /**
  * T3.1 / T3.3 — read side and retention for mcpflow_call_audit (db-t3.1).
  * The write path lives in the policy enforcer (decision + completion rows) and the
- * agent directory (lifecycle rows). This module never UPDATEs or DELETEs on the normal path.
+ * agent directory (lifecycle rows). Nothing here UPDATEs or DELETEs call_audit rows (T2.1 §12): call_audit
+ * is never deleted, not even by retention.
  */
 import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { CALL_AUDIT_NO_DELETE_TRIGGER } from "../db/migrations/0002_call_audit.js";
 
 export interface CallAuditFilter {
   from?: string;
@@ -152,22 +152,23 @@ export function retentionCutoff(now: Date, months: number): string {
 
 export interface RetentionResult {
   dryRun: boolean;
-  archived: Record<string, number>;
-  deleted: number;
   files: string[];
-  /** Security R2-6: resolved rows older than `before` in the outcome / pending-call tables */
-  state: { call_outcome: number; pending_call: number };
+  /** Security R2-6 / T2.1 §12: resolved call_outcome rows (no live result payload) older than `before` */
+  state: { call_outcome: number };
 }
 
 /**
- * Retention maintenance path (separate from the gateway request path):
+ * Retention maintenance path (separate from the gateway request path). Architecture T2.1 §12:
+ * export-then-delete applies ONLY to mcpflow_call_outcome rows. mcpflow_call_audit rows (including
+ * result_read / result_purge events) and mcpflow_pending_call rows are never deleted; the only
+ * call_audit write is one appended lifecycle row ('state_retention') recording the run.
  * - dry run by default (counts only, nothing written or deleted); pass execute: true to act
  * - `before` must be a month boundary AND at least `minMonths` (default 12) in the past
- * - lifecycle rows (key/agent history) are never deleted
- * - archives: <archiveDir>/call_audit_<ws>_<YYYY-MM>.jsonl, mode 0600, fsynced, written to a temp
- *   name and renamed only after the delete commits; never overwrites; temps removed on failure
- * - delete: ONE BEGIN IMMEDIATE txn: drop no-delete trigger, delete exactly the exported rows,
- *   recreate trigger, append lifecycle row (audit_retention)
+ * - only resolved outcomes whose result payload is gone (purged / never stored) are eligible
+ * - archive: <archiveDir>/call_outcome_<ws>_before-<YYYY-MM>.jsonl, mode 0600, fsynced, written to a
+ *   temp name and renamed only after the delete commits; never overwrites; temp removed on failure
+ * - delete: ONE BEGIN IMMEDIATE txn: drop the outcome no-delete trigger, delete exactly the exported
+ *   rows, recreate the trigger, append the lifecycle row
  */
 export function runAuditRetention(
   db: DatabaseSync,
@@ -193,149 +194,38 @@ export function runAuditRetention(
   if (new Date(opts.before).getTime() > new Date(cutoff).getTime()) {
     throw new Error(`before (${opts.before}) is newer than the retention floor ${cutoff} (${minMonths} months)`);
   }
-  // L-7: count per month without loading rows; then process ONE month at a time (bounded memory),
-  // each in its own archive file and its own transaction.
-  const months = (db
-    .prepare(
-      `SELECT substr(ts, 1, 7) AS m, count(*) AS n FROM mcpflow_call_audit
-        WHERE workspace_id = ? AND ts < ? AND event_type <> 'lifecycle' GROUP BY m ORDER BY m`,
-    )
-    .all(opts.workspaceId, opts.before) as Array<{ m: string; n: number }>);
-  const archived: Record<string, number> = {};
-  for (const { m, n } of months) archived[m] = Number(n);
-  const finalName = (m: string) => join(opts.archiveDir, `call_audit_${opts.workspaceId}_${m}.jsonl`);
-  const stateFiles = stateArchiveNames(opts.archiveDir, opts.workspaceId, opts.before);
-  if (!execute) {
-    return {
-      dryRun: true, archived, deleted: 0, files: [...months.map(({ m }) => finalName(m)), stateFiles.call_outcome, stateFiles.pending_call],
-      state: countStateRows(db, opts.workspaceId, opts.before),
-    };
-  }
-
+  const file = outcomeArchiveName(opts.archiveDir, opts.workspaceId, opts.before);
+  if (!execute) return { dryRun: true, files: [file], state: { call_outcome: countOutcomeRows(db, opts.workspaceId, opts.before) } };
   mkdirSync(opts.archiveDir, { recursive: true, mode: 0o700 });
-  for (const f of [...months.map(({ m }) => finalName(m)), stateFiles.call_outcome, stateFiles.pending_call]) {
-    if (existsSync(f)) throw new Error(`EEXIST: archive already exists: ${f}`);
-  }
-  const files: string[] = [];
-  let deleted = 0;
-  for (const { m } of months) {
-    const from = `${m}-01T00:00:00.000Z`;
-    const [y, mo] = m.split("-").map(Number) as [number, number];
-    const to = new Date(Date.UTC(y, mo, 1)).toISOString();
-    const upper = to < opts.before ? to : opts.before;
-    const tmp = `${finalName(m)}.tmp-${randomBytes(6).toString("hex")}`;
-    let count = 0;
-    let maxId = 0;
-    const fd = openSync(tmp, "wx", 0o600);
-    try {
-      // stream the month in pages of 1000 rows
-      let after = 0;
-      for (;;) {
-        const page = db
-          .prepare(
-            `SELECT ${CALL_AUDIT_COLUMNS.join(", ")} FROM mcpflow_call_audit
-              WHERE workspace_id = ? AND ts >= ? AND ts < ? AND event_type <> 'lifecycle' AND audit_id > ?
-              ORDER BY audit_id LIMIT 1000`,
-          )
-          .all(opts.workspaceId, from, upper, after) as Record<string, unknown>[];
-        if (!page.length) break;
-        writeSync(fd, page.map((r) => JSON.stringify(r)).join("\n") + "\n");
-        count += page.length;
-        after = Number(page.at(-1)!.audit_id);
-        maxId = after;
-      }
-      fsyncSync(fd);
-    } catch (err) {
-      closeSync(fd);
-      rmSync(tmp, { force: true });
-      throw err;
-    }
-    closeSync(fd);
-    fsyncDir(opts.archiveDir);
-    db.exec("BEGIN IMMEDIATE;");
-    try {
-      db.exec("DROP TRIGGER mcpflow_call_audit_no_delete;");
-      const res = db
-        .prepare(
-          `DELETE FROM mcpflow_call_audit
-            WHERE workspace_id = ? AND ts >= ? AND ts < ? AND audit_id <= ? AND event_type <> 'lifecycle'`,
-        )
-        .run(opts.workspaceId, from, upper, maxId);
-      const n = Number(res.changes);
-      if (n !== count) throw new Error(`retention mismatch for ${m}: exported ${count}, deleting ${n}`);
-      db.exec(CALL_AUDIT_NO_DELETE_TRIGGER);
-      db.prepare(
-        `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor, args_redacted)
-         VALUES ('lifecycle', ?, ?, 'audit_retention', ?, ?)`,
-      ).run(
-        `lc_${randomBytes(12).toString("hex")}`,
-        opts.workspaceId,
-        opts.actor,
-        JSON.stringify({ before: opts.before, month: m, deleted: n, file: finalName(m) }),
-      );
-      db.exec("COMMIT;");
-      deleted += n;
-    } catch (err) {
-      try {
-        db.exec("ROLLBACK;");
-      } catch {
-        /* keep the original error */
-      }
-      rmSync(tmp, { force: true });
-      throw err;
-    }
-    renameSync(tmp, finalName(m));
-    fsyncDir(opts.archiveDir);
-    files.push(finalName(m));
-    archived[m] = count;
-  }
-  const state = retainStateTables(db, opts, stateFiles);
-  files.push(stateFiles.call_outcome, stateFiles.pending_call);
-  return { dryRun: false, archived, deleted, files, state };
+  if (existsSync(file)) throw new Error(`EEXIST: archive already exists: ${file}`);
+  const n = retainOutcomes(db, opts, file);
+  return { dryRun: false, files: [file], state: { call_outcome: n } };
 }
 
-// ---------- R2-6: outcome + pending-call retention ----------
+// ---------- R2-6 / §12: call_outcome retention (the only export-then-delete) ----------
 
-const OUTCOME_SEL = `FROM mcpflow_call_outcome o WHERE o.workspace_id = ? AND o.created_at < ? AND o.state <> 'pending'`;
-/** Resolved holds that nothing still references: grants (never deleted) and outcomes that are kept. */
-const PENDING_SEL = `FROM mcpflow_pending_call p
-  WHERE p.workspace_id = ? AND p.created_at < ? AND p.status <> 'pending'
-    AND NOT (p.status = 'approved' AND p.dispatched_at IS NULL AND p.abandoned_at IS NULL)
-    AND NOT EXISTS (SELECT 1 FROM mcpflow_policy_grant g WHERE g.source_pending_call_id = p.id)
-    AND NOT EXISTS (SELECT 1 FROM mcpflow_call_outcome o2 WHERE o2.pending_call_id = p.id
-                     AND NOT (o2.workspace_id = ? AND o2.created_at < ? AND o2.state <> 'pending'))`;
+const OUTCOME_SEL = `FROM mcpflow_call_outcome o WHERE o.workspace_id = ? AND o.created_at < ? AND o.state <> 'pending'
+  AND o.result_ciphertext IS NULL`;
 const OUTCOME_COLS = [
   "call_id", "pending_call_id", "workspace_id", "agent_id", "key_id", "idempotency_key", "qualified_tool", "args_hash",
   "async", "state", "final_outcome", "result_status", "created_at", "completed_at", "result_bytes", "result_truncated",
   "result_read_at", "result_purged_at", "result_stored_at", "result_expires_at", "result_purge_reason",
 ]; // never the result ciphertext
-const PENDING_COLS = [
-  "id", "call_id", "workspace_id", "agent_id", "key_id", "session_id", "project_id", "backend_slug", "tool", "qualified_tool",
-  "placement", "device_id", "args_redacted", "args_hash", "matched_rules", "approvers", "reason_to_agent", "created_at",
-  "expires_at", "status", "decided_by", "decided_at", "note", "dispatched_at", "grant_id", "abandoned_at",
-]; // never the args ciphertext
 
-function stateArchiveNames(dir: string, ws: string, before: string) {
-  const tag = `before-${before.slice(0, 7)}`;
-  return {
-    call_outcome: join(dir, `call_outcome_${ws}_${tag}.jsonl`),
-    pending_call: join(dir, `pending_call_${ws}_${tag}.jsonl`),
-  };
+function outcomeArchiveName(dir: string, ws: string, before: string): string {
+  return join(dir, `call_outcome_${ws}_before-${before.slice(0, 7)}.jsonl`);
 }
 
-function countStateRows(db: DatabaseSync, ws: string, before: string) {
-  return {
-    call_outcome: Number((db.prepare(`SELECT count(*) AS n ${OUTCOME_SEL}`).get(ws, before) as { n: number }).n),
-    pending_call: Number((db.prepare(`SELECT count(*) AS n ${PENDING_SEL}`).get(ws, before, ws, before) as { n: number }).n),
-  };
+function countOutcomeRows(db: DatabaseSync, ws: string, before: string): number {
+  return Number((db.prepare(`SELECT count(*) AS n ${OUTCOME_SEL}`).get(ws, before) as { n: number }).n);
 }
 
-function exportRows(db: DatabaseSync, sql: string, params: unknown[], cols: string[], path: string): { tmp: string; n: number } {
+function exportRows(db: DatabaseSync, sql: string, params: unknown[], cols: string[], path: string): { tmp: string; n: number; maxRowid: number } {
   const tmp = `${path}.tmp-${randomBytes(6).toString("hex")}`;
   const fd = openSync(tmp, "wx", 0o600);
   let n = 0;
+  let after = 0;
   try {
-    let after = 0;
     for (;;) {
       const page = db.prepare(`SELECT rowid AS _rid, ${cols.join(", ")} ${sql} AND rowid > ? ORDER BY rowid LIMIT 1000`)
         .all(...(params as never[]), after) as Array<Record<string, unknown>>;
@@ -351,47 +241,32 @@ function exportRows(db: DatabaseSync, sql: string, params: unknown[], cols: stri
     throw err;
   }
   closeSync(fd);
-  return { tmp, n };
+  return { tmp, n, maxRowid: after };
 }
 
-function retainStateTables(
+function retainOutcomes(
   db: DatabaseSync,
   opts: { workspaceId: string; before: string; archiveDir: string; actor: string },
-  files: { call_outcome: string; pending_call: string },
-): { call_outcome: number; pending_call: number } {
+  file: string,
+): number {
   const { workspaceId: ws, before } = opts;
-  const pend = exportRows(db, PENDING_SEL, [ws, before, ws, before], PENDING_COLS.map((c) => `p.${c}`), files.pending_call);
-  let out: { tmp: string; n: number };
-  try {
-    out = exportRows(db, OUTCOME_SEL, [ws, before], OUTCOME_COLS.map((c) => `o.${c}`), files.call_outcome);
-  } catch (err) {
-    rmSync(pend.tmp, { force: true });
-    throw err;
-  }
+  const out = exportRows(db, OUTCOME_SEL, [ws, before], OUTCOME_COLS.map((c) => `o.${c}`), file);
   fsyncDir(opts.archiveDir);
-  const triggers = ["mcpflow_call_outcome_no_delete", "mcpflow_pending_call_no_delete"].map((name) => {
-    const r = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ?`).get(name) as { sql: string } | undefined;
-    if (!r) throw new Error(`missing trigger ${name}`);
-    return { name, sql: r.sql };
-  });
+  const trig = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'mcpflow_call_outcome_no_delete'`).get() as { sql: string } | undefined;
+  if (!trig) {
+    rmSync(out.tmp, { force: true });
+    throw new Error("missing trigger mcpflow_call_outcome_no_delete");
+  }
   db.exec("BEGIN IMMEDIATE;");
   try {
-    // the pending set is computed before the outcome delete, against the same snapshot as the export
-    const pendIds = (db.prepare(`SELECT p.id ${PENDING_SEL}`).all(ws, before, ws, before) as Array<{ id: string }>).map((r) => r.id);
-    for (const t of triggers) db.exec(`DROP TRIGGER ${t.name};`);
-    const nOut = Number(db.prepare(`DELETE FROM mcpflow_call_outcome WHERE rowid IN (SELECT o.rowid ${OUTCOME_SEL})`).run(ws, before).changes);
-    let nPend = 0;
-    const del = db.prepare(`DELETE FROM mcpflow_pending_call WHERE id = ?`);
-    for (const id of pendIds) nPend += Number(del.run(id).changes);
-    if (nOut !== out.n || nPend !== pend.n) {
-      throw new Error(`state retention mismatch: exported ${out.n}/${pend.n}, deleting ${nOut}/${nPend}`);
-    }
-    for (const t of triggers) db.exec(`${t.sql};`);
+    db.exec("DROP TRIGGER mcpflow_call_outcome_no_delete;");
+    const n = Number(db.prepare(`DELETE FROM mcpflow_call_outcome WHERE rowid IN (SELECT o.rowid ${OUTCOME_SEL} AND o.rowid <= ?)`).run(ws, before, out.maxRowid).changes);
+    if (n !== out.n) throw new Error(`state retention mismatch: exported ${out.n}, deleting ${n}`);
+    db.exec(`${trig.sql};`);
     db.prepare(
       `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor, args_redacted)
        VALUES ('lifecycle', ?, ?, 'state_retention', ?, ?)`,
-    ).run(`lc_${randomBytes(12).toString("hex")}`, ws, opts.actor,
-      JSON.stringify({ before, call_outcome: nOut, pending_call: nPend, files: [files.call_outcome, files.pending_call] }));
+    ).run(`lc_${randomBytes(12).toString("hex")}`, ws, opts.actor, JSON.stringify({ before, call_outcome: n, file }));
     db.exec("COMMIT;");
   } catch (err) {
     try {
@@ -400,13 +275,11 @@ function retainStateTables(
       /* keep the original error */
     }
     rmSync(out.tmp, { force: true });
-    rmSync(pend.tmp, { force: true });
     throw err;
   }
-  renameSync(out.tmp, files.call_outcome);
-  renameSync(pend.tmp, files.pending_call);
+  renameSync(out.tmp, file);
   fsyncDir(opts.archiveDir);
-  return { call_outcome: out.n, pending_call: pend.n };
+  return out.n;
 }
 
 function fsyncDir(dir: string): void {

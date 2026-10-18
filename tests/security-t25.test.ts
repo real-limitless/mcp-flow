@@ -231,7 +231,7 @@ describe("M-4 / L-6 / L-7 retention guards", () => {
     old("2025-08-02T00:00:00.000Z");
     const archive = mkdtempSync(join(tmpdir(), "sec-arch-")); tmp.push(archive);
     const out = runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: join(archive, "a"), actor: chen });
-    expect(out).toMatchObject({ dryRun: true, deleted: 0, archived: { "2025-08": 1 } });
+    expect(out).toMatchObject({ dryRun: true, state: { call_outcome: 0 } });
     expect(count()).toBe(1);
     expect(existsSync(join(archive, "a"))).toBe(false);
   });
@@ -241,13 +241,13 @@ describe("M-4 / L-6 / L-7 retention guards", () => {
     }
     expect(() => runAuditRetention(db, { workspaceId: "../etc", before: "2025-09-01T00:00:00.000Z", archiveDir: "/tmp/never", actor: chen })).toThrow(/workspace/);
   });
-  it("keeps lifecycle rows; archives are 0600 with no temp files left", () => {
+  it("keeps every call_audit row (T2.1 §12); archives are 0600 with no temp files left", () => {
     old("2025-08-02T00:00:00.000Z");
     old("2025-08-03T00:00:00.000Z", "lifecycle");
     const archive = mkdtempSync(join(tmpdir(), "sec-arch-")); tmp.push(archive);
     const out = runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true });
-    expect(out.deleted).toBe(1);
-    expect(count()).toBe(1); // the lifecycle row
+    expect(out.state).toEqual({ call_outcome: 0 });
+    expect(count()).toBe(2); // decision + lifecycle rows both kept
     expect(statSync(out.files[0]!).mode & 0o777).toBe(0o600);
     expect(existsSync(out.files[0]!)).toBe(true);
   });
@@ -256,7 +256,8 @@ describe("M-4 / L-6 / L-7 retention guards", () => {
     const archive = mkdtempSync(join(tmpdir(), "sec-arch-")); tmp.push(archive);
     expect(() => runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: "bogus", execute: true })).toThrow();
     const ok = runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true });
-    expect(ok.deleted).toBe(1);
+    expect(ok.dryRun).toBe(false);
+    expect(count()).toBe(1);
   });
 });
 

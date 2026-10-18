@@ -200,18 +200,23 @@ describe("R-4 / L-7 retention", () => {
       expect(() => runAuditRetention(db, { workspaceId: WS, before: "2020-01-01T00:00:00.000Z", archiveDir: "/tmp/never", actor: chen, minMonths })).toThrow(/minMonths/);
     }
   });
-  it("processes month by month in pages, one lifecycle row per month", () => {
-    const ins = db.prepare(`INSERT INTO mcpflow_call_audit (ts, event_type, call_id, workspace_id, agent_id, policy_decision) VALUES (?, 'decision', ?, ?, ?, 'allow')`);
-    db.exec("BEGIN;");
-    for (let i = 0; i < 2500; i++) ins.run(`2025-07-${String(1 + (i % 28)).padStart(2, "0")}T00:00:00.000Z`, `c${i}`, WS, bot);
-    for (let i = 0; i < 3; i++) ins.run("2025-08-05T00:00:00.000Z", `d${i}`, WS, bot);
-    db.exec("COMMIT;");
+  it("T2.1 §12: call_audit rows survive retention, including result_read and result_purge rows", async () => {
+    let clock = Date.parse("2025-06-10T00:00:00.000Z");
+    const peOld = enforcer({ clock: () => clock, resultTtlMs: 1 });
+    await peOld.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "old-1", dispatch: async () => ({ content: [{ type: "text" as const, text: "r" }] }) });
+    // the 1 ms window has passed (gateway clock and wall clock), so this read purges it (result_purge) and audits the read (result_read)
+    clock += 10;
+    await peOld.enforce({ ctx: ctx("echo"), args: { x: 1 }, idempotencyKey: "old-1", dispatch: async () => ({ content: [] }) });
+    const types = () => (db.prepare(`SELECT event_type, count(*) n FROM mcpflow_call_audit GROUP BY event_type ORDER BY event_type`).all() as Array<{ event_type: string; n: number }>);
+    const auditBefore = db.prepare(`SELECT * FROM mcpflow_call_audit ORDER BY audit_id`).all();
+    expect(types().map((r) => r.event_type)).toEqual(expect.arrayContaining(["decision", "completion", "result_read", "result_purge"]));
     const archive = mkdtempSync(join(tmpdir(), "rr-arch-")); tmp.push(archive);
-    const out = runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true });
-    expect(out.archived).toEqual({ "2025-07": 2500, "2025-08": 3 });
-    expect(out.deleted).toBe(2503);
-    expect(readFileSync(out.files[0]!, "utf8").trim().split("\n")).toHaveLength(2500);
-    expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_audit WHERE lifecycle_action='audit_retention'`).get() as { n: number }).n).toBe(2);
+    const out = runAuditRetention(db, { workspaceId: WS, before: "2025-09-01T00:00:00.000Z", archiveDir: archive, actor: chen, execute: true, now: new Date("2026-10-14T00:00:00Z") });
+    expect(out.state).toEqual({ call_outcome: 1 }); // only the outcome row is exported and deleted
+    expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_outcome`).get() as { n: number }).n).toBe(0);
+    const auditAfter = db.prepare(`SELECT * FROM mcpflow_call_audit ORDER BY audit_id`).all() as Array<Record<string, unknown>>;
+    expect(auditAfter.slice(0, auditBefore.length)).toEqual(auditBefore);
+    expect(auditAfter.slice(auditBefore.length).map((r) => r.lifecycle_action)).toEqual(["state_retention"]);
   });
 });
 
