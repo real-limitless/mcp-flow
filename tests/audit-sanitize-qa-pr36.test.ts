@@ -147,8 +147,8 @@ describe("QA PR #36 follow-up details", () => {
     expect(sanitizeForAudit({ h: [["X-Api-Key", "k1"], ["Accept", "json"]] })).toEqual({ h: [["X-Api-Key", "[redacted]"], ["Accept", "json"]] });
     expect(sanitizeForAudit({ h: ["Authorization", "Bearer x"] })).toEqual({ h: ["Authorization", "[redacted]"] });
     expect(sanitizeForAudit({ raw: ["Host", "h", "Cookie", "sid=1", "Accept", "*/*"] })).toEqual({ raw: ["Host", "h", "Cookie", "[redacted]", "Accept", "*/*"] });
-    // odd-length or non-string-name arrays are not treated as pairs
-    expect(sanitizeForAudit({ a: ["DB_PASS", "HOST", "PORT"] })).toEqual({ a: ["DB_PASS", "HOST", "PORT"] });
+    // non-string-name arrays are not treated as pairs
+    expect(sanitizeForAudit({ a: ["HOST", "h", "PORT"] })).toEqual({ a: ["HOST", "h", "PORT"] });
     expect(sanitizeForAudit({ a: [1, "x"] })).toEqual({ a: [1, "x"] });
   });
 

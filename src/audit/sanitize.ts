@@ -85,7 +85,7 @@ const SECRET_NAME_SUFFIX_RE =
   /[_.-](?:PASS|PWD|PASSWD|PASSWORD|KEYS?|SECRETS?|TOKENS?|AUTH|CREDENTIALS?|PASSPHRASE)$/i;
 /** *_TOKENS names that are counts or limits, not secrets (max_tokens, max_output_tokens, …). */
 const TOKEN_COUNT_NAME_RE =
-  /(?:^|[_.-])(?:max(?:[_.-](?:input|output|completion|prompt|new|context))?|min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$/i;
+  /^(?:min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$|(?:^|[_.-])max(?:[_.-](?:input|output|completion|prompt|new|context))?[_.-]tokens$/i;
 const SECRET_NAME_BARE_RE =
   /^(?:PASS|PASSWD|PASSWORD|PWD|SECRETS?|TOKEN|AUTH|AUTHORIZATION|CREDENTIALS?|PASSPHRASE|APIKEY|BEARER|COOKIE|DSN)$/i;
 const SECRET_NAME_CONTAINS_RE =
@@ -106,8 +106,13 @@ const BENIGN_KEY_WORDS =
 /** Non-secret *Key / *_KEY names, camelCase or separated: primaryKey, sort_key, PUBLIC_KEY, … */
 const CAMEL_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})Keys?$`);
 const SEP_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})[_.-]keys?$`, "i");
+/**
+ * Token counts in camelCase. Count words in lowercase only at the start of the name
+ * (maxTokens, promptTokens, totalTokens); after a camel hump only Max (modelMaxTokens,
+ * modelMaxOutputTokens). So adminTokens and adminMinTokens are secret names (fail closed).
+ */
 const CAMEL_TOKEN_COUNT_RE =
-  /(?:^|[a-z0-9])(?:max(?:Input|Output|Completion|Prompt|New|Context)?|Max(?:Input|Output|Completion|Prompt|New|Context)?|[mM]in|[nN]um|[tT]otal|[pP]rompt|[cC]ompletion|[iI]nput|[oO]utput|[cC]ached|[rR]easoning)Tokens$/;
+  /^(?:max(?:Input|Output|Completion|Prompt|New|Context)?|min|num|total|prompt|completion|input|output|cached|reasoning)Tokens$|[a-z0-9]Max(?:Input|Output|Completion|Prompt|New|Context)?Tokens$/;
 
 /** Names longer than this are treated as secret names (fail closed), never skipped. */
 const MAX_NAME_LEN = 256;
@@ -276,14 +281,21 @@ const URL_TOKEN_STOP = new Set([" ", "\t", "\n", "\r", '"', "<", ">"]);
 
 /**
  * URL passwords holding a raw / # ' or ? (not RFC-valid, common in hand-written DSNs):
- * postgres://u:p/x@h/db. Only when the authority has user:pass whose "pass" is not a port
- * (digits), and an '@' follows within the same token before any query (= or &). Bounded scans,
- * so linear in the input. Normal URLs (https://h:8080/a@b, /path/@user, ?email=a@b) are kept.
+ * postgres://u:p/x@h/db, u:p/a=x@h, u:p/&x@h. Only when the authority has user:pass whose
+ * "pass" is not a port (digits), and an '@' follows within the same token (1024-char window).
+ * A ?email=a@b query is only reached after a user:<non-port> authority, so normal URLs
+ * (https://h:8080/a@b, /path/@user, https://h/x?email=a@b) are kept. Linear: the '@' search
+ * never rescans text an earlier search already cleared.
  */
 function redactRawUrlPasswords(s: string): string {
   let out = "";
   let last = 0;
   let from = 0;
+  // [clearFrom, clearUntil) is known to hold no '@' and no token stop; clearStop says the
+  // scan that cleared it ended on a token stop (so no '@' can follow within the token)
+  let clearFrom = -1;
+  let clearUntil = -1;
+  let clearStop = false;
   for (;;) {
     const at = s.indexOf("://", from);
     if (at < 0) break;
@@ -301,16 +313,30 @@ function redactRawUrlPasswords(s: string): string {
     if (!(stop === "/" || stop === "#" || stop === "'" || stop === "?" || stop === "\\")) continue;
     if (/^\d*$/.test(s.slice(colon + 1, e))) continue; // host:port
     let x = -1;
-    const tokMax = Math.min(s.length, e + 256);
-    for (let j = e; j < tokMax; j++) {
+    const tokMax = Math.min(s.length, e + 1024);
+    let j = e;
+    if (e >= clearFrom && e < clearUntil) {
+      if (clearStop) continue;
+      j = clearUntil;
+    }
+    let stopped = false;
+    for (; j < tokMax; j++) {
       const c = s[j]!;
-      if (URL_TOKEN_STOP.has(c) || c === "=" || c === "&") break;
+      if (URL_TOKEN_STOP.has(c)) {
+        stopped = true;
+        break;
+      }
       if (c === "@") {
         x = j;
         break;
       }
     }
-    if (x < 0) continue;
+    if (x < 0) {
+      if (!(e >= clearFrom && e < clearUntil)) clearFrom = e;
+      clearUntil = j;
+      clearStop = stopped;
+      continue;
+    }
     out += s.slice(last, a) + "[redacted]";
     last = x;
     from = x;
@@ -432,12 +458,11 @@ function walk(
   if (Array.isArray(value)) {
     const out: unknown[] = [];
     const limit = Math.min(value.length, 200);
-    // [name, value] tuples and flat name/value lists (header arrays, rawHeaders):
+    // [name, value] tuples and flat name/value lists (header arrays, rawHeaders; odd lengths
+    // too, the last name then has no value):
     // [["X-Api-Key","v"]], ["Authorization","Bearer x"], ["Accept","a","X-Api-Key","v"]
     const pairs =
-      value.length >= 2 &&
-      value.length % 2 === 0 &&
-      value.every((v, i) => i % 2 === 1 || typeof v === "string");
+      value.length >= 2 && value.every((v, i) => i % 2 === 1 || typeof v === "string");
     for (let i = 0; i < limit; i++) {
       if (pairs && i % 2 === 1 && isSecretName(String(value[i - 1]).trim())) {
         out.push("[redacted]");

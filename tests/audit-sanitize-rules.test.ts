@@ -271,3 +271,40 @@ describe("A0 second-round follow-ups", () => {
     expect(sanitizeForAudit({ envName: "HOST", envValue: "db" })).toEqual({ envName: "HOST", envValue: "db" });
   });
 });
+
+describe("A0 third-round follow-ups", () => {
+  it("count words only at the start (lowercase) or Max after a camel hump", () => {
+    for (const n of ["adminTokens", "adminMinTokens", "superadminTokens", "userTotalTokens", "admin_tokens", "admin_min_tokens", "x_total_tokens"])
+      expect(isSecretName(n)).toBe(true);
+    for (const n of ["maxTokens", "minTokens", "numTokens", "totalTokens", "promptTokens", "completionTokens", "inputTokens",
+      "outputTokens", "cachedTokens", "reasoningTokens", "maxOutputTokens", "maxNewTokens", "modelMaxTokens", "modelMaxOutputTokens",
+      "min_tokens", "total_tokens", "prompt_tokens", "max_tokens", "model_max_tokens", "max_output_tokens"])
+      expect(isSecretName(n)).toBe(false);
+  });
+
+  it.each([
+    ["postgres://u:p/a=FAKEU1@h/db", "postgres://[redacted]@h/db"],
+    ["postgres://u:p/&FAKEU2@h/db", "postgres://[redacted]@h/db"],
+    ["postgres://u:p/?x=1&y=FAKEU3@h", "postgres://[redacted]@h"],
+    [`postgres://u:p/${"a".repeat(900)}@h`, "postgres://[redacted]@h"],
+  ])("URL password with = & or a long tail: %s", (input, want) => expect(redactSecrets(input)).toBe(want));
+
+  it("normal query URLs stay readable", () => {
+    for (const s of ["https://h/x?email=a@b.c", "https://h:8080/x?email=a@b.c&n=1", "https://example.com/u?to=a@b&cc=c@d",
+      "see https://h/p?a=1&b=x@y and more"]) expect(redactSecrets(s)).toBe(s);
+  });
+
+  it("URL password scan stays linear with the 1024 window", () => {
+    const t = Date.now();
+    redactSecrets("a://u:p/".repeat(30_000));
+    redactSecrets(("x://u:p/" + "b".repeat(50)).repeat(5_000));
+    redactSecrets("://u:x/" + "=&".repeat(100_000));
+    expect(Date.now() - t).toBeLessThan(1000);
+  });
+
+  it("odd-length flat header lists pair up when names are strings", () => {
+    expect(sanitizeForAudit({ raw: ["Accept", "a", "X-Api-Key", "k1", "Cookie"] })).toEqual({ raw: ["Accept", "a", "X-Api-Key", "[redacted]", "Cookie"] });
+    expect(sanitizeForAudit({ raw: ["Authorization", "Bearer x", "Host"] })).toEqual({ raw: ["Authorization", "[redacted]", "Host"] });
+    expect(sanitizeForAudit({ raw: [1, "Authorization", "Bearer y"] })).toEqual({ raw: [1, "Authorization", "Bearer [redacted]"] });
+  });
+});
