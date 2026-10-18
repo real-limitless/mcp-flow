@@ -455,3 +455,27 @@ describe("gateway enforcement (bypass attempts)", () => {
     expect(n).toBeGreaterThanOrEqual(4);
   });
 });
+
+// ---------------- T2.1 v10 (0010/0011) gateway behaviour ----------------
+
+describe("T2.1 v10 holds", () => {
+  beforeEach(setup);
+  const human = (name: string) =>
+    dir.createAgent({ workspaceId: WS, name, owner: "chen", kind: "human", projects: ["gb_devops"], createdBy: chen });
+
+  it("no active approver at hold time -> policy_denied no_active_approver; decision audited, no hold, nothing dispatched", async () => {
+    const ana = human("ana");
+    const rid = rule({ effect: "require_approval", approvers: [ana] });
+    db.prepare(`UPDATE mcpflow_agent SET status = 'suspended' WHERE id = ?`).run(ana);
+    const s = stub();
+    const r = await pe.enforce({ ctx: ctx(), args: { command: "ls" }, dispatch: s.dispatch });
+    expect(payload(r)).toMatchObject({ code: "policy_denied", reason: "no_active_approver", rule_id: rid });
+    expect(s.calls).toHaveLength(0);
+    expect(notices).toHaveLength(0);
+    expect(db.prepare(`SELECT count(*) n FROM mcpflow_pending_call`).get()).toEqual({ n: 0 });
+    expect(rows().map((x) => [x.event_type, x.policy_decision, x.final_outcome, x.error_code])).toEqual([
+      ["decision", "require_approval", null, "no_active_approver"],
+      ["completion", null, "denied", "no_active_approver"],
+    ]);
+  });
+});

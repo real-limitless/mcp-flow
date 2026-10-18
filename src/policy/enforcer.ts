@@ -36,7 +36,8 @@ export type DenyReason =
   | "no_active_project"
   | "invalid_idempotency_key"
   | "idempotency_conflict"
-  | "gateway_shutting_down";
+  | "gateway_shutting_down"
+  | "no_active_approver";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -174,6 +175,7 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   invalid_idempotency_key: "Idempotency keys are 1-128 printable ASCII characters; nothing was dispatched.",
   idempotency_conflict: "This idempotency key was already used with different arguments; nothing was dispatched.",
   gateway_shutting_down: "The gateway is shutting down; nothing was dispatched. Retry after it restarts.",
+  no_active_approver: "No listed approver is an active human, so this call cannot be approved; nothing was dispatched.",
 };
 
 export class PolicyEnforcer {
@@ -434,6 +436,7 @@ export class PolicyEnforcer {
     let pendingId: string | null = null;
     let expiresAt: string | null = null;
     let busy = false;
+    let noApprover = false;
     try {
       this.tx(() => {
         if (decision.decision === "require_approval") {
@@ -445,6 +448,9 @@ export class PolicyEnforcer {
           ) {
             busy = true;
           }
+          // 0011 / T2.1 §10.5: fail closed when no listed approver is an active human (same check as the
+          // mcpflow_pending_call_ins_active_approver trigger, done first so the decision row is still written)
+          if (!grantId && !busy && !this.hasActiveApprover(decision.approvers ?? [])) noApprover = true;
         }
         this.writeAudit({
           event_type: "decision",
@@ -458,9 +464,9 @@ export class PolicyEnforcer {
           rule_version: decision.rule?.version ?? null,
           matched_rule_ids: JSON.stringify(decision.matched.map((r) => r.ruleId)),
           grant_id: grantId,
-          error_code: decision.decision === "deny" ? decision.reason : busy ? "approval_busy" : null,
+          error_code: decision.decision === "deny" ? decision.reason : busy ? "approval_busy" : noApprover ? "no_active_approver" : null,
         });
-        if (decision.decision === "require_approval" && !grantId && !busy) {
+        if (decision.decision === "require_approval" && !grantId && !busy && !noApprover) {
           pendingId = newId("pc");
           const created = this.clock();
           expiresAt = this.iso(created + (decision.timeoutS ?? 300) * 1000);
@@ -495,8 +501,12 @@ export class PolicyEnforcer {
           }
         }
       });
-    } catch {
+    } catch (err) {
       if (out.duplicateKey) throw new Error("duplicate idempotency key");
+      // the DB trigger is the backstop for the pre-check above
+      if (/no_active_approver/.test((err as Error).message)) {
+        return policyDeniedResult({ reason: "no_active_approver", tool: ctx.qualifiedTool, ruleId: decision.rule?.ruleId, ruleVersion: decision.rule?.version });
+      }
       // nothing committed: no audit row, no hold, no dispatch
       return policyDeniedResult({ reason: "audit_unavailable", tool: ctx.qualifiedTool });
     }
@@ -514,8 +524,8 @@ export class PolicyEnforcer {
       });
 
     // 3) deny
-    if (decision.decision === "deny" || busy) {
-      const reason: DenyReason = busy ? "approval_busy" : (decision.reason as DenyReason);
+    if (decision.decision === "deny" || busy || noApprover) {
+      const reason: DenyReason = busy ? "approval_busy" : noApprover ? "no_active_approver" : (decision.reason as DenyReason);
       notDispatched("denied", { error_code: reason });
       return policyDeniedResult({
         reason,
@@ -1043,6 +1053,17 @@ export class PolicyEnforcer {
     } catch {
       /* best effort; trigger guards correctness */
     }
+  }
+
+  private hasActiveApprover(approvers: string[]): boolean {
+    if (!approvers.length) return false;
+    const r = this.deps.db
+      .prepare(
+        `SELECT 1 AS ok FROM json_each(?) j JOIN mcpflow_agent a ON a.id = j.value
+          WHERE a.kind = 'human' AND a.status = 'active' LIMIT 1`,
+      )
+      .get(JSON.stringify(approvers));
+    return r != null;
   }
 
   private matchLiveGrant(ctx: CallContext, args: unknown, hash: string, d: Decision): string | null {
