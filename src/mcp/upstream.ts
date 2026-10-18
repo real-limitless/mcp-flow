@@ -8,6 +8,7 @@ import { DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS, DEFAULT_BACKEND_INIT_TIMEOUT_MS }
 import { type Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
+import { splitQualifiedToolName } from "../types.js";
 import { connectOci } from "./runners/oci.js";
 import {
   armStdioReap,
@@ -39,15 +40,15 @@ export function namespaceTool(slug: string, name: string): string {
 /** tools/call result plus whether a request was sent to the backend. */
 export type UpstreamCallResult = CallToolResult & { sent: boolean };
 
+/**
+ * Split "slug__tool". Pass the workspace's backend slugs so a legacy slug containing "__" resolves to
+ * the longest matching backend (QA v5.6 check 6); without them the first "__" splits.
+ */
 export function parseNamespacedTool(
   namespaced: string,
+  slugs?: Iterable<string>,
 ): { slug: string; tool: string } | null {
-  const idx = namespaced.indexOf("__");
-  if (idx <= 0) return null;
-  return {
-    slug: namespaced.slice(0, idx),
-    tool: namespaced.slice(idx + 2),
-  };
+  return splitQualifiedToolName(namespaced, slugs);
 }
 
 interface PooledClient {
@@ -350,7 +351,7 @@ export class UpstreamPool {
     const known = this.knownNames.get(workspaceId);
     if (!known) return;
     for (const name of known) {
-      if (parseNamespacedTool(name)?.slug === slug) known.delete(name);
+      if (parseNamespacedTool(name, this.backendSlugs(workspaceId))?.slug === slug) known.delete(name);
     }
   }
 
@@ -367,7 +368,7 @@ export class UpstreamPool {
 
   /** Cached name still belongs to an enabled backend and its current allowlist. */
   private nameStillListed(workspaceId: string, name: string): boolean {
-    const parsed = parseNamespacedTool(name);
+    const parsed = parseNamespacedTool(name, this.backendSlugs(workspaceId));
     if (!parsed) return false;
     const backend = this.store.getBackend(workspaceId, parsed.slug);
     if (!backend?.enabled) return false;
@@ -937,6 +938,8 @@ export class UpstreamPool {
   async listNamespacedTools(workspaceId: string, onlySlugs?: ReadonlySet<string>): Promise<NamespacedTool[]> {
     // QA v5.5 note A: a caller scoped to a project never waits on (or starts) backends outside it
     const backends = this.store.listEnabledBackends(workspaceId).filter((b) => !onlySlugs || onlySlugs.has(b.slug));
+    // QA v5.6 check 6: resolution set read up front (sync), never after the awaits below (store may be closed)
+    const slugs = this.backendSlugs(workspaceId);
     const out: NamespacedTool[] = [];
 
     await Promise.all(
@@ -971,9 +974,22 @@ export class UpstreamPool {
       }),
     );
 
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    this.rememberNames(workspaceId, out.map((tool) => tool.name));
-    return out;
+    // QA v5.6 check 6: a name owned by a longer slug ("a__b__echo" -> "a__b") is never listed for the
+    // shorter one ("a", tool "b__echo"): it could not be called. Names stay unique.
+    const seen = new Set<string>();
+    const listed = out.filter((t) => {
+      if (parseNamespacedTool(t.name, slugs)?.slug !== t.backendSlug || seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
+    });
+    listed.sort((a, b) => a.name.localeCompare(b.name));
+    this.rememberNames(workspaceId, listed.map((tool) => tool.name));
+    return listed;
+  }
+
+  /** Every backend slug in the workspace (enabled or not): the set qualified names resolve against. */
+  backendSlugs(workspaceId: string): string[] {
+    return this.store.listBackends(workspaceId).map((b) => b.slug);
   }
 
   /**
@@ -981,7 +997,7 @@ export class UpstreamPool {
    * Looks up that backend only. Does not use the audit name cache and does not send a tools/call.
    */
   async toolIsCallable(workspaceId: string, namespacedName: string): Promise<boolean> {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) return false;
     const backend = this.store.getBackend(workspaceId, parsed.slug);
     if (!backend?.enabled) return false;
@@ -1036,7 +1052,7 @@ export class UpstreamPool {
     namespacedName: string,
     args: Record<string, unknown> | undefined,
   ): Promise<UpstreamCallResult> {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) return this.notSent("tool not found");
 
     const backend = this.store.getBackend(workspaceId, parsed.slug);
@@ -1144,7 +1160,7 @@ export class UpstreamPool {
     placement: string | null;
     deviceId: string | null;
   } {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) {
       return { backendSlug: null, placement: null, deviceId: null };
     }
