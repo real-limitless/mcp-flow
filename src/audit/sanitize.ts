@@ -12,11 +12,16 @@ const SECRET_KEY_RE =
  * shape but loses the secret. All patterns are linear (no nested quantifiers).
  */
 const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
-  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted]"],
   [/\b(Authorization\s*[:=]\s*["']?(?:token|bearer|basic|digest)\s+)[^\s"']+/gi, "$1[redacted]"],
   [/\bBearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]"],
-  [/\bBasic\s+[A-Za-z0-9+/=]{8,}/g, "Basic [redacted]"],
-  [/(:\/\/)[^\s:/@]+:[^\s@/]+@/g, "$1[redacted]@"],
+  // URL userinfo in any scheme, empty user or password included (redis://:pw@h, https://tok@h).
+  // The run is greedy, so it ends at the LAST '@' before / ? # or whitespace (p@ss@host).
+  // Linear: the scheme is bounded and runs cannot overlap (each one stops at the next '/').
+  [/(\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/)[^\s/?#"'<>\\]*@/g, "$1[redacted]@"],
+  // scheme-less fallback for longer or unusual schemes; same last-'@' rule, linear (runs stop at '/')
+  [/:\/\/[^\s/?#"'<>\\]*@/g, "://[redacted]@"],
+  // mysql/mariadb -p<password> (no space; "-p" alone prompts and is left alone)
+  [/(\b(?:mysql|mysqldump|mysqladmin|mysqlimport|mysqlcheck|mysqlshow|mariadb(?:-dump|-admin)?)\b[^\n]{0,2000}?\s-p)(?:'[^'\n]*'|"[^"\n]*"|[^\s'"]+)/g, "$1[redacted]"],
   [/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]"],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, "[redacted]"],
   [/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]"],
@@ -27,7 +32,6 @@ const SECRET_SUBSTRING_RES: Array<[RegExp, string]> = [
   [/\bxox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]"],
   [/https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9/]+/g, "[redacted]"],
   [/([?&;](?:access_token|refresh_token|id_token|token|api_key|apikey|key|secret|password|passwd|sig|signature|code)=)[^&#\s"']+/gi, "$1[redacted]"],
-  [/\b([A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_KEY|APIKEY|ACCESS_KEY|PRIVATE_KEY|DSN)[A-Za-z0-9_]*\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, "$1[redacted]"],
   [/(--(?:password|token|secret|api-key)[= ])\S+/gi, "$1[redacted]"],
 ];
 
@@ -57,11 +61,302 @@ function looksLikeOpaqueSecret(s: string): boolean {
   return entropy(t) > 4.3;
 }
 
+/**
+ * Secret names, used both for object keys and for NAME=value / NAME: value text (env files,
+ * shell, YAML, HTTP headers, JSON text). Suffix rule rather than an allowlist:
+ *  - any name ending in _PASS/_PWD/_PASSWD/_PASSWORD/_KEY/_KEYS/_SECRET(S)/_TOKEN/_AUTH/
+ *    _CREDENTIAL(S)/_PASSPHRASE (separator _ . or -, case-insensitive): DB_PASS, POSTGRES_PWD,
+ *    JWT_KEY, STRIPE_KEY, SMTP_AUTH, GH_CREDENTIALS, MCP_FLOW_MASTER_KEY, x-auth-token;
+ *  - the bare names PASS, PASSWD, PASSWORD, PWD, SECRET(S), TOKEN, AUTH, AUTHORIZATION,
+ *    CREDENTIAL(S), PASSPHRASE, APIKEY, BEARER, COOKIE, DSN;
+ *  - names containing PASSWORD/PASSWD/PASSPHRASE/SECRET/CREDENTIAL/AUTHORIZATION/COOKIE,
+ *    PRIVATE_KEY/ACCESS_KEY/API_KEY, a TOKEN segment, DATABASE_URL or CONNECTION_STRING.
+ * Common non-secret *_KEY names stay readable through an explicit list (PRIMARY_KEY, SORT_KEY,
+ * PUBLIC_KEY, IDEMPOTENCY_KEY, CACHE_KEY, PARTITION_KEY, …; see BENIGN_KEY_WORDS); any other
+ * *_KEY is redacted. Known false positives (accepted, audit text only loses the value): other
+ * non-secret *_KEY names (APP_KEY_FILE is fine, SSH_HOST_KEY is not), PWD=/cwd in env dumps,
+ * prose like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable).
+ * *_TOKENS is a secret name (API_TOKENS) except token counts and limits: max_tokens,
+ * *_max_tokens, max_{input,output,completion,prompt,new,context}_tokens, and
+ * min/num/total/prompt/completion/input/output/cached/reasoning_tokens stay readable
+ * (MAX_ACCESS_TOKENS, max_refresh_tokens are secret names).
+ */
+const SECRET_NAME_SUFFIX_RE =
+  /[_.-](?:PASS|PWD|PASSWD|PASSWORD|KEYS?|SECRETS?|TOKENS?|AUTH|CREDENTIALS?|PASSPHRASE)$/i;
+/** *_TOKENS names that are counts or limits, not secrets (max_tokens, max_output_tokens, …). */
+const TOKEN_COUNT_NAME_RE =
+  /^(?:min|num|total|prompt|completion|input|output|cached|reasoning)[_.-]tokens$|(?:^|[_.-])max(?:[_.-](?:input|output|completion|prompt|new|context))?[_.-]tokens$/i;
+const SECRET_NAME_BARE_RE =
+  /^(?:PASS|PASSWD|PASSWORD|PWD|SECRETS?|TOKEN|AUTH|AUTHORIZATION|CREDENTIALS?|PASSPHRASE|APIKEY|BEARER|COOKIE|DSN)$/i;
+const SECRET_NAME_CONTAINS_RE =
+  /PASSWORD|PASSWD|PASSPHRASE|SECRET|CREDENTIAL|AUTHORIZATION|COOKIE|PRIVATE[_.-]?KEY|ACCESS[_.-]?KEY|API[_.-]?KEY|(?:^|[_.-])TOKEN(?:$|[_.-])|DATABASE[_.-]?URL|CONNECTION[_.-]?STRING/i;
+
+/**
+ * camelCase names: a lowercase letter or digit followed by an uppercase secret suffix (dbPass,
+ * dbPwd, smtpAuth, jwtKey, masterKey, signingKey, basicAuth, apiToken, clientSecret, apiTokens).
+ * Readable on purpose: common non-secret *Key names (primaryKey, sortKey, idempotencyKey,
+ * partitionKey, foreignKey, cacheKey, publicKey, routingKey, …) and token counts (maxTokens,
+ * maxOutputTokens, promptTokens, totalTokens, …). Other camelCase *Key / *Auth names are
+ * redacted (accepted false positives: hotKey, oAuth, isAuth).
+ */
+const CAMEL_SECRET_SUFFIX_RE =
+  /[a-z0-9](?:Pass|Pwd|Passwd|Password|Passphrase|Keys?|Secrets?|Tokens?|Auth|Credentials?)$/;
+const BENIGN_KEY_WORDS =
+  "primary|sort|idempotency|partition|foreign|cache|public|routing|row|hash|range|object|composite|unique|lookup|dedupe?|group|shard|index|search|order|parent|join";
+/** Non-secret *Key / *_KEY names, camelCase or separated: primaryKey, sort_key, PUBLIC_KEY, … */
+const CAMEL_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})Keys?$`);
+const SEP_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})[_.-]keys?$`, "i");
+/**
+ * Token counts in camelCase. Count words in lowercase only at the start of the name
+ * (maxTokens, promptTokens, totalTokens); after a camel hump only Max (modelMaxTokens,
+ * modelMaxOutputTokens). So adminTokens and adminMinTokens are secret names (fail closed).
+ */
+const CAMEL_TOKEN_COUNT_RE =
+  /^(?:max(?:Input|Output|Completion|Prompt|New|Context)?|min|num|total|prompt|completion|input|output|cached|reasoning)Tokens$|[a-z0-9]Max(?:Input|Output|Completion|Prompt|New|Context)?Tokens$/;
+
+/** Names longer than this are treated as secret names (fail closed), never skipped. */
+const MAX_NAME_LEN = 256;
+
+/** True when a key or variable name names a secret (see the rules above). */
+export function isSecretName(name: string): boolean {
+  if (name.length > MAX_NAME_LEN) return true;
+  if (TOKEN_COUNT_NAME_RE.test(name) || CAMEL_TOKEN_COUNT_RE.test(name)) return false;
+  if (CAMEL_BENIGN_KEY_RE.test(name) || SEP_BENIGN_KEY_RE.test(name)) return false;
+  return (
+    SECRET_NAME_SUFFIX_RE.test(name) ||
+    SECRET_NAME_BARE_RE.test(name) ||
+    SECRET_NAME_CONTAINS_RE.test(name) ||
+    CAMEL_SECRET_SUFFIX_RE.test(name)
+  );
+}
+
+/**
+ * NAME=value / NAME: value candidates. Group 1 is the char before the name (or a JSON-escaped
+ * quote or literal \n / \r / \t escape, for env text inside JSON strings), group 2 an optional
+ * quote around the name ("NAME": or \"NAME\":), group 3 the name.
+ * Bounded: the name is capped (1024) and nothing is nested; a name longer than MAX_NAME_LEN is
+ * treated as secret by isSecretName.
+ */
+const ASSIGN_RE =
+  /(^|\\["'nrt]|[^A-Za-z0-9_.\\])((?:\\?["'])?)([A-Za-z_][A-Za-z0-9_.-]{0,1023})\2[ \t]*[=:][ \t]*/g;
+
+/**
+ * True when a literal \n / \r escape at j ends a line of escaped text: what follows is the end,
+ * another escape or quote, or the next NAME= / NAME: pair. Otherwise the escape is taken as part
+ * of the value (a password containing "\n" is not cut short). Bounded lookahead.
+ */
+const NEXT_PAIR_RE = /[A-Za-z_][A-Za-z0-9_.-]{0,127}[ \t]*[=:]/y;
+function escapedLineBreakAt(s: string, k: number): boolean {
+  if (k >= s.length) return true;
+  const c = s[k];
+  if (c === "\\" || c === '"' || c === "'" || c === "\n" || c === "\r" || c === "#") return true;
+  NEXT_PAIR_RE.lastIndex = k;
+  return NEXT_PAIR_RE.test(s);
+}
+
+/** Index of the end of the line starting at i: a real CR/LF or a literal \n / \r line break. */
+function lineEnd(s: string, i: number): number {
+  for (let j = i; j < s.length; j++) {
+    const c = s.charCodeAt(j);
+    if (c === 10 || c === 13) return j;
+    if (c === 92 /* \ */ && (s[j + 1] === "n" || s[j + 1] === "r")) {
+      // skip the whole run of escapes once, so the scan stays linear
+      let k = j;
+      while (k < s.length - 1 && s[k] === "\\" && (s[k + 1] === "n" || s[k + 1] === "r")) k += 2;
+      if (escapedLineBreakAt(s, k)) return j;
+      j = k - 1;
+    }
+  }
+  return s.length;
+}
+
+/** End index (exclusive) of the value starting at i, given its surrounding context. */
+function valueEnd(s: string, i: number, prefix: string, nameQuote: string): { end: number; quote: string } {
+  const c = s[i];
+  // \"value\" inside JSON-escaped text: ends at the next \" that is not itself escaped (\\\")
+  if (c === "\\" && (s[i + 1] === '"' || s[i + 1] === "'")) {
+    const q = s[i + 1]!;
+    for (let j = i + 2; j < s.length - 1; j++) {
+      if (s[j] === "\\" && s[j + 1] === q && s[j - 1] !== "\\") return { end: j + 2, quote: `\\${q}` };
+    }
+    return { end: lineEnd(s, i), quote: "" };
+  }
+  // "value" / 'value' with backslash escapes; unterminated runs to the end of the line
+  if (c === '"' || c === "'") {
+    for (let j = i + 1; j < s.length; j++) {
+      if (s[j] === "\\") { j++; continue; }
+      if (s[j] === c) return { end: j + 1, quote: c };
+    }
+    return { end: lineEnd(s, i), quote: "" };
+  }
+  const eol = lineEnd(s, i);
+  let stop = (_ch: string, _j: number) => false;
+  if (prefix === '"' || prefix === "'") {
+    // "DB_PASS=x y" / -H 'Authorization: Basic x': ends at the unescaped quote that opened it
+    stop = (ch, j) => ch === prefix && s[j - 1] !== "\\";
+  } else if (prefix === '\\"' || prefix === "\\'") {
+    const q = prefix[1]!;
+    stop = (ch, j) => ch === "\\" && s[j + 1] === q;
+  } else if (prefix === "?" || prefix === "&" || prefix === ";") {
+    // URL query parameter
+    stop = (ch) => ch === "&" || ch === "#" || ch === " " || ch === "\t" || ch === '"' || ch === "'";
+  } else if (nameQuote) {
+    // "DB_PASS": 12345 in JSON text
+    stop = (ch) => ch === "," || ch === "}" || ch === "]";
+  }
+  for (let j = i; j < eol; j++) if (stop(s[j]!, j)) return { end: j, quote: "" };
+  return { end: eol, quote: "" };
+}
+
+/** Redact the values of NAME=value / NAME: value pairs whose NAME is a secret name. */
+function redactAssignments(s: string): string {
+  let out = "";
+  let last = 0;
+  ASSIGN_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = ASSIGN_RE.exec(s)) !== null) {
+    const [whole, prefix = "", nameQuote = "", name = ""] = m;
+    const vStart = m.index + whole.length;
+    if (!isSecretName(name)) continue;
+    // "scheme://" is a URL, not an assignment (userinfo is handled separately)
+    if (s.startsWith("//", vStart)) continue;
+    const { end, quote } = valueEnd(s, vStart, prefix, nameQuote);
+    if (end <= vStart) continue;
+    out += s.slice(last, vStart) + (quote ? `${quote}[redacted]${quote}` : "[redacted]");
+    last = end;
+    ASSIGN_RE.lastIndex = Math.max(end, vStart);
+  }
+  return last === 0 ? s : out + s.slice(last);
+}
+
+const PEM_BEGIN_RE = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----/y;
+const PEM_END_RE = /-----END [A-Z ]{0,40}PRIVATE KEY-----/y;
+
+/**
+ * PEM private key blocks. Linear: indexOf BEGIN, then indexOf END from there; each position is
+ * scanned once. An unterminated BEGIN redacts to the end of the string (fail closed).
+ */
+function redactPem(s: string): string {
+  let out = "";
+  let last = 0;
+  let from = 0;
+  for (;;) {
+    const b = s.indexOf("-----BEGIN ", from);
+    if (b < 0) break;
+    PEM_BEGIN_RE.lastIndex = b;
+    if (!PEM_BEGIN_RE.test(s)) {
+      from = b + 1;
+      continue;
+    }
+    let e = PEM_BEGIN_RE.lastIndex;
+    let end = -1;
+    for (;;) {
+      const x = s.indexOf("-----END ", e);
+      if (x < 0) break;
+      PEM_END_RE.lastIndex = x;
+      if (PEM_END_RE.test(s)) {
+        end = PEM_END_RE.lastIndex;
+        break;
+      }
+      e = x + 1;
+    }
+    out += s.slice(last, b) + "[redacted]";
+    if (end < 0) return out;
+    last = from = end;
+  }
+  return last === 0 ? s : out + s.slice(last);
+}
+
+/** fish / csh: `set -x DB_PASS value`, `setenv DB_PASS value` (value runs to the end of the line). */
+function redactShellSet(s: string): string {
+  return s.replace(
+    /(\b(?:set|setenv)(?:[ \t]+-{1,2}[A-Za-z]+)*[ \t]+)([A-Za-z_][A-Za-z0-9_]{0,255})([ \t]+)([^\r\n]+)/g,
+    (all, head: string, name: string, sp: string) =>
+      isSecretName(name) ? `${head}${name}${sp}[redacted]` : all,
+  );
+}
+
+const URL_AUTH_STOP = new Set([" ", "\t", "\n", "\r", "/", "?", "#", '"', "'", "<", ">", "\\", "@"]);
+const URL_TOKEN_STOP = new Set([" ", "\t", "\n", "\r", '"', "<", ">"]);
+
+/**
+ * URL passwords holding a raw / # ' or ? (not RFC-valid, common in hand-written DSNs):
+ * postgres://u:p/x@h/db, u:p/a=x@h, u:p/&x@h. Only when the authority has user:pass whose
+ * "pass" is not a port (digits), and an '@' follows within the same token (1024-char window).
+ * A ?email=a@b query is only reached after a user:<non-port> authority, so normal URLs
+ * (https://h:8080/a@b, /path/@user, https://h/x?email=a@b) are kept. Linear: the '@' search
+ * never rescans text an earlier search already cleared.
+ */
+function redactRawUrlPasswords(s: string): string {
+  let out = "";
+  let last = 0;
+  let from = 0;
+  // [clearFrom, clearUntil) is known to hold no '@' and no token stop; clearStop says the
+  // scan that cleared it ended on a token stop (so no '@' can follow within the token)
+  let clearFrom = -1;
+  let clearUntil = -1;
+  let clearStop = false;
+  for (;;) {
+    const at = s.indexOf("://", from);
+    if (at < 0) break;
+    const a = at + 3;
+    from = a;
+    let e = a;
+    let colon = -1;
+    const authMax = Math.min(s.length, a + 1024);
+    while (e < authMax && !URL_AUTH_STOP.has(s[e]!)) {
+      if (colon < 0 && s[e] === ":") colon = e;
+      e++;
+    }
+    if (e >= s.length || s[e] === "@" || colon < 0) continue;
+    const stop = s[e]!;
+    if (!(stop === "/" || stop === "#" || stop === "'" || stop === "?" || stop === "\\")) continue;
+    if (/^\d*$/.test(s.slice(colon + 1, e))) continue; // host:port
+    let x = -1;
+    const tokMax = Math.min(s.length, e + 1024);
+    let j = e;
+    if (e >= clearFrom && e < clearUntil) {
+      if (clearStop) continue;
+      j = clearUntil;
+    }
+    let stopped = false;
+    for (; j < tokMax; j++) {
+      const c = s[j]!;
+      if (URL_TOKEN_STOP.has(c)) {
+        stopped = true;
+        break;
+      }
+      if (c === "@") {
+        x = j;
+        break;
+      }
+    }
+    if (x < 0) {
+      if (!(e >= clearFrom && e < clearUntil)) clearFrom = e;
+      clearUntil = j;
+      clearStop = stopped;
+      continue;
+    }
+    out += s.slice(last, a) + "[redacted]";
+    last = x;
+    from = x;
+  }
+  return last === 0 ? s : out + s.slice(last);
+}
+
+/** "Basic <base64>" credentials; plain words ("Basic authentication") are left alone. */
+function redactBasic(s: string): string {
+  return s.replace(/\bBasic\s+([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/gi, (all, tok: string) =>
+    /[0-9+/=]/.test(tok) || /[A-Z]/.test(tok.slice(1)) ? "Basic [redacted]" : all,
+  );
+}
+
 /** Replace every embedded secret in a string (exported for tests and push payloads). */
 export function redactSecrets(s: string): string {
-  let out = s;
+  let out = redactRawUrlPasswords(redactPem(s));
   for (const [re, rep] of SECRET_SUBSTRING_RES) out = out.replace(re, rep);
-  return out;
+  out = redactBasic(out);
+  return redactShellSet(redactAssignments(out));
 }
 
 const DEFAULT_MAX_BYTES = 65_536;
@@ -105,7 +400,7 @@ export function sanitizeForAudit(
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
 
   try {
-    const walked = walk(value, 0, maxDepth, maxString);
+    const walked = walk(value, 0, maxDepth, maxString, { n: 0 });
     const json = JSON.stringify(walked);
     if (json === undefined) return null;
     const bytes = Buffer.byteLength(json, "utf8");
@@ -124,26 +419,56 @@ export function sanitizeForAudit(
   }
 }
 
+/** Fields that name a variable in a name/value pair, and the sibling fields holding its value. */
+const PAIR_NAME_FIELD_RE = /^(?:name|key|variable|var|env|env_?name|variable_?name|key_?name)$/i;
+const PAIR_VALUE_FIELD_RE =
+  /^(?:value|val|values|value_?from|env_?value|default|default_?value|secret_?value|data|content|text)$/i;
+
+/** Upper bound on nodes visited per sanitize call (self-referential wide arrays). */
+const MAX_NODES = 50_000;
+
+/** Object key text with embedded secrets redacted; very long keys are cut (fail closed). */
+function safeKeyName(k: string): string {
+  if (k.length > MAX_NAME_LEN) return `${redactSecrets(k.slice(0, 64))}…[key truncated]`;
+  if (looksLikeOpaqueSecret(k)) return "[redacted]";
+  return redactSecrets(k);
+}
+
 function walk(
   value: unknown,
   depth: number,
   maxDepth: number,
   maxString: number,
+  budget: { n: number } = { n: 0 },
 ): unknown {
   if (value === null || value === undefined) return value;
+  if (++budget.n > MAX_NODES) return "[omitted]";
   if (typeof value === "string") return redactString(value, maxString);
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "bigint") return value.toString();
   if (typeof value === "function" || typeof value === "symbol") {
     return `[${typeof value}]`;
   }
+  // Buffer / Uint8Array / DataView / ArrayBuffer: never emit raw bytes
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    return { _omitted: "binary", byteLength: (value as ArrayBufferLike | ArrayBufferView).byteLength };
+  }
   if (depth >= maxDepth) return "[max_depth]";
 
   if (Array.isArray(value)) {
     const out: unknown[] = [];
     const limit = Math.min(value.length, 200);
+    // [name, value] tuples and flat name/value lists (header arrays, rawHeaders; odd lengths
+    // too, the last name then has no value):
+    // [["X-Api-Key","v"]], ["Authorization","Bearer x"], ["Accept","a","X-Api-Key","v"]
+    const pairs =
+      value.length >= 2 && value.every((v, i) => i % 2 === 1 || typeof v === "string");
     for (let i = 0; i < limit; i++) {
-      out.push(walk(value[i], depth + 1, maxDepth, maxString));
+      if (pairs && i % 2 === 1 && isSecretName(String(value[i - 1]).trim())) {
+        out.push("[redacted]");
+        continue;
+      }
+      out.push(walk(value[i], depth + 1, maxDepth, maxString, budget));
     }
     if (value.length > limit) {
       out.push(`…[${value.length - limit} more items]`);
@@ -155,13 +480,29 @@ function walk(
     const out: Record<string, unknown> = {};
     const keys = Object.keys(value);
     const limit = Math.min(keys.length, 100);
+    // name/value pairs (Dokploy/Docker/k8s env arrays): {"name":"DB_PASS","value":"x"}
+    const secretPair = keys.some((k) => {
+      const v = value[k];
+      return PAIR_NAME_FIELD_RE.test(k) && typeof v === "string" && isSecretName(v.trim());
+    });
     for (let i = 0; i < limit; i++) {
       const k = keys[i]!;
-      if (SECRET_KEY_RE.test(k) || CAMEL_SECRET_KEY_RE.test(k)) {
-        out[k] = "[redacted]";
+      let outKey = safeKeyName(k);
+      if (outKey !== k) {
+        let n = 1;
+        while (Object.prototype.hasOwnProperty.call(out, outKey)) outKey = `${safeKeyName(k)}#${++n}`;
+      }
+      if (
+        SECRET_KEY_RE.test(k) ||
+        CAMEL_SECRET_KEY_RE.test(k) ||
+        isSecretName(k) ||
+        outKey !== k ||
+        (secretPair && PAIR_VALUE_FIELD_RE.test(k))
+      ) {
+        out[outKey] = "[redacted]";
         continue;
       }
-      out[k] = walk(value[k], depth + 1, maxDepth, maxString);
+      out[k] = walk(value[k], depth + 1, maxDepth, maxString, budget);
     }
     if (keys.length > limit) {
       out._omittedKeys = keys.length - limit;
@@ -199,7 +540,7 @@ export function summarizeCallToolResult(result: CallToolResult): unknown {
         byteLength: len,
       };
     }
-    return walk(b, 0, 6, DEFAULT_MAX_STRING);
+    return walk(b, 0, 6, DEFAULT_MAX_STRING, { n: 0 });
   });
 
   const out: Record<string, unknown> = {
