@@ -35,7 +35,13 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0009_agent_bootstrap_session_guard", sql: MIGRATION_0009 },
   { id: "0010_policy_grant", sql: MIGRATION_0010 },
   { id: "0011_policy_v10", sql: MIGRATION_0011 },
-  { id: "0012_call_outcome_v11", sql: MIGRATION_0012 },
+  {
+    id: "0012_call_outcome_v11",
+    sql: MIGRATION_0012,
+    // Database (approval of afcbc646): 0012 also rebuilds call_audit; a pre-0012 DB gets the same
+    // disk check + row count/ETA log as 0013 (runner-side; the 0012 file is unchanged).
+    preflight: tableRebuildPreflight("0012_call_outcome_v11", "mcpflow_call_audit"),
+  },
   {
     id: "0013_call_audit_purge_actor",
     sql: MIGRATION_0013,

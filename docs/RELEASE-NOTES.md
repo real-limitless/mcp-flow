@@ -16,6 +16,9 @@ The first gateway start on this release applies migration `0013_call_audit_purge
   **2x the DB size** (main file plus WAL), and exits with an error that says how much is needed and how much is
   free. Nothing is applied when it refuses. If you've checked the space yourself, you can override with
   `MCP_FLOW_MIGRATE_SKIP_DISK_CHECK=1` (only the exact value `1` works). A warning is still logged.
+- **DBs from before 0012.** `0012_call_outcome_v11` also rebuilds `mcpflow_call_audit`. A DB that still needs 0012
+  gets the same disk check, override and row-count/ETA log line for it (tagged `migration 0012_call_outcome_v11`),
+  before 0013's. The two rebuilds run back to back, so plan for both.
 - **Afterwards.** The DB file keeps the space the old table used (it goes to free pages, not back to
   the OS). In a later window, stop the gateway and run `mcp-flow db vacuum`. This is offline: it needs the
   gateway lock and about 1x the DB size free, and it also switches the DB to `auto_vacuum=INCREMENTAL`.
