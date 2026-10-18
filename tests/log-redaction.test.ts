@@ -1,6 +1,6 @@
 // Gateway stderr: backend errors and passthrough stderr are redacted before logging. Fake values.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { lineRedactor, redactLog } from "../src/log/redact-lines.js";
+import { lineRedactor, PEM_MAX_LINES, redactLog } from "../src/log/redact-lines.js";
 import { connectStdioCommand } from "../src/mcp/runners/stdio.js";
 
 afterEach(() => vi.restoreAllMocks());
@@ -43,19 +43,19 @@ describe("log redaction", () => {
     expect(all.endsWith("[redacted]\n[redacted]\n[redacted]\n[redacted]\nready\n")).toBe(true);
   });
 
-  it("lineRedactor handles RSA/OPENSSH variants and resets after 200 lines without END", () => {
+  it("lineRedactor handles RSA/OPENSSH variants and resets after PEM_MAX_LINES lines without END", () => {
     const out: string[] = [];
     const r = lineRedactor((s) => out.push(s));
     r.push("-----BEGIN OPENSSH PRIVATE KEY-----\nFAKEOSSH1\n-----END OPENSSH PRIVATE KEY-----\nafter1\n");
     r.push("-----BEGIN RSA PRIVATE KEY-----\n");
-    for (let i = 0; i < 250; i++) r.push(`FAKERSA${i}\n`);
+    for (let i = 0; i < PEM_MAX_LINES + 50; i++) r.push(`FAKERSA${i}\n`);
     r.flush();
     const all = out.join("");
     expect(all).not.toContain("FAKEOSSH1");
     expect(all).toContain("after1\n");
-    for (let i = 0; i < 200; i++) expect(all).not.toContain(`FAKERSA${i}\n`);
-    expect(all).toContain("FAKERSA200\n"); // cap reached, state reset
-    expect(all.split("[redacted]\n").length - 1).toBe(2 + 200);
+    for (let i = 0; i < PEM_MAX_LINES; i++) expect(all).not.toContain(`FAKERSA${i}\n`);
+    expect(all).toContain(`FAKERSA${PEM_MAX_LINES}\n`); // cap reached, state reset
+    expect(all.split("[redacted]\n").length - 1).toBe(2 + PEM_MAX_LINES);
   });
 
   it("lineRedactor: a public key or certificate is not a private key block", () => {

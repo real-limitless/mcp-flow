@@ -1,16 +1,20 @@
-import { isSecretName, redactSecrets } from "../audit/sanitize.js";
+import { isSecretName, redactSecrets, secretArmorMarkers } from "../audit/sanitize.js";
 
 /** Redact a message before it is written to the gateway's own stderr. */
 export function redactLog(v: unknown): string {
   return redactSecrets(v instanceof Error ? v.message : String(v));
 }
 
-const PEM_BEGIN_RE = /-----BEGIN [A-Z0-9 ]{0,40}PRIVATE KEY-----/g;
-const PEM_END_RE = /-----END [A-Z0-9 ]{0,40}PRIVATE KEY-----/;
-/** Max lines redacted after a PEM BEGIN line without an END marker before the state resets. */
-export const PEM_MAX_LINES = 200;
+/**
+ * Max lines redacted after a private key BEGIN line without an END marker before the state
+ * resets (live passthrough only, so a stray BEGIN cannot mute a backend's stderr for good).
+ * Large enough for PGP secret key blocks with subkeys. Pass Infinity to never reset.
+ */
+export const PEM_MAX_LINES = 1024;
 /** Max partial-line tail kept back after a forced flush (the cut is at the last whitespace). */
 export const PENDING_TAIL_MAX = 4 * 1024;
+/** Longest armor marker line ("---- BEGIN <label up to 80> ----"). */
+const ARMOR_MARKER_MAX = 100;
 
 /** A segment that ends in a secret NAME= / NAME: (or Bearer / --password) with no value yet. */
 const DANGLING_NAME_RE = /(?:^|[^A-Za-z0-9_.-])([A-Za-z_][A-Za-z0-9_.-]{0,255})["']?[ \t]*[=:][ \t]*["']?$/;
@@ -23,12 +27,35 @@ function dangling(seg: string): boolean {
   return !!m && isSecretName(m[1]!);
 }
 
-/** Line opens a private key block that it does not close. */
+const PARTIAL_BEGIN_TAIL_RE = /-{1,5} ?(?:B(?:E(?:G(?:I(?:N(?: [A-Za-z0-9 ._]{0,80})?)?)?)?)?)?$/;
+
+/**
+ * Where a forced flush must stop so it does not split an armor BEGIN marker: the start of a
+ * BEGIN marker (or a partial one: dashes, "BEG…") within the last ARMOR_MARKER_MAX chars of s,
+ * else s.length.
+ */
+function armorHoldFrom(s: string): number {
+  const from = Math.max(0, s.length - ARMOR_MARKER_MAX);
+  const k = s.lastIndexOf("BEGIN");
+  if (k >= from) {
+    let d = k;
+    while (d > 0 && k - d < 6 && (s[d - 1] === "-" || s[d - 1] === " ")) d--;
+    return d; // complete or not, the marker goes to the next segment whole
+  }
+  const m = PARTIAL_BEGIN_TAIL_RE.exec(s.slice(from));
+  return m ? from + m.index : s.length;
+}
+
+/** Line opens a private key armor block (PEM, PGP, SSH2, OpenVPN) that it does not close. */
 function opensPem(line: string): boolean {
-  PEM_BEGIN_RE.lastIndex = 0;
-  let last = -1;
-  for (let m; (m = PEM_BEGIN_RE.exec(line)); ) last = m.index;
-  return last >= 0 && !PEM_END_RE.test(line.slice(last));
+  let open = false;
+  for (const mk of secretArmorMarkers(line)) open = mk.begin;
+  return open;
+}
+
+/** Line holds a private key armor END marker. */
+function closesPem(line: string): boolean {
+  return secretArmorMarkers(line).some((mk) => !mk.begin);
 }
 
 /**
@@ -36,8 +63,9 @@ function opensPem(line: string): boolean {
  * redacted and written; a partial line waits for its newline so a secret split across chunks
  * is still seen whole.
  *
- * - After a `-----BEGIN … PRIVATE KEY-----` line every following line is written as
- *   [redacted] up to and including the END marker (at most PEM_MAX_LINES, then it resets).
+ * - After a private key armor BEGIN line (`-----BEGIN … PRIVATE KEY-----`,
+ *   `-----BEGIN PGP PRIVATE KEY BLOCK-----`, …) every following line is written as [redacted]
+ *   up to and including the END marker (at most maxPemLines, then it resets).
  * - A partial line longer than maxPending is cut at its last whitespace, keeping a tail of at
  *   most PENDING_TAIL_MAX. If what was written ends in a secret NAME= / NAME: (or Bearer …)
  *   with no value, or in a value that may continue, the rest of that line is suppressed as
@@ -46,6 +74,7 @@ function opensPem(line: string): boolean {
 export function lineRedactor(
   write: (s: string) => void,
   maxPending = 64 * 1024,
+  maxPemLines = PEM_MAX_LINES,
 ): { push: (chunk: string) => void; flush: () => void } {
   let pending = "";
   let pemLines = 0; // > 0 while inside a private key block
@@ -54,7 +83,8 @@ export function lineRedactor(
   const line = (l: string) => {
     if (pemLines > 0) {
       write(l.endsWith("\n") ? "[redacted]\n" : "[redacted]");
-      if (PEM_END_RE.test(l) || ++pemLines > PEM_MAX_LINES) pemLines = 0;
+      if (opensPem(l)) pemLines = 1; // END then a new BEGIN on one line
+      else if (closesPem(l) || ++pemLines > maxPemLines) pemLines = 0;
       return;
     }
     write(redactSecrets(l));
@@ -66,7 +96,7 @@ export function lineRedactor(
     if (i < 0) return null;
     skipLine = false;
     write("\n");
-    if (pemLines > 0 && ++pemLines > PEM_MAX_LINES) pemLines = 0;
+    if (pemLines > 0 && ++pemLines > maxPemLines) pemLines = 0;
     return data.slice(i + 1);
   };
 
@@ -85,11 +115,19 @@ export function lineRedactor(
         break;
       }
     }
-    const seg = cut >= 0 ? pending.slice(0, cut + 1) : pending;
-    const rest = cut >= 0 ? pending.slice(cut + 1) : "";
+    let seg = cut >= 0 ? pending.slice(0, cut + 1) : pending;
+    let rest = cut >= 0 ? pending.slice(cut + 1) : "";
+    // never cut inside an armor BEGIN marker ("-----BEGIN RSA " | "PRIVATE KEY-----",
+    // "---- " | "BEGIN SSH2 …"): hold the marker back with the tail so it is seen whole
+    const hold = armorHoldFrom(pending);
+    if (hold < seg.length) {
+      seg = pending.slice(0, hold);
+      rest = pending.slice(hold);
+    }
     const out = redactSecrets(seg);
     write(out);
     pending = rest;
+    if (opensPem(seg)) pemLines = 1; // BEGIN marker in a forced segment: the key lines follow
     if (dangling(seg) || /\[redacted\]["']?[ \t\r]*$/.test(out)) {
       write("[redacted]");
       pending = "";

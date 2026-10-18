@@ -229,42 +229,57 @@ function redactAssignments(s: string): string {
   return last === 0 ? s : out + s.slice(last);
 }
 
-const PEM_BEGIN_RE = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----/y;
-const PEM_END_RE = /-----END [A-Z ]{0,40}PRIVATE KEY-----/y;
+/**
+ * ASCII-armor markers: PEM (`-----BEGIN RSA PRIVATE KEY-----`), PGP
+ * (`-----BEGIN PGP PRIVATE KEY BLOCK-----`), SSH.com (`---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----`),
+ * OpenVPN (`-----BEGIN OpenVPN Static key V1-----`). Bounded label, no nested quantifiers.
+ */
+const ARMOR_MARKER_RE = /-{4,5} ?(BEGIN|END) ([A-Za-z0-9][A-Za-z0-9 ._]{0,79}?) ?-{4,5}/g;
+/** Labels whose block body is secret key material (public keys, certificates and signatures are kept). */
+const SECRET_ARMOR_LABEL_RE = /\b(?:PRIVATE|SECRET|STATIC) KEY\b/i;
+
+export interface ArmorMarker {
+  begin: boolean;
+  start: number;
+  end: number;
+}
+
+/** Secret-key armor BEGIN/END markers in s, in order. Linear: one global regex pass. */
+export function secretArmorMarkers(s: string): ArmorMarker[] {
+  const out: ArmorMarker[] = [];
+  if (s.indexOf("BEGIN") < 0 && s.indexOf("END") < 0) return out;
+  ARMOR_MARKER_RE.lastIndex = 0;
+  for (let m; (m = ARMOR_MARKER_RE.exec(s)); ) {
+    if (SECRET_ARMOR_LABEL_RE.test(m[2]!)) {
+      out.push({ begin: m[1] === "BEGIN", start: m.index, end: m.index + m[0].length });
+    }
+  }
+  return out;
+}
 
 /**
- * PEM private key blocks. Linear: indexOf BEGIN, then indexOf END from there; each position is
- * scanned once. An unterminated BEGIN redacts to the end of the string (fail closed).
+ * Private key armor blocks (PEM, PGP, SSH2, OpenVPN static keys). Fail closed:
+ * - an unterminated BEGIN redacts to the end of the string;
+ * - an END with no BEGIN before it (the start of the block was cut off by a tail slice or a
+ *   line cap) redacts everything from the previous block, or the start, up to that END.
  */
 function redactPem(s: string): string {
+  const marks = secretArmorMarkers(s);
+  if (!marks.length) return s;
   let out = "";
   let last = 0;
-  let from = 0;
-  for (;;) {
-    const b = s.indexOf("-----BEGIN ", from);
-    if (b < 0) break;
-    PEM_BEGIN_RE.lastIndex = b;
-    if (!PEM_BEGIN_RE.test(s)) {
-      from = b + 1;
+  let open = -1;
+  for (const mk of marks) {
+    if (mk.begin) {
+      if (open < 0) open = mk.start;
       continue;
     }
-    let e = PEM_BEGIN_RE.lastIndex;
-    let end = -1;
-    for (;;) {
-      const x = s.indexOf("-----END ", e);
-      if (x < 0) break;
-      PEM_END_RE.lastIndex = x;
-      if (PEM_END_RE.test(s)) {
-        end = PEM_END_RE.lastIndex;
-        break;
-      }
-      e = x + 1;
-    }
-    out += s.slice(last, b) + "[redacted]";
-    if (end < 0) return out;
-    last = from = end;
+    out += s.slice(last, open < 0 ? last : open) + "[redacted]";
+    last = mk.end;
+    open = -1;
   }
-  return last === 0 ? s : out + s.slice(last);
+  if (open >= 0) return out + s.slice(last, open) + "[redacted]";
+  return out + s.slice(last);
 }
 
 /** fish / csh: `set -x DB_PASS value`, `setenv DB_PASS value` (value runs to the end of the line). */
