@@ -24,14 +24,15 @@ export interface Config {
   refuseLegacyMcpKeys?: boolean;
   /**
    * QA V51-F1: on SIGTERM/SIGINT, how long dispatched calls may finish before they are recorded as
-   * outcome unknown. MCP_FLOW_SHUTDOWN_GRACE_MS, default 8000, clamped to 0..9000 so the whole
-   * shutdown fits inside Docker's default 10 s stop timeout.
+   * outcome unknown. MCP_FLOW_SHUTDOWN_GRACE_MS, default 8000, clamped to 0..8000 so the drain plus
+   * the upstream close (connect deadline + process-group kill, about 2 s) fits inside Docker's default
+   * 10 s stop timeout.
    */
   shutdownGraceMs?: number;
 }
 
 export const DEFAULT_SHUTDOWN_GRACE_MS = 8000;
-export const MAX_SHUTDOWN_GRACE_MS = 9000;
+export const MAX_SHUTDOWN_GRACE_MS = 8000;
 
 export function parseShutdownGraceMs(raw: string | number | undefined | null): number {
   const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);

@@ -22,6 +22,20 @@ export const SHUTDOWN_DRAIN_MS = Math.min(
   SHUTDOWN_BUDGET_MS - STDIO_GROUP_KILL_BUDGET_MS - INFLIGHT_CLOSE_DEADLINE_MS,
 );
 
+/** Time reserved after the drain for pool.closeAll(): in-flight connect deadline + process-group kill. */
+export const SHUTDOWN_CLOSE_RESERVE_MS = INFLIGHT_CLOSE_DEADLINE_MS + STDIO_GROUP_KILL_BUDGET_MS;
+/** Held callers get at most this long to receive their 'cancelled' answer. */
+export const HELD_CALLER_WAIT_MAX_MS = 1000;
+const SHUTDOWN_MARGIN_MS = 150;
+
+/**
+ * How long shutdown may still wait for held callers, given the time already spent: never more than
+ * HELD_CALLER_WAIT_MAX_MS, and never into the time reserved for closing upstreams.
+ */
+export function heldCallerWaitMs(elapsedMs: number): number {
+  return Math.max(0, Math.min(HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS - SHUTDOWN_CLOSE_RESERVE_MS - SHUTDOWN_MARGIN_MS - elapsedMs));
+}
+
 export interface RunningServer {
   store: Store;
   pool: UpstreamPool;
@@ -273,6 +287,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       lock?.release();
     },
     shutdown: (reason: string) => (shuttingDown ??= (async () => {
+      const shutdownStarted = Date.now();
       // QA V51-F1: drain instead of cut.
       // 1) stop accepting: no new connections; new requests on open connections get 503; new calls refused
       draining = true;
@@ -299,8 +314,11 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
           const tot = Object.values(per).reduce((a, c) => ({ cancelled: a.cancelled + c.cancelled, abandoned: a.abandoned + c.abandoned, drained: a.drained + c.drained, unknown: a.unknown + c.unknown }), { cancelled: 0, abandoned: 0, drained: 0, unknown: 0 });
           console.error(`[mcp-flow] shutdown: ${JSON.stringify(tot)}`);
           // 5) let held callers receive their 'cancelled' answer before connections are closed
-          for (let i = 0; i < 40 && store.policy.waiterCount() > 0; i++) await new Promise((r) => setTimeout(r, 25));
-          await new Promise((r) => setTimeout(r, 50));
+          // capped to what is left of the 10 s budget after reserving time for the upstream close
+          const waitUntil = Date.now() + heldCallerWaitMs(Date.now() - shutdownStarted);
+          while (store.policy.waiterCount() > 0 && Date.now() < waitUntil) await new Promise((r) => setTimeout(r, 25));
+          const flush = Math.min(50, Math.max(0, waitUntil - Date.now()));
+          if (flush > 0) await new Promise((r) => setTimeout(r, flush));
         } catch (err) {
           console.error(`[mcp-flow] shutdown drain failed: ${(err as Error).message}`);
         }
