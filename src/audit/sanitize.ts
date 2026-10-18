@@ -217,11 +217,20 @@ function redactAssignments(s: string): string {
   while ((m = ASSIGN_RE.exec(s)) !== null) {
     const [whole, prefix = "", nameQuote = "", name = ""] = m;
     const vStart = m.index + whole.length;
-    if (!isSecretName(name)) continue;
+    if (!isSecretName(name)) {
+      // "a: password=x", "denied: API_KEY=x": a non-secret NAME: consumed the separator and the
+      // spaces that are the next name's left boundary; rescan from the last consumed char
+      // (always past m.index, so the scan still moves forward)
+      ASSIGN_RE.lastIndex = vStart - 1;
+      continue;
+    }
     // "scheme://" is a URL, not an assignment (userinfo is handled separately)
     if (s.startsWith("//", vStart)) continue;
     const { end, quote } = valueEnd(s, vStart, prefix, nameQuote);
-    if (end <= vStart) continue;
+    if (end <= vStart) {
+      ASSIGN_RE.lastIndex = vStart - 1; // empty value ("password: token=x"): rescan likewise
+      continue;
+    }
     out += s.slice(last, vStart) + (quote ? `${quote}[redacted]${quote}` : "[redacted]");
     last = end;
     ASSIGN_RE.lastIndex = Math.max(end, vStart);
