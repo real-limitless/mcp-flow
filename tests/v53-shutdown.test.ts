@@ -196,3 +196,39 @@ describe("V53-F1 forceStop kills the stdio process groups", () => {
     expect(await until(() => survivors(w.spawnDir).length === 0, 500)).toBe(true);
   });
 });
+
+describe("V53-F2 HTTP drain covers legacy-key calls (they bypass the enforcer)", () => {
+  it("L2: a legacy in-flight slow call finishes inside the grace and gets its result; exit 0", async () => {
+    const w = seed(1);
+    const s = await serve(w.dbPath, { MCP_FLOW_SHUTDOWN_GRACE_MS: "4000" });
+    const c = await mcpClient(s.port, w.legacy);
+    expect(await call(c, "s1__echo")).toBe("echo");
+    const t0 = Date.now();
+    const slow = call(c, "s1__slow", { ms: 1500 });
+    await sleep(100);
+    s.p.kill("SIGTERM");
+    expect(await slow).toBe("slow:1500"); // QA v5.3 saw "ERR fetch failed" ~83 ms after SIGTERM
+    const done = await s.exited;
+    expect(done.code).toBe(0);
+    expect(done.at - t0).toBeGreaterThanOrEqual(1400);
+    expect(done.at - t0).toBeLessThan(4000);
+    expect(await until(() => survivors(w.spawnDir).length === 0, 1_000)).toBe(true);
+  }, 30_000);
+
+  it("L3: a legacy call that never finishes is held for the full grace, then cut; shutdown stays in budget", async () => {
+    const w = seed(1);
+    const s = await serve(w.dbPath, { MCP_FLOW_SHUTDOWN_GRACE_MS: "1500" });
+    const c = await mcpClient(s.port, w.legacy);
+    expect(await call(c, "s1__echo")).toBe("echo");
+    const hang = call(c, "s1__hang");
+    await sleep(100);
+    const t0 = Date.now();
+    s.p.kill("SIGTERM");
+    const done = await s.exited;
+    expect(done.code).toBe(0);
+    expect(done.at - t0).toBeGreaterThanOrEqual(1450); // drained for the grace, not cut at once
+    expect(done.at - t0).toBeLessThan(5000);
+    expect(await hang).toMatch(/^ERR/);
+    expect(await until(() => survivors(w.spawnDir).length === 0, 1_000)).toBe(true);
+  }, 30_000);
+});
