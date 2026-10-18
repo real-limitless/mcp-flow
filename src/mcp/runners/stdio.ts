@@ -331,8 +331,8 @@ const STDERR_TAIL_MAX = 8_000;
 
 /**
  * Keeps the last `keep` characters written. Memory is bounded at about 2x keep: the trim runs
- * after a write, so the buffer can briefly exceed 2x keep by one write (the line redactor
- * writes at most one forced segment, up to about 64 KiB). When older text was
+ * after a write, so the buffer can briefly exceed 2x keep by one write (a write can be a whole
+ * line: up to maxPending (64 KiB) plus one incoming chunk, about 128 KiB). When older text was
  * dropped, text() starts after the first line break of the kept window, so a cut-off line
  * fragment (too short to look like key body) never reaches the second redaction pass. The
  * buffer only ever holds the tail redactor's output, never raw stderr.

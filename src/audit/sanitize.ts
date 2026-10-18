@@ -156,6 +156,16 @@ function escapedLineBreakAt(s: string, k: number): boolean {
 
 /** Index of the end of the line starting at i: a real CR/LF or a literal \n / \r line break. */
 function lineEnd(s: string, i: number): number {
+  return scanToStop(s, i, null);
+}
+
+/**
+ * First index from i that ends the line (as lineEnd) or where stop(s[j], j) holds, in one forward
+ * pass. valueEnd used to compute the whole line end first and then look for a stop char, so an
+ * empty value repeated on one line ("&token=&token=…", "\"password\":,…") cost a line scan per
+ * match (quadratic); now an early stop char returns at once. Same result as before.
+ */
+function scanToStop(s: string, i: number, stop: ((ch: string, j: number) => boolean) | null): number {
   for (let j = i; j < s.length; j++) {
     const c = s.charCodeAt(j);
     if (c === 10 || c === 13) return j;
@@ -164,8 +174,11 @@ function lineEnd(s: string, i: number): number {
       let k = j;
       while (k < s.length - 1 && s[k] === "\\" && (s[k + 1] === "n" || s[k + 1] === "r")) k += 2;
       if (escapedLineBreakAt(s, k)) return j;
+      if (stop) for (let t = j; t < k; t++) if (stop(s[t]!, t)) return t;
       j = k - 1;
+      continue;
     }
+    if (stop && stop(s[j]!, j)) return j;
   }
   return s.length;
 }
@@ -189,8 +202,7 @@ function valueEnd(s: string, i: number, prefix: string, nameQuote: string): { en
     }
     return { end: lineEnd(s, i), quote: "" };
   }
-  const eol = lineEnd(s, i);
-  let stop = (_ch: string, _j: number) => false;
+  let stop: ((ch: string, j: number) => boolean) | null = null;
   if (prefix === '"' || prefix === "'") {
     // "DB_PASS=x y" / -H 'Authorization: Basic x': ends at the unescaped quote that opened it
     stop = (ch, j) => ch === prefix && s[j - 1] !== "\\";
@@ -204,12 +216,63 @@ function valueEnd(s: string, i: number, prefix: string, nameQuote: string): { en
     // "DB_PASS": 12345 in JSON text
     stop = (ch) => ch === "," || ch === "}" || ch === "]";
   }
-  for (let j = i; j < eol; j++) if (stop(s[j]!, j)) return { end: j, quote: "" };
-  return { end: eol, quote: "" };
+  return { end: scanToStop(s, i, stop), quote: "" };
+}
+
+/** Name characters (as in ASSIGN_RE). */
+function isNameChar(c: number): boolean {
+  return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || c === 46 || c === 45;
+}
+
+/**
+ * ASSIGN_RE caps a name at 1024 characters and needs a non-name character before it, so a longer
+ * name ("<1100 chars>_PASSWORD=v") never matched and its value was kept. Names longer than that are
+ * secret names (fail closed, as isSecretName treats any name over MAX_NAME_LEN): one linear pass
+ * over name-character runs; a run longer than 1024 followed by an optional (escaped) quote,
+ * [ \t]* and = or : has its value redacted with the same value rules.
+ */
+const LONG_NAME_MIN = 1025;
+function redactLongNameAssignments(s: string): string {
+  if (s.length < LONG_NAME_MIN + 1) return s;
+  let out = "";
+  let last = 0;
+  let i = 0;
+  while (i < s.length) {
+    if (!isNameChar(s.charCodeAt(i))) {
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < s.length && isNameChar(s.charCodeAt(i))) i++;
+    if (i - start < LONG_NAME_MIN) continue;
+    let j = i;
+    let nameQuote = "";
+    if (s[j] === "\\" && (s[j + 1] === '"' || s[j + 1] === "'")) {
+      nameQuote = s.slice(j, j + 2);
+      j += 2;
+    } else if (s[j] === '"' || s[j] === "'") {
+      nameQuote = s[j]!;
+      j++;
+    }
+    while (s[j] === " " || s[j] === "\t") j++;
+    if (s[j] !== "=" && s[j] !== ":") continue;
+    j++;
+    while (s[j] === " " || s[j] === "\t") j++;
+    if (j < last || s.startsWith("//", j)) continue;
+    const before = start > 0 ? s[start - 1]! : "";
+    const prefix = (before === '"' || before === "'") && s[start - 2] === "\\" ? `\\${before}` : before;
+    const { end, quote } = valueEnd(s, j, prefix, nameQuote);
+    if (end <= j) continue;
+    out += s.slice(last, j) + (quote ? `${quote}[redacted]${quote}` : "[redacted]");
+    last = end;
+    i = Math.max(i, end);
+  }
+  return last === 0 ? s : out + s.slice(last);
 }
 
 /** Redact the values of NAME=value / NAME: value pairs whose NAME is a secret name. */
-function redactAssignments(s: string): string {
+function redactAssignments(input: string): string {
+  const s = redactLongNameAssignments(input);
   let out = "";
   let last = 0;
   ASSIGN_RE.lastIndex = 0;
