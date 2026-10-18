@@ -112,10 +112,17 @@ const OUTCOME_MESSAGES: Record<string, string> = {
 };
 
 /** Read error codes on call_audit 'result_read' rows (db-t2.1-pending-result; result_none added for "no result stored"). */
-/** System actors on call_audit 'result_purge' rows (0012 CHECK pins each to its reason). */
+/** System actors on call_audit 'result_purge' rows (the 0013 CHECK pins each to its reason). */
 export const PURGE_ACTOR = { expired: "system:sweeper", quota: "system:quota" } as const;
 
-export type ResultReadError = "result_not_ready" | "result_purged" | "result_forbidden" | "result_undecryptable" | "result_none";
+/** result_expired: the window closed (DB clock) but the payload is not purged yet (the gateway clock disagrees). */
+export type ResultReadError =
+  | "result_not_ready"
+  | "result_purged"
+  | "result_expired"
+  | "result_forbidden"
+  | "result_undecryptable"
+  | "result_none";
 
 export function outcomeSummary(
   row: Record<string, unknown>,
@@ -912,10 +919,11 @@ export class PolicyEnforcer {
         } else if (!Number(row.db_window_open)) {
           // Read gate on the DB clock (the same clock as the 0012 expiry trigger): once SQLite says the
           // window closed, the result is never served, whatever the gateway clock says. The purge itself
-          // still needs both clocks to agree (as in the sweep); until then the payload just isn't served.
-          if (!(now < String(row.result_expires_at))) this.purgeOne(String(row.call_id), "expired", now);
-          errorCode = "result_purged";
-          reason = "purged:expired";
+          // still needs both clocks to agree (as in the sweep); until then the payload just isn't served
+          // and the read says result_expired (Database nit): purged:expired only when this read purged it.
+          const purged = !(now < String(row.result_expires_at)) && this.purgeOne(String(row.call_id), "expired", now);
+          errorCode = purged ? "result_purged" : "result_expired";
+          reason = purged ? "purged:expired" : "expired";
         } else {
           try {
             served = decryptArgs(this.deps.keys.resultEnc, row.result_ciphertext as Uint8Array) as unknown as CallToolResult;

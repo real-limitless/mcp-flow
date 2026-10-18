@@ -190,8 +190,9 @@ describe("read gate uses the DB clock (same clock as the 0012 expiry trigger)", 
     expect(new Date(Date.now() + skew).toISOString() < exp).toBe(true);
     const r = pe.takeAsyncResult(pc, bot);
     expect(JSON.stringify(r)).not.toContain("secret-result");
-    expect(JSON.parse(txt(r))).toMatchObject({ error_code: "result_purged", reason: "purged:expired" });
-    expect(reads().at(-1)).toMatchObject({ actor: bot, error_code: "result_purged" });
+    // expired on the DB clock but not purged yet: result_expired, not purged:expired (Database nit)
+    expect(JSON.parse(txt(r))).toMatchObject({ error_code: "result_expired", reason: "expired" });
+    expect(reads().at(-1)).toMatchObject({ actor: bot, error_code: "result_expired" });
     // the admin is refused too
     expect(JSON.stringify(pe.takeAsyncResult(pc, chen))).not.toContain("secret-result");
     // purge needs both clocks: neither the read nor the sweep purged it yet
