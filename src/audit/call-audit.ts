@@ -17,7 +17,7 @@ export interface CallAuditFilter {
   projectId?: string;
   backendSlug?: string;
   tool?: string;
-  eventType?: "decision" | "completion" | "lifecycle";
+  eventType?: "decision" | "completion" | "lifecycle" | "result_read" | "result_purge";
   policyDecision?: "allow" | "deny" | "require_approval";
   finalOutcome?: string;
   callId?: string;
@@ -307,7 +307,7 @@ const PENDING_SEL = `FROM mcpflow_pending_call p
 const OUTCOME_COLS = [
   "call_id", "pending_call_id", "workspace_id", "agent_id", "key_id", "idempotency_key", "qualified_tool", "args_hash",
   "async", "state", "final_outcome", "result_status", "created_at", "completed_at", "result_bytes", "result_truncated",
-  "result_read_at", "result_purged_at",
+  "result_read_at", "result_purged_at", "result_stored_at", "result_expires_at", "result_purge_reason",
 ]; // never the result ciphertext
 const PENDING_COLS = [
   "id", "call_id", "workspace_id", "agent_id", "key_id", "session_id", "project_id", "backend_slug", "tool", "qualified_tool",
