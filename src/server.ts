@@ -162,6 +162,29 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     port: cfg.port,
   });
 
+  // V53-F2: count in-flight HTTP requests so shutdown drains every call, including legacy-key
+  // /mcp calls that never pass through the policy enforcer. Long-lived GET event streams are not
+  // work in flight and are not counted.
+  let httpInflight = 0;
+  const httpIdleWaiters = new Set<() => void>();
+  nodeServer.on("request", (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => {
+    if (req.method === "GET" && String(req.headers.accept ?? "").includes("text/event-stream")) return;
+    httpInflight++;
+    res.once("close", () => {
+      httpInflight--;
+      if (httpInflight === 0) for (const wake of [...httpIdleWaiters]) wake();
+    });
+  });
+  /** Resolves true when no HTTP request is in flight, or false after ms. */
+  const httpDrain = (ms: number): Promise<boolean> =>
+    httpInflight === 0
+      ? Promise.resolve(true)
+      : new Promise<boolean>((resolve) => {
+          const wake = () => { clearTimeout(timer); httpIdleWaiters.delete(wake); resolve(true); };
+          const timer = setTimeout(() => { httpIdleWaiters.delete(wake); resolve(httpInflight === 0); }, Math.max(0, ms));
+          httpIdleWaiters.add(wake);
+        });
+
   const wss = new WebSocketServer({ noServer: true });
   // R3-2 self-fencing: stop accepting new HTTP/WS work immediately when the lock is lost
   stopServing = () => {
@@ -304,8 +327,11 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
           const holds = store.policy.beginShutdown();
           // 3) dispatched calls: bounded grace, then any still running -> outcome unknown + completion row
           const graceMs = cfg.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS;
-          console.error(`[mcp-flow] draining ${store.policy.inflightCount()} in-flight call(s), grace ${graceMs} ms`);
-          const drain = await store.policy.drain(graceMs);
+          console.error(`[mcp-flow] draining ${store.policy.inflightCount()} in-flight call(s), ${httpInflight} HTTP request(s), grace ${graceMs} ms`);
+          // V53-F2: enforcer calls and in-flight HTTP requests (legacy-key calls bypass the enforcer)
+          // drain concurrently inside the same grace window, so the HTTP drain adds no time.
+          const [drain, httpDrained] = await Promise.all([store.policy.drain(graceMs), httpDrain(graceMs)]);
+          if (!httpDrained) console.error(`[mcp-flow] ${httpInflight} HTTP request(s) still open after the grace; closing them`);
           // 4) anything else left open (e.g. tracked outcomes) is closed out as on restart
           const rest = store.policy.recoverOrphans();
           const per: Record<string, { cancelled: number; abandoned: number; drained: number; unknown: number }> = {};
