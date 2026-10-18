@@ -233,15 +233,16 @@ function redactAssignments(s: string): string {
  * ASCII-armor markers: PEM (`-----BEGIN RSA PRIVATE KEY-----`), PGP
  * (`-----BEGIN PGP PRIVATE KEY BLOCK-----`), SSH.com (`---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----`),
  * OpenVPN (`-----BEGIN OpenVPN Static key V1-----`). Case-insensitive (`-----begin pgp private
- * key block-----`). Bounded label, no nested quantifiers.
+ * key block-----`), 4 or 5 dashes, spaces or tabs around BEGIN/END and inside the label.
+ * Bounded quantifiers only.
  */
-const ARMOR_MARKER_RE = /-{4,5} ?(BEGIN|END) ([A-Za-z0-9][A-Za-z0-9 ._]{0,79}?) ?-{4,5}/gi;
+const ARMOR_MARKER_RE = /-{4,5}[ \t]{0,8}(BEGIN|END)[ \t]{1,8}([A-Za-z0-9][A-Za-z0-9 \t._]{0,79}?)[ \t]{0,8}-{4,5}/gi;
 /**
  * Labels whose block body is secret key material. Public keys, certificates, and PGP MESSAGE /
  * SIGNATURE blocks stay readable by design: a MESSAGE body is ciphertext (useless without the
  * private key) and a SIGNATURE is public, and both are useful when reading an audit trail.
  */
-const SECRET_ARMOR_LABEL_RE = /\b(?:PRIVATE|SECRET|STATIC) KEY\b/i;
+const SECRET_ARMOR_LABEL_RE = /\b(?:PRIVATE|SECRET|STATIC)[ \t]+KEY\b/i;
 
 export interface ArmorMarker {
   begin: boolean;
@@ -252,7 +253,7 @@ export interface ArmorMarker {
 /** Secret-key armor BEGIN/END markers in s, in order. Linear: one global regex pass. */
 export function secretArmorMarkers(s: string): ArmorMarker[] {
   const out: ArmorMarker[] = [];
-  if (s.indexOf("-----") < 0 && s.indexOf("---- ") < 0) return out;
+  if (s.indexOf("----") < 0) return out;
   ARMOR_MARKER_RE.lastIndex = 0;
   for (let m; (m = ARMOR_MARKER_RE.exec(s)); ) {
     if (SECRET_ARMOR_LABEL_RE.test(m[2]!)) {

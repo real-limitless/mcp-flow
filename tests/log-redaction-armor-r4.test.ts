@@ -170,11 +170,16 @@ describe("stray END limited to the key-body run before it (SecOPS SHOULD 4)", ()
   });
 });
 
-describe("case-insensitive armor markers (QA r3 partial)", () => {
+describe("armor marker variants: any case, 4 dashes, extra spaces / tabs (QA r3)", () => {
   const variants = [
     ["-----begin pgp private key block-----", "-----end pgp private key block-----"],
     ["-----Begin Rsa Private Key-----", "-----End Rsa Private Key-----"],
     ["---- begin ssh2 encrypted private key ----", "---- end ssh2 encrypted private key ----"],
+    // QA r3 probe-r3-ext variants: double spaces, tabs, 4 dashes
+    ["-----BEGIN  PGP PRIVATE KEY BLOCK-----", "-----END  PGP PRIVATE KEY BLOCK-----"],
+    ["-----BEGIN PGP PRIVATE  KEY BLOCK-----", "-----END PGP PRIVATE  KEY BLOCK-----"],
+    ["-----BEGIN\tPGP PRIVATE KEY BLOCK-----", "-----END\tPGP PRIVATE KEY BLOCK-----"],
+    ["----BEGIN PGP PRIVATE KEY BLOCK----", "----END PGP PRIVATE KEY BLOCK----"],
   ];
   it("redactSecrets", () => {
     for (const [b, e] of variants) expect(redactSecrets(`x ${b}\n${M}1\n${e} y`), b).toBe("x [redacted] y");
@@ -191,14 +196,15 @@ describe("case-insensitive armor markers (QA r3 partial)", () => {
     }
   });
 
-  it("forced flush holds back a lowercase BEGIN marker", () => {
+  it("forced flush holds back a lowercase or tab/4-dash BEGIN marker", () => {
     const head = "x".repeat(64 * 1024 - 10) + " ";
-    const marker = "-----begin pgp private key block-----";
-    const text = head + marker;
-    for (let i = head.length - 1; i <= text.length; i++) {
-      const o = run([text.slice(0, i), text.slice(i), `\n${M}1\n${M}2\n-----end pgp private key block-----\nok\n`]);
-      expect(o, `at ${i}`).not.toContain(M);
-      expect(o.endsWith("ok\n"), `at ${i}`).toBe(true);
+    for (const marker of ["-----begin pgp private key block-----", "----BEGIN\t PGP PRIVATE KEY BLOCK----"]) {
+      const text = head + marker;
+      for (let i = head.length - 1; i <= text.length; i++) {
+        const o = run([text.slice(0, i), text.slice(i), `\n${M}1\n${M}2\n-----end pgp private key block-----\nok\n`]);
+        expect(o, `${marker} at ${i}`).not.toContain(M);
+        expect(o.endsWith("ok\n"), `${marker} at ${i}`).toBe(true);
+      }
     }
   });
 

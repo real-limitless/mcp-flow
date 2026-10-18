@@ -22,7 +22,7 @@ export const PEM_MAX_LINES = 1024;
 /** Max partial-line tail kept back after a forced flush (the cut is at the last whitespace). */
 export const PENDING_TAIL_MAX = 4 * 1024;
 /** Longest armor marker line ("---- BEGIN <label up to 80> ----"). */
-const ARMOR_MARKER_MAX = 100;
+const ARMOR_MARKER_MAX = 128;
 
 /** A segment that ends in a secret NAME= / NAME: (or Bearer / --password) with no value yet. */
 const DANGLING_NAME_RE = /(?:^|[^A-Za-z0-9_.-])([A-Za-z_][A-Za-z0-9_.-]{0,255})["']?[ \t]*[=:][ \t]*["']?$/;
@@ -36,7 +36,7 @@ function dangling(seg: string): boolean {
 }
 
 const BEGIN_WORD_RE = /begin/gi;
-const PARTIAL_BEGIN_TAIL_RE = /-{1,5} ?(?:B(?:E(?:G(?:I(?:N(?: [A-Za-z0-9 ._]{0,80})?)?)?)?)?)?$/i;
+const PARTIAL_BEGIN_TAIL_RE = /-{1,5}[ \t]{0,8}(?:B(?:E(?:G(?:I(?:N(?:[ \t][A-Za-z0-9 \t._]{0,80})?)?)?)?)?)?$/i;
 
 /**
  * Where a forced flush must stop so it does not split an armor BEGIN marker: the start of a
@@ -50,7 +50,7 @@ function armorHoldFrom(s: string): number {
   for (let m; (m = BEGIN_WORD_RE.exec(s)); ) k = m.index;
   if (k >= 0) {
     let d = k;
-    while (d > 0 && k - d < 6 && (s[d - 1] === "-" || s[d - 1] === " ")) d--;
+    while (d > 0 && k - d < 14 && (s[d - 1] === "-" || s[d - 1] === " " || s[d - 1] === "\t")) d--;
     return d; // complete or not, the marker goes to the next segment whole
   }
   const m = PARTIAL_BEGIN_TAIL_RE.exec(s.slice(from));
