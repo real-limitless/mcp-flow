@@ -617,11 +617,11 @@ export class Store {
   constructor(
     dbPath: string,
     masterKeyRaw: string,
-    opts: { policyDevKeyRaw?: string } = {},
+    opts: { policyDevKeyRaw?: string; journalSizeLimitBytes?: number } = {},
   ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
-    applyConnectionPragmas(this.db);
+    applyConnectionPragmas(this.db, { journalSizeLimitBytes: opts.journalSizeLimitBytes });
     this.db.exec(SCHEMA);
     this.migrate();
     runMigrations(this.db);

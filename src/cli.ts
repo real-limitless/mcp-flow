@@ -69,7 +69,7 @@ function openStore(db?: string): { store: Store; workspaceId: string } {
   if (!cfg.masterKeyRaw) {
     throw new Error("MCP_FLOW_MASTER_KEY is required");
   }
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
   const ws = store.ensureWorkspace(cfg.workspaceName);
   return { store, workspaceId: ws.id };
 }
@@ -395,7 +395,7 @@ backendCmd
           | "edge-bare",
         deviceId: opts.deviceId,
       };
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const { assertBackendShape, assertPlacementAllowed } = await import(
@@ -931,7 +931,7 @@ catalogCmd
         ? parseHeaderFlags(opts.header)
         : undefined;
       const headers = withAuthorizationToken(parsed, opts.apiKey);
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const result = await installFromGallery(store, ws.id, {
@@ -1205,7 +1205,7 @@ program
     };
     try {
       if (cfg.masterKeyRaw) {
-        const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+        const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;
         report.policy = ws.policy;

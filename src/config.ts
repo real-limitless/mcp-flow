@@ -29,6 +29,11 @@ export interface Config {
    * 10 s stop timeout.
    */
   shutdownGraceMs?: number;
+  /**
+   * PM: PRAGMA journal_size_limit, from MCP_FLOW_JOURNAL_SIZE_LIMIT_MB (whole MiB, default 64, clamped
+   * 1..4096; unset/invalid = default). Bounds the WAL file kept on disk after checkpoints.
+   */
+  journalSizeLimitBytes: number;
 }
 
 export const DEFAULT_SHUTDOWN_GRACE_MS = 8000;
@@ -38,6 +43,17 @@ export function parseShutdownGraceMs(raw: string | number | undefined | null): n
   const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
   if (!Number.isFinite(n)) return DEFAULT_SHUTDOWN_GRACE_MS;
   return Math.min(MAX_SHUTDOWN_GRACE_MS, Math.max(0, Math.floor(n)));
+}
+
+export const DEFAULT_JOURNAL_SIZE_LIMIT_MB = 64;
+const MAX_JOURNAL_SIZE_LIMIT_MB = 4096;
+
+/** MCP_FLOW_JOURNAL_SIZE_LIMIT_MB -> bytes: whole MiB, clamped 1..4096; unset/invalid -> 64 MiB. */
+export function parseJournalSizeLimitBytes(raw: string | number | undefined | null): number {
+  const s = raw == null ? "" : String(raw).trim();
+  const n = s === "" || !/^\d+$/.test(s) ? NaN : Number(s);
+  const mb = Number.isSafeInteger(n) ? Math.min(MAX_JOURNAL_SIZE_LIMIT_MB, Math.max(1, n)) : DEFAULT_JOURNAL_SIZE_LIMIT_MB;
+  return mb * 1024 * 1024;
 }
 
 /** R4-3: `true` (any case) or `1` is on; anything else (unset, false, 0, yes, typos) is off. */
@@ -99,6 +115,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
+    journalSizeLimitBytes: overrides.journalSizeLimitBytes ?? parseJournalSizeLimitBytes(env("MCP_FLOW_JOURNAL_SIZE_LIMIT_MB")),
   };
 }
 

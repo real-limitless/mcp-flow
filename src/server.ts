@@ -112,7 +112,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   });
   let store: Store;
   try {
-    store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw });
+    store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw, journalSizeLimitBytes: cfg.journalSizeLimitBytes });
   } catch (err) {
     lock?.release();
     throw err;

@@ -36,10 +36,21 @@ export const MIGRATIONS: readonly Migration[] = [
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
 
 /** Per-connection pragmas required by the mcpflow_* schema (Database, 2026-10-14). */
-export function applyConnectionPragmas(db: DatabaseSync): void {
+/** PM: cap the WAL file left on disk after a checkpoint (MCP_FLOW_JOURNAL_SIZE_LIMIT_MB, default 64 MiB). */
+export const DEFAULT_JOURNAL_SIZE_LIMIT_BYTES = 64 * 1024 * 1024;
+
+export interface ConnectionPragmaOptions {
+  /** PRAGMA journal_size_limit in bytes (default DEFAULT_JOURNAL_SIZE_LIMIT_BYTES). */
+  journalSizeLimitBytes?: number;
+}
+
+export function applyConnectionPragmas(db: DatabaseSync, opts: ConnectionPragmaOptions = {}): void {
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
+  const limit = opts.journalSizeLimitBytes ?? DEFAULT_JOURNAL_SIZE_LIMIT_BYTES;
+  if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("journalSizeLimitBytes must be a non-negative integer");
+  db.exec(`PRAGMA journal_size_limit = ${limit};`);
 }
 
 /**

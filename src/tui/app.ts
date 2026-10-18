@@ -105,7 +105,7 @@ export async function runTui(cfg: Config): Promise<void> {
     process.exit(1);
   }
 
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
   const ws = store.ensureWorkspace(cfg.workspaceName);
   const pool = new UpstreamPool(store);
 

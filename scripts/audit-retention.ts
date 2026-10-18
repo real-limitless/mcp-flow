@@ -9,6 +9,7 @@
  */
 import { DatabaseSync } from "node:sqlite";
 import { applyConnectionPragmas } from "../src/db/migrations/index.js";
+import { parseJournalSizeLimitBytes } from "../src/config.js";
 import { runAuditRetention } from "../src/audit/call-audit.js";
 
 function arg(name: string): string {
@@ -21,7 +22,7 @@ function arg(name: string): string {
 const dbPath = process.env.MCP_FLOW_DB_PATH;
 if (!dbPath) throw new Error("MCP_FLOW_DB_PATH is required");
 const db = new DatabaseSync(dbPath);
-applyConnectionPragmas(db);
+applyConnectionPragmas(db, { journalSizeLimitBytes: parseJournalSizeLimitBytes(process.env.MCP_FLOW_JOURNAL_SIZE_LIMIT_MB) });
 const out = runAuditRetention(db, {
   workspaceId: arg("workspace"),
   before: arg("before"),
