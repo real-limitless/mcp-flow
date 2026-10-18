@@ -31,8 +31,9 @@ describe("secret names: suffix rule, not an allowlist", () => {
     expect(out).toMatchObject({ KEY_COUNT: 5, key: "name", max_tokens: 10, primaryKey: "id" });
   });
 
-  it("documented false positives: *_KEY names that are not secrets are redacted (fail closed)", () => {
-    expect(sanitizeForAudit({ sort_key: "created_at", PUBLIC_KEY: "ssh-ed25519 AAAA" })).toEqual({ sort_key: R, PUBLIC_KEY: R });
+  it("common non-secret *_KEY names stay readable; other *_KEY names are redacted (fail closed)", () => {
+    expect(sanitizeForAudit({ sort_key: "created_at", PUBLIC_KEY: "ssh-ed25519 AAAA" })).toEqual({ sort_key: "created_at", PUBLIC_KEY: "ssh-ed25519 AAAA" });
+    expect(sanitizeForAudit({ SSH_HOST_KEY: "x", hotKey: "y" })).toEqual({ SSH_HOST_KEY: R, hotKey: R });
     expect(redactSecrets("PWD=/home/app")).toBe(`PWD=${R}`);
   });
 });

@@ -71,9 +71,11 @@ function looksLikeOpaqueSecret(s: string): boolean {
  *    CREDENTIAL(S), PASSPHRASE, APIKEY, BEARER, COOKIE, DSN;
  *  - names containing PASSWORD/PASSWD/PASSPHRASE/SECRET/CREDENTIAL/AUTHORIZATION/COOKIE,
  *    PRIVATE_KEY/ACCESS_KEY/API_KEY, a TOKEN segment, DATABASE_URL or CONNECTION_STRING.
- * Known false positives (accepted, audit text only loses the value): *_KEY names that are not
- * secrets (PRIMARY_KEY, SORT_KEY, PUBLIC_KEY, IDEMPOTENCY_KEY), PWD=/cwd in env dumps, prose
- * like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable).
+ * Common non-secret *_KEY names stay readable through an explicit list (PRIMARY_KEY, SORT_KEY,
+ * PUBLIC_KEY, IDEMPOTENCY_KEY, CACHE_KEY, PARTITION_KEY, …; see BENIGN_KEY_WORDS); any other
+ * *_KEY is redacted. Known false positives (accepted, audit text only loses the value): other
+ * non-secret *_KEY names (APP_KEY_FILE is fine, SSH_HOST_KEY is not), PWD=/cwd in env dumps,
+ * prose like "Token: ...". Bare KEY is NOT a secret name (key=value, KEY_COUNT=5 stay readable).
  * *_TOKENS is a secret name (API_TOKENS) except token counts and limits: max_tokens,
  * *_max_tokens, max_{input,output,completion,prompt,new,context}_tokens, and
  * min/num/total/prompt/completion/input/output/cached/reasoning_tokens stay readable
@@ -89,14 +91,37 @@ const SECRET_NAME_BARE_RE =
 const SECRET_NAME_CONTAINS_RE =
   /PASSWORD|PASSWD|PASSPHRASE|SECRET|CREDENTIAL|AUTHORIZATION|COOKIE|PRIVATE[_.-]?KEY|ACCESS[_.-]?KEY|API[_.-]?KEY|(?:^|[_.-])TOKEN(?:$|[_.-])|DATABASE[_.-]?URL|CONNECTION[_.-]?STRING/i;
 
+/**
+ * camelCase names: a lowercase letter or digit followed by an uppercase secret suffix (dbPass,
+ * dbPwd, smtpAuth, jwtKey, masterKey, signingKey, basicAuth, apiToken, clientSecret, apiTokens).
+ * Readable on purpose: common non-secret *Key names (primaryKey, sortKey, idempotencyKey,
+ * partitionKey, foreignKey, cacheKey, publicKey, routingKey, …) and token counts (maxTokens,
+ * maxOutputTokens, promptTokens, totalTokens, …). Other camelCase *Key / *Auth names are
+ * redacted (accepted false positives: hotKey, oAuth, isAuth).
+ */
+const CAMEL_SECRET_SUFFIX_RE =
+  /[a-z0-9](?:Pass|Pwd|Passwd|Password|Passphrase|Keys?|Secrets?|Tokens?|Auth|Credentials?)$/;
+const BENIGN_KEY_WORDS =
+  "primary|sort|idempotency|partition|foreign|cache|public|routing|row|hash|range|object|composite|unique|lookup|dedupe?|group|shard|index|search|order|parent|join";
+/** Non-secret *Key / *_KEY names, camelCase or separated: primaryKey, sort_key, PUBLIC_KEY, … */
+const CAMEL_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})Keys?$`);
+const SEP_BENIGN_KEY_RE = new RegExp(`^(?:${BENIGN_KEY_WORDS})[_.-]keys?$`, "i");
+const CAMEL_TOKEN_COUNT_RE =
+  /(?:^|[a-z0-9])(?:max(?:Input|Output|Completion|Prompt|New|Context)?|Max(?:Input|Output|Completion|Prompt|New|Context)?|[mM]in|[nN]um|[tT]otal|[pP]rompt|[cC]ompletion|[iI]nput|[oO]utput|[cC]ached|[rR]easoning)Tokens$/;
+
+/** Names longer than this are treated as secret names (fail closed), never skipped. */
+const MAX_NAME_LEN = 256;
+
 /** True when a key or variable name names a secret (see the rules above). */
 export function isSecretName(name: string): boolean {
-  if (name.length > 256) return false;
-  if (TOKEN_COUNT_NAME_RE.test(name)) return false;
+  if (name.length > MAX_NAME_LEN) return true;
+  if (TOKEN_COUNT_NAME_RE.test(name) || CAMEL_TOKEN_COUNT_RE.test(name)) return false;
+  if (CAMEL_BENIGN_KEY_RE.test(name) || SEP_BENIGN_KEY_RE.test(name)) return false;
   return (
     SECRET_NAME_SUFFIX_RE.test(name) ||
     SECRET_NAME_BARE_RE.test(name) ||
-    SECRET_NAME_CONTAINS_RE.test(name)
+    SECRET_NAME_CONTAINS_RE.test(name) ||
+    CAMEL_SECRET_SUFFIX_RE.test(name)
   );
 }
 
@@ -104,10 +129,11 @@ export function isSecretName(name: string): boolean {
  * NAME=value / NAME: value candidates. Group 1 is the char before the name (or a JSON-escaped
  * quote or literal \n / \r / \t escape, for env text inside JSON strings), group 2 an optional
  * quote around the name ("NAME": or \"NAME\":), group 3 the name.
- * Linear: the name is bounded and nothing is nested.
+ * Bounded: the name is capped (1024) and nothing is nested; a name longer than MAX_NAME_LEN is
+ * treated as secret by isSecretName.
  */
 const ASSIGN_RE =
-  /(^|\\["'nrt]|[^A-Za-z0-9_.\\])((?:\\?["'])?)([A-Za-z_][A-Za-z0-9_.-]{0,127})\2[ \t]*[=:][ \t]*/g;
+  /(^|\\["'nrt]|[^A-Za-z0-9_.\\])((?:\\?["'])?)([A-Za-z_][A-Za-z0-9_.-]{0,1023})\2[ \t]*[=:][ \t]*/g;
 
 /**
  * True when a literal \n / \r escape at j ends a line of escaped text: what follows is the end,
@@ -236,6 +262,62 @@ function redactPem(s: string): string {
   return last === 0 ? s : out + s.slice(last);
 }
 
+/** fish / csh: `set -x DB_PASS value`, `setenv DB_PASS value` (value runs to the end of the line). */
+function redactShellSet(s: string): string {
+  return s.replace(
+    /(\b(?:set|setenv)(?:[ \t]+-{1,2}[A-Za-z]+)*[ \t]+)([A-Za-z_][A-Za-z0-9_]{0,255})([ \t]+)([^\r\n]+)/g,
+    (all, head: string, name: string, sp: string) =>
+      isSecretName(name) ? `${head}${name}${sp}[redacted]` : all,
+  );
+}
+
+const URL_AUTH_STOP = new Set([" ", "\t", "\n", "\r", "/", "?", "#", '"', "'", "<", ">", "\\", "@"]);
+const URL_TOKEN_STOP = new Set([" ", "\t", "\n", "\r", '"', "<", ">"]);
+
+/**
+ * URL passwords holding a raw / # ' or ? (not RFC-valid, common in hand-written DSNs):
+ * postgres://u:p/x@h/db. Only when the authority has user:pass whose "pass" is not a port
+ * (digits), and an '@' follows within the same token before any query (= or &). Bounded scans,
+ * so linear in the input. Normal URLs (https://h:8080/a@b, /path/@user, ?email=a@b) are kept.
+ */
+function redactRawUrlPasswords(s: string): string {
+  let out = "";
+  let last = 0;
+  let from = 0;
+  for (;;) {
+    const at = s.indexOf("://", from);
+    if (at < 0) break;
+    const a = at + 3;
+    from = a;
+    let e = a;
+    let colon = -1;
+    const authMax = Math.min(s.length, a + 1024);
+    while (e < authMax && !URL_AUTH_STOP.has(s[e]!)) {
+      if (colon < 0 && s[e] === ":") colon = e;
+      e++;
+    }
+    if (e >= s.length || s[e] === "@" || colon < 0) continue;
+    const stop = s[e]!;
+    if (!(stop === "/" || stop === "#" || stop === "'" || stop === "?" || stop === "\\")) continue;
+    if (/^\d*$/.test(s.slice(colon + 1, e))) continue; // host:port
+    let x = -1;
+    const tokMax = Math.min(s.length, e + 256);
+    for (let j = e; j < tokMax; j++) {
+      const c = s[j]!;
+      if (URL_TOKEN_STOP.has(c) || c === "=" || c === "&") break;
+      if (c === "@") {
+        x = j;
+        break;
+      }
+    }
+    if (x < 0) continue;
+    out += s.slice(last, a) + "[redacted]";
+    last = x;
+    from = x;
+  }
+  return last === 0 ? s : out + s.slice(last);
+}
+
 /** "Basic <base64>" credentials; plain words ("Basic authentication") are left alone. */
 function redactBasic(s: string): string {
   return s.replace(/\bBasic\s+([A-Za-z0-9+/]{8,}={0,2})(?![A-Za-z0-9+/=])/gi, (all, tok: string) =>
@@ -245,10 +327,10 @@ function redactBasic(s: string): string {
 
 /** Replace every embedded secret in a string (exported for tests and push payloads). */
 export function redactSecrets(s: string): string {
-  let out = redactPem(s);
+  let out = redactRawUrlPasswords(redactPem(s));
   for (const [re, rep] of SECRET_SUBSTRING_RES) out = out.replace(re, rep);
   out = redactBasic(out);
-  return redactAssignments(out);
+  return redactShellSet(redactAssignments(out));
 }
 
 const DEFAULT_MAX_BYTES = 65_536;
@@ -292,7 +374,7 @@ export function sanitizeForAudit(
   const maxDepth = opts.maxDepth ?? DEFAULT_MAX_DEPTH;
 
   try {
-    const walked = walk(value, 0, maxDepth, maxString);
+    const walked = walk(value, 0, maxDepth, maxString, { n: 0 });
     const json = JSON.stringify(walked);
     if (json === undefined) return null;
     const bytes = Buffer.byteLength(json, "utf8");
@@ -316,26 +398,52 @@ const PAIR_NAME_FIELD_RE = /^(?:name|key|variable|var|env|env_?name|variable_?na
 const PAIR_VALUE_FIELD_RE =
   /^(?:value|val|values|value_?from|env_?value|default|default_?value|secret_?value|data|content|text)$/i;
 
+/** Upper bound on nodes visited per sanitize call (self-referential wide arrays). */
+const MAX_NODES = 50_000;
+
+/** Object key text with embedded secrets redacted; very long keys are cut (fail closed). */
+function safeKeyName(k: string): string {
+  if (k.length > MAX_NAME_LEN) return `${redactSecrets(k.slice(0, 64))}…[key truncated]`;
+  if (looksLikeOpaqueSecret(k)) return "[redacted]";
+  return redactSecrets(k);
+}
+
 function walk(
   value: unknown,
   depth: number,
   maxDepth: number,
   maxString: number,
+  budget: { n: number } = { n: 0 },
 ): unknown {
   if (value === null || value === undefined) return value;
+  if (++budget.n > MAX_NODES) return "[omitted]";
   if (typeof value === "string") return redactString(value, maxString);
   if (typeof value === "number" || typeof value === "boolean") return value;
   if (typeof value === "bigint") return value.toString();
   if (typeof value === "function" || typeof value === "symbol") {
     return `[${typeof value}]`;
   }
+  // Buffer / Uint8Array / DataView / ArrayBuffer: never emit raw bytes
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    return { _omitted: "binary", byteLength: (value as ArrayBufferLike | ArrayBufferView).byteLength };
+  }
   if (depth >= maxDepth) return "[max_depth]";
 
   if (Array.isArray(value)) {
     const out: unknown[] = [];
     const limit = Math.min(value.length, 200);
+    // [name, value] tuples and flat name/value lists (header arrays, rawHeaders):
+    // [["X-Api-Key","v"]], ["Authorization","Bearer x"], ["Accept","a","X-Api-Key","v"]
+    const pairs =
+      value.length >= 2 &&
+      value.length % 2 === 0 &&
+      value.every((v, i) => i % 2 === 1 || typeof v === "string");
     for (let i = 0; i < limit; i++) {
-      out.push(walk(value[i], depth + 1, maxDepth, maxString));
+      if (pairs && i % 2 === 1 && isSecretName(String(value[i - 1]).trim())) {
+        out.push("[redacted]");
+        continue;
+      }
+      out.push(walk(value[i], depth + 1, maxDepth, maxString, budget));
     }
     if (value.length > limit) {
       out.push(`…[${value.length - limit} more items]`);
@@ -354,16 +462,22 @@ function walk(
     });
     for (let i = 0; i < limit; i++) {
       const k = keys[i]!;
+      let outKey = safeKeyName(k);
+      if (outKey !== k) {
+        let n = 1;
+        while (Object.prototype.hasOwnProperty.call(out, outKey)) outKey = `${safeKeyName(k)}#${++n}`;
+      }
       if (
         SECRET_KEY_RE.test(k) ||
         CAMEL_SECRET_KEY_RE.test(k) ||
         isSecretName(k) ||
+        outKey !== k ||
         (secretPair && PAIR_VALUE_FIELD_RE.test(k))
       ) {
-        out[k] = "[redacted]";
+        out[outKey] = "[redacted]";
         continue;
       }
-      out[k] = walk(value[k], depth + 1, maxDepth, maxString);
+      out[k] = walk(value[k], depth + 1, maxDepth, maxString, budget);
     }
     if (keys.length > limit) {
       out._omittedKeys = keys.length - limit;
@@ -401,7 +515,7 @@ export function summarizeCallToolResult(result: CallToolResult): unknown {
         byteLength: len,
       };
     }
-    return walk(b, 0, 6, DEFAULT_MAX_STRING);
+    return walk(b, 0, 6, DEFAULT_MAX_STRING, { n: 0 });
   });
 
   const out: Record<string, unknown> = {
