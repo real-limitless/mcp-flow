@@ -89,3 +89,19 @@ describe("0010 auto-revoke triggers on mcpflow_policy_grant", () => {
     expect(() => d.prepare(`UPDATE mcpflow_policy_grant SET tool = 'x' WHERE id = ?`).run(g1)).toThrow(/immutable/);
   });
 });
+
+describe("R5-6: the runner pins legacy_alter_table = OFF", () => {
+  it("a connection with legacy_alter_table = ON still migrates 0010 with pending_call following the renamed grant table", () => {
+    const { d, pc, g1 } = at0009();
+    d.exec("PRAGMA legacy_alter_table = ON;");
+    expect(Number(Object.values(d.prepare("PRAGMA legacy_alter_table").get() as Record<string, unknown>)[0])).toBe(1);
+    runMigrations(d);
+    expect(Number(Object.values(d.prepare("PRAGMA legacy_alter_table").get() as Record<string, unknown>)[0])).toBe(0);
+    const fks = d.prepare(`SELECT "table", "from" FROM pragma_foreign_key_list('mcpflow_pending_call')`).all() as Array<{ table: string; from: string }>;
+    expect(fks).toContainEqual({ table: "mcpflow_policy_grant", from: "grant_id" });
+    expect(fks.some((f) => f.table === "mcpflow_approval_grant")).toBe(false);
+    expect(d.prepare(`SELECT grant_id FROM mcpflow_pending_call WHERE id = ?`).get(pc)).toEqual({ grant_id: g1 });
+    expect(fkClean(d)).toEqual([]);
+    expect(integrityOk(d)).toBe(true);
+  });
+});

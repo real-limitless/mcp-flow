@@ -64,6 +64,11 @@ export function applyConnectionPragmas(db: DatabaseSync, opts: ConnectionPragmaO
  * This is the only place mcpflow_* DDL runs; the request path never runs DDL.
  */
 export function runMigrations(db: DatabaseSync, upTo?: string): string[] {
+  // Security R5-6: table rebuilds (0010, 0012, 0013) rely on RENAME updating FK references in other
+  // tables, which needs legacy_alter_table OFF (the SQLite default). Pin it rather than assume it.
+  db.exec("PRAGMA legacy_alter_table = OFF;");
+  const legacyAlter = Number(Object.values(db.prepare("PRAGMA legacy_alter_table").get() as Record<string, unknown>)[0]);
+  if (legacyAlter !== 0) throw new Error("migrations need PRAGMA legacy_alter_table = OFF");
   db.exec(`CREATE TABLE IF NOT EXISTS mcpflow_schema_migrations (
     id TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL
