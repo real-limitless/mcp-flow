@@ -849,6 +849,7 @@ export class PolicyEnforcer {
         const row = db
           .prepare(
             `SELECT o.*, a.name AS owner_name,
+                    (strftime('%Y-%m-%dT%H:%M:%fZ','now') < o.result_expires_at) AS db_window_open,
                     EXISTS (SELECT 1 FROM mcpflow_agent r WHERE r.id = ? AND r.is_admin = 1 AND r.kind = 'human' AND r.status = 'active') AS reader_admin
                FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id
               WHERE ${where.pendingCallId ? "o.pending_call_id = ?" : "o.call_id = ?"}`,
@@ -866,9 +867,11 @@ export class PolicyEnforcer {
         } else if (row.result_ciphertext == null) {
           errorCode = row.result_purged_at != null ? "result_purged" : "result_none";
           reason = row.result_purge_reason ? `purged:${String(row.result_purge_reason)}` : null;
-        } else if (!(now < String(row.result_expires_at))) {
-          // window closed but the sweep has not run yet: never serve; purge now when SQLite agrees it expired
-          this.purgeOne(String(row.call_id), "expired", now);
+        } else if (!Number(row.db_window_open)) {
+          // Read gate on the DB clock (the same clock as the 0012 expiry trigger): once SQLite says the
+          // window closed, the result is never served, whatever the gateway clock says. The purge itself
+          // still needs both clocks to agree (as in the sweep); until then the payload just isn't served.
+          if (!(now < String(row.result_expires_at))) this.purgeOne(String(row.call_id), "expired", now);
           errorCode = "result_purged";
           reason = "purged:expired";
         } else {
