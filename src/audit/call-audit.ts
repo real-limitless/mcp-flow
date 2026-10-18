@@ -8,6 +8,7 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, renameSync, rmSy
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
+import { incrementalVacuum, type IncrementalVacuumResult } from "../db/maintenance.js";
 
 export interface CallAuditFilter {
   from?: string;
@@ -155,6 +156,8 @@ export interface RetentionResult {
   files: string[];
   /** Security R2-6 / T2.1 §12: resolved call_outcome rows (no live result payload) older than `before` */
   state: { call_outcome: number };
+  /** PM: incremental_vacuum after the delete (execute only; a no-op unless auto_vacuum = INCREMENTAL) */
+  vacuum?: IncrementalVacuumResult;
 }
 
 /**
@@ -199,7 +202,9 @@ export function runAuditRetention(
   mkdirSync(opts.archiveDir, { recursive: true, mode: 0o700 });
   if (existsSync(file)) throw new Error(`EEXIST: archive already exists: ${file}`);
   const n = retainOutcomes(db, opts, file);
-  return { dryRun: false, files: [file], state: { call_outcome: n } };
+  // PM: give the deleted rows' pages back (no-op unless auto_vacuum = INCREMENTAL; see `mcp-flow db vacuum`)
+  const vacuum = incrementalVacuum(db);
+  return { dryRun: false, files: [file], state: { call_outcome: n }, vacuum };
 }
 
 // ---------- R2-6 / §12: call_outcome retention (the only export-then-delete) ----------

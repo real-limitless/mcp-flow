@@ -45,6 +45,10 @@ export interface ConnectionPragmaOptions {
 }
 
 export function applyConnectionPragmas(db: DatabaseSync, opts: ConnectionPragmaOptions = {}): void {
+  // PM: new (empty) DBs get auto_vacuum = INCREMENTAL; it only takes effect before the first table.
+  // Existing DBs keep their mode until the offline `mcp-flow db vacuum` (src/db/maintenance.ts).
+  const empty = Number((db.prepare(`SELECT count(*) AS n FROM sqlite_master`).get() as { n: number }).n) === 0;
+  if (empty) db.exec("PRAGMA auto_vacuum = INCREMENTAL;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);
