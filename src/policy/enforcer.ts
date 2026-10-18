@@ -99,12 +99,19 @@ export function outcomeState(finalOutcome: string, resultStatus: string): "execu
 }
 
 const OUTCOME_MESSAGES: Record<string, string> = {
-  executed: "The call ran. Its result was already read, purged, or lost in a restart. Do not re-send it.",
+  executed: "The call ran. Its result is no longer available (purged or never stored). Do not re-send it.",
   not_executed: "The call never reached the backend. It is safe to send again (as a new call).",
   unknown: "The call was dispatched but its outcome is unknown. Do NOT retry blindly; check the backend first.",
 };
 
-export function outcomeSummary(row: Record<string, unknown>, replayed: boolean): CallToolResult {
+/** Read error codes on call_audit 'result_read' rows (db-t2.1-pending-result; result_none added for "no result stored"). */
+export type ResultReadError = "result_not_ready" | "result_purged" | "result_forbidden" | "result_undecryptable" | "result_none";
+
+export function outcomeSummary(
+  row: Record<string, unknown>,
+  replayed: boolean,
+  read?: { errorCode: ResultReadError; reason?: string | null },
+): CallToolResult {
   return {
     isError: row.state !== "executed",
     content: [{ type: "text", text: JSON.stringify({
@@ -115,6 +122,8 @@ export function outcomeSummary(row: Record<string, unknown>, replayed: boolean):
       pending_call_id: row.pending_call_id ?? null,
       call_id: row.call_id,
       result_available: false,
+      ...(read ? { error_code: read.errorCode } : {}),
+      ...(read?.reason ? { reason: read.reason } : {}),
       ...(replayed ? { replayed: true } : {}),
       message: OUTCOME_MESSAGES[String(row.state)] ?? "",
     }) }],
@@ -647,7 +656,7 @@ export class PolicyEnforcer {
             pending_call_id: pc,
             tool: ctx.qualifiedTool,
             expires_at: expiresAt,
-            message: "This call needs human approval. Poll mf_pending_status; when it is resolved, call mf_pending_result once to get the outcome. Do not re-send the call (a re-send with the same idempotency key replays this outcome).",
+            message: "This call needs human approval. Poll mf_pending_status; when it is resolved, call mf_pending_result to get the outcome. The result stays readable until it expires (24 h after it is stored), so you can read it again. Do not re-send the call (a re-send with the same idempotency key replays this outcome).",
           }),
         }],
       };
@@ -702,12 +711,16 @@ export class PolicyEnforcer {
         }) }],
       };
     }
-    const stored = this.readResult(String(prior.call_id), false);
-    if (stored) return stored;
-    return outcomeSummary(prior, true);
+    // T2.1 §11: replay goes through the audited read (the re-sender is the owning agent)
+    const r = this.readAudited({ callId: String(prior.call_id) }, String(prior.agent_id), true);
+    return r === "gone" || r === "not_ready" ? outcomeSummary(prior, true) : r;
   }
 
-  /** Persist a (capped, encrypted) result for a tracked call; enforce global caps. */
+  /**
+   * Persist a (capped, encrypted) result for a tracked call, write-once (0012): result_stored_at = now,
+   * result_expires_at = now + 24 h (the window starts when the result is stored). Stores are never
+   * refused for quota (the call already ran); the caps evict older results instead (purgeResults).
+   */
   private storeResult(callId: string, result: CallToolResult): void {
     try {
       let json = JSON.stringify(result);
@@ -724,75 +737,171 @@ export class PolicyEnforcer {
         });
       }
       const bytes = Buffer.byteLength(json, "utf8");
-      this.deps.db
-        .prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = ?, result_bytes = ?, result_truncated = ? WHERE call_id = ? AND result_purged_at IS NULL AND result_read_at IS NULL`)
-        .run(encryptArgs(this.deps.keys.resultEnc, JSON.parse(json)), bytes, truncated, callId);
-      this.purgeResults();
+      const now = this.clock();
+      const window = Math.min(Math.max(this.deps.resultTtlMs ?? RESULT_TTL_MS, 1), RESULT_TTL_MS);
+      const ct = encryptArgs(this.deps.keys.resultEnc, JSON.parse(json));
+      this.tx(() => {
+        this.deps.db
+          .prepare(
+            `UPDATE mcpflow_call_outcome
+                SET result_ciphertext = ?, result_bytes = ?, result_truncated = ?, result_stored_at = ?, result_expires_at = ?
+              WHERE call_id = ? AND result_ciphertext IS NULL AND result_stored_at IS NULL AND result_purged_at IS NULL`,
+          )
+          .run(ct, bytes, truncated, this.iso(now), this.iso(now + window), callId);
+        this.purgeResultsTx();
+      });
     } catch (err) {
       console.error(`[mcp-flow] storing result for ${callId} failed: ${redactSecrets((err as Error).message)}`);
     }
   }
 
-  /** R-2: drop stored results past their TTL, then oldest-first until under the total byte cap. */
+  /**
+   * R-2 / T2.1 §12 purge sweep (periodic, on startup, and after every store). Never deletes rows:
+   * - expired: result_expires_at has passed (reason 'expired')
+   * - per-agent cap: an agent over its share loses only its OWN oldest results (reason 'quota')
+   * - global cap: oldest results overall (reason 'quota')
+   * Every purge writes a call_audit 'result_purge' row (error_code purged:<reason>).
+   */
   purgeResults(): number {
+    let n = 0;
+    this.tx(() => {
+      n = this.purgeResultsTx();
+    });
+    return n;
+  }
+
+  private purgeResultsTx(): number {
     const db = this.deps.db;
     const now = this.iso();
-    const cutoff = this.iso(this.clock() - (this.deps.resultTtlMs ?? RESULT_TTL_MS));
-    let n = Number(db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ?
-                                  WHERE result_ciphertext IS NOT NULL AND completed_at < ?`).run(now, cutoff).changes);
-    // R2-3: per-agent quota first, so an agent over its share only evicts its own results
+    let n = 0;
+    // the 0012 trigger checks expiry against SQLite's wall clock too; never ask it to purge early
+    const expired = db.prepare(
+      `SELECT call_id FROM mcpflow_call_outcome
+        WHERE result_ciphertext IS NOT NULL AND result_expires_at <= ? AND result_expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')
+        ORDER BY result_expires_at, rowid`,
+    ).all(now) as Array<{ call_id: string }>;
+    for (const r of expired) if (this.purgeOne(r.call_id, "expired", now)) n++;
     const agentCap = this.deps.maxResultAgentBytes ?? MAX_RESULT_AGENT_BYTES;
     const over = db.prepare(`SELECT agent_id, sum(result_bytes) AS t FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL
                               GROUP BY agent_id HAVING sum(result_bytes) > ?`).all(agentCap) as Array<{ agent_id: string; t: number }>;
     for (const o of over) {
       let t = Number(o.t);
       const rows = db.prepare(`SELECT call_id, result_bytes FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL AND agent_id = ?
-                                ORDER BY completed_at, call_id`).all(o.agent_id) as Array<{ call_id: string; result_bytes: number }>;
+                                ORDER BY result_stored_at, rowid`).all(o.agent_id) as Array<{ call_id: string; result_bytes: number }>;
       for (const r of rows) {
         if (t <= agentCap) break;
-        db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ? WHERE call_id = ?`).run(now, r.call_id);
+        if (this.purgeOne(r.call_id, "quota", now)) n++;
         t -= Number(r.result_bytes ?? 0);
-        n++;
       }
     }
     const cap = this.deps.maxResultTotalBytes ?? MAX_RESULT_TOTAL_BYTES;
     let total = Number((db.prepare(`SELECT coalesce(sum(result_bytes),0) AS t FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL`).get() as { t: number }).t);
     while (total > cap) {
-      const oldest = db.prepare(`SELECT call_id, result_bytes FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL ORDER BY completed_at, call_id LIMIT 1`).get() as { call_id: string; result_bytes: number } | undefined;
+      const oldest = db.prepare(`SELECT call_id, result_bytes FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL
+                                  ORDER BY result_stored_at, rowid LIMIT 1`).get() as { call_id: string; result_bytes: number } | undefined;
       if (!oldest) break;
-      db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ? WHERE call_id = ?`).run(now, oldest.call_id);
+      if (!this.purgeOne(oldest.call_id, "quota", now)) break;
       total -= Number(oldest.result_bytes ?? 0);
       n++;
     }
     return n;
   }
 
-  private readResult(callId: string, consume: boolean): CallToolResult | null {
-    const row = this.deps.db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE call_id = ?`).get(callId) as { result_ciphertext: Uint8Array | null } | undefined;
-    if (!row?.result_ciphertext) return null;
-    let res: CallToolResult;
-    try {
-      res = decryptArgs(this.deps.keys.resultEnc, row.result_ciphertext) as unknown as CallToolResult;
-    } catch {
-      return null; // undecryptable (e.g. written under the pre-R2-7 key): fall back to the outcome summary
-    }
-    if (consume) {
-      this.deps.db.prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_read_at = ? WHERE call_id = ?`).run(this.iso(), callId);
-    }
-    return res;
+  /** Purge one stored result and write its call_audit 'result_purge' row (same transaction as the caller). */
+  private purgeOne(callId: string, reason: "expired" | "quota", nowIso: string): boolean {
+    const db = this.deps.db;
+    const r = db
+      .prepare(`UPDATE mcpflow_call_outcome SET result_ciphertext = NULL, result_purged_at = ?, result_purge_reason = ?
+                 WHERE call_id = ? AND result_ciphertext IS NOT NULL`)
+      .run(nowIso, reason, callId);
+    if (Number(r.changes) !== 1) return false;
+    if (this.deps.auditFault?.()) throw new Error("audit write failed (fault injected)");
+    db.prepare(
+      `INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, agent_name, key_id, pending_call_id, qualified_tool, error_code)
+       SELECT 'result_purge', o.call_id, o.workspace_id, o.agent_id, a.name, o.key_id, o.pending_call_id, o.qualified_tool, ?
+         FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id WHERE o.call_id = ?`,
+    ).run(`purged:${reason}`, callId);
+    return true;
   }
 
   /**
-   * mf_pending_result: one-time read of an approval_pending call's result, same agent + key only.
-   * After the read (or purge/restart) the durable outcome still says executed / not_executed / unknown.
+   * T2.1 §11 audited read: the owning agent or an active human admin may read a stored result,
+   * repeatedly, until result_expires_at. Every attempt on an existing row writes a call_audit
+   * 'result_read' row (actor = reader; agent/key = owner) in the same transaction; the result is
+   * returned only if that insert commits and the window is still open. Not owner and not admin
+   * looks exactly like "no result" (no existence oracle).
    */
-  takeAsyncResult(pc: string, agentId: string, keyId: string): CallToolResult | "not_ready" | "gone" {
-    const row = this.deps.db
-      .prepare(`SELECT * FROM mcpflow_call_outcome WHERE pending_call_id = ? AND agent_id = ? AND key_id = ?`)
-      .get(pc, agentId, keyId) as Record<string, unknown> | undefined;
-    if (!row) return "gone";
-    if (row.state === "pending" || this.inflightAsync.has(pc)) return "not_ready";
-    return this.readResult(String(row.call_id), true) ?? outcomeSummary(row, false);
+  private readAudited(
+    where: { pendingCallId?: string; callId?: string },
+    reader: string,
+    replayed: boolean,
+  ): CallToolResult | "not_ready" | "gone" {
+    const db = this.deps.db;
+    let out: CallToolResult | "not_ready" | "gone" = "gone";
+    try {
+      this.tx(() => {
+        const row = db
+          .prepare(
+            `SELECT o.*, a.name AS owner_name,
+                    EXISTS (SELECT 1 FROM mcpflow_agent r WHERE r.id = ? AND r.is_admin = 1 AND r.kind = 'human' AND r.status = 'active') AS reader_admin
+               FROM mcpflow_call_outcome o LEFT JOIN mcpflow_agent a ON a.id = o.agent_id
+              WHERE ${where.pendingCallId ? "o.pending_call_id = ?" : "o.call_id = ?"}`,
+          )
+          .get(reader, where.pendingCallId ?? where.callId!) as Record<string, unknown> | undefined;
+        if (!row) return;
+        let errorCode: ResultReadError | null = null;
+        let reason: string | null = null;
+        let served: CallToolResult | null = null;
+        const now = this.iso();
+        if (row.agent_id !== reader && !Number(row.reader_admin)) {
+          errorCode = "result_forbidden";
+        } else if (row.state === "pending" || (row.pending_call_id != null && this.inflightAsync.has(String(row.pending_call_id)))) {
+          errorCode = "result_not_ready";
+        } else if (row.result_ciphertext == null) {
+          errorCode = row.result_purged_at != null ? "result_purged" : "result_none";
+          reason = row.result_purge_reason ? `purged:${String(row.result_purge_reason)}` : null;
+        } else if (!(now < String(row.result_expires_at))) {
+          // window closed but the sweep has not run yet: never serve; purge now when SQLite agrees it expired
+          this.purgeOne(String(row.call_id), "expired", now);
+          errorCode = "result_purged";
+          reason = "purged:expired";
+        } else {
+          try {
+            served = decryptArgs(this.deps.keys.resultEnc, row.result_ciphertext as Uint8Array) as unknown as CallToolResult;
+          } catch {
+            errorCode = "result_undecryptable"; // e.g. written under an older result key
+          }
+        }
+        this.writeAudit({
+          event_type: "result_read",
+          call_id: String(row.call_id),
+          workspace_id: row.workspace_id ?? null,
+          agent_id: String(row.agent_id),
+          agent_name: row.owner_name ?? null,
+          key_id: row.key_id ?? null,
+          pending_call_id: row.pending_call_id ?? null,
+          qualified_tool: row.qualified_tool ?? null,
+          actor: reader,
+          error_code: errorCode,
+        });
+        if (errorCode === "result_forbidden") out = "gone";
+        else if (errorCode === "result_not_ready") out = "not_ready";
+        else out = served ?? outcomeSummary(row, replayed, { errorCode: errorCode!, reason });
+      });
+    } catch {
+      // fail closed: no audit row, no result
+      return policyDeniedResult({ reason: "audit_unavailable", tool: "mf_pending_result" });
+    }
+    return out;
+  }
+
+  /**
+   * mf_pending_result: read the result of an approval_pending call. Allowed for the calling agent
+   * (any of its keys) or an active human admin; re-readable until it expires; every read audited.
+   * After expiry or purge the durable outcome still says executed / not_executed / unknown.
+   */
+  takeAsyncResult(pc: string, readerAgentId: string): CallToolResult | "not_ready" | "gone" {
+    return this.readAudited({ pendingCallId: pc }, readerAgentId, false);
   }
 
   /**

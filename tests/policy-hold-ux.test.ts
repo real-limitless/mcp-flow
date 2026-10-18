@@ -125,7 +125,7 @@ describe("hold UX extras", () => {
     expect(progress[0]!.message).toContain(pc);
   });
 
-  it("approval_pending early return: immediate answer, one-time result after approval, dispatched once", async () => {
+  it("approval_pending early return: immediate answer, re-readable result after approval (was one-time), dispatched once", async () => {
     const e = await boot();
     const r = await e.client.callTool({ name: "shell__merge", arguments: { pr: 2 }, _meta: { "mcp-flow/approval": "async" } });
     const body = JSON.parse(text(r));
@@ -143,9 +143,8 @@ describe("hold UX extras", () => {
     }
     expect(text(out)).toBe("ran:merge");
     expect(e.up.seen).toEqual([{ name: "merge", args: { pr: 2 } }]);
-    // second read: the result body is gone, but the durable outcome still says it ran (R-1)
-    const again = JSON.parse(text(await e.client.callTool({ name: "mf_pending_result", arguments: { pending_call_id: pc } })));
-    expect(again).toMatchObject({ code: "call_outcome", state: "executed", result_available: false });
+    // T2.1 §11: re-readable until it expires (read-once removed); nothing runs again
+    expect(text(await e.client.callTool({ name: "mf_pending_result", arguments: { pending_call_id: pc } }))).toBe("ran:merge");
     expect(JSON.parse(text(await e.client.callTool({ name: "mf_pending_status", arguments: { pending_call_id: pc } })))).toMatchObject({ status: "approved", outcome: "executed", dispatched: true });
     // via mf_call_tool flag, then denied
     const r2 = await e.client.callTool({ name: "mf_call_tool", arguments: { name: "shell__merge", arguments: { pr: 3 }, async_approval: true } });
@@ -160,15 +159,15 @@ describe("hold UX extras", () => {
     expect(e.up.seen).toHaveLength(1);
   });
 
-  it("a different agent key cannot read another's pending result", async () => {
+  it("another agent cannot read a pending result; the same agent can with any of its keys (T2.1 §11)", async () => {
     const e = await boot();
     const r = await e.client.callTool({ name: "shell__merge", arguments: { pr: 4 }, _meta: { "mcp-flow/approval": "async" } });
     const pc = JSON.parse(text(r)).pending_call_id as string;
     e.gw.store.policy.decide(pc, e.chen, "approved");
     const row = e.gw.store.db.prepare(`SELECT agent_id, key_id FROM mcpflow_pending_call WHERE id=?`).get(pc) as { agent_id: string; key_id: string };
     for (let i = 0; i < 100 && e.up.seen.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
-    expect(e.gw.store.policy.takeAsyncResult(pc, row.agent_id, "key_other")).toBe("gone");
-    expect(e.gw.store.policy.takeAsyncResult(pc, "agt_other", row.key_id)).toBe("gone");
-    expect(text(e.gw.store.policy.takeAsyncResult(pc, row.agent_id, row.key_id))).toBe("ran:merge");
+    for (let i = 0; i < 100 && e.gw.store.policy.takeAsyncResult(pc, row.agent_id) === "not_ready"; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(e.gw.store.policy.takeAsyncResult(pc, `agt_${"e".repeat(24)}`)).toBe("gone");
+    expect(text(e.gw.store.policy.takeAsyncResult(pc, row.agent_id))).toBe("ran:merge");
   });
 });

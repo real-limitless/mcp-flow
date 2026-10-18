@@ -65,7 +65,7 @@ const pcRow = (id: string) => db.prepare(`SELECT * FROM mcpflow_pending_call WHE
 describe("R-1 durable outcomes, idempotency, restart recovery", () => {
   beforeEach(setup);
 
-  it("async result survives a restart (new enforcer on the same DB) and is distinguishable after reading", async () => {
+  it("async result survives a restart and is re-readable within its window (T2.1 §11; was read-once); every read audited", async () => {
     const pe1 = enforcer();
     let ran = 0;
     const r = await pe1.enforce({ ctx: ctx("merge"), args: { pr: 1 }, asyncApproval: true, dispatch: async () => { ran++; return { content: [{ type: "text", text: "merged" }] }; } });
@@ -74,9 +74,12 @@ describe("R-1 durable outcomes, idempotency, restart recovery", () => {
     await waitFor(() => (db.prepare(`SELECT result_ciphertext FROM mcpflow_call_outcome WHERE pending_call_id=?`).get(pc) as { result_ciphertext: unknown }).result_ciphertext != null);
     const pe2 = enforcer(); // "restart"
     expect(pe2.recoverOrphans()).toMatchObject({ cancelled: 0, abandoned: 0, unknown: 0, byWorkspace: {} });
-    const got = pe2.takeAsyncResult(pc, bot, botKey);
+    const got = pe2.takeAsyncResult(pc, bot);
     expect((got as { content: Array<{ text: string }> }).content[0]!.text).toBe("merged");
-    expect(body(pe2.takeAsyncResult(pc, bot, botKey) as never)).toMatchObject({ state: "executed", result_available: false });
+    // re-readable (an agent that disconnects mid-read does not lose it)
+    expect((pe2.takeAsyncResult(pc, bot) as { content: Array<{ text: string }> }).content[0]!.text).toBe("merged");
+    const reads = db.prepare(`SELECT actor, agent_id, error_code FROM mcpflow_call_audit WHERE event_type = 'result_read' ORDER BY audit_id`).all();
+    expect(reads).toEqual([{ actor: bot, agent_id: bot, error_code: null }, { actor: bot, agent_id: bot, error_code: null }]);
     expect(pe2.pendingStatus(pc, bot)).toMatchObject({ outcome: "executed", dispatched: true });
     expect(ran).toBe(1);
   });
@@ -115,7 +118,7 @@ describe("R-1 durable outcomes, idempotency, restart recovery", () => {
     const pe2 = enforcer();
     expect(pe2.recoverOrphans()).toMatchObject({ unknown: 1 });
     expect(pe2.pendingStatus(pc, bot)).toMatchObject({ outcome: "unknown", dispatched: true });
-    expect(body(pe2.takeAsyncResult(pc, bot, botKey) as never)).toMatchObject({ state: "unknown" });
+    expect(body(pe2.takeAsyncResult(pc, bot) as never)).toMatchObject({ state: "unknown" });
     expect(pcRow(pc).args_ciphertext).toBeNull();
   });
 
@@ -146,21 +149,25 @@ describe("R-1 durable outcomes, idempotency, restart recovery", () => {
 
 describe("R-2 result store caps", () => {
   beforeEach(setup);
-  it("per-result cap truncates; total cap purges oldest; TTL purges", async () => {
-    const pe = enforcer({ maxResultBytes: 1024, maxResultTotalBytes: 3000 });
+  it("per-result cap truncates; total cap purges oldest (quota); TTL purges (expired); every purge audited", async () => {
+    const pe = enforcer({ maxResultBytes: 1024, maxResultTotalBytes: 3000, resultTtlMs: 300 });
     const big = async () => ({ content: [{ type: "text" as const, text: "x".repeat(10_000) }] });
     for (let i = 0; i < 5; i++) await pe.enforce({ ctx: ctx("echo"), args: { i }, idempotencyKey: `cap-${i}`, dispatch: big });
-    const rows = db.prepare(`SELECT result_bytes, result_truncated, result_ciphertext IS NOT NULL AS kept FROM mcpflow_call_outcome ORDER BY created_at`).all() as Array<{ result_bytes: number; result_truncated: number; kept: number }>;
+    const rows = db.prepare(`SELECT result_bytes, result_truncated, result_ciphertext IS NOT NULL AS kept, result_purge_reason FROM mcpflow_call_outcome ORDER BY rowid`).all() as Array<{ result_bytes: number; result_truncated: number; kept: number; result_purge_reason: string | null }>;
     expect(rows.every((r) => r.result_truncated === 1 && r.result_bytes <= 1024)).toBe(true);
     const kept = rows.filter((r) => r.kept);
     expect(kept.reduce((s, r) => s + r.result_bytes, 0)).toBeLessThanOrEqual(3000);
-    expect(rows[0]!.kept).toBe(0); // oldest purged first
-    const pe2 = enforcer({ resultTtlMs: -1 });
-    pe2.purgeResults();
+    expect(rows[0]).toMatchObject({ kept: 0, result_purge_reason: "quota" }); // oldest purged first
+    const quota = rows.filter((r) => r.result_purge_reason === "quota").length;
+    await new Promise((r) => setTimeout(r, 350)); // the 300 ms window (from store time) passes
+    expect(pe.purgeResults()).toBe(kept.length);
     expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_outcome WHERE result_ciphertext IS NOT NULL`).get() as { n: number }).n).toBe(0);
+    const audit = db.prepare(`SELECT error_code, count(*) n FROM mcpflow_call_audit WHERE event_type = 'result_purge' GROUP BY error_code ORDER BY error_code`).all();
+    expect(audit).toEqual([{ error_code: "purged:expired", n: kept.length }, { error_code: "purged:quota", n: quota }]);
     // outcome metadata survives the purge
     expect((db.prepare(`SELECT count(*) n FROM mcpflow_call_outcome WHERE state='executed'`).get() as { n: number }).n).toBe(5);
   });
+
 });
 
 describe("R-3 /mcp body limit", () => {

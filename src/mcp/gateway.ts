@@ -51,7 +51,7 @@ const META_TOOLS: Tool[] = [
   {
     name: "mf_pending_result",
     description:
-      "One-time read of the outcome of a call that returned approval_pending (same agent key). Returns not_ready while it is still held.",
+      "Read the outcome of a call that returned approval_pending (same agent, any of its keys). Returns not_ready while it is still held. The result stays readable until it expires (24 h after it is stored); every read is audited.",
     inputSchema: {
       type: "object",
       properties: { pending_call_id: { type: "string" } },
@@ -1159,12 +1159,12 @@ export function createGatewayServer(deps: GatewayDeps): Server {
 
     if (name === "mf_pending_result") {
       const pid = String(args.pending_call_id ?? "");
-      const r = ctx.agentId && ctx.keyId ? store.policy.takeAsyncResult(pid, ctx.agentId, ctx.keyId) : "gone";
+      const r = ctx.agentId ? store.policy.takeAsyncResult(pid, ctx.agentId) : "gone";
       const result =
         r === "not_ready"
           ? textResult({ pending_call_id: pid, status: "not_ready" })
           : r === "gone"
-            ? textResult("no result for this pending call (unknown, not yours, already read, or expired)", true)
+            ? textResult("no result for this pending call (unknown pending_call_id, or not yours)", true)
             : r;
       auditCall(result, { meta: true });
       return result;
