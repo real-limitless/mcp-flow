@@ -365,8 +365,9 @@ describe("pending calls", () => {
     key = insertKey(db, bot);
   });
 
-  it("approvers must be human", () => {
-    expect(() => insertPending(db, { agent: bot, key, approvers: [bot2] })).toThrow(/human/);
+  it("approvers must be human (and, since 0011, at least one must be an active human)", () => {
+    expect(() => insertPending(db, { agent: bot, key, approvers: [chen, bot2] })).toThrow(/human/);
+    expect(() => insertPending(db, { agent: bot, key, approvers: [bot2] })).toThrow(/no_active_approver/);
   });
 
   it("moves only from pending to a terminal state", () => {
