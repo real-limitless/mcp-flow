@@ -34,6 +34,8 @@ export async function startServer(cfg: Config): Promise<RunningServer> {
   requireSecrets(cfg);
   const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
   store.ensureWorkspace(cfg.workspaceName);
+  // raw approval arguments must not outlive a decision made while no gate was waiting
+  store.sweepResolvedSealedApprovalArgs();
   const pool = new UpstreamPool(store);
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);

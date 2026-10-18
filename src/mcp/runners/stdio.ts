@@ -11,6 +11,8 @@ import {
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { PassThrough } from "node:stream";
+import { redactSecrets } from "../../audit/sanitize.js";
+import { lineRedactor, redactLog } from "../../log/redact-lines.js";
 
 export interface StdioRunResult {
   client: Client;
@@ -287,6 +289,51 @@ class GroupedStdioClientTransport extends StdioClientTransport {
   }
 }
 
+/** Redacted backend stderr kept for an init error (characters). */
+const STDERR_TAIL_KEEP = 12_000;
+/** Backend stderr included in an init error (characters). */
+const STDERR_TAIL_MAX = 8_000;
+
+/**
+ * Keeps the last `keep` characters written. Memory is bounded at about 2x keep: the trim runs
+ * after a write, so the buffer can briefly exceed 2x keep by one write (a write can be a whole
+ * line: up to maxPending (64 KiB) plus one incoming chunk, about 128 KiB). When older text was
+ * dropped, text() starts after the first line break of the kept window, so a cut-off line
+ * fragment (too short to look like key body) never reaches the second redaction pass. The
+ * buffer only ever holds the tail redactor's output, never raw stderr.
+ */
+export function boundedTail(keep: number): { write: (s: string) => void; text: () => string } {
+  let buf = "";
+  let dropped = false;
+  return {
+    write: (s: string) => {
+      buf += s;
+      if (buf.length > 2 * keep) {
+        buf = buf.slice(-keep);
+        dropped = true;
+      }
+    },
+    text: () => {
+      if (!dropped && buf.length <= keep) return buf;
+      const t = buf.slice(-keep);
+      const nl = t.indexOf("\n");
+      return nl < 0 ? t : t.slice(nl + 1); // one long line: no line run to cut into
+    },
+  };
+}
+
+/**
+ * Init-error stderr tail from the tail redactor's output (lineRedactor with keepEndMarker and
+ * no line-count reset): redacted again as a whole, then cut to STDERR_TAIL_MAX.
+ * - A block whose BEGIN streamed past is already [redacted] line by line (fail closed to the
+ *   end of the stream when it never closes).
+ * - A stray END (its BEGIN never appeared) is still present as a bare marker, so this pass
+ *   redacts the key-body run the line redactor had already written before the END arrived.
+ */
+export function stderrTailForError(redacted: string): string {
+  return redactSecrets(redacted.trim()).slice(-STDERR_TAIL_MAX);
+}
+
 async function connectOnce(
   command: string[],
   env: Record<string, string>,
@@ -301,12 +348,24 @@ async function connectOnce(
     stderr: "pipe",
   });
 
-  const errBuf: string[] = [];
+  // backend stderr is passed through to ours, redacted line by line. Lines already printed
+  // cannot be taken back: key-body lines before a stray END (no BEGIN seen) stay on live
+  // stderr; the init-error tail below does redact them (see stderrTailForError).
+  const passthrough = lineRedactor((s) => process.stderr.write(s));
+  // the tail kept for the init error is redacted as it streams (the whole stream, with the
+  // key-block state carried across lines), and only the redacted text is capped, so a cut can
+  // never drop a BEGIN marker and expose the key lines after it. A private key block left open
+  // is redacted to the end of the stream (no line-count reset here).
+  const errTail = boundedTail(STDERR_TAIL_KEEP);
+  const tailRedactor = lineRedactor(errTail.write, undefined, Infinity, { keepEndMarker: true });
+  let initDone = false; // the tail is only used for an init error
   transport.stderr?.on("data", (chunk: Buffer | string) => {
     const s = typeof chunk === "string" ? chunk : chunk.toString("utf8");
-    errBuf.push(s);
-    process.stderr.write(s);
+    passthrough.push(s);
+    if (!initDone) tailRedactor.push(s);
   });
+  transport.stderr?.on("end", () => passthrough.flush());
+  transport.stderr?.on("close", () => passthrough.flush());
 
   const client = new Client(
     { name: "mcp-flow-stdio", version: "0.1.0" },
@@ -315,6 +374,7 @@ async function connectOnce(
   try {
     await client.connect(transport);
     const listed = await client.listTools();
+    initDone = true;
     return {
       client,
       transport,
@@ -326,8 +386,10 @@ async function connectOnce(
     } catch {
       /* ignore */
     }
-    const tail = errBuf.join("").trim().slice(-8000);
-    const msg = err instanceof Error ? err.message : String(err);
+    passthrough.flush();
+    tailRedactor.flush();
+    const tail = stderrTailForError(errTail.text());
+    const msg = redactLog(err);
     throw new Error(tail ? `${msg}\n--- stderr ---\n${tail}` : msg);
   }
 }
@@ -350,7 +412,7 @@ export async function connectStdioCommand(opts: {
     }
     const cache = env.npm_config_cache || resolveNpmCacheDir();
     console.error(
-      `[mcp-flow] npx extract looks corrupt (${msg.split("\n")[0]}); clearing ${npxExtractStore(cache)} and retrying`,
+      `[mcp-flow] npx extract looks corrupt (${redactLog(msg.split("\n")[0])}); clearing ${npxExtractStore(cache)} and retrying`,
     );
     clearNpxExtractStore(cache);
     return await connectOnce(opts.command, env, opts.cwd);
