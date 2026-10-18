@@ -481,6 +481,15 @@ function auditIdent(v: string | null | undefined, max = 256): string | null {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
+/**
+ * audit_events.key_id: an API key id (key_ + lowercase alphanumerics, as newId("key") mints
+ * key_<24 hex>) or "[invalid]". Never free text, so a token passed by mistake is not stored.
+ */
+function auditKeyId(v: string | null | undefined): string | null {
+  if (v == null || v === "") return v ?? null;
+  return /^key_[0-9a-z]{1,32}$/.test(String(v)) ? String(v) : "[invalid]";
+}
+
 /** audit_events.backend_slug: a backend slug ([a-z][a-z0-9_-]{0,63}) or "[invalid]". */
 function auditSlug(v: string | null | undefined): string | null {
   if (v == null || v === "") return null;
@@ -1006,7 +1015,7 @@ export class Store {
         newId("aud"),
         nowIso(),
         input.workspaceId,
-        input.keyId ?? null,
+        auditKeyId(input.keyId),
         auditIdent(input.action) ?? "",
         auditSlug(input.backendSlug),
         auditIdent(input.tool),

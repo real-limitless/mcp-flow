@@ -53,4 +53,20 @@ describe("audit_events columns", () => {
     expect(last(store).ip).toBeNull();
     store.close();
   });
+
+  it("key_id is shape-checked: real key ids kept, anything else is [invalid]", () => {
+    const store = open();
+    const ws = store.ensureWorkspace("default");
+    const key = (keyId: string | null | undefined) => {
+      store.writeAudit({ workspaceId: ws.id, action: "a", keyId: keyId as string, detail: {} });
+      return (store.db.prepare(`SELECT key_id FROM audit_events ORDER BY rowid DESC LIMIT 1`).get() as { key_id: unknown }).key_id;
+    };
+    expect(key("key_0123456789abcdef01234567")).toBe("key_0123456789abcdef01234567");
+    expect(key(null)).toBeNull();
+    expect(key(undefined)).toBeNull();
+    expect(key("key_x")).toBe("key_x");
+    for (const bad of ["mf_FAKEKEYID1234567890abcdef", "key_FAKEK4UPPER", "aud_0123456789abcdef01234567", "key_0123 DB_PASS=FAKEK2", "Bearer FAKEK3", "key_0123456789abcdef0123456\n", "x".repeat(300)])
+      expect(key(bad)).toBe("[invalid]");
+    expect(JSON.stringify(store.db.prepare(`SELECT * FROM audit_events`).all())).not.toMatch(/FAKEK/);
+  });
 });
