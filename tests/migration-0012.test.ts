@@ -48,7 +48,7 @@ describe("0012 up/down/up", () => {
     expect((d.prepare(`SELECT sql FROM sqlite_master WHERE name = 'mcpflow_call_audit_no_delete'`).get() as { sql: string }).sql.trim())
       .toBe(CALL_AUDIT_NO_DELETE_TRIGGER.trim().replace(/;$/, ""));
     d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, key_id, actor) VALUES ('result_read', ?, ?, ?, ?, ?)`).run(stored, ws, bot, k, chen);
-    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, key_id, error_code) VALUES ('result_purge', ?, ?, ?, ?, 'purged:quota')`).run(stored, ws, bot, k);
+    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, key_id, actor, error_code) VALUES ('result_purge', ?, ?, ?, ?, 'system:quota', 'purged:quota')`).run(stored, ws, bot, k);
     expect(auditIds(d)).toEqual([7, 8, 9, 101, 102]);
     expect(fkClean(d)).toEqual([]);
 
@@ -97,12 +97,24 @@ describe("0012 triggers", () => {
     expect(() => d.prepare(`DELETE FROM mcpflow_call_outcome WHERE call_id = ?`).run(id)).toThrow(/never deleted/);
   });
 
-  it("call_audit result_read needs actor + agent; result_purge needs a purged:<reason> code; still append-only", () => {
+  it("call_audit result_read needs actor + agent; result_purge needs a system actor matching its purged:<reason> code; still append-only", () => {
     const { d, ws, bot, id } = fresh();
     expect(() => d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id) VALUES ('result_read', ?, ?, ?)`).run(id, ws, bot)).toThrow(/CHECK/);
     expect(() => d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, actor, policy_decision) VALUES ('result_read', ?, ?, ?, ?, 'allow')`).run(id, ws, bot, bot)).toThrow(/CHECK/);
-    expect(() => d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, error_code) VALUES ('result_purge', ?, ?, ?, 'oops')`).run(id, ws, bot)).toThrow(/CHECK/);
-    d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, error_code) VALUES ('result_purge', ?, ?, ?, 'purged:expired')`).run(id, ws, bot);
+    const purge = (actor: string | null, code: string) =>
+      d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, actor, error_code) VALUES ('result_purge', ?, ?, ?, ?, ?)`).run(id, ws, bot, actor, code);
+    expect(() => purge("system:sweeper", "oops")).toThrow(/CHECK/);
+    expect(() => purge(null, "purged:expired")).toThrow(/CHECK/); // actor required
+    expect(() => purge(bot, "purged:expired")).toThrow(/CHECK/); // never an agt_ id
+    expect(() => purge(`agt_${"0".repeat(24)}`, "purged:quota")).toThrow(/CHECK/); // nor a fake one
+    expect(() => purge("system:quota", "purged:expired")).toThrow(/CHECK/); // actor must match the reason
+    expect(() => purge("system:sweeper", "purged:quota")).toThrow(/CHECK/);
+    expect(() => purge("system:other", "purged:quota")).toThrow(/CHECK/);
+    purge("system:sweeper", "purged:expired");
+    purge("system:quota", "purged:quota");
+    // system actors are only valid on purge rows
+    expect(() => d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, agent_id, actor) VALUES ('result_read', ?, ?, ?, 'system:sweeper')`).run(id, ws, bot)).toThrow(/CHECK/);
+    expect(() => d.prepare(`INSERT INTO mcpflow_call_audit (event_type, call_id, workspace_id, lifecycle_action, actor) VALUES ('lifecycle', ?, ?, 'x', 'system:quota')`).run(id, ws)).toThrow(/CHECK/);
     expect(() => d.prepare(`UPDATE mcpflow_call_audit SET error_code = NULL`).run()).toThrow(/append-only/);
     expect(() => d.prepare(`DELETE FROM mcpflow_call_audit`).run()).toThrow(/append-only/);
   });

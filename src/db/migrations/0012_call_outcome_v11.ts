@@ -7,8 +7,12 @@
  * triggers recreated verbatim) to allow the new event types.
  * Deviation from Database's SQL (flagged): event_type 'result_purge' is added as well, because §12
  * requires a call_audit event for every purge and a purge has no agt_ actor (lifecycle needs one).
+ * Purge rows carry a defined system actor that must match the reason (Database review of 1a90e2bc):
+ * actor 'system:sweeper' with error_code 'purged:expired', 'system:quota' with 'purged:quota'.
+ * 'system:*' actors are allowed on result_purge rows only; every other actor is still an agt_ id.
  * DOWN maps result_read and result_purge rows to lifecycle rows (lifecycle_action = the old type;
- * purge rows get actor = owner agent), so no audit row is lost.
+ * purge rows get actor = owner agent, since the old CHECK allows agt_ actors only; the reason
+ * stays in error_code), so no audit row is lost.
  */
 export const MIGRATION_0012 = `
 -- 0012_call_outcome_v11 (T2.1 §11): call_outcome is the single result store; re-readable 24 h; reads audited
@@ -49,7 +53,8 @@ CREATE TABLE mcpflow_call_audit_new (
   result_status    TEXT CHECK (result_status IN ('ok','error','not_dispatched','timeout')),
   error_code       TEXT,
   lifecycle_action TEXT,
-  actor            TEXT CHECK (actor IS NULL OR (length(actor) = 28 AND substr(actor, 1, 4) = 'agt_' AND substr(actor, 5) NOT GLOB '*[^0-9a-f]*')),
+  actor            TEXT CHECK (actor IS NULL OR actor IN ('system:sweeper','system:quota')
+                     OR (length(actor) = 28 AND substr(actor, 1, 4) = 'agt_' AND substr(actor, 5) NOT GLOB '*[^0-9a-f]*')),
   rule_version     INTEGER,
   grant_id         TEXT CHECK (grant_id IS NULL OR (length(grant_id) = 28 AND substr(grant_id, 1, 4) = 'grt_' AND substr(grant_id, 5) NOT GLOB '*[^0-9a-f]*')),
   CHECK (event_type <> 'decision'   OR policy_decision IS NOT NULL OR error_code IS 'unauthenticated'),
@@ -57,8 +62,13 @@ CREATE TABLE mcpflow_call_audit_new (
   CHECK (event_type <> 'lifecycle'  OR (lifecycle_action IS NOT NULL AND actor IS NOT NULL)),
   CHECK (event_type <> 'result_read' OR (actor IS NOT NULL AND agent_id IS NOT NULL
          AND policy_decision IS NULL AND final_outcome IS NULL AND lifecycle_action IS NULL)),
-  CHECK (event_type <> 'result_purge' OR (agent_id IS NOT NULL AND error_code IN ('purged:expired','purged:quota')
+  -- purge rows: system actor matching the reason (sweeper = expiry, quota = byte caps); owner in agent_id
+  -- (IS, not =: a NULL actor must fail the CHECK, not slip through as NULL)
+  CHECK (event_type <> 'result_purge' OR (agent_id IS NOT NULL
+         AND ((actor IS 'system:sweeper' AND error_code IS 'purged:expired') OR (actor IS 'system:quota' AND error_code IS 'purged:quota'))
          AND policy_decision IS NULL AND final_outcome IS NULL AND lifecycle_action IS NULL)),
+  -- system actors exist only on purge rows
+  CHECK (actor IS NULL OR substr(actor, 1, 7) <> 'system:' OR event_type = 'result_purge'),
   CHECK (final_outcome IS NULL OR final_outcome NOT IN ('approval_denied') OR approver IS NOT NULL),
   CHECK (final_outcome IS NULL OR final_outcome = 'executed' OR final_outcome = 'error'
          OR result_status = 'not_dispatched')
@@ -216,7 +226,7 @@ CREATE TABLE mcpflow_call_audit_new (
          OR result_status = 'not_dispatched')
 ) STRICT;
 INSERT INTO mcpflow_call_audit_new (audit_id, ts, event_type, call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id, backend_slug, tool, qualified_tool, placement, device_id, args_redacted, args_hash, policy_decision, final_outcome, rule_id, matched_rule_ids, pending_call_id, approver, approver_note, latency_ms, backend_latency_ms, result_status, error_code, lifecycle_action, actor, rule_version, grant_id)
-SELECT audit_id, ts, CASE WHEN event_type IN ('result_read','result_purge') THEN 'lifecycle' ELSE event_type END, call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id, backend_slug, tool, qualified_tool, placement, device_id, args_redacted, args_hash, policy_decision, final_outcome, rule_id, matched_rule_ids, pending_call_id, approver, approver_note, latency_ms, backend_latency_ms, result_status, error_code, CASE WHEN event_type IN ('result_read','result_purge') THEN event_type ELSE lifecycle_action END, CASE event_type WHEN 'result_purge' THEN COALESCE(actor, agent_id) ELSE actor END, rule_version, grant_id FROM mcpflow_call_audit ORDER BY audit_id;
+SELECT audit_id, ts, CASE WHEN event_type IN ('result_read','result_purge') THEN 'lifecycle' ELSE event_type END, call_id, workspace_id, agent_id, agent_name, key_id, key_prefix, project_id, backend_slug, tool, qualified_tool, placement, device_id, args_redacted, args_hash, policy_decision, final_outcome, rule_id, matched_rule_ids, pending_call_id, approver, approver_note, latency_ms, backend_latency_ms, result_status, error_code, CASE WHEN event_type IN ('result_read','result_purge') THEN event_type ELSE lifecycle_action END, CASE event_type WHEN 'result_purge' THEN agent_id ELSE actor END, rule_version, grant_id FROM mcpflow_call_audit ORDER BY audit_id;
 -- keep the AUTOINCREMENT high-water mark (ids freed by retention are never reused)
 DELETE FROM sqlite_sequence WHERE name = 'mcpflow_call_audit_new';
 INSERT INTO sqlite_sequence (name, seq)
