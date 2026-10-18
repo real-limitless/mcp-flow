@@ -61,7 +61,7 @@ function insertKey(
     kid,
     agent,
     randomBytes(9).toString("base64url").slice(0, 12),
-    `sha256-pepper$v1$${hex()}`,
+    `sha256-pepper$v1$${randomBytes(32).toString("hex")}`,
     o.status ?? "active",
     o.pred ?? null,
     o.expiresAt ?? iso(90 * DAY),
@@ -71,11 +71,11 @@ function insertKey(
 }
 
 function insertSession(d: DatabaseSync, agent: string, key: string, expiresAt = iso(DAY)): string {
-  const sid = `mf_sess_${hex()}`;
+  const sid = `sess_${hex()}`; // 0009: new ids are sess_ only; token_hash is a hash, never a token
   d.prepare(
     `INSERT INTO mcpflow_session (id, token_hash, agent_id, key_id, project_id, expires_at)
      VALUES (?, ?, ?, ?, 'gb_devops', ?)`,
-  ).run(sid, hex(), agent, key, expiresAt);
+  ).run(sid, `sha256-pepper$v1$${randomBytes(32).toString("hex")}`, agent, key, expiresAt);
   return sid;
 }
 
@@ -164,14 +164,14 @@ describe("connection and runner", () => {
   });
 
   it("rejects malformed ids and enum values", () => {
-    expect(() => insertAgent(db, { id: "agt_nothex", ws, name: "x" })).toThrow(/CHECK/);
-    expect(() => insertAgent(db, { ws, name: "y", kind: "robot" })).toThrow(/CHECK/);
+    expect(() => insertAgent(db, { id: "agt_nothex", ws, name: "x", createdBy: chen })).toThrow(/CHECK/);
+    expect(() => insertAgent(db, { ws, name: "y", kind: "robot", createdBy: chen })).toThrow(/CHECK/);
   });
 });
 
 describe("agents", () => {
   it("only human agents may be admin", () => {
-    expect(() => insertAgent(db, { ws, name: "evil", kind: "grokbot", admin: 1 })).toThrow(/CHECK/);
+    expect(() => insertAgent(db, { ws, name: "evil", kind: "grokbot", admin: 1, createdBy: chen })).toThrow(/CHECK/);
   });
 
   it("revoked is terminal", () => {
@@ -204,11 +204,11 @@ describe("api keys", () => {
     const prefix = (db.prepare(`SELECT prefix FROM mcpflow_api_key WHERE id=?`).get(k) as { prefix: string }).prefix;
     expect(() =>
       db.prepare(`INSERT INTO mcpflow_api_key (id, agent_id, prefix, secret_hash, expires_at, created_by) VALUES (?,?,?,?,?,?)`)
-        .run(id("key"), bot2, prefix, hex(), iso(DAY), chen),
+        .run(id("key"), bot2, prefix, `sha256-pepper$v1$${randomBytes(32).toString("hex")}`, iso(DAY), chen),
     ).toThrow(/UNIQUE/);
     expect(() =>
       db.prepare(`INSERT INTO mcpflow_api_key (id, agent_id, prefix, secret_hash, expires_at, created_by) VALUES (?,?,?,?,?,?)`)
-        .run(id("key"), bot2, "short", hex(), iso(DAY), chen),
+        .run(id("key"), bot2, "short", `sha256-pepper$v1$${randomBytes(32).toString("hex")}`, iso(DAY), chen),
     ).toThrow(/CHECK/);
   });
 
