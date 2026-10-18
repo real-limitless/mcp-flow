@@ -39,7 +39,7 @@ export function seedKey(d: DatabaseSync, agent: string, createdBy: string): stri
   return k;
 }
 
-export function seedSession(d: DatabaseSync, agent: string, key: string, prefix = "mf_sess_"): string {
+export function seedSession(d: DatabaseSync, agent: string, key: string, prefix = "sess_"): string {
   const s = `${prefix}${hex()}`;
   d.prepare(`INSERT INTO mcpflow_session (id, token_hash, agent_id, key_id, project_id, expires_at) VALUES (?, ?, ?, ?, 'gb_devops', ?)`).run(
     s, `sha256-pepper$v1$${hex(32)}`, agent, key, iso(DAY),
@@ -70,10 +70,11 @@ export function integrityOk(d: DatabaseSync): boolean {
   return r.length === 1 && Object.values(r[0]!)[0] === "ok";
 }
 
-/** Normalized schema (type, name, sql) for up/down/up comparisons. */
+/** Normalized schema (type, name, sql) for up/down/up comparisons. Whitespace and the identifier quotes that
+ *  ALTER TABLE ... RENAME writes into sqlite_master ("mcpflow_x") are normalized away. */
 export function schemaSnapshot(d: DatabaseSync): string[] {
   return (d.prepare(`SELECT type, name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY type, name`).all() as Array<{ type: string; name: string; sql: string }>)
-    .map((r) => `${r.type}|${r.name}|${r.sql.replace(/\s+/g, " ").trim()}`);
+    .map((r) => `${r.type}|${r.name}|${r.sql.replace(/"(mcpflow_\w+)"/g, "$1").replace(/\s+/g, " ").trim()}`);
 }
 
 /** Apply a manual DOWN script in one transaction and forget the migration id. */
@@ -92,4 +93,33 @@ export function rollback(d: DatabaseSync, migrationId: string, downSql: string):
 /** Insert a legacy mf_sess_ session the way pre-0009 code did (only possible before 0009). */
 export function seedLegacySession(d: DatabaseSync, agent: string, key: string): string {
   return seedSession(d, agent, key, "mf_sess_");
+}
+
+/** Mark a pending call approved by `by` (pre-0011 schema). */
+export function approvePending(d: DatabaseSync, pc: string, by: string): void {
+  d.prepare(`UPDATE mcpflow_pending_call SET status = 'approved', decided_by = ?, decided_at = ? WHERE id = ?`).run(by, iso(), pc);
+}
+
+/** Pre-0010 grant row (mcpflow_approval_grant with max_uses/use_count). */
+export function seedLegacyGrant(
+  d: DatabaseSync,
+  o: { pc: string; ws: string; agent: string; by: string; rules: string[]; maxUses?: number | null; minutes?: number },
+): string {
+  const g = mkid("grt");
+  d.prepare(
+    `INSERT INTO mcpflow_approval_grant (id, source_pending_call_id, workspace_id, agent_id, project_id, backend_slug, tool,
+       overrides_rule_ids, granted_by, granted_at, expires_at, max_uses)
+     VALUES (?, ?, ?, ?, 'gb_devops', 'gh-repos-shell', 'run_command', ?, ?, ?, ?, ?)`,
+  ).run(g, o.pc, o.ws, o.agent, JSON.stringify(o.rules), o.by, iso(), iso((o.minutes ?? 30) * 60_000), o.maxUses ?? null);
+  return g;
+}
+
+/** Minimal enabled rule (allow) with version 1. */
+export function seedRule(d: DatabaseSync, ws: string, by: string, effect = "allow"): string {
+  const r = mkid("rule");
+  d.exec("BEGIN;");
+  d.prepare(`INSERT INTO mcpflow_policy_rule (id, workspace_id, current_version, created_by) VALUES (?, ?, 1, ?)`).run(r, ws, by);
+  d.prepare(`INSERT INTO mcpflow_policy_rule_version (rule_id, version, description, effect, created_by) VALUES (?, 1, 't', ?, ?)`).run(r, effect, by);
+  d.exec("COMMIT;");
+  return r;
 }

@@ -437,7 +437,7 @@ export class PolicyEnforcer {
     try {
       this.tx(() => {
         if (decision.decision === "require_approval") {
-          grantId = this.claimGrant(ctx, args, hash, decision);
+          grantId = this.matchLiveGrant(ctx, args, hash, decision);
           if (
             !grantId &&
             (this.holds(ctx.workspaceId) >= (this.deps.maxHolds ?? 32) ||
@@ -857,7 +857,7 @@ export class PolicyEnforcer {
   }
 
   /** Approve this call and create an expiring grant for similar calls (≤ 60 min, never overrides deny). */
-  approveSimilar(pendingCallId: string, deciderAgentId: string, minutes: number, opts: { maxUses?: number; note?: string; matchArgs?: ArgMatcher[]; sameArgsOnly?: boolean } = {}):
+  approveSimilar(pendingCallId: string, deciderAgentId: string, minutes: number, opts: { note?: string; matchArgs?: ArgMatcher[]; sameArgsOnly?: boolean } = {}):
     { ok: true; grantId: string } | { ok: false; error: string } {
     const db = this.deps.db;
     const pc = db.prepare(`SELECT * FROM mcpflow_pending_call WHERE id = ?`).get(pendingCallId) as Record<string, unknown> | undefined;
@@ -895,14 +895,14 @@ export class PolicyEnforcer {
         if (Number(res.changes) !== 1) throw new Error("not pending");
         const now = this.clock();
         db.prepare(
-          `INSERT INTO mcpflow_approval_grant (id, source_pending_call_id, workspace_id, agent_id, project_id,
-             backend_slug, tool, match_args, args_hash, overrides_rule_ids, granted_by, granted_at, expires_at, max_uses)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO mcpflow_policy_grant (id, source_pending_call_id, workspace_id, agent_id, project_id,
+             backend_slug, tool, match_args, args_hash, overrides_rule_ids, granted_by, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           grantId, pendingCallId, String(pc.workspace_id), String(pc.agent_id), String(pc.project_id),
           String(pc.backend_slug), String(pc.tool), JSON.stringify(opts.matchArgs ?? []),
           sameArgsOnly ? String(pc.args_hash) : null, JSON.stringify(overrides), deciderAgentId,
-          this.iso(now), this.iso(now + Math.min(Math.max(minutes, 1), 60) * 60_000), opts.maxUses ?? null,
+          this.iso(now), this.iso(now + Math.min(Math.max(minutes, 1), 60) * 60_000),
         );
         db.prepare(`UPDATE mcpflow_pending_call SET grant_id = ? WHERE id = ?`).run(grantId, pendingCallId);
       });
@@ -1044,15 +1044,17 @@ export class PolicyEnforcer {
     }
   }
 
-  private claimGrant(ctx: CallContext, args: unknown, hash: string, d: Decision): string | null {
+  private matchLiveGrant(ctx: CallContext, args: unknown, hash: string, d: Decision): string | null {
     const reqRules = d.matched.filter((r) => r.effect === "require_approval").map((r) => r.ruleId);
     if (d.matched.some((r: PolicyRule) => r.effect === "deny")) return null;
     const now = this.iso();
+    // 0010: live grants come from mcpflow_live_policy_grant; there is no use limit, so nothing is bumped.
+    // `expires_at > ?` also applies the gateway clock (the view uses SQLite's wall clock).
     const grants = this.deps.db
       .prepare(
-        `SELECT id, match_args, args_hash, overrides_rule_ids FROM mcpflow_approval_grant
+        `SELECT id, match_args, args_hash, overrides_rule_ids FROM mcpflow_live_policy_grant
           WHERE agent_id = ? AND project_id = ? AND backend_slug = ? AND tool = ? AND workspace_id = ?
-            AND revoked_at IS NULL AND expires_at > ? AND (max_uses IS NULL OR use_count < max_uses)
+            AND expires_at > ?
           ORDER BY expires_at`,
       )
       .all(ctx.agentId, ctx.projectId, ctx.backendSlug, ctx.tool, ctx.workspaceId, now) as Record<string, unknown>[];
@@ -1066,14 +1068,7 @@ export class PolicyEnforcer {
       } catch {
         ok = false; // matcher error = grant does not apply (fail closed to approval)
       }
-      if (!ok) continue;
-      const r = this.deps.db
-        .prepare(
-          `UPDATE mcpflow_approval_grant SET use_count = use_count + 1
-            WHERE id = ? AND revoked_at IS NULL AND expires_at > ? AND (max_uses IS NULL OR use_count < max_uses)`,
-        )
-        .run(String(g.id), now);
-      if (Number(r.changes) === 1) return String(g.id);
+      if (ok) return String(g.id);
     }
     return null;
   }

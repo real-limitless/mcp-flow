@@ -301,7 +301,7 @@ const OUTCOME_SEL = `FROM mcpflow_call_outcome o WHERE o.workspace_id = ? AND o.
 const PENDING_SEL = `FROM mcpflow_pending_call p
   WHERE p.workspace_id = ? AND p.created_at < ? AND p.status <> 'pending'
     AND NOT (p.status = 'approved' AND p.dispatched_at IS NULL AND p.abandoned_at IS NULL)
-    AND NOT EXISTS (SELECT 1 FROM mcpflow_approval_grant g WHERE g.source_pending_call_id = p.id)
+    AND NOT EXISTS (SELECT 1 FROM mcpflow_policy_grant g WHERE g.source_pending_call_id = p.id)
     AND NOT EXISTS (SELECT 1 FROM mcpflow_call_outcome o2 WHERE o2.pending_call_id = p.id
                      AND NOT (o2.workspace_id = ? AND o2.created_at < ? AND o2.state <> 'pending'))`;
 const OUTCOME_COLS = [
