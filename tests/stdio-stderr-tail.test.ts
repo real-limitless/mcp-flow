@@ -52,7 +52,7 @@ describe("Leak B: init-error stderr tail is redacted before it is cut", () => {
   });
 
   it("stderrTailForError fails closed on an END whose BEGIN is outside the window", () => {
-    const tail = stderrTailForError(`${M}1\n${M}2\n-----END RSA PRIVATE KEY-----\n${"x".repeat(50)}`);
+    const tail = stderrTailForError(`${M}1${"A".repeat(48)}\n${M}2${"B".repeat(48)}\n-----END RSA PRIVATE KEY-----\n${"x".repeat(50)}`);
     expect(tail).not.toContain(M);
     expect(tail.length).toBeLessThanOrEqual(8000);
   });

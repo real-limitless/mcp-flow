@@ -232,10 +232,15 @@ function redactAssignments(s: string): string {
 /**
  * ASCII-armor markers: PEM (`-----BEGIN RSA PRIVATE KEY-----`), PGP
  * (`-----BEGIN PGP PRIVATE KEY BLOCK-----`), SSH.com (`---- BEGIN SSH2 ENCRYPTED PRIVATE KEY ----`),
- * OpenVPN (`-----BEGIN OpenVPN Static key V1-----`). Bounded label, no nested quantifiers.
+ * OpenVPN (`-----BEGIN OpenVPN Static key V1-----`). Case-insensitive (`-----begin pgp private
+ * key block-----`). Bounded label, no nested quantifiers.
  */
-const ARMOR_MARKER_RE = /-{4,5} ?(BEGIN|END) ([A-Za-z0-9][A-Za-z0-9 ._]{0,79}?) ?-{4,5}/g;
-/** Labels whose block body is secret key material (public keys, certificates and signatures are kept). */
+const ARMOR_MARKER_RE = /-{4,5} ?(BEGIN|END) ([A-Za-z0-9][A-Za-z0-9 ._]{0,79}?) ?-{4,5}/gi;
+/**
+ * Labels whose block body is secret key material. Public keys, certificates, and PGP MESSAGE /
+ * SIGNATURE blocks stay readable by design: a MESSAGE body is ciphertext (useless without the
+ * private key) and a SIGNATURE is public, and both are useful when reading an audit trail.
+ */
 const SECRET_ARMOR_LABEL_RE = /\b(?:PRIVATE|SECRET|STATIC) KEY\b/i;
 
 export interface ArmorMarker {
@@ -247,21 +252,79 @@ export interface ArmorMarker {
 /** Secret-key armor BEGIN/END markers in s, in order. Linear: one global regex pass. */
 export function secretArmorMarkers(s: string): ArmorMarker[] {
   const out: ArmorMarker[] = [];
-  if (s.indexOf("BEGIN") < 0 && s.indexOf("END") < 0) return out;
+  if (s.indexOf("-----") < 0 && s.indexOf("---- ") < 0) return out;
   ARMOR_MARKER_RE.lastIndex = 0;
   for (let m; (m = ARMOR_MARKER_RE.exec(s)); ) {
     if (SECRET_ARMOR_LABEL_RE.test(m[2]!)) {
-      out.push({ begin: m[1] === "BEGIN", start: m.index, end: m.index + m[0].length });
+      out.push({ begin: m[1]!.toUpperCase() === "BEGIN", start: m.index, end: m.index + m[0].length });
     }
   }
   return out;
+}
+
+const ARMOR_BODY_RE = /^[A-Za-z0-9+/=]{16,}$/;
+/** A short last line of a base64 body with its padding ("AbC=", "Zg=="). */
+const ARMOR_BODY_PADDED_RE = /^[A-Za-z0-9+/]{1,15}={1,2}$/;
+/** Any base64-charset text (allowed only right before an END marker: the short last line). */
+const ARMOR_BODY_SHORT_RE = /^[A-Za-z0-9+/=]{1,15}$/;
+const ARMOR_HEADER_RE = /^(?:Comment|Version|Hash|Charset|MessageID|Proc-Type|DEK-Info)[ \t]*:/i;
+const ARMOR_CHECKSUM_RE = /^=[A-Za-z0-9+/]{4}$/;
+
+/**
+ * Line (trimmed) that looks like the inside of a key armor block: base64 of 16+ characters, a
+ * padded short last line, an armor header (Comment:, Version:, …) or a PGP checksum (=XXXX).
+ */
+export function isArmorBodyLine(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  return ARMOR_BODY_RE.test(t) || ARMOR_BODY_PADDED_RE.test(t) || ARMOR_CHECKSUM_RE.test(t) || ARMOR_HEADER_RE.test(t);
+}
+
+/** Start of the line break that ends just before `pos` ("\n", "\r\n" or an escaped "\\n"), or -1. */
+function prevBreak(s: string, from: number, pos: number): { at: number; len: number } {
+  for (let i = pos - 1; i >= from; i--) {
+    if (s[i] === "\n") return { at: i > from && s[i - 1] === "\r" ? i - 1 : i, len: i > from && s[i - 1] === "\r" ? 2 : 1 };
+    if (s[i] === "n" && i > from && s[i - 1] === "\\") {
+      const crlf = i - 3 >= from && s[i - 2] === "r" && s[i - 3] === "\\";
+      return crlf ? { at: i - 3, len: 4 } : { at: i - 1, len: 2 };
+    }
+  }
+  return { at: -1, len: 0 };
+}
+
+/**
+ * Where to start redacting for an END marker at `endStart` with no BEGIN before it (the start of
+ * the block was cut off): the run of key-body-shaped lines right before the END, back to `from`
+ * at most. Fails closed on that run only; text above it stays readable.
+ */
+function bodyRunStart(s: string, from: number, endStart: number): number {
+  // text on the END line before the marker
+  let b = prevBreak(s, from, endStart);
+  let lineStart = b.at < 0 ? from : b.at + b.len;
+  const head = s.slice(lineStart, endStart).trim();
+  if (head && !isArmorBodyLine(head) && !ARMOR_BODY_SHORT_RE.test(head)) return endStart;
+  let runStart = head ? lineStart : endStart;
+  // a short unpadded base64 line is only taken as the block's last line: right before the END,
+  // or right before a PGP checksum that is right before the END
+  let allowShort = !head;
+  while (b.at >= 0) {
+    const pos = b.at;
+    b = prevBreak(s, from, pos);
+    lineStart = b.at < 0 ? from : b.at + b.len;
+    const t = s.slice(lineStart, pos).trim();
+    if (!t) continue; // blank lines inside the run do not end it (PGP header / body gap)
+    if (!(isArmorBodyLine(t) || (allowShort && ARMOR_BODY_SHORT_RE.test(t)))) break;
+    allowShort = allowShort && ARMOR_CHECKSUM_RE.test(t);
+    runStart = lineStart;
+  }
+  return runStart;
 }
 
 /**
  * Private key armor blocks (PEM, PGP, SSH2, OpenVPN static keys). Fail closed:
  * - an unterminated BEGIN redacts to the end of the string;
  * - an END with no BEGIN before it (the start of the block was cut off by a tail slice or a
- *   line cap) redacts everything from the previous block, or the start, up to that END.
+ *   line cap) redacts the run of key-body-shaped lines right before it, and the marker.
  */
 function redactPem(s: string): string {
   const marks = secretArmorMarkers(s);
@@ -274,12 +337,66 @@ function redactPem(s: string): string {
       if (open < 0) open = mk.start;
       continue;
     }
-    out += s.slice(last, open < 0 ? last : open) + "[redacted]";
+    out += s.slice(last, open < 0 ? bodyRunStart(s, last, mk.start) : open) + "[redacted]";
     last = mk.end;
     open = -1;
   }
   if (open >= 0) return out + s.slice(last, open) + "[redacted]";
   return out + s.slice(last);
+}
+
+/**
+ * PuTTY .ppk (`PuTTY-User-Key-File-2:` / `-3:` header): "Private-Lines: N" (the N lines after it
+ * are the private key) and "Private-MAC:". A count over PPK_MAX_PRIVATE_LINES is not trusted.
+ */
+export const PPK_MAX_PRIVATE_LINES = 1024;
+const PPK_PRIVATE_LINES_RE = /Private-Lines:[ \t]*(\d{1,6})[ \t]*(?:\r?\n|\\r\\n|\\n)/g;
+const PPK_MAC_RE = /(Private-MAC:[ \t]*)[^\s"'\\]+/g;
+
+/** Next line break at or after pos ("\n", "\r\n" or an escaped "\\n"): its start and length. */
+function nextBreak(s: string, pos: number): { at: number; len: number } {
+  for (let i = pos; i < s.length; i++) {
+    if (s[i] === "\r" && s[i + 1] === "\n") return { at: i, len: 2 };
+    if (s[i] === "\n") return { at: i, len: 1 };
+    if (s[i] === "\\" && s[i + 1] === "n") return { at: i, len: 2 };
+    if (s[i] === "\\" && s[i + 1] === "r" && s[i + 2] === "\\" && s[i + 3] === "n") return { at: i, len: 4 };
+  }
+  return { at: -1, len: 0 };
+}
+
+/**
+ * PuTTY private keys (`PuTTY-User-Key-File-2/3:`). The N lines after "Private-Lines: N" are
+ * redacted (to the end of the string if fewer follow, or if N is over the cap: fail closed), and
+ * so is the Private-MAC.
+ * Applied with or without the header line, so a tail that cut the header off is still covered.
+ */
+function redactPpk(s: string): string {
+  if (s.indexOf("Private-") < 0) return s;
+  let out = "";
+  let last = 0;
+  PPK_PRIVATE_LINES_RE.lastIndex = 0;
+  for (let m; (m = PPK_PRIVATE_LINES_RE.exec(s)); ) {
+    const count = Number(m[1]);
+    const start = m.index + m[0].length;
+    if (count > PPK_MAX_PRIVATE_LINES) return (out + s.slice(last, start) + "[redacted]").replace(PPK_MAC_RE, "$1[redacted]");
+    const n = count;
+    let pos = start;
+    let i = 0;
+    for (; i < n; i++) {
+      const b = nextBreak(s, pos);
+      if (b.at < 0) {
+        pos = s.length;
+        break;
+      }
+      pos = i === n - 1 ? b.at : b.at + b.len;
+    }
+    if (n === 0 || pos <= start) continue;
+    out += s.slice(last, start) + "[redacted]";
+    last = pos;
+    PPK_PRIVATE_LINES_RE.lastIndex = Math.max(pos, start);
+  }
+  const r = last === 0 ? s : out + s.slice(last);
+  return r.replace(PPK_MAC_RE, "$1[redacted]");
 }
 
 /** fish / csh: `set -x DB_PASS value`, `setenv DB_PASS value` (value runs to the end of the line). */
@@ -368,7 +485,7 @@ function redactBasic(s: string): string {
 
 /** Replace every embedded secret in a string (exported for tests and push payloads). */
 export function redactSecrets(s: string): string {
-  let out = redactRawUrlPasswords(redactPem(s));
+  let out = redactRawUrlPasswords(redactPpk(redactPem(s)));
   for (const [re, rep] of SECRET_SUBSTRING_RES) out = out.replace(re, rep);
   out = redactBasic(out);
   return redactShellSet(redactAssignments(out));
