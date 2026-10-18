@@ -1073,6 +1073,28 @@ program
     });
   });
 
+const dbCmd = program.command("db").description("Offline database maintenance (never run by the gateway)");
+
+dbCmd
+  .command("vacuum")
+  .description(
+    "One-time: switch an existing DB to auto_vacuum=INCREMENTAL and run a full VACUUM. " +
+      "Offline: refused while a gateway holds the DB. Back up first; needs free disk about the DB size.",
+  )
+  .option("--db <path>", "sqlite path")
+  .option("--check", "only report the current mode and free pages")
+  .action(async (opts: { db?: string; check?: boolean }) => {
+    const { convertToIncrementalVacuum } = await import("./db/maintenance.js");
+    const cfg = loadConfig({ dbPath: opts.db });
+    try {
+      const out = await convertToIncrementalVacuum(cfg.dbPath, { check: opts.check, pragmas: { journalSizeLimitBytes: cfg.journalSizeLimitBytes } });
+      console.log(JSON.stringify({ dbPath: cfg.dbPath, ...out }, null, 2));
+    } catch (err) {
+      console.error(`[mcp-flow] db vacuum: ${(err as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 const wsCmd = program.command("workspace").description("Workspace settings");
 
 wsCmd
