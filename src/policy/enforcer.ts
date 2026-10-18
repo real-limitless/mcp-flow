@@ -12,7 +12,7 @@
  *     error gets; final_outcome='error' vs 'executed' is what tells a gateway failure from a backend one)
  *  - deny / approval_denied / approval_expired / cancelled : result_status='not_dispatched'
  */
-import { sanitizeCallAuditCols } from "../audit/call-audit-cols.js";
+import { auditText, CALL_AUDIT_NOTE_MAX, sanitizeCallAuditCols } from "../audit/call-audit-cols.js";
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { AgentRateLimiter } from "./rate-limit.js";
@@ -1063,7 +1063,7 @@ export class PolicyEnforcer {
           `UPDATE mcpflow_pending_call SET status = ?, decided_by = ?, decided_at = ?, note = ?
             WHERE id = ? AND status = 'pending'`,
         )
-        .run(decision, deciderAgentId, this.iso(), note ?? null, pendingCallId);
+        .run(decision, deciderAgentId, this.iso(), auditText(note, CALL_AUDIT_NOTE_MAX), pendingCallId); // SecOPS: approver free text, redacted + capped
       if (Number(res.changes) !== 1) return { ok: false, error: "not pending" };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
@@ -1107,7 +1107,7 @@ export class PolicyEnforcer {
             `UPDATE mcpflow_pending_call SET status = 'approved', decided_by = ?, decided_at = ?, note = ?
               WHERE id = ? AND status = 'pending'`,
           )
-          .run(deciderAgentId, this.iso(), opts.note ?? null, pendingCallId);
+          .run(deciderAgentId, this.iso(), auditText(opts.note, CALL_AUDIT_NOTE_MAX), pendingCallId);
         if (Number(res.changes) !== 1) throw new Error("not pending");
         const now = this.clock();
         db.prepare(
