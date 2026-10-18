@@ -14,7 +14,7 @@ import {
 } from "./waiters.js";
 import { notifyApprovalPush } from "./push.js";
 
-export type AuthzDenyReason = "authz_denied" | "authz_timeout" | "authz_busy";
+export type AuthzDenyReason = "authz_denied" | "authz_timeout" | "authz_busy" | "authz_not_dispatched";
 
 export function asPlacementMode(raw: string | null | undefined): PlacementMode | null {
   if (
@@ -49,6 +49,9 @@ export function authzErrorResult(opts: {
   } else if (opts.reason === "authz_denied") {
     payload.message =
       "A human denied this tool call. Tell the user it was blocked.";
+  } else if (opts.reason === "authz_not_dispatched") {
+    payload.message =
+      "This call was approved, but its approved arguments could not be read back, so it was not run. Retry the tool call.";
   } else {
     payload.message =
       "Too many gated tool calls are waiting for human approval. Retry shortly.";
@@ -178,12 +181,29 @@ export async function runAuthzGate(opts: {
   const waitedSeconds = Math.max(1, Math.round((Date.now() - started) / 1000));
 
   if (decision.status === "approved") {
-    const row = opts.store.getApproval(opts.workspaceId, approval.id, {
-      redact: false,
-    });
-    const frozen =
-      row?.arguments && typeof row.arguments === "object" ? row.arguments : opts.args;
-    return { proceed: true, frozenArgs: frozen };
+    // read the frozen arguments and retire them at rest in one transaction; fail closed if
+    // they cannot be read back (never fall back to the caller's current arguments)
+    const consumed = opts.store.consumeApprovedArguments(opts.workspaceId, approval.id);
+    if (!consumed.ok) {
+      opts.store.writeAudit({
+        workspaceId: opts.workspaceId,
+        keyId: opts.keyId,
+        action: "authz.not_dispatched",
+        tool,
+        backendSlug: approval.backendSlug,
+        detail: { approvalId: approval.id, reason: consumed.reason },
+        ip: opts.ip,
+      });
+      return {
+        proceed: false,
+        result: authzErrorResult({
+          reason: "authz_not_dispatched",
+          tool,
+          approvalId: approval.id,
+        }),
+      };
+    }
+    return { proceed: true, frozenArgs: consumed.args ?? {} };
   }
 
   if (decision.status === "denied") {
