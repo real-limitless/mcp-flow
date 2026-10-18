@@ -124,7 +124,7 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
     const projects = slugs.map((slug) => {
       const p: Project | null = store.getProject(ws, slug);
       const tools = p
-        ? catalog.filter((t) => toolAllowedByProject(t.name, p)).map((t) => ({
+        ? catalog.filter((t) => toolAllowedByProject(t.name, p, pool.backendSlugs(ws))).map((t) => ({
             name: t.name,
             effect: a.status === "active" ? toolEffect(rules, { agentId, projectId: slug, backendSlug: t.backendSlug, tool: t.upstreamName }) : "denied",
           }))

@@ -14,6 +14,7 @@ import { EdgeRouter } from "./edge/router.js";
 import { STDIO_GROUP_KILL_BUDGET_MS, killLiveStdioSync } from "./mcp/runners/stdio.js";
 import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
 import { redactLog } from "./log/redact-lines.js";
+import { slugClashWarnings } from "./types.js";
 
 /** Docker's 10 s stop timeout: drain + upstream close (connect deadline + process-group kill) fit inside. */
 export const SHUTDOWN_BUDGET_MS = 10_000;
@@ -153,6 +154,14 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   store.ensureWorkspace(cfg.workspaceName);
   // raw approval arguments must not outlive a decision made while no gate was waiting
   store.sweepResolvedSealedApprovalArgs();
+  // QA v5.6 check 6: legacy slugs containing "__" can shadow another backend's tools
+  {
+    const byWs = new Map<string, string[]>();
+    for (const r of store.db.prepare(`SELECT workspace_id AS w, slug FROM backends`).all() as Array<{ w: string; slug: string }>) {
+      byWs.set(r.w, [...(byWs.get(r.w) ?? []), r.slug]);
+    }
+    for (const slugs of byWs.values()) for (const line of slugClashWarnings(slugs)) console.error(line);
+  }
   const pool = new UpstreamPool(store, { initTimeoutMs: cfg.backendInitTimeoutMs, initHardTimeoutMs: cfg.backendInitHardTimeoutMs });
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);

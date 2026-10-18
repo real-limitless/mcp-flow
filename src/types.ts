@@ -448,10 +448,12 @@ export function toolAllowedByScopes(
 export function toolAllowedByProject(
   toolName: string,
   project: Project | null | undefined,
+  /** The workspace's backend slugs (QA v5.6 check 6); defaults to the project's own. */
+  workspaceSlugs?: Iterable<string>,
 ): boolean {
   if (toolName.startsWith("mf_")) return true;
   if (!project) return true;
-  const slug = toolName.split("__")[0] ?? "";
+  const slug = splitQualifiedToolName(toolName, workspaceSlugs ?? project.backendSlugs)?.slug ?? "";
   if (!project.backendSlugs.length) return false;
   if (!project.backendSlugs.includes(slug)) return false;
   if (project.toolPrefixAllowlist?.length) {
@@ -478,3 +480,48 @@ export function resolveDefaultProjectSlug(
   if (scopes?.defaultProject) return scopes.defaultProject;
   return workspaceDefaultSlug;
 }
+
+/**
+ * QA v5.6 check 6: "__" separates backend slug and tool name, and slugs created before that rule
+ * may contain "__" themselves (backends "a" and "a__b"). A qualified name resolves to the LONGEST
+ * known slug it starts with (followed by "__" and a non-empty tool name), so "a__b__echo" is backend
+ * "a__b", tool "echo", never backend "a", tool "b__echo". Without a slug list (or no slug matches)
+ * the first "__" splits, as before.
+ */
+export function splitQualifiedToolName(
+  name: string,
+  slugs?: Iterable<string>,
+): { slug: string; tool: string } | null {
+  if (slugs) {
+    let best = "";
+    for (const s of slugs) {
+      if (s && s.length > best.length && name.length > s.length + 2 && name.startsWith(`${s}__`)) best = s;
+    }
+    if (best) return { slug: best, tool: name.slice(best.length + 2) };
+  }
+  const idx = name.indexOf("__");
+  if (idx <= 0) return null;
+  return { slug: name.slice(0, idx), tool: name.slice(idx + 2) };
+}
+
+/** Slug pairs where one is a "__"-prefix of the other ("a", "a__b"): the shorter one's tools named "b__*" are shadowed. */
+export function overlappingSlugs(slugs: Iterable<string>): Array<[shorter: string, longer: string]> {
+  const all = [...new Set(slugs)].sort();
+  const out: Array<[string, string]> = [];
+  for (const a of all) for (const b of all) if (a !== b && b.startsWith(`${a}__`)) out.push([a, b]);
+  return out;
+}
+
+/**
+ * Startup warnings for legacy backend slugs (QA v5.6 check 6): every slug pair where one is a
+ * "__"-prefix of the other. Slugs are validated identifiers, so naming them is safe.
+ */
+export function slugClashWarnings(slugs: Iterable<string>): string[] {
+  return overlappingSlugs(slugs).map(
+    ([a, b]) =>
+      `[mcp-flow] WARNING backend slugs "${a}" and "${b}" clash ("__" separates backend and tool): ` +
+      `names starting "${b}__" resolve to the longer slug "${b}", so tools of "${a}" named ` +
+      `"${b.slice(a.length + 2)}__*" are not listed or callable. Rename one of these backends.`,
+  );
+}
+

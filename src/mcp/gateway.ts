@@ -195,11 +195,12 @@ function filterTools(
   tools: Tool[],
   auth: AuthContext,
   project: Project | null,
+  slugs?: Iterable<string>,
 ): Tool[] {
   return tools.filter(
     (t) =>
       toolAllowedByScopes(t.name, auth.scopes) &&
-      toolAllowedByProject(t.name, project),
+      toolAllowedByProject(t.name, project, slugs),
   );
 }
 
@@ -318,7 +319,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (!project) return store.policy.refuseBeforePolicy(who, "no_active_project", qualified, callArgs);
     // QA T2.5 F1: resolve the caller's string EXACTLY against the live catalog. No trimming, case
     // folding or Unicode normalization: anything not byte-identical to a listed tool is refused.
-    const parsed = parseNamespacedTool(qualified);
+    const parsed = parseNamespacedTool(qualified, upstream.backendSlugs(ctx.workspaceId));
     const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
     if (!parsed || !backend || backend.slug !== parsed.slug) {
       return store.policy.refuseBeforePolicy(who, "unknown_backend", qualified, callArgs);
@@ -347,7 +348,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       catalog = [];
     }
     const entry = catalog.find((t) => t.name === qualified);
-    const canonical = entry ? parseNamespacedTool(entry.name) : null;
+    const canonical = entry ? parseNamespacedTool(entry.name, upstream.backendSlugs(ctx.workspaceId)) : null;
     if (!entry || !canonical || canonical.slug !== backend.slug || namespaceTool(canonical.slug, canonical.tool) !== qualified) {
       return store.policy.refuseBeforePolicy({ ...who, backendSlug: backend.slug }, "unknown_tool", qualified, callArgs);
     }
@@ -383,7 +384,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   /** QA T2.5 F2: every refused upstream-call attempt by an agent also lands in mcpflow_call_audit. */
   const agentEarlyRefuse = (qualified: string, callArgs: Record<string, unknown>, project: Project | null) => {
     if (!ctx.agentId || !ctx.keyId || qualified.startsWith("mf_")) return;
-    const parsed = parseNamespacedTool(qualified);
+    const parsed = parseNamespacedTool(qualified, upstream.backendSlugs(ctx.workspaceId));
     const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
     store.policy.refuseBeforePolicy(
       { workspaceId: ctx.workspaceId, agentId: ctx.agentId, agentName: ctx.agentName ?? "", keyId: ctx.keyId,
@@ -402,10 +403,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     // QA v5.5 note A: only the project's backends are listed (and waited on); toolAllowedByProject
     // below would drop the others anyway
     const all = await upstream.listNamespacedTools(ctx.workspaceId, project ? new Set(project.backendSlugs) : undefined);
+    const wsSlugs = upstream.backendSlugs(ctx.workspaceId);
     const inScope = all.filter(
       (t) =>
         toolAllowedByScopes(t.name, ctx.scopes) &&
-        toolAllowedByProject(t.name, project),
+        toolAllowedByProject(t.name, project, wsSlugs),
     );
     // PM-approved: agents don't see tools policy would deny for every possible args.
     // Display only; enforcement still runs on every call.
@@ -441,6 +443,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       ],
       ctx,
       project,
+      upstream.backendSlugs(ctx.workspaceId),
     );
     store.writeAudit({
       workspaceId: ctx.workspaceId,
@@ -506,7 +509,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return textResult(`Tool not allowed by API key scopes: ${name}`, true);
     }
 
-    if (!toolAllowedByProject(name, project)) {
+    if (!toolAllowedByProject(name, project, upstream.backendSlugs(ctx.workspaceId))) {
       store.writeAudit({
         workspaceId: ctx.workspaceId,
         keyId: ctx.keyId,
@@ -883,7 +886,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
-      if (!toolAllowedByProject(toolName, project)) {
+      if (!toolAllowedByProject(toolName, project, upstream.backendSlugs(ctx.workspaceId))) {
         const result = textResult(
           `Tool not in active project (${project?.slug ?? "none"}): ${toolName}`,
           true,
@@ -948,8 +951,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         }
         const toRemove = new Set<string>(names);
         const working = workingSetFor(ctx);
+        const wsSlugs = upstream.backendSlugs(ctx.workspaceId);
         for (const toolName of working) {
-          const parsed = parseNamespacedTool(toolName);
+          const parsed = parseNamespacedTool(toolName, wsSlugs);
           if (parsed && backends.includes(parsed.slug)) toRemove.add(toolName);
           if (prefixes.some((p) => toolName.startsWith(p))) toRemove.add(toolName);
         }
@@ -1066,7 +1070,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
-      if (!toolAllowedByProject(innerName, project)) {
+      if (!toolAllowedByProject(innerName, project, upstream.backendSlugs(ctx.workspaceId))) {
         agentEarlyRefuse(innerName, innerArgs, project);
         const result = textResult(
           `Tool not in active project (${project?.slug ?? "none"}): ${innerName}. Use mf_use_project or mf_list_projects.`,
@@ -1091,7 +1095,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
-      const parsed = parseNamespacedTool(innerName);
+      const parsed = parseNamespacedTool(innerName, upstream.backendSlugs(ctx.workspaceId));
       const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
       const innerCtx: AuthzEvalContext = {
         tool: innerName,
@@ -1257,7 +1261,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       auditCall(result);
       return result;
     }
-    const parsed = parseNamespacedTool(name);
+    const parsed = parseNamespacedTool(name, upstream.backendSlugs(ctx.workspaceId));
     const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, name);
     const gate = await runAuthzGate({
       store,
