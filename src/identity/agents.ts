@@ -5,6 +5,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import type { PolicyKeys } from "./dev-keys.js";
+import { auditActor, auditText } from "../audit/call-audit-cols.js";
 
 export type AgentKind = "grokbot" | "cloud_agent" | "human" | "service";
 
@@ -397,8 +398,8 @@ export class AgentDirectory {
         workspaceId,
         (detail.agentId as string | undefined) ?? null,
         (detail.keyId as string | undefined) ?? null,
-        action,
-        actor,
+        auditText(action),
+        auditActor(actor), // SecOPS 7: shape-checked on write
         JSON.stringify(detail),
       );
   }
