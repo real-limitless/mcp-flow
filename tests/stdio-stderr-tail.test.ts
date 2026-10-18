@@ -115,7 +115,7 @@ describe("Leak B: init-error stderr tail is redacted before it is cut", () => {
 });
 
 /** QA r4 probe-stray-e2e: key-body lines, then an END with no BEGIN, then a normal line; exit 1. */
-function strayEndScript(bodyLines = 5, filler = 0): string {
+function strayEndScript(bodyLines = 5, filler = 0, endLine = "-----END RSA PRIVATE KEY-----", afterEnd = ""): string {
   const dir = mkdtempSync(join(tmpdir(), "mf-stray-"));
   dirs.push(dir);
   const p = join(dir, "stray.mjs");
@@ -125,7 +125,7 @@ function strayEndScript(bodyLines = 5, filler = 0): string {
 ${filler ? `await w("y".repeat(${filler}) + "\\n");` : ""}
 await w("INFO starting\\n");
 for (let i = 0; i < ${bodyLines}; i++) await w("lQ${M}S" + i + "C".repeat(50) + "\\n");
-await w("-----END RSA PRIVATE KEY-----\\nafter-line\\n");
+await w(${JSON.stringify(endLine + "\n" + afterEnd)} + "after-line\\n");
 process.exit(1);
 `,
   );
@@ -165,6 +165,63 @@ describe("stray END with no BEGIN: the init-error tail redacts the body already 
       store.close();
     }
   }, 30_000);
+
+  it("stray END followed by a new BEGIN on the same line (SecOPS 52d45324 SHOULD): error, tool result, detail_json", async () => {
+    silenceStderr();
+    const endBegin = "-----END RSA PRIVATE KEY----------BEGIN RSA PRIVATE KEY-----";
+    const second = `${M}N1${"D".repeat(50)}\n${M}N2${"D".repeat(50)}\n-----END RSA PRIVATE KEY-----\n`;
+    let thrown = "";
+    try {
+      await connectStdioCommand({ command: [process.execPath, strayEndScript(5, 0, endBegin, second)], env: { PATH: process.env.PATH ?? "" } });
+    } catch (err) {
+      thrown = err instanceof Error ? err.message : String(err);
+    }
+    expect(thrown).toContain("--- stderr ---");
+    expect(thrown).not.toContain(M);
+    expect(thrown).toContain("INFO starting\n[redacted]");
+    expect(thrown).toContain("after-line");
+
+    const dir = mkdtempSync(join(tmpdir(), "mf-stray2-db-"));
+    dirs.push(dir);
+    const store = new Store(join(dir, "t.db"), Buffer.alloc(32, 6).toString("base64"));
+    const ws = store.ensureWorkspace("default").id;
+    store.createBackend(ws, { slug: "stray2", transport: "stdio", command: [process.execPath, strayEndScript(5, 0, endBegin, second)], enabled: true, placement: { mode: "central-sandbox" } });
+    const pool = new UpstreamPool(store);
+    try {
+      const r = (await pool.callTool(ws, "stray2__x", {})) as { isError?: boolean; content?: { text?: string }[] };
+      const text = String(r?.content?.[0]?.text ?? "");
+      expect(r.isError).toBe(true);
+      expect(text).not.toContain(M);
+      expect(text).toContain("after-line");
+      store.writeAudit({ workspaceId: ws, action: "tools/call", tool: "stray2__x", detail: toolCallAuditDetail({ arguments: {}, result: r, durationMs: 1 }) as Record<string, unknown> });
+      const row = store.db.prepare("SELECT detail_json FROM audit_events ORDER BY rowid DESC LIMIT 1").get() as { detail_json: string };
+      expect(row.detail_json).not.toContain(M);
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  }, 30_000);
+
+  it("tail redactor: stray END + BEGIN on one line, every 2-way split and at end of stream", () => {
+    const bodyTxt = Array.from({ length: 5 }, (_, i) => `lQ${M}${i}${"C".repeat(50)}`).join("\n");
+    const text = `INFO starting\n${bodyTxt}\n-----END RSA PRIVATE KEY----------BEGIN RSA PRIVATE KEY-----\n${M}X${"E".repeat(50)}\n-----END RSA PRIVATE KEY-----\nafter-line\n`;
+    const tailOf = (chunks: string[]) => {
+      let s = "";
+      const r = lineRedactor((x) => (s += x), undefined, Infinity, { keepEndMarker: true });
+      for (const c of chunks) r.push(c);
+      r.flush();
+      return stderrTailForError(s);
+    };
+    for (let i = 1; i < text.length; i++) {
+      const out = tailOf([text.slice(0, i), text.slice(i)]);
+      expect(out, `split ${i}`).not.toContain(M);
+      expect(out, `split ${i}`).toContain("INFO starting\n");
+      expect(out, `split ${i}`).toContain("after-line");
+    }
+    // the END+BEGIN line is the last thing on the stream (no newline): flush path
+    const eos = tailOf([`INFO starting\n${bodyTxt}\n-----END RSA PRIVATE KEY----------BEGIN RSA PRIVATE KEY-----`]);
+    expect(eos).not.toContain(M);
+  });
 
   it("a stray-END body run longer than the tail window is fully redacted (no fragment at the cut)", async () => {
     silenceStderr();

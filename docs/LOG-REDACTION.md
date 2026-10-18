@@ -6,7 +6,8 @@ mcp-flow redacts a stdio backend's stderr on two paths:
   private key armor state carried across lines (PEM, PGP, SSH2, OpenVPN, PuTTY .ppk).
 - **Init-error tail** (the thrown startup error, the tool result built from it, and the
   audit_events row that records that result): a second line redactor feeds a bounded buffer
-  (12000 characters kept, at most 24000 in memory). When a backend fails to start, that buffer
+  (12000 characters kept; memory about 24000 characters, which one write can briefly exceed by
+  up to about 64 KiB). When a backend fails to start, that buffer
   is redacted again as a whole and cut to 8000 characters. Only redacted text is ever cut.
 
 ## Fail-closed rules
@@ -17,7 +18,8 @@ mcp-flow redacts a stdio backend's stderr on two paths:
   checksums) stay redacted until the first other line.
 - A stray END marker whose BEGIN never appeared: the run of key-body-shaped lines right before
   it is redacted. On the init-error tail the END marker is kept for the second pass, so those
-  lines are redacted there too.
+  lines are redacted there too. This also holds when the stray END is followed by a new BEGIN on the same line
+  (`-----END … KEY----------BEGIN … KEY-----`); the new block is then redacted as usual.
 
 ## Known limit: live stderr cannot take back printed lines
 

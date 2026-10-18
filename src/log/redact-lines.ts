@@ -131,6 +131,21 @@ export function lineRedactor(
     return true;
   };
 
+  /**
+   * keepEndMarker, no block open: a stray END followed by a new BEGIN on the same line
+   * ("-----END RSA PRIVATE KEY----------BEGIN RSA PRIVATE KEY-----", the first BEGIN never
+   * seen). The bare marker goes on its own line so the second pass still redacts the key-body
+   * run before it; the rest of the line is [redacted] and the new block is open.
+   */
+  const strayEndReopen = (l: string): boolean => {
+    if (!keepEnd || !opensPem(l)) return false;
+    const first = secretArmorMarkers(l)[0];
+    if (!first || first.begin) return false;
+    write(`${KEPT_END_MARKER}\n`);
+    redactedLine(l);
+    return true;
+  };
+
   /** One more line of a block (or of PuTTY private lines) consumed. */
   const countLine = () => {
     if (pemLines > 0 && ++pemLines > maxPemLines) {
@@ -173,6 +188,10 @@ export function lineRedactor(
       body = false; // first other line (or a new BEGIN): normal handling below
     }
     if (endLine(l)) return; // stray END (keepEndMarker): the second pass redacts the run before it
+    if (strayEndReopen(l)) {
+      pemLines = 1;
+      return;
+    }
     write(redactSecrets(l));
     if (opensPem(l)) {
       pemLines = 1;
@@ -248,7 +267,7 @@ export function lineRedactor(
     },
     flush() {
       if (pending) {
-        if (endLine(pending)) {
+        if (endLine(pending) || strayEndReopen(pending)) {
           /* bare END marker written */
         } else if (pemLines > 0 || ppkLeft > 0 || (body && isArmorBodyLine(pending))) write("[redacted]");
         else write(redactSecrets(pending));
