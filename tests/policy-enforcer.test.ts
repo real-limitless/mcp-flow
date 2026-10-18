@@ -306,7 +306,12 @@ describe("T2.2 holds", () => {
     const r2 = await pe.enforce({ ctx: ctx(), args: { command: "pwd" }, dispatch: s.dispatch });
     expect(r2.isError).toBeFalsy();
     expect(s.calls).toHaveLength(2);
-    expect(rows().filter((r) => r.event_type === "decision").at(-1)!.grant_id).toBe(g.ok ? g.grantId : null);
+    const covered = rows().filter((r) => r.event_type === "decision").at(-1)!;
+    expect(covered.grant_id).toBe(g.ok ? g.grantId : null);
+    // T2.1 §10: logged as allow with grant_id; rule_id = the overridden require_approval rule
+    expect(covered.policy_decision).toBe("allow");
+    expect(covered.rule_id).toBe(rows().find((r) => r.event_type === "decision")!.rule_id);
+    expect(rows().find((r) => r.event_type === "decision")!.policy_decision).toBe("require_approval");
     // no use limit: the grant keeps applying until it expires or is revoked
     expect((await pe.enforce({ ctx: ctx(), args: { command: "ls" }, dispatch: s.dispatch })).isError).toBeFalsy();
     expect(s.calls).toHaveLength(3);

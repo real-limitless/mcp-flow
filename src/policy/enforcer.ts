@@ -452,7 +452,8 @@ export class PolicyEnforcer {
           ...this.ctxCols(ctx),
           args_redacted: JSON.stringify(redacted),
           args_hash: hash,
-          policy_decision: decision.decision,
+          // T2.1 §10: a require_approval covered by a live grant is an allow; rule_id stays the overridden rule
+          policy_decision: grantId ? "allow" : decision.decision,
           rule_id: decision.rule?.ruleId ?? null,
           rule_version: decision.rule?.version ?? null,
           matched_rule_ids: JSON.stringify(decision.matched.map((r) => r.ruleId)),
