@@ -99,7 +99,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
   {
     name: "mf_admin_update_backend",
     description:
-      "Patch backend by id or slug. env merges per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode=replace to swap the map). Secret values are write-only. Requires admin key.",
+      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). Secret values are write-only. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -112,7 +112,15 @@ export const ADMIN_META_TOOLS: Tool[] = [
         command: { type: ["array", "null"], items: { type: "string" } },
         headers: {
           type: ["object", "null"],
-          additionalProperties: { type: "string" },
+          additionalProperties: { type: ["string", "null"] },
+          description:
+            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced.",
+        },
+        headerMode: {
+          type: "string",
+          enum: ["merge", "replace"],
+          description:
+            "merge (default) keeps omitted headers. replace swaps the whole header map.",
         },
         apiKey: { type: ["string", "null"] },
         env: {
@@ -646,6 +654,13 @@ export async function handleAdminTool(
         if (parseEnvMode(body.envMode) === "invalid") {
           return textResult("envMode must be merge or replace", true);
         }
+        if (
+          args.headerMode !== undefined &&
+          args.headerMode !== "merge" &&
+          args.headerMode !== "replace"
+        ) {
+          return textResult("headerMode must be merge or replace", true);
+        }
         if (body.url) {
           try {
             await assertSafeUrl(body.url, cfg.allowPrivateUrls);
@@ -681,10 +696,7 @@ export async function handleAdminTool(
           "backend.update",
           {
             via: "mf_admin",
-            ...backendUpdateAuditDetail(
-              store.backendUpdateSnapshot(existing),
-              body,
-            ),
+            ...backendUpdateAuditDetail(body),
           },
           { backendSlug: backend.slug },
         );

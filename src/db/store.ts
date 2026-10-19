@@ -36,6 +36,12 @@ import type {
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import {
+  applyHeaderPatch,
+  compactEnvRecord,
+  validateCreateSecrets,
+  validateUpdateSecrets,
+} from "./secret-input.js";
+import {
   compactSecretRecord,
   normalizeUpstreamHeaders,
   withAuthorizationToken,
@@ -67,7 +73,7 @@ function sealSecretMap(
   const compact =
     kind === "headers"
       ? normalizeUpstreamHeaders(rec)
-      : compactSecretRecord(rec ?? undefined);
+      : compactEnvRecord(rec ?? undefined);
   return compact ? seal(masterKey, compact) : null;
 }
 
@@ -1070,6 +1076,7 @@ export class Store {
         "slug must be lowercase alphanumeric/underscore/hyphen, start with a letter",
       );
     }
+    validateCreateSecrets(input);
     const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
     const transport = input.transport ?? "streamable-http";
     const ts = nowIso();
@@ -1171,23 +1178,6 @@ export class Store {
     };
   }
 
-  /** Snapshot for an audit entry. Includes env values only in memory, never logged. */
-  backendUpdateSnapshot(rec: BackendRecord) {
-    return {
-      title: rec.title,
-      transport: rec.transport,
-      url: rec.url,
-      image: rec.image,
-      enabled: rec.enabled,
-      commandJson: rec.commandJson,
-      placementJson: rec.placementJson,
-      sandboxJson: rec.sandboxJson,
-      toolAllowlistJson: rec.toolAllowlistJson,
-      env: this.decryptEnv(rec),
-      headerNames: Object.keys(this.decryptHeaders(rec)),
-    };
-  }
-
   updateBackend(
     workspaceId: string,
     idOrSlug: string,
@@ -1195,6 +1185,7 @@ export class Store {
   ): BackendPublic | null {
     const existing = this.getBackend(workspaceId, idOrSlug);
     if (!existing) return null;
+    validateUpdateSecrets(input);
 
     const title = input.title ?? existing.title;
     const transport = input.transport ?? existing.transport;
@@ -1209,35 +1200,37 @@ export class Store {
           : null
         : existing.commandJson;
     let headersEnc = existing.headersEnc;
-    if (input.headers !== undefined || input.apiKey !== undefined) {
-      if (input.headers === null && !input.apiKey) {
+    const apiKeySets =
+      typeof input.apiKey === "string" && input.apiKey.trim() !== "";
+    if (input.headers !== undefined || apiKeySets) {
+      if (input.headers === null && !apiKeySets) {
         headersEnc = null;
       } else {
-        const base =
-          input.headers === null
-            ? {}
-            : input.headers !== undefined
-              ? input.headers
-              : this.decryptHeaders(existing);
+        const currentHeaders = this.decryptHeaders(existing);
+        const patched =
+          input.headers === undefined
+            ? currentHeaders
+            : (applyHeaderPatch(currentHeaders, {
+                headers: input.headers,
+                headerMode: input.headerMode,
+              }).next ?? {});
         headersEnc = sealSecretMap(
           this.masterKey,
-          withAuthorizationToken(base, input.apiKey),
+          withAuthorizationToken(
+            patched,
+            apiKeySets ? input.apiKey : undefined,
+          ),
           "headers",
         );
       }
     }
     let envEnc = existing.envEnc;
-    const touchesEnv =
-      input.env !== undefined ||
-      (input.unsetEnv ?? []).some((name) => name.trim() !== "");
-    if (touchesEnv) {
-      const envPatch = applyEnvPatch(this.decryptEnv(existing), input);
-      if (envPatch.next !== undefined) {
-        envEnc =
-          envPatch.next === null
-            ? null
-            : sealSecretMap(this.masterKey, envPatch.next, "env");
-      }
+    const envPatch = applyEnvPatch(this.decryptEnv(existing), input);
+    if (envPatch.next !== undefined) {
+      envEnc =
+        envPatch.next === null
+          ? null
+          : sealSecretMap(this.masterKey, envPatch.next, "env");
     }
     const enabled =
       input.enabled !== undefined ? input.enabled : existing.enabled;
@@ -1323,7 +1316,8 @@ export class Store {
     if (!existing) return null;
     const current = this.decryptHeaders(existing);
     return this.updateBackend(workspaceId, existing.id, {
-      headers: compactSecretRecord({ ...current, ...partial }) ?? null,
+      headers: compactSecretRecord({ ...current, ...partial }) ?? {},
+      headerMode: "replace",
     });
   }
 

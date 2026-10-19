@@ -5,6 +5,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
 import { toolCallAuditDetail } from "../audit/sanitize.js";
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
@@ -306,6 +307,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const auditArguments = redactAdminToolAuditArgs(name, args);
     const started = Date.now();
     const project = activeProject();
 
@@ -318,7 +320,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         detail: toolCallAuditDetail({
           denied: true,
           reason: "scope",
-          arguments: args,
+          arguments: auditArguments,
           durationMs: Date.now() - started,
         }),
         ip,
@@ -335,7 +337,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         detail: toolCallAuditDetail({
           denied: true,
           reason: "project",
-          arguments: args,
+          arguments: auditArguments,
           durationMs: Date.now() - started,
         }),
         ip,
@@ -365,7 +367,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         deviceId: extra?.deviceId ?? null,
         detail: toolCallAuditDetail({
           meta: extra?.meta,
-          arguments: args,
+          arguments: auditArguments,
           result,
           durationMs: Date.now() - started,
         }),
@@ -928,7 +930,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           detail: toolCallAuditDetail({
             denied: true,
             reason: "admin_required",
-            arguments: args,
+            arguments: auditArguments,
             durationMs: Date.now() - started,
           }),
           ip,
@@ -992,7 +994,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         detail: toolCallAuditDetail({
           denied: true,
           reason: "dynamic_working_set",
-          arguments: args,
+          arguments: auditArguments,
           durationMs: Date.now() - started,
         }),
         ip,

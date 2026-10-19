@@ -3,7 +3,9 @@
  *
  * A token already on the command line or in MCP_FLOW_DEVICE_TOKEN connects to
  * an existing server and does not wait for the full-stack bootstrap file.
- * With neither, the full stack still waits for /data/device-token.txt.
+ * The env token is left in the environment. It is not copied onto argv.
+ * With neither an env token nor a token file, the full stack still waits
+ * for /data/device-token.txt, then passes that file token as --token.
  */
 
 function nonempty(v) {
@@ -22,8 +24,8 @@ export function planEdgeCliArgs({ args, env, tokenFromFile }) {
     return { waitForTokenFile: true, cliArgs: null };
   }
 
-  if (!hasTokenFlag) {
-    rest.push("--token", envToken || fileToken);
+  if (!hasTokenFlag && !envToken && fileToken) {
+    rest.push("--token", fileToken);
   }
 
   if (!rest.includes("--url")) {

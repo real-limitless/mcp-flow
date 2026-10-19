@@ -1,27 +1,38 @@
 /**
  * Per-key env updates.
  *
- * `merge` (default) sets keys that have a non-empty string and leaves every
+ * `merge` (default) sets keys that have a non-blank string and leaves every
  * other key sealed. A null value, or a name in `unsetEnv`, deletes that key.
- * A blank string is ignored so a masked field can be left empty.
- * `replace` swaps the whole map for the non-empty entries in `env`.
+ * Empty or all-whitespace values are ignored so a masked field can be left
+ * empty. Stored values are not trimmed.
+ * `replace` swaps the whole map for the non-blank entries in `env`.
  * `env: null` clears every key.
+ *
+ * `set` / `unset` compare the stored map. Audit logs must not use them:
+ * they would show whether a submitted value matched the sealed one.
  */
+
+import {
+  BackendInputError,
+  checkedSecretName,
+  isPlainRecord,
+  readUnsetEnv,
+} from "./secret-input.js";
 
 export type EnvMode = "merge" | "replace";
 
 export interface EnvPatchInput {
-  env?: Record<string, string | null> | null;
-  envMode?: string;
-  unsetEnv?: string[];
+  env?: unknown;
+  envMode?: unknown;
+  unsetEnv?: unknown;
 }
 
 export interface EnvPatchApplied {
   /** `undefined` when this patch does not touch env. `null` clears the seal. */
   next: Record<string, string> | null | undefined;
-  /** Names whose values changed. Values are never included. */
+  /** Names whose stored values differ. Not an audit source. */
   set: string[];
-  /** Names removed. */
+  /** Names removed from the stored map. Not an audit source. */
   unset: string[];
   cleared: boolean;
   mode: EnvMode | null;
@@ -31,10 +42,6 @@ export function parseEnvMode(mode: unknown): EnvMode | "invalid" {
   if (mode === undefined || mode === null || mode === "") return "merge";
   if (mode === "merge" || mode === "replace") return mode;
   return "invalid";
-}
-
-function trimmedName(raw: unknown): string {
-  return typeof raw === "string" ? raw.trim() : "";
 }
 
 function diffEnv(
@@ -61,11 +68,12 @@ export function applyEnvPatch(
   current: Record<string, string>,
   input: EnvPatchInput,
 ): EnvPatchApplied {
-  const unsetNames = (input.unsetEnv ?? [])
-    .map(trimmedName)
-    .filter(Boolean);
-  const touches =
-    input.env !== undefined || unsetNames.length > 0;
+  const mode = parseEnvMode(input.envMode);
+  if (mode === "invalid") {
+    throw new BackendInputError("envMode must be merge or replace");
+  }
+  const unsetNames = readUnsetEnv(input.unsetEnv);
+  const touches = input.env !== undefined || unsetNames.length > 0;
   if (!touches) {
     return { next: undefined, set: [], unset: [], cleared: false, mode: null };
   }
@@ -81,33 +89,39 @@ export function applyEnvPatch(
     };
   }
 
-  const mode = parseEnvMode(input.envMode);
+  if (input.env !== undefined && !isPlainRecord(input.env)) {
+    throw new BackendInputError("env must be an object");
+  }
+
   const resolved: EnvMode = mode === "replace" ? "replace" : "merge";
-  const incoming = input.env ?? {};
+  const incoming = (input.env ?? {}) as Record<string, unknown>;
 
   let next: Record<string, string>;
   if (resolved === "replace") {
     next = {};
     for (const [rawName, rawValue] of Object.entries(incoming)) {
-      const name = rawName.trim();
-      if (!name || rawValue === null || typeof rawValue !== "string") continue;
-      const value = rawValue.trim();
-      if (!value) continue;
-      next[name] = value;
+      const name = checkedSecretName(rawName, "env");
+      if (!name || rawValue === null) continue;
+      if (typeof rawValue !== "string") {
+        throw new BackendInputError("env values must be strings or null");
+      }
+      if (rawValue.trim() === "") continue;
+      next[name] = rawValue;
     }
   } else {
     next = { ...current };
     for (const [rawName, rawValue] of Object.entries(incoming)) {
-      const name = rawName.trim();
+      const name = checkedSecretName(rawName, "env");
       if (!name) continue;
       if (rawValue === null) {
         delete next[name];
         continue;
       }
-      if (typeof rawValue !== "string") continue;
-      const value = rawValue.trim();
-      if (!value) continue;
-      next[name] = value;
+      if (typeof rawValue !== "string") {
+        throw new BackendInputError("env values must be strings or null");
+      }
+      if (rawValue.trim() === "") continue;
+      next[name] = rawValue;
     }
     for (const name of unsetNames) delete next[name];
   }

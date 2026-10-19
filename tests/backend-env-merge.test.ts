@@ -4,10 +4,14 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { backendUpdateAuditDetail } from "../src/audit/backend-update.js";
+import { redactAdminToolAuditArgs } from "../src/audit/redact-admin-args.js";
 import { sanitizeForAudit } from "../src/audit/sanitize.js";
 import { loadConfig } from "../src/config.js";
 import { applyEnvPatch } from "../src/db/env-patch.js";
+import { BackendInputError } from "../src/db/secret-input.js";
 import { Store } from "../src/db/store.js";
 import { handleAdminTool } from "../src/mcp/admin-tools.js";
 import { UpstreamPool } from "../src/mcp/upstream.js";
@@ -114,22 +118,7 @@ describe("env merge", () => {
       env: { API_KEY: SECRET_C, OTHER: "" },
       envMode: "merge" as const,
     };
-    const detail = backendUpdateAuditDetail(
-      {
-        title: "remote",
-        transport: "streamable-http",
-        url: "https://example.com/mcp",
-        image: null,
-        enabled: true,
-        commandJson: null,
-        placementJson: JSON.stringify({ mode: "remote" }),
-        sandboxJson: null,
-        toolAllowlistJson: null,
-        env: current,
-        headerNames: ["Authorization"],
-      },
-      input,
-    );
+    const detail = backendUpdateAuditDetail(input);
     expect(JSON.stringify(detail)).not.toContain(SECRET_A);
     expect(JSON.stringify(detail)).not.toContain(SECRET_C);
     expect(JSON.stringify(detail)).not.toContain("https://example.com/v2");
@@ -178,8 +167,6 @@ describe("PATCH /v1/backends and mf_admin_update_backend", () => {
     expect(createdBody.backend.envKeys).toEqual(["API_KEY", "REGION"]);
     expect(createdBody.backend.headerNames).toEqual(["Authorization"]);
 
-    const before = gw.store.getBackend(gw.store.ensureWorkspace("default").id, "remote")!;
-    const snap = gw.store.backendUpdateSnapshot(before);
     const patchBody = {
       url: "https://example.com/v2",
       env: { API_KEY: SECRET_C },
@@ -213,7 +200,7 @@ describe("PATCH /v1/backends and mf_admin_update_backend", () => {
       .listAudit(ws.id)
       .find((event) => event.action === "backend.update");
     expect(audit?.detail).toEqual(
-      sanitizeForAudit(backendUpdateAuditDetail(snap, patchBody)),
+      sanitizeForAudit(backendUpdateAuditDetail(patchBody)),
     );
     const auditJson = JSON.stringify(audit);
     expect(auditJson).toContain("API_KEY");
@@ -249,8 +236,6 @@ describe("PATCH /v1/backends and mf_admin_update_backend", () => {
       adminToken: admin,
       allowPrivateUrls: true,
     });
-    const before = store.getBackend(ws.id, "remote")!;
-    const snap = store.backendUpdateSnapshot(before);
     const args = {
       idOrSlug: "remote",
       url: "https://example.com/v2",
@@ -282,7 +267,7 @@ describe("PATCH /v1/backends and mf_admin_update_backend", () => {
     expect(audit?.detail).toEqual(
       sanitizeForAudit({
         via: "mf_admin",
-        ...backendUpdateAuditDetail(snap, patch),
+        ...backendUpdateAuditDetail(patch),
       }),
     );
     const auditJson = JSON.stringify(audit);
@@ -309,11 +294,10 @@ describe("edge-only compose", () => {
       "edge",
       "--name",
       "edge",
-      "--token",
-      "replace-with-device-token",
       "--url",
       "https://mcp-flow.example",
     ]);
+    expect(plan.cliArgs?.join(" ")).not.toContain("replace-with-device-token");
   });
 
   it("still waits for the bootstrap token file when no token is supplied", () => {
@@ -350,5 +334,417 @@ describe("edge-only compose", () => {
     expect(text).not.toContain("http://mcp-flow:8787");
     expect(text).not.toMatch(/\b\d{1,3}(?:\.\d{1,3}){3}\b/);
     expect(text).not.toMatch(/^ {2}mcp-flow:/m);
+    const command = text.slice(text.indexOf("command:"));
+    expect(command).not.toContain("--token");
+    expect(command).not.toContain("MCP_FLOW_DEVICE_TOKEN");
+  });
+
+  it("keeps the full-stack client JSON reference ahead of the edge-only section", () => {
+    const readme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+    const jsonAt = readme.indexOf("that JSON");
+    const edgeAt = readme.indexOf("### Edge only");
+    expect(jsonAt).toBeGreaterThan(0);
+    expect(edgeAt).toBeGreaterThan(jsonAt);
+    expect(readme.slice(edgeAt, edgeAt + 1200)).not.toMatch(/healthy/i);
+  });
+});
+
+const PADDED = "  pad-secret  ";
+const STRIPE = "stripe-placeholder-value";
+const REDIS = "redis://placeholder.example/0";
+const SENTRY = "https://placeholder.example/dsn";
+const SIG = "sig-placeholder-value";
+const KEY = "key-placeholder-value";
+
+describe("secret input validation", () => {
+  it("keeps padded env values and treats only blank values as keep", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    store.createBackend(ws.id, {
+      slug: "remote",
+      url: "https://example.com/mcp",
+      env: { STRIPE_SK: PADDED, REGION: "east" },
+    });
+    expect(store.decryptEnv(store.getBackend(ws.id, "remote")!)).toEqual({
+      STRIPE_SK: PADDED,
+      REGION: "east",
+    });
+
+    const kept = store.updateBackend(ws.id, "remote", {
+      env: { STRIPE_SK: "   ", REGION: "" },
+    });
+    expect(kept?.envKeys).toEqual(["REGION", "STRIPE_SK"]);
+    expect(store.decryptEnv(store.getBackend(ws.id, "remote")!)).toEqual({
+      STRIPE_SK: PADDED,
+      REGION: "east",
+    });
+
+    const next = applyEnvPatch(
+      { STRIPE_SK: PADDED },
+      { env: { STRIPE_SK: PADDED } },
+    );
+    expect(next.next).toEqual({ STRIPE_SK: PADDED });
+    store.close();
+  });
+
+  it("merges headers per key and keeps Authorization", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    store.createBackend(ws.id, {
+      slug: "remote",
+      url: "https://example.com/mcp",
+      apiKey: SECRET_A,
+      headers: { "X-Existing": "keep-me" },
+    });
+    const merged = store.updateBackend(ws.id, "remote", {
+      headers: { "X-Upstream-Sig": SIG, "X-Existing": "   " },
+    });
+    expect(merged?.headerNames).toEqual([
+      "Authorization",
+      "X-Existing",
+      "X-Upstream-Sig",
+    ]);
+    expect(store.decryptHeaders(store.getBackend(ws.id, "remote")!)).toEqual({
+      Authorization: `Bearer ${SECRET_A}`,
+      "X-Existing": "keep-me",
+      "X-Upstream-Sig": SIG,
+    });
+
+    const dropped = store.updateBackend(ws.id, "remote", {
+      headers: { "X-Existing": null },
+    });
+    expect(dropped?.headerNames).toEqual(["Authorization", "X-Upstream-Sig"]);
+    expect(
+      store.decryptHeaders(store.getBackend(ws.id, "remote")!).Authorization,
+    ).toBe(`Bearer ${SECRET_A}`);
+
+    const replaced = store.updateBackend(ws.id, "remote", {
+      headerMode: "replace",
+      headers: { "X-Upstream-Sig": SIG },
+    });
+    expect(replaced?.headerNames).toEqual(["X-Upstream-Sig"]);
+    store.close();
+  });
+
+  it("rejects malformed env, headers, and unsetEnv", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    store.createBackend(ws.id, {
+      slug: "remote",
+      url: "https://example.com/mcp",
+      env: { REGION: "east" },
+      apiKey: SECRET_A,
+    });
+    const bad: unknown[] = [
+      { unsetEnv: "NOPE" },
+      { unsetEnv: ["OK", 1] },
+      { env: "hello" },
+      { env: ["a"] },
+      { env: { FOO: 1 } },
+      { env: { "A=B": "x" } },
+      { env: { "BAD\nNAME": "x" } },
+      { env: { ["N".repeat(10000)]: "x" } },
+      { headers: "nope" },
+      { headers: ["a"] },
+      { headers: { "X\nY": "x" } },
+      { envMode: "MERGE" },
+      { headerMode: "bogus" },
+    ];
+    for (const patch of bad) {
+      expect(() =>
+        store.updateBackend(ws.id, "remote", patch as never),
+      ).toThrow(BackendInputError);
+    }
+    expect(() =>
+      store.createBackend(ws.id, {
+        slug: "other",
+        env: "hello" as never,
+      }),
+    ).toThrow(BackendInputError);
+    expect(store.decryptEnv(store.getBackend(ws.id, "remote")!)).toEqual({
+      REGION: "east",
+    });
+    expect(store.getBackend(ws.id, "other")).toBeNull();
+    store.close();
+  });
+
+  it("drops __proto__ and still stores ordinary keys", () => {
+    const store = openStore();
+    const ws = store.ensureWorkspace("default");
+    store.createBackend(ws.id, {
+      slug: "remote",
+      url: "https://example.com/mcp",
+      env: { REGION: "east" },
+    });
+    const updated = store.updateBackend(ws.id, "remote", {
+      env: JSON.parse('{"__proto__":"x","REGION":"west"}') as Record<
+        string,
+        string
+      >,
+    });
+    expect(updated?.envKeys).toEqual(["REGION"]);
+    expect(store.decryptEnv(store.getBackend(ws.id, "remote")!)).toEqual({
+      REGION: "west",
+    });
+    expect(JSON.stringify(updated)).not.toContain("\"__proto__\"");
+    store.close();
+  });
+
+  it("logs submitted secret names without comparing stored values", () => {
+    const input = {
+      env: { STRIPE_SK: STRIPE, OTHER: "   " },
+      unsetEnv: ["GONE"],
+      headers: { "X-Upstream-Sig": SIG },
+      envMode: "merge" as const,
+    };
+    const once = backendUpdateAuditDetail(input);
+    const twice = backendUpdateAuditDetail(input);
+    expect(twice).toEqual(once);
+    expect(once.envSet).toEqual([{ name: "STRIPE_SK" }]);
+    expect(once.envUnset).toEqual([{ name: "GONE" }]);
+    expect(once.headerSet).toEqual([{ name: "X-Upstream-Sig" }]);
+    expect(once.headerUnset).toBeUndefined();
+    const text = JSON.stringify(once);
+    expect(text).not.toContain(STRIPE);
+    expect(text).not.toContain(SIG);
+
+    const both = backendUpdateAuditDetail({
+      env: { STRIPE_SK: STRIPE },
+      unsetEnv: ["STRIPE_SK"],
+    });
+    expect(both.envSet).toBeUndefined();
+    expect(both.envUnset).toEqual([{ name: "STRIPE_SK" }]);
+
+    const replaced = backendUpdateAuditDetail({
+      envMode: "replace",
+      env: { REGION: "west" },
+      unsetEnv: ["STRIPE_SK"],
+    });
+    expect(replaced.envMode).toBe("replace");
+    expect(replaced.envSet).toEqual([{ name: "REGION" }]);
+    expect(replaced.envUnset).toBeUndefined();
+  });
+});
+
+describe("admin tool audit redaction", () => {
+  it("redacts ordinary env, header, and apiKey values on admin tools", () => {
+    const args = {
+      slug: "remote",
+      env: { STRIPE_SK: STRIPE, REDIS_URL: REDIS, SENTRY_DSN: null },
+      headers: { "X-Upstream-Sig": SIG },
+      apiKey: KEY,
+    };
+    const redacted = redactAdminToolAuditArgs("mf_admin_create_backend", args);
+    expect(redacted).not.toBe(args);
+    expect(redacted.env).toEqual({
+      STRIPE_SK: "[redacted]",
+      REDIS_URL: "[redacted]",
+      SENTRY_DSN: null,
+    });
+    expect(redacted.headers).toEqual({ "X-Upstream-Sig": "[redacted]" });
+    expect(redacted.apiKey).toBe("[redacted]");
+    expect(args.env.STRIPE_SK).toBe(STRIPE);
+    expect(args.apiKey).toBe(KEY);
+
+    const installed = redactAdminToolAuditArgs("mf_admin_catalog_install", {
+      id: "example/server",
+      env: { NOTION_INTEGRATION: "notion-placeholder" },
+      headers: "not-a-map",
+    });
+    expect(installed.env).toEqual({ NOTION_INTEGRATION: "[redacted]" });
+    expect(installed.headers).toBe("[redacted]");
+
+    const plain = { text: "hi" };
+    expect(redactAdminToolAuditArgs("up__echo", plain)).toBe(plain);
+  });
+
+  it("stores redacted tools/call arguments for admin backend tools", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${admin}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name: "ops", admin: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key
+      .token;
+    const client = new Client({ name: "ops", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const created = await client.callTool({
+      name: "mf_admin_create_backend",
+      arguments: {
+        slug: "remote",
+        url: "https://example.com/mcp",
+        apiKey: KEY,
+        env: { STRIPE_SK: STRIPE, REDIS_URL: REDIS, SENTRY_DSN: SENTRY },
+        headers: { "X-Upstream-Sig": SIG },
+        enabled: false,
+        placement: { mode: "remote" },
+      },
+    });
+    expect(created.isError).not.toBe(true);
+    const updated = await client.callTool({
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "remote",
+        apiKey: KEY,
+        env: { STRIPE_SK: STRIPE, REDIS_URL: null },
+        headers: { "X-Upstream-Sig": SIG },
+      },
+    });
+    expect(updated.isError).not.toBe(true);
+    await client.close();
+
+    const ws = gw.store.ensureWorkspace("default");
+    const events = gw.store
+      .listAudit(ws.id, { limit: 100 })
+      .filter((event) => event.action === "tools/call");
+    expect(events).toHaveLength(2);
+    const blob = JSON.stringify(events);
+    expect(blob).toContain("STRIPE_SK");
+    expect(blob).toContain("REDIS_URL");
+    expect(blob).toContain("SENTRY_DSN");
+    expect(blob).toContain("X-Upstream-Sig");
+    expect(blob).toContain("[redacted]");
+    expect(blob).not.toContain(STRIPE);
+    expect(blob).not.toContain(REDIS);
+    expect(blob).not.toContain(SENTRY);
+    expect(blob).not.toContain(SIG);
+    expect(blob).not.toContain(KEY);
+    const createArgs = (
+      events.find((event) => {
+        const args = (event.detail as { arguments?: { slug?: string } } | null)
+          ?.arguments;
+        return args?.slug === "remote";
+      })?.detail as {
+        arguments: {
+          env: Record<string, unknown>;
+          headers: Record<string, unknown>;
+          apiKey: string;
+        };
+      }
+    ).arguments;
+    expect(createArgs.env).toEqual({
+      STRIPE_SK: "[redacted]",
+      REDIS_URL: "[redacted]",
+      SENTRY_DSN: "[redacted]",
+    });
+    expect(createArgs.headers).toEqual({ "X-Upstream-Sig": "[redacted]" });
+    expect(createArgs.apiKey).toBe("[redacted]");
+  }, 60_000);
+});
+
+describe("backend patch errors", () => {
+  it("returns 400 for a malformed unsetEnv and other bad secret input", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const created = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "remote",
+        url: "https://example.com/mcp",
+        env: { REGION: "east" },
+        apiKey: SECRET_A,
+        placement: { mode: "remote" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const id = ((await created.json()) as { backend: { id: string } }).backend.id;
+    const cases = [
+      { unsetEnv: "NOPE" },
+      { unsetEnv: ["OK", 1] },
+      { env: "hello" },
+      { env: ["a"] },
+      { env: { FOO: 1 } },
+      { env: { "A=B": "x" } },
+      { env: { "BAD\nNAME": "x" } },
+      { headers: { "X\nY": SIG } },
+      { envMode: "bogus" },
+      { headerMode: "MERGE" },
+    ];
+    for (const body of cases) {
+      const res = await fetch(`${base}/v1/backends/${id}`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      expect(res.status, text).toBe(400);
+      expect(text).not.toMatch(/TypeError/);
+    }
+    const posted = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "broken",
+        url: "https://example.com/mcp",
+        env: "hello",
+        placement: { mode: "remote" },
+      }),
+    });
+    const postedText = await posted.text();
+    expect(posted.status).toBe(400);
+    expect(postedText).not.toMatch(/TypeError/);
+
+    const ws = gw.store.ensureWorkspace("default");
+    expect(gw.store.decryptEnv(gw.store.getBackend(ws.id, "remote")!)).toEqual({
+      REGION: "east",
+    });
+    expect(
+      gw.store.decryptHeaders(gw.store.getBackend(ws.id, "remote")!).Authorization,
+    ).toBe(`Bearer ${SECRET_A}`);
+  });
+
+  it("does not leak a TypeError for a malformed unsetEnv tool call", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-env-admin-"));
+    dirs.push(dir);
+    const store = new Store(join(dir, "t.db"), master);
+    const ws = store.ensureWorkspace("default");
+    store.createBackend(ws.id, {
+      slug: "remote",
+      url: "https://example.com/mcp",
+      env: { REGION: "east" },
+    });
+    const pool = new UpstreamPool(store);
+    const cfg = loadConfig({
+      dbPath: join(dir, "t.db"),
+      masterKeyRaw: master,
+      adminToken: admin,
+      allowPrivateUrls: true,
+    });
+    const result = await handleAdminTool(
+      "mf_admin_update_backend",
+      { idOrSlug: "remote", unsetEnv: "NOPE" },
+      {
+        store,
+        pool,
+        cfg,
+        auth: { kind: "admin", workspaceId: ws.id },
+        edgeEnabled: false,
+      },
+    );
+    const text = result.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(result.isError).toBe(true);
+    expect(text).toMatch(/unsetEnv/);
+    expect(text).not.toMatch(/TypeError/);
+    expect(store.decryptEnv(store.getBackend(ws.id, "remote")!)).toEqual({
+      REGION: "east",
+    });
+    store.close();
   });
 });

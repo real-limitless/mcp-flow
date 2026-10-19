@@ -335,8 +335,16 @@ export interface UpdateBackendInput {
   url?: string | null;
   image?: string | null;
   command?: string[] | null;
-  headers?: Record<string, string> | null;
-  /** Merge into Authorization (Bearer prefixed). Does not clear other headers. */
+  /**
+   * Header patch. Default `headerMode` is `merge`: non-blank values set that
+   * header and every other header stays sealed, including Authorization.
+   * `null` deletes one header. Blank keeps it. `headerMode: "replace"` swaps
+   * the map. `headers: null` clears every header.
+   */
+  headers?: Record<string, string | null> | null;
+  /** `merge` (default) or `replace`. */
+  headerMode?: "merge" | "replace";
+  /** Merge into Authorization (Bearer prefixed). Does not clear other headers. A blank value keeps the sealed key. */
   apiKey?: string | null;
   /**
    * Env patch. Default `envMode` is `merge`: non-empty values set that key and

@@ -29,6 +29,7 @@ import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import { parseEnvMode } from "../db/env-patch.js";
+import { BackendInputError } from "../db/secret-input.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
@@ -510,11 +511,15 @@ export function createApp(
     );
     if (verr) return c.json({ error: verr }, 400);
 
-    const backend = store.updateBackend(
-      auth.workspaceId,
-      c.req.param("id"),
-      body,
-    );
+    let backend;
+    try {
+      backend = store.updateBackend(auth.workspaceId, c.req.param("id"), body);
+    } catch (err) {
+      if (err instanceof BackendInputError) {
+        return c.json({ error: err.message }, 400);
+      }
+      throw err;
+    }
     if (!backend) return c.json({ error: "not found" }, 404);
     pool.invalidate(existing.id);
     store.writeAudit({
@@ -523,10 +528,7 @@ export function createApp(
       backendSlug: backend.slug,
       placement: backend.placement.mode,
       deviceId: backend.placement.deviceId ?? null,
-      detail: backendUpdateAuditDetail(
-        store.backendUpdateSnapshot(existing),
-        body,
-      ),
+      detail: backendUpdateAuditDetail(body),
       ip: clientIp(c),
     });
     return c.json({ backend });
