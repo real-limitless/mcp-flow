@@ -1057,7 +1057,7 @@ export async function handleAdminTool(
       }
 
       default:
-        return textResult(`Unknown admin tool: ${name}`, true);
+        return textResult("Unknown admin tool", true);
     }
   } catch (err) {
     return textResult(err instanceof Error ? err.message : String(err), true);

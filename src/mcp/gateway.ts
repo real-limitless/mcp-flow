@@ -5,7 +5,11 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
+import {
+  catalogAuditName,
+  redactAdminToolAuditArgs,
+  undispatchedToolAudit,
+} from "../audit/redact-admin-args.js";
 import { toolCallAuditDetail } from "../audit/sanitize.js";
 import type { Config } from "../config.js";
 import type { Store } from "../db/store.js";
@@ -311,73 +315,86 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
-    const auditArguments = redactAdminToolAuditArgs(name, args);
     const started = Date.now();
     const project = activeProject();
+    let catalogNames: Set<string> | null = null;
+    const loadCatalog = async (): Promise<Set<string>> => {
+      if (catalogNames) return catalogNames;
+      const names = new Set<string>();
+      for (const tool of [...META_TOOLS, ...DYNAMIC_META_TOOLS, ...ADMIN_META_TOOLS]) {
+        names.add(tool.name);
+      }
+      for (const tool of await upstream.listNamespacedTools(ctx.workspaceId)) {
+        names.add(tool.name);
+      }
+      catalogNames = names;
+      return names;
+    };
 
-    if (!toolAllowedByScopes(name, ctx.scopes)) {
-      store.writeAudit({
-        workspaceId: ctx.workspaceId,
-        keyId: ctx.keyId,
-        action: "tools/call",
-        tool: name,
-        detail: toolCallAuditDetail({
-          denied: true,
-          reason: "scope",
-          arguments: auditArguments,
-          durationMs: Date.now() - started,
-        }),
-        ip,
-      });
-      return textResult(`Tool not allowed by API key scopes: ${name}`, true);
-    }
-
-    if (!toolAllowedByProject(name, project)) {
-      store.writeAudit({
-        workspaceId: ctx.workspaceId,
-        keyId: ctx.keyId,
-        action: "tools/call",
-        tool: name,
-        detail: toolCallAuditDetail({
-          denied: true,
-          reason: "project",
-          arguments: auditArguments,
-          durationMs: Date.now() - started,
-        }),
-        ip,
-      });
-      return textResult(
-        `Tool not in active project (${project?.slug ?? "none"}): ${name}. Use mf_use_project or mf_list_projects.`,
-        true,
-      );
-    }
-
-    const auditCall = (
+    /**
+     * upstream: the call reached a real backend tool; keep args for the content sanitizer.
+     * admin: an exact mf_admin_* handler ran; keep the schema projection.
+     * collapsed: rejected or not dispatched. Name is a catalog tool or "[invalid]".
+     */
+    type AuditKind = "upstream" | "admin" | "collapsed";
+    const auditCall = async (
       result: CallToolResult,
       extra?: {
         meta?: boolean;
         backendSlug?: string | null;
         placement?: string | null;
         deviceId?: string | null;
+        denied?: boolean;
+        reason?: string;
       },
+      kind: AuditKind = "collapsed",
     ) => {
+      const catalog = kind === "collapsed" ? await loadCatalog() : null;
+      const recordedTool =
+        kind === "collapsed" ? catalogAuditName(name, catalog!) : name;
+      const recordedArgs =
+        kind === "upstream"
+          ? args
+          : kind === "admin"
+            ? redactAdminToolAuditArgs(name, args)
+            : undispatchedToolAudit(
+                /^mf_call_tool$/i.test(name) ? args.name : name,
+                catalog!,
+              );
       store.writeAudit({
         workspaceId: ctx.workspaceId,
         keyId: ctx.keyId,
         action: "tools/call",
-        tool: name,
+        tool: recordedTool,
         backendSlug: extra?.backendSlug ?? null,
         placement: extra?.placement ?? null,
         deviceId: extra?.deviceId ?? null,
         detail: toolCallAuditDetail({
           meta: extra?.meta,
-          arguments: auditArguments,
+          denied: extra?.denied,
+          reason: extra?.reason,
+          arguments: recordedArgs,
           result,
           durationMs: Date.now() - started,
         }),
         ip,
       });
     };
+
+    if (!toolAllowedByScopes(name, ctx.scopes)) {
+      const result = textResult("Tool not allowed by API key scopes", true);
+      await auditCall(result, { denied: true, reason: "scope" });
+      return result;
+    }
+
+    if (!toolAllowedByProject(name, project)) {
+      const result = textResult(
+        `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
+        true,
+      );
+      await auditCall(result, { denied: true, reason: "project" });
+      return result;
+    }
 
     if (name === "mf_list_backends") {
       let backends = store.listBackends(ctx.workspaceId);
@@ -418,7 +435,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         }),
       };
       const result = textResult(payload);
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -456,7 +473,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         })),
       };
       const result = textResult(payload);
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -478,7 +495,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         })),
       };
       const result = textResult(payload);
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -495,7 +512,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           : null,
         mcpSessionId: ctx.mcpSessionId ?? null,
       });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -505,7 +522,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         .toLowerCase();
       if (!slug) {
         const result = textResult("project slug required", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (!keyMayUseProject(ctx.scopes, slug)) {
@@ -513,13 +530,13 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           `key cannot use project: ${slug}`,
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const target = store.getProjectBySlug(ctx.workspaceId, slug);
       if (!target) {
         const result = textResult(`project not found: ${slug}`, true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       // Bind MCP session sticky when we have a session id
@@ -583,7 +600,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           ? "Optional: use sessionToken as Bearer for project-scoped /mcp calls. Re-run tools/list."
           : "Project bound to this session. Re-run tools/list to refresh available tools.",
       });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -629,32 +646,32 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           : { enabled: false, enabledCount: 0, enabledCap: listCap, tools: [] },
       };
       const result = textResult(payload);
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
     if (name === "mf_use_device") {
       if (!edgeRouter) {
         const result = textResult("edge routing not enabled", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const deviceId = String(args.deviceId ?? "").trim();
       if (!deviceId) {
         if (ctx.keyId) edgeRouter.sticky.clear(ctx.keyId);
         const result = textResult({ ok: true, stickyDeviceId: null });
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const d = store.getDevice(ctx.workspaceId, deviceId);
       if (!d) {
         const result = textResult(`device not found: ${deviceId}`, true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (ctx.keyId) edgeRouter.sticky.set(ctx.keyId, deviceId);
       const result = textResult({ ok: true, stickyDeviceId: deviceId });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -662,30 +679,30 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       const toolName = String(args.name ?? "").trim();
       if (!toolName) {
         const result = textResult("name required", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (!toolAllowedByScopes(toolName, ctx.scopes)) {
         const result = textResult(
-          `Tool not allowed by API key scopes: ${toolName}`,
+          "Tool not allowed by API key scopes",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (!toolAllowedByProject(toolName, project)) {
         const result = textResult(
-          `Tool not in active project (${project?.slug ?? "none"}): ${toolName}`,
+          `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const catalog = await catalogInScope(project);
       const hit = catalog.find((t) => t.name === toolName);
       if (!hit) {
-        const result = textResult(`tool not found: ${toolName}`, true);
-        auditCall(result, { meta: true });
+        const result = textResult("tool not found", true);
+        await auditCall(result, { meta: true });
         return result;
       }
       const result = textResult({
@@ -699,7 +716,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           ctx.scopes,
         ),
       });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -709,13 +726,13 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           "dynamicTools is not enabled on this API key",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const sid = stickySessionId(ctx);
       if (!sid || !ctx.keyId) {
         const result = textResult("no session or key to bind working set", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const catalog = await catalogInScope(project);
@@ -733,7 +750,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
             enabledCap: listCap,
             note: "Hot prefixes on the key stay enabled.",
           });
-          auditCall(result, { meta: true });
+          await auditCall(result, { meta: true });
           return result;
         }
         const toRemove = new Set<string>(names);
@@ -748,7 +765,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
             "names, backends, prefixes, or all:true required",
             true,
           );
-          auditCall(result, { meta: true });
+          await auditCall(result, { meta: true });
           return result;
         }
         const enabled = [
@@ -761,7 +778,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           enabledCount: enabled.length,
           enabledCap: listCap,
         });
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
 
@@ -786,7 +803,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           "names, backends, or prefixes required",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (missing.length) {
@@ -797,7 +814,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           },
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const working = workingSetFor(ctx);
@@ -811,7 +828,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           `enabling these tools would exceed the working-set cap (${listCap}); disable others first`,
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const enabled = [...globalSessionToolSets.add(sid, ctx.keyId, toAdd)].sort();
@@ -823,14 +840,14 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         enabledCap: listCap,
         note: "Re-run tools/list if the harness honors list changes; otherwise use mf_call_tool.",
       });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true });
       return result;
     }
 
     if (name === "mf_call_tool") {
       if (typeof args.name !== "string") {
         const result = textResult("name required", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const innerName = args.name.trim();
@@ -840,7 +857,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           : {};
       if (!innerName) {
         const result = textResult("name required", true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (/^mf_/i.test(innerName)) {
@@ -848,23 +865,28 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           "mf_call_tool is for namespaced upstream tools (slug__tool)",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
+        return result;
+      }
+      if (!(await loadCatalog()).has(innerName)) {
+        const result = textResult("tool not found", true);
+        await auditCall(result, { meta: true });
         return result;
       }
       if (!toolAllowedByScopes(innerName, ctx.scopes)) {
         const result = textResult(
-          `Tool not allowed by API key scopes: ${innerName}`,
+          "Tool not allowed by API key scopes",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (!toolAllowedByProject(innerName, project)) {
         const result = textResult(
-          `Tool not in active project (${project?.slug ?? "none"}): ${innerName}. Use mf_use_project or mf_list_projects.`,
+          `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       if (
@@ -872,10 +894,10 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         !toolEnabledInWorkingSet(innerName, workingSetFor(ctx), ctx.scopes)
       ) {
         const result = textResult(
-          `Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools: ${innerName}`,
+          "Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools.",
           true,
         );
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const parsed = parseNamespacedTool(innerName);
@@ -906,7 +928,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         ip,
       });
       if (!gate.proceed) {
-        auditCall(gate.result, {
+        await auditCall(gate.result, {
           meta: true,
           backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
           placement: ctxInfo.placement,
@@ -919,37 +941,25 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         innerName,
         gate.frozenArgs,
       );
-      auditCall(result, {
+      await auditCall(result, {
         meta: true,
         backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
         placement: ctxInfo.placement,
         deviceId: ctxInfo.deviceId,
-      });
+      }, "upstream");
       return result;
     }
 
-    if (/^mf_admin_/i.test(name)) {
+    if (ADMIN_META_TOOLS.some((tool) => tool.name === name)) {
       if (!isAdminScopes(ctx.scopes)) {
-        const result = textResult(`admin key required for ${name}`, true);
-        store.writeAudit({
-          workspaceId: ctx.workspaceId,
-          keyId: ctx.keyId,
-          action: "tools/call",
-          tool: name,
-          detail: toolCallAuditDetail({
-            denied: true,
-            reason: "admin_required",
-            arguments: auditArguments,
-            durationMs: Date.now() - started,
-          }),
-          ip,
-        });
+        const result = textResult("admin key required", true);
+        await auditCall(result, { meta: true, denied: true, reason: "admin_required" });
         return result;
       }
       const unknownArg = unknownAdminArgumentMessage(name, args);
       if (unknownArg) {
         const result = textResult(unknownArg, true);
-        auditCall(result, { meta: true });
+        await auditCall(result, { meta: true });
         return result;
       }
       const adminGate = await runAuthzGate({
@@ -971,7 +981,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         ip,
       });
       if (!adminGate.proceed) {
-        auditCall(adminGate.result, { meta: true });
+        await auditCall(adminGate.result, { meta: true });
         return adminGate.result;
       }
       const result = await handleAdminTool(name, adminGate.frozenArgs, {
@@ -983,13 +993,19 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         ip,
         edgeEnabled,
       });
-      auditCall(result, { meta: true });
+      await auditCall(result, { meta: true }, "admin");
+      return result;
+    }
+
+    if (/^mf_admin_/i.test(name)) {
+      const result = textResult("Unknown admin tool", true);
+      await auditCall(result, { meta: true });
       return result;
     }
 
     if (/^mf_/i.test(name)) {
-      const result = textResult(`Unknown meta tool: ${name}`, true);
-      auditCall(result, { meta: true });
+      const result = textResult("Unknown meta tool", true);
+      await auditCall(result, { meta: true });
       return result;
     }
 
@@ -998,22 +1014,16 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       !toolEnabledInWorkingSet(name, workingSetFor(ctx), ctx.scopes)
     ) {
       const result = textResult(
-        `Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools: ${name}`,
+        "Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools.",
         true,
       );
-      store.writeAudit({
-        workspaceId: ctx.workspaceId,
-        keyId: ctx.keyId,
-        action: "tools/call",
-        tool: name,
-        detail: toolCallAuditDetail({
-          denied: true,
-          reason: "dynamic_working_set",
-          arguments: auditArguments,
-          durationMs: Date.now() - started,
-        }),
-        ip,
-      });
+      await auditCall(result, { denied: true, reason: "dynamic_working_set" });
+      return result;
+    }
+
+    if (!(await loadCatalog()).has(name)) {
+      const result = textResult("tool not found", true);
+      await auditCall(result);
       return result;
     }
 
@@ -1038,7 +1048,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       ip,
     });
     if (!gate.proceed) {
-      auditCall(gate.result, {
+      await auditCall(gate.result, {
         backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
         placement: ctxInfo.placement,
         deviceId: ctxInfo.deviceId,
@@ -1050,11 +1060,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       name,
       gate.frozenArgs,
     );
-    auditCall(result, {
+    await auditCall(result, {
       backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
       placement: ctxInfo.placement,
       deviceId: ctxInfo.deviceId,
-    });
+    }, "upstream");
     return result;
   });
 

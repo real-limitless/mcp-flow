@@ -7,7 +7,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { backendUpdateAuditDetail } from "../src/audit/backend-update.js";
-import { redactAdminToolAuditArgs } from "../src/audit/redact-admin-args.js";
+import {
+  redactAdminToolAuditArgs,
+  undispatchedToolAudit,
+} from "../src/audit/redact-admin-args.js";
 import { sanitizeForAudit } from "../src/audit/sanitize.js";
 import { loadConfig } from "../src/config.js";
 import { applyEnvPatch } from "../src/db/env-patch.js";
@@ -656,8 +659,8 @@ describe("admin tool audit redaction", () => {
         apiKey: KEY,
       },
     };
-    const wrappedCopy = redactAdminToolAuditArgs("mf_call_tool", wrapped);
-    expect(wrappedCopy).not.toBe(wrapped);
+    const catalog = new Set(["mf_admin_update_backend", "remote__echo"]);
+    const wrappedCopy = undispatchedToolAudit(wrapped.name, catalog);
     expect(wrappedCopy).toEqual({
       name: "mf_admin_update_backend",
       arguments: "[redacted]",
@@ -668,14 +671,26 @@ describe("admin tool audit redaction", () => {
     expect(wrapped.arguments.env.STRIPE_SK).toBe(STRIPE);
     const plainCall = { name: "remote__echo", arguments: { text: "hi" } };
     expect(redactAdminToolAuditArgs("mf_call_tool", plainCall)).toBe(plainCall);
+    expect(undispatchedToolAudit("remote__echo", catalog)).toEqual({
+      name: "remote__echo",
+      arguments: "[redacted]",
+    });
   });
 
-  it("records only a sanitized inner name when mf_call_tool is not an upstream tool", () => {
+  it("records a catalog name or [invalid] when a call is not dispatched", () => {
     const secret = "wrap-variant-placeholder";
     const header = "wrap-header-placeholder";
     const extra = "wrap-extra-placeholder";
     const note = "wrap-note-placeholder";
     const place = "wrap-placement-placeholder";
+    const catalog = new Set([
+      "mf_call_tool",
+      "mf_admin_update_backend",
+      "mf_admin_create_backend",
+      "mf_admin_catalog_install",
+      "mf_admin_delete_backend",
+      "mf_status",
+    ]);
     const inner = {
       idOrSlug: "sb",
       env: { STRIPE_SK: secret, SLACK_BOT: secret },
@@ -690,7 +705,8 @@ describe("admin tool audit redaction", () => {
       args: Record<string, unknown>,
       name: string,
     ) => {
-      const copy = redactAdminToolAuditArgs(tool, args);
+      const candidate = /^mf_call_tool$/i.test(tool) ? args.name : tool;
+      const copy = undispatchedToolAudit(candidate, catalog);
       expect(copy).toEqual({ name, arguments: "[redacted]" });
       const text = JSON.stringify(copy);
       expect(text).not.toContain(secret);
@@ -768,12 +784,12 @@ describe("admin tool audit redaction", () => {
         extra,
         env: { STRIPE_SK: secret },
       },
-      "MF_ADMIN_update_backend",
+      "[invalid]",
     );
     expectCollapsed(
       "Mf_Call_Tool",
       { name: "Mf_Admin_update_backend", arguments: inner, extra },
-      "Mf_Admin_update_backend",
+      "[invalid]",
     );
     expectCollapsed(
       "mf_call_tool",
@@ -788,14 +804,49 @@ describe("admin tool audit redaction", () => {
     expectCollapsed(
       "mf_call_tool",
       { name: "mf_admin_\u0001update_backend", arguments: inner },
-      "mf_admin_update_backend",
+      "[invalid]",
     );
-    const long = "mf_admin_" + "n".repeat(80);
     expectCollapsed(
       "mf_call_tool",
-      { name: `  ${long}  `, arguments: inner },
-      long.slice(0, 64),
+      { name: "mf_admin_" + "n".repeat(80), arguments: inner },
+      "[invalid]",
     );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_update_backend__x", arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "MF_ADMIN__update_backend", arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_call_tool__x", arguments: { name: "mf_admin_update_backend", arguments: inner } },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "nosuch__tool", arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "sk_live_placeholder_value", arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "ok\u202ename", arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "MF_ADMIN_UPDATE_BACKEND",
+      inner,
+      "[invalid]",
+    );
+    expectCollapsed("nosuch__tool", inner, "[invalid]");
     const spacedUpstream = { name: " remote__echo ", arguments: { text: secret } };
     expect(redactAdminToolAuditArgs("mf_call_tool", spacedUpstream)).toBe(spacedUpstream);
   });
@@ -1744,22 +1795,32 @@ describe("placement and sandbox shapes", () => {
       note: { deep: note },
       placement: { extra: place },
     };
-    const calls: Array<{ arguments: Record<string, unknown>; name: string }> = [
-      { arguments: { name: "mf_admin_update_backend", arguments: inner }, name: "mf_admin_update_backend" },
-      { arguments: { name: "mf_admin_create_backend", arguments: inner }, name: "mf_admin_create_backend" },
-      { arguments: { name: "mf_admin_catalog_install", arguments: inner }, name: "mf_admin_catalog_install" },
-      { arguments: { name: "  mf_admin_update_backend  ", arguments: inner }, name: "mf_admin_update_backend" },
-      { arguments: { name: "\tmf_admin_update_backend\t", arguments: inner }, name: "mf_admin_update_backend" },
-      { arguments: { name: "mf_admin_update_backend", arguments: [inner] }, name: "mf_admin_update_backend" },
-      { arguments: { name: "mf_admin_update_backend", arguments: secret }, name: "mf_admin_update_backend" },
+    const secretName = "sk_live_placeholder_value";
+    const rloName = "ok\u202ename";
+    const calls: Array<{
+      tool: string;
+      arguments: Record<string, unknown>;
+      name: string;
+      hidden: string[];
+    }> = [
+      { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "mf_admin_create_backend", arguments: inner }, name: "mf_admin_create_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "mf_admin_catalog_install", arguments: inner }, name: "mf_admin_catalog_install", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "  mf_admin_update_backend  ", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "\tmf_admin_update_backend\t", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: [inner] }, name: "mf_admin_update_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: secret }, name: "mf_admin_update_backend", hidden: [] },
       {
+        tool: "mf_call_tool",
         arguments: {
           name: "mf_call_tool",
           arguments: { name: "mf_admin_update_backend", arguments: inner },
         },
         name: "mf_call_tool",
+        hidden: [],
       },
       {
+        tool: "mf_call_tool",
         arguments: {
           name: "mf_call_tool",
           arguments: {
@@ -1771,31 +1832,111 @@ describe("placement and sandbox shapes", () => {
           },
         },
         name: "mf_call_tool",
+        hidden: [],
       },
       {
+        tool: "mf_call_tool",
         arguments: { name: "MF_ADMIN_update_backend", arguments: inner, extra, env: { STRIPE_SK: secret } },
-        name: "MF_ADMIN_update_backend",
+        name: "[invalid]",
+        hidden: ["MF_ADMIN_update_backend"],
       },
       {
+        tool: "mf_call_tool",
         arguments: { name: "Mf_Admin_update_backend", arguments: inner, extra },
-        name: "Mf_Admin_update_backend",
+        name: "[invalid]",
+        hidden: ["Mf_Admin_update_backend"],
       },
       {
+        tool: "mf_call_tool",
         arguments: { name: "mf_status", arguments: { env: { STRIPE_SK: secret } }, extra },
         name: "mf_status",
+        hidden: [],
       },
       {
+        tool: "mf_call_tool",
         arguments: { name: { env: { STRIPE_SK: secret }, extra }, arguments: inner },
         name: "[invalid]",
+        hidden: [],
       },
       {
+        tool: "mf_call_tool",
         arguments: { name: "mf_admin_\u0001update_backend", arguments: inner },
-        name: "mf_admin_update_backend",
+        name: "[invalid]",
+        hidden: [],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: { name: "mf_admin_update_backend__x", arguments: inner },
+        name: "[invalid]",
+        hidden: ["mf_admin_update_backend__x"],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: { name: "MF_ADMIN__update_backend", arguments: inner },
+        name: "[invalid]",
+        hidden: ["MF_ADMIN__update_backend"],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: {
+          name: "mf_call_tool__x",
+          arguments: { name: "mf_admin_update_backend", arguments: inner },
+        },
+        name: "[invalid]",
+        hidden: ["mf_call_tool__x"],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: { name: "nosuch__tool", arguments: inner, extra },
+        name: "[invalid]",
+        hidden: ["nosuch__tool"],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: { name: secretName, arguments: inner },
+        name: "[invalid]",
+        hidden: [secretName],
+      },
+      {
+        tool: "mf_call_tool",
+        arguments: { name: rloName, arguments: inner },
+        name: "[invalid]",
+        hidden: [rloName, "\u202e"],
+      },
+      {
+        tool: "Mf_Call_Tool",
+        arguments: { name: "sb__envdump", arguments: inner, extra, env: { STRIPE_SK: secret } },
+        name: "[invalid]",
+        hidden: ["Mf_Call_Tool", "sb__envdump"],
+      },
+      {
+        tool: "nosuch__tool",
+        arguments: inner,
+        name: "[invalid]",
+        hidden: ["nosuch__tool"],
+      },
+      {
+        tool: "MF_ADMIN_UPDATE_BACKEND",
+        arguments: inner,
+        name: "[invalid]",
+        hidden: ["MF_ADMIN_UPDATE_BACKEND"],
+      },
+      {
+        tool: "mf_admin_Update_Backend",
+        arguments: inner,
+        name: "[invalid]",
+        hidden: ["mf_admin_Update_Backend"],
+      },
+      {
+        tool: "mf_admin_Delete_Backend",
+        arguments: { idOrSlug: "sb", env: { STRIPE_SK: secret }, extra },
+        name: "[invalid]",
+        hidden: ["mf_admin_Delete_Backend"],
       },
     ];
     for (const call of calls) {
       const result = await client.callTool({
-        name: "mf_call_tool",
+        name: call.tool,
         arguments: call.arguments,
       });
       const text = result.content
@@ -1809,6 +1950,9 @@ describe("placement and sandbox shapes", () => {
       expect(text).not.toContain(note);
       expect(text).not.toContain(place);
       expect(text).not.toContain(KEY);
+      for (const hidden of call.hidden) {
+        expect(text).not.toContain(hidden);
+      }
     }
     await client.close();
 
@@ -1831,9 +1975,40 @@ describe("placement and sandbox shapes", () => {
       /\bmf_[A-Za-z0-9_-]{16,}/.test(call.name) ? "[redacted]" : call.name,
     );
     expect(storedNames.slice().sort()).toEqual(expectedStored.slice().sort());
+    const toolColumns = events.map((event) => event.tool);
+    expect(toolColumns.filter((tool) => tool === "mf_call_tool")).toHaveLength(
+      calls.filter((call) => call.tool === "mf_call_tool").length,
+    );
+    expect(toolColumns.filter((tool) => tool === "[invalid]")).toHaveLength(
+      calls.filter((call) => call.tool !== "mf_call_tool").length,
+    );
 
-    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 100 }));
-    for (const leaked of [secret, slack, header, extra, note, place, KEY, "SLACK_BOT", "STRIPE_SK"]) {
+    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 200 }));
+    for (const leaked of [
+      secret,
+      slack,
+      header,
+      extra,
+      note,
+      place,
+      KEY,
+      "SLACK_BOT",
+      "STRIPE_SK",
+      secretName,
+      rloName,
+      "\u202e",
+      "mf_admin_update_backend__x",
+      "MF_ADMIN__update_backend",
+      "mf_call_tool__x",
+      "MF_ADMIN_update_backend",
+      "Mf_Admin_update_backend",
+      "Mf_Call_Tool",
+      "sb__envdump",
+      "nosuch__tool",
+      "MF_ADMIN_UPDATE_BACKEND",
+      "mf_admin_Update_Backend",
+      "mf_admin_Delete_Backend",
+    ]) {
       expect(blob).not.toContain(leaked);
     }
     expect(gw.store.listApprovals(ws.id, { status: "all", limit: 50 })).toHaveLength(0);
@@ -1859,7 +2034,7 @@ describe("placement and sandbox shapes", () => {
     const listedText = listed.content
       .map((block) => ("text" in block ? block.text : ""))
       .join("\n");
-    for (const leaked of [secret, slack, header, extra, note, place, KEY]) {
+    for (const leaked of [secret, slack, header, extra, note, place, KEY, secretName, "nosuch__tool", "Mf_Call_Tool", "\u202e"]) {
       expect(listedText).not.toContain(leaked);
     }
   }, 60_000);

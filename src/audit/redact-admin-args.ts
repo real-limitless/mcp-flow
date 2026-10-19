@@ -139,34 +139,36 @@ function projectSchemaArgs(
   return out;
 }
 
-const NAME_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
-const AUDIT_NAME_MAX = 64;
-
-/** slug__tool. Same rule as parseNamespacedTool: "__" after the first character. */
-function isUpstreamToolName(name: string): boolean {
-  return name.indexOf("__") > 0;
-}
+/** A tool name that may be stored for a call that was not dispatched. */
+const AUDIT_CATALOG_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 /**
- * Inner name stored for a rejected mf_call_tool that is not an upstream tool.
- * Trimmed, control characters removed, capped at 64 UTF-16 units.
+ * Name recorded for a call that was not dispatched.
+ * The trimmed value is kept only when it matches the catalog name pattern
+ * and is a real catalog tool. Anything else is "[invalid]".
  */
-function auditCallToolName(value: unknown): string {
+export function catalogAuditName(
+  value: unknown,
+  catalog: ReadonlySet<string>,
+): string {
   if (typeof value !== "string") return "[invalid]";
-  return value.trim().replace(NAME_CONTROL_RE, "").slice(0, AUDIT_NAME_MAX);
+  const name = value.trim();
+  if (!AUDIT_CATALOG_NAME_RE.test(name) || !catalog.has(name)) return "[invalid]";
+  return name;
 }
 
 /**
- * A rejected mf_call_tool whose target is not slug__tool records only the
- * inner name and a redacted arguments blob. Nested wrappers, case variants,
- * extra wrapper keys, and a non-string name all collapse to that shape.
- * An upstream slug__tool keeps its arguments for the content sanitizer.
+ * Tools/call arguments for a call that was rejected or not dispatched.
+ * Only the catalog name (or "[invalid]") and a redacted arguments blob are kept.
  */
-function auditCallToolArgs(args: Record<string, unknown>): Record<string, unknown> {
-  if (typeof args.name === "string" && isUpstreamToolName(args.name.trim())) {
-    return args;
-  }
-  return { name: auditCallToolName(args.name), arguments: "[redacted]" };
+export function undispatchedToolAudit(
+  candidate: unknown,
+  catalog: ReadonlySet<string>,
+): { name: string; arguments: "[redacted]" } {
+  return {
+    name: catalogAuditName(candidate, catalog),
+    arguments: "[redacted]",
+  };
 }
 
 export function redactAdminToolAuditArgs(
@@ -174,7 +176,6 @@ export function redactAdminToolAuditArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!args || typeof args !== "object" || Array.isArray(args)) return args;
-  if (/^mf_call_tool$/i.test(tool)) return auditCallToolArgs(args);
   if (!/^mf_admin_/i.test(tool)) return args;
   const projected = projectSchemaArgs(tool, args);
   if (!hasSecretShape(projected)) return projected;
