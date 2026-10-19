@@ -51,6 +51,8 @@ interface PooledClient {
   dispose?: () => Promise<void>;
   placementMode: string;
   deviceId?: string;
+  /** Transport closed or failed. The pool entry must not be reused. */
+  dead: boolean;
 }
 
 /** Re-list tools on the open client after this age. Do not reconnect. */
@@ -101,6 +103,12 @@ function transportMessage(message: string): boolean {
   return /connection closed|not connected|econnreset|econnrefused|\bepipe\b|socket hang up|fetch failed|broken pipe|other side closed|process exited/i.test(
     message,
   );
+}
+
+/** The SDK rejects with this before Protocol.request writes to the transport. */
+function isPreWriteRejection(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /not connected/i.test(message);
 }
 
 function parsePlacement(backend: BackendRecord): Placement {
@@ -346,6 +354,7 @@ export class UpstreamPool {
         tools: listed.tools ?? [],
         fetchedAt: Date.now(),
         placementMode: "remote",
+        dead: false,
       };
     } catch (err) {
       try {
@@ -379,6 +388,7 @@ export class UpstreamPool {
         fetchedAt: Date.now(),
         dispose: run.dispose,
         placementMode: "central-sandbox",
+        dead: false,
       };
     }
 
@@ -400,6 +410,7 @@ export class UpstreamPool {
         fetchedAt: Date.now(),
         dispose: run.dispose,
         placementMode: "central-sandbox",
+        dead: false,
       };
     }
 
@@ -450,20 +461,51 @@ export class UpstreamPool {
     return job;
   }
 
+  /** Drop the pool entry when its transport closes or the connection fails. */
+  private watchTransport(entry: PooledClient): void {
+    entry.client.onclose = () => {
+      entry.dead = true;
+      if (this.pool.get(entry.backendId) === entry) void this.retire(entry.backendId);
+    };
+    entry.client.onerror = (error: Error) => {
+      if (!isTransportOrConnectionError(error)) return;
+      entry.dead = true;
+      if (this.pool.get(entry.backendId) === entry) void this.retire(entry.backendId);
+    };
+  }
+
+  /** False when the SDK has already dropped the transport or the stdio process is gone. */
+  private transportAlive(entry: PooledClient): boolean {
+    if (entry.dead) return false;
+    const client = entry.client as Client & { transport?: unknown };
+    if (!client.transport) return false;
+    const transport = entry.transport as { pid?: number | null };
+    if (!("pid" in transport)) return true;
+    const pid = transport.pid;
+    if (pid == null) return false;
+    try {
+      process.kill(pid, 0);
+    } catch {
+      return false;
+    }
+    return true;
+  }
+
   private async connectAndStore(backend: BackendRecord): Promise<PooledClient> {
     const generation = this.generation;
     const entry = await this.connect(backend);
-    if (this.closing || generation !== this.generation) {
+    this.watchTransport(entry);
+    if (this.closing || generation !== this.generation || entry.dead) {
       await this.closeEntry(entry);
-      throw new Error("upstream pool is closing");
+      throw new Error(entry.dead ? "Not connected" : "upstream pool is closing");
     }
     const previous = this.pool.get(backend.id);
     if (previous && previous !== entry) {
       await this.closeEntry(previous);
     }
-    if (this.closing) {
+    if (this.closing || entry.dead) {
       await this.closeEntry(entry);
-      throw new Error("upstream pool is closing");
+      throw new Error(entry.dead ? "Not connected" : "upstream pool is closing");
     }
     this.pool.set(backend.id, entry);
     return entry;
@@ -475,11 +517,24 @@ export class UpstreamPool {
     if (this.closing) throw new Error("upstream pool is closing");
 
     const existing = this.pool.get(backend.id);
-    if (existing) {
+    if (existing && !existing.dead && this.transportAlive(existing)) {
       if (Date.now() - existing.fetchedAt >= TOOL_CACHE_MS) {
-        await this.refreshTools(existing);
+        try {
+          await this.refreshTools(existing);
+        } catch (err) {
+          if (this.pool.get(backend.id) === existing) await this.retire(backend.id);
+          if (!isTransportOrConnectionError(err)) throw err;
+        }
       }
-      return existing;
+      if (
+        this.pool.get(backend.id) === existing &&
+        !existing.dead &&
+        this.transportAlive(existing)
+      ) {
+        return existing;
+      }
+    } else if (existing) {
+      await this.retire(backend.id);
     }
 
     const pending = this.inflight.get(backend.id);
@@ -655,7 +710,7 @@ export class UpstreamPool {
           );
           return { ...result, sent: true };
         } catch (err) {
-          return this.upstreamError(backend.slug, err, true);
+          return this.upstreamError(backend.slug, err, !isPreWriteRejection(err));
         }
       }
 
@@ -669,6 +724,20 @@ export class UpstreamPool {
       if (!pooled.tools.some((tool) => tool.name === parsed.tool)) {
         return this.notSent("tool not found");
       }
+      if (pooled.dead || !this.transportAlive(pooled)) {
+        pooled.dead = true;
+        await this.retire(backend.id);
+        return this.notSent("tool not found");
+      }
+      const previousSend = pooled.transport.send;
+      const originalSend = previousSend.bind(pooled.transport);
+      let wrote = false;
+      const wrappedSend = (async (message, options) => {
+        const value = await originalSend(message, options);
+        wrote = true;
+        return value;
+      }) as Transport["send"];
+      pooled.transport.send = wrappedSend;
       try {
         const result = await pooled.client.callTool({
           name: parsed.tool,
@@ -676,8 +745,13 @@ export class UpstreamPool {
         });
         return { ...(result as CallToolResult), sent: true };
       } catch (err) {
-        if (isTransportOrConnectionError(err)) await this.retire(backend.id);
-        return this.upstreamError(backend.slug, err, true);
+        if (!wrote || isTransportOrConnectionError(err)) {
+          pooled.dead = true;
+          await this.retire(backend.id);
+        }
+        return this.upstreamError(backend.slug, err, wrote && !isPreWriteRejection(err));
+      } finally {
+        if (pooled.transport.send === wrappedSend) pooled.transport.send = previousSend;
       }
     } catch (err) {
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);

@@ -1081,6 +1081,18 @@ describe("api + gateway", () => {
     expect(coldWrapped.isError).not.toBe(true);
     expect(textOf(coldWrapped)).toBe("envsig:valid-envsig");
 
+    const paddedNote = "padded-envsig";
+    for (const name of ["vh__envsig ", " vh__envsig", "vh__envsig\t"]) {
+      const paddedTool = await client.callTool({
+        name: "mf_call_tool",
+        arguments: { name, arguments: { note: paddedNote } },
+      });
+      expect(paddedTool.isError).toBe(true);
+      expect(textOf(paddedTool)).not.toContain(paddedNote);
+      expect(textOf(paddedTool)).not.toContain("envsig:");
+      expect(textOf(paddedTool)).not.toContain("vh__envsig");
+    }
+
     await client.listTools();
     const nulled = await fetch(`${base}/v1/backends/${ids.h}`, {
       method: "PATCH",
@@ -1162,6 +1174,7 @@ describe("api + gateway", () => {
     expect(blob).toContain("valid-envsig");
     expect(blob).toContain("after-null");
     expect(blob).not.toContain(secret);
+    expect(blob).not.toContain(paddedNote);
     expect(blob).not.toContain("mf_admin_list_backends");
     const collapsed = calls.filter((event) => {
       const args = (event.detail as { arguments?: { arguments?: unknown } } | null)?.arguments;

@@ -2,6 +2,8 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { STDIO_GROUP_KILL_BUDGET_MS } from "../src/mcp/runners/stdio.js";
@@ -309,6 +311,31 @@ function listCount(listFile: string): number {
   }
 }
 
+function resultText(result: { content?: Array<{ text?: string }> }): string {
+  return (result.content ?? []).map((block) => block.text ?? "").join("\n");
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+interface PoolEntry {
+  dead: boolean;
+  client: {
+    callTool: (params: {
+      name: string;
+      arguments?: Record<string, unknown>;
+    }) => Promise<unknown>;
+  };
+  transport: {
+    send: (message: unknown, options?: unknown) => Promise<void>;
+  };
+}
+
+function poolEntry(pool: UpstreamPool, backendId: string): PoolEntry | undefined {
+  return (pool as unknown as { pool: Map<string, PoolEntry> }).pool.get(backendId);
+}
+
 async function until(pred: () => boolean, ms: number): Promise<boolean> {
   const started = Date.now();
   while (Date.now() - started < ms) {
@@ -433,7 +460,9 @@ describe("stdio process lifecycle", () => {
       expect(tested.ok).toBe(true);
       expect(readdirSync(spawnDir)).toHaveLength(1);
 
-      await pool.callTool(workspaceId, "fix__die", {});
+      const died = await pool.callTool(workspaceId, "fix__die", {});
+      expect(died.sent).toBe(true);
+      expect(resultText(died)).toMatch(/connection closed/i);
       const gone = await until(() => alivePids(spawnDir).length === 0, 2_000);
       expect(gone).toBe(true);
       const tools = await pool.listNamespacedTools(workspaceId);
@@ -520,6 +549,233 @@ describe("stdio process lifecycle", () => {
       store.close();
     }
   });
+
+  it("respawns the next call after the stdio process is killed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "kill-between.mjs");
+    const { pool, store, workspaceId } = setupPool(script, spawnDir);
+    try {
+      const first = await pool.callTool(workspaceId, "fix__ping", {});
+      expect(first.sent).toBe(true);
+      expect(resultText(first)).toBe("pong");
+      expect(readdirSync(spawnDir)).toHaveLength(1);
+      const pid = alivePids(spawnDir)[0];
+      expect(pid).toBeTypeOf("number");
+      process.kill(pid!, "SIGKILL");
+      const dropped = await until(
+        () => poolSize(pool) === 0 && alivePids(spawnDir).length === 0,
+        2_000,
+      );
+      expect(dropped).toBe(true);
+      const again = await pool.callTool(workspaceId, "fix__ping", {
+        note: "respawn-note-placeholder",
+      });
+      expect(again.sent).toBe(true);
+      expect(resultText(again)).toBe("pong");
+      expect(readdirSync(spawnDir)).toHaveLength(2);
+      expect(alivePids(spawnDir)).toHaveLength(1);
+      expect(alivePids(spawnDir)[0]).not.toBe(pid);
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("marks a pre-write Not connected rejection as unsent and respawns", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "prewrite.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      await pool.callTool(workspaceId, "fix__ping", {});
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      entry!.transport.send = async () => {
+        throw new Error("Not connected");
+      };
+      const blocked = await pool.callTool(workspaceId, "fix__ping", {
+        note: "kill-note-placeholder",
+      });
+      expect(blocked.sent).toBe(false);
+      expect(resultText(blocked)).toMatch(/Not connected/);
+      expect(resultText(blocked)).not.toContain("kill-note-placeholder");
+      const dropped = await until(() => poolSize(pool) === 0, 2_000);
+      expect(dropped).toBe(true);
+      const again = await pool.callTool(workspaceId, "fix__ping", {});
+      expect(again.sent).toBe(true);
+      expect(resultText(again)).toBe("pong");
+      expect(readdirSync(spawnDir).length).toBeGreaterThanOrEqual(2);
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("keeps sent when the transport write finished before Connection closed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "written.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      await pool.callTool(workspaceId, "fix__ping", {});
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      entry!.client.callTool = async () => {
+        await entry!.transport.send({ jsonrpc: "2.0", id: 99, method: "ping" });
+        throw new Error("Connection closed");
+      };
+      const written = await pool.callTool(workspaceId, "fix__ping", {
+        note: "written-note-placeholder",
+      });
+      expect(written.sent).toBe(true);
+      expect(resultText(written)).toMatch(/connection closed/i);
+      const again = await pool.callTool(workspaceId, "fix__ping", {});
+      expect(again.sent).toBe(true);
+      expect(resultText(again)).toBe("pong");
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("does not report Not connected as sent in the kill race window", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "race.mjs");
+    const { pool, store, workspaceId } = setupPool(script, spawnDir);
+    try {
+      const primed = await pool.callTool(workspaceId, "fix__ping", {});
+      expect(primed.sent).toBe(true);
+      expect(resultText(primed)).toBe("pong");
+      for (const delay of [0, 1, 5, 20]) {
+        const living = alivePids(spawnDir);
+        expect(living.length).toBeGreaterThan(0);
+        const pid = living[living.length - 1]!;
+        process.kill(pid, "SIGKILL");
+        if (delay) await sleep(delay);
+        const outcome = await pool.callTool(workspaceId, "fix__ping", {
+          note: "race-secret-placeholder",
+        });
+        const text = resultText(outcome);
+        if (/not connected/i.test(text)) expect(outcome.sent).toBe(false);
+        if (outcome.sent) expect(text).not.toMatch(/not connected/i);
+        if (!outcome.sent) expect(text).not.toContain("race-secret-placeholder");
+        if (outcome.sent && text === "pong") continue;
+        const dropped = await until(() => poolSize(pool) === 0, 2_000);
+        expect(dropped).toBe(true);
+        const next = await pool.callTool(workspaceId, "fix__ping", {});
+        expect(next.sent).toBe(true);
+        expect(resultText(next)).toBe("pong");
+      }
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+});
+
+describe("stdio death audit", () => {
+  it("records a respawned call and collapses a pre-write rejection", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "audit-kill.mjs");
+    spawnDirs.push(spawnDir);
+    const cfg = loadConfig({
+      dbPath: join(dir, "t.db"),
+      masterKeyRaw: master,
+      adminToken: "stdio-death-audit-token",
+      host: "127.0.0.1",
+      port: 0,
+      allowPrivateUrls: true,
+    });
+    const running = await startServer(cfg);
+    const ws = running.store.ensureWorkspace("default");
+    running.store.createBackend(ws.id, {
+      slug: "fix",
+      transport: "stdio",
+      command: [process.execPath, script],
+      enabled: true,
+      placement: { mode: "central-sandbox" },
+    });
+    const backend = running.store.getBackend(ws.id, "fix");
+    expect(backend).toBeTruthy();
+    const created = running.store.createApiKey(ws.id, "stdio-death");
+    const client = new Client({ name: "stdio-death", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${running.url}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${created.token}` } },
+      }),
+    );
+    const textOf = (result: { content: Array<{ text?: string }> }): string =>
+      result.content.map((block) => block.text ?? "").join("\n");
+    try {
+      const first = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: "between-note-placeholder" },
+      });
+      expect(textOf(first)).toBe("pong");
+      const pid = alivePids(spawnDir)[0];
+      expect(pid).toBeTypeOf("number");
+      process.kill(pid!, "SIGKILL");
+      const dropped = await until(
+        () => poolSize(running.pool) === 0 && alivePids(spawnDir).length === 0,
+        2_000,
+      );
+      expect(dropped).toBe(true);
+      const again = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: "respawn-note-placeholder" },
+      });
+      expect(textOf(again)).toBe("pong");
+
+      const entry = poolEntry(running.pool, backend!.id);
+      expect(entry).toBeTruthy();
+      entry!.transport.send = async () => {
+        throw new Error("Not connected");
+      };
+      const secret = "race-secret-placeholder";
+      const blocked = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: secret },
+      });
+      expect(textOf(blocked)).toBe("tool not found");
+      expect(textOf(blocked)).not.toMatch(/not connected/i);
+      expect(textOf(blocked)).not.toContain(secret);
+
+      const recovered = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: "after-race-placeholder" },
+      });
+      expect(textOf(recovered)).toBe("pong");
+
+      const calls = running.store
+        .listAudit(ws.id, { limit: 50 })
+        .filter((event) => event.action === "tools/call");
+      const blob = JSON.stringify(calls);
+      expect(blob).toContain("between-note-placeholder");
+      expect(blob).toContain("respawn-note-placeholder");
+      expect(blob).toContain("after-race-placeholder");
+      expect(blob).not.toContain(secret);
+      const collapsed = calls.filter((event) => {
+        const args = (event.detail as { arguments?: { arguments?: unknown } } | null)
+          ?.arguments;
+        return args?.arguments === "[redacted]";
+      });
+      expect(collapsed.length).toBeGreaterThanOrEqual(1);
+      for (const event of collapsed) {
+        expect(JSON.stringify(event.detail)).not.toContain(secret);
+      }
+    } finally {
+      await client.close();
+      await running.close();
+    }
+  }, 30_000);
 });
 
 describe("shutdown budget", () => {

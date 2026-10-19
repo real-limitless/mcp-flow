@@ -874,7 +874,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      const innerName = args.name.trim();
+      const innerName = args.name;
       const innerArgs =
         args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments)
           ? (args.arguments as Record<string, unknown>)
