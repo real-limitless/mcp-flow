@@ -3,7 +3,7 @@ import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
-import type { Store } from "../db/store.js";
+import { type Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
 import { connectOci } from "./runners/oci.js";
@@ -27,6 +27,9 @@ export interface NamespacedTool extends Tool {
 export function namespaceTool(slug: string, name: string): string {
   return `${slug}__${name}`;
 }
+
+/** tools/call result plus whether a request was sent to the backend. */
+export type UpstreamCallResult = CallToolResult & { sent: boolean };
 
 export function parseNamespacedTool(
   namespaced: string,
@@ -127,7 +130,11 @@ export class UpstreamPool {
    */
   private knownNames = new Map<string, Set<string>>();
 
-  constructor(private store: Store) {}
+  constructor(private store: Store) {
+    store.onBackendRetired((workspaceId, slug) => {
+      this.forgetBackendTools(workspaceId, slug);
+    });
+  }
 
   setEdgeRouter(router: EdgeRouter | null): void {
     this.edgeRouter = router;
@@ -142,23 +149,49 @@ export class UpstreamPool {
     for (const name of names) known.add(name);
   }
 
+  private forgetBackendTools(workspaceId: string, slug: string): void {
+    const known = this.knownNames.get(workspaceId);
+    if (!known) return;
+    for (const name of known) {
+      if (parseNamespacedTool(name)?.slug === slug) known.delete(name);
+    }
+  }
+
+  private allowSet(backend: BackendRecord): Set<string> | null {
+    if (!backend.toolAllowlistJson) return null;
+    try {
+      const parsed = JSON.parse(backend.toolAllowlistJson) as unknown;
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.filter((item): item is string => typeof item === "string"));
+    } catch {
+      return new Set();
+    }
+  }
+
+  /** Cached name still belongs to an enabled backend and its current allowlist. */
+  private nameStillListed(workspaceId: string, name: string): boolean {
+    const parsed = parseNamespacedTool(name);
+    if (!parsed) return false;
+    const backend = this.store.getBackend(workspaceId, parsed.slug);
+    if (!backend?.enabled) return false;
+    const allow = this.allowSet(backend);
+    return !allow || allow.has(parsed.tool);
+  }
+
   /**
-   * Namespaced tools this process has already listed or still has open.
-   * Does not connect, refresh, or spawn a backend.
+   * Namespaced tools this process has already listed or still has open,
+   * limited to backends that are enabled now and tools on the current allowlist.
+   * Does not connect, refresh, or spawn a backend. Dispatch must not use this.
    */
   knownToolNames(workspaceId: string): ReadonlySet<string> {
-    const names = new Set(this.knownNames.get(workspaceId) ?? []);
+    const names = new Set<string>();
+    for (const name of this.knownNames.get(workspaceId) ?? []) {
+      if (this.nameStillListed(workspaceId, name)) names.add(name);
+    }
     for (const backend of this.store.listEnabledBackends(workspaceId)) {
       const pooled = this.pool.get(backend.id);
       if (!pooled) continue;
-      let allow: Set<string> | null = null;
-      if (backend.toolAllowlistJson) {
-        try {
-          allow = new Set(JSON.parse(backend.toolAllowlistJson) as string[]);
-        } catch {
-          allow = new Set();
-        }
-      }
+      const allow = this.allowSet(backend);
       for (const tool of pooled.tools) {
         if (allow && !allow.has(tool.name)) continue;
         names.add(namespaceTool(backend.slug, tool.name));
@@ -528,53 +561,74 @@ export class UpstreamPool {
     return out;
   }
 
+  /**
+   * Whether slug__tool can be sent to its enabled backend right now.
+   * Looks up that backend only. Does not use the audit name cache and does not send a tools/call.
+   */
+  async toolIsCallable(workspaceId: string, namespacedName: string): Promise<boolean> {
+    const parsed = parseNamespacedTool(namespacedName);
+    if (!parsed) return false;
+    const backend = this.store.getBackend(workspaceId, parsed.slug);
+    if (!backend?.enabled) return false;
+    const allow = this.allowSet(backend);
+    if (allow && !allow.has(parsed.tool)) return false;
+    const placement = parsePlacement(backend);
+    try {
+      if (placement.mode === "edge-sandbox" || placement.mode === "edge-bare") {
+        if (!this.edgeRouter) return false;
+        const tools = await this.edgeRouter.listTools(backend);
+        return tools.some((tool) => tool.name === parsed.tool);
+      }
+      const pooled = await this.getClient(backend);
+      return pooled.tools.some((tool) => tool.name === parsed.tool);
+    } catch (err) {
+      if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+      return false;
+    }
+  }
+
+  private notSent(text: string): UpstreamCallResult {
+    return {
+      isError: true,
+      sent: false,
+      content: [{ type: "text", text }],
+    };
+  }
+
+  private upstreamError(slug: string, err: unknown, sent: boolean): UpstreamCallResult {
+    return {
+      isError: true,
+      sent,
+      content: [
+        {
+          type: "text",
+          text: `Upstream error (${slug}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        },
+      ],
+    };
+  }
+
+  /**
+   * Resolve slug__tool on the matching enabled backend and call it.
+   * sent is true only after a tools/call request is handed to that backend.
+   * Allowlist misses, disabled or deleted backends, and tools that are not
+   * listed return sent:false and do not send a request.
+   */
   async callTool(
     workspaceId: string,
     namespacedName: string,
     args: Record<string, unknown> | undefined,
-  ): Promise<CallToolResult> {
+  ): Promise<UpstreamCallResult> {
     const parsed = parseNamespacedTool(namespacedName);
-    if (!parsed) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Invalid tool name (expected slug__tool): ${namespacedName}`,
-          },
-        ],
-      };
-    }
+    if (!parsed) return this.notSent("tool not found");
 
     const backend = this.store.getBackend(workspaceId, parsed.slug);
-    if (!backend || !backend.enabled) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Backend not found or disabled: ${parsed.slug}`,
-          },
-        ],
-      };
-    }
+    if (!backend || !backend.enabled) return this.notSent("tool not found");
 
-    if (backend.toolAllowlistJson) {
-      const allow = new Set(
-        JSON.parse(backend.toolAllowlistJson) as string[],
-      );
-      if (!allow.has(parsed.tool)) {
-        return {
-          isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Tool ${parsed.tool} not on allowlist for ${backend.slug}`,
-            },
-          ],
-        };
-      }
-    }
+    const allow = this.allowSet(backend);
+    if (allow && !allow.has(parsed.tool)) return this.notSent("tool not found");
 
     const placement = parsePlacement(backend);
 
@@ -583,35 +637,51 @@ export class UpstreamPool {
         placement.mode === "edge-sandbox" ||
         placement.mode === "edge-bare"
       ) {
-        if (!this.edgeRouter) {
-          throw new Error("edge hub not configured");
+        if (!this.edgeRouter) return this.notSent("tool not found");
+        let tools;
+        try {
+          tools = await this.edgeRouter.listTools(backend);
+        } catch (err) {
+          return this.upstreamError(backend.slug, err, false);
         }
-        return await this.edgeRouter.callTool(
-          backend,
-          parsed.tool,
-          args ?? {},
-        );
+        if (!tools.some((tool) => tool.name === parsed.tool)) {
+          return this.notSent("tool not found");
+        }
+        try {
+          const result = await this.edgeRouter.callTool(
+            backend,
+            parsed.tool,
+            args ?? {},
+          );
+          return { ...result, sent: true };
+        } catch (err) {
+          return this.upstreamError(backend.slug, err, true);
+        }
       }
 
-      const pooled = await this.getClient(backend);
-      const result = await pooled.client.callTool({
-        name: parsed.tool,
-        arguments: args ?? {},
-      });
-      return result as CallToolResult;
+      let pooled;
+      try {
+        pooled = await this.getClient(backend);
+      } catch (err) {
+        if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+        return this.upstreamError(backend.slug, err, false);
+      }
+      if (!pooled.tools.some((tool) => tool.name === parsed.tool)) {
+        return this.notSent("tool not found");
+      }
+      try {
+        const result = await pooled.client.callTool({
+          name: parsed.tool,
+          arguments: args ?? {},
+        });
+        return { ...(result as CallToolResult), sent: true };
+      } catch (err) {
+        if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+        return this.upstreamError(backend.slug, err, true);
+      }
     } catch (err) {
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Upstream error (${backend.slug}): ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-          },
-        ],
-      };
+      return this.upstreamError(backend.slug, err, false);
     }
   }
 

@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { backendUpdateAuditDetail } from "../src/audit/backend-update.js";
 import {
+  catalogAuditName,
   EXACT_ADMIN_TOOL_NAMES,
   redactAdminToolAuditArgs,
   undispatchedToolAudit,
@@ -652,6 +653,12 @@ describe("admin tool audit redaction", () => {
     expect([...EXACT_ADMIN_TOOL_NAMES].sort()).toEqual(
       ADMIN_META_TOOLS.map((tool) => tool.name).sort(),
     );
+    const adminCatalog = new Set(ADMIN_META_TOOLS.map((tool) => tool.name));
+    expect(catalogAuditName("mf_admin_list_backends", adminCatalog)).toBe(
+      "mf_admin_list_backends",
+    );
+    expect(catalogAuditName("mf_admin_list_backends ", adminCatalog)).toBe("[invalid]");
+    expect(catalogAuditName(" qa__ok", new Set(["qa__ok"]))).toBe("[invalid]");
 
     const wrapped = {
       name: "mf_admin_update_backend",
@@ -741,12 +748,12 @@ describe("admin tool audit redaction", () => {
     expectCollapsed(
       "mf_call_tool",
       { name: "  mf_admin_update_backend  ", arguments: inner },
-      "mf_admin_update_backend",
+      "[invalid]",
     );
     expectCollapsed(
       "mf_call_tool",
       { name: "\tmf_admin_update_backend\t", arguments: inner },
-      "mf_admin_update_backend",
+      "[invalid]",
     );
     expectCollapsed(
       "mf_call_tool",
@@ -1815,8 +1822,8 @@ describe("placement and sandbox shapes", () => {
       { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
       { tool: "mf_call_tool", arguments: { name: "mf_admin_create_backend", arguments: inner }, name: "mf_admin_create_backend", hidden: [] },
       { tool: "mf_call_tool", arguments: { name: "mf_admin_catalog_install", arguments: inner }, name: "mf_admin_catalog_install", hidden: [] },
-      { tool: "mf_call_tool", arguments: { name: "  mf_admin_update_backend  ", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
-      { tool: "mf_call_tool", arguments: { name: "\tmf_admin_update_backend\t", arguments: inner }, name: "mf_admin_update_backend", hidden: [] },
+      { tool: "mf_call_tool", arguments: { name: "  mf_admin_update_backend  ", arguments: inner }, name: "[invalid]", hidden: ["mf_admin_update_backend"] },
+      { tool: "mf_call_tool", arguments: { name: "\tmf_admin_update_backend\t", arguments: inner }, name: "[invalid]", hidden: ["mf_admin_update_backend"] },
       { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: [inner] }, name: "mf_admin_update_backend", hidden: [] },
       { tool: "mf_call_tool", arguments: { name: "mf_admin_update_backend", arguments: secret }, name: "mf_admin_update_backend", hidden: [] },
       {
@@ -2127,12 +2134,15 @@ describe("placement and sandbox shapes", () => {
     expect(deniedDeviceText).not.toContain(deviceSecret);
 
     const rejected = await restricted.callTool({
-      name: "spawn__touch",
+      name: "nosuch__tool",
       arguments: { note: toolSecret },
     });
     expect(rejected.isError).toBe(true);
-    expect(textOf(rejected)).toBe("tool not found");
+    expect(textOf(rejected)).toBe(
+      "Tool not in active project (default). Use mf_use_project or mf_list_projects.",
+    );
     expect(textOf(rejected)).not.toContain(toolSecret);
+    expect(textOf(rejected)).not.toContain("nosuch");
 
     const missing = await client.callTool({
       name: "mf_use_project",
@@ -2154,11 +2164,14 @@ describe("placement and sandbox shapes", () => {
 
     const wrapped = await client.callTool({
       name: "mf_call_tool",
-      arguments: { name: "spawn__touch", arguments: { note: toolSecret } },
+      arguments: { name: "nosuch__tool", arguments: { note: toolSecret } },
     });
     expect(wrapped.isError).toBe(true);
-    expect(textOf(wrapped)).toBe("tool not found");
+    expect(textOf(wrapped)).toBe(
+      "Tool not in active project (default). Use mf_use_project or mf_list_projects.",
+    );
     expect(textOf(wrapped)).not.toContain(toolSecret);
+    expect(textOf(wrapped)).not.toContain("nosuch");
     expect(existsSync(marker)).toBe(false);
 
     const enable = await client.callTool({

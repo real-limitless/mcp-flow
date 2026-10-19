@@ -719,6 +719,9 @@ export function toPublicBackend(b: BackendRecord): BackendPublic {
 export class Store {
   readonly db: DatabaseSync;
   readonly masterKey: Buffer;
+  private readonly backendRetiredListeners = new Set<
+    (workspaceId: string, slug: string) => void
+  >();
 
   constructor(dbPath: string, masterKeyRaw: string) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
@@ -1305,7 +1308,17 @@ export class Store {
         updatedAt,
         existing.id,
       );
+    this.emitBackendRetired(workspaceId, existing.slug);
     return this.getBackendPublic(workspaceId, existing.id);
+  }
+
+  /** Drop cached upstream tool names when a backend is updated, disabled, or deleted. */
+  onBackendRetired(listener: (workspaceId: string, slug: string) => void): void {
+    this.backendRetiredListeners.add(listener);
+  }
+
+  private emitBackendRetired(workspaceId: string, slug: string): void {
+    for (const listener of this.backendRetiredListeners) listener(workspaceId, slug);
   }
 
   deleteBackend(workspaceId: string, idOrSlug: string): boolean {
@@ -1314,7 +1327,9 @@ export class Store {
     const res = this.db
       .prepare(`DELETE FROM backends WHERE id = ? AND workspace_id = ?`)
       .run(existing.id, workspaceId);
-    return Number(res.changes) > 0;
+    const deleted = Number(res.changes) > 0;
+    if (deleted) this.emitBackendRetired(workspaceId, existing.slug);
+    return deleted;
   }
 
   listEnabledBackends(workspaceId: string): BackendRecord[] {

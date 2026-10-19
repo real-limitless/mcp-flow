@@ -173,17 +173,17 @@ const AUDIT_CATALOG_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 
 /**
  * Name recorded for a call that was not dispatched.
- * The trimmed value is kept only when it matches the catalog name pattern
- * and is a real catalog tool. Anything else is "[invalid]".
+ * The value is kept only when it matches the catalog name pattern exactly
+ * and is a real catalog tool. Padding is not trimmed: a padded exact admin
+ * name is "[invalid]".
  */
 export function catalogAuditName(
   value: unknown,
   catalog: ReadonlySet<string>,
 ): string {
   if (typeof value !== "string") return "[invalid]";
-  const name = value.trim();
-  if (!AUDIT_CATALOG_NAME_RE.test(name) || !catalog.has(name)) return "[invalid]";
-  return name;
+  if (!AUDIT_CATALOG_NAME_RE.test(value) || !catalog.has(value)) return "[invalid]";
+  return value;
 }
 
 /**

@@ -382,6 +382,25 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       });
     };
 
+    const finishUpstream = async (
+      outcome: CallToolResult & { sent: boolean },
+      extra?: {
+        meta?: boolean;
+        backendSlug?: string | null;
+        placement?: string | null;
+        deviceId?: string | null;
+      },
+    ): Promise<CallToolResult> => {
+      if (!outcome.sent) {
+        const result = textResult("tool not found", true);
+        await auditCall(result, extra);
+        return result;
+      }
+      const { sent: _sent, ...result } = outcome;
+      await auditCall(result, extra, "upstream");
+      return result;
+    };
+
     if (!toolAllowedByScopes(name, ctx.scopes)) {
       const result = textResult("Tool not allowed by API key scopes", true);
       await auditCall(result, { denied: true, reason: "scope" });
@@ -873,11 +892,6 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!loadCatalog().has(innerName)) {
-        const result = textResult("tool not found", true);
-        await auditCall(result, { meta: true });
-        return result;
-      }
       if (!toolAllowedByScopes(innerName, ctx.scopes)) {
         const result = textResult(
           "Tool not allowed by API key scopes",
@@ -902,6 +916,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           "Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools.",
           true,
         );
+        await auditCall(result, { meta: true });
+        return result;
+      }
+      if (!(await upstream.toolIsCallable(ctx.workspaceId, innerName))) {
+        const result = textResult("tool not found", true);
         await auditCall(result, { meta: true });
         return result;
       }
@@ -941,18 +960,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         });
         return gate.result;
       }
-      const result = await upstream.callTool(
-        ctx.workspaceId,
-        innerName,
-        gate.frozenArgs,
+      return finishUpstream(
+        await upstream.callTool(ctx.workspaceId, innerName, gate.frozenArgs),
+        {
+          meta: true,
+          backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
+          placement: ctxInfo.placement,
+          deviceId: ctxInfo.deviceId,
+        },
       );
-      await auditCall(result, {
-        meta: true,
-        backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
-        placement: ctxInfo.placement,
-        deviceId: ctxInfo.deviceId,
-      }, "upstream");
-      return result;
     }
 
     if (ADMIN_META_TOOLS.some((tool) => tool.name === name)) {
@@ -1026,7 +1042,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
-    if (!loadCatalog().has(name)) {
+    if (!(await upstream.toolIsCallable(ctx.workspaceId, name))) {
       const result = textResult("tool not found", true);
       await auditCall(result);
       return result;
@@ -1060,17 +1076,14 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       });
       return gate.result;
     }
-    const result = await upstream.callTool(
-      ctx.workspaceId,
-      name,
-      gate.frozenArgs,
+    return finishUpstream(
+      await upstream.callTool(ctx.workspaceId, name, gate.frozenArgs),
+      {
+        backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
+        placement: ctxInfo.placement,
+        deviceId: ctxInfo.deviceId,
+      },
     );
-    await auditCall(result, {
-      backendSlug: ctxInfo.backendSlug ?? parsed?.slug ?? null,
-      placement: ctxInfo.placement,
-      deviceId: ctxInfo.deviceId,
-    }, "upstream");
-    return result;
   });
 
   return server;
