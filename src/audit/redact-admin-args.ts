@@ -139,13 +139,29 @@ function projectSchemaArgs(
   return out;
 }
 
+function redactWrappedAdminArgs(
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const innerName = typeof args.name === "string" ? args.name.trim() : "";
+  if (!innerName.startsWith("mf_admin_")) return args;
+  if (!Object.prototype.hasOwnProperty.call(args, "arguments")) {
+    return { ...args };
+  }
+  const inner = args.arguments;
+  const argumentsCopy =
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? redactAdminToolAuditArgs(innerName, inner as Record<string, unknown>)
+      : "[redacted]";
+  return { ...args, arguments: argumentsCopy };
+}
+
 export function redactAdminToolAuditArgs(
   tool: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!tool.startsWith("mf_admin_") || !args || typeof args !== "object" || Array.isArray(args)) {
-    return args;
-  }
+  if (!args || typeof args !== "object" || Array.isArray(args)) return args;
+  if (tool === "mf_call_tool") return redactWrappedAdminArgs(args);
+  if (!tool.startsWith("mf_admin_")) return args;
   const projected = projectSchemaArgs(tool, args);
   if (!hasSecretShape(projected)) return projected;
   return redactLevel(projected);

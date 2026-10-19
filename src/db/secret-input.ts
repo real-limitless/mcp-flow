@@ -141,14 +141,23 @@ export function readUnsetEnv(raw: unknown): string[] {
   return names;
 }
 
-/** Identifiers and sandbox limits: short, with no whitespace or control characters. */
+/**
+ * Identifiers and sandbox limits: non-empty, at most 256 UTF-16 units,
+ * no whitespace, no C0/C1/DEL controls (including U+0085 NEL), and no
+ * format or bidi characters.
+ */
 export const MAX_CONFIG_STRING_LEN = 256;
+
+const CONFIG_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/u;
+const CONFIG_FORMAT_RE = /\p{Cf}/u;
 
 export function isBoundedConfigString(value: string): boolean {
   return (
+    value.length > 0 &&
     value.length <= MAX_CONFIG_STRING_LEN &&
     !/\s/.test(value) &&
-    !CONTROL_RE.test(value)
+    !CONFIG_CONTROL_RE.test(value) &&
+    !CONFIG_FORMAT_RE.test(value)
   );
 }
 

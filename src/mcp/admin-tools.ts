@@ -578,7 +578,7 @@ export function adminToolPropertyNames(tool: string): ReadonlySet<string> | null
 
 /**
  * MCP error text when args include a top-level key the tool schema does not
- * define. The text names safe keys and never includes argument values.
+ * define. The text is a count, so a secret pasted as a key name is not logged.
  */
 export function unknownAdminArgumentMessage(
   tool: string,
@@ -588,10 +588,7 @@ export function unknownAdminArgumentMessage(
   if (!allowed) return null;
   const unknown = Object.keys(args).filter((key) => !allowed.has(key));
   if (!unknown.length) return null;
-  const safe = unknown.every(
-    (key) => key.length > 0 && key.length <= 64 && /^[A-Za-z0-9_.-]+$/.test(key),
-  );
-  return safe ? `unknown argument: ${unknown.join(", ")}` : "unknown argument";
+  return `unknown argument (${unknown.length})`;
 }
 
 export async function handleAdminTool(

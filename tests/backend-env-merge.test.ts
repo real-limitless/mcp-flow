@@ -645,6 +645,33 @@ describe("admin tool audit redaction", () => {
     expect(installedLeak).toEqual({ id: "example/server" });
     expect(JSON.stringify(installedLeak)).not.toContain(top);
     expect(redactAdminToolAuditArgs("mf_admin_status", { STRIPE_SK: top })).toEqual({});
+
+    const wrapped = {
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "sb",
+        env: { STRIPE_SK: STRIPE },
+        headers: { "X-Upstream-Sig": SIG },
+        extra: extra,
+        apiKey: KEY,
+      },
+    };
+    const wrappedCopy = redactAdminToolAuditArgs("mf_call_tool", wrapped);
+    expect(wrappedCopy).not.toBe(wrapped);
+    expect(wrappedCopy).toEqual({
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "sb",
+        env: { STRIPE_SK: "[redacted]" },
+        headers: { "X-Upstream-Sig": "[redacted]" },
+        apiKey: "[redacted]",
+      },
+    });
+    expect(JSON.stringify(wrappedCopy)).not.toContain(STRIPE);
+    expect(JSON.stringify(wrappedCopy)).not.toContain(extra);
+    expect(wrapped.arguments.env.STRIPE_SK).toBe(STRIPE);
+    const plainCall = { name: "remote__echo", arguments: { text: "hi" } };
+    expect(redactAdminToolAuditArgs("mf_call_tool", plainCall)).toBe(plainCall);
   });
 
   it("stores redacted tools/call arguments for admin backend tools", async () => {
@@ -1280,6 +1307,7 @@ describe("placement and sandbox shapes", () => {
           extra: extraVal,
           note: { deep: noteVal },
         },
+        unknown: 3,
       },
       {
         name: "mf_admin_create_backend",
@@ -1289,23 +1317,32 @@ describe("placement and sandbox shapes", () => {
           STRIPE_SK: top,
           extra: extraVal,
         },
+        unknown: 2,
       },
       {
         name: "mf_admin_catalog_install",
         arguments: { id: "example/server", note: noteVal, extra: extraVal },
+        unknown: 2,
       },
       {
         name: "mf_admin_list_backends",
         arguments: { STRIPE_SK: top },
+        unknown: 1,
       },
     ];
     for (const call of calls) {
-      const result = await client.callTool(call);
+      const result = await client.callTool({
+        name: call.name,
+        arguments: call.arguments,
+      });
       const text = result.content
         .map((block) => ("text" in block ? block.text : ""))
         .join("\n");
       expect(result.isError, text).toBe(true);
-      expect(text).toMatch(/unknown argument/);
+      expect(text).toBe(`unknown argument (${call.unknown})`);
+      expect(text).not.toContain("STRIPE_SK");
+      expect(text).not.toContain("extra");
+      expect(text).not.toContain("note");
       expect(text).not.toContain(top);
       expect(text).not.toContain(extraVal);
       expect(text).not.toContain(noteVal);
@@ -1317,6 +1354,9 @@ describe("placement and sandbox shapes", () => {
     expect(blob).not.toContain(top);
     expect(blob).not.toContain(extraVal);
     expect(blob).not.toContain(noteVal);
+    expect(blob).not.toContain("STRIPE_SK");
+    expect(blob).not.toContain("\"extra\"");
+    expect(blob).not.toContain("\"note\"");
     expect(blob).not.toContain(long);
     const listed = await handleAdminTool("mf_admin_list_audit", { limit: 100 }, deps);
     const listedText = listed.content
@@ -1325,6 +1365,160 @@ describe("placement and sandbox shapes", () => {
     expect(listedText).not.toContain(top);
     expect(listedText).not.toContain(extraVal);
     expect(listedText).not.toContain(noteVal);
+    expect(listedText).not.toContain("STRIPE_SK");
     expect(listedText).not.toContain(long);
+  }, 60_000);
+
+  it("rejects NEL, format characters, and empty config strings, and redacts wrapped admin calls", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const created = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "sb",
+        transport: "stdio",
+        command: ["echo", "ok"],
+        placement: { mode: "central-sandbox" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const ws = gw.store.ensureWorkspace("default");
+    const before = gw.store.getBackend(ws.id, "sb")!;
+    const nel = "64m\u0085x";
+    const zwsp = "dev\u200b1";
+    const rlo = "1\u202e0";
+    const bad = [
+      { sandbox: { memory: nel } },
+      { sandbox: { cpus: rlo } },
+      { sandbox: { networkMode: "" } },
+      { placement: { mode: "central-sandbox", deviceId: "id\u0085" } },
+      { placement: { mode: "central-sandbox", deviceId: zwsp } },
+      { placement: { mode: "central-sandbox", deviceId: "" } },
+      { placement: { mode: "central-sandbox", deviceTags: ["ok", "\u200b"] } },
+      { placement: { mode: "central-sandbox", deviceTags: [""] } },
+    ];
+    for (const body of bad) {
+      const res = await fetch(`${base}/v1/backends/sb`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      expect(res.status, text).toBe(400);
+      expect(text).not.toContain(nel);
+      expect(text).not.toContain(zwsp);
+      expect(text).not.toContain(rlo);
+      expect(text).not.toContain("\u0085");
+      expect(text).not.toContain("\u200b");
+      expect(text).not.toContain("\u202e");
+      expect(text).not.toMatch(/TypeError/);
+    }
+    const row = gw.store.getBackend(ws.id, "sb")!;
+    expect(row.placementJson).toBe(before.placementJson);
+    expect(row.sandboxJson).toBe(before.sandboxJson);
+    expect(row.placementJson).not.toContain("\u0085");
+    expect(row.sandboxJson ?? "").not.toContain("\u0085");
+
+    const pool = new UpstreamPool(gw.store);
+    const cfg = loadConfig({
+      dbPath: join(tmpdir(), "unused-shape.db"),
+      masterKeyRaw: master,
+      adminToken: admin,
+      allowPrivateUrls: true,
+    });
+    const deps = {
+      store: gw.store,
+      pool,
+      cfg,
+      auth: { kind: "admin" as const, workspaceId: ws.id },
+      edgeEnabled: false,
+    };
+    const mcpNel = await handleAdminTool(
+      "mf_admin_update_backend",
+      { idOrSlug: "sb", sandbox: { memory: nel } },
+      deps,
+    );
+    const mcpNelText = mcpNel.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(mcpNel.isError).toBe(true);
+    expect(mcpNelText).toMatch(/memory/);
+    expect(mcpNelText).not.toContain(nel);
+    expect(mcpNelText).not.toContain("\u0085");
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "ops-wrap", admin: true }),
+    });
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client({ name: "ops-wrap", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const extraVal = "wrapped-extra-placeholder";
+    const wrapped = await client.callTool({
+      name: "mf_call_tool",
+      arguments: {
+        name: "mf_admin_update_backend",
+        arguments: {
+          idOrSlug: "sb",
+          env: { STRIPE_SK: STRIPE },
+          headers: { "X-Upstream-Sig": SIG },
+          extra: extraVal,
+          apiKey: KEY,
+        },
+      },
+    });
+    const wrappedText = wrapped.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(wrapped.isError).toBe(true);
+    expect(wrappedText).not.toContain(STRIPE);
+    expect(wrappedText).not.toContain(SIG);
+    expect(wrappedText).not.toContain(extraVal);
+    expect(wrappedText).not.toContain(KEY);
+    const wrappedCreate = await client.callTool({
+      name: "mf_call_tool",
+      arguments: {
+        name: "mf_admin_create_backend",
+        arguments: {
+          slug: "wrapped",
+          env: { STRIPE_SK: STRIPE },
+          extra: extraVal,
+        },
+      },
+    });
+    expect(wrappedCreate.isError).toBe(true);
+    await client.close();
+    expect(gw.store.getBackend(ws.id, "wrapped")).toBeNull();
+
+    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 100 }));
+    expect(blob).not.toContain(STRIPE);
+    expect(blob).not.toContain(SIG);
+    expect(blob).not.toContain(extraVal);
+    expect(blob).not.toContain(KEY);
+    expect(blob).not.toContain(nel);
+    expect(blob).not.toContain("\u0085");
+    expect(blob).not.toContain("\u200b");
+    expect(blob).not.toContain("\u202e");
+    expect(blob).toContain("STRIPE_SK");
+    expect(blob).toContain("[redacted]");
+    const listed = await handleAdminTool("mf_admin_list_audit", { limit: 100 }, deps);
+    const listedText = listed.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(listedText).not.toContain(STRIPE);
+    expect(listedText).not.toContain(SIG);
+    expect(listedText).not.toContain(extraVal);
+    expect(listedText).not.toContain(KEY);
+    expect(listedText).not.toContain("\u0085");
   }, 60_000);
 });
