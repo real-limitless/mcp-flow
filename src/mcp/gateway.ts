@@ -828,9 +828,14 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (name === "mf_call_tool") {
-      const innerName = String(args.name ?? "").trim();
+      if (typeof args.name !== "string") {
+        const result = textResult("name required", true);
+        auditCall(result, { meta: true });
+        return result;
+      }
+      const innerName = args.name.trim();
       const innerArgs =
-        args.arguments && typeof args.arguments === "object"
+        args.arguments && typeof args.arguments === "object" && !Array.isArray(args.arguments)
           ? (args.arguments as Record<string, unknown>)
           : {};
       if (!innerName) {
@@ -838,7 +843,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         auditCall(result, { meta: true });
         return result;
       }
-      if (innerName.startsWith("mf_")) {
+      if (/^mf_/i.test(innerName)) {
         const result = textResult(
           "mf_call_tool is for namespaced upstream tools (slug__tool)",
           true,
@@ -923,7 +928,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
-    if (name.startsWith("mf_admin_")) {
+    if (/^mf_admin_/i.test(name)) {
       if (!isAdminScopes(ctx.scopes)) {
         const result = textResult(`admin key required for ${name}`, true);
         store.writeAudit({
@@ -982,7 +987,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
-    if (name.startsWith("mf_")) {
+    if (/^mf_/i.test(name)) {
       const result = textResult(`Unknown meta tool: ${name}`, true);
       auditCall(result, { meta: true });
       return result;

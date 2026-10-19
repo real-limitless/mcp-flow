@@ -660,18 +660,144 @@ describe("admin tool audit redaction", () => {
     expect(wrappedCopy).not.toBe(wrapped);
     expect(wrappedCopy).toEqual({
       name: "mf_admin_update_backend",
-      arguments: {
-        idOrSlug: "sb",
-        env: { STRIPE_SK: "[redacted]" },
-        headers: { "X-Upstream-Sig": "[redacted]" },
-        apiKey: "[redacted]",
-      },
+      arguments: "[redacted]",
     });
     expect(JSON.stringify(wrappedCopy)).not.toContain(STRIPE);
     expect(JSON.stringify(wrappedCopy)).not.toContain(extra);
+    expect(JSON.stringify(wrappedCopy)).not.toContain("STRIPE_SK");
     expect(wrapped.arguments.env.STRIPE_SK).toBe(STRIPE);
     const plainCall = { name: "remote__echo", arguments: { text: "hi" } };
     expect(redactAdminToolAuditArgs("mf_call_tool", plainCall)).toBe(plainCall);
+  });
+
+  it("records only a sanitized inner name when mf_call_tool is not an upstream tool", () => {
+    const secret = "wrap-variant-placeholder";
+    const header = "wrap-header-placeholder";
+    const extra = "wrap-extra-placeholder";
+    const note = "wrap-note-placeholder";
+    const place = "wrap-placement-placeholder";
+    const inner = {
+      idOrSlug: "sb",
+      env: { STRIPE_SK: secret, SLACK_BOT: secret },
+      headers: { "X-Upstream-Sig": header },
+      apiKey: KEY,
+      extra,
+      note: { deep: note },
+      placement: { extra: place },
+    };
+    const expectCollapsed = (
+      tool: string,
+      args: Record<string, unknown>,
+      name: string,
+    ) => {
+      const copy = redactAdminToolAuditArgs(tool, args);
+      expect(copy).toEqual({ name, arguments: "[redacted]" });
+      const text = JSON.stringify(copy);
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain(header);
+      expect(text).not.toContain(extra);
+      expect(text).not.toContain(note);
+      expect(text).not.toContain(place);
+      expect(text).not.toContain(KEY);
+      expect(text).not.toContain("SLACK_BOT");
+      expect(text).not.toContain("STRIPE_SK");
+    };
+
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_update_backend", arguments: inner },
+      "mf_admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_create_backend", arguments: inner },
+      "mf_admin_create_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_catalog_install", arguments: inner },
+      "mf_admin_catalog_install",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "  mf_admin_update_backend  ", arguments: inner },
+      "mf_admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "\tmf_admin_update_backend\t", arguments: inner },
+      "mf_admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_update_backend", arguments: [inner] as unknown as Record<string, unknown> },
+      "mf_admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_update_backend", arguments: secret },
+      "mf_admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      {
+        name: "mf_call_tool",
+        arguments: { name: "mf_admin_update_backend", arguments: inner },
+      },
+      "mf_call_tool",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      {
+        name: "mf_call_tool",
+        arguments: {
+          name: "mf_call_tool",
+          arguments: {
+            name: "mf_call_tool",
+            arguments: { name: "mf_admin_update_backend", arguments: inner },
+          },
+        },
+      },
+      "mf_call_tool",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      {
+        name: "MF_ADMIN_update_backend",
+        arguments: inner,
+        extra,
+        env: { STRIPE_SK: secret },
+      },
+      "MF_ADMIN_update_backend",
+    );
+    expectCollapsed(
+      "Mf_Call_Tool",
+      { name: "Mf_Admin_update_backend", arguments: inner, extra },
+      "Mf_Admin_update_backend",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_status", arguments: { env: { STRIPE_SK: secret } }, extra },
+      "mf_status",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: { env: { STRIPE_SK: secret }, extra }, arguments: inner },
+      "[invalid]",
+    );
+    expectCollapsed(
+      "mf_call_tool",
+      { name: "mf_admin_\u0001update_backend", arguments: inner },
+      "mf_admin_update_backend",
+    );
+    const long = "mf_admin_" + "n".repeat(80);
+    expectCollapsed(
+      "mf_call_tool",
+      { name: `  ${long}  `, arguments: inner },
+      long.slice(0, 64),
+    );
+    const spacedUpstream = { name: " remote__echo ", arguments: { text: secret } };
+    expect(redactAdminToolAuditArgs("mf_call_tool", spacedUpstream)).toBe(spacedUpstream);
   });
 
   it("stores redacted tools/call arguments for admin backend tools", async () => {
@@ -1392,15 +1518,28 @@ describe("placement and sandbox shapes", () => {
     const nel = "64m\u0085x";
     const zwsp = "dev\u200b1";
     const rlo = "1\u202e0";
+    const lone = "dev\uD800";
+    const loneLow = "dev\uDC00";
+    const pua = "dev\uE000";
+    const nonchar = "dev\uFFFF";
+    const noncharFdd0 = "dev\uFDD0";
     const bad = [
       { sandbox: { memory: nel } },
       { sandbox: { cpus: rlo } },
       { sandbox: { networkMode: "" } },
+      { sandbox: { memory: lone } },
+      { sandbox: { cpus: pua } },
+      { sandbox: { networkMode: nonchar } },
       { placement: { mode: "central-sandbox", deviceId: "id\u0085" } },
       { placement: { mode: "central-sandbox", deviceId: zwsp } },
       { placement: { mode: "central-sandbox", deviceId: "" } },
+      { placement: { mode: "central-sandbox", deviceId: lone } },
+      { placement: { mode: "central-sandbox", deviceId: pua } },
+      { placement: { mode: "central-sandbox", deviceId: nonchar } },
       { placement: { mode: "central-sandbox", deviceTags: ["ok", "\u200b"] } },
       { placement: { mode: "central-sandbox", deviceTags: [""] } },
+      { placement: { mode: "central-sandbox", deviceTags: ["ok", loneLow] } },
+      { placement: { mode: "central-sandbox", deviceTags: [noncharFdd0] } },
     ];
     for (const body of bad) {
       const res = await fetch(`${base}/v1/backends/sb`, {
@@ -1416,6 +1555,13 @@ describe("placement and sandbox shapes", () => {
       expect(text).not.toContain("\u0085");
       expect(text).not.toContain("\u200b");
       expect(text).not.toContain("\u202e");
+      expect(text).not.toContain(lone);
+      expect(text).not.toContain(loneLow);
+      expect(text).not.toContain(pua);
+      expect(text).not.toContain(nonchar);
+      expect(text).not.toContain(noncharFdd0);
+      expect(text.toLowerCase()).not.toContain("\\ud800");
+      expect(text.toLowerCase()).not.toContain("\\udc00");
       expect(text).not.toMatch(/TypeError/);
     }
     const row = gw.store.getBackend(ws.id, "sb")!;
@@ -1423,6 +1569,21 @@ describe("placement and sandbox shapes", () => {
     expect(row.sandboxJson).toBe(before.sandboxJson);
     expect(row.placementJson).not.toContain("\u0085");
     expect(row.sandboxJson ?? "").not.toContain("\u0085");
+    expect(row.placementJson).not.toContain(pua);
+    expect(row.placementJson).not.toContain(nonchar);
+    expect(row.sandboxJson ?? "").not.toContain(pua);
+    expect(row.sandboxJson ?? "").not.toContain(nonchar);
+    const emoji = "dev-\uD83D\uDE00";
+    const kept = await fetch(`${base}/v1/backends/sb`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        placement: { mode: "central-sandbox", deviceId: emoji },
+      }),
+    });
+    expect(kept.status).toBe(200);
+    const keptRow = gw.store.getBackend(ws.id, "sb")!;
+    expect(keptRow.placementJson).toContain(emoji);
 
     const pool = new UpstreamPool(gw.store);
     const cfg = loadConfig({
@@ -1450,6 +1611,30 @@ describe("placement and sandbox shapes", () => {
     expect(mcpNelText).toMatch(/memory/);
     expect(mcpNelText).not.toContain(nel);
     expect(mcpNelText).not.toContain("\u0085");
+    for (const args of [
+      { idOrSlug: "sb", placement: { deviceId: lone } },
+      { idOrSlug: "sb", sandbox: { cpus: pua } },
+      { idOrSlug: "sb", sandbox: { networkMode: nonchar } },
+      { idOrSlug: "sb", placement: { deviceTags: [loneLow, noncharFdd0] } },
+    ]) {
+      const rejected = await handleAdminTool("mf_admin_update_backend", args, deps);
+      const rejectedText = rejected.content
+        .map((block) => ("text" in block ? block.text : ""))
+        .join("\n");
+      expect(rejected.isError, rejectedText).toBe(true);
+      expect(rejectedText).not.toContain(lone);
+      expect(rejectedText).not.toContain(pua);
+      expect(rejectedText).not.toContain(nonchar);
+      expect(rejectedText).not.toContain(loneLow);
+      expect(rejectedText).not.toContain(noncharFdd0);
+      expect(rejectedText.toLowerCase()).not.toContain("\\ud800");
+    }
+    const afterRejects = gw.store.getBackend(ws.id, "sb")!;
+    expect(afterRejects.placementJson).toContain(emoji);
+    expect(afterRejects.placementJson).not.toContain(pua);
+    expect(afterRejects.placementJson).not.toContain(nonchar);
+    expect(afterRejects.sandboxJson ?? "").not.toContain(pua);
+    expect(afterRejects.sandboxJson ?? "").not.toContain(nonchar);
 
     const keyRes = await fetch(`${base}/v1/keys`, {
       method: "POST",
@@ -1509,7 +1694,7 @@ describe("placement and sandbox shapes", () => {
     expect(blob).not.toContain("\u0085");
     expect(blob).not.toContain("\u200b");
     expect(blob).not.toContain("\u202e");
-    expect(blob).toContain("STRIPE_SK");
+    expect(blob).not.toContain("STRIPE_SK");
     expect(blob).toContain("[redacted]");
     const listed = await handleAdminTool("mf_admin_list_audit", { limit: 100 }, deps);
     const listedText = listed.content
@@ -1520,5 +1705,162 @@ describe("placement and sandbox shapes", () => {
     expect(listedText).not.toContain(extraVal);
     expect(listedText).not.toContain(KEY);
     expect(listedText).not.toContain("\u0085");
+  }, 60_000);
+
+  it("audits every rejected mf_call_tool wrapper as a name and a redacted blob", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "ops-wrap-variants", admin: true }),
+    });
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client(
+      { name: "ops-wrap-variants", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const secret = "wrap-variant-placeholder";
+    const slack = "wrap-slack-placeholder";
+    const header = "wrap-header-placeholder";
+    const extra = "wrap-extra-placeholder";
+    const note = "wrap-note-placeholder";
+    const place = "wrap-placement-placeholder";
+    const inner = {
+      idOrSlug: "sb",
+      env: { STRIPE_SK: secret, SLACK_BOT: slack },
+      headers: { "X-Upstream-Sig": header },
+      apiKey: KEY,
+      extra,
+      note: { deep: note },
+      placement: { extra: place },
+    };
+    const calls: Array<{ arguments: Record<string, unknown>; name: string }> = [
+      { arguments: { name: "mf_admin_update_backend", arguments: inner }, name: "mf_admin_update_backend" },
+      { arguments: { name: "mf_admin_create_backend", arguments: inner }, name: "mf_admin_create_backend" },
+      { arguments: { name: "mf_admin_catalog_install", arguments: inner }, name: "mf_admin_catalog_install" },
+      { arguments: { name: "  mf_admin_update_backend  ", arguments: inner }, name: "mf_admin_update_backend" },
+      { arguments: { name: "\tmf_admin_update_backend\t", arguments: inner }, name: "mf_admin_update_backend" },
+      { arguments: { name: "mf_admin_update_backend", arguments: [inner] }, name: "mf_admin_update_backend" },
+      { arguments: { name: "mf_admin_update_backend", arguments: secret }, name: "mf_admin_update_backend" },
+      {
+        arguments: {
+          name: "mf_call_tool",
+          arguments: { name: "mf_admin_update_backend", arguments: inner },
+        },
+        name: "mf_call_tool",
+      },
+      {
+        arguments: {
+          name: "mf_call_tool",
+          arguments: {
+            name: "mf_call_tool",
+            arguments: {
+              name: "mf_call_tool",
+              arguments: { name: "mf_admin_update_backend", arguments: inner },
+            },
+          },
+        },
+        name: "mf_call_tool",
+      },
+      {
+        arguments: { name: "MF_ADMIN_update_backend", arguments: inner, extra, env: { STRIPE_SK: secret } },
+        name: "MF_ADMIN_update_backend",
+      },
+      {
+        arguments: { name: "Mf_Admin_update_backend", arguments: inner, extra },
+        name: "Mf_Admin_update_backend",
+      },
+      {
+        arguments: { name: "mf_status", arguments: { env: { STRIPE_SK: secret } }, extra },
+        name: "mf_status",
+      },
+      {
+        arguments: { name: { env: { STRIPE_SK: secret }, extra }, arguments: inner },
+        name: "[invalid]",
+      },
+      {
+        arguments: { name: "mf_admin_\u0001update_backend", arguments: inner },
+        name: "mf_admin_update_backend",
+      },
+    ];
+    for (const call of calls) {
+      const result = await client.callTool({
+        name: "mf_call_tool",
+        arguments: call.arguments,
+      });
+      const text = result.content
+        .map((block) => ("text" in block ? block.text : ""))
+        .join("\n");
+      expect(result.isError, text).toBe(true);
+      expect(text).not.toContain(secret);
+      expect(text).not.toContain(slack);
+      expect(text).not.toContain(header);
+      expect(text).not.toContain(extra);
+      expect(text).not.toContain(note);
+      expect(text).not.toContain(place);
+      expect(text).not.toContain(KEY);
+    }
+    await client.close();
+
+    const ws = gw.store.ensureWorkspace("default");
+    const events = gw.store
+      .listAudit(ws.id, { limit: 100 })
+      .filter((event) => event.action === "tools/call");
+    expect(events).toHaveLength(calls.length);
+    const storedNames = events.map((event) => {
+      const args = (event.detail as { arguments?: Record<string, unknown> } | null)
+        ?.arguments;
+      expect(args).toEqual({
+        name: expect.any(String),
+        arguments: "[redacted]",
+      });
+      expect(Object.keys(args ?? {}).sort()).toEqual(["arguments", "name"]);
+      return String(args?.name);
+    });
+    const expectedStored = calls.map((call) =>
+      /\bmf_[A-Za-z0-9_-]{16,}/.test(call.name) ? "[redacted]" : call.name,
+    );
+    expect(storedNames.slice().sort()).toEqual(expectedStored.slice().sort());
+
+    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 100 }));
+    for (const leaked of [secret, slack, header, extra, note, place, KEY, "SLACK_BOT", "STRIPE_SK"]) {
+      expect(blob).not.toContain(leaked);
+    }
+    expect(gw.store.listApprovals(ws.id, { status: "all", limit: 50 })).toHaveLength(0);
+
+    const pool = new UpstreamPool(gw.store);
+    const cfg = loadConfig({
+      dbPath: join(tmpdir(), "unused-wrap.db"),
+      masterKeyRaw: master,
+      adminToken: admin,
+      allowPrivateUrls: true,
+    });
+    const listed = await handleAdminTool(
+      "mf_admin_list_audit",
+      { limit: 100 },
+      {
+        store: gw.store,
+        pool,
+        cfg,
+        auth: { kind: "admin" as const, workspaceId: ws.id },
+        edgeEnabled: false,
+      },
+    );
+    const listedText = listed.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    for (const leaked of [secret, slack, header, extra, note, place, KEY]) {
+      expect(listedText).not.toContain(leaked);
+    }
   }, 60_000);
 });

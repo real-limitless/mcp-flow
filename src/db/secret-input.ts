@@ -143,13 +143,30 @@ export function readUnsetEnv(raw: unknown): string[] {
 
 /**
  * Identifiers and sandbox limits: non-empty, at most 256 UTF-16 units,
- * no whitespace, no C0/C1/DEL controls (including U+0085 NEL), and no
- * format or bidi characters.
+ * no whitespace, no C0/C1/DEL controls (including U+0085 NEL), no format
+ * or bidi characters, no lone surrogates, no private-use characters, and
+ * no noncharacters.
  */
 export const MAX_CONFIG_STRING_LEN = 256;
 
 const CONFIG_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/u;
 const CONFIG_FORMAT_RE = /\p{Cf}/u;
+const CONFIG_PRIVATE_RE = /\p{Co}/u;
+const CONFIG_NONCHAR_RE = /\p{Noncharacter_Code_Point}/u;
+
+function hasLoneSurrogate(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(i + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      i++;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export function isBoundedConfigString(value: string): boolean {
   return (
@@ -157,7 +174,10 @@ export function isBoundedConfigString(value: string): boolean {
     value.length <= MAX_CONFIG_STRING_LEN &&
     !/\s/.test(value) &&
     !CONFIG_CONTROL_RE.test(value) &&
-    !CONFIG_FORMAT_RE.test(value)
+    !CONFIG_FORMAT_RE.test(value) &&
+    !CONFIG_PRIVATE_RE.test(value) &&
+    !CONFIG_NONCHAR_RE.test(value) &&
+    !hasLoneSurrogate(value)
   );
 }
 

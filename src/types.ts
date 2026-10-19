@@ -166,7 +166,7 @@ export function toolEnabledInWorkingSet(
   working: ReadonlySet<string>,
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
-  if (toolName.startsWith("mf_")) return true;
+  if (/^mf_/i.test(toolName)) return true;
   if (!isDynamicTools(scopes)) return true;
   if (working.has(toolName)) return true;
   return toolMatchesHotPrefix(toolName, scopes);
@@ -444,13 +444,13 @@ export function toolAllowedByScopes(
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
   // Admin tools only for operator keys
-  if (toolName.startsWith("mf_admin_")) {
+  if (/^mf_admin_/i.test(toolName)) {
     return isAdminScopes(scopes);
   }
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
   if (!scopes?.toolPrefixAllowlist?.length) return true;
   // Admin keys may still use other mf_* metas when prefixes are set
-  if (isAdminScopes(scopes) && toolName.startsWith("mf_")) return true;
+  if (isAdminScopes(scopes) && /^mf_/i.test(toolName)) return true;
   return scopes.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
 }
 
@@ -462,7 +462,7 @@ export function toolAllowedByProject(
   toolName: string,
   project: Project | null | undefined,
 ): boolean {
-  if (toolName.startsWith("mf_")) return true;
+  if (/^mf_/i.test(toolName)) return true;
   if (!project) return true;
   const slug = toolName.split("__")[0] ?? "";
   if (!project.backendSlugs.length) return false;

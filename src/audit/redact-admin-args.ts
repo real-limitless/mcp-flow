@@ -139,20 +139,34 @@ function projectSchemaArgs(
   return out;
 }
 
-function redactWrappedAdminArgs(
-  args: Record<string, unknown>,
-): Record<string, unknown> {
-  const innerName = typeof args.name === "string" ? args.name.trim() : "";
-  if (!innerName.startsWith("mf_admin_")) return args;
-  if (!Object.prototype.hasOwnProperty.call(args, "arguments")) {
-    return { ...args };
+const NAME_CONTROL_RE = /[\u0000-\u001f\u007f-\u009f]/gu;
+const AUDIT_NAME_MAX = 64;
+
+/** slug__tool. Same rule as parseNamespacedTool: "__" after the first character. */
+function isUpstreamToolName(name: string): boolean {
+  return name.indexOf("__") > 0;
+}
+
+/**
+ * Inner name stored for a rejected mf_call_tool that is not an upstream tool.
+ * Trimmed, control characters removed, capped at 64 UTF-16 units.
+ */
+function auditCallToolName(value: unknown): string {
+  if (typeof value !== "string") return "[invalid]";
+  return value.trim().replace(NAME_CONTROL_RE, "").slice(0, AUDIT_NAME_MAX);
+}
+
+/**
+ * A rejected mf_call_tool whose target is not slug__tool records only the
+ * inner name and a redacted arguments blob. Nested wrappers, case variants,
+ * extra wrapper keys, and a non-string name all collapse to that shape.
+ * An upstream slug__tool keeps its arguments for the content sanitizer.
+ */
+function auditCallToolArgs(args: Record<string, unknown>): Record<string, unknown> {
+  if (typeof args.name === "string" && isUpstreamToolName(args.name.trim())) {
+    return args;
   }
-  const inner = args.arguments;
-  const argumentsCopy =
-    inner && typeof inner === "object" && !Array.isArray(inner)
-      ? redactAdminToolAuditArgs(innerName, inner as Record<string, unknown>)
-      : "[redacted]";
-  return { ...args, arguments: argumentsCopy };
+  return { name: auditCallToolName(args.name), arguments: "[redacted]" };
 }
 
 export function redactAdminToolAuditArgs(
@@ -160,8 +174,8 @@ export function redactAdminToolAuditArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!args || typeof args !== "object" || Array.isArray(args)) return args;
-  if (tool === "mf_call_tool") return redactWrappedAdminArgs(args);
-  if (!tool.startsWith("mf_admin_")) return args;
+  if (/^mf_call_tool$/i.test(tool)) return auditCallToolArgs(args);
+  if (!/^mf_admin_/i.test(tool)) return args;
   const projected = projectSchemaArgs(tool, args);
   if (!hasSecretShape(projected)) return projected;
   return redactLevel(projected);

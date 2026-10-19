@@ -568,7 +568,9 @@ function validateBackendWrite(
 
 /** Top-level inputSchema property names, or null when the tool is not an admin tool. */
 export function adminToolPropertyNames(tool: string): ReadonlySet<string> | null {
-  const found = ADMIN_META_TOOLS.find((item) => item.name === tool);
+  const found = ADMIN_META_TOOLS.find(
+    (item) => item.name === tool || item.name === tool.toLowerCase(),
+  );
   if (!found) return null;
   const properties = (
     found.inputSchema as { properties?: Record<string, unknown> } | undefined
