@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { backendUpdateAuditDetail } from "../src/audit/backend-update.js";
 import {
+  EXACT_ADMIN_TOOL_NAMES,
   redactAdminToolAuditArgs,
   undispatchedToolAudit,
 } from "../src/audit/redact-admin-args.js";
@@ -16,7 +17,7 @@ import { loadConfig } from "../src/config.js";
 import { applyEnvPatch } from "../src/db/env-patch.js";
 import { BackendInputError } from "../src/db/secret-input.js";
 import { Store } from "../src/db/store.js";
-import { handleAdminTool } from "../src/mcp/admin-tools.js";
+import { ADMIN_META_TOOLS, handleAdminTool } from "../src/mcp/admin-tools.js";
 import { UpstreamPool } from "../src/mcp/upstream.js";
 import { planEdgeCliArgs } from "../docker/edge-launch.mjs";
 import { startServer, type RunningServer } from "../src/server.js";
@@ -648,6 +649,9 @@ describe("admin tool audit redaction", () => {
     expect(installedLeak).toEqual({ id: "example/server" });
     expect(JSON.stringify(installedLeak)).not.toContain(top);
     expect(redactAdminToolAuditArgs("mf_admin_status", { STRIPE_SK: top })).toEqual({});
+    expect([...EXACT_ADMIN_TOOL_NAMES].sort()).toEqual(
+      ADMIN_META_TOOLS.map((tool) => tool.name).sort(),
+    );
 
     const wrapped = {
       name: "mf_admin_update_backend",
@@ -911,6 +915,11 @@ describe("admin tool audit redaction", () => {
       .listAudit(ws.id, { limit: 100 })
       .filter((event) => event.action === "tools/call");
     expect(events).toHaveLength(3);
+    expect(events.map((event) => event.tool).sort()).toEqual([
+      "mf_admin_create_backend",
+      "mf_admin_update_backend",
+      "mf_admin_update_backend",
+    ]);
     const blob = JSON.stringify(events);
     expect(blob).toContain("STRIPE_SK");
     expect(blob).toContain("REDIS_URL");
@@ -2037,5 +2046,168 @@ describe("placement and sandbox shapes", () => {
     for (const leaked of [secret, slack, header, extra, note, place, KEY, secretName, "nosuch__tool", "Mf_Call_Tool", "\u202e"]) {
       expect(listedText).not.toContain(leaked);
     }
+  }, 60_000);
+
+  it("does not echo meta-tool input or spawn a backend to reject it", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const marker = join(tmpdir(), `mcp-flow-spawn-${Date.now()}`);
+    const created = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "spawn",
+        transport: "stdio",
+        command: ["/bin/touch", marker],
+        placement: { mode: "central-sandbox" },
+      }),
+    });
+    expect(created.status).toBe(201);
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "dyn-echo", admin: true, dynamicTools: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client({ name: "dyn-echo", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+
+    const projectSecret = "project-secret-placeholder";
+    const deviceSecret = "device-secret-placeholder";
+    const toolSecret = "tool-secret-placeholder";
+    const backendSecret = "backend-secret-placeholder";
+    const prefixSecret = "prefix-secret-placeholder";
+    const textOf = (result: { content: Array<{ text?: string }> }): string =>
+      result.content.map((block) => block.text ?? "").join("\n");
+
+    const restrictedRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "restricted-echo", projects: ["allowed-only"] }),
+    });
+    expect(restrictedRes.status).toBe(201);
+    const restrictedToken = ((await restrictedRes.json()) as { key: { token: string } }).key
+      .token;
+    const restricted = new Client(
+      { name: "restricted-echo", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await restricted.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${restrictedToken}` } },
+      }),
+    );
+
+    const deniedProject = await restricted.callTool({
+      name: "mf_use_project",
+      arguments: { project: projectSecret },
+    });
+    const deniedProjectText = textOf(deniedProject);
+    expect(deniedProject.isError).toBe(true);
+    expect(deniedProjectText).toBe("key cannot use project");
+    expect(deniedProjectText).not.toContain(projectSecret);
+
+    const deniedDevice = await restricted.callTool({
+      name: "mf_use_device",
+      arguments: { deviceId: deviceSecret },
+    });
+    const deniedDeviceText = textOf(deniedDevice);
+    expect(deniedDevice.isError).toBe(true);
+    expect(deniedDeviceText).toBe("device not found");
+    expect(deniedDeviceText).not.toContain(deviceSecret);
+
+    const rejected = await restricted.callTool({
+      name: "spawn__touch",
+      arguments: { note: toolSecret },
+    });
+    expect(rejected.isError).toBe(true);
+    expect(textOf(rejected)).toBe("tool not found");
+    expect(textOf(rejected)).not.toContain(toolSecret);
+
+    const missing = await client.callTool({
+      name: "mf_use_project",
+      arguments: { project: projectSecret },
+    });
+    const missingText = textOf(missing);
+    expect(missing.isError).toBe(true);
+    expect(missingText).toBe("project not found");
+    expect(missingText).not.toContain(projectSecret);
+
+    const device = await client.callTool({
+      name: "mf_use_device",
+      arguments: { deviceId: deviceSecret },
+    });
+    const deviceText = textOf(device);
+    expect(device.isError).toBe(true);
+    expect(deviceText).toBe("device not found");
+    expect(deviceText).not.toContain(deviceSecret);
+
+    const wrapped = await client.callTool({
+      name: "mf_call_tool",
+      arguments: { name: "spawn__touch", arguments: { note: toolSecret } },
+    });
+    expect(wrapped.isError).toBe(true);
+    expect(textOf(wrapped)).toBe("tool not found");
+    expect(textOf(wrapped)).not.toContain(toolSecret);
+    expect(existsSync(marker)).toBe(false);
+
+    const enable = await client.callTool({
+      name: "mf_enable_tools",
+      arguments: {
+        names: [toolSecret],
+        backends: ["backend-secret-placeholder"],
+        prefixes: ["prefix-secret-placeholder"],
+      },
+    });
+    const enableText = textOf(enable);
+    expect(enable.isError).toBe(true);
+    expect(enableText).not.toContain(toolSecret);
+    expect(enableText).not.toContain(backendSecret);
+    expect(enableText).not.toContain(prefixSecret);
+    expect(JSON.parse(enableText)).toEqual({
+      error: "unknown or out-of-scope tools",
+      missing: 3,
+    });
+
+    const disable = await client.callTool({
+      name: "mf_disable_tools",
+      arguments: {
+        names: [toolSecret, "up__echo"],
+        backends: [backendSecret],
+        prefixes: [prefixSecret],
+      },
+    });
+    const disableText = textOf(disable);
+    expect(disable.isError).not.toBe(true);
+    const disableBody = JSON.parse(disableText) as { removed: string[]; removedCount: number };
+    expect(disableBody.removed).toEqual([]);
+    expect(disableBody.removedCount).toBe(0);
+    expect(disableText).not.toContain(toolSecret);
+    expect(disableText).not.toContain(backendSecret);
+    expect(disableText).not.toContain(prefixSecret);
+
+    await restricted.close();
+    await client.close();
+
+    const ws = gw.store.ensureWorkspace("default");
+    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 200 }));
+    expect(blob).not.toContain(projectSecret);
+    expect(blob).not.toContain(deviceSecret);
+    expect(blob).not.toContain(toolSecret);
+    expect(blob).not.toContain(backendSecret);
+    expect(blob).not.toContain(prefixSecret);
+    expect(blob).toContain("project not found");
+    expect(blob).toContain("key cannot use project");
+    expect(blob).toContain("device not found");
   }, 60_000);
 });

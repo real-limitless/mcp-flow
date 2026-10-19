@@ -121,11 +121,50 @@ export class UpstreamPool {
   private drain: Promise<void> | null = null;
   /** Bumped by closeAll so a connect that finishes late cannot rejoin the pool. */
   private generation = 0;
+  /**
+   * Tool names already learned from a tools/list or an open client.
+   * Read-only lookups must not connect or spawn a backend.
+   */
+  private knownNames = new Map<string, Set<string>>();
 
   constructor(private store: Store) {}
 
   setEdgeRouter(router: EdgeRouter | null): void {
     this.edgeRouter = router;
+  }
+
+  private rememberNames(workspaceId: string, names: Iterable<string>): void {
+    let known = this.knownNames.get(workspaceId);
+    if (!known) {
+      known = new Set();
+      this.knownNames.set(workspaceId, known);
+    }
+    for (const name of names) known.add(name);
+  }
+
+  /**
+   * Namespaced tools this process has already listed or still has open.
+   * Does not connect, refresh, or spawn a backend.
+   */
+  knownToolNames(workspaceId: string): ReadonlySet<string> {
+    const names = new Set(this.knownNames.get(workspaceId) ?? []);
+    for (const backend of this.store.listEnabledBackends(workspaceId)) {
+      const pooled = this.pool.get(backend.id);
+      if (!pooled) continue;
+      let allow: Set<string> | null = null;
+      if (backend.toolAllowlistJson) {
+        try {
+          allow = new Set(JSON.parse(backend.toolAllowlistJson) as string[]);
+        } catch {
+          allow = new Set();
+        }
+      }
+      for (const tool of pooled.tools) {
+        if (allow && !allow.has(tool.name)) continue;
+        names.add(namespaceTool(backend.slug, tool.name));
+      }
+    }
+    return names;
   }
 
   private closeEntry(entry: PooledClient): Promise<void> {
@@ -485,6 +524,7 @@ export class UpstreamPool {
     );
 
     out.sort((a, b) => a.name.localeCompare(b.name));
+    this.rememberNames(workspaceId, out.map((tool) => tool.name));
     return out;
   }
 

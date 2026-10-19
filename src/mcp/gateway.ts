@@ -318,14 +318,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     const started = Date.now();
     const project = activeProject();
     let catalogNames: Set<string> | null = null;
-    const loadCatalog = async (): Promise<Set<string>> => {
+    const loadCatalog = (): Set<string> => {
       if (catalogNames) return catalogNames;
-      const names = new Set<string>();
-      for (const tool of [...META_TOOLS, ...DYNAMIC_META_TOOLS, ...ADMIN_META_TOOLS]) {
-        names.add(tool.name);
-      }
-      for (const tool of await upstream.listNamespacedTools(ctx.workspaceId)) {
-        names.add(tool.name);
+      const names = new Set<string>([
+        ...META_TOOLS.map((tool) => tool.name),
+        ...DYNAMIC_META_TOOLS.map((tool) => tool.name),
+        ...ADMIN_META_TOOLS.map((tool) => tool.name),
+      ]);
+      for (const toolName of upstream.knownToolNames(ctx.workspaceId)) {
+        names.add(toolName);
       }
       catalogNames = names;
       return names;
@@ -349,7 +350,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       },
       kind: AuditKind = "collapsed",
     ) => {
-      const catalog = kind === "collapsed" ? await loadCatalog() : null;
+      const catalog = kind === "collapsed" ? loadCatalog() : null;
       const recordedTool =
         kind === "collapsed" ? catalogAuditName(name, catalog!) : name;
       const recordedArgs =
@@ -526,16 +527,13 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (!keyMayUseProject(ctx.scopes, slug)) {
-        const result = textResult(
-          `key cannot use project: ${slug}`,
-          true,
-        );
+        const result = textResult("key cannot use project", true);
         await auditCall(result, { meta: true });
         return result;
       }
       const target = store.getProjectBySlug(ctx.workspaceId, slug);
       if (!target) {
-        const result = textResult(`project not found: ${slug}`, true);
+        const result = textResult("project not found", true);
         await auditCall(result, { meta: true });
         return result;
       }
@@ -665,12 +663,12 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       }
       const d = store.getDevice(ctx.workspaceId, deviceId);
       if (!d) {
-        const result = textResult(`device not found: ${deviceId}`, true);
+        const result = textResult("device not found", true);
         await auditCall(result, { meta: true });
         return result;
       }
-      if (ctx.keyId) edgeRouter.sticky.set(ctx.keyId, deviceId);
-      const result = textResult({ ok: true, stickyDeviceId: deviceId });
+      if (ctx.keyId) edgeRouter.sticky.set(ctx.keyId, d.id);
+      const result = textResult({ ok: true, stickyDeviceId: d.id });
       await auditCall(result, { meta: true });
       return result;
     }
@@ -753,14 +751,19 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           await auditCall(result, { meta: true });
           return result;
         }
-        const toRemove = new Set<string>(names);
         const working = workingSetFor(ctx);
+        const toRemove = new Set<string>();
+        for (const n of names) {
+          if (working.has(n)) toRemove.add(n);
+        }
         for (const toolName of working) {
           const parsed = parseNamespacedTool(toolName);
           if (parsed && backends.includes(parsed.slug)) toRemove.add(toolName);
-          if (prefixes.some((p) => toolName.startsWith(p))) toRemove.add(toolName);
+          if (prefixes.some((p) => p.length > 0 && toolName.startsWith(p))) {
+            toRemove.add(toolName);
+          }
         }
-        if (!toRemove.size) {
+        if (!names.length && !backends.length && !prefixes.length) {
           const result = textResult(
             "names, backends, prefixes, or all:true required",
             true,
@@ -771,9 +774,11 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         const enabled = [
           ...globalSessionToolSets.remove(sid, ctx.keyId, toRemove),
         ].sort();
+        const removed = [...toRemove].sort();
         const result = textResult({
           ok: true,
-          removed: [...toRemove].sort(),
+          removed,
+          removedCount: removed.length,
           enabled,
           enabledCount: enabled.length,
           enabledCap: listCap,
@@ -810,7 +815,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         const result = textResult(
           {
             error: "unknown or out-of-scope tools",
-            missing,
+            missing: missing.length,
           },
           true,
         );
@@ -868,7 +873,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!(await loadCatalog()).has(innerName)) {
+      if (!loadCatalog().has(innerName)) {
         const result = textResult("tool not found", true);
         await auditCall(result, { meta: true });
         return result;
@@ -1021,7 +1026,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
-    if (!(await loadCatalog()).has(name)) {
+    if (!loadCatalog().has(name)) {
       const result = textResult("tool not found", true);
       await auditCall(result);
       return result;

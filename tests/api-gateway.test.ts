@@ -854,9 +854,15 @@ describe("api + gateway", () => {
 
     const disabled = await client.callTool({
       name: "mf_disable_tools",
-      arguments: { names: ["up__echo"] },
+      arguments: { names: ["up__echo", "tool-secret-placeholder"] },
     });
     expect(disabled.isError).not.toBe(true);
+    const disabledText =
+      (disabled.content as Array<{ type: string; text?: string }>)
+        .map((block) => block.text ?? "")
+        .join("\n");
+    expect(JSON.parse(disabledText).removed).toEqual(["up__echo"]);
+    expect(disabledText).not.toContain("tool-secret-placeholder");
 
     const afterDisable = await client.callTool({
       name: "up__echo",

@@ -33,7 +33,10 @@ import type {
   Workspace,
   WorkspacePolicy,
 } from "../types.js";
-import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
+import {
+  EXACT_ADMIN_TOOL_NAMES,
+  redactAdminToolAuditArgs,
+} from "../audit/redact-admin-args.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import {
@@ -489,7 +492,9 @@ function rowAuthzRule(r: Record<string, unknown>): AuthzRule {
  */
 function auditIdent(v: string | null | undefined, max = 256): string | null {
   if (v == null) return null;
-  const s = redactSecrets(String(v).slice(0, max * 4)).replace(/[\u0000-\u001f\u007f]/g, "?");
+  const raw = String(v);
+  if (EXACT_ADMIN_TOOL_NAMES.has(raw) && raw.length <= max) return raw;
+  const s = redactSecrets(raw.slice(0, max * 4)).replace(/[\u0000-\u001f\u007f]/g, "?");
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 

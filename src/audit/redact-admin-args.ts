@@ -139,6 +139,35 @@ function projectSchemaArgs(
   return out;
 }
 
+/**
+ * Exact mf_admin_* tool names. The audit tool column keeps these as written.
+ * The content sanitizer would otherwise match them as long mf_ tokens.
+ */
+export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "mf_admin_status",
+  "mf_admin_list_backends",
+  "mf_admin_get_backend",
+  "mf_admin_create_backend",
+  "mf_admin_update_backend",
+  "mf_admin_delete_backend",
+  "mf_admin_test_backend",
+  "mf_admin_list_keys",
+  "mf_admin_create_key",
+  "mf_admin_update_key_scopes",
+  "mf_admin_revoke_key",
+  "mf_admin_list_devices",
+  "mf_admin_enroll_device",
+  "mf_admin_revoke_device",
+  "mf_admin_set_policy",
+  "mf_admin_list_audit",
+  "mf_admin_catalog_search",
+  "mf_admin_catalog_install",
+  "mf_admin_list_projects",
+  "mf_admin_create_project",
+  "mf_admin_update_project",
+  "mf_admin_delete_project",
+]);
+
 /** A tool name that may be stored for a call that was not dispatched. */
 const AUDIT_CATALOG_NAME_RE = /^[A-Za-z0-9_.-]{1,64}$/;
 
