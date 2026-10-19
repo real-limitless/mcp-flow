@@ -33,11 +33,15 @@ import type {
   Workspace,
   WorkspacePolicy,
 } from "../types.js";
+import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import {
   applyHeaderPatch,
   compactEnvRecord,
+  pickKnownKeys,
+  PLACEMENT_KEYS,
+  SANDBOX_KEYS,
   validateCreateSecrets,
   validateUpdateSecrets,
 } from "./secret-input.js";
@@ -348,9 +352,9 @@ function parsePolicy(raw: unknown): WorkspacePolicy {
 function parseSandbox(raw: unknown): SandboxConfig | null {
   if (raw == null || raw === "") return null;
   try {
-    const s = JSON.parse(String(raw)) as SandboxConfig;
-    if (!s || typeof s !== "object") return null;
-    return s;
+    const picked = pickKnownKeys(JSON.parse(String(raw)), SANDBOX_KEYS);
+    if (!picked || !Object.keys(picked).length) return null;
+    return picked as SandboxConfig;
   } catch {
     return null;
   }
@@ -596,7 +600,9 @@ function rowApproval(
   const args = readApprovalArgs(masterKey, r.arguments_json).args;
   const redacted =
     redactArgs && args
-      ? (sanitizeForAudit(args) as Record<string, unknown>)
+      ? (sanitizeForAudit(
+          redactAdminToolAuditArgs(String(r.tool), args),
+        ) as Record<string, unknown>)
       : args;
   const requirement =
     parseAuthzRequirement(r.requirement) ?? "notify_approve";
@@ -669,9 +675,11 @@ function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
 
 function parsePlacement(json: string): Placement {
   try {
-    const p = JSON.parse(json) as Placement;
-    if (!p?.mode) return { ...DEFAULT_PLACEMENT };
-    return p;
+    const picked = pickKnownKeys(JSON.parse(json), PLACEMENT_KEYS);
+    if (!picked || typeof picked.mode !== "string" || !picked.mode) {
+      return { ...DEFAULT_PLACEMENT };
+    }
+    return picked as unknown as Placement;
   } catch {
     return { ...DEFAULT_PLACEMENT };
   }
@@ -1077,12 +1085,18 @@ export class Store {
       );
     }
     validateCreateSecrets(input);
-    const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
+    const placement =
+      pickKnownKeys(input.placement ?? { ...DEFAULT_PLACEMENT }, PLACEMENT_KEYS) ??
+      { ...DEFAULT_PLACEMENT };
     const transport = input.transport ?? "streamable-http";
     const ts = nowIso();
+    const sandboxPicked =
+      input.sandbox != null ? pickKnownKeys(input.sandbox, SANDBOX_KEYS) : undefined;
     const sandboxJson =
       input.sandbox !== undefined && input.sandbox !== null
-        ? JSON.stringify(input.sandbox)
+        ? sandboxPicked && Object.keys(sandboxPicked).length
+          ? JSON.stringify(sandboxPicked)
+          : null
         : null;
     const rec: BackendRecord = {
       id: newId("be"),
@@ -1241,12 +1255,20 @@ export class Store {
           : null
         : existing.toolAllowlistJson;
     const placementJson = input.placement
-      ? JSON.stringify(input.placement)
+      ? JSON.stringify(
+          pickKnownKeys(input.placement, PLACEMENT_KEYS) ?? {
+            ...DEFAULT_PLACEMENT,
+          },
+        )
       : existing.placementJson;
+    const sandboxPicked =
+      input.sandbox != null ? pickKnownKeys(input.sandbox, SANDBOX_KEYS) : undefined;
     const sandboxJson =
       input.sandbox !== undefined
         ? input.sandbox
-          ? JSON.stringify(input.sandbox)
+          ? sandboxPicked && Object.keys(sandboxPicked).length
+            ? JSON.stringify(sandboxPicked)
+            : null
           : null
         : existing.sandboxJson;
     const updatedAt = nowIso();
@@ -2011,14 +2033,22 @@ export class Store {
   private retireSealedArgs(workspaceId: string, id: string): boolean {
     const row = this.db
       .prepare(
-        `SELECT arguments_json FROM approvals
+        `SELECT tool, arguments_json FROM approvals
          WHERE id = ? AND workspace_id = ? AND status != 'pending'`,
       )
-      .get(id, workspaceId) as { arguments_json: unknown } | undefined;
+      .get(id, workspaceId) as
+      | { tool: unknown; arguments_json: unknown }
+      | undefined;
     if (!row || !isSealedApprovalArgs(row.arguments_json)) return false;
     const read = readApprovalArgs(this.masterKey, row.arguments_json);
     if (read.state !== "sealed" || !read.args) return false;
-    const safe = APPROVAL_ARGS_SAN_PREFIX + JSON.stringify(sanitizeForAudit(read.args));
+    const safe =
+      APPROVAL_ARGS_SAN_PREFIX +
+      JSON.stringify(
+        sanitizeForAudit(
+          redactAdminToolAuditArgs(String(row.tool ?? ""), read.args),
+        ),
+      );
     const res = this.db
       .prepare(
         `UPDATE approvals SET arguments_json = ?

@@ -1,12 +1,15 @@
 /**
- * Audit copy of mf_admin_* arguments.
- * env, headers, and apiKey values are replaced with "[redacted]" before any
- * audit row is written. Names stay. The object passed to the tool is not mutated.
+ * Audit and approval copy of mf_admin_* arguments.
+ * env, headers, and apiKey values are replaced with "[redacted]". Names stay.
+ * Those fields match case-insensitively, including when nested under placement
+ * or sandbox. The object passed to the tool is not mutated.
  * Null stays null so a per-key delete is still visible. A string or array in
  * place of a map is replaced as a whole so a bad payload cannot leak either.
  */
 
-const SECRET_ARG_FIELDS = ["env", "headers", "apiKey"] as const;
+const MAP_FIELDS = new Set(["env", "headers"]);
+const VALUE_FIELDS = new Set(["apikey"]);
+const NEST_FIELDS = new Set(["placement", "sandbox"]);
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -26,6 +29,36 @@ function redactMap(value: unknown): unknown {
   return out;
 }
 
+function hasSecretShape(args: Record<string, unknown>): boolean {
+  for (const key of Object.keys(args)) {
+    const lower = key.toLowerCase();
+    if (MAP_FIELDS.has(lower) || VALUE_FIELDS.has(lower) || NEST_FIELDS.has(lower)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function redactLevel(
+  rec: Record<string, unknown>,
+  nested: boolean,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(rec)) {
+    const lower = key.toLowerCase();
+    if (MAP_FIELDS.has(lower)) {
+      out[key] = redactMap(value);
+    } else if (VALUE_FIELDS.has(lower)) {
+      out[key] = value == null ? value : "[redacted]";
+    } else if (!nested && NEST_FIELDS.has(lower) && isPlainRecord(value)) {
+      out[key] = redactLevel(value, true);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
 export function redactAdminToolAuditArgs(
   tool: string,
   args: Record<string, unknown>,
@@ -33,10 +66,6 @@ export function redactAdminToolAuditArgs(
   if (!tool.startsWith("mf_admin_") || !args || typeof args !== "object") {
     return args;
   }
-  if (!SECRET_ARG_FIELDS.some((field) => field in args)) return args;
-  const copy: Record<string, unknown> = { ...args };
-  if ("env" in copy) copy.env = redactMap(copy.env);
-  if ("headers" in copy) copy.headers = redactMap(copy.headers);
-  if ("apiKey" in copy && copy.apiKey != null) copy.apiKey = "[redacted]";
-  return copy;
+  if (!hasSecretShape(args)) return args;
+  return redactLevel(args, false);
 }

@@ -766,8 +766,8 @@ function collectKvPairs(root, rowSel, nameSel, valueSel) {
   const out = {};
   root.querySelectorAll(rowSel).forEach((row) => {
     const name = row.querySelector(nameSel)?.value?.trim();
-    const value = (row.querySelector(valueSel)?.value ?? "").trim();
-    if (name && value) out[name] = value;
+    const value = row.querySelector(valueSel)?.value ?? "";
+    if (name && value.trim()) out[name] = value;
   });
   return out;
 }
@@ -1180,8 +1180,8 @@ async function onCreateBackend() {
       if (!url) throw new Error("url required");
       body.url = url;
       const headers = collectHeaderPairs($("#beHdrEditor") || document);
-      const apiKey = $("#beApiKey")?.value?.trim();
-      if (apiKey) body.apiKey = apiKey;
+      const apiKey = $("#beApiKey")?.value ?? "";
+      if (apiKey.trim()) body.apiKey = apiKey;
       if (Object.keys(headers).length) body.headers = headers;
     } else {
       if (mode === "edge-sandbox" || mode === "edge-bare") {
@@ -1322,13 +1322,13 @@ async function saveBackendEdit(backend, panel, dropped) {
       if (!url) throw new Error("url required");
       if (url !== (backend.url || "")) body.url = url;
     }
-    const apiKey = panel.querySelector("#beEditApiKey")?.value?.trim();
-    if (apiKey) body.apiKey = apiKey;
+    const apiKey = panel.querySelector("#beEditApiKey")?.value ?? "";
+    if (apiKey.trim()) body.apiKey = apiKey;
     const env = {};
     panel.querySelectorAll("[data-env-row]").forEach((row) => {
       const name = row.querySelector("[data-env-name]")?.value?.trim();
-      const value = (row.querySelector("[data-env-value]")?.value ?? "").trim();
-      if (name && value) env[name] = value;
+      const value = row.querySelector("[data-env-value]")?.value ?? "";
+      if (name && value.trim()) env[name] = value;
     });
     if (Object.keys(env).length) {
       body.env = env;

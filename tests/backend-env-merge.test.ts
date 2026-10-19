@@ -334,6 +334,7 @@ describe("edge-only compose", () => {
     expect(text).not.toContain("http://mcp-flow:8787");
     expect(text).not.toMatch(/\b\d{1,3}(?:\.\d{1,3}){3}\b/);
     expect(text).not.toMatch(/^ {2}mcp-flow:/m);
+    expect(text).toMatch(/healthcheck:\n\s+disable:\s+true/);
     const command = text.slice(text.indexOf("command:"));
     expect(command).not.toContain("--token");
     expect(command).not.toContain("MCP_FLOW_DEVICE_TOKEN");
@@ -346,6 +347,24 @@ describe("edge-only compose", () => {
     expect(jsonAt).toBeGreaterThan(0);
     expect(edgeAt).toBeGreaterThan(jsonAt);
     expect(readme.slice(edgeAt, edgeAt + 1200)).not.toMatch(/healthy/i);
+  });
+
+  it("sends padded env and api key values and treats a blank value as keep", () => {
+    const app = readFileSync(join(process.cwd(), "src/admin/app.js"), "utf8");
+    const save = app.slice(
+      app.indexOf("async function saveBackendEdit"),
+      app.indexOf("function wireBackendTable"),
+    );
+    expect(save).toContain('if (apiKey.trim()) body.apiKey = apiKey');
+    expect(save).toContain("if (name && value.trim()) env[name] = value");
+    expect(save).not.toContain("beEditApiKey\")?.value?.trim()");
+    expect(save).not.toContain('value ?? "").trim()');
+    const collect = app.slice(
+      app.indexOf("function collectKvPairs"),
+      app.indexOf("function collectHeaderPairs"),
+    );
+    expect(collect).toContain("if (name && value.trim()) out[name] = value");
+    expect(collect).not.toContain('value ?? "").trim()');
   });
 });
 
@@ -447,6 +466,9 @@ describe("secret input validation", () => {
       { headers: "nope" },
       { headers: ["a"] },
       { headers: { "X\nY": "x" } },
+      { headers: { "A B": "x" } },
+      { headers: { "X:Y": "x" } },
+      { headers: { "ÄÖ_X": "x" } },
       { envMode: "MERGE" },
       { headerMode: "bogus" },
     ];
@@ -487,6 +509,20 @@ describe("secret input validation", () => {
       REGION: "west",
     });
     expect(JSON.stringify(updated)).not.toContain("\"__proto__\"");
+
+    const placed = store.createBackend(ws.id, {
+      slug: "placed",
+      url: "https://example.com/mcp",
+      placement: { mode: "remote", env: { STRIPE_SK: STRIPE } } as never,
+      sandbox: { memory: "512m", headers: { "X-Upstream-Sig": SIG } } as never,
+    });
+    expect(JSON.stringify(placed)).not.toContain(STRIPE);
+    expect(JSON.stringify(placed)).not.toContain(SIG);
+    expect(placed.placement).toEqual({ mode: "remote" });
+    expect(placed.sandbox).toEqual({ memory: "512m" });
+    const row = store.getBackend(ws.id, "placed")!;
+    expect(row.placementJson).not.toContain(STRIPE);
+    expect(row.sandboxJson ?? "").not.toContain(SIG);
     store.close();
   });
 
@@ -556,6 +592,26 @@ describe("admin tool audit redaction", () => {
 
     const plain = { text: "hi" };
     expect(redactAdminToolAuditArgs("up__echo", plain)).toBe(plain);
+
+    const nested = {
+      Env: { STRIPE_SK: STRIPE },
+      HEADERS: { "X-Upstream-Sig": SIG },
+      placement: { mode: "remote", env: { STRIPE_SK: STRIPE } },
+      sandbox: { memory: "512m", headers: { "X-Upstream-Sig": SIG } },
+    };
+    const nestedRedacted = redactAdminToolAuditArgs("mf_admin_update_backend", nested);
+    expect(nestedRedacted).not.toBe(nested);
+    expect(nestedRedacted.Env).toEqual({ STRIPE_SK: "[redacted]" });
+    expect(nestedRedacted.HEADERS).toEqual({ "X-Upstream-Sig": "[redacted]" });
+    expect(nestedRedacted.placement).toEqual({
+      mode: "remote",
+      env: { STRIPE_SK: "[redacted]" },
+    });
+    expect(nestedRedacted.sandbox).toEqual({
+      memory: "512m",
+      headers: { "X-Upstream-Sig": "[redacted]" },
+    });
+    expect((nested.placement as { env: { STRIPE_SK: string } }).env.STRIPE_SK).toBe(STRIPE);
   });
 
   it("stores redacted tools/call arguments for admin backend tools", async () => {
@@ -601,13 +657,25 @@ describe("admin tool audit redaction", () => {
       },
     });
     expect(updated.isError).not.toBe(true);
+    const nestedValue = "nested-stripe-placeholder";
+    const caseValue = "case-env-placeholder";
+    const nestedCall = await client.callTool({
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "remote",
+        Env: { STRIPE_SK: caseValue },
+        placement: { mode: "remote", env: { STRIPE_SK: nestedValue } },
+        sandbox: { memory: "512m", headers: { "X-Upstream-Sig": SIG } },
+      },
+    });
+    expect(nestedCall.isError).not.toBe(true);
     await client.close();
 
     const ws = gw.store.ensureWorkspace("default");
     const events = gw.store
       .listAudit(ws.id, { limit: 100 })
       .filter((event) => event.action === "tools/call");
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     const blob = JSON.stringify(events);
     expect(blob).toContain("STRIPE_SK");
     expect(blob).toContain("REDIS_URL");
@@ -619,6 +687,8 @@ describe("admin tool audit redaction", () => {
     expect(blob).not.toContain(SENTRY);
     expect(blob).not.toContain(SIG);
     expect(blob).not.toContain(KEY);
+    expect(blob).not.toContain("nested-stripe-placeholder");
+    expect(blob).not.toContain("case-env-placeholder");
     const createArgs = (
       events.find((event) => {
         const args = (event.detail as { arguments?: { slug?: string } } | null)
@@ -672,6 +742,9 @@ describe("backend patch errors", () => {
       { env: { "A=B": "x" } },
       { env: { "BAD\nNAME": "x" } },
       { headers: { "X\nY": SIG } },
+      { headers: { "A B": SIG } },
+      { headers: { "X:Y": SIG } },
+      { headers: { "ÄÖ_X": SIG } },
       { envMode: "bogus" },
       { headerMode: "MERGE" },
     ];

@@ -15,6 +15,11 @@ export const MAX_SECRET_NAME_LEN = 256;
 
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 const DROPPED_NAMES = new Set(["__proto__", "constructor", "prototype"]);
+/** RFC 9110 token. Header names that are not tokens are rejected. */
+const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+
+export const PLACEMENT_KEYS = ["mode", "deviceId", "deviceTags", "affinity"] as const;
+export const SANDBOX_KEYS = ["memory", "cpus", "networkMode"] as const;
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -31,13 +36,27 @@ export function checkedSecretName(raw: string, kind: "env" | "header"): string {
   if (
     name.length > MAX_SECRET_NAME_LEN ||
     name.includes("=") ||
-    CONTROL_RE.test(name)
+    CONTROL_RE.test(name) ||
+    (kind === "header" && !HTTP_TOKEN.test(name))
   ) {
     throw new BackendInputError(
       kind === "env" ? "env name is invalid" : "header name is invalid",
     );
   }
   return name;
+}
+
+/** Keep only the known placement or sandbox fields. Extra keys are dropped. */
+export function pickKnownKeys(
+  value: unknown,
+  keys: readonly string[],
+): Record<string, unknown> | undefined {
+  if (!isPlainRecord(value)) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) out[key] = value[key];
+  }
+  return out;
 }
 
 function assertMode(mode: unknown, label: "envMode" | "headerMode"): void {
