@@ -40,6 +40,7 @@ import {
   applyHeaderPatch,
   compactEnvRecord,
   pickKnownKeys,
+  placementForWrite,
   PLACEMENT_KEYS,
   SANDBOX_KEYS,
   validateCreateSecrets,
@@ -1085,9 +1086,10 @@ export class Store {
       );
     }
     validateCreateSecrets(input);
-    const placement =
-      pickKnownKeys(input.placement ?? { ...DEFAULT_PLACEMENT }, PLACEMENT_KEYS) ??
-      { ...DEFAULT_PLACEMENT };
+    const placement = placementForWrite(
+      input.placement ?? { ...DEFAULT_PLACEMENT },
+      { ...DEFAULT_PLACEMENT },
+    );
     const transport = input.transport ?? "streamable-http";
     const ts = nowIso();
     const sandboxPicked =
@@ -1254,13 +1256,15 @@ export class Store {
           ? JSON.stringify(input.toolAllowlist)
           : null
         : existing.toolAllowlistJson;
-    const placementJson = input.placement
-      ? JSON.stringify(
-          pickKnownKeys(input.placement, PLACEMENT_KEYS) ?? {
-            ...DEFAULT_PLACEMENT,
-          },
-        )
-      : existing.placementJson;
+    const placementJson =
+      input.placement != null
+        ? JSON.stringify(
+            placementForWrite(
+              input.placement,
+              parsePlacement(existing.placementJson),
+            ),
+          )
+        : existing.placementJson;
     const sandboxPicked =
       input.sandbox != null ? pickKnownKeys(input.sandbox, SANDBOX_KEYS) : undefined;
     const sandboxJson =

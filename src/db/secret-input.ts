@@ -1,3 +1,5 @@
+import type { Placement, PlacementMode } from "../types.js";
+
 /**
  * Validate env and header writes before they touch the database.
  * Blank (empty or all whitespace) is a keep, not a value to trim and store.
@@ -66,6 +68,21 @@ export function pickKnownKeys(
   return out;
 }
 
+/**
+ * Placement written on create or update. A missing or null mode keeps the
+ * fallback mode. Null optional fields stay null.
+ */
+export function placementForWrite(
+  value: unknown,
+  fallback: { mode: PlacementMode },
+): Placement {
+  const picked = pickKnownKeys(value, PLACEMENT_KEYS) ?? {};
+  const mode = (
+    typeof picked.mode === "string" ? picked.mode : fallback.mode
+  ) as PlacementMode;
+  return { ...(picked as Partial<Placement>), mode };
+}
+
 function assertMode(mode: unknown, label: "envMode" | "headerMode"): void {
   if (mode === undefined || mode === null || mode === "") return;
   if (mode !== "merge" && mode !== "replace") {
@@ -124,34 +141,59 @@ export function readUnsetEnv(raw: unknown): string[] {
   return names;
 }
 
-function assertStringArray(value: unknown, label: string): void {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new BackendInputError(`${label} must be an array of strings`);
+/** Identifiers and sandbox limits: short, with no whitespace or control characters. */
+export const MAX_CONFIG_STRING_LEN = 256;
+
+export function isBoundedConfigString(value: string): boolean {
+  return (
+    value.length <= MAX_CONFIG_STRING_LEN &&
+    !/\s/.test(value) &&
+    !CONTROL_RE.test(value)
+  );
+}
+
+function assertConfigString(value: unknown, label: string): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== "string") {
+    throw new BackendInputError(`${label} must be a string`);
+  }
+  if (!isBoundedConfigString(value)) {
+    throw new BackendInputError(`${label} is invalid`);
   }
 }
 
 /**
- * Known placement fields must match their types. Anything else is a 400.
+ * Known placement fields must match their types.
+ * Omitted mode, null placement, and null optional fields are left as they were.
+ * A non-null value of the wrong type or format is a 400.
  * Unknown keys are ignored here; callers drop them and never store them.
  */
 export function assertPlacementValue(value: unknown): void {
-  if (value === undefined) return;
+  if (value === undefined || value === null) return;
   if (!isPlainRecord(value)) {
     throw new BackendInputError("placement must be an object");
   }
-  if (
-    typeof value.mode !== "string" ||
-    !(PLACEMENT_MODES as readonly string[]).includes(value.mode)
-  ) {
-    throw new BackendInputError("placement.mode is invalid");
+  if (value.mode !== undefined && value.mode !== null) {
+    if (
+      typeof value.mode !== "string" ||
+      !(PLACEMENT_MODES as readonly string[]).includes(value.mode)
+    ) {
+      throw new BackendInputError("placement.mode is invalid");
+    }
   }
-  if (value.deviceId !== undefined && typeof value.deviceId !== "string") {
-    throw new BackendInputError("placement.deviceId must be a string");
+  assertConfigString(value.deviceId, "placement.deviceId");
+  if (value.deviceTags !== undefined && value.deviceTags !== null) {
+    if (
+      !Array.isArray(value.deviceTags) ||
+      value.deviceTags.some((item) => typeof item !== "string")
+    ) {
+      throw new BackendInputError("placement.deviceTags must be an array of strings");
+    }
+    if (value.deviceTags.some((item) => !isBoundedConfigString(item))) {
+      throw new BackendInputError("placement.deviceTags is invalid");
+    }
   }
-  if (value.deviceTags !== undefined) {
-    assertStringArray(value.deviceTags, "placement.deviceTags");
-  }
-  if (value.affinity !== undefined) {
+  if (value.affinity !== undefined && value.affinity !== null) {
     if (
       typeof value.affinity !== "string" ||
       !(AFFINITIES as readonly string[]).includes(value.affinity)
@@ -168,8 +210,8 @@ export function assertSandboxValue(value: unknown): void {
     throw new BackendInputError("sandbox must be an object");
   }
   for (const key of SANDBOX_KEYS) {
-    if (value[key] !== undefined && typeof value[key] !== "string") {
-      throw new BackendInputError(`sandbox.${key} must be a string`);
+    if (value[key] !== undefined && value[key] !== null) {
+      assertConfigString(value[key], `sandbox.${key}`);
     }
   }
 }

@@ -32,7 +32,11 @@ import {
   runAuthzGate,
 } from "../authz/gate.js";
 import type { AuthzEvalContext } from "../authz/match.js";
-import { ADMIN_META_TOOLS, handleAdminTool } from "./admin-tools.js";
+import {
+  ADMIN_META_TOOLS,
+  handleAdminTool,
+  unknownAdminArgumentMessage,
+} from "./admin-tools.js";
 import {
   DYNAMIC_INSTRUCTIONS,
   DYNAMIC_META_TOOLS,
@@ -935,6 +939,12 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           }),
           ip,
         });
+        return result;
+      }
+      const unknownArg = unknownAdminArgumentMessage(name, args);
+      if (unknownArg) {
+        const result = textResult(unknownArg, true);
+        auditCall(result, { meta: true });
         return result;
       }
       const adminGate = await runAuthzGate({

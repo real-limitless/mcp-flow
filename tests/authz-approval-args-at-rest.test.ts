@@ -320,7 +320,8 @@ describe("approvals.arguments_json at rest", () => {
       expect(raw.startsWith("san:v1:")).toBe(true);
       expect(raw).toContain("STRIPE_SK");
       expect(raw).toContain("X-Upstream-Sig");
-      expect(raw).toContain("SLACK_BOT");
+      expect(raw).not.toContain("SLACK_BOT");
+      expect(raw).not.toContain("X-Case");
       expect(raw).toContain("[redacted]");
       noSecrets(raw);
     }

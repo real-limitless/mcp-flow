@@ -33,6 +33,7 @@ import {
   assertPlacementValue,
   assertSandboxValue,
   BackendInputError,
+  placementForWrite,
 } from "../db/secret-input.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
@@ -456,9 +457,12 @@ export function createApp(
       }
     }
 
-    const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
     const shapeErr = placementSandboxError(body);
     if (shapeErr) return c.json({ error: shapeErr }, 400);
+    const placement = placementForWrite(
+      body.placement ?? { ...DEFAULT_PLACEMENT },
+      { ...DEFAULT_PLACEMENT },
+    );
     const verr = validateBackendWrite(
       auth.workspaceId,
       transport,
@@ -509,9 +513,15 @@ export function createApp(
     }
 
     const transport = (body.transport ?? existing.transport) as TransportKind;
+    const storedPlacement = JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT;
+    const fallbackPlacement =
+      storedPlacement && typeof storedPlacement.mode === "string"
+        ? storedPlacement
+        : { ...DEFAULT_PLACEMENT };
     const placement =
-      body.placement ??
-      (JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT);
+      body.placement == null
+        ? fallbackPlacement
+        : placementForWrite(body.placement, fallbackPlacement);
     const merged: UpdateBackendInput = {
       ...body,
       url: body.url !== undefined ? body.url : existing.url,

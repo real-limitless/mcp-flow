@@ -12,7 +12,11 @@ import {
 import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Config } from "../config.js";
 import { parseEnvMode } from "../db/env-patch.js";
-import { assertPlacementValue, assertSandboxValue } from "../db/secret-input.js";
+import {
+  assertPlacementValue,
+  assertSandboxValue,
+  placementForWrite,
+} from "../db/secret-input.js";
 import type { Store } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
@@ -81,6 +85,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
         },
         env: { type: "object", additionalProperties: { type: "string" } },
         enabled: { type: "boolean" },
+        toolAllowlist: { type: "array", items: { type: "string" } },
         placement: {
           type: "object",
           properties: {
@@ -88,7 +93,24 @@ export const ADMIN_META_TOOLS: Tool[] = [
               type: "string",
               enum: ["remote", "central-sandbox", "edge-sandbox", "edge-bare"],
             },
-            deviceId: { type: "string" },
+            deviceId: { type: ["string", "null"] },
+            deviceTags: {
+              type: ["array", "null"],
+              items: { type: "string" },
+            },
+            affinity: {
+              type: ["string", "null"],
+              enum: ["harness-local", "pinned", "any-online", null],
+            },
+          },
+          additionalProperties: false,
+        },
+        sandbox: {
+          type: ["object", "null"],
+          properties: {
+            memory: { type: ["string", "null"] },
+            cpus: { type: ["string", "null"] },
+            networkMode: { type: ["string", "null"] },
           },
           additionalProperties: false,
         },
@@ -141,7 +163,9 @@ export const ADMIN_META_TOOLS: Tool[] = [
           items: { type: "string" },
           description: "Env names to delete. Ignored when envMode is replace.",
         },
-        placement: { type: "object" },
+        toolAllowlist: { type: ["array", "null"], items: { type: "string" } },
+        placement: { type: ["object", "null"] },
+        sandbox: { type: ["object", "null"] },
       },
       required: ["idOrSlug"],
       additionalProperties: false,
@@ -542,6 +566,34 @@ function validateBackendWrite(
   }
 }
 
+/** Top-level inputSchema property names, or null when the tool is not an admin tool. */
+export function adminToolPropertyNames(tool: string): ReadonlySet<string> | null {
+  const found = ADMIN_META_TOOLS.find((item) => item.name === tool);
+  if (!found) return null;
+  const properties = (
+    found.inputSchema as { properties?: Record<string, unknown> } | undefined
+  )?.properties;
+  return new Set(Object.keys(properties ?? {}));
+}
+
+/**
+ * MCP error text when args include a top-level key the tool schema does not
+ * define. The text names safe keys and never includes argument values.
+ */
+export function unknownAdminArgumentMessage(
+  tool: string,
+  args: Record<string, unknown>,
+): string | null {
+  const allowed = adminToolPropertyNames(tool);
+  if (!allowed) return null;
+  const unknown = Object.keys(args).filter((key) => !allowed.has(key));
+  if (!unknown.length) return null;
+  const safe = unknown.every(
+    (key) => key.length > 0 && key.length <= 64 && /^[A-Za-z0-9_.-]+$/.test(key),
+  );
+  return safe ? `unknown argument: ${unknown.join(", ")}` : "unknown argument";
+}
+
 export async function handleAdminTool(
   name: string,
   args: Record<string, unknown>,
@@ -550,6 +602,8 @@ export async function handleAdminTool(
   if (!isAdminScopes(deps.auth.scopes) && deps.auth.kind !== "admin") {
     return textResult("admin key required for " + name, true);
   }
+  const unknownArg = unknownAdminArgumentMessage(name, args);
+  if (unknownArg) return textResult(unknownArg, true);
 
   const { store, pool, cfg, auth } = deps;
   const wsId = auth.workspaceId;
@@ -627,9 +681,12 @@ export async function handleAdminTool(
             );
           }
         }
-        const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
         assertPlacementValue(body.placement);
         assertSandboxValue(body.sandbox);
+        const placement = placementForWrite(
+          body.placement ?? { ...DEFAULT_PLACEMENT },
+          { ...DEFAULT_PLACEMENT },
+        );
         const verr = validateBackendWrite(deps, transport, body, placement);
         if (verr) return textResult(verr, true);
         const backend = store.createBackend(wsId, {
@@ -678,9 +735,17 @@ export async function handleAdminTool(
         }
         const transport = (body.transport ??
           existing.transport) as TransportKind;
+        const storedPlacement = JSON.parse(
+          existing.placementJson,
+        ) as typeof DEFAULT_PLACEMENT;
+        const fallbackPlacement =
+          storedPlacement && typeof storedPlacement.mode === "string"
+            ? storedPlacement
+            : { ...DEFAULT_PLACEMENT };
         const placement =
-          body.placement ??
-          (JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT);
+          body.placement == null
+            ? fallbackPlacement
+            : placementForWrite(body.placement, fallbackPlacement);
         const merged: UpdateBackendInput = {
           ...body,
           url: body.url !== undefined ? body.url : existing.url,

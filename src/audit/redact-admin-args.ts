@@ -8,9 +8,16 @@
  * placement and sandbox copies keep only known keys. Unknown keys such as
  * extra are omitted so their values never reach tools/call or list_audit.
  * A known key whose value is the wrong type is replaced with "[redacted]".
+ * Top-level keys that the tool schema does not define are omitted as well,
+ * including when the payload has no env, header, or apiKey field.
  */
 
-import { AFFINITIES, PLACEMENT_MODES } from "../db/secret-input.js";
+import {
+  AFFINITIES,
+  isBoundedConfigString,
+  PLACEMENT_MODES,
+} from "../db/secret-input.js";
+import { adminToolPropertyNames } from "../mcp/admin-tools.js";
 
 const MAP_FIELDS = new Set(["env", "headers"]);
 const VALUE_FIELDS = new Set(["apikey"]);
@@ -47,15 +54,23 @@ function hasSecretShape(args: Record<string, unknown>): boolean {
 }
 
 function copyEnum(value: unknown, allowed: Set<string>): unknown {
+  if (value === null) return null;
   return typeof value === "string" && allowed.has(value) ? value : "[redacted]";
 }
 
-function copyString(value: unknown): unknown {
-  return typeof value === "string" ? value : "[redacted]";
+function copyConfigString(value: unknown): unknown {
+  if (value === null) return null;
+  return typeof value === "string" && isBoundedConfigString(value)
+    ? value
+    : "[redacted]";
 }
 
 function copyStringArray(value: unknown): unknown {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+  if (value === null) return null;
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string" || !isBoundedConfigString(item))
+  ) {
     return "[redacted]";
   }
   return value.slice();
@@ -70,7 +85,7 @@ function projectPlacement(value: unknown): unknown {
     out.mode = copyEnum(value.mode, PLACEMENT_MODE_SET);
   }
   if (Object.prototype.hasOwnProperty.call(value, "deviceId")) {
-    out.deviceId = copyString(value.deviceId);
+    out.deviceId = copyConfigString(value.deviceId);
   }
   if (Object.prototype.hasOwnProperty.call(value, "deviceTags")) {
     out.deviceTags = copyStringArray(value.deviceTags);
@@ -88,7 +103,7 @@ function projectSandbox(value: unknown): unknown {
   const out: Record<string, unknown> = {};
   for (const key of ["memory", "cpus", "networkMode"] as const) {
     if (Object.prototype.hasOwnProperty.call(value, key)) {
-      out[key] = copyString(value[key]);
+      out[key] = copyConfigString(value[key]);
     }
   }
   return out;
@@ -111,13 +126,27 @@ function redactLevel(rec: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+function projectSchemaArgs(
+  tool: string,
+  args: Record<string, unknown>,
+): Record<string, unknown> {
+  const allowed = adminToolPropertyNames(tool);
+  const out: Record<string, unknown> = {};
+  if (!allowed) return out;
+  for (const key of Object.keys(args)) {
+    if (allowed.has(key)) out[key] = args[key];
+  }
+  return out;
+}
+
 export function redactAdminToolAuditArgs(
   tool: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!tool.startsWith("mf_admin_") || !args || typeof args !== "object") {
+  if (!tool.startsWith("mf_admin_") || !args || typeof args !== "object" || Array.isArray(args)) {
     return args;
   }
-  if (!hasSecretShape(args)) return args;
-  return redactLevel(args);
+  const projected = projectSchemaArgs(tool, args);
+  if (!hasSecretShape(projected)) return projected;
+  return redactLevel(projected);
 }

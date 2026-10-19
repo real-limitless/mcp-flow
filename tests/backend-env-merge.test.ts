@@ -613,8 +613,8 @@ describe("admin tool audit redaction", () => {
     };
     const nestedRedacted = redactAdminToolAuditArgs("mf_admin_update_backend", nested);
     expect(nestedRedacted).not.toBe(nested);
-    expect(nestedRedacted.Env).toEqual({ STRIPE_SK: "[redacted]" });
-    expect(nestedRedacted.HEADERS).toEqual({ "X-Upstream-Sig": "[redacted]" });
+    expect(nestedRedacted).not.toHaveProperty("Env");
+    expect(nestedRedacted).not.toHaveProperty("HEADERS");
     expect(nestedRedacted.placement).toEqual({
       mode: "remote",
       affinity: "[redacted]",
@@ -627,6 +627,24 @@ describe("admin tool audit redaction", () => {
     expect(nestedText).not.toContain(sandboxExtra);
     expect(nestedText).not.toContain("sandbox-token-placeholder");
     expect((nested.placement as { env: { STRIPE_SK: string } }).env.STRIPE_SK).toBe(STRIPE);
+
+    const top = "top-level-stripe-placeholder";
+    const leaked = redactAdminToolAuditArgs("mf_admin_update_backend", {
+      idOrSlug: "sb",
+      STRIPE_SK: top,
+      extra: "top-extra-placeholder",
+      note: { deep: top },
+    });
+    expect(leaked).toEqual({ idOrSlug: "sb" });
+    expect(JSON.stringify(leaked)).not.toContain(top);
+    const installedLeak = redactAdminToolAuditArgs("mf_admin_catalog_install", {
+      id: "example/server",
+      STRIPE_SK: top,
+      note: top,
+    });
+    expect(installedLeak).toEqual({ id: "example/server" });
+    expect(JSON.stringify(installedLeak)).not.toContain(top);
+    expect(redactAdminToolAuditArgs("mf_admin_status", { STRIPE_SK: top })).toEqual({});
   });
 
   it("stores redacted tools/call arguments for admin backend tools", async () => {
@@ -673,12 +691,10 @@ describe("admin tool audit redaction", () => {
     });
     expect(updated.isError).not.toBe(true);
     const nestedValue = "nested-stripe-placeholder";
-    const caseValue = "case-env-placeholder";
     const nestedCall = await client.callTool({
       name: "mf_admin_update_backend",
       arguments: {
         idOrSlug: "remote",
-        Env: { STRIPE_SK: caseValue },
         placement: { mode: "remote", env: { STRIPE_SK: nestedValue } },
         sandbox: { memory: "512m", headers: { "X-Upstream-Sig": SIG } },
       },
@@ -703,7 +719,6 @@ describe("admin tool audit redaction", () => {
     expect(blob).not.toContain(SIG);
     expect(blob).not.toContain(KEY);
     expect(blob).not.toContain("nested-stripe-placeholder");
-    expect(blob).not.toContain("case-env-placeholder");
     const createArgs = (
       events.find((event) => {
         const args = (event.detail as { arguments?: { slug?: string } } | null)
@@ -1065,5 +1080,251 @@ describe("placement and sandbox shapes", () => {
     expect(listedText).not.toContain(extra);
     expect(listedText).not.toContain(sandboxExtra);
     expect(listedText).not.toContain("affinity-note-placeholder");
+  }, 60_000);
+
+  it("rejects unknown admin arguments and unbounded config strings, and keeps null placement", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const created = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "sb",
+        transport: "stdio",
+        command: ["echo", "ok"],
+        placement: { mode: "central-sandbox" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const ws = gw.store.ensureWorkspace("default");
+    const before = gw.store.getBackend(ws.id, "sb")!.placementJson;
+    const long = "d".repeat(100_000);
+    const spaced = "x y;z";
+    const badBodies = [
+      { placement: { mode: "central-sandbox", deviceId: long } },
+      { placement: { mode: "central-sandbox", deviceId: spaced } },
+      { placement: { mode: "central-sandbox", deviceId: "bad\nid" } },
+      { placement: { mode: "central-sandbox", deviceTags: ["ok", spaced] } },
+      { placement: { mode: "central-sandbox", deviceTags: [long] } },
+      { sandbox: { memory: long } },
+      { sandbox: { memory: "512 m" } },
+      { sandbox: { cpus: "1.0\t" } },
+      { sandbox: { networkMode: "br idge" } },
+    ];
+    for (const body of badBodies) {
+      const res = await fetch(`${base}/v1/backends/sb`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      expect(res.status, text).toBe(400);
+      expect(text).not.toContain(long);
+      expect(text).not.toContain(spaced);
+      expect(text).not.toMatch(/TypeError/);
+    }
+    expect(gw.store.getBackend(ws.id, "sb")!.placementJson).toBe(before);
+
+    const kept = await fetch(`${base}/v1/backends/sb`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        placement: {
+          mode: "central-sandbox",
+          deviceId: "device-1",
+          deviceTags: ["edge-a"],
+          affinity: "harness-local",
+        },
+        sandbox: { memory: "not-a-size!!", cpus: "1.0", networkMode: "bridge" },
+      }),
+    });
+    expect(kept.status).toBe(200);
+    const keptBody = (await kept.json()) as {
+      backend: { placement: Record<string, unknown>; sandbox: Record<string, unknown> };
+    };
+    expect(keptBody.backend.placement).toMatchObject({
+      mode: "central-sandbox",
+      deviceId: "device-1",
+      affinity: "harness-local",
+    });
+    expect(keptBody.backend.sandbox.memory).toBe("not-a-size!!");
+
+    const cleared = await fetch(`${base}/v1/backends/sb`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ placement: null }),
+    });
+    expect(cleared.status).toBe(200);
+    const clearedBody = (await cleared.json()) as {
+      backend: { placement: Record<string, unknown> };
+    };
+    expect(clearedBody.backend.placement.mode).toBe("central-sandbox");
+    expect(clearedBody.backend.placement.deviceId).toBe("device-1");
+
+    const nulled = await fetch(`${base}/v1/backends/sb`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({
+        placement: {
+          mode: "central-sandbox",
+          deviceId: null,
+          affinity: null,
+          deviceTags: null,
+        },
+      }),
+    });
+    expect(nulled.status).toBe(200);
+    const nulledBody = (await nulled.json()) as {
+      backend: { placement: Record<string, unknown> };
+    };
+    expect(nulledBody.backend.placement.mode).toBe("central-sandbox");
+    expect(nulledBody.backend.placement.deviceId).toBeNull();
+    expect(nulledBody.backend.placement.affinity).toBeNull();
+
+    const noMode = await fetch(`${base}/v1/backends/sb`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ placement: { affinity: "pinned" } }),
+    });
+    const noModeText = await noMode.text();
+    expect(noMode.status, noModeText).toBe(200);
+    expect(noModeText).not.toMatch(/placement\.mode is invalid/);
+    expect(JSON.parse(noModeText).backend.placement).toMatchObject({
+      mode: "central-sandbox",
+      affinity: "pinned",
+    });
+
+    const pool = new UpstreamPool(gw.store);
+    const cfg = loadConfig({
+      dbPath: join(tmpdir(), "unused-shape.db"),
+      masterKeyRaw: master,
+      adminToken: admin,
+      allowPrivateUrls: true,
+    });
+    const deps = {
+      store: gw.store,
+      pool,
+      cfg,
+      auth: { kind: "admin" as const, workspaceId: ws.id },
+      edgeEnabled: false,
+    };
+    const mcpLong = await handleAdminTool(
+      "mf_admin_update_backend",
+      {
+        idOrSlug: "sb",
+        sandbox: { memory: long },
+      },
+      deps,
+    );
+    const mcpLongText = mcpLong.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(mcpLong.isError).toBe(true);
+    expect(mcpLongText).toMatch(/memory/);
+    expect(mcpLongText).not.toContain(long);
+    expect(mcpLongText).not.toMatch(/TypeError/);
+
+    const mcpNull = await handleAdminTool(
+      "mf_admin_update_backend",
+      {
+        idOrSlug: "sb",
+        placement: { mode: "central-sandbox", deviceId: null, affinity: null },
+      },
+      deps,
+    );
+    expect(mcpNull.isError).not.toBe(true);
+    const mcpMissingMode = await handleAdminTool(
+      "mf_admin_create_backend",
+      {
+        slug: "no-mode",
+        url: "https://example.com/mcp",
+        placement: { affinity: "any-online" },
+      },
+      deps,
+    );
+    expect(mcpMissingMode.isError).not.toBe(true);
+    const createdNoMode = gw.store.getBackendPublic(ws.id, "no-mode");
+    expect(createdNoMode?.placement).toMatchObject({
+      mode: "remote",
+      affinity: "any-online",
+    });
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "ops-unknown", admin: true }),
+    });
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client(
+      { name: "ops-unknown", version: "1.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const top = "top-level-stripe-placeholder";
+    const extraVal = "top-extra-placeholder";
+    const noteVal = "top-note-placeholder";
+    const calls = [
+      {
+        name: "mf_admin_update_backend",
+        arguments: {
+          idOrSlug: "sb",
+          STRIPE_SK: top,
+          extra: extraVal,
+          note: { deep: noteVal },
+        },
+      },
+      {
+        name: "mf_admin_create_backend",
+        arguments: {
+          slug: "leaky",
+          url: "https://example.com/mcp",
+          STRIPE_SK: top,
+          extra: extraVal,
+        },
+      },
+      {
+        name: "mf_admin_catalog_install",
+        arguments: { id: "example/server", note: noteVal, extra: extraVal },
+      },
+      {
+        name: "mf_admin_list_backends",
+        arguments: { STRIPE_SK: top },
+      },
+    ];
+    for (const call of calls) {
+      const result = await client.callTool(call);
+      const text = result.content
+        .map((block) => ("text" in block ? block.text : ""))
+        .join("\n");
+      expect(result.isError, text).toBe(true);
+      expect(text).toMatch(/unknown argument/);
+      expect(text).not.toContain(top);
+      expect(text).not.toContain(extraVal);
+      expect(text).not.toContain(noteVal);
+    }
+    await client.close();
+    expect(gw.store.getBackend(ws.id, "leaky")).toBeNull();
+
+    const blob = JSON.stringify(gw.store.listAudit(ws.id, { limit: 100 }));
+    expect(blob).not.toContain(top);
+    expect(blob).not.toContain(extraVal);
+    expect(blob).not.toContain(noteVal);
+    expect(blob).not.toContain(long);
+    const listed = await handleAdminTool("mf_admin_list_audit", { limit: 100 }, deps);
+    const listedText = listed.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(listedText).not.toContain(top);
+    expect(listedText).not.toContain(extraVal);
+    expect(listedText).not.toContain(noteVal);
+    expect(listedText).not.toContain(long);
   }, 60_000);
 });
