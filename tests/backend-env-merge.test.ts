@@ -593,11 +593,23 @@ describe("admin tool audit redaction", () => {
     const plain = { text: "hi" };
     expect(redactAdminToolAuditArgs("up__echo", plain)).toBe(plain);
 
+    const extra = "extra-note-placeholder";
+    const sandboxExtra = "sandbox-extra-placeholder";
     const nested = {
       Env: { STRIPE_SK: STRIPE },
       HEADERS: { "X-Upstream-Sig": SIG },
-      placement: { mode: "remote", env: { STRIPE_SK: STRIPE } },
-      sandbox: { memory: "512m", headers: { "X-Upstream-Sig": SIG } },
+      placement: {
+        mode: "remote",
+        env: { STRIPE_SK: STRIPE },
+        extra: { note: extra },
+        affinity: { env: { STRIPE_SK: STRIPE } },
+      },
+      sandbox: {
+        memory: "512m",
+        headers: { "X-Upstream-Sig": SIG },
+        extra: { note: sandboxExtra },
+        token: "sandbox-token-placeholder",
+      },
     };
     const nestedRedacted = redactAdminToolAuditArgs("mf_admin_update_backend", nested);
     expect(nestedRedacted).not.toBe(nested);
@@ -605,12 +617,15 @@ describe("admin tool audit redaction", () => {
     expect(nestedRedacted.HEADERS).toEqual({ "X-Upstream-Sig": "[redacted]" });
     expect(nestedRedacted.placement).toEqual({
       mode: "remote",
-      env: { STRIPE_SK: "[redacted]" },
+      affinity: "[redacted]",
     });
-    expect(nestedRedacted.sandbox).toEqual({
-      memory: "512m",
-      headers: { "X-Upstream-Sig": "[redacted]" },
-    });
+    expect(nestedRedacted.sandbox).toEqual({ memory: "512m" });
+    const nestedText = JSON.stringify(nestedRedacted);
+    expect(nestedText).not.toContain(STRIPE);
+    expect(nestedText).not.toContain(SIG);
+    expect(nestedText).not.toContain(extra);
+    expect(nestedText).not.toContain(sandboxExtra);
+    expect(nestedText).not.toContain("sandbox-token-placeholder");
     expect((nested.placement as { env: { STRIPE_SK: string } }).env.STRIPE_SK).toBe(STRIPE);
   });
 
@@ -820,4 +835,235 @@ describe("backend patch errors", () => {
     });
     store.close();
   });
+});
+
+describe("placement and sandbox shapes", () => {
+  it("rejects mistyped placement and sandbox values and omits unknown keys from audit", async () => {
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const created = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "sb",
+        transport: "stdio",
+        command: ["echo", "ok"],
+        placement: { mode: "central-sandbox" },
+      }),
+    });
+    expect(created.status).toBe(201);
+    const ws = gw.store.ensureWorkspace("default");
+    const before = gw.store.getBackend(ws.id, "sb")!;
+    const affinityBody = {
+      placement: {
+        mode: "central-sandbox",
+        affinity: { env: { STRIPE_SK: STRIPE }, note: "affinity-note-placeholder" },
+      },
+    };
+    const memoryBody = {
+      sandbox: { memory: { env: { STRIPE_SK: STRIPE } } },
+    };
+    const bad = [
+      affinityBody,
+      memoryBody,
+      { sandbox: { cpus: { env: { STRIPE_SK: STRIPE } } } },
+      { sandbox: { networkMode: { env: { STRIPE_SK: STRIPE } } } },
+      {
+        placement: {
+          mode: "central-sandbox",
+          deviceTags: ["ok", { env: { STRIPE_SK: STRIPE } }],
+        },
+      },
+      {
+        placement: {
+          mode: { env: { STRIPE_SK: STRIPE } },
+        },
+      },
+      {
+        placement: {
+          mode: "central-sandbox",
+          deviceId: { env: { STRIPE_SK: STRIPE } },
+        },
+      },
+    ];
+    for (const body of bad) {
+      const res = await fetch(`${base}/v1/backends/sb`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const text = await res.text();
+      expect(res.status, text).toBe(400);
+      expect(text).not.toContain(STRIPE);
+      expect(text).not.toContain("affinity-note-placeholder");
+      expect(text).not.toMatch(/TypeError/);
+    }
+    const echoed = await fetch(`${base}/v1/backends/sb`, { headers });
+    const echoedText = await echoed.text();
+    expect(echoed.status).toBe(200);
+    expect(echoedText).not.toContain(STRIPE);
+    expect(echoedText).not.toContain("affinity-note-placeholder");
+    const row = gw.store.getBackend(ws.id, "sb")!;
+    expect(row.placementJson).toBe(before.placementJson);
+    expect(row.sandboxJson).toBe(before.sandboxJson);
+    expect(row.placementJson).not.toContain(STRIPE);
+    expect(row.sandboxJson ?? "").not.toContain(STRIPE);
+
+    const posted = await fetch(`${base}/v1/backends`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        slug: "bad-shape",
+        transport: "stdio",
+        command: ["echo", "ok"],
+        placement: affinityBody.placement,
+        sandbox: memoryBody.sandbox,
+      }),
+    });
+    const postedText = await posted.text();
+    expect(posted.status).toBe(400);
+    expect(postedText).not.toContain(STRIPE);
+    expect(postedText).not.toMatch(/TypeError/);
+    expect(gw.store.getBackend(ws.id, "bad-shape")).toBeNull();
+
+    const pool = new UpstreamPool(gw.store);
+    const cfg = loadConfig({
+      dbPath: join(tmpdir(), "unused-shape.db"),
+      masterKeyRaw: master,
+      adminToken: admin,
+      allowPrivateUrls: true,
+    });
+    const deps = {
+      store: gw.store,
+      pool,
+      cfg,
+      auth: { kind: "admin" as const, workspaceId: ws.id },
+      edgeEnabled: false,
+    };
+    const mcpUpdate = await handleAdminTool(
+      "mf_admin_update_backend",
+      { idOrSlug: "sb", ...affinityBody },
+      deps,
+    );
+    const mcpMemory = await handleAdminTool(
+      "mf_admin_update_backend",
+      { idOrSlug: "sb", ...memoryBody },
+      deps,
+    );
+    const mcpCreate = await handleAdminTool(
+      "mf_admin_create_backend",
+      {
+        slug: "bad-mcp",
+        transport: "stdio",
+        command: ["echo", "ok"],
+        placement: affinityBody.placement,
+        sandbox: memoryBody.sandbox,
+      },
+      deps,
+    );
+    for (const result of [mcpUpdate, mcpMemory, mcpCreate]) {
+      const text = result.content
+        .map((block) => ("text" in block ? block.text : ""))
+        .join("\n");
+      expect(result.isError).toBe(true);
+      expect(text).not.toContain(STRIPE);
+      expect(text).not.toMatch(/TypeError/);
+    }
+    expect(
+      mcpUpdate.content.map((block) => ("text" in block ? block.text : "")).join("\n"),
+    ).toMatch(/affinity/);
+    expect(
+      mcpMemory.content.map((block) => ("text" in block ? block.text : "")).join("\n"),
+    ).toMatch(/memory/);
+    expect(gw.store.getBackend(ws.id, "bad-mcp")).toBeNull();
+    expect(gw.store.getBackend(ws.id, "sb")!.placementJson).toBe(before.placementJson);
+
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "ops-shape", admin: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const opToken = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client({ name: "ops-shape", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${opToken}` } },
+      }),
+    );
+    const extra = "placement-extra-placeholder";
+    const sandboxExtra = "sandbox-extra-placeholder";
+    const kept = await client.callTool({
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "sb",
+        placement: {
+          mode: "central-sandbox",
+          affinity: "pinned",
+          deviceTags: ["lab"],
+          extra: { note: extra, env: { STRIPE_SK: STRIPE } },
+        },
+        sandbox: {
+          memory: "512m",
+          cpus: "1.0",
+          networkMode: "bridge",
+          extra: { note: sandboxExtra },
+        },
+      },
+    });
+    expect(kept.isError).not.toBe(true);
+    const rejected = await client.callTool({
+      name: "mf_admin_update_backend",
+      arguments: {
+        idOrSlug: "sb",
+        placement: affinityBody.placement,
+        sandbox: memoryBody.sandbox,
+      },
+    });
+    expect(rejected.isError).toBe(true);
+    await client.close();
+
+    const stored = gw.store.getBackendPublic(ws.id, "sb");
+    expect(stored?.placement).toEqual({
+      mode: "central-sandbox",
+      affinity: "pinned",
+      deviceTags: ["lab"],
+    });
+    expect(stored?.sandbox).toEqual({
+      memory: "512m",
+      cpus: "1.0",
+      networkMode: "bridge",
+    });
+    const storedText = JSON.stringify(stored);
+    expect(storedText).not.toContain(STRIPE);
+    expect(storedText).not.toContain(extra);
+    expect(storedText).not.toContain(sandboxExtra);
+
+    const events = gw.store.listAudit(ws.id, { limit: 100 });
+    const blob = JSON.stringify(events);
+    expect(blob).not.toContain(STRIPE);
+    expect(blob).not.toContain(extra);
+    expect(blob).not.toContain(sandboxExtra);
+    expect(blob).not.toContain("affinity-note-placeholder");
+    const calls = events.filter((event) => event.action === "tools/call");
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+
+    const listed = await handleAdminTool(
+      "mf_admin_list_audit",
+      { limit: 100 },
+      deps,
+    );
+    const listedText = listed.content
+      .map((block) => ("text" in block ? block.text : ""))
+      .join("\n");
+    expect(listed.isError).not.toBe(true);
+    expect(listedText).not.toContain(STRIPE);
+    expect(listedText).not.toContain(extra);
+    expect(listedText).not.toContain(sandboxExtra);
+    expect(listedText).not.toContain("affinity-note-placeholder");
+  }, 60_000);
 });

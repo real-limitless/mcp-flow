@@ -29,7 +29,11 @@ import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import { parseEnvMode } from "../db/env-patch.js";
-import { BackendInputError } from "../db/secret-input.js";
+import {
+  assertPlacementValue,
+  assertSandboxValue,
+  BackendInputError,
+} from "../db/secret-input.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
@@ -64,6 +68,20 @@ import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 type Variables = {
   auth: AuthContext;
 };
+
+function placementSandboxError(body: {
+  placement?: unknown;
+  sandbox?: unknown;
+}): string | null {
+  try {
+    assertPlacementValue(body.placement);
+    assertSandboxValue(body.sandbox);
+    return null;
+  } catch (err) {
+    if (err instanceof BackendInputError) return err.message;
+    throw err;
+  }
+}
 
 function bearer(header: string | undefined): string | null {
   if (!header) return null;
@@ -439,6 +457,8 @@ export function createApp(
     }
 
     const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
+    const shapeErr = placementSandboxError(body);
+    if (shapeErr) return c.json({ error: shapeErr }, 400);
     const verr = validateBackendWrite(
       auth.workspaceId,
       transport,
@@ -503,6 +523,8 @@ export function createApp(
             ? (JSON.parse(existing.commandJson) as string[])
             : null,
     };
+    const shapeErr = placementSandboxError(body);
+    if (shapeErr) return c.json({ error: shapeErr }, 400);
     const verr = validateBackendWrite(
       auth.workspaceId,
       transport,

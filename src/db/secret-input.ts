@@ -20,6 +20,13 @@ const HTTP_TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
 export const PLACEMENT_KEYS = ["mode", "deviceId", "deviceTags", "affinity"] as const;
 export const SANDBOX_KEYS = ["memory", "cpus", "networkMode"] as const;
+export const PLACEMENT_MODES = [
+  "remote",
+  "central-sandbox",
+  "edge-sandbox",
+  "edge-bare",
+] as const;
+export const AFFINITIES = ["harness-local", "pinned", "any-online"] as const;
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
@@ -117,10 +124,62 @@ export function readUnsetEnv(raw: unknown): string[] {
   return names;
 }
 
+function assertStringArray(value: unknown, label: string): void {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new BackendInputError(`${label} must be an array of strings`);
+  }
+}
+
+/**
+ * Known placement fields must match their types. Anything else is a 400.
+ * Unknown keys are ignored here; callers drop them and never store them.
+ */
+export function assertPlacementValue(value: unknown): void {
+  if (value === undefined) return;
+  if (!isPlainRecord(value)) {
+    throw new BackendInputError("placement must be an object");
+  }
+  if (
+    typeof value.mode !== "string" ||
+    !(PLACEMENT_MODES as readonly string[]).includes(value.mode)
+  ) {
+    throw new BackendInputError("placement.mode is invalid");
+  }
+  if (value.deviceId !== undefined && typeof value.deviceId !== "string") {
+    throw new BackendInputError("placement.deviceId must be a string");
+  }
+  if (value.deviceTags !== undefined) {
+    assertStringArray(value.deviceTags, "placement.deviceTags");
+  }
+  if (value.affinity !== undefined) {
+    if (
+      typeof value.affinity !== "string" ||
+      !(AFFINITIES as readonly string[]).includes(value.affinity)
+    ) {
+      throw new BackendInputError("placement.affinity is invalid");
+    }
+  }
+}
+
+/** memory, cpus, and networkMode are strings. null clears the sandbox. */
+export function assertSandboxValue(value: unknown): void {
+  if (value === undefined || value === null) return;
+  if (!isPlainRecord(value)) {
+    throw new BackendInputError("sandbox must be an object");
+  }
+  for (const key of SANDBOX_KEYS) {
+    if (value[key] !== undefined && typeof value[key] !== "string") {
+      throw new BackendInputError(`sandbox.${key} must be a string`);
+    }
+  }
+}
+
 export function validateCreateSecrets(input: {
   env?: unknown;
   headers?: unknown;
   apiKey?: unknown;
+  placement?: unknown;
+  sandbox?: unknown;
 }): void {
   assertApiKey(input.apiKey);
   assertSecretMap(input.env, "env", { allowNull: true, allowNullValues: false });
@@ -128,6 +187,8 @@ export function validateCreateSecrets(input: {
     allowNull: true,
     allowNullValues: false,
   });
+  assertPlacementValue(input.placement);
+  assertSandboxValue(input.sandbox);
 }
 
 export function validateUpdateSecrets(input: {
@@ -137,6 +198,8 @@ export function validateUpdateSecrets(input: {
   unsetEnv?: unknown;
   envMode?: unknown;
   headerMode?: unknown;
+  placement?: unknown;
+  sandbox?: unknown;
 }): void {
   assertMode(input.envMode, "envMode");
   assertMode(input.headerMode, "headerMode");
@@ -147,6 +210,8 @@ export function validateUpdateSecrets(input: {
     allowNull: true,
     allowNullValues: true,
   });
+  assertPlacementValue(input.placement);
+  assertSandboxValue(input.sandbox);
 }
 
 /**

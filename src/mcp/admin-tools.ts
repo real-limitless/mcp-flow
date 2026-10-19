@@ -12,6 +12,7 @@ import {
 import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Config } from "../config.js";
 import { parseEnvMode } from "../db/env-patch.js";
+import { assertPlacementValue, assertSandboxValue } from "../db/secret-input.js";
 import type { Store } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
@@ -627,6 +628,8 @@ export async function handleAdminTool(
           }
         }
         const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
+        assertPlacementValue(body.placement);
+        assertSandboxValue(body.sandbox);
         const verr = validateBackendWrite(deps, transport, body, placement);
         if (verr) return textResult(verr, true);
         const backend = store.createBackend(wsId, {
@@ -651,6 +654,8 @@ export async function handleAdminTool(
         if (!existing) return textResult("not found", true);
         const body = { ...args } as UpdateBackendInput & { idOrSlug?: string };
         delete (body as { idOrSlug?: string }).idOrSlug;
+        assertPlacementValue(body.placement);
+        assertSandboxValue(body.sandbox);
         if (parseEnvMode(body.envMode) === "invalid") {
           return textResult("envMode must be merge or replace", true);
         }
