@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
-import { STDIO_GROUP_KILL_BUDGET_MS } from "../src/mcp/runners/stdio.js";
+import { isLiving, STDIO_GROUP_KILL_BUDGET_MS } from "../src/mcp/runners/stdio.js";
 import {
   INFLIGHT_CLOSE_DEADLINE_MS,
   UpstreamPool,
@@ -197,6 +198,7 @@ rl.on("line", (line) => {
           { name: "ping", description: "ping", inputSchema: { type: "object", properties: {} } },
           { name: "bad", description: "bad", inputSchema: { type: "object", properties: {} } },
           { name: "die", description: "die", inputSchema: { type: "object", properties: {} } },
+          { name: "ack", description: "ack", inputSchema: { type: "object", properties: {} } },
         ],
       },
     });
@@ -208,6 +210,15 @@ rl.on("line", (line) => {
   }
   if (msg.method === "tools/call" && msg.params && msg.params.name === "die") {
     process.exit(1);
+  }
+  if (msg.method === "tools/call" && msg.params && msg.params.name === "ack") {
+    const note = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/progress",
+      params: { progressToken: msg.id, progress: 1 },
+    }) + "\\n";
+    process.stdout.write(note, () => process.exit(0));
+    return;
   }
   if (msg.method === "tools/call") {
     send({ jsonrpc: "2.0", id: msg.id, result: { content: [{ type: "text", text: "pong" }] } });
@@ -336,6 +347,49 @@ function poolEntry(pool: UpstreamPool, backendId: string): PoolEntry | undefined
   return (pool as unknown as { pool: Map<string, PoolEntry> }).pool.get(backendId);
 }
 
+function entryPid(entry: PoolEntry): number {
+  const pid = (entry.transport as { pid?: number | null }).pid;
+  if (pid == null) throw new Error("stdio transport has no pid");
+  return pid;
+}
+
+function rpcMethod(message: unknown): string | undefined {
+  if (!message || typeof message !== "object" || !("method" in message)) return undefined;
+  const method = (message as { method?: unknown }).method;
+  return typeof method === "string" ? method : undefined;
+}
+
+function holdZombie(): Promise<{ pid: number; stop: () => void }> {
+  const child = spawn(
+    "python3",
+    [
+      "-c",
+      "import os,sys,time\npid=os.fork()\nif pid==0:\n os._exit(0)\nsys.stdout.write(str(pid)+'\\n')\nsys.stdout.flush()\ntime.sleep(60)\n",
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
+  return new Promise((resolve, reject) => {
+    let buf = "";
+    const timer = setTimeout(() => reject(new Error("zombie pid missing")), 2_000);
+    child.once("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.stdout?.on("data", (chunk: Buffer) => {
+      buf += chunk.toString();
+      const line = buf.split("\n")[0] ?? "";
+      if (!/^\d+$/.test(line)) return;
+      clearTimeout(timer);
+      resolve({
+        pid: Number(line),
+        stop: () => {
+          child.kill("SIGKILL");
+        },
+      });
+    });
+  });
+}
+
 async function until(pred: () => boolean, ms: number): Promise<boolean> {
   const started = Date.now();
   while (Date.now() - started < ms) {
@@ -453,6 +507,7 @@ describe("stdio process lifecycle", () => {
       expect(alivePids(spawnDir)).toHaveLength(1);
       const bad = await pool.callTool(workspaceId, "fix__bad", {});
       expect(bad.isError).toBe(true);
+      expect(bad.sent).toBe(true);
       expect(readdirSync(spawnDir)).toHaveLength(1);
       expect(alivePids(spawnDir)).toHaveLength(1);
 
@@ -461,7 +516,7 @@ describe("stdio process lifecycle", () => {
       expect(readdirSync(spawnDir)).toHaveLength(1);
 
       const died = await pool.callTool(workspaceId, "fix__die", {});
-      expect(died.sent).toBe(true);
+      expect(died.sent).toBe(false);
       expect(resultText(died)).toMatch(/connection closed/i);
       const gone = await until(() => alivePids(spawnDir).length === 0, 2_000);
       expect(gone).toBe(true);
@@ -614,7 +669,7 @@ describe("stdio process lifecycle", () => {
     }
   });
 
-  it("keeps sent when the transport write finished before Connection closed", async () => {
+  it("does not mark a resolved write as sent when the child never answers", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
     dirs.push(dir);
     const spawnDir = join(dir, "spawns");
@@ -631,7 +686,7 @@ describe("stdio process lifecycle", () => {
       const written = await pool.callTool(workspaceId, "fix__ping", {
         note: "written-note-placeholder",
       });
-      expect(written.sent).toBe(true);
+      expect(written.sent).toBe(false);
       expect(resultText(written)).toMatch(/connection closed/i);
       const again = await pool.callTool(workspaceId, "fix__ping", {});
       expect(again.sent).toBe(true);
@@ -662,8 +717,8 @@ describe("stdio process lifecycle", () => {
           note: "race-secret-placeholder",
         });
         const text = resultText(outcome);
-        if (/not connected/i.test(text)) expect(outcome.sent).toBe(false);
-        if (outcome.sent) expect(text).not.toMatch(/not connected/i);
+        if (/not connected|connection closed/i.test(text)) expect(outcome.sent).toBe(false);
+        if (outcome.sent) expect(text).toBe("pong");
         if (!outcome.sent) expect(text).not.toContain("race-secret-placeholder");
         if (outcome.sent && text === "pong") continue;
         const dropped = await until(() => poolSize(pool) === 0, 2_000);
@@ -672,6 +727,129 @@ describe("stdio process lifecycle", () => {
         expect(next.sent).toBe(true);
         expect(resultText(next)).toBe("pong");
       }
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("respawns instead of writing to a zombie stdio process", async () => {
+    const held = await holdZombie();
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "zombie.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      expect(isLiving(held.pid)).toBe(false);
+      expect(() => process.kill(held.pid, 0)).not.toThrow();
+      await pool.callTool(workspaceId, "fix__ping", {});
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      const original = entryPid(entry!);
+      Object.defineProperty(entry!.transport, "pid", {
+        configurable: true,
+        get: () => held.pid,
+      });
+      expect((entry!.transport as { pid?: number | null }).pid).toBe(held.pid);
+      const outcome = await pool.callTool(workspaceId, "fix__ping", {
+        note: "zombie-placeholder",
+      });
+      expect(resultText(outcome)).toBe("pong");
+      expect(outcome.sent).toBe(true);
+      expect(readdirSync(spawnDir)).toHaveLength(2);
+      const living = alivePids(spawnDir);
+      expect(living).toHaveLength(1);
+      expect(living[0]).not.toBe(original);
+    } finally {
+      held.stop();
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("does not mark a call sent when the child is killed before the write", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "before-write.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      await pool.callTool(workspaceId, "fix__ping", {});
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      const pid = entryPid(entry!);
+      const realSend = entry!.transport.send.bind(entry!.transport);
+      entry!.transport.send = async (message, options) => {
+        if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+        process.kill(pid, "SIGKILL");
+        await until(() => !isLiving(pid), 2_000);
+        await Promise.race([
+          realSend(message, options).catch(() => undefined),
+          sleep(500),
+        ]);
+        return undefined;
+      };
+      const outcome = await pool.callTool(workspaceId, "fix__ping", {
+        note: "before-write-placeholder",
+      });
+      expect(outcome.sent).toBe(false);
+      expect(resultText(outcome)).not.toBe("pong");
+      expect(resultText(outcome)).not.toContain("before-write-placeholder");
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("does not mark a call sent when the child is killed during the write", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "during-write.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      await pool.callTool(workspaceId, "fix__ping", {});
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      const pid = entryPid(entry!);
+      process.kill(pid, "SIGSTOP");
+      const stopped = await until(() => procStat(pid)?.state === "T", 2_000);
+      expect(stopped).toBe(true);
+      const realSend = entry!.transport.send.bind(entry!.transport);
+      entry!.transport.send = async (message, options) => {
+        if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+        await realSend(message, options);
+        process.kill(pid, "SIGKILL");
+        return undefined;
+      };
+      const outcome = await pool.callTool(workspaceId, "fix__ping", {
+        note: "during-write-placeholder",
+      });
+      expect(outcome.sent).toBe(false);
+      expect(resultText(outcome)).not.toBe("pong");
+      expect(resultText(outcome)).not.toContain("during-write-placeholder");
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("marks a call sent when the child acknowledged before it exited", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "after-ack.mjs");
+    const { pool, store, workspaceId } = setupPool(script, spawnDir);
+    try {
+      const outcome = await pool.callTool(workspaceId, "fix__ack", {
+        note: "ack-note-placeholder",
+      });
+      expect(outcome.sent).toBe(true);
+      expect(resultText(outcome)).toMatch(/connection closed/i);
+      const again = await pool.callTool(workspaceId, "fix__ping", {});
+      expect(again.sent).toBe(true);
+      expect(resultText(again)).toBe("pong");
     } finally {
       await pool.closeAll();
       store.close();
@@ -771,6 +949,86 @@ describe("stdio death audit", () => {
       for (const event of collapsed) {
         expect(JSON.stringify(event.detail)).not.toContain(secret);
       }
+    } finally {
+      await client.close();
+      await running.close();
+    }
+  }, 30_000);
+
+  it("keeps acknowledged args and collapses a kill during the write", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "audit-windows.mjs");
+    spawnDirs.push(spawnDir);
+    const cfg = loadConfig({
+      dbPath: join(dir, "t.db"),
+      masterKeyRaw: master,
+      adminToken: "stdio-window-audit-token",
+      host: "127.0.0.1",
+      port: 0,
+      allowPrivateUrls: true,
+    });
+    const running = await startServer(cfg);
+    const ws = running.store.ensureWorkspace("default");
+    running.store.createBackend(ws.id, {
+      slug: "fix",
+      transport: "stdio",
+      command: [process.execPath, script],
+      enabled: true,
+      placement: { mode: "central-sandbox" },
+    });
+    const backend = running.store.getBackend(ws.id, "fix");
+    expect(backend).toBeTruthy();
+    const created = running.store.createApiKey(ws.id, "stdio-windows");
+    const client = new Client({ name: "stdio-windows", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${running.url}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${created.token}` } },
+      }),
+    );
+    const textOf = (result: { content: Array<{ text?: string }> }): string =>
+      result.content.map((block) => block.text ?? "").join("\n");
+    try {
+      const acked = await client.callTool({
+        name: "fix__ack",
+        arguments: { note: "ack-note-placeholder" },
+      });
+      expect(textOf(acked)).toMatch(/connection closed/i);
+      const ping = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: "after-ack-placeholder" },
+      });
+      expect(textOf(ping)).toBe("pong");
+
+      const entry = poolEntry(running.pool, backend!.id);
+      expect(entry).toBeTruthy();
+      const pid = entryPid(entry!);
+      process.kill(pid, "SIGSTOP");
+      const stopped = await until(() => procStat(pid)?.state === "T", 2_000);
+      expect(stopped).toBe(true);
+      const realSend = entry!.transport.send.bind(entry!.transport);
+      entry!.transport.send = async (message, options) => {
+        if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+        await realSend(message, options);
+        process.kill(pid, "SIGKILL");
+        return undefined;
+      };
+      const secret = "during-write-placeholder";
+      const blocked = await client.callTool({
+        name: "fix__ping",
+        arguments: { note: secret },
+      });
+      expect(textOf(blocked)).toBe("tool not found");
+      expect(textOf(blocked)).not.toContain(secret);
+
+      const calls = running.store
+        .listAudit(ws.id, { limit: 50 })
+        .filter((event) => event.action === "tools/call");
+      const blob = JSON.stringify(calls);
+      expect(blob).toContain("ack-note-placeholder");
+      expect(blob).toContain("after-ack-placeholder");
+      expect(blob).not.toContain(secret);
     } finally {
       await client.close();
       await running.close();

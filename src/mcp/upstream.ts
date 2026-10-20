@@ -11,6 +11,7 @@ import {
   armStdioReap,
   connectStdioCommand,
   disarmStdioReap,
+  isLiving,
   killLiveStdio,
   STDIO_GROUP_KILL_BUDGET_MS,
 } from "./runners/stdio.js";
@@ -109,6 +110,40 @@ function transportMessage(message: string): boolean {
 function isPreWriteRejection(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /not connected/i.test(message);
+}
+
+function sameRpcId(left: unknown, right: unknown): boolean {
+  if (typeof left === "number" && typeof right === "number") return left === right;
+  if (typeof left === "string" && typeof right === "string") return left === right;
+  if (
+    (typeof left === "number" && typeof right === "string") ||
+    (typeof left === "string" && typeof right === "number")
+  ) {
+    return String(left) === String(right);
+  }
+  return false;
+}
+
+/**
+ * The child acknowledged this JSON-RPC id. A resolved stdin write is not
+ * enough: the peer can accept the bytes and exit before reading them.
+ */
+function messageAcksRequest(message: unknown, requestId: string | number): boolean {
+  if (!message || typeof message !== "object") return false;
+  const msg = message as {
+    id?: unknown;
+    method?: unknown;
+    result?: unknown;
+    error?: unknown;
+    params?: { progressToken?: unknown };
+  };
+  if (sameRpcId(msg.id, requestId) && (msg.result !== undefined || msg.error !== undefined)) {
+    return true;
+  }
+  return (
+    msg.method === "notifications/progress" &&
+    sameRpcId(msg.params?.progressToken, requestId)
+  );
 }
 
 function parsePlacement(backend: BackendRecord): Placement {
@@ -474,7 +509,7 @@ export class UpstreamPool {
     };
   }
 
-  /** False when the SDK has already dropped the transport or the stdio process is gone. */
+  /** False when the SDK has dropped the transport or the stdio process is dead or a zombie. */
   private transportAlive(entry: PooledClient): boolean {
     if (entry.dead) return false;
     const client = entry.client as Client & { transport?: unknown };
@@ -483,12 +518,7 @@ export class UpstreamPool {
     if (!("pid" in transport)) return true;
     const pid = transport.pid;
     if (pid == null) return false;
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return false;
-    }
-    return true;
+    return isLiving(pid);
   }
 
   private async connectAndStore(backend: BackendRecord): Promise<PooledClient> {
@@ -667,9 +697,11 @@ export class UpstreamPool {
 
   /**
    * Resolve slug__tool on the matching enabled backend and call it.
-   * sent is true only after a tools/call request is handed to that backend.
-   * Allowlist misses, disabled or deleted backends, and tools that are not
-   * listed return sent:false and do not send a request.
+   * sent is true only after that backend acknowledges the tools/call
+   * (a response or progress for its request id). A transport write that
+   * later fails with Connection closed, and a dead or zombie stdio process,
+   * are sent:false. Allowlist misses, disabled or deleted backends, and
+   * tools that are not listed return sent:false and do not send a request.
    */
   async callTool(
     workspaceId: string,
@@ -729,14 +761,30 @@ export class UpstreamPool {
         await this.retire(backend.id);
         return this.notSent("tool not found");
       }
+      const previousOnMessage = pooled.transport.onmessage;
       const previousSend = pooled.transport.send;
       const originalSend = previousSend.bind(pooled.transport);
-      let wrote = false;
+      let requestId: string | number | null = null;
+      let acknowledged = false;
+      const wrappedOnMessage: NonNullable<Transport["onmessage"]> = (message, extra) => {
+        if (requestId !== null && messageAcksRequest(message, requestId)) acknowledged = true;
+        previousOnMessage?.(message, extra);
+      };
       const wrappedSend = (async (message, options) => {
-        const value = await originalSend(message, options);
-        wrote = true;
-        return value;
+        if (pooled.dead || !this.transportAlive(pooled)) {
+          pooled.dead = true;
+          throw new Error("Not connected");
+        }
+        const request = message as { id?: unknown; method?: unknown };
+        if (
+          request.method === "tools/call" &&
+          (typeof request.id === "string" || typeof request.id === "number")
+        ) {
+          requestId = request.id;
+        }
+        return originalSend(message, options);
       }) as Transport["send"];
+      pooled.transport.onmessage = wrappedOnMessage;
       pooled.transport.send = wrappedSend;
       try {
         const result = await pooled.client.callTool({
@@ -745,13 +793,16 @@ export class UpstreamPool {
         });
         return { ...(result as CallToolResult), sent: true };
       } catch (err) {
-        if (!wrote || isTransportOrConnectionError(err)) {
+        if (!acknowledged || isTransportOrConnectionError(err)) {
           pooled.dead = true;
           await this.retire(backend.id);
         }
-        return this.upstreamError(backend.slug, err, wrote && !isPreWriteRejection(err));
+        return this.upstreamError(backend.slug, err, acknowledged);
       } finally {
         if (pooled.transport.send === wrappedSend) pooled.transport.send = previousSend;
+        if (pooled.transport.onmessage === wrappedOnMessage) {
+          pooled.transport.onmessage = previousOnMessage;
+        }
       }
     } catch (err) {
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);
