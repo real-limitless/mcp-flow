@@ -163,10 +163,12 @@ function writePlainServer(
   ignoreTerm = false,
 ): string {
   const path = join(dir, name);
+  const readLog = join(dir, "reads");
   const code = `import { createInterface } from "node:readline";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 ${ignoreTerm ? 'process.on("SIGTERM", () => {});' : ""}
 const spawnDir = ${JSON.stringify(spawnDir)};
+const readLog = ${JSON.stringify(readLog)};
 mkdirSync(spawnDir, { recursive: true });
 writeFileSync(spawnDir + "/" + String(process.pid), "1");
 const rl = createInterface({ input: process.stdin });
@@ -203,6 +205,9 @@ rl.on("line", (line) => {
       },
     });
     return;
+  }
+  if (msg.method === "tools/call") {
+    appendFileSync(readLog, String(msg.params && msg.params.name) + "\\n");
   }
   if (msg.method === "tools/call" && msg.params && msg.params.name === "bad") {
     send({ jsonrpc: "2.0", id: msg.id, error: { code: -32602, message: "bad args" } });
@@ -345,6 +350,14 @@ interface PoolEntry {
 
 function poolEntry(pool: UpstreamPool, backendId: string): PoolEntry | undefined {
   return (pool as unknown as { pool: Map<string, PoolEntry> }).pool.get(backendId);
+}
+
+function readNames(dir: string): string[] {
+  try {
+    return readFileSync(join(dir, "reads"), "utf8").split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 function entryPid(entry: PoolEntry): number {
@@ -776,6 +789,7 @@ describe("stdio process lifecycle", () => {
     const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
     try {
       await pool.callTool(workspaceId, "fix__ping", {});
+      expect(readNames(dir)).toEqual(["ping"]);
       const entry = poolEntry(pool, backend.id);
       expect(entry).toBeTruthy();
       const pid = entryPid(entry!);
@@ -783,11 +797,16 @@ describe("stdio process lifecycle", () => {
       entry!.transport.send = async (message, options) => {
         if (rpcMethod(message) !== "tools/call") return realSend(message, options);
         process.kill(pid, "SIGKILL");
-        await until(() => !isLiving(pid), 2_000);
-        await Promise.race([
-          realSend(message, options).catch(() => undefined),
-          sleep(500),
-        ]);
+        let sawZ = false;
+        const started = Date.now();
+        while (Date.now() - started < 1_000) {
+          if (procStat(pid)?.state === "Z") {
+            sawZ = true;
+            break;
+          }
+        }
+        expect(sawZ).toBe(true);
+        await realSend(message, options).catch(() => undefined);
         return undefined;
       };
       const outcome = await pool.callTool(workspaceId, "fix__ping", {
@@ -796,6 +815,7 @@ describe("stdio process lifecycle", () => {
       expect(outcome.sent).toBe(false);
       expect(resultText(outcome)).not.toBe("pong");
       expect(resultText(outcome)).not.toContain("before-write-placeholder");
+      expect(readNames(dir)).toEqual(["ping"]);
     } finally {
       await pool.closeAll();
       store.close();
@@ -810,6 +830,43 @@ describe("stdio process lifecycle", () => {
     const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
     try {
       await pool.callTool(workspaceId, "fix__ping", {});
+      expect(readNames(dir)).toEqual(["ping"]);
+      const entry = poolEntry(pool, backend.id);
+      expect(entry).toBeTruthy();
+      const pid = entryPid(entry!);
+      process.kill(pid, "SIGSTOP");
+      const stopped = await until(() => procStat(pid)?.state === "T", 2_000);
+      expect(stopped).toBe(true);
+      const realSend = entry!.transport.send.bind(entry!.transport);
+      entry!.transport.send = async (message, options) => {
+        if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+        const pending = realSend(message, options);
+        process.kill(pid, "SIGKILL");
+        await pending.catch(() => undefined);
+        return undefined;
+      };
+      const outcome = await pool.callTool(workspaceId, "fix__ping", {
+        note: "during-write-placeholder",
+      });
+      expect(outcome.sent).toBe(false);
+      expect(resultText(outcome)).not.toBe("pong");
+      expect(resultText(outcome)).not.toContain("during-write-placeholder");
+      expect(readNames(dir)).toEqual(["ping"]);
+    } finally {
+      await pool.closeAll();
+      store.close();
+    }
+  });
+
+  it("does not mark a call sent when the child is killed after send resolves", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-life-"));
+    dirs.push(dir);
+    const spawnDir = join(dir, "spawns");
+    const script = writePlainServer(dir, spawnDir, "after-send.mjs");
+    const { pool, store, workspaceId, backend } = setupPool(script, spawnDir);
+    try {
+      await pool.callTool(workspaceId, "fix__ping", {});
+      expect(readNames(dir)).toEqual(["ping"]);
       const entry = poolEntry(pool, backend.id);
       expect(entry).toBeTruthy();
       const pid = entryPid(entry!);
@@ -824,11 +881,12 @@ describe("stdio process lifecycle", () => {
         return undefined;
       };
       const outcome = await pool.callTool(workspaceId, "fix__ping", {
-        note: "during-write-placeholder",
+        note: "after-send-placeholder",
       });
       expect(outcome.sent).toBe(false);
       expect(resultText(outcome)).not.toBe("pong");
-      expect(resultText(outcome)).not.toContain("during-write-placeholder");
+      expect(resultText(outcome)).not.toContain("after-send-placeholder");
+      expect(readNames(dir)).toEqual(["ping"]);
     } finally {
       await pool.closeAll();
       store.close();
@@ -1001,26 +1059,59 @@ describe("stdio death audit", () => {
       });
       expect(textOf(ping)).toBe("pong");
 
-      const entry = poolEntry(running.pool, backend!.id);
-      expect(entry).toBeTruthy();
-      const pid = entryPid(entry!);
-      process.kill(pid, "SIGSTOP");
-      const stopped = await until(() => procStat(pid)?.state === "T", 2_000);
-      expect(stopped).toBe(true);
-      const realSend = entry!.transport.send.bind(entry!.transport);
-      entry!.transport.send = async (message, options) => {
-        if (rpcMethod(message) !== "tools/call") return realSend(message, options);
-        await realSend(message, options);
-        process.kill(pid, "SIGKILL");
-        return undefined;
-      };
-      const secret = "during-write-placeholder";
-      const blocked = await client.callTool({
-        name: "fix__ping",
-        arguments: { note: secret },
-      });
-      expect(textOf(blocked)).toBe("tool not found");
-      expect(textOf(blocked)).not.toContain(secret);
+      const unread = [
+        "before-write-placeholder",
+        "during-write-placeholder",
+        "after-send-placeholder",
+      ] as const;
+      for (const [index, note] of unread.entries()) {
+        const primed = await client.callTool({
+          name: "fix__ping",
+          arguments: { note: `window-live-${index}` },
+        });
+        expect(textOf(primed)).toBe("pong");
+        const beforeReads = readNames(dir).length;
+        const entry = poolEntry(running.pool, backend!.id);
+        expect(entry).toBeTruthy();
+        const pid = entryPid(entry!);
+        const realSend = entry!.transport.send.bind(entry!.transport);
+        if (index === 0) {
+          entry!.transport.send = async (message, options) => {
+            if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+            process.kill(pid, "SIGKILL");
+            const started = Date.now();
+            let sawZ = false;
+            while (Date.now() - started < 1_000) {
+              if (procStat(pid)?.state === "Z") {
+                sawZ = true;
+                break;
+              }
+            }
+            expect(sawZ).toBe(true);
+            await realSend(message, options).catch(() => undefined);
+            return undefined;
+          };
+        } else {
+          process.kill(pid, "SIGSTOP");
+          const stopped = await until(() => procStat(pid)?.state === "T", 2_000);
+          expect(stopped).toBe(true);
+          entry!.transport.send = async (message, options) => {
+            if (rpcMethod(message) !== "tools/call") return realSend(message, options);
+            const pending = realSend(message, options);
+            if (index === 2) await pending;
+            process.kill(pid, "SIGKILL");
+            await pending.catch(() => undefined);
+            return undefined;
+          };
+        }
+        const blocked = await client.callTool({
+          name: "fix__ping",
+          arguments: { note },
+        });
+        expect(textOf(blocked)).toBe("tool not found");
+        expect(textOf(blocked)).not.toContain(note);
+        expect(readNames(dir)).toHaveLength(beforeReads);
+      }
 
       const calls = running.store
         .listAudit(ws.id, { limit: 50 })
@@ -1028,7 +1119,7 @@ describe("stdio death audit", () => {
       const blob = JSON.stringify(calls);
       expect(blob).toContain("ack-note-placeholder");
       expect(blob).toContain("after-ack-placeholder");
-      expect(blob).not.toContain(secret);
+      for (const note of unread) expect(blob).not.toContain(note);
     } finally {
       await client.close();
       await running.close();

@@ -133,13 +133,9 @@ function messageAcksRequest(message: unknown, requestId: string | number): boole
   const msg = message as {
     id?: unknown;
     method?: unknown;
-    result?: unknown;
-    error?: unknown;
     params?: { progressToken?: unknown };
   };
-  if (sameRpcId(msg.id, requestId) && (msg.result !== undefined || msg.error !== undefined)) {
-    return true;
-  }
+  if (sameRpcId(msg.id, requestId)) return true;
   return (
     msg.method === "notifications/progress" &&
     sameRpcId(msg.params?.progressToken, requestId)
