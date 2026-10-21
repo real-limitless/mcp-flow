@@ -49,6 +49,7 @@ import { assertOauthBackendConfig } from "../oauth/policy.js";
 import { resolveRedirectUri } from "../oauth/origin.js";
 import {
   completeOauthCallback,
+  pollOauthDevice,
   revokeOauthGrant,
   startOauthAuthorization,
 } from "../oauth/flow.js";
@@ -635,6 +636,28 @@ export function createApp(
         ...started,
         redirectOrigin: derived ? "derived" : "configured",
       });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.post("/backends/:id/oauth/device/poll", async (c) => {
+    const auth = c.get("auth");
+    const backend = store.getBackend(auth.workspaceId, c.req.param("id"));
+    if (!backend) return c.json({ error: "not found" }, 404);
+    try {
+      const result = await pollOauthDevice({
+        store,
+        backend,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+        keyId: auth.keyId,
+        ip: clientIp(c),
+      });
+      if (result.status === "connected") pool.invalidate(backend.id);
+      return c.json(result, result.status === "error" ? 400 : 200);
     } catch (err) {
       return c.json(
         { error: err instanceof Error ? err.message : String(err) },

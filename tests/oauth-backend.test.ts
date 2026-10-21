@@ -10,7 +10,7 @@ import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { readOauthSecrets } from "../src/db/oauth-store.js";
 import { createSafeFetch } from "../src/oauth/fetch.js";
-import { startOauthAuthorization } from "../src/oauth/flow.js";
+import { safeOauthMessage, startOauthAuthorization, pollOauthDevice } from "../src/oauth/flow.js";
 import { UpstreamPool } from "../src/mcp/upstream.js";
 import { startServer, type RunningServer } from "../src/server.js";
 
@@ -611,6 +611,160 @@ describe("upstream OAuth", () => {
     const text = await res.text();
     expect(text).toContain("did not complete");
     expect(text).not.toContain("secret-code");
+  });
+});
+
+describe("device login when the public redirect is rejected", () => {
+  it("keeps the redirect error text instead of collapsing it to server_error", () => {
+    const err = new Error(
+      "redirect_uri not allowed: https://mcp-flow.z.srl/oauth/callback",
+    );
+    Object.defineProperty(err, "errorCode", { get: () => "server_error" });
+    const message = safeOauthMessage(err);
+    expect(message).toContain("redirect_uri not allowed");
+    expect(message).not.toBe("OAuth error: server_error");
+  });
+
+  it("starts a device grant and polls it without storing the device code in plaintext", async () => {
+    const deviceCode = "device-code-PLAINTEXT-should-not-leak";
+    const access = "device-access-PLAINTEXT-should-not-leak";
+    let polls = 0;
+    let port = 0;
+    const httpServer = createServer(async (req, res) => {
+      const origin = `http://127.0.0.1:${port}`;
+      const pathname = new URL(req.url || "/", origin).pathname;
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const send = (status: number, body: unknown) => {
+        const payload = JSON.stringify(body);
+        res.statusCode = status;
+        res.setHeader("content-type", "application/json");
+        res.end(payload);
+      };
+      if (pathname.includes("oauth-protected-resource")) {
+        send(200, {
+          resource: `${origin}/mcp`,
+          authorization_servers: [origin],
+          scopes_supported: ["models:read"],
+        });
+        return;
+      }
+      if (pathname.includes("oauth-authorization-server")) {
+        send(200, {
+          issuer: origin,
+          authorization_endpoint: `${origin}/authorize`,
+          token_endpoint: `${origin}/token`,
+          registration_endpoint: `${origin}/register`,
+          device_authorization_endpoint: `${origin}/device`,
+          response_types_supported: ["code"],
+          grant_types_supported: [
+            "authorization_code",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code",
+          ],
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["none"],
+        });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/register") {
+        const body = JSON.parse(raw) as { redirect_uris?: string[] };
+        const redirect = body.redirect_uris?.[0] ?? "";
+        if (!redirect.startsWith("http://127.0.0.1")) {
+          send(400, {
+            error: "invalid_redirect_uri",
+            error_description: `redirect_uri not allowed: ${redirect}`,
+          });
+          return;
+        }
+        send(201, {
+          client_id: "dev-client",
+          redirect_uris: body.redirect_uris,
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "none",
+          client_name: "mcp-flow",
+        });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/device") {
+        send(200, {
+          device_code: deviceCode,
+          user_code: "ABCD-EFGH",
+          verification_uri: `${origin}/verify`,
+          verification_uri_complete: `${origin}/verify?user_code=ABCD-EFGH`,
+          expires_in: 600,
+          interval: 5,
+        });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/token") {
+        polls += 1;
+        if (polls === 1) {
+          send(400, { error: "authorization_pending" });
+          return;
+        }
+        send(200, {
+          access_token: access,
+          token_type: "Bearer",
+          expires_in: 3600,
+          refresh_token: "device-refresh-PLAINTEXT-should-not-leak",
+        });
+        return;
+      }
+      res.statusCode = 404;
+      res.end();
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    port = (httpServer.address() as { port: number }).port;
+    cleanups.push(() => closeHttp(httpServer));
+
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-oauth-device-"));
+    dirs.push(dir);
+    const dbPath = join(dir, "t.db");
+    const store = new Store(dbPath, master);
+    cleanups.push(async () => store.close());
+    const ws = store.ensureWorkspace("default");
+    const created = store.createBackend(ws.id, {
+      slug: "sway",
+      url: `http://127.0.0.1:${port}/mcp`,
+      transport: "streamable-http",
+      enabled: true,
+      auth: { type: "oauth" },
+    });
+    const backend = store.getBackend(ws.id, created.id)!;
+    const started = await startOauthAuthorization({
+      store,
+      backend,
+      redirectUri: "https://mcp-flow.z.srl/oauth/callback",
+      allowPrivateUrls: true,
+    });
+    expect(started.mode).toBe("device");
+    expect(started.userCode).toBe("ABCD-EFGH");
+    expect(JSON.stringify(started)).not.toContain(deviceCode);
+    expect(store.getBackendPublic(ws.id, created.id)?.auth.device?.userCode).toBe(
+      "ABCD-EFGH",
+    );
+
+    const pending = await pollOauthDevice({
+      store,
+      backend,
+      allowPrivateUrls: true,
+    });
+    expect(pending).toMatchObject({ status: "pending" });
+    const done = await pollOauthDevice({
+      store,
+      backend,
+      allowPrivateUrls: true,
+    });
+    expect(done.status).toBe("connected");
+    expect(store.getBackendPublic(ws.id, created.id)?.auth.status).toBe("connected");
+    expect(store.getBackendPublic(ws.id, created.id)?.auth.device).toBeNull();
+    store.db.exec("PRAGMA wal_checkpoint(FULL)");
+    const raw = dbText(dbPath);
+    expect(raw).not.toContain(deviceCode);
+    expect(raw).not.toContain(access);
   });
 });
 

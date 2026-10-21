@@ -1307,6 +1307,27 @@ if (!window.__mfOauthListener) {
   });
 }
 
+async function pollDeviceLogin(id, intervalSeconds) {
+  let wait = Math.max(5, Number(intervalSeconds) || 5);
+  for (let i = 0; i < 120; i++) {
+    await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+    const r = await api(`/v1/backends/${id}/oauth/device/poll`, {
+      method: "POST",
+      body: "{}",
+    });
+    if (r.status === "connected") {
+      await renderBackends();
+      return;
+    }
+    if (r.status === "pending") {
+      wait = Math.max(5, Number(r.intervalSeconds) || wait);
+      continue;
+    }
+    throw new Error(r.error || "device authorization failed");
+  }
+  throw new Error("timed out waiting for device approval");
+}
+
 function wireBackendTable(root) {
   const scope = root || $("#beListMount") || document;
   scope.querySelectorAll("[data-oauth-start]").forEach((btn) => {
@@ -1316,6 +1337,23 @@ function wireBackendTable(root) {
           method: "POST",
           body: "{}",
         });
+        if (r.mode === "device") {
+          const wrap = $("#beOutWrap");
+          const out = $("#beOut");
+          if (wrap && out) {
+            wrap.hidden = false;
+            out.textContent = [
+              "Approve this code at the provider.",
+              `Code: ${r.userCode}`,
+              r.verificationUriComplete || r.verificationUri,
+              "Waiting for approval…",
+            ].join("\n");
+          }
+          const url = r.verificationUriComplete || r.verificationUri;
+          if (url) window.open(url, "mcp-flow-oauth", "width=520,height=720");
+          await pollDeviceLogin(btn.getAttribute("data-oauth-start"), r.intervalSeconds || 5);
+          return;
+        }
         window.open(r.authorizationUrl, "mcp-flow-oauth", "width=520,height=720");
       } catch (e) {
         showErr(e.message);

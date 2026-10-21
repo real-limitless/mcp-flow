@@ -9,6 +9,7 @@ import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
 import { resolveRedirectUri } from "./oauth/origin.js";
 import {
+  pollOauthDevice,
   revokeOauthGrant,
   startOauthAuthorization,
 } from "./oauth/flow.js";
@@ -642,7 +643,10 @@ oauthCmd
             {
               ...started,
               redirectOrigin: derived ? "derived" : "configured",
-              note: "Open authorizationUrl in a browser. mcp-flow serve must be running on this database to accept the redirect.",
+              note:
+                started.mode === "device"
+                  ? "Open verificationUriComplete and approve the user code. The device code stays on this gateway."
+                  : "Open authorizationUrl in a browser. mcp-flow serve must be running on this database to accept the redirect.",
             },
             null,
             2,
@@ -651,14 +655,39 @@ oauthCmd
         if (!opts.wait) return;
         const timeoutMs = Math.max(1, Number(opts.timeout) || 120) * 1000;
         const deadline = Date.now() + timeoutMs;
+        let waitMs = (started.intervalSeconds ?? 1) * 1000;
         while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 1000));
+          await new Promise((r) => setTimeout(r, waitMs));
+          if (started.mode === "device") {
+            const polled = await pollOauthDevice({
+              store,
+              backend,
+              allowPrivateUrls: cfg.allowPrivateUrls,
+            });
+            if (polled.status === "connected") {
+              console.log(
+                JSON.stringify(
+                  { backend: store.getBackendPublic(workspaceId, backend.id) },
+                  null,
+                  2,
+                ),
+              );
+              return;
+            }
+            if (polled.status === "pending") {
+              waitMs = polled.intervalSeconds * 1000;
+              continue;
+            }
+            console.error(polled.error);
+            process.exit(1);
+          }
           const pub = store.getBackendPublic(workspaceId, backend.id);
           const status = pub?.auth.status;
           if (status === "connected" || status === "expiring") {
             console.log(JSON.stringify({ backend: pub }, null, 2));
             return;
           }
+          waitMs = 1000;
         }
         console.error("timed out waiting for OAuth consent");
         process.exit(2);

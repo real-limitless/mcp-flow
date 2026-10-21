@@ -186,6 +186,8 @@ npx mcp-flow backend oauth revoke vendor
 
 Set `MCP_FLOW_PUBLIC_URL` to the origin browsers use to reach the gateway (include the port). The admin UI shows the same redirect URL on the backend form. Connect / Reconnect opens the provider consent page; Revoke drops the grant and keeps the client so you can authorize again without recreating the backend.
 
+Some providers only register loopback redirect URLs (for example Swaybyte rejects `https://mcp-flow.z.srl/oauth/callback`). When that server also offers the device-code grant, Connect shows a user code and a verification page instead of failing with `server_error`. Approve that code in the browser; the gateway polls and stores the tokens.
+
 Access and refresh tokens and the client secret are sealed with `MCP_FLOW_MASTER_KEY`. They are not returned by the API or UI, not written to the audit log, and not stored in plaintext. The gateway refreshes the access token before it expires. If refresh fails, the backend shows **re-auth** and tool calls fail with a re-authorization error until an admin runs the consent flow again.
 
 Admin UI: Backends → Auth **OAuth** → create → **Connect**. API: `POST /v1/backends/:id/oauth/start` returns `authorizationUrl`; the provider redirects to `GET /oauth/callback`.
