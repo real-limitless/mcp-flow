@@ -1,6 +1,7 @@
 import {
   auth,
   discoverOAuthServerInfo,
+  registerClient,
 } from "@modelcontextprotocol/sdk/client/auth.js";
 import { redactSecrets } from "../audit/sanitize.js";
 import { hashToken } from "../crypto.js";
@@ -11,10 +12,14 @@ import {
   clearOauthTokens,
   getOauthRow,
   readOauthSecrets,
+  saveOauthClient,
+  saveOauthDevice,
   saveOauthDiscovery,
+  saveOauthTokens,
   setOauthLastError,
   setOauthRedirect,
   consumeOauthPendingState,
+  type OauthSecrets,
 } from "../db/oauth-store.js";
 import { createSafeFetch } from "./fetch.js";
 import { StoreOauthProvider, oauthErrorCode } from "./provider.js";
@@ -24,14 +29,27 @@ const SETUP_HINT =
 
 export function safeOauthMessage(err: unknown): string {
   const code = oauthErrorCode(err);
-  if (code !== "refresh_failed") return `OAuth error: ${code}`;
   const raw = err instanceof Error ? err.message : String(err);
-  return redactSecrets(raw).slice(0, 300);
+  const safe = redactSecrets(raw).replace(/\s+/g, " ").trim().slice(0, 400);
+  if (!safe) {
+    return code === "refresh_failed" ? "OAuth request failed" : `OAuth error: ${code}`;
+  }
+  // The SDK maps unrecognized OAuth errors (including invalid_redirect_uri) onto
+  // ServerError, whose code is server_error. Keep the description.
+  if (code === "refresh_failed" || code === "server_error") return safe;
+  if (safe.toLowerCase().includes(code)) return safe;
+  return `${code}: ${safe}`;
 }
 
 export interface OauthStartResult {
-  authorizationUrl: string;
+  mode: "authorization_code" | "device";
   redirectUri: string;
+  authorizationUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  verificationUriComplete?: string | null;
+  expiresAt?: string;
+  intervalSeconds?: number;
 }
 
 /**
@@ -139,6 +157,17 @@ export async function startOauthAuthorization(opts: {
       throw new Error("authorization server did not return a consent URL");
     }
   } catch (err) {
+    if (redirectRejected(err) && deviceGrantSupported(info.authorizationServerMetadata)) {
+      return beginDeviceGrant({
+        store: opts.store,
+        backend: opts.backend,
+        redirectUri: opts.redirectUri,
+        allowPrivateUrls: opts.allowPrivateUrls,
+        info,
+        scope: fresh?.scope ?? row.scope,
+        fetchFn,
+      });
+    }
     const message = safeOauthMessage(err);
     setOauthLastError(opts.store.db, opts.backend.id, message);
     throw new Error(message);
@@ -156,9 +185,247 @@ export async function startOauthAuthorization(opts: {
   }
 
   return {
+    mode: "authorization_code",
     authorizationUrl: provider.authorizationUrl.href,
     redirectUri: opts.redirectUri,
   };
+}
+
+const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
+const LOOPBACK_DCR_REDIRECT = "http://127.0.0.1/oauth/callback";
+
+function redirectRejected(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err);
+  return /invalid_redirect_uri|redirect_uri not allowed|redirect_uris is required/i.test(raw);
+}
+
+function deviceGrantSupported(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata || typeof metadata.device_authorization_endpoint !== "string") return false;
+  const grants = metadata.grant_types_supported;
+  if (!Array.isArray(grants)) return true;
+  return grants.some((grant) => String(grant).includes("device_code"));
+}
+
+function grantScope(
+  rowScope: string | null,
+  info: {
+    resourceMetadata?: { scopes_supported?: string[] };
+    authorizationServerMetadata?: { scopes_supported?: string[] };
+  },
+): string | undefined {
+  if (rowScope?.trim()) return rowScope.trim();
+  const resource = info.resourceMetadata?.scopes_supported;
+  if (Array.isArray(resource) && resource.length) return resource.join(" ");
+  const server = info.authorizationServerMetadata?.scopes_supported;
+  if (Array.isArray(server) && server.length) return server.join(" ");
+  return undefined;
+}
+
+async function beginDeviceGrant(opts: {
+  store: Store;
+  backend: BackendRecord;
+  redirectUri: string;
+  allowPrivateUrls: boolean;
+  info: {
+    authorizationServerUrl: string | URL;
+    authorizationServerMetadata?: Record<string, unknown>;
+    resourceMetadata?: { scopes_supported?: string[] };
+  };
+  scope: string | null;
+  fetchFn: ReturnType<typeof createSafeFetch>;
+}): Promise<OauthStartResult> {
+  const metadata = opts.info.authorizationServerMetadata;
+  const endpoint = metadata?.device_authorization_endpoint;
+  if (typeof endpoint !== "string") {
+    throw new Error("this authorization server does not offer device login");
+  }
+  const conn = { db: opts.store.db, masterKey: opts.store.masterKey };
+  let clientId = getOauthRow(opts.store.db, opts.backend.id)?.clientId ?? "";
+  if (!clientId) {
+    const scope = grantScope(opts.scope, opts.info);
+    const registered = await registerClient(opts.info.authorizationServerUrl, {
+      metadata: metadata as never,
+      clientMetadata: {
+        client_name: "mcp-flow",
+        redirect_uris: [LOOPBACK_DCR_REDIRECT],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      },
+      ...(scope ? { scope } : {}),
+      fetchFn: opts.fetchFn,
+    });
+    saveOauthClient(conn, opts.backend.id, {
+      clientId: registered.client_id,
+      ...(registered.client_secret ? { clientSecret: registered.client_secret } : {}),
+      dynamicClient: true,
+    });
+    clientId = registered.client_id;
+  }
+  const scope = grantScope(opts.scope, opts.info);
+  const body = new URLSearchParams({ client_id: clientId });
+  if (scope) body.set("scope", scope);
+  const response = await opts.fetchFn(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body,
+  });
+  if (!response.ok) {
+    const failed = await readOauthError(response);
+    const message = failed.description
+      ? `${failed.error}: ${failed.description}`
+      : `OAuth error: ${failed.error}`;
+    setOauthLastError(opts.store.db, opts.backend.id, message);
+    throw new Error(message);
+  }
+  const payload = (await response.json()) as Record<string, unknown>;
+  const deviceCode = stringField(payload, "device_code");
+  const userCode = stringField(payload, "user_code");
+  const verificationUri = stringField(payload, "verification_uri");
+  if (!deviceCode || !userCode || !verificationUri) {
+    throw new Error("device authorization response was missing user_code");
+  }
+  const intervalSeconds = Math.max(
+    5,
+    numberField(payload, "interval") ?? 5,
+  );
+  const expiresIn = numberField(payload, "expires_in") ?? 600;
+  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+  const verificationUriComplete = stringField(payload, "verification_uri_complete");
+  saveOauthDevice(conn, opts.backend.id, {
+    deviceCode,
+    intervalSeconds,
+    userCode,
+    verificationUri,
+    ...(verificationUriComplete ? { verificationUriComplete } : {}),
+    expiresAt,
+  });
+  return {
+    mode: "device",
+    redirectUri: opts.redirectUri,
+    userCode,
+    verificationUri,
+    verificationUriComplete,
+    expiresAt,
+    intervalSeconds,
+  };
+}
+
+export async function pollOauthDevice(opts: {
+  store: Store;
+  backend: BackendRecord;
+  allowPrivateUrls: boolean;
+  keyId?: string | null;
+  ip?: string | null;
+}): Promise<
+  | { status: "pending"; intervalSeconds: number }
+  | { status: "connected" }
+  | { status: "expired" | "error"; error: string }
+> {
+  const conn = { db: opts.store.db, masterKey: opts.store.masterKey };
+  const row = getOauthRow(opts.store.db, opts.backend.id);
+  const secrets = readOauthSecrets(opts.store.db, opts.store.masterKey, opts.backend.id);
+  const device = secrets?.device;
+  if (!row || !device?.deviceCode) {
+    return { status: "error", error: "no device authorization in progress" };
+  }
+  if (Date.parse(device.expiresAt) <= Date.now()) {
+    clearOauthTokens(conn, opts.backend.id, "device code expired");
+    return { status: "expired", error: "device code expired" };
+  }
+  const tokenEndpoint = secrets?.discovery?.authorizationServerMetadata?.token_endpoint;
+  if (typeof tokenEndpoint !== "string" || !row.clientId) {
+    return { status: "error", error: "token endpoint is not known" };
+  }
+  const body = new URLSearchParams({
+    grant_type: DEVICE_GRANT,
+    device_code: device.deviceCode,
+    client_id: row.clientId,
+  });
+  const response = await createSafeFetch(opts.allowPrivateUrls)(tokenEndpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    },
+    body,
+  });
+  if (response.ok) {
+    const tokens = readTokenFields((await response.json()) as Record<string, unknown>);
+    const expiresAt =
+      tokens.expires_in != null
+        ? new Date(Date.now() + tokens.expires_in * 1000).toISOString()
+        : null;
+    saveOauthTokens(conn, opts.backend.id, tokens, expiresAt);
+    opts.store.writeAudit({
+      workspaceId: opts.backend.workspaceId,
+      keyId: opts.keyId,
+      action: "oauth.authorize",
+      backendSlug: opts.backend.slug,
+      detail: { phase: "device" },
+      ip: opts.ip,
+    });
+    return { status: "connected" };
+  }
+  const failed = await readOauthError(response);
+  if (failed.error === "authorization_pending") {
+    return { status: "pending", intervalSeconds: device.intervalSeconds };
+  }
+  if (failed.error === "slow_down") {
+    const intervalSeconds = device.intervalSeconds + 5;
+    saveOauthDevice(conn, opts.backend.id, { ...device, intervalSeconds });
+    return { status: "pending", intervalSeconds };
+  }
+  const message = failed.description
+    ? `${failed.error}: ${failed.description}`
+    : failed.error;
+  clearOauthTokens(conn, opts.backend.id, message);
+  return { status: "error", error: message };
+}
+
+function stringField(obj: Record<string, unknown>, key: string): string | null {
+  const value = obj[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function numberField(obj: Record<string, unknown>, key: string): number | null {
+  const value = obj[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readTokenFields(payload: Record<string, unknown>): NonNullable<OauthSecrets["tokens"]> {
+  const access = stringField(payload, "access_token");
+  if (!access) throw new Error("token response missing access_token");
+  const expires = numberField(payload, "expires_in");
+  const refresh = stringField(payload, "refresh_token");
+  const scope = stringField(payload, "scope");
+  return {
+    access_token: access,
+    token_type: stringField(payload, "token_type") ?? "Bearer",
+    ...(expires != null ? { expires_in: expires } : {}),
+    ...(refresh ? { refresh_token: refresh } : {}),
+    ...(scope ? { scope } : {}),
+  };
+}
+
+async function readOauthError(
+  response: Response,
+): Promise<{ error: string; description: string }> {
+  const text = await response.text();
+  try {
+    const json = JSON.parse(text) as { error?: unknown; error_description?: unknown };
+    const error = typeof json.error === "string" && json.error ? json.error : "server_error";
+    const description =
+      typeof json.error_description === "string"
+        ? redactSecrets(json.error_description).slice(0, 300)
+        : "";
+    return { error, description };
+  } catch {
+    return { error: "server_error", description: redactSecrets(text).slice(0, 200) };
+  }
 }
 
 export async function completeOauthCallback(opts: {

@@ -299,6 +299,16 @@ export interface BackendAuthPublic {
   expiresAt?: string | null;
   /** Sanitized status text. Never a token, verifier, or client secret. */
   lastError?: string | null;
+  /**
+   * Device-code login in progress (RFC 8628). The device code itself stays sealed.
+   * Shown so an admin can finish consent on a provider that rejects the public redirect.
+   */
+  device?: {
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string | null;
+    expiresAt: string;
+  } | null;
 }
 
 export interface BackendOauthInput {

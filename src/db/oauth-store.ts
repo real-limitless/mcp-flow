@@ -22,6 +22,15 @@ export interface OauthSecrets {
     id_token?: string;
   };
   codeVerifier?: string;
+  /** RFC 8628 device grant. deviceCode is a secret. userCode is safe to display. */
+  device?: {
+    deviceCode: string;
+    intervalSeconds: number;
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete?: string;
+    expiresAt: string;
+  };
   discovery?: {
     authorizationServerUrl: string;
     resourceMetadataUrl?: string;
@@ -104,6 +113,7 @@ function writeSecrets(
     !secrets.dynamicClient &&
     !secrets.tokens &&
     !secrets.codeVerifier &&
+    !secrets.device &&
     !secrets.discovery;
   db.prepare(
     `UPDATE backend_oauth SET secrets_enc = ?, updated_at = ? WHERE backend_id = ?`,
@@ -144,6 +154,14 @@ export function toAuthPublic(
     redirectUri: row.redirectUri || null,
     expiresAt: row.tokenExpiresAt,
     lastError: row.lastError,
+    device: secrets?.device?.userCode
+      ? {
+          userCode: secrets.device.userCode,
+          verificationUri: secrets.device.verificationUri,
+          verificationUriComplete: secrets.device.verificationUriComplete ?? null,
+          expiresAt: secrets.device.expiresAt,
+        }
+      : null,
   };
 }
 
@@ -350,6 +368,7 @@ export function saveOauthTokens(
     ...(tokens.id_token ? { id_token: tokens.id_token } : {}),
   };
   delete secrets.codeVerifier;
+  delete secrets.device;
   conn.db
     .prepare(
       `UPDATE backend_oauth SET
@@ -378,6 +397,7 @@ export function clearOauthTokens(
   const secrets = readOauthSecrets(conn.db, conn.masterKey, backendId) ?? {};
   delete secrets.tokens;
   delete secrets.codeVerifier;
+  delete secrets.device;
   conn.db
     .prepare(
       `UPDATE backend_oauth SET
@@ -405,6 +425,7 @@ export function clearOauthClient(conn: OauthDb, backendId: string): void {
   delete secrets.dynamicClient;
   delete secrets.tokens;
   delete secrets.codeVerifier;
+  delete secrets.device;
   conn.db
     .prepare(
       `UPDATE backend_oauth SET
@@ -462,4 +483,19 @@ export function saveOauthClient(
       `UPDATE backend_oauth SET client_id = ?, updated_at = ? WHERE backend_id = ?`,
     )
     .run(client.clientId, nowIso(), backendId);
+}
+
+export function saveOauthDevice(
+  conn: OauthDb,
+  backendId: string,
+  device: NonNullable<OauthSecrets["device"]>,
+): void {
+  mergeOauthSecrets(conn, backendId, (secrets) => {
+    secrets.device = device;
+  });
+  conn.db
+    .prepare(
+      `UPDATE backend_oauth SET last_error = NULL, updated_at = ? WHERE backend_id = ?`,
+    )
+    .run(nowIso(), backendId);
 }
