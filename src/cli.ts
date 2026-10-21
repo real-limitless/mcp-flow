@@ -7,6 +7,11 @@ import { startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
+import { resolveRedirectUri } from "./oauth/origin.js";
+import {
+  revokeOauthGrant,
+  startOauthAuthorization,
+} from "./oauth/flow.js";
 import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
@@ -353,6 +358,17 @@ backendCmd
     "--api-key <token>",
     "sealed as Authorization (Bearer prefix added if the value has no scheme)",
   )
+  .option(
+    "--oauth",
+    "OAuth 2.1 authorization code for this remote HTTP/SSE backend",
+    false,
+  )
+  .option("--client-id <id>", "OAuth client id when the server has no dynamic registration")
+  .option(
+    "--client-secret <secret>",
+    "OAuth client secret for a confidential client (sealed at rest)",
+  )
+  .option("--scope <scope>", "space-separated OAuth scopes")
   .option("--enable", "enable immediately", false)
   .option("--db <path>", "sqlite path")
   .action(
@@ -369,6 +385,10 @@ backendCmd
       deviceId?: string;
       header: string[];
       apiKey?: string;
+      oauth?: boolean;
+      clientId?: string;
+      clientSecret?: string;
+      scope?: string;
       enable?: boolean;
       db?: string;
     }) => {
@@ -434,6 +454,10 @@ backendCmd
           console.error(err instanceof Error ? err.message : err);
           process.exit(1);
         }
+        if ((opts.clientId || opts.clientSecret || opts.scope) && !opts.oauth) {
+          console.error("--client-id, --client-secret, and --scope require --oauth");
+          process.exit(1);
+        }
         const backend = store.createBackend(ws.id, {
           slug: opts.slug,
           title: opts.title,
@@ -443,6 +467,16 @@ backendCmd
           transport,
           headers: Object.keys(headers).length ? headers : undefined,
           apiKey: opts.apiKey,
+          auth: opts.oauth
+            ? {
+                type: "oauth",
+                ...(opts.clientId ? { clientId: opts.clientId } : {}),
+                ...(opts.clientSecret ? { clientSecret: opts.clientSecret } : {}),
+                ...(opts.scope
+                  ? { scopes: opts.scope.split(/\s+/).filter(Boolean) }
+                  : {}),
+              }
+            : undefined,
           env: Object.keys(env).length ? env : undefined,
           toolAllowlist: opts.toolAllowlist.length
             ? opts.toolAllowlist
@@ -562,6 +596,144 @@ backendCmd
     },
   );
 
+const oauthCmd = backendCmd
+  .command("oauth")
+  .description("OAuth grants for a remote backend");
+
+function cliRedirectUri(db?: string): { redirectUri: string; derived: boolean } {
+  const cfg = loadConfig({ dbPath: db });
+  const host =
+    cfg.host === "0.0.0.0" || cfg.host === "::" ? "127.0.0.1" : cfg.host;
+  return resolveRedirectUri({
+    publicUrl: cfg.publicUrl,
+    fallbackOrigin: `http://${host}:${cfg.port}`,
+  });
+}
+
+oauthCmd
+  .command("login")
+  .description("Print the provider consent URL. serve must be running to accept the redirect")
+  .argument("<idOrSlug>", "backend id or slug")
+  .option("--wait", "poll until the grant is connected", false)
+  .option("--timeout <seconds>", "wait timeout", "120")
+  .option("--db <path>", "sqlite path")
+  .action(
+    async (
+      idOrSlug: string,
+      opts: { wait?: boolean; timeout?: string; db?: string },
+    ) => {
+      const cfg = loadConfig({ dbPath: opts.db });
+      const { store, workspaceId } = openStore(opts.db);
+      try {
+        const backend = store.getBackend(workspaceId, idOrSlug);
+        if (!backend) {
+          console.error("not found");
+          process.exit(1);
+        }
+        const { redirectUri, derived } = cliRedirectUri(opts.db);
+        const started = await startOauthAuthorization({
+          store,
+          backend,
+          redirectUri,
+          allowPrivateUrls: cfg.allowPrivateUrls,
+        });
+        console.log(
+          JSON.stringify(
+            {
+              ...started,
+              redirectOrigin: derived ? "derived" : "configured",
+              note: "Open authorizationUrl in a browser. mcp-flow serve must be running on this database to accept the redirect.",
+            },
+            null,
+            2,
+          ),
+        );
+        if (!opts.wait) return;
+        const timeoutMs = Math.max(1, Number(opts.timeout) || 120) * 1000;
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const pub = store.getBackendPublic(workspaceId, backend.id);
+          const status = pub?.auth.status;
+          if (status === "connected" || status === "expiring") {
+            console.log(JSON.stringify({ backend: pub }, null, 2));
+            return;
+          }
+        }
+        console.error("timed out waiting for OAuth consent");
+        process.exit(2);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : err);
+        process.exit(1);
+      } finally {
+        store.close();
+      }
+    },
+  );
+
+oauthCmd
+  .command("status")
+  .description("Show OAuth status (no secrets)")
+  .argument("<idOrSlug>", "backend id or slug")
+  .option("--db <path>", "sqlite path")
+  .action((idOrSlug: string, opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const backend = store.getBackendPublic(workspaceId, idOrSlug);
+      if (!backend) {
+        console.error("not found");
+        process.exit(1);
+      }
+      console.log(
+        JSON.stringify(
+          {
+            slug: backend.slug,
+            auth: backend.auth,
+            redirectUri: cliRedirectUri(opts.db).redirectUri,
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      store.close();
+    }
+  });
+
+oauthCmd
+  .command("revoke")
+  .description("Revoke the OAuth grant and keep the client registration")
+  .argument("<idOrSlug>", "backend id or slug")
+  .option("--db <path>", "sqlite path")
+  .action(async (idOrSlug: string, opts: { db?: string }) => {
+    const cfg = loadConfig({ dbPath: opts.db });
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const backend = store.getBackend(workspaceId, idOrSlug);
+      if (!backend) {
+        console.error("not found");
+        process.exit(1);
+      }
+      await revokeOauthGrant({
+        store,
+        backend,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+      });
+      console.log(
+        JSON.stringify(
+          { backend: store.getBackendPublic(workspaceId, backend.id) },
+          null,
+          2,
+        ),
+      );
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : err);
+      process.exit(1);
+    } finally {
+      store.close();
+    }
+  });
+
 backendCmd
   .command("list")
   .description("List backends (secrets redacted)")
@@ -638,7 +810,9 @@ backendCmd
   .option("--db <path>", "sqlite path")
   .action(async (idOrSlug: string, opts: { db?: string }) => {
     const { store, workspaceId } = openStore(opts.db);
-    const pool = new UpstreamPool(store);
+    const pool = new UpstreamPool(store, {
+      allowPrivateUrls: loadConfig({ dbPath: opts.db }).allowPrivateUrls,
+    });
     try {
       const backend = store.getBackend(workspaceId, idOrSlug);
       if (!backend) {

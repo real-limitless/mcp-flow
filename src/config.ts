@@ -9,6 +9,9 @@ export interface Config {
   adminToken: string;
   allowPrivateUrls: boolean;
   workspaceName: string;
+  /** Public origin for the OAuth redirect URI. Empty when unset. */
+  publicUrl: string;
+  trustProxy: boolean;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -38,6 +41,12 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       env("MCP_FLOW_ALLOW_PRIVATE_URLS", "false") === "true",
     workspaceName:
       overrides.workspaceName ?? env("MCP_FLOW_WORKSPACE_NAME", "default")!,
+    publicUrl: (
+      overrides.publicUrl ??
+      env("MCP_FLOW_PUBLIC_URL", "")!
+    ).replace(/\/$/, ""),
+    trustProxy:
+      overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
   };
 }
 
