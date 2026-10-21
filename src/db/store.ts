@@ -262,6 +262,45 @@ CREATE TABLE IF NOT EXISTS backend_oauth (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_backend_oauth_state
   ON backend_oauth(pending_state_hash)
   WHERE pending_state_hash IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT,
+  name TEXT NOT NULL,
+  secret_hash TEXT,
+  redirect_uris_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  redirect_uri TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  scopes_json TEXT,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS oauth_grants (
+  id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  access_hash TEXT NOT NULL UNIQUE,
+  refresh_hash TEXT UNIQUE,
+  access_prefix TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  scopes_json TEXT,
+  expires_at TEXT NOT NULL,
+  refresh_expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_oauth_grants_ws ON oauth_grants(workspace_id, created_at DESC);
 `;
 
 function nowIso(): string {
