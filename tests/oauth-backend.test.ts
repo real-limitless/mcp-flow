@@ -761,6 +761,16 @@ describe("device login when the public redirect is rejected", () => {
     expect(done.status).toBe("connected");
     expect(store.getBackendPublic(ws.id, created.id)?.auth.status).toBe("connected");
     expect(store.getBackendPublic(ws.id, created.id)?.auth.device).toBeNull();
+
+    const again = await startOauthAuthorization({
+      store,
+      backend,
+      redirectUri: "https://mcp-flow.z.srl/oauth/callback",
+      allowPrivateUrls: true,
+    });
+    expect(again.mode).toBe("device");
+    expect(again.authorizationUrl).toBeUndefined();
+    expect(again.userCode).toBe("ABCD-EFGH");
     store.db.exec("PRAGMA wal_checkpoint(FULL)");
     const raw = dbText(dbPath);
     expect(raw).not.toContain(deviceCode);

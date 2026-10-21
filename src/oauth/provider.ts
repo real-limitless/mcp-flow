@@ -129,6 +129,7 @@ export class StoreOauthProvider implements OAuthClientProvider {
       clientId,
       ...(info.client_secret ? { clientSecret: info.client_secret } : {}),
       dynamicClient: dynamic,
+      registeredRedirectUris: [this.opts.redirectUri],
     });
   }
 

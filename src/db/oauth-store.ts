@@ -13,6 +13,8 @@ export interface OauthSecrets {
   clientSecret?: string;
   /** True when client_id was issued by dynamic client registration. */
   dynamicClient?: boolean;
+  /** Redirect URIs actually registered for this client. Not the public gateway URL when that was rejected. */
+  registeredRedirectUris?: string[];
   tokens?: {
     access_token: string;
     token_type: string;
@@ -111,6 +113,7 @@ function writeSecrets(
   const empty =
     !secrets.clientSecret &&
     !secrets.dynamicClient &&
+    !secrets.registeredRedirectUris?.length &&
     !secrets.tokens &&
     !secrets.codeVerifier &&
     !secrets.device &&
@@ -423,6 +426,7 @@ export function clearOauthClient(conn: OauthDb, backendId: string): void {
   const secrets = readOauthSecrets(conn.db, conn.masterKey, backendId) ?? {};
   delete secrets.clientSecret;
   delete secrets.dynamicClient;
+  delete secrets.registeredRedirectUris;
   delete secrets.tokens;
   delete secrets.codeVerifier;
   delete secrets.device;
@@ -472,11 +476,22 @@ export function saveOauthDiscovery(
 export function saveOauthClient(
   conn: OauthDb,
   backendId: string,
-  client: { clientId: string; clientSecret?: string; dynamicClient: boolean },
+  client: {
+    clientId: string;
+    clientSecret?: string;
+    dynamicClient: boolean;
+    registeredRedirectUris?: string[];
+  },
 ): void {
   mergeOauthSecrets(conn, backendId, (secrets) => {
     if (client.clientSecret) secrets.clientSecret = client.clientSecret;
     secrets.dynamicClient = client.dynamicClient;
+    if (client.registeredRedirectUris?.length) {
+      const prev = secrets.registeredRedirectUris ?? [];
+      secrets.registeredRedirectUris = [
+        ...new Set([...prev, ...client.registeredRedirectUris]),
+      ];
+    }
   });
   conn.db
     .prepare(

@@ -137,6 +137,29 @@ export async function startOauthAuthorization(opts: {
 
   const hadTokens = Boolean(secrets?.tokens?.access_token || secrets?.tokens?.refresh_token);
   const fresh = getOauthRow(opts.store.db, opts.backend.id);
+  const freshSecrets = readOauthSecrets(
+    opts.store.db,
+    opts.store.masterKey,
+    opts.backend.id,
+  );
+  // A client registered only for loopback (device login) must not be sent back
+  // through the authorization-code flow with the public redirect. That request
+  // succeeds here and then SwayByte rejects it in the browser.
+  if (
+    fresh?.clientId &&
+    !clientRedirectAllows(freshSecrets, opts.redirectUri) &&
+    deviceGrantSupported(info.authorizationServerMetadata)
+  ) {
+    return beginDeviceGrant({
+      store: opts.store,
+      backend: opts.backend,
+      redirectUri: opts.redirectUri,
+      allowPrivateUrls: opts.allowPrivateUrls,
+      info,
+      scope: fresh?.scope ?? row.scope,
+      fetchFn,
+    });
+  }
   const provider = new StoreOauthProvider({
     store: opts.store,
     backendId: opts.backend.id,
@@ -193,6 +216,30 @@ export async function startOauthAuthorization(opts: {
 
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const LOOPBACK_DCR_REDIRECT = "http://127.0.0.1/oauth/callback";
+
+function isLoopbackRedirect(uri: string): boolean {
+  try {
+    const host = new URL(uri).hostname.toLowerCase();
+    return host === "127.0.0.1" || host === "localhost" || host === "::1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * True when this client may use redirectUri in an authorization-code request.
+ * Legacy device clients have no registered list: a dynamic client on a public
+ * URL was registered for loopback only.
+ */
+function clientRedirectAllows(
+  secrets: OauthSecrets | null,
+  redirectUri: string,
+): boolean {
+  const registered = secrets?.registeredRedirectUris ?? [];
+  if (registered.length) return registered.includes(redirectUri);
+  if (secrets?.dynamicClient && !isLoopbackRedirect(redirectUri)) return false;
+  return true;
+}
 
 function redirectRejected(err: unknown): boolean {
   const raw = err instanceof Error ? err.message : String(err);
@@ -259,6 +306,7 @@ async function beginDeviceGrant(opts: {
       clientId: registered.client_id,
       ...(registered.client_secret ? { clientSecret: registered.client_secret } : {}),
       dynamicClient: true,
+      registeredRedirectUris: [LOOPBACK_DCR_REDIRECT],
     });
     clientId = registered.client_id;
   }
