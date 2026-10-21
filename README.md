@@ -153,6 +153,43 @@ npx mcp-flow backend headers yh-finance
 
 You do **not** need `npx mcp-remote … --header` in the harness: put the URL + headers on the backend; harnesses only get the mcp-flow URL + agent key.
 
+### Add a remote MCP (OAuth)
+
+Remote HTTP/SSE backends can use OAuth 2.1 authorization code with PKCE instead of a static API key. The gateway discovers the authorization server from the MCP server's protected-resource metadata, uses dynamic client registration when the server offers it, and otherwise uses a client id and secret you enter. `mcp-flow serve` must be running to accept the browser redirect.
+
+```bash
+# Redirect URL to register with the provider:
+#   ${MCP_FLOW_PUBLIC_URL}/oauth/callback
+# Example: http://127.0.0.1:8787/oauth/callback
+
+npx mcp-flow backend add \
+  --slug vendor \
+  --url https://mcp.example.com/mcp \
+  --transport streamable-http \
+  --oauth \
+  --enable
+
+# Confidential client, no dynamic registration:
+npx mcp-flow backend add \
+  --slug vendor \
+  --url https://mcp.example.com/mcp \
+  --oauth \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret YOUR_CLIENT_SECRET \
+  --scope "openid offline_access"
+
+npx mcp-flow backend oauth login vendor
+# open the printed authorizationUrl, then:
+npx mcp-flow backend oauth status vendor
+npx mcp-flow backend oauth revoke vendor
+```
+
+Set `MCP_FLOW_PUBLIC_URL` to the origin browsers use to reach the gateway (include the port). The admin UI shows the same redirect URL on the backend form. Connect / Reconnect opens the provider consent page; Revoke drops the grant and keeps the client so you can authorize again without recreating the backend.
+
+Access and refresh tokens and the client secret are sealed with `MCP_FLOW_MASTER_KEY`. They are not returned by the API or UI, not written to the audit log, and not stored in plaintext. The gateway refreshes the access token before it expires. If refresh fails, the backend shows **re-auth** and tool calls fail with a re-authorization error until an admin runs the consent flow again.
+
+Admin UI: Backends → Auth **OAuth** → create → **Connect**. API: `POST /v1/backends/:id/oauth/start` returns `authorizationUrl`; the provider redirects to `GET /oauth/callback`.
+
 ### Point a harness at mcp-flow only
 
 HTTP (Cursor / clients with streamable HTTP):
@@ -222,6 +259,9 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 | `GET` | `/v1/backends` | List (redacted) |
 | `PATCH` | `/v1/backends/:id` | Update / enable |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
+| `POST` | `/v1/backends/:id/oauth/start` | OAuth consent URL (PKCE). Tokens stay sealed |
+| `POST` | `/v1/backends/:id/oauth/revoke` | Drop the grant; keep the client registration |
+| `GET` | `/oauth/callback` | Provider redirect. No admin token; no tokens in the response |
 | `GET/PATCH` | `/v1/workspace`, `/v1/workspace/policy` | Workspace + edge-bare policy |
 | `GET/POST/PATCH/DELETE` | `/v1/authz/rules` | Human-gate rules (match + MFA/approve) |
 | `GET` | `/v1/approvals` | Inbox (`?status=pending`) |
@@ -237,7 +277,7 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 
 ## Security
 
-- Upstream headers/env encrypted at rest (`AES-256-GCM` + `MCP_FLOW_MASTER_KEY`)
+- Upstream headers/env and OAuth tokens/client secrets encrypted at rest (`AES-256-GCM` + `MCP_FLOW_MASTER_KEY`)
 - Agent keys stored as SHA-256 hashes; plaintext shown once
 - GET payloads never include decrypted secrets
 - SSRF guards on backend URLs (`MCP_FLOW_ALLOW_PRIVATE_URLS=true` to allow LAN)

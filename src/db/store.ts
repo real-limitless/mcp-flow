@@ -39,6 +39,15 @@ import {
   normalizeUpstreamHeaders,
   withAuthorizationToken,
 } from "../headers.js";
+import { assertOauthBackendConfig } from "../oauth/policy.js";
+import {
+  authPublicByWorkspace,
+  authPublicForBackend,
+  deleteOauthBackend,
+  getOauthRow,
+  insertOauthBackend,
+  upsertOauthSettings,
+} from "./oauth-store.js";
 import {
   authzMatchHasConstraint,
   clampAuthzTtl,
@@ -235,6 +244,24 @@ CREATE INDEX IF NOT EXISTS idx_authz_rules_ws ON authz_rules(workspace_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_ws_status ON approvals(workspace_id, status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_operator_mfa_ws ON operator_mfa(workspace_id, operator_key_id);
 CREATE INDEX IF NOT EXISTS idx_push_subs_ws ON push_subscriptions(workspace_id);
+
+CREATE TABLE IF NOT EXISTS backend_oauth (
+  backend_id TEXT PRIMARY KEY REFERENCES backends(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  client_id TEXT,
+  scope TEXT,
+  issuer TEXT,
+  redirect_uri TEXT NOT NULL DEFAULT '',
+  token_expires_at TEXT,
+  pending_state_hash TEXT,
+  pending_expires_at TEXT,
+  last_error TEXT,
+  secrets_enc TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_backend_oauth_state
+  ON backend_oauth(pending_state_hash)
+  WHERE pending_state_hash IS NOT NULL;
 `;
 
 function nowIso(): string {
@@ -670,7 +697,10 @@ function parsePlacement(json: string): Placement {
   }
 }
 
-export function toPublicBackend(b: BackendRecord): BackendPublic {
+export function toPublicBackend(
+  b: BackendRecord,
+  auth: BackendPublic["auth"] = { type: "static" },
+): BackendPublic {
   return {
     id: b.id,
     workspaceId: b.workspaceId,
@@ -688,6 +718,7 @@ export function toPublicBackend(b: BackendRecord): BackendPublic {
       : null,
     placement: parsePlacement(b.placementJson),
     sandbox: parseSandbox(b.sandboxJson),
+    auth,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
   };
@@ -1069,6 +1100,13 @@ export class Store {
     }
     const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
     const transport = input.transport ?? "streamable-http";
+    assertOauthBackendConfig({
+      transport,
+      placementMode: placement.mode,
+      auth: input.auth,
+      apiKey: input.apiKey,
+      headers: input.headers,
+    });
     const ts = nowIso();
     const sandboxJson =
       input.sandbox !== undefined && input.sandbox !== null
@@ -1098,34 +1136,48 @@ export class Store {
       createdAt: ts,
       updatedAt: ts,
     };
-    this.db
-      .prepare(
-        `INSERT INTO backends (
-          id, workspace_id, slug, title, transport, url, image, command_json,
-          headers_enc, env_enc, enabled, tool_allowlist_json, placement_json,
-          sandbox_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        rec.id,
-        rec.workspaceId,
-        rec.slug,
-        rec.title,
-        rec.transport,
-        rec.url,
-        rec.image,
-        rec.commandJson,
-        rec.headersEnc,
-        rec.envEnc,
-        rec.enabled ? 1 : 0,
-        rec.toolAllowlistJson,
-        rec.placementJson,
-        rec.sandboxJson,
-        rec.createdAt,
-        rec.updatedAt,
-      );
-    this.addBackendToDefaultProject(workspaceId, slug);
-    return toPublicBackend(rec);
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO backends (
+            id, workspace_id, slug, title, transport, url, image, command_json,
+            headers_enc, env_enc, enabled, tool_allowlist_json, placement_json,
+            sandbox_json, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          rec.id,
+          rec.workspaceId,
+          rec.slug,
+          rec.title,
+          rec.transport,
+          rec.url,
+          rec.image,
+          rec.commandJson,
+          rec.headersEnc,
+          rec.envEnc,
+          rec.enabled ? 1 : 0,
+          rec.toolAllowlistJson,
+          rec.placementJson,
+          rec.sandboxJson,
+          rec.createdAt,
+          rec.updatedAt,
+        );
+      if (input.auth?.type === "oauth") {
+        insertOauthBackend(this.oauthConn(), rec.id, input.auth);
+      }
+      this.addBackendToDefaultProject(workspaceId, slug);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return this.getBackendPublic(workspaceId, rec.id)!;
+  }
+
+  private oauthConn() {
+    return { db: this.db, masterKey: this.masterKey };
   }
 
   listBackends(workspaceId: string): BackendPublic[] {
@@ -1134,7 +1186,11 @@ export class Store {
         `SELECT * FROM backends WHERE workspace_id = ? ORDER BY slug ASC`,
       )
       .all(workspaceId) as Record<string, unknown>[];
-    return rows.map((r) => toPublicBackend(rowBackend(r)));
+    const auth = authPublicByWorkspace(this.oauthConn(), workspaceId);
+    return rows.map((r) => {
+      const backend = rowBackend(r);
+      return toPublicBackend(backend, auth.get(backend.id) ?? { type: "static" });
+    });
   }
 
   getBackend(
@@ -1151,12 +1207,21 @@ export class Store {
     return row ? rowBackend(row) : null;
   }
 
+  getBackendById(id: string): BackendRecord | null {
+    const row = this.db
+      .prepare(`SELECT * FROM backends WHERE id = ?`)
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? rowBackend(row) : null;
+  }
+
   getBackendPublic(
     workspaceId: string,
     idOrSlug: string,
   ): BackendPublic | null {
     const b = this.getBackend(workspaceId, idOrSlug);
-    return b ? toPublicBackend(b) : null;
+    return b
+      ? toPublicBackend(b, authPublicForBackend(this.oauthConn(), b.id))
+      : null;
   }
 
   updateBackend(
@@ -1222,30 +1287,63 @@ export class Store {
           : null
         : existing.sandboxJson;
     const updatedAt = nowIso();
-
-    this.db
-      .prepare(
-        `UPDATE backends SET
-          title = ?, transport = ?, url = ?, image = ?, command_json = ?,
-          headers_enc = ?, env_enc = ?, enabled = ?, tool_allowlist_json = ?,
-          placement_json = ?, sandbox_json = ?, updated_at = ?
-         WHERE id = ?`,
-      )
-      .run(
-        title,
+    const placement = input.placement ?? parsePlacement(existing.placementJson);
+    const nextHeaders =
+      input.headers === null
+        ? {}
+        : input.headers !== undefined
+          ? input.headers
+          : this.decryptHeaders(existing);
+    const keepingOauth =
+      !input.auth && Boolean(getOauthRow(this.db, existing.id));
+    if (input.auth?.type === "oauth" || keepingOauth) {
+      assertOauthBackendConfig({
         transport,
-        url,
-        image,
-        commandJson,
-        headersEnc,
-        envEnc,
-        enabled ? 1 : 0,
-        toolAllowlistJson,
-        placementJson,
-        sandboxJson,
-        updatedAt,
-        existing.id,
-      );
+        placementMode: placement.mode,
+        auth:
+          input.auth?.type === "oauth"
+            ? input.auth
+            : { type: "oauth" },
+        apiKey: input.apiKey,
+        headers: nextHeaders,
+      });
+    }
+
+    this.db.exec("BEGIN");
+    try {
+      this.db
+        .prepare(
+          `UPDATE backends SET
+            title = ?, transport = ?, url = ?, image = ?, command_json = ?,
+            headers_enc = ?, env_enc = ?, enabled = ?, tool_allowlist_json = ?,
+            placement_json = ?, sandbox_json = ?, updated_at = ?
+           WHERE id = ?`,
+        )
+        .run(
+          title,
+          transport,
+          url,
+          image,
+          commandJson,
+          headersEnc,
+          envEnc,
+          enabled ? 1 : 0,
+          toolAllowlistJson,
+          placementJson,
+          sandboxJson,
+          updatedAt,
+          existing.id,
+        );
+      if (input.auth?.type === "static") {
+        deleteOauthBackend(this.db, existing.id);
+      } else if (input.auth?.type === "oauth") {
+        upsertOauthSettings(this.oauthConn(), existing.id, input.auth);
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
     return this.getBackendPublic(workspaceId, existing.id);
   }
 
