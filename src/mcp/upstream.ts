@@ -17,6 +17,12 @@ import {
 } from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { redactLog } from "../log/redact-lines.js";
+import { createSafeFetch } from "../oauth/fetch.js";
+import { getOauthRow } from "../db/oauth-store.js";
+import {
+  NeedsReauthError,
+  StoreOauthProvider,
+} from "../oauth/provider.js";
 
 export interface NamespacedTool extends Tool {
   /** Original upstream tool name */
@@ -100,6 +106,11 @@ export function isTransportOrConnectionError(err: unknown): boolean {
   return transportMessage(message);
 }
 
+function publicUpstreamError(err: unknown): string {
+  if (err instanceof NeedsReauthError) return err.message;
+  return redactLog(err instanceof Error ? err : String(err));
+}
+
 function transportMessage(message: string): boolean {
   return /connection closed|not connected|econnreset|econnrefused|\bepipe\b|socket hang up|fetch failed|broken pipe|other side closed|process exited/i.test(
     message,
@@ -151,6 +162,7 @@ function parsePlacement(backend: BackendRecord): Placement {
 }
 
 export class UpstreamPool {
+  private allowPrivateUrls: boolean;
   private pool = new Map<string, PooledClient>();
   /** In-flight connect, one per backend. Removed when the attempt settles. */
   private inflight = new Map<string, Promise<PooledClient>>();
@@ -169,7 +181,11 @@ export class UpstreamPool {
    */
   private knownNames = new Map<string, Set<string>>();
 
-  constructor(private store: Store) {
+  constructor(
+    private store: Store,
+    opts?: { allowPrivateUrls?: boolean },
+  ) {
+    this.allowPrivateUrls = opts?.allowPrivateUrls ?? false;
     store.onBackendRetired((workspaceId, slug) => {
       this.forgetBackendTools(workspaceId, slug);
     });
@@ -356,7 +372,7 @@ export class UpstreamPool {
       throw new Error(`backend ${backend.slug} has no url`);
     }
 
-    const headers = this.store.decryptHeaders(backend);
+    const headers = { ...this.store.decryptHeaders(backend) };
     const url = new URL(backend.url);
 
     const client = new Client(
@@ -365,14 +381,46 @@ export class UpstreamPool {
     );
 
     let transport: Transport;
-    const requestInit: RequestInit = {
-      headers: { ...headers },
-    };
-
-    if (backend.transport === "sse") {
-      transport = new SSEClientTransport(url, { requestInit });
+    const oauth = getOauthRow(this.store.db, backend.id);
+    if (oauth) {
+      for (const name of Object.keys(headers)) {
+        if (name.toLowerCase() === "authorization") delete headers[name];
+      }
+      const provider = new StoreOauthProvider({
+        store: this.store,
+        backendId: backend.id,
+        workspaceId: backend.workspaceId,
+        slug: backend.slug,
+        redirectUri: oauth.redirectUri,
+        interactive: false,
+        allowPrivateUrls: this.allowPrivateUrls,
+        onRefreshFailure: (code) => {
+          this.store.writeAudit({
+            workspaceId: backend.workspaceId,
+            action: "oauth.refresh_failure",
+            backendSlug: backend.slug,
+            detail: { error: code },
+          });
+        },
+      });
+      await provider.prepareForConnect();
+      const requestInit: RequestInit = { headers };
+      const fetch = createSafeFetch(this.allowPrivateUrls);
+      // Do not set SSE eventSourceInit: the SDK then skips the bearer token.
+      transport =
+        backend.transport === "sse"
+          ? new SSEClientTransport(url, { authProvider: provider, requestInit, fetch })
+          : new StreamableHTTPClientTransport(url, {
+              authProvider: provider,
+              requestInit,
+              fetch,
+            });
     } else {
-      transport = new StreamableHTTPClientTransport(url, { requestInit });
+      const requestInit: RequestInit = { headers };
+      transport =
+        backend.transport === "sse"
+          ? new SSEClientTransport(url, { requestInit })
+          : new StreamableHTTPClientTransport(url, { requestInit });
     }
 
     try {
@@ -630,7 +678,7 @@ export class UpstreamPool {
         } catch (err) {
           console.error(
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
-            redactLog(err),
+            publicUpstreamError(err),
           );
           if (isTransportOrConnectionError(err)) await this.retire(backend.id);
         }
@@ -683,9 +731,7 @@ export class UpstreamPool {
       content: [
         {
           type: "text",
-          text: `Upstream error (${slug}): ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          text: `Upstream error (${slug}): ${publicUpstreamError(err)}`,
         },
       ],
     };
@@ -835,7 +881,9 @@ export class UpstreamPool {
     error?: string;
     backend: ReturnType<typeof toPublicBackend>;
   }> {
-    const pub = toPublicBackend(backend);
+    const pub =
+      this.store.getBackendPublic(backend.workspaceId, backend.id) ??
+      toPublicBackend(backend);
     const placement = parsePlacement(backend);
     try {
       if (
@@ -874,13 +922,16 @@ export class UpstreamPool {
       }
       throw lastErr;
     } catch (err) {
-      const base = err instanceof Error ? err.message : String(err);
+      const base = publicUpstreamError(err);
       const hdrs = this.store.decryptHeaders(backend);
       const hasAuth = Object.keys(hdrs).some((k) =>
         /^(authorization|x-api-key)$/i.test(k),
       );
+      const oauth = Boolean(getOauthRow(this.store.db, backend.id));
       const hint =
-        !hasAuth && /authentication required|unauthorized|\b401\b/i.test(base)
+        !oauth &&
+        !hasAuth &&
+        /authentication required|unauthorized|\b401\b/i.test(base)
           ? `${base} (no sealed Authorization header — set apiKey or Authorization; Bearer is added automatically)`
           : base;
       return {

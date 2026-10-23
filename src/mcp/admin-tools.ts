@@ -27,6 +27,12 @@ import {
   supportedPlacementModes,
 } from "../placement.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
+import { assertOauthBackendConfig } from "../oauth/policy.js";
+import { resolveRedirectUri } from "../oauth/origin.js";
+import {
+  revokeOauthGrant,
+  startOauthAuthorization,
+} from "../oauth/flow.js";
 import type {
   ApiKeyScopes,
   AuthContext,
@@ -82,6 +88,19 @@ export const ADMIN_META_TOOLS: Tool[] = [
           type: "string",
           description:
             "Sealed as Authorization. Raw tokens get a Bearer prefix.",
+        },
+        auth: {
+          type: "object",
+          description:
+            "OAuth 2.1 for a remote HTTP/SSE backend. Do not combine with apiKey or an Authorization header.",
+          properties: {
+            type: { type: "string", enum: ["oauth"] },
+            clientId: { type: "string" },
+            clientSecret: { type: "string" },
+            scopes: { type: "array", items: { type: "string" } },
+          },
+          required: ["type"],
+          additionalProperties: false,
         },
         env: { type: "object", additionalProperties: { type: "string" } },
         enabled: { type: "boolean" },
@@ -146,6 +165,17 @@ export const ADMIN_META_TOOLS: Tool[] = [
             "merge (default) keeps omitted headers. replace swaps the whole header map.",
         },
         apiKey: { type: ["string", "null"] },
+        auth: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["oauth", "static"] },
+            clientId: { type: "string" },
+            clientSecret: { type: "string" },
+            scopes: { type: "array", items: { type: "string" } },
+          },
+          required: ["type"],
+          additionalProperties: false,
+        },
         env: {
           type: ["object", "null"],
           additionalProperties: { type: ["string", "null"] },
@@ -184,6 +214,28 @@ export const ADMIN_META_TOOLS: Tool[] = [
   {
     name: "mf_admin_test_backend",
     description: "Probe backend tools/list. Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: { idOrSlug: { type: "string" } },
+      required: ["idOrSlug"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_oauth_start",
+    description:
+      "Start OAuth consent for a remote backend. Returns the authorization URL for an admin to open. Does not complete the browser step. Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: { idOrSlug: { type: "string" } },
+      required: ["idOrSlug"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_oauth_revoke",
+    description:
+      "Revoke the OAuth grant for a backend and keep the client registration. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: { idOrSlug: { type: "string" } },
@@ -558,6 +610,13 @@ function validateBackendWrite(
       deviceBare: Boolean(device?.capabilities.bare),
       deviceSandbox: Boolean(device && device.capabilities.sandbox !== "none"),
     });
+    assertOauthBackendConfig({
+      transport,
+      placementMode: placement.mode,
+      auth: body.auth,
+      apiKey: body.apiKey,
+      headers: body.headers === null ? {} : body.headers,
+    });
     return null;
   } catch (err) {
     return err instanceof PlacementError || err instanceof Error
@@ -688,11 +747,19 @@ export async function handleAdminTool(
         );
         const verr = validateBackendWrite(deps, transport, body, placement);
         if (verr) return textResult(verr, true);
-        const backend = store.createBackend(wsId, {
-          ...body,
-          transport,
-          placement,
-        });
+        let backend;
+        try {
+          backend = store.createBackend(wsId, {
+            ...body,
+            transport,
+            placement,
+          });
+        } catch (err) {
+          return textResult(
+            err instanceof Error ? err.message : String(err),
+            true,
+          );
+        }
         audit(
           "backend.create",
           { via: "mf_admin" },
@@ -758,7 +825,15 @@ export async function handleAdminTool(
         };
         const verr = validateBackendWrite(deps, transport, merged, placement);
         if (verr) return textResult(verr, true);
-        const backend = store.updateBackend(wsId, existing.id, body);
+        let backend;
+        try {
+          backend = store.updateBackend(wsId, existing.id, body);
+        } catch (err) {
+          return textResult(
+            err instanceof Error ? err.message : String(err),
+            true,
+          );
+        }
         if (!backend) return textResult("not found", true);
         pool.invalidate(existing.id);
         audit(
@@ -784,6 +859,60 @@ export async function handleAdminTool(
           { backendSlug: existing?.slug },
         );
         return textResult({ ok: true });
+      }
+
+      case "mf_admin_oauth_start": {
+        const idOrSlug = String(args.idOrSlug ?? "");
+        const backend = store.getBackend(wsId, idOrSlug);
+        if (!backend) return textResult("not found", true);
+        try {
+          const { redirectUri, derived } = resolveRedirectUri({
+            publicUrl: cfg.publicUrl,
+            fallbackOrigin: `http://127.0.0.1:${cfg.port}`,
+          });
+          const started = await startOauthAuthorization({
+            store,
+            backend,
+            redirectUri,
+            allowPrivateUrls: cfg.allowPrivateUrls,
+            keyId: auth.keyId,
+            ip,
+          });
+          return textResult({
+            ...started,
+            redirectOrigin: derived ? "derived" : "configured",
+            note: "Open authorizationUrl in a browser. The running gateway accepts the redirect.",
+          });
+        } catch (err) {
+          return textResult(
+            err instanceof Error ? err.message : String(err),
+            true,
+          );
+        }
+      }
+
+      case "mf_admin_oauth_revoke": {
+        const idOrSlug = String(args.idOrSlug ?? "");
+        const backend = store.getBackend(wsId, idOrSlug);
+        if (!backend) return textResult("not found", true);
+        try {
+          await revokeOauthGrant({
+            store,
+            backend,
+            allowPrivateUrls: cfg.allowPrivateUrls,
+            keyId: auth.keyId,
+            ip,
+          });
+        } catch (err) {
+          return textResult(
+            err instanceof Error ? err.message : String(err),
+            true,
+          );
+        }
+        pool.invalidate(backend.id);
+        return textResult({
+          backend: store.getBackendPublic(wsId, backend.id),
+        });
       }
 
       case "mf_admin_test_backend": {

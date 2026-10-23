@@ -53,6 +53,14 @@ import {
   supportedPlacementModes,
 } from "../placement.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
+import { assertOauthBackendConfig } from "../oauth/policy.js";
+import { resolveRedirectUri } from "../oauth/origin.js";
+import {
+  completeOauthCallback,
+  pollOauthDevice,
+  revokeOauthGrant,
+  startOauthAuthorization,
+} from "../oauth/flow.js";
 import type {
   ApiKeyScopes,
   AuthContext,
@@ -88,6 +96,35 @@ function bearer(header: string | undefined): string | null {
   if (!header) return null;
   const m = /^Bearer\s+(.+)$/i.exec(header.trim());
   return m ? m[1]!.trim() : null;
+}
+
+function requestOrigin(
+  c: { req: { url: string; header: (name: string) => string | undefined } },
+  trustProxy: boolean,
+): string {
+  if (trustProxy) {
+    const proto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim();
+    const host = (c.req.header("x-forwarded-host") || c.req.header("host"))
+      ?.split(",")[0]
+      ?.trim();
+    if (
+      (proto === "http" || proto === "https") &&
+      host &&
+      !/[/\\\s]/.test(host)
+    ) {
+      return `${proto}://${host}`;
+    }
+  }
+  return new URL(c.req.url).origin;
+}
+
+function oauthDoneHtml(ok: boolean): string {
+  const title = ok ? "Connected" : "Authorization failed";
+  const body = ok
+    ? "The backend is connected. You can close this window."
+    : "Authorization did not complete. Return to the admin UI and try again.";
+  const payload = JSON.stringify({ type: "mcp-flow-oauth", ok });
+  return `<!doctype html><meta charset="utf-8"><title>${title}</title><p>${body}</p><script>if(window.opener){window.opener.postMessage(${payload},window.location.origin)}</script>`;
 }
 
 function findEntryById(
@@ -231,9 +268,19 @@ export function createApp(
   admin.get("/workspace", (c) => {
     const auth = c.get("auth");
     const ws = store.getWorkspace(auth.workspaceId);
+    let oauthRedirectUri: string | null = null;
+    try {
+      oauthRedirectUri = resolveRedirectUri({
+        publicUrl: cfg.publicUrl,
+        requestOrigin: requestOrigin(c, cfg.trustProxy),
+      }).redirectUri;
+    } catch {
+      oauthRedirectUri = null;
+    }
     return c.json({
       workspace: ws,
       placementModes: supportedPlacementModes({ edgeEnabled }),
+      oauthRedirectUri,
     });
   });
 
@@ -431,6 +478,13 @@ export function createApp(
           device && device.capabilities.sandbox !== "none",
         ),
       });
+      assertOauthBackendConfig({
+        transport,
+        placementMode: placement.mode,
+        auth: body.auth,
+        apiKey: body.apiKey,
+        headers: body.headers === null ? {} : body.headers,
+      });
       return null;
     } catch (err) {
       return err instanceof PlacementError || err instanceof Error
@@ -547,10 +601,10 @@ export function createApp(
     try {
       backend = store.updateBackend(auth.workspaceId, c.req.param("id"), body);
     } catch (err) {
-      if (err instanceof BackendInputError) {
-        return c.json({ error: err.message }, 400);
-      }
-      throw err;
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
     }
     if (!backend) return c.json({ error: "not found" }, 404);
     pool.invalidate(existing.id);
@@ -594,6 +648,80 @@ export function createApp(
       ip: clientIp(c),
     });
     return c.json(result, result.ok ? 200 : 502);
+  });
+
+  admin.post("/backends/:id/oauth/start", async (c) => {
+    const auth = c.get("auth");
+    const backend = store.getBackend(auth.workspaceId, c.req.param("id"));
+    if (!backend) return c.json({ error: "not found" }, 404);
+    try {
+      const { redirectUri, derived } = resolveRedirectUri({
+        publicUrl: cfg.publicUrl,
+        requestOrigin: requestOrigin(c, cfg.trustProxy),
+      });
+      const started = await startOauthAuthorization({
+        store,
+        backend,
+        redirectUri,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+        keyId: auth.keyId,
+        ip: clientIp(c),
+      });
+      return c.json({
+        ...started,
+        redirectOrigin: derived ? "derived" : "configured",
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.post("/backends/:id/oauth/device/poll", async (c) => {
+    const auth = c.get("auth");
+    const backend = store.getBackend(auth.workspaceId, c.req.param("id"));
+    if (!backend) return c.json({ error: "not found" }, 404);
+    try {
+      const result = await pollOauthDevice({
+        store,
+        backend,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+        keyId: auth.keyId,
+        ip: clientIp(c),
+      });
+      if (result.status === "connected") pool.invalidate(backend.id);
+      return c.json(result, result.status === "error" ? 400 : 200);
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+  });
+
+  admin.post("/backends/:id/oauth/revoke", async (c) => {
+    const auth = c.get("auth");
+    const backend = store.getBackend(auth.workspaceId, c.req.param("id"));
+    if (!backend) return c.json({ error: "not found" }, 404);
+    try {
+      await revokeOauthGrant({
+        store,
+        backend,
+        allowPrivateUrls: cfg.allowPrivateUrls,
+        keyId: auth.keyId,
+        ip: clientIp(c),
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : String(err) },
+        400,
+      );
+    }
+    pool.invalidate(backend.id);
+    const pub = store.getBackendPublic(auth.workspaceId, backend.id);
+    return c.json({ backend: pub });
   });
 
   // Devices
@@ -1285,6 +1413,28 @@ export function createApp(
       }),
       unblocked,
     });
+  });
+
+  app.get("/oauth/callback", async (c) => {
+    const result = await completeOauthCallback({
+      store,
+      code: c.req.query("code"),
+      state: c.req.query("state"),
+      oauthError: c.req.query("error"),
+      allowPrivateUrls: cfg.allowPrivateUrls,
+    });
+    const target = result.ok
+      ? `/oauth/callback/done?result=ok&backend=${encodeURIComponent(result.slug)}`
+      : "/oauth/callback/done?result=error";
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("Cache-Control", "no-store");
+    return c.redirect(target, 303);
+  });
+
+  app.get("/oauth/callback/done", (c) => {
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("Cache-Control", "no-store");
+    return c.html(oauthDoneHtml(c.req.query("result") === "ok"));
   });
 
   app.route("/v1", admin);

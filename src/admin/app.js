@@ -1005,8 +1005,11 @@ function syncBackendFormFields() {
     if (el) el.hidden = !on;
   };
 
+  const oauth = isRemote && ($("#beAuth")?.value || "static") === "oauth";
+  show("#beFieldAuth", isRemote);
   show("#beFieldUrl", isRemote);
-  show("#beFieldApiKey", isRemote);
+  show("#beFieldApiKey", isRemote && !oauth);
+  show("#beFieldOauth", oauth);
   show("#beHdrEditor", isRemote);
   show("#beFieldDevice", isEdge);
   show("#beFieldCommand", !isRemote && isStdio);
@@ -1014,7 +1017,11 @@ function syncBackendFormFields() {
   show("#beEnvEditor", !isRemote);
 
   const hint = $("#beModeHint");
-  if (hint) hint.textContent = BE_MODE_HINTS[mode] || "";
+  if (hint) {
+    hint.textContent = oauth
+      ? "OAuth 2.1 with PKCE. Tokens are sealed. Open Connect after creating the backend."
+      : BE_MODE_HINTS[mode] || "";
+  }
 }
 
 function backendEndpointCell(b) {
@@ -1062,6 +1069,23 @@ function addBackendFormHtml(modes, devices) {
         <div class="form-field" id="beFieldUrl" style="grid-column: 1 / -1">
           <label class="field-label" for="beUrl">URL</label>
           <input id="beUrl" placeholder="https://mcp.example.com/mcp" autocomplete="off" />
+        </div>
+        <div class="form-field" id="beFieldAuth" style="grid-column: 1 / -1">
+          <span class="field-label">Auth</span>
+          <div class="seg role-seg" id="beAuthSeg" role="group" aria-label="Auth">
+            <button type="button" class="seg-btn active" data-auth="static">API key</button>
+            <button type="button" class="seg-btn" data-auth="oauth">OAuth</button>
+          </div>
+          <input type="hidden" id="beAuth" value="static" />
+        </div>
+        <div class="form-field" id="beFieldOauth" hidden style="grid-column: 1 / -1">
+          <label class="field-label" for="beOauthClientId">Client ID (optional)</label>
+          <input id="beOauthClientId" placeholder="leave empty for dynamic registration" autocomplete="off" />
+          <label class="field-label" for="beOauthSecret" style="margin-top:10px">Client secret (optional)</label>
+          <input id="beOauthSecret" type="password" placeholder="confidential clients only" autocomplete="off" />
+          <label class="field-label" for="beOauthScopes" style="margin-top:10px">Scopes (optional)</label>
+          <input id="beOauthScopes" placeholder="space-separated" autocomplete="off" />
+          <p class="dim" id="beOauthRedirect" style="margin-top:8px"></p>
         </div>
         <div class="form-field" id="beFieldApiKey" style="grid-column: 1 / -1">
           <label class="field-label" for="beApiKey">API key</label>
@@ -1119,6 +1143,7 @@ function backendsTableHtml(backends) {
               <th>transport</th>
               <th>placement</th>
               <th>secrets</th>
+              <th>auth</th>
               <th>enabled</th>
               <th></th>
             </tr>
@@ -1134,15 +1159,34 @@ function backendsTableHtml(backends) {
                       ]
                         .filter(Boolean)
                         .join("+");
+                      const oauth = b.auth?.type === "oauth" ? b.auth : null;
+                      const authLabel = !oauth
+                        ? "static"
+                        : oauth.status === "needs_reauth"
+                          ? "re-auth"
+                          : oauth.status || "re-auth";
+                      const authClass = !oauth
+                        ? "off"
+                        : oauth.status === "connected"
+                          ? "on"
+                          : oauth.status === "expiring"
+                            ? "warn"
+                            : "off";
+                      const oauthActions = oauth
+                        ? `<button type="button" class="pill-btn" data-oauth-start="${esc(b.id)}">${oauth.status === "connected" || oauth.status === "expiring" ? "Reconnect" : "Connect"}</button>
+                <button type="button" class="pill-btn ghost" data-oauth-revoke="${esc(b.id)}" data-slug="${esc(b.slug)}">Revoke</button>`
+                        : "";
                       return `<tr>
               <td class="mono">${esc(b.slug)}</td>
               ${backendEndpointCell(b)}
               <td>${esc(b.transport)}</td>
               <td class="mono">${esc(b.placement?.mode)}${b.placement?.deviceId ? " @" + esc(String(b.placement.deviceId).slice(0, 8)) : ""}</td>
               <td>${secrets ? `<span class="pill vault">${esc(secrets)}</span>` : '<span class="pill off">none</span>'}</td>
+              <td><span class="pill ${authClass}"${oauth?.clientId ? ` title="client ${esc(oauth.clientId)}"` : ""}>${esc(authLabel)}</span></td>
               <td><span class="pill ${b.enabled ? "on" : "off"}">${b.enabled ? "on" : "off"}</span></td>
               <td class="row-actions">
                 <button type="button" class="pill-btn ghost" data-be-edit="${esc(b.id)}">Edit</button>
+                ${oauthActions}
                 <button type="button" class="pill-btn" data-test="${esc(b.id)}">Test</button>
                 <button type="button" class="pill-btn ghost" data-toggle="${esc(b.id)}" data-en="${b.enabled ? "0" : "1"}">${b.enabled ? "Disable" : "Enable"}</button>
                 <button type="button" class="pill-btn danger" data-del="${esc(b.id)}" data-slug="${esc(b.slug)}">Delete</button>
@@ -1150,7 +1194,7 @@ function backendsTableHtml(backends) {
             </tr>`;
                     })
                     .join("")
-                : `<tr><td colspan="7" class="muted">No backends — add one above</td></tr>`
+                : `<tr><td colspan="8" class="muted">No backends — add one above</td></tr>`
             }
           </tbody>
         </table>
@@ -1180,8 +1224,22 @@ async function onCreateBackend() {
       if (!url) throw new Error("url required");
       body.url = url;
       const headers = collectHeaderPairs($("#beHdrEditor") || document);
-      const apiKey = $("#beApiKey")?.value ?? "";
-      if (apiKey.trim()) body.apiKey = apiKey;
+      if ($("#beAuth")?.value === "oauth") {
+        const auth = { type: "oauth" };
+        const clientId = $("#beOauthClientId")?.value?.trim();
+        const clientSecret = $("#beOauthSecret")?.value ?? "";
+        const scopes = ($("#beOauthScopes")?.value || "")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean);
+        if (clientId) auth.clientId = clientId;
+        if (clientSecret) auth.clientSecret = clientSecret;
+        if (scopes.length) auth.scopes = scopes;
+        body.auth = auth;
+      } else {
+        const apiKey = $("#beApiKey")?.value ?? "";
+        if (apiKey.trim()) body.apiKey = apiKey;
+      }
       if (Object.keys(headers).length) body.headers = headers;
     } else {
       if (mode === "edge-sandbox" || mode === "edge-bare") {
@@ -1207,6 +1265,8 @@ async function onCreateBackend() {
     await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
     const apiKeyEl = $("#beApiKey");
     if (apiKeyEl) apiKeyEl.value = "";
+    const secretEl = $("#beOauthSecret");
+    if (secretEl) secretEl.value = "";
     await renderBackends();
   } catch (e) {
     showErr(e.message);
@@ -1220,6 +1280,15 @@ function wireBackendForm() {
   wirePlacementSeg($("#beModeSeg"));
   wireTransportSeg($("#beTransportSeg"));
   $("#beCreate")?.addEventListener("click", () => void onCreateBackend());
+  $("#beAuthSeg")?.querySelectorAll("[data-auth]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = btn.getAttribute("data-auth") || "static";
+      const hidden = $("#beAuth");
+      if (hidden) hidden.value = value;
+      setSegActive($("#beAuthSeg"), "data-auth", value);
+      syncBackendFormFields();
+    });
+  });
   syncBackendFormFields();
 }
 
@@ -1351,12 +1420,96 @@ async function saveBackendEdit(backend, panel, dropped) {
   }
 }
 
+function setOauthRedirectHint(uri) {
+  const el = $("#beOauthRedirect");
+  if (!el) return;
+  el.textContent = uri
+    ? `Redirect URL to register with the provider: ${uri}`
+    : "Set MCP_FLOW_PUBLIC_URL so the OAuth redirect URL stays stable.";
+}
+
+if (!window.__mfOauthListener) {
+  window.__mfOauthListener = true;
+  window.addEventListener("message", (ev) => {
+    if (ev.origin !== window.location.origin) return;
+    if (!ev.data || ev.data.type !== "mcp-flow-oauth") return;
+    if (!token()) return;
+    void renderBackends().catch((e) => showErr(e.message));
+  });
+}
+
+async function pollDeviceLogin(id, intervalSeconds) {
+  let wait = Math.max(5, Number(intervalSeconds) || 5);
+  for (let i = 0; i < 120; i++) {
+    await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+    const r = await api(`/v1/backends/${id}/oauth/device/poll`, {
+      method: "POST",
+      body: "{}",
+    });
+    if (r.status === "connected") {
+      await renderBackends();
+      return;
+    }
+    if (r.status === "pending") {
+      wait = Math.max(5, Number(r.intervalSeconds) || wait);
+      continue;
+    }
+    throw new Error(r.error || "device authorization failed");
+  }
+  throw new Error("timed out waiting for device approval");
+}
+
 function wireBackendTable(root) {
   const scope = root || $("#beListMount") || document;
   scope.querySelectorAll("[data-be-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const id = btn.getAttribute("data-be-edit");
       openBackendEditor(backendById.get(id));
+    });
+  });
+  scope.querySelectorAll("[data-oauth-start]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      try {
+        const r = await api(`/v1/backends/${btn.getAttribute("data-oauth-start")}/oauth/start`, {
+          method: "POST",
+          body: "{}",
+        });
+        if (r.mode === "device") {
+          const wrap = $("#beOutWrap");
+          const out = $("#beOut");
+          if (wrap && out) {
+            wrap.hidden = false;
+            out.textContent = [
+              "Approve this code at the provider.",
+              `Code: ${r.userCode}`,
+              r.verificationUriComplete || r.verificationUri,
+              "Waiting for approval…",
+            ].join("\n");
+          }
+          const url = r.verificationUriComplete || r.verificationUri;
+          if (url) window.open(url, "mcp-flow-oauth", "width=520,height=720");
+          await pollDeviceLogin(btn.getAttribute("data-oauth-start"), r.intervalSeconds || 5);
+          return;
+        }
+        window.open(r.authorizationUrl, "mcp-flow-oauth", "width=520,height=720");
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+  scope.querySelectorAll("[data-oauth-revoke]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const slug = btn.getAttribute("data-slug") || "backend";
+      if (!confirm(`Revoke the OAuth grant for “${slug}”? The backend stays, and you can connect again.`)) return;
+      try {
+        await api(`/v1/backends/${btn.getAttribute("data-oauth-revoke")}/oauth/revoke`, {
+          method: "POST",
+          body: "{}",
+        });
+        await renderBackends();
+      } catch (e) {
+        showErr(e.message);
+      }
     });
   });
   scope.querySelectorAll("[data-test]").forEach((btn) => {
@@ -1414,6 +1567,7 @@ async function renderBackends() {
   const modes = wsRes.placementModes || ["remote", "central-sandbox"];
   backendById = new Map(backends.map((b) => [b.id, b]));
   const formMounted = Boolean($("#beAddForm"));
+  const oauthRedirectUri = wsRes.oauthRedirectUri || "";
 
   if (!formMounted) {
     $("#tab-backends").innerHTML = `
@@ -1425,6 +1579,7 @@ async function renderBackends() {
     updatePlacementSeg(modes);
     updateDeviceSelect(devices);
   }
+  setOauthRedirectHint(oauthRedirectUri);
 
   const list = $("#beListMount");
   if (list) {

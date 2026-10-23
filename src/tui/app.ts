@@ -107,7 +107,9 @@ export async function runTui(cfg: Config): Promise<void> {
 
   const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
   const ws = store.ensureWorkspace(cfg.workspaceName);
-  const pool = new UpstreamPool(store);
+  const pool = new UpstreamPool(store, {
+    allowPrivateUrls: cfg.allowPrivateUrls,
+  });
 
   let screen: Screen = { id: "home", cursor: 0 };
   let alive = true;
@@ -241,6 +243,11 @@ export async function runTui(cfg: Config): Promise<void> {
           `transport:  ${b.transport}`,
           `url:        ${b.url ?? "—"}`,
           `placement:  ${b.placement.mode}`,
+          `auth:       ${
+            b.auth?.type === "oauth"
+              ? `${b.auth.status ?? "needs_reauth"}${b.auth.clientId ? " · " + b.auth.clientId : ""}`
+              : "static"
+          }`,
           `headers:    ${
             b.hasHeaders
               ? c.green +

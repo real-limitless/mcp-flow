@@ -284,6 +284,41 @@ export interface BackendRecord {
   updatedAt: string;
 }
 
+/** Shown on backend list/get. Never includes tokens or a client secret. */
+export type OauthAuthStatus = "connected" | "expiring" | "needs_reauth";
+
+export interface BackendAuthPublic {
+  type: "static" | "oauth";
+  status?: OauthAuthStatus;
+  clientId?: string | null;
+  /** True when a client secret is sealed — the secret is never returned */
+  hasClientSecret?: boolean;
+  scope?: string | null;
+  issuer?: string | null;
+  redirectUri?: string | null;
+  expiresAt?: string | null;
+  /** Sanitized status text. Never a token, verifier, or client secret. */
+  lastError?: string | null;
+  /**
+   * Device-code login in progress (RFC 8628). The device code itself stays sealed.
+   * Shown so an admin can finish consent on a provider that rejects the public redirect.
+   */
+  device?: {
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string | null;
+    expiresAt: string;
+  } | null;
+}
+
+export interface BackendOauthInput {
+  type: "oauth";
+  clientId?: string;
+  clientSecret?: string;
+  /** Space-joined when stored. Omit to let discovery choose scopes. */
+  scopes?: string[];
+}
+
 export interface BackendPublic {
   id: string;
   workspaceId: string;
@@ -305,6 +340,8 @@ export interface BackendPublic {
   toolAllowlist: string[] | null;
   placement: Placement;
   sandbox: SandboxConfig | null;
+  /** Static headers, or an OAuth grant. Secret values are never included. */
+  auth: BackendAuthPublic;
   createdAt: string;
   updatedAt: string;
 }
@@ -322,6 +359,11 @@ export interface CreateBackendInput {
    * headers.Authorization if both are sent). Raw tokens get a Bearer prefix.
    */
   apiKey?: string;
+  /**
+   * OAuth 2.1 authorization-code for a remote HTTP/SSE backend.
+   * Mutually exclusive with apiKey and an Authorization header.
+   */
+  auth?: BackendOauthInput;
   env?: Record<string, string>;
   enabled?: boolean;
   toolAllowlist?: string[];
@@ -357,6 +399,8 @@ export interface UpdateBackendInput {
   envMode?: "merge" | "replace";
   /** Env names to delete. Ignored when `env` is null or `envMode` is `replace`. */
   unsetEnv?: string[];
+  /** `oauth` configures a grant. `static` drops it and keeps header auth. */
+  auth?: BackendOauthInput | { type: "static" };
   enabled?: boolean;
   toolAllowlist?: string[] | null;
   placement?: Placement;
@@ -402,7 +446,11 @@ export type AuditAction =
   | "authz.pending"
   | "authz.approve"
   | "authz.deny"
-  | "authz.timeout";
+  | "authz.timeout"
+  | "oauth.authorize"
+  | "oauth.reauth"
+  | "oauth.refresh_failure"
+  | "oauth.revoke";
 
 export interface AuditEvent {
   id: string;

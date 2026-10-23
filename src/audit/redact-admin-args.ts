@@ -166,6 +166,8 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_admin_create_project",
   "mf_admin_update_project",
   "mf_admin_delete_project",
+  "mf_admin_oauth_start",
+  "mf_admin_oauth_revoke",
 ]);
 
 /** A tool name that may be stored for a call that was not dispatched. */
