@@ -438,11 +438,14 @@ function formatKeyProjects(scopes) {
 }
 
 async function renderKeys() {
-  const [{ keys }, projRes] = await Promise.all([
+  const [{ keys }, projRes, connector, grantRes] = await Promise.all([
     api("/v1/keys"),
     api("/v1/projects").catch(() => ({ projects: [] })),
+    api("/v1/oauth/connector"),
+    api("/v1/oauth/grants").catch(() => ({ grants: [] })),
   ]);
   const projects = projRes.projects || [];
+  const grants = grantRes.grants || [];
 
   $("#tab-keys").innerHTML = `
     ${surface(
@@ -507,6 +510,63 @@ async function renderKeys() {
       </div>
     `,
       "mf_* · projects",
+    )}
+    ${surface(
+      "OAuth connector",
+      `
+      <p class="muted" style="margin-bottom:12px">
+        Paste these into a connector that asks for OAuth credentials (Grok custom connector).
+        Leave the client secret empty. Token auth method is <span class="mono">none</span> (PKCE).
+        Scope <span class="mono">mcp</span> is an agent. <span class="mono">mcp:admin</span> is an operator.
+      </p>
+      <div class="form-grid">
+        ${[
+          ["Client ID", connector.clientId],
+          ["Authorization endpoint", connector.authorizationEndpoint],
+          ["Token endpoint", connector.tokenEndpoint],
+          ["Registration endpoint", connector.registrationEndpoint],
+          ["Resource", connector.resource],
+          ["Scopes", (connector.scopes || []).join(" ")],
+        ]
+          .map(
+            ([label, value]) => `
+          <div class="form-field" style="grid-column:1/-1">
+            <span class="field-label">${esc(label)}</span>
+            <input class="mono" readonly value="${esc(value)}" />
+          </div>`,
+          )
+          .join("")}
+      </div>
+      <div class="table-wrap" style="margin-top:14px">
+        <table class="data-table">
+          <thead><tr><th>name</th><th>client</th><th>prefix</th><th>scope</th><th></th></tr></thead>
+          <tbody>
+            ${
+              grants.length
+                ? grants
+                    .map(
+                      (g) => `<tr>
+              <td>${esc(g.name)}</td>
+              <td class="mono">${esc(g.clientId)}</td>
+              <td class="mono">${esc(g.accessPrefix)}</td>
+              <td class="mono">${esc(g.scope)}</td>
+              <td class="row-actions">
+                ${
+                  g.revokedAt
+                    ? '<span class="pill off">revoked</span>'
+                    : `<button type="button" class="pill-btn danger" data-grant-revoke="${esc(g.id)}">Revoke</button>`
+                }
+              </td>
+            </tr>`,
+                    )
+                    .join("")
+                : `<tr><td colspan="5" class="muted">No OAuth grants yet. Approve a connector login to mint one.</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    `,
+      "PKCE · no secret",
     )}
     ${surface(
       "Keys",
@@ -611,6 +671,20 @@ async function renderKeys() {
   };
   roleSeg?.querySelectorAll("[data-role]").forEach((btn) => {
     btn.addEventListener("click", () => setRole(btn.getAttribute("data-role") || "agent"));
+  });
+
+  document.querySelectorAll("[data-grant-revoke]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Revoke this OAuth grant?")) return;
+      try {
+        await api(`/v1/oauth/grants/${btn.getAttribute("data-grant-revoke")}`, {
+          method: "DELETE",
+        });
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
   });
 
   $("#createKey")?.addEventListener("click", async () => {

@@ -24,7 +24,7 @@ import {
 } from "../authz/types.js";
 import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
 import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
-import { seal, safeEqualStr } from "../crypto.js";
+import { hashToken, seal, safeEqualStr } from "../crypto.js";
 import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
@@ -61,6 +61,33 @@ import {
   revokeOauthGrant,
   startOauthAuthorization,
 } from "../oauth/flow.js";
+import {
+  authorizationServerMetadata,
+  clientSecretOk,
+  consentPage,
+  issuerOrigin,
+  mintAuthCode,
+  normalizeOauthScope,
+  pkceS256,
+  redirectAllowed,
+  registrationRedirectsOk,
+  resourceMetadata,
+  validCodeVerifier,
+  wwwAuthenticate,
+} from "../oauth/downstream.js";
+import {
+  authenticateAccess,
+  consumeAuthCode,
+  CODE_TTL_SECONDS,
+  ensurePublicClient,
+  getClient,
+  insertClient,
+  insertGrant,
+  listGrants,
+  revokeGrant,
+  rotateGrant,
+  saveAuthCode,
+} from "../db/downstream-oauth.js";
 import type {
   ApiKeyScopes,
   AuthContext,
@@ -262,6 +289,19 @@ export function createApp(
       return;
     }
 
+    const grant = authenticateAccess(store.db, token);
+    if (grant && isAdminScopes(grant.scopes)) {
+      c.set("auth", {
+        kind: "api_key",
+        workspaceId: grant.workspaceId,
+        keyId: grant.keyId,
+        keyName: grant.keyName,
+        scopes: grant.scopes,
+      });
+      await next();
+      return;
+    }
+
     return c.json({ error: "unauthorized" }, 401);
   });
 
@@ -427,6 +467,49 @@ export function createApp(
       workspaceId: auth.workspaceId,
       action: "key.revoke",
       detail: { keyId: c.req.param("id") },
+      ip: clientIp(c),
+    });
+    return c.json({ ok: true });
+  });
+
+  function gatewayOrigin(c: {
+    req: { url: string; header: (name: string) => string | undefined };
+  }): string {
+    return issuerOrigin(cfg.publicUrl, requestOrigin(c, cfg.trustProxy));
+  }
+
+  admin.get("/oauth/connector", (c) => {
+    const auth = c.get("auth");
+    const origin = gatewayOrigin(c);
+    const client = ensurePublicClient(store.db, auth.workspaceId);
+    return c.json({
+      clientId: client.id,
+      clientSecret: null,
+      tokenEndpointAuthMethod: "none",
+      authorizationEndpoint: `${origin}/oauth/authorize`,
+      tokenEndpoint: `${origin}/oauth/token`,
+      registrationEndpoint: `${origin}/oauth/register`,
+      resource: `${origin}/mcp`,
+      scopes: ["mcp", "mcp:admin"],
+      resourceMetadata: `${origin}/.well-known/oauth-protected-resource/mcp`,
+    });
+  });
+
+  admin.get("/oauth/grants", (c) => {
+    const auth = c.get("auth");
+    return c.json({ grants: listGrants(store.db, auth.workspaceId) });
+  });
+
+  admin.delete("/oauth/grants/:id", (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const ok = revokeGrant(store.db, auth.workspaceId, id);
+    if (!ok) return c.json({ error: "not found" }, 404);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
+      action: "oauth.grant.revoke",
+      detail: { grantId: id },
       ip: clientIp(c),
     });
     return c.json({ ok: true });
@@ -1437,12 +1520,260 @@ export function createApp(
     return c.html(oauthDoneHtml(c.req.query("result") === "ok"));
   });
 
+  function oauthJson(
+    c: { json: (body: unknown, status?: number) => Response },
+    status: number,
+    error: string,
+    description?: string,
+  ) {
+    return c.json(
+      {
+        error,
+        ...(description ? { error_description: description } : {}),
+      },
+      status,
+    );
+  }
+
+  app.get("/.well-known/oauth-protected-resource", (c) => {
+    return c.json(resourceMetadata(gatewayOrigin(c)));
+  });
+  app.get("/.well-known/oauth-protected-resource/mcp", (c) => {
+    return c.json(resourceMetadata(gatewayOrigin(c)));
+  });
+  app.get("/.well-known/oauth-authorization-server", (c) => {
+    return c.json(authorizationServerMetadata(gatewayOrigin(c)));
+  });
+
+  app.post("/oauth/register", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as {
+      client_name?: string;
+      redirect_uris?: string[];
+      token_endpoint_auth_method?: string;
+    } | null;
+    const redirects = Array.isArray(body?.redirect_uris) ? body.redirect_uris : [];
+    if (!registrationRedirectsOk(redirects)) {
+      return oauthJson(c, 400, "invalid_redirect_uri", "redirect_uris must be https or loopback http");
+    }
+    const method = body?.token_endpoint_auth_method ?? "none";
+    if (!["none", "client_secret_post", "client_secret_basic"].includes(method)) {
+      return oauthJson(c, 400, "invalid_client_metadata", "unsupported token_endpoint_auth_method");
+    }
+    let secret: string | null = null;
+    let secretHash: string | null = null;
+    if (method !== "none") {
+      const minted = mintAuthCode();
+      secret = minted.code;
+      secretHash = minted.hash;
+    }
+    const client = insertClient(store.db, {
+      workspaceId: null,
+      name: (body?.client_name || "connector").slice(0, 80),
+      secretHash,
+      redirectUris: redirects,
+    });
+    return c.json(
+      {
+        client_id: client.id,
+        ...(secret ? { client_secret: secret } : {}),
+        client_name: client.name,
+        redirect_uris: client.redirectUris,
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: method,
+        client_id_issued_at: Math.floor(Date.now() / 1000),
+      },
+      201,
+    );
+  });
+
+  function formValue(body: Record<string, unknown>, key: string): string {
+    const value = body[key];
+    return typeof value === "string" ? value : "";
+  }
+
+  app.get("/oauth/authorize", (c) => {
+    const clientId = c.req.query("client_id") ?? "";
+    const redirectUri = c.req.query("redirect_uri") ?? "";
+    const challenge = c.req.query("code_challenge") ?? "";
+    const method = c.req.query("code_challenge_method") ?? "";
+    const responseType = c.req.query("response_type") ?? "";
+    const client = clientId ? getClient(store.db, clientId) : null;
+    if (
+      responseType !== "code" ||
+      method !== "S256" ||
+      !challenge ||
+      !client ||
+      !redirectAllowed(client.redirectUris, redirectUri)
+    ) {
+      return c.html(
+        `<!doctype html><meta charset="utf-8"><title>mcp-flow</title><p>This authorization request is not allowed.</p>`,
+        400,
+      );
+    }
+    const scope = normalizeOauthScope(c.req.query("scope")).scope;
+    c.header("Cache-Control", "no-store");
+    c.header("Referrer-Policy", "no-referrer");
+    return c.html(
+      consentPage({
+        clientName: client.name,
+        clientId: client.id,
+        redirectUri,
+        scope,
+        state: c.req.query("state") ?? "",
+        codeChallenge: challenge,
+        resource: c.req.query("resource") ?? "",
+      }),
+    );
+  });
+
+  app.post("/oauth/authorize", async (c) => {
+    const body = (await c.req.parseBody()) as Record<string, unknown>;
+    const clientId = formValue(body, "client_id");
+    const redirectUri = formValue(body, "redirect_uri");
+    const challenge = formValue(body, "code_challenge");
+    const state = formValue(body, "state");
+    const decision = formValue(body, "decision");
+    const adminToken = formValue(body, "admin_token");
+    const client = getClient(store.db, clientId);
+    if (!client || !redirectAllowed(client.redirectUris, redirectUri) || !challenge) {
+      return c.html(
+        `<!doctype html><meta charset="utf-8"><p>This authorization request is not allowed.</p>`,
+        400,
+      );
+    }
+    const { scope, scopes } = normalizeOauthScope(formValue(body, "scope"));
+    const back = (error: string) =>
+      c.html(
+        consentPage({
+          clientName: client.name,
+          clientId,
+          redirectUri,
+          scope,
+          state,
+          codeChallenge: challenge,
+          resource: formValue(body, "resource"),
+          error,
+        }),
+        401,
+      );
+    let approver: { workspaceId: string; keyId: string | null } | null = null;
+    if (cfg.adminToken && safeEqualStr(adminToken, cfg.adminToken)) {
+      approver = {
+        workspaceId: store.ensureWorkspace(cfg.workspaceName).id,
+        keyId: null,
+      };
+    } else {
+      const key = store.authenticateApiKey(adminToken);
+      if (key && isAdminScopes(key.scopes)) {
+        approver = { workspaceId: key.workspaceId, keyId: key.keyId };
+      }
+    }
+    if (!approver) return back("Admin token was not accepted.");
+    const location = new URL(redirectUri);
+    if (decision !== "allow") {
+      location.searchParams.set("error", "access_denied");
+      if (state) location.searchParams.set("state", state);
+      c.header("Referrer-Policy", "no-referrer");
+      return c.redirect(location.href, 303);
+    }
+    const minted = mintAuthCode();
+    saveAuthCode(store.db, {
+      codeHash: minted.hash,
+      clientId,
+      workspaceId: approver.workspaceId,
+      redirectUri,
+      codeChallenge: challenge,
+      scope,
+      scopes,
+      expiresAt: new Date(Date.now() + CODE_TTL_SECONDS * 1000).toISOString(),
+    });
+    store.writeAudit({
+      workspaceId: approver.workspaceId,
+      keyId: approver.keyId,
+      action: "oauth.grant.create",
+      detail: { clientId, scope },
+      ip: clientIp(c),
+    });
+    location.searchParams.set("code", minted.code);
+    if (state) location.searchParams.set("state", state);
+    c.header("Referrer-Policy", "no-referrer");
+    c.header("Cache-Control", "no-store");
+    return c.redirect(location.href, 303);
+  });
+
+  app.post("/oauth/token", async (c) => {
+    const body = (await c.req.parseBody()) as Record<string, unknown>;
+    const grantType = formValue(body, "grant_type");
+    let clientId = formValue(body, "client_id");
+    let secret = formValue(body, "client_secret");
+    const basic = c.req.header("authorization");
+    if (basic?.toLowerCase().startsWith("basic ")) {
+      const decoded = Buffer.from(basic.slice(6).trim(), "base64").toString("utf8");
+      const idx = decoded.indexOf(":");
+      if (idx > 0) {
+        clientId = decoded.slice(0, idx);
+        secret = decoded.slice(idx + 1);
+      }
+    }
+    const client = clientId ? getClient(store.db, clientId) : null;
+    if (!client || !clientSecretOk(client.secretHash, secret || null)) {
+      return oauthJson(c, 401, "invalid_client");
+    }
+    if (grantType === "refresh_token") {
+      const next = rotateGrant(store.db, formValue(body, "refresh_token"));
+      if (!next) return oauthJson(c, 400, "invalid_grant");
+      c.header("Cache-Control", "no-store");
+      return c.json({
+        access_token: next.accessToken,
+        token_type: "Bearer",
+        expires_in: next.expiresIn,
+        refresh_token: next.refreshToken,
+        scope: next.scope,
+      });
+    }
+    if (grantType !== "authorization_code") {
+      return oauthJson(c, 400, "unsupported_grant_type");
+    }
+    const verifier = formValue(body, "code_verifier");
+    const redirectUri = formValue(body, "redirect_uri");
+    if (!validCodeVerifier(verifier)) {
+      return oauthJson(c, 400, "invalid_grant", "code_verifier is invalid");
+    }
+    const code = consumeAuthCode(store.db, hashToken(formValue(body, "code")));
+    if (
+      !code ||
+      code.clientId !== client.id ||
+      code.redirectUri !== redirectUri ||
+      code.codeChallenge !== pkceS256(verifier)
+    ) {
+      return oauthJson(c, 400, "invalid_grant");
+    }
+    const issued = insertGrant(store.db, {
+      workspaceId: code.workspaceId,
+      clientId: client.id,
+      name: client.name,
+      scope: code.scope,
+      scopes: code.scopes,
+    });
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      access_token: issued.accessToken,
+      token_type: "Bearer",
+      expires_in: issued.expiresIn,
+      refresh_token: issued.refreshToken,
+      scope: code.scope,
+    });
+  });
+
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
   app.all("/mcp", async (c) => {
     const token = bearer(c.req.header("authorization"));
+    const origin = gatewayOrigin(c);
     if (!token) {
+      c.header("WWW-Authenticate", wwwAuthenticate(origin));
       return c.json({ error: "missing bearer token" }, 401);
     }
 
@@ -1467,8 +1798,10 @@ export function createApp(
         mcpSessionId,
       };
     } else {
-      const key = store.authenticateApiKey(token);
+      const key =
+        store.authenticateApiKey(token) ?? authenticateAccess(store.db, token);
       if (!key) {
+        c.header("WWW-Authenticate", wwwAuthenticate(origin));
         return c.json({ error: "invalid api key" }, 401);
       }
       // Resolve sticky project from MCP session or key fallback
