@@ -854,9 +854,15 @@ describe("api + gateway", () => {
 
     const disabled = await client.callTool({
       name: "mf_disable_tools",
-      arguments: { names: ["up__echo"] },
+      arguments: { names: ["up__echo", "tool-secret-placeholder"] },
     });
     expect(disabled.isError).not.toBe(true);
+    const disabledText =
+      (disabled.content as Array<{ type: string; text?: string }>)
+        .map((block) => block.text ?? "")
+        .join("\n");
+    expect(JSON.parse(disabledText).removed).toEqual(["up__echo"]);
+    expect(disabledText).not.toContain("tool-secret-placeholder");
 
     const afterDisable = await client.callTool({
       name: "up__echo",
@@ -1020,4 +1026,215 @@ describe("api + gateway", () => {
     expect(offJson.key.scopes.dynamicTools).toBeUndefined();
     expect(offJson.key.scopes.toolPrefixAllowlist).toEqual(["up__"]);
   });
+
+  it("dispatches a cold tool by slug and collapses stale cached names", async () => {
+    const upstream = await startEnvSig();
+    cleanups.push(upstream.close);
+    const gw = await bootGateway();
+    const base = gw.url;
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const ids: Record<string, string> = {};
+    for (const slug of ["vh", "vm", "h", "qa"]) {
+      const created = await fetch(`${base}/v1/backends`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          slug,
+          url: upstream.url,
+          transport: "streamable-http",
+          enabled: true,
+          placement: { mode: "remote" },
+        }),
+      });
+      expect(created.status).toBe(201);
+      ids[slug] = ((await created.json()) as { backend: { id: string } }).backend.id;
+    }
+    const keyRes = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "cold-cache", admin: true }),
+    });
+    expect(keyRes.status).toBe(201);
+    const token = ((await keyRes.json()) as { key: { token: string } }).key.token;
+    const client = new Client({ name: "cold-cache", version: "1.0.0" }, { capabilities: {} });
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+      }),
+    );
+    const textOf = (result: { content: Array<{ text?: string }> }): string =>
+      result.content.map((block) => block.text ?? "").join("\n");
+
+    const cold = await client.callTool({
+      name: "vh__envsig",
+      arguments: { note: "valid-envsig" },
+    });
+    expect(cold.isError).not.toBe(true);
+    expect(textOf(cold)).toBe("envsig:valid-envsig");
+    const coldWrapped = await client.callTool({
+      name: "mf_call_tool",
+      arguments: { name: "vm__envsig", arguments: { note: "valid-envsig" } },
+    });
+    expect(coldWrapped.isError).not.toBe(true);
+    expect(textOf(coldWrapped)).toBe("envsig:valid-envsig");
+
+    const paddedNote = "padded-envsig";
+    for (const name of ["vh__envsig ", " vh__envsig", "vh__envsig\t"]) {
+      const paddedTool = await client.callTool({
+        name: "mf_call_tool",
+        arguments: { name, arguments: { note: paddedNote } },
+      });
+      expect(paddedTool.isError).toBe(true);
+      expect(textOf(paddedTool)).not.toContain(paddedNote);
+      expect(textOf(paddedTool)).not.toContain("envsig:");
+      expect(textOf(paddedTool)).not.toContain("vh__envsig");
+    }
+
+    await client.listTools();
+    const nulled = await fetch(`${base}/v1/backends/${ids.h}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ placement: null }),
+    });
+    expect(nulled.status).toBe(200);
+    const afterNull = await client.callTool({
+      name: "h__envsig",
+      arguments: { note: "after-null" },
+    });
+    expect(afterNull.isError).not.toBe(true);
+    expect(textOf(afterNull)).toBe("envsig:after-null");
+
+    const padded = await client.callTool({
+      name: "mf_admin_list_backends ",
+      arguments: {},
+    });
+    expect(textOf(padded)).toBe("Unknown admin tool");
+
+    gw.store.db
+      .prepare(`UPDATE backends SET tool_allowlist_json = ? WHERE slug = ?`)
+      .run(JSON.stringify(["other"]), "qa");
+    const secret = "stale-note-placeholder";
+    const dropped = await client.callTool({
+      name: "qa__envsig",
+      arguments: { note: secret },
+    });
+    expect(textOf(dropped)).toBe("tool not found");
+    const droppedWrapped = await client.callTool({
+      name: "mf_call_tool",
+      arguments: { name: "qa__envsig", arguments: { note: secret } },
+    });
+    expect(textOf(droppedWrapped)).toBe("tool not found");
+
+    const disabled = await fetch(`${base}/v1/backends/${ids.qa}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(disabled.status).toBe(200);
+    const disabledCall = await client.callTool({
+      name: "qa__envsig",
+      arguments: { note: secret },
+    });
+    expect(textOf(disabledCall)).toBe("tool not found");
+
+    const removed = await fetch(`${base}/v1/backends/${ids.qa}`, {
+      method: "DELETE",
+      headers,
+    });
+    expect(removed.status).toBe(200);
+    await client.close();
+
+    const freshKey = await fetch(`${base}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ name: "after-delete" }),
+    });
+    const freshToken = ((await freshKey.json()) as { key: { token: string } }).key.token;
+    const fresh = new Client({ name: "after-delete", version: "1.0.0" }, { capabilities: {} });
+    await fresh.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { Authorization: `Bearer ${freshToken}` } },
+      }),
+    );
+    const deletedCall = await fresh.callTool({
+      name: "qa__envsig",
+      arguments: { note: secret },
+    });
+    expect(textOf(deletedCall)).toBe("tool not found");
+    await fresh.close();
+
+    const ws = gw.store.ensureWorkspace("default");
+    const calls = gw.store
+      .listAudit(ws.id, { limit: 200 })
+      .filter((event) => event.action === "tools/call");
+    const blob = JSON.stringify(calls);
+    expect(blob).toContain("valid-envsig");
+    expect(blob).toContain("after-null");
+    expect(blob).not.toContain(secret);
+    expect(blob).not.toContain(paddedNote);
+    expect(blob).not.toContain("mf_admin_list_backends");
+    const collapsed = calls.filter((event) => {
+      const args = (event.detail as { arguments?: { arguments?: unknown } } | null)?.arguments;
+      return args?.arguments === "[redacted]";
+    });
+    expect(collapsed.length).toBeGreaterThanOrEqual(4);
+    for (const event of collapsed) {
+      const args = (event.detail as { arguments?: { name?: string } }).arguments;
+      expect(args?.name).toBe("[invalid]");
+      expect(event.tool === "[invalid]" || event.tool === "mf_call_tool").toBe(true);
+    }
+  }, 60_000);
 });
+
+async function startEnvSig(): Promise<{ url: string; close: () => Promise<void> }> {
+  const getServer = () => {
+    const server = new McpServer({ name: "envsig", version: "1.0.0" });
+    server.registerTool(
+      "envsig",
+      {
+        description: "Echo a note",
+        inputSchema: { note: z.string().optional() },
+      },
+      async ({ note }) => ({
+        content: [{ type: "text", text: `envsig:${note ?? ""}` }],
+      }),
+    );
+    return server;
+  };
+  const httpServer = createServer(async (req, res) => {
+    if (req.method === "POST" && req.url === "/mcp") {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const body = chunks.length
+        ? JSON.parse(Buffer.concat(chunks).toString("utf8"))
+        : undefined;
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      const server = getServer();
+      await server.connect(transport);
+      await transport.handleRequest(req, res, body);
+      res.on("close", () => {
+        void transport.close();
+        void server.close();
+      });
+      return;
+    }
+    res.statusCode = 404;
+    res.end();
+  });
+  await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+  const addr = httpServer.address();
+  if (!addr || typeof addr === "string") throw new Error("no addr");
+  return {
+    url: `http://127.0.0.1:${addr.port}/mcp`,
+    close: () =>
+      new Promise((resolve, reject) =>
+        httpServer.close((err) => (err ? reject(err) : resolve())),
+      ),
+  };
+}

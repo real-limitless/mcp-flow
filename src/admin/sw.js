@@ -1,5 +1,5 @@
 /* mcp-flow admin service worker: cache the shell, never /v1 or /mcp. */
-const CACHE = "mcp-flow-admin-v1";
+const CACHE = "mcp-flow-admin-v3";
 const PRECACHE = [
   "/admin/",
   "/admin/app.js",
@@ -19,7 +19,14 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))),
+      )
+      .then(() => self.clients.claim()),
+  );
 });
 
 self.addEventListener("fetch", (event) => {

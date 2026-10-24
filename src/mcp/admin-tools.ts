@@ -9,7 +9,14 @@ import {
   loadLocalGallery,
   searchRegistryLive,
 } from "../catalog/sync.js";
+import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Config } from "../config.js";
+import { parseEnvMode } from "../db/env-patch.js";
+import {
+  assertPlacementValue,
+  assertSandboxValue,
+  placementForWrite,
+} from "../db/secret-input.js";
 import type { Store } from "../db/store.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
@@ -97,6 +104,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
         },
         env: { type: "object", additionalProperties: { type: "string" } },
         enabled: { type: "boolean" },
+        toolAllowlist: { type: "array", items: { type: "string" } },
         placement: {
           type: "object",
           properties: {
@@ -104,7 +112,24 @@ export const ADMIN_META_TOOLS: Tool[] = [
               type: "string",
               enum: ["remote", "central-sandbox", "edge-sandbox", "edge-bare"],
             },
-            deviceId: { type: "string" },
+            deviceId: { type: ["string", "null"] },
+            deviceTags: {
+              type: ["array", "null"],
+              items: { type: "string" },
+            },
+            affinity: {
+              type: ["string", "null"],
+              enum: ["harness-local", "pinned", "any-online", null],
+            },
+          },
+          additionalProperties: false,
+        },
+        sandbox: {
+          type: ["object", "null"],
+          properties: {
+            memory: { type: ["string", "null"] },
+            cpus: { type: ["string", "null"] },
+            networkMode: { type: ["string", "null"] },
           },
           additionalProperties: false,
         },
@@ -115,7 +140,8 @@ export const ADMIN_META_TOOLS: Tool[] = [
   },
   {
     name: "mf_admin_update_backend",
-    description: "Patch backend by id or slug. Requires admin key.",
+    description:
+      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). Secret values are write-only. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -128,7 +154,15 @@ export const ADMIN_META_TOOLS: Tool[] = [
         command: { type: ["array", "null"], items: { type: "string" } },
         headers: {
           type: ["object", "null"],
-          additionalProperties: { type: "string" },
+          additionalProperties: { type: ["string", "null"] },
+          description:
+            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced.",
+        },
+        headerMode: {
+          type: "string",
+          enum: ["merge", "replace"],
+          description:
+            "merge (default) keeps omitted headers. replace swaps the whole header map.",
         },
         apiKey: { type: ["string", "null"] },
         auth: {
@@ -144,9 +178,24 @@ export const ADMIN_META_TOOLS: Tool[] = [
         },
         env: {
           type: ["object", "null"],
-          additionalProperties: { type: "string" },
+          additionalProperties: { type: ["string", "null"] },
+          description:
+            "Per-key merge by default. Null deletes that key. Empty string keeps the sealed value.",
         },
-        placement: { type: "object" },
+        envMode: {
+          type: "string",
+          enum: ["merge", "replace"],
+          description:
+            "merge (default) keeps omitted keys. replace swaps the whole env map.",
+        },
+        unsetEnv: {
+          type: "array",
+          items: { type: "string" },
+          description: "Env names to delete. Ignored when envMode is replace.",
+        },
+        toolAllowlist: { type: ["array", "null"], items: { type: "string" } },
+        placement: { type: ["object", "null"] },
+        sandbox: { type: ["object", "null"] },
       },
       required: ["idOrSlug"],
       additionalProperties: false,
@@ -576,6 +625,33 @@ function validateBackendWrite(
   }
 }
 
+/** Top-level inputSchema property names, or null when the tool is not an admin tool. */
+export function adminToolPropertyNames(tool: string): ReadonlySet<string> | null {
+  const found = ADMIN_META_TOOLS.find(
+    (item) => item.name === tool || item.name === tool.toLowerCase(),
+  );
+  if (!found) return null;
+  const properties = (
+    found.inputSchema as { properties?: Record<string, unknown> } | undefined
+  )?.properties;
+  return new Set(Object.keys(properties ?? {}));
+}
+
+/**
+ * MCP error text when args include a top-level key the tool schema does not
+ * define. The text is a count, so a secret pasted as a key name is not logged.
+ */
+export function unknownAdminArgumentMessage(
+  tool: string,
+  args: Record<string, unknown>,
+): string | null {
+  const allowed = adminToolPropertyNames(tool);
+  if (!allowed) return null;
+  const unknown = Object.keys(args).filter((key) => !allowed.has(key));
+  if (!unknown.length) return null;
+  return `unknown argument (${unknown.length})`;
+}
+
 export async function handleAdminTool(
   name: string,
   args: Record<string, unknown>,
@@ -584,6 +660,8 @@ export async function handleAdminTool(
   if (!isAdminScopes(deps.auth.scopes) && deps.auth.kind !== "admin") {
     return textResult("admin key required for " + name, true);
   }
+  const unknownArg = unknownAdminArgumentMessage(name, args);
+  if (unknownArg) return textResult(unknownArg, true);
 
   const { store, pool, cfg, auth } = deps;
   const wsId = auth.workspaceId;
@@ -661,7 +739,12 @@ export async function handleAdminTool(
             );
           }
         }
-        const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
+        assertPlacementValue(body.placement);
+        assertSandboxValue(body.sandbox);
+        const placement = placementForWrite(
+          body.placement ?? { ...DEFAULT_PLACEMENT },
+          { ...DEFAULT_PLACEMENT },
+        );
         const verr = validateBackendWrite(deps, transport, body, placement);
         if (verr) return textResult(verr, true);
         let backend;
@@ -694,6 +777,18 @@ export async function handleAdminTool(
         if (!existing) return textResult("not found", true);
         const body = { ...args } as UpdateBackendInput & { idOrSlug?: string };
         delete (body as { idOrSlug?: string }).idOrSlug;
+        assertPlacementValue(body.placement);
+        assertSandboxValue(body.sandbox);
+        if (parseEnvMode(body.envMode) === "invalid") {
+          return textResult("envMode must be merge or replace", true);
+        }
+        if (
+          args.headerMode !== undefined &&
+          args.headerMode !== "merge" &&
+          args.headerMode !== "replace"
+        ) {
+          return textResult("headerMode must be merge or replace", true);
+        }
         if (body.url) {
           try {
             await assertSafeUrl(body.url, cfg.allowPrivateUrls);
@@ -706,9 +801,17 @@ export async function handleAdminTool(
         }
         const transport = (body.transport ??
           existing.transport) as TransportKind;
+        const storedPlacement = JSON.parse(
+          existing.placementJson,
+        ) as typeof DEFAULT_PLACEMENT;
+        const fallbackPlacement =
+          storedPlacement && typeof storedPlacement.mode === "string"
+            ? storedPlacement
+            : { ...DEFAULT_PLACEMENT };
         const placement =
-          body.placement ??
-          (JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT);
+          body.placement == null
+            ? fallbackPlacement
+            : placementForWrite(body.placement, fallbackPlacement);
         const merged: UpdateBackendInput = {
           ...body,
           url: body.url !== undefined ? body.url : existing.url,
@@ -735,7 +838,10 @@ export async function handleAdminTool(
         pool.invalidate(existing.id);
         audit(
           "backend.update",
-          { via: "mf_admin" },
+          {
+            via: "mf_admin",
+            ...backendUpdateAuditDetail(body),
+          },
           { backendSlug: backend.slug },
         );
         return textResult({ backend });
@@ -1080,7 +1186,7 @@ export async function handleAdminTool(
       }
 
       default:
-        return textResult(`Unknown admin tool: ${name}`, true);
+        return textResult("Unknown admin tool", true);
     }
   } catch (err) {
     return textResult(err instanceof Error ? err.message : String(err), true);

@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
 import type { Store } from "../db/store.js";
 import type { PlacementMode } from "../types.js";
@@ -135,7 +136,7 @@ export async function runAuthzGate(opts: {
       ruleId: rule.id,
       requirement: rule.requirement,
       ttlSeconds: rule.ttlSeconds,
-      arguments: sanitizeForAudit(opts.args),
+      arguments: sanitizeForAudit(redactAdminToolAuditArgs(tool, opts.args)),
       approveUrl,
     },
     ip: opts.ip,

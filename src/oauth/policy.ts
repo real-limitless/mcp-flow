@@ -1,10 +1,12 @@
 import type { BackendOauthInput } from "../types.js";
 
 export function hasAuthorizationHeader(
-  headers: Record<string, string> | null | undefined,
+  headers: Record<string, string | null> | null | undefined,
 ): boolean {
   if (!headers) return false;
-  return Object.keys(headers).some((name) => name.toLowerCase() === "authorization");
+  return Object.entries(headers).some(
+    ([name, value]) => name.toLowerCase() === "authorization" && value != null,
+  );
 }
 
 export function scopeString(scopes: string[] | undefined): string | null {
@@ -22,7 +24,7 @@ export function assertOauthBackendConfig(input: {
   placementMode: string;
   auth?: BackendOauthInput | { type: "static" } | null;
   apiKey?: string | null;
-  headers?: Record<string, string> | null;
+  headers?: Record<string, string | null> | null;
 }): void {
   if (!input.auth || input.auth.type !== "oauth") return;
   if (input.transport !== "streamable-http" && input.transport !== "sse") {

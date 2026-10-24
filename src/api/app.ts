@@ -25,8 +25,16 @@ import {
 import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
 import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
 import { hashToken, seal, safeEqualStr } from "../crypto.js";
+import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import { parseEnvMode } from "../db/env-patch.js";
+import {
+  assertPlacementValue,
+  assertSandboxValue,
+  BackendInputError,
+  placementForWrite,
+} from "../db/secret-input.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { clientIp } from "../http/client-ip.js";
@@ -96,6 +104,20 @@ import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 type Variables = {
   auth: AuthContext;
 };
+
+function placementSandboxError(body: {
+  placement?: unknown;
+  sandbox?: unknown;
+}): string | null {
+  try {
+    assertPlacementValue(body.placement);
+    assertSandboxValue(body.sandbox);
+    return null;
+  } catch (err) {
+    if (err instanceof BackendInputError) return err.message;
+    throw err;
+  }
+}
 
 function bearer(header: string | undefined): string | null {
   if (!header) return null;
@@ -572,7 +594,12 @@ export function createApp(
       }
     }
 
-    const placement = body.placement ?? { ...DEFAULT_PLACEMENT };
+    const shapeErr = placementSandboxError(body);
+    if (shapeErr) return c.json({ error: shapeErr }, 400);
+    const placement = placementForWrite(
+      body.placement ?? { ...DEFAULT_PLACEMENT },
+      { ...DEFAULT_PLACEMENT },
+    );
     const verr = validateBackendWrite(
       auth.workspaceId,
       transport,
@@ -609,6 +636,9 @@ export function createApp(
     const body = (await c.req.json()) as UpdateBackendInput;
     const existing = store.getBackend(auth.workspaceId, c.req.param("id"));
     if (!existing) return c.json({ error: "not found" }, 404);
+    if (parseEnvMode(body.envMode) === "invalid") {
+      return c.json({ error: "envMode must be merge or replace" }, 400);
+    }
 
     if (body.url) {
       try {
@@ -620,9 +650,15 @@ export function createApp(
     }
 
     const transport = (body.transport ?? existing.transport) as TransportKind;
+    const storedPlacement = JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT;
+    const fallbackPlacement =
+      storedPlacement && typeof storedPlacement.mode === "string"
+        ? storedPlacement
+        : { ...DEFAULT_PLACEMENT };
     const placement =
-      body.placement ??
-      (JSON.parse(existing.placementJson) as typeof DEFAULT_PLACEMENT);
+      body.placement == null
+        ? fallbackPlacement
+        : placementForWrite(body.placement, fallbackPlacement);
     const merged: UpdateBackendInput = {
       ...body,
       url: body.url !== undefined ? body.url : existing.url,
@@ -634,6 +670,8 @@ export function createApp(
             ? (JSON.parse(existing.commandJson) as string[])
             : null,
     };
+    const shapeErr = placementSandboxError(body);
+    if (shapeErr) return c.json({ error: shapeErr }, 400);
     const verr = validateBackendWrite(
       auth.workspaceId,
       transport,
@@ -644,11 +682,7 @@ export function createApp(
 
     let backend;
     try {
-      backend = store.updateBackend(
-        auth.workspaceId,
-        c.req.param("id"),
-        body,
-      );
+      backend = store.updateBackend(auth.workspaceId, c.req.param("id"), body);
     } catch (err) {
       return c.json(
         { error: err instanceof Error ? err.message : String(err) },
@@ -663,6 +697,7 @@ export function createApp(
       backendSlug: backend.slug,
       placement: backend.placement.mode,
       deviceId: backend.placement.deviceId ?? null,
+      detail: backendUpdateAuditDetail(body),
       ip: clientIp(c),
     });
     return c.json({ backend });

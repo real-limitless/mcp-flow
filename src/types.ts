@@ -166,7 +166,7 @@ export function toolEnabledInWorkingSet(
   working: ReadonlySet<string>,
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
-  if (toolName.startsWith("mf_")) return true;
+  if (/^mf_/i.test(toolName)) return true;
   if (!isDynamicTools(scopes)) return true;
   if (working.has(toolName)) return true;
   return toolMatchesHotPrefix(toolName, scopes);
@@ -330,8 +330,12 @@ export interface BackendPublic {
   command: string[] | null;
   /** True when sealed headers exist — values never returned */
   hasHeaders: boolean;
+  /** Sealed header names. Values are never returned. */
+  headerNames: string[];
   /** True when sealed env exists — values never returned */
   hasEnv: boolean;
+  /** Sealed env names. Values are never returned. */
+  envKeys: string[];
   enabled: boolean;
   toolAllowlist: string[] | null;
   placement: Placement;
@@ -373,12 +377,30 @@ export interface UpdateBackendInput {
   url?: string | null;
   image?: string | null;
   command?: string[] | null;
-  headers?: Record<string, string> | null;
-  /** Merge into Authorization (Bearer prefixed). Does not clear other headers. */
+  /**
+   * Header patch. Default `headerMode` is `merge`: non-blank values set that
+   * header and every other header stays sealed, including Authorization.
+   * `null` deletes one header. Blank keeps it. `headerMode: "replace"` swaps
+   * the map. `headers: null` clears every header.
+   */
+  headers?: Record<string, string | null> | null;
+  /** `merge` (default) or `replace`. */
+  headerMode?: "merge" | "replace";
+  /** Merge into Authorization (Bearer prefixed). Does not clear other headers. A blank value keeps the sealed key. */
   apiKey?: string | null;
+  /**
+   * Env patch. Default `envMode` is `merge`: non-empty values set that key and
+   * every other key stays sealed. `null` deletes one key. `""` keeps it.
+   * `envMode: "replace"` swaps the whole map. `env: null` clears every key.
+   * Values are write-only and are never returned.
+   */
+  env?: Record<string, string | null> | null;
+  /** `merge` (default) or `replace`. */
+  envMode?: "merge" | "replace";
+  /** Env names to delete. Ignored when `env` is null or `envMode` is `replace`. */
+  unsetEnv?: string[];
   /** `oauth` configures a grant. `static` drops it and keeps header auth. */
   auth?: BackendOauthInput | { type: "static" };
-  env?: Record<string, string> | null;
   enabled?: boolean;
   toolAllowlist?: string[] | null;
   placement?: Placement;
@@ -470,13 +492,13 @@ export function toolAllowedByScopes(
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
   // Admin tools only for operator keys
-  if (toolName.startsWith("mf_admin_")) {
+  if (/^mf_admin_/i.test(toolName)) {
     return isAdminScopes(scopes);
   }
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
   if (!scopes?.toolPrefixAllowlist?.length) return true;
   // Admin keys may still use other mf_* metas when prefixes are set
-  if (isAdminScopes(scopes) && toolName.startsWith("mf_")) return true;
+  if (isAdminScopes(scopes) && /^mf_/i.test(toolName)) return true;
   return scopes.toolPrefixAllowlist.some((p) => toolName.startsWith(p));
 }
 
@@ -488,7 +510,7 @@ export function toolAllowedByProject(
   toolName: string,
   project: Project | null | undefined,
 ): boolean {
-  if (toolName.startsWith("mf_")) return true;
+  if (/^mf_/i.test(toolName)) return true;
   if (!project) return true;
   const slug = toolName.split("__")[0] ?? "";
   if (!project.backendSlugs.length) return false;

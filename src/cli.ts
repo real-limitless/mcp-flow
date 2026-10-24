@@ -578,6 +578,7 @@ backendCmd
           ? store.updateBackend(workspaceId, idOrSlug, {
               headers: partial,
               apiKey: opts.apiKey,
+              headerMode: "replace",
             })
           : store.mergeBackendHeaders(workspaceId, idOrSlug, partial);
         if (!backend) {

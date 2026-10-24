@@ -94,7 +94,7 @@ function procStat(pid: number): ProcStat | null {
   }
 }
 
-function isLiving(pid: number): boolean {
+export function isLiving(pid: number): boolean {
   if (process.platform === "linux") {
     const stat = procStat(pid);
     return stat !== null && stat.state !== "Z";
