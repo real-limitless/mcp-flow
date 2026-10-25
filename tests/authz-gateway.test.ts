@@ -148,6 +148,7 @@ async function connectAgent(base: string, token: string): Promise<Client> {
       requestInit: { headers: { Authorization: `Bearer ${token}` } },
     }),
   );
+  await client.listTools();
   return client;
 }
 

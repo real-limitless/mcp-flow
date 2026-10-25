@@ -1,7 +1,7 @@
 // A0: legacy approvals.arguments_json is sealed at rest for new rows and reduced to its
 // sanitized form once the approval resolves. Legacy plaintext rows still read and are never
 // rewritten. Fake values only.
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -242,5 +242,91 @@ describe("approvals.arguments_json at rest", () => {
     } finally {
       await running.close();
     }
+  });
+
+  it("redacts ordinary admin secrets for pending, approved, denied, and expired rows", () => {
+    const stripe = "stripe-placeholder-value";
+    const sig = "sig-placeholder-value";
+    const key = "key-placeholder-value";
+    const nested = "nested-stripe-placeholder";
+    const caseEnv = "case-env-placeholder";
+    const caseHeader = "case-header-placeholder";
+    const secrets = [stripe, sig, key, nested, caseEnv, caseHeader];
+    const args = {
+      idOrSlug: "remote",
+      env: { STRIPE_SK: stripe },
+      headers: { "X-Upstream-Sig": sig },
+      apiKey: key,
+      Env: { SLACK_BOT: caseEnv },
+      HEADERS: { "X-Case": caseHeader },
+      placement: { mode: "remote", env: { STRIPE_SK: nested } },
+      sandbox: { memory: "512m", headers: { "X-Upstream-Sig": sig } },
+    };
+    const { store, path } = open();
+    const ws = store.ensureWorkspace("default");
+    const rule = store.createAuthzRule(ws.id, {
+      name: "admin-update",
+      match: { tools: ["mf_admin_update_backend"] },
+      ttlSeconds: 60,
+    });
+    const agent = store.createApiKey(ws.id, "ops");
+    const make = () =>
+      store.createApproval({
+        workspaceId: ws.id,
+        ruleId: rule.id,
+        keyId: agent.id,
+        tool: "mf_admin_update_backend",
+        arguments: args,
+        backendSlug: "remote",
+        requirement: "notify_approve",
+        ttlSeconds: 60,
+      }).approval;
+    const bytes = () =>
+      Buffer.concat(
+        [path, `${path}-wal`, `${path}-shm`]
+          .filter((file) => existsSync(file))
+          .map((file) => readFileSync(file)),
+      ).toString("utf8");
+    const noSecrets = (text: string) => {
+      for (const secret of secrets) expect(text).not.toContain(secret);
+    };
+
+    const pending = make();
+    expect(String(rawArgs(store, pending.id)).startsWith("enc:v1:")).toBe(true);
+    noSecrets(bytes());
+    noSecrets(JSON.stringify(store.listApprovals(ws.id, { status: "pending" })));
+    noSecrets(JSON.stringify(store.getApproval(ws.id, pending.id)));
+    const pendingView = JSON.stringify(store.listApprovals(ws.id, { status: "all" }));
+    expect(pendingView).toContain("STRIPE_SK");
+    expect(pendingView).toContain("X-Upstream-Sig");
+    expect(pendingView).toContain("[redacted]");
+    expect(store.getApproval(ws.id, pending.id, { redact: false })?.arguments).toEqual(args);
+
+    const denied = make();
+    store.decideApproval(ws.id, denied.id, { status: "denied" });
+    const expired = make();
+    store.expireApproval(ws.id, expired.id);
+    const approved = make();
+    store.decideApproval(ws.id, approved.id, { status: "approved" });
+    noSecrets(JSON.stringify(store.getApproval(ws.id, approved.id)));
+    expect(String(rawArgs(store, approved.id)).startsWith("enc:v1:")).toBe(true);
+    expect(store.consumeApprovedArguments(ws.id, approved.id)).toEqual({
+      ok: true,
+      args,
+    });
+
+    for (const id of [denied.id, expired.id, approved.id]) {
+      const raw = String(rawArgs(store, id));
+      expect(raw.startsWith("san:v1:")).toBe(true);
+      expect(raw).toContain("STRIPE_SK");
+      expect(raw).toContain("X-Upstream-Sig");
+      expect(raw).not.toContain("SLACK_BOT");
+      expect(raw).not.toContain("X-Case");
+      expect(raw).toContain("[redacted]");
+      noSecrets(raw);
+    }
+    noSecrets(bytes());
+    noSecrets(JSON.stringify(store.listApprovals(ws.id, { status: "all" })));
+    store.close();
   });
 });

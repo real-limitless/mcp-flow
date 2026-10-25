@@ -33,7 +33,22 @@ import type {
   Workspace,
   WorkspacePolicy,
 } from "../types.js";
+import {
+  EXACT_ADMIN_TOOL_NAMES,
+  redactAdminToolAuditArgs,
+} from "../audit/redact-admin-args.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
+import { applyEnvPatch } from "./env-patch.js";
+import {
+  applyHeaderPatch,
+  compactEnvRecord,
+  pickKnownKeys,
+  placementForWrite,
+  PLACEMENT_KEYS,
+  SANDBOX_KEYS,
+  validateCreateSecrets,
+  validateUpdateSecrets,
+} from "./secret-input.js";
 import {
   compactSecretRecord,
   normalizeUpstreamHeaders,
@@ -75,7 +90,7 @@ function sealSecretMap(
   const compact =
     kind === "headers"
       ? normalizeUpstreamHeaders(rec)
-      : compactSecretRecord(rec ?? undefined);
+      : compactEnvRecord(rec ?? undefined);
   return compact ? seal(masterKey, compact) : null;
 }
 
@@ -407,9 +422,9 @@ function parsePolicy(raw: unknown): WorkspacePolicy {
 function parseSandbox(raw: unknown): SandboxConfig | null {
   if (raw == null || raw === "") return null;
   try {
-    const s = JSON.parse(String(raw)) as SandboxConfig;
-    if (!s || typeof s !== "object") return null;
-    return s;
+    const picked = pickKnownKeys(JSON.parse(String(raw)), SANDBOX_KEYS);
+    if (!picked || !Object.keys(picked).length) return null;
+    return picked as SandboxConfig;
   } catch {
     return null;
   }
@@ -543,7 +558,9 @@ function rowAuthzRule(r: Record<string, unknown>): AuthzRule {
  */
 function auditIdent(v: string | null | undefined, max = 256): string | null {
   if (v == null) return null;
-  const s = redactSecrets(String(v).slice(0, max * 4)).replace(/[\u0000-\u001f\u007f]/g, "?");
+  const raw = String(v);
+  if (EXACT_ADMIN_TOOL_NAMES.has(raw) && raw.length <= max) return raw;
+  const s = redactSecrets(raw.slice(0, max * 4)).replace(/[\u0000-\u001f\u007f]/g, "?");
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
@@ -655,7 +672,9 @@ function rowApproval(
   const args = readApprovalArgs(masterKey, r.arguments_json).args;
   const redacted =
     redactArgs && args
-      ? (sanitizeForAudit(args) as Record<string, unknown>)
+      ? (sanitizeForAudit(
+          redactAdminToolAuditArgs(String(r.tool), args),
+        ) as Record<string, unknown>)
       : args;
   const requirement =
     parseAuthzRequirement(r.requirement) ?? "notify_approve";
@@ -728,9 +747,11 @@ function toPublicKey(k: ApiKeyRecord): ApiKeyPublic {
 
 function parsePlacement(json: string): Placement {
   try {
-    const p = JSON.parse(json) as Placement;
-    if (!p?.mode) return { ...DEFAULT_PLACEMENT };
-    return p;
+    const picked = pickKnownKeys(JSON.parse(json), PLACEMENT_KEYS);
+    if (!picked || typeof picked.mode !== "string" || !picked.mode) {
+      return { ...DEFAULT_PLACEMENT };
+    }
+    return picked as unknown as Placement;
   } catch {
     return { ...DEFAULT_PLACEMENT };
   }
@@ -750,7 +771,9 @@ export function toPublicBackend(
     image: b.image,
     command: b.commandJson ? (JSON.parse(b.commandJson) as string[]) : null,
     hasHeaders: Boolean(b.headersEnc),
+    headerNames: [],
     hasEnv: Boolean(b.envEnc),
+    envKeys: [],
     enabled: b.enabled,
     toolAllowlist: b.toolAllowlistJson
       ? (JSON.parse(b.toolAllowlistJson) as string[])
@@ -766,6 +789,9 @@ export function toPublicBackend(
 export class Store {
   readonly db: DatabaseSync;
   readonly masterKey: Buffer;
+  private readonly backendRetiredListeners = new Set<
+    (workspaceId: string, slug: string) => void
+  >();
 
   constructor(dbPath: string, masterKeyRaw: string) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
@@ -1137,7 +1163,11 @@ export class Store {
         "slug must be lowercase alphanumeric/underscore/hyphen, start with a letter",
       );
     }
-    const placement = input.placement ?? { ...DEFAULT_PLACEMENT };
+    validateCreateSecrets(input);
+    const placement = placementForWrite(
+      input.placement ?? { ...DEFAULT_PLACEMENT },
+      { ...DEFAULT_PLACEMENT },
+    );
     const transport = input.transport ?? "streamable-http";
     assertOauthBackendConfig({
       transport,
@@ -1147,9 +1177,13 @@ export class Store {
       headers: input.headers,
     });
     const ts = nowIso();
+    const sandboxPicked =
+      input.sandbox != null ? pickKnownKeys(input.sandbox, SANDBOX_KEYS) : undefined;
     const sandboxJson =
       input.sandbox !== undefined && input.sandbox !== null
-        ? JSON.stringify(input.sandbox)
+        ? sandboxPicked && Object.keys(sandboxPicked).length
+          ? JSON.stringify(sandboxPicked)
+          : null
         : null;
     const rec: BackendRecord = {
       id: newId("be"),
@@ -1212,7 +1246,7 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw err;
     }
-    return this.getBackendPublic(workspaceId, rec.id)!;
+    return this.publish(rec);
   }
 
   private oauthConn() {
@@ -1228,7 +1262,7 @@ export class Store {
     const auth = authPublicByWorkspace(this.oauthConn(), workspaceId);
     return rows.map((r) => {
       const backend = rowBackend(r);
-      return toPublicBackend(backend, auth.get(backend.id) ?? { type: "static" });
+      return this.publish(backend, auth.get(backend.id) ?? { type: "static" });
     });
   }
 
@@ -1258,9 +1292,19 @@ export class Store {
     idOrSlug: string,
   ): BackendPublic | null {
     const b = this.getBackend(workspaceId, idOrSlug);
-    return b
-      ? toPublicBackend(b, authPublicForBackend(this.oauthConn(), b.id))
-      : null;
+    return b ? this.publish(b) : null;
+  }
+
+  /** Public view plus sealed key names. Values are never included. */
+  private publish(
+    rec: BackendRecord,
+    auth: BackendPublic["auth"] = authPublicForBackend(this.oauthConn(), rec.id),
+  ): BackendPublic {
+    return {
+      ...toPublicBackend(rec, auth),
+      envKeys: Object.keys(this.decryptEnv(rec)).sort(),
+      headerNames: Object.keys(this.decryptHeaders(rec)).sort(),
+    };
   }
 
   updateBackend(
@@ -1270,6 +1314,7 @@ export class Store {
   ): BackendPublic | null {
     const existing = this.getBackend(workspaceId, idOrSlug);
     if (!existing) return null;
+    validateUpdateSecrets(input);
 
     const title = input.title ?? existing.title;
     const transport = input.transport ?? existing.transport;
@@ -1284,29 +1329,36 @@ export class Store {
           : null
         : existing.commandJson;
     let headersEnc = existing.headersEnc;
-    if (input.headers !== undefined || input.apiKey !== undefined) {
-      if (input.headers === null && !input.apiKey) {
+    let nextHeaders = this.decryptHeaders(existing);
+    const apiKeySets =
+      typeof input.apiKey === "string" && input.apiKey.trim() !== "";
+    if (input.headers !== undefined || apiKeySets) {
+      if (input.headers === null && !apiKeySets) {
         headersEnc = null;
+        nextHeaders = {};
       } else {
-        const base =
-          input.headers === null
-            ? {}
-            : input.headers !== undefined
-              ? input.headers
-              : this.decryptHeaders(existing);
-        headersEnc = sealSecretMap(
-          this.masterKey,
-          withAuthorizationToken(base, input.apiKey),
-          "headers",
+        const patched =
+          input.headers === undefined
+            ? nextHeaders
+            : (applyHeaderPatch(nextHeaders, {
+                headers: input.headers,
+                headerMode: input.headerMode,
+              }).next ?? {});
+        const sealedHeaders = withAuthorizationToken(
+          patched,
+          apiKeySets ? input.apiKey : undefined,
         );
+        nextHeaders = sealedHeaders ?? {};
+        headersEnc = sealSecretMap(this.masterKey, sealedHeaders, "headers");
       }
     }
     let envEnc = existing.envEnc;
-    if (input.env !== undefined) {
+    const envPatch = applyEnvPatch(this.decryptEnv(existing), input);
+    if (envPatch.next !== undefined) {
       envEnc =
-        input.env === null
+        envPatch.next === null
           ? null
-          : sealSecretMap(this.masterKey, input.env, "env");
+          : sealSecretMap(this.masterKey, envPatch.next, "env");
     }
     const enabled =
       input.enabled !== undefined ? input.enabled : existing.enabled;
@@ -1316,23 +1368,27 @@ export class Store {
           ? JSON.stringify(input.toolAllowlist)
           : null
         : existing.toolAllowlistJson;
-    const placementJson = input.placement
-      ? JSON.stringify(input.placement)
-      : existing.placementJson;
+    const placementJson =
+      input.placement != null
+        ? JSON.stringify(
+            placementForWrite(
+              input.placement,
+              parsePlacement(existing.placementJson),
+            ),
+          )
+        : existing.placementJson;
+    const sandboxPicked =
+      input.sandbox != null ? pickKnownKeys(input.sandbox, SANDBOX_KEYS) : undefined;
     const sandboxJson =
       input.sandbox !== undefined
         ? input.sandbox
-          ? JSON.stringify(input.sandbox)
+          ? sandboxPicked && Object.keys(sandboxPicked).length
+            ? JSON.stringify(sandboxPicked)
+            : null
           : null
         : existing.sandboxJson;
     const updatedAt = nowIso();
     const placement = input.placement ?? parsePlacement(existing.placementJson);
-    const nextHeaders =
-      input.headers === null
-        ? {}
-        : input.headers !== undefined
-          ? input.headers
-          : this.decryptHeaders(existing);
     const keepingOauth =
       !input.auth && Boolean(getOauthRow(this.db, existing.id));
     if (input.auth?.type === "oauth" || keepingOauth) {
@@ -1383,7 +1439,17 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw err;
     }
+    this.emitBackendRetired(workspaceId, existing.slug);
     return this.getBackendPublic(workspaceId, existing.id);
+  }
+
+  /** Drop cached upstream tool names when a backend is updated, disabled, or deleted. */
+  onBackendRetired(listener: (workspaceId: string, slug: string) => void): void {
+    this.backendRetiredListeners.add(listener);
+  }
+
+  private emitBackendRetired(workspaceId: string, slug: string): void {
+    for (const listener of this.backendRetiredListeners) listener(workspaceId, slug);
   }
 
   deleteBackend(workspaceId: string, idOrSlug: string): boolean {
@@ -1392,7 +1458,9 @@ export class Store {
     const res = this.db
       .prepare(`DELETE FROM backends WHERE id = ? AND workspace_id = ?`)
       .run(existing.id, workspaceId);
-    return Number(res.changes) > 0;
+    const deleted = Number(res.changes) > 0;
+    if (deleted) this.emitBackendRetired(workspaceId, existing.slug);
+    return deleted;
   }
 
   listEnabledBackends(workspaceId: string): BackendRecord[] {
@@ -1425,7 +1493,8 @@ export class Store {
     if (!existing) return null;
     const current = this.decryptHeaders(existing);
     return this.updateBackend(workspaceId, existing.id, {
-      headers: compactSecretRecord({ ...current, ...partial }) ?? null,
+      headers: compactSecretRecord({ ...current, ...partial }) ?? {},
+      headerMode: "replace",
     });
   }
 
@@ -2119,14 +2188,22 @@ export class Store {
   private retireSealedArgs(workspaceId: string, id: string): boolean {
     const row = this.db
       .prepare(
-        `SELECT arguments_json FROM approvals
+        `SELECT tool, arguments_json FROM approvals
          WHERE id = ? AND workspace_id = ? AND status != 'pending'`,
       )
-      .get(id, workspaceId) as { arguments_json: unknown } | undefined;
+      .get(id, workspaceId) as
+      | { tool: unknown; arguments_json: unknown }
+      | undefined;
     if (!row || !isSealedApprovalArgs(row.arguments_json)) return false;
     const read = readApprovalArgs(this.masterKey, row.arguments_json);
     if (read.state !== "sealed" || !read.args) return false;
-    const safe = APPROVAL_ARGS_SAN_PREFIX + JSON.stringify(sanitizeForAudit(read.args));
+    const safe =
+      APPROVAL_ARGS_SAN_PREFIX +
+      JSON.stringify(
+        sanitizeForAudit(
+          redactAdminToolAuditArgs(String(row.tool ?? ""), read.args),
+        ),
+      );
     const res = this.db
       .prepare(
         `UPDATE approvals SET arguments_json = ?

@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { planEdgeCliArgs } from "./edge-launch.mjs";
 
 const DATA = process.env.MCP_FLOW_DATA_DIR || "/data";
 const SECRETS = `${DATA}/secrets.env`;
@@ -89,22 +90,36 @@ if (verb === "bootstrap") {
 
 if (verb === "edge") {
   const tokenPath = `${DATA}/device-token.txt`;
-  const deadline = Date.now() + 90_000;
-  while (!existsSync(tokenPath) && Date.now() < deadline) {
-    console.error("mcp-flow edge: waiting for /data/device-token.txt");
-    await new Promise((r) => setTimeout(r, 1000));
+  const readTokenFile = () =>
+    existsSync(tokenPath) ? readFileSync(tokenPath, "utf8") : "";
+  let plan = planEdgeCliArgs({
+    args,
+    env: process.env,
+    tokenFromFile: readTokenFile(),
+  });
+  if (plan.waitForTokenFile) {
+    const deadline = Date.now() + 90_000;
+    while (!existsSync(tokenPath) && Date.now() < deadline) {
+      console.error("mcp-flow edge: waiting for /data/device-token.txt");
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (!existsSync(tokenPath)) {
+      console.error(
+        "mcp-flow edge: /data/device-token.txt missing — set MCP_FLOW_DEVICE_TOKEN or start bootstrap first",
+      );
+      process.exit(1);
+    }
+    plan = planEdgeCliArgs({
+      args,
+      env: process.env,
+      tokenFromFile: readTokenFile(),
+    });
   }
-  if (!existsSync(tokenPath)) {
-    console.error("mcp-flow edge: /data/device-token.txt missing — start bootstrap first");
+  if (!plan.cliArgs) {
+    console.error("mcp-flow edge: device token missing");
     process.exit(1);
   }
-  const token = readFileSync(tokenPath, "utf8").trim();
-  const rest = args.slice(1);
-  if (!rest.includes("--url") && !process.env.MCP_FLOW_URL) {
-    rest.push("--url", "http://mcp-flow:8787");
-  }
-  if (!rest.includes("--token")) rest.push("--token", token);
-  await execCli(["edge", ...rest]);
+  await execCli(plan.cliArgs);
   process.exit(0);
 }
 

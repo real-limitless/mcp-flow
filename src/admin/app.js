@@ -840,8 +840,8 @@ function collectKvPairs(root, rowSel, nameSel, valueSel) {
   const out = {};
   root.querySelectorAll(rowSel).forEach((row) => {
     const name = row.querySelector(nameSel)?.value?.trim();
-    const value = (row.querySelector(valueSel)?.value ?? "").trim();
-    if (name && value) out[name] = value;
+    const value = row.querySelector(valueSel)?.value ?? "";
+    if (name && value.trim()) out[name] = value;
   });
   return out;
 }
@@ -929,6 +929,7 @@ const BE_MODE_HINTS = {
 let beLastRemoteTransport = "streamable-http";
 let beLastLocalTransport = "stdio";
 let beTransportKind = "";
+let backendById = new Map();
 
 function allowedPlacementModes(modes) {
   const have = modes || [];
@@ -1258,6 +1259,7 @@ function backendsTableHtml(backends) {
               <td><span class="pill ${authClass}"${oauth?.clientId ? ` title="client ${esc(oauth.clientId)}"` : ""}>${esc(authLabel)}</span></td>
               <td><span class="pill ${b.enabled ? "on" : "off"}">${b.enabled ? "on" : "off"}</span></td>
               <td class="row-actions">
+                <button type="button" class="pill-btn ghost" data-be-edit="${esc(b.id)}">Edit</button>
                 ${oauthActions}
                 <button type="button" class="pill-btn" data-test="${esc(b.id)}">Test</button>
                 <button type="button" class="pill-btn ghost" data-toggle="${esc(b.id)}" data-en="${b.enabled ? "0" : "1"}">${b.enabled ? "Disable" : "Enable"}</button>
@@ -1271,6 +1273,7 @@ function backendsTableHtml(backends) {
           </tbody>
         </table>
       </div>
+      <div id="beEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px"></div>
       <div id="beOutWrap" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35)">
         <div class="once-label" style="color: var(--accent-hot)">Test result</div>
         <pre id="beOut"></pre>
@@ -1308,8 +1311,8 @@ async function onCreateBackend() {
         if (scopes.length) auth.scopes = scopes;
         body.auth = auth;
       } else {
-        const apiKey = $("#beApiKey")?.value?.trim();
-        if (apiKey) body.apiKey = apiKey;
+        const apiKey = $("#beApiKey")?.value ?? "";
+        if (apiKey.trim()) body.apiKey = apiKey;
       }
       if (Object.keys(headers).length) body.headers = headers;
     } else {
@@ -1363,6 +1366,134 @@ function wireBackendForm() {
   syncBackendFormFields();
 }
 
+function envEditRowHtml(name, existing) {
+  return `
+    <div class="hdr-row" data-env-row ${existing ? 'data-env-existing="1"' : ""}>
+      <input data-env-name type="text" placeholder="ENV_NAME" value="${esc(name)}" ${existing ? "readonly" : ""} autocomplete="off" />
+      <input data-env-value type="password" placeholder="${existing ? "leave blank to keep" : "value (sealed)"}" value="" autocomplete="new-password" />
+      <button type="button" class="pill-btn ghost" data-env-rm title="${existing ? "Delete key" : "Remove"}">×</button>
+    </div>`;
+}
+
+function backendEditHtml(b) {
+  const remote =
+    b.transport === "streamable-http" ||
+    b.transport === "sse" ||
+    b.placement?.mode === "remote";
+  const envKeys = Array.isArray(b.envKeys) ? b.envKeys : [];
+  const headerNames = Array.isArray(b.headerNames) ? b.headerNames : [];
+  const hasApiKey = headerNames.some(
+    (n) => String(n).toLowerCase() === "authorization",
+  );
+  return `
+    <div class="once-label" style="color:var(--accent-hot)">
+      Edit · <span class="mono">${esc(b.slug)}</span>
+    </div>
+    <p class="muted" style="margin:8px 0 12px;font-size:12px">
+      Secret values stay sealed and are never shown. Leave a field blank to keep it.
+      Removing an env row deletes that key and leaves the others in place.
+    </p>
+    <div class="form-grid">
+      ${
+        remote
+          ? `<div class="form-field" style="grid-column: 1 / -1">
+              <label class="field-label" for="beEditUrl">URL</label>
+              <input id="beEditUrl" value="${esc(b.url || "")}" autocomplete="off" />
+            </div>
+            <div class="form-field" style="grid-column: 1 / -1">
+              <label class="field-label" for="beEditApiKey">API key</label>
+              <input id="beEditApiKey" type="password" value="" placeholder="${hasApiKey ? "leave blank to keep" : "optional — sealed as Authorization"}" autocomplete="new-password" />
+            </div>`
+          : ""
+      }
+    </div>
+    <div class="hdr-editor" style="margin-top:12px">
+      <div class="hdr-editor-head">
+        <span class="field-label" style="margin:0">Environment</span>
+        <button type="button" class="pill-btn ghost" data-env-add>+ Add env</button>
+      </div>
+      <div data-env-list class="hdr-list">${envKeys.map((name) => envEditRowHtml(name, true)).join("")}</div>
+      <p class="dim hdr-hint">Names only. A new value replaces that one key.</p>
+    </div>
+    <div class="row-actions" style="margin-top:12px">
+      <button type="button" class="pill-btn primary" data-be-save>Save</button>
+      <button type="button" class="pill-btn ghost" data-be-cancel>Cancel</button>
+    </div>
+  `;
+}
+
+function openBackendEditor(b) {
+  const panel = $("#beEdit");
+  if (!panel || !b) return;
+  const dropped = new Set();
+  panel.hidden = false;
+  panel.innerHTML = backendEditHtml(b);
+  const list = panel.querySelector("[data-env-list]");
+  const bindRm = (btn) => {
+    btn.addEventListener("click", () => {
+      const row = btn.closest("[data-env-row]");
+      if (!row) return;
+      if (row.getAttribute("data-env-existing") === "1") {
+        const name = row.querySelector("[data-env-name]")?.value?.trim();
+        if (name) dropped.add(name);
+      }
+      row.remove();
+    });
+  };
+  list?.querySelectorAll("[data-env-rm]").forEach(bindRm);
+  panel.querySelector("[data-env-add]")?.addEventListener("click", () => {
+    list.insertAdjacentHTML("beforeend", envEditRowHtml("", false));
+    const btn = list.querySelector("[data-env-row]:last-child [data-env-rm]");
+    if (btn) bindRm(btn);
+  });
+  panel.querySelector("[data-be-cancel]")?.addEventListener("click", () => {
+    panel.hidden = true;
+    panel.innerHTML = "";
+  });
+  panel.querySelector("[data-be-save]")?.addEventListener("click", () => {
+    void saveBackendEdit(b, panel, dropped);
+  });
+  panel.scrollIntoView({ block: "nearest" });
+}
+
+async function saveBackendEdit(backend, panel, dropped) {
+  try {
+    const body = {};
+    const urlEl = panel.querySelector("#beEditUrl");
+    if (urlEl) {
+      const url = urlEl.value.trim();
+      if (!url) throw new Error("url required");
+      if (url !== (backend.url || "")) body.url = url;
+    }
+    const apiKey = panel.querySelector("#beEditApiKey")?.value ?? "";
+    if (apiKey.trim()) body.apiKey = apiKey;
+    const env = {};
+    panel.querySelectorAll("[data-env-row]").forEach((row) => {
+      const name = row.querySelector("[data-env-name]")?.value?.trim();
+      const value = row.querySelector("[data-env-value]")?.value ?? "";
+      if (name && value.trim()) env[name] = value;
+    });
+    if (Object.keys(env).length) {
+      body.env = env;
+      body.envMode = "merge";
+    }
+    const unsetEnv = [...dropped].filter((name) => !Object.prototype.hasOwnProperty.call(env, name));
+    if (unsetEnv.length) body.unsetEnv = unsetEnv;
+    if (!Object.keys(body).length) {
+      throw new Error("Nothing to update. Blank secrets are left unchanged.");
+    }
+    await api(`/v1/backends/${backend.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    const keyEl = panel.querySelector("#beEditApiKey");
+    if (keyEl) keyEl.value = "";
+    await renderBackends();
+  } catch (e) {
+    showErr(e.message);
+  }
+}
+
 function setOauthRedirectHint(uri) {
   const el = $("#beOauthRedirect");
   if (!el) return;
@@ -1404,6 +1535,12 @@ async function pollDeviceLogin(id, intervalSeconds) {
 
 function wireBackendTable(root) {
   const scope = root || $("#beListMount") || document;
+  scope.querySelectorAll("[data-be-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-be-edit");
+      openBackendEditor(backendById.get(id));
+    });
+  });
   scope.querySelectorAll("[data-oauth-start]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       try {
@@ -1502,6 +1639,7 @@ async function renderBackends() {
   ]);
   const devices = devicesRes.devices || [];
   const modes = wsRes.placementModes || ["remote", "central-sandbox"];
+  backendById = new Map(backends.map((b) => [b.id, b]));
   const formMounted = Boolean($("#beAddForm"));
   const oauthRedirectUri = wsRes.oauthRedirectUri || "";
 

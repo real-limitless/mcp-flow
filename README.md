@@ -252,6 +252,27 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
+### Edge only
+
+`docker-compose.edge.yaml` runs just the edge agent and connects it to an mcp-flow server that is already up. It does not start the gateway, bootstrap, or any other service. Set two variables — nothing in the file is a real address or token:
+
+| Variable | Meaning |
+| --- | --- |
+| `MCP_FLOW_URL` | Base URL of the existing server, for example `https://mcp-flow.example` |
+| `MCP_FLOW_DEVICE_TOKEN` | Device token from enroll (shown once). Placeholder: `replace-with-device-token` |
+
+Optional: `MCP_FLOW_EDGE_NAME` (default `edge`). The device token stays in the environment. The compose command does not put it on the process command line.
+
+Plain Compose, from a fresh checkout:
+
+```bash
+MCP_FLOW_URL=https://mcp-flow.example \
+MCP_FLOW_DEVICE_TOKEN=replace-with-device-token \
+docker compose -f docker-compose.edge.yaml up --build -d
+```
+
+Dokploy: create a compose application from `docker-compose.edge.yaml` and set `MCP_FLOW_URL` and `MCP_FLOW_DEVICE_TOKEN` in that application's environment. Dokploy interpolates those variables into the edge service. Do not commit the token. After the container is running it dials `MCP_FLOW_URL` with the device token and shows up as an online device on the server.
+
 Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN. Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
 
 ### Admin REST
@@ -265,7 +286,7 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 | `DELETE` | `/v1/keys/:id` | Revoke |
 | `POST` | `/v1/backends` | Create (GET redacts sealed headers/env) |
 | `GET` | `/v1/backends` | List (redacted) |
-| `PATCH` | `/v1/backends/:id` | Update / enable |
+| `PATCH` | `/v1/backends/:id` | Update / enable. `env` and `headers` merge per key (`envMode=replace` or `headerMode=replace` swaps that map; `unsetEnv`, a null env value, or a null header value deletes one key). A non-blank `apiKey` updates Authorization and keeps the other headers. Responses list `envKeys` and `headerNames` only — values are never returned. |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
 | `POST` | `/v1/backends/:id/oauth/start` | OAuth consent URL (PKCE). Tokens stay sealed |
 | `POST` | `/v1/backends/:id/oauth/revoke` | Drop the grant; keep the client registration |
