@@ -31,6 +31,7 @@ Stack: **TypeScript / Node ≥ 22**, Hono HTTP, MCP SDK, SQLite (`node:sqlite`),
 8. **Do not commit** `catalog/entries/`, `catalog/index.json`, or `site/out/` (gitignored). Publish data via **`catalog-data` branch** or CI.
 9. **No force-push `main`**, no commit unless the user asks.
 10. Prefer shared contracts/fixtures with OpenFlow over silent drift.
+11. No production or environment URLs in code or descriptions.
 
 ---
 
