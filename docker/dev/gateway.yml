@@ -1,0 +1,50 @@
+# DEV gateway service. Included by docker-compose.dev.yml.
+# This file sits in docker/dev/, so the build context and env file point at
+# the repo root. Do not change those relative paths to ".".
+
+services:
+  mcp-flow-dev:
+    build:
+      context: ../..
+      target: gateway
+    image: mcp-flow-dev:local
+    container_name: mcp-flow-dev
+    restart: unless-stopped
+    init: true
+    expose:
+      - "8787"
+    env_file:
+      - path: ../../.env.dev
+        required: false
+    environment:
+      ENVIRONMENT: staging
+      MCP_FLOW_MASTER_KEY: ${MCP_FLOW_DEV_MASTER_KEY:-}
+      MCP_FLOW_ADMIN_TOKEN: ${MCP_FLOW_DEV_ADMIN_TOKEN:-}
+      MCP_FLOW_HOST: "0.0.0.0"
+      MCP_FLOW_PORT: "8787"
+      MCP_FLOW_DATA_DIR: /data
+      MCP_FLOW_DB_PATH: /data/mcp-flow.db
+      MCP_FLOW_LOCK_PATH: /data/mcp-flow.lock
+      MCP_FLOW_WORKSPACE_NAME: ${MCP_FLOW_DEV_WORKSPACE_NAME:-default}
+      MCP_FLOW_ALLOW_PRIVATE_URLS: "false"
+      MCP_FLOW_REFUSE_LEGACY_MCP_KEYS: "true"
+      MCP_FLOW_CORS_ORIGINS: "${MCP_FLOW_DEV_CORS_ORIGINS:-}"
+      MCP_FLOW_PUBLIC_URL: "${MCP_FLOW_DEV_PUBLIC_URL:-https://mcp-flow-dev.example.com}"
+      MCP_FLOW_TRUST_PROXY: "true"
+      MCP_FLOW_AUDIT_MAX_DETAIL_BYTES: ${MCP_FLOW_DEV_AUDIT_MAX_DETAIL_BYTES:-65536}
+    volumes:
+      - mcp-flow-dev-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    networks:
+      - mcp-flow-dev

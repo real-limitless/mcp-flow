@@ -9,9 +9,16 @@
 # tailnet identity. Pass --env-file .env.dev. On Dokploy, set those variables
 # on this app and build from the git commit.
 #
-# No host ports. Every service joins only the network named mcp-flow-dev.
-# Do not attach another network. Stop this project before starting it again.
+# No host ports. By default every service joins only the network named
+# mcp-flow-dev. Stop this project before starting it again.
 # One process uses /data/mcp-flow.db on the volume named mcp-flow-dev-data.
+#
+# The gateway service is docker/dev/gateway.yml. A non-empty
+# MCP_FLOW_DEV_PUBLIC_HOST (hostname only) includes
+# docker/dev/gateway-public.yml instead, which extends that service onto the
+# external Dokploy network and adds host-Traefik labels. Unset or empty keeps
+# the tailnet-only stack: no Dokploy network and no Traefik labels.
+# mcp-flow-dev-traefik and mcp-flow-dev-tailscale stay as they are either way.
 #
 # After boot, create project slug mcp_flow_dev in Admin. Day-1 backends are
 # echo and health only. This file does not register backends, does not start
@@ -24,60 +31,20 @@
 # - MCP_FLOW_REFUSE_LEGACY_MCP_KEYS, MCP_FLOW_CORS_ORIGINS, and
 #   MCP_FLOW_LOCK_PATH are not read. CORS is origin "*" in src/api/app.ts.
 #   SQLite WAL files are created beside the db file. No lock file is taken.
-# - MCP_FLOW_ALLOW_PRIVATE_URLS is read. The code default is false. This
-#   file sets false. docker-compose.yml defaults that variable to true.
+# - MCP_FLOW_ALLOW_PRIVATE_URLS is read. The code default is false. The
+#   gateway fragment sets false. docker-compose.yml defaults that variable to true.
 # - resolveRedirectUri() in src/oauth/origin.ts uses the origin of
 #   MCP_FLOW_PUBLIC_URL plus /oauth/callback. Keep an https origin, no path.
 
 name: mcp-flow-dev
 
-services:
-  mcp-flow-dev:
-    build:
-      context: .
-      target: gateway
-    image: mcp-flow-dev:local
-    container_name: mcp-flow-dev
-    restart: unless-stopped
-    init: true
-    expose:
-      - "8787"
-    env_file:
-      - path: .env.dev
-        required: false
-    environment:
-      ENVIRONMENT: staging
-      MCP_FLOW_MASTER_KEY: ${MCP_FLOW_DEV_MASTER_KEY:-}
-      MCP_FLOW_ADMIN_TOKEN: ${MCP_FLOW_DEV_ADMIN_TOKEN:-}
-      MCP_FLOW_HOST: "0.0.0.0"
-      MCP_FLOW_PORT: "8787"
-      MCP_FLOW_DATA_DIR: /data
-      MCP_FLOW_DB_PATH: /data/mcp-flow.db
-      MCP_FLOW_LOCK_PATH: /data/mcp-flow.lock
-      MCP_FLOW_WORKSPACE_NAME: ${MCP_FLOW_DEV_WORKSPACE_NAME:-default}
-      MCP_FLOW_ALLOW_PRIVATE_URLS: "false"
-      MCP_FLOW_REFUSE_LEGACY_MCP_KEYS: "true"
-      MCP_FLOW_CORS_ORIGINS: "${MCP_FLOW_DEV_CORS_ORIGINS:-}"
-      MCP_FLOW_PUBLIC_URL: "${MCP_FLOW_DEV_PUBLIC_URL:-https://mcp-flow-dev.example.com}"
-      MCP_FLOW_TRUST_PROXY: "true"
-      MCP_FLOW_AUDIT_MAX_DETAIL_BYTES: ${MCP_FLOW_DEV_AUDIT_MAX_DETAIL_BYTES:-65536}
-    volumes:
-      - mcp-flow-dev-data:/data
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
-        ]
-      interval: 10s
-      timeout: 3s
-      retries: 10
-      start_period: 15s
-    networks:
-      - mcp-flow-dev
+# Compose include cannot merge into a service defined in this file. The
+# gateway therefore lives in a fragment, and this path picks the fragment.
+# ${VAR:+-public} is "-public" only when the host is non-empty.
+include:
+  - path: ./docker/dev/gateway${MCP_FLOW_DEV_PUBLIC_HOST:+-public}.yml
 
+services:
   mcp-flow-dev-bootstrap:
     build:
       context: .

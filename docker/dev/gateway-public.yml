@@ -1,0 +1,33 @@
+# Included only when MCP_FLOW_DEV_PUBLIC_HOST is non-empty.
+# Extends docker/dev/gateway.yml, joins the external Dokploy network, and
+# adds labels for the host Traefik. No host ports. The in-stack Traefik and
+# Tailscale services are not in this file.
+#
+# Defaults match Dokploy's usual network (dokploy-network), HTTPS entrypoint
+# (websecure), and certificate resolver (letsencrypt). Override
+# MCP_FLOW_DEV_DOKPLOY_NETWORK, MCP_FLOW_DEV_TRAEFIK_ENTRYPOINT, and
+# MCP_FLOW_DEV_TRAEFIK_CERTRESOLVER when this host's dokploy-traefik differs.
+# MCP_FLOW_DEV_PUBLIC_HOST is a hostname only: no scheme, path, or port.
+
+services:
+  mcp-flow-dev:
+    extends:
+      file: gateway.yml
+      service: mcp-flow-dev
+    networks:
+      mcp-flow-dev: {}
+      dokploy: {}
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: ${MCP_FLOW_DEV_DOKPLOY_NETWORK:-dokploy-network}
+      traefik.http.routers.mcp-flow-dev.rule: "Host(`${MCP_FLOW_DEV_PUBLIC_HOST:?Set MCP_FLOW_DEV_PUBLIC_HOST to a hostname}`)"
+      traefik.http.routers.mcp-flow-dev.entrypoints: ${MCP_FLOW_DEV_TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.mcp-flow-dev.tls: "true"
+      traefik.http.routers.mcp-flow-dev.tls.certresolver: ${MCP_FLOW_DEV_TRAEFIK_CERTRESOLVER:-letsencrypt}
+      traefik.http.routers.mcp-flow-dev.service: mcp-flow-dev
+      traefik.http.services.mcp-flow-dev.loadbalancer.server.port: "8787"
+
+networks:
+  dokploy:
+    name: ${MCP_FLOW_DEV_DOKPLOY_NETWORK:-dokploy-network}
+    external: true
