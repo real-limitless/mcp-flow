@@ -38,7 +38,22 @@ function parseScopes(raw: string | null): ApiKeyScopes | null {
   try {
     const s = JSON.parse(raw) as ApiKeyScopes;
     if (!s || typeof s !== "object") return null;
-    return s.admin ? { admin: true } : null;
+    const out: ApiKeyScopes = {};
+    if (s.admin === true) out.admin = true;
+    if (Array.isArray(s.toolPrefixAllowlist) && s.toolPrefixAllowlist.length) {
+      out.toolPrefixAllowlist = s.toolPrefixAllowlist.map(String);
+    }
+    if (Array.isArray(s.projects) && s.projects.length) {
+      out.projects = s.projects.map(String);
+    }
+    if (typeof s.defaultProject === "string" && s.defaultProject) {
+      out.defaultProject = s.defaultProject;
+    }
+    if (s.dynamicTools === true) out.dynamicTools = true;
+    if (Array.isArray(s.dynamicToolsHot) && s.dynamicToolsHot.length) {
+      out.dynamicToolsHot = s.dynamicToolsHot.map(String);
+    }
+    return Object.keys(out).length ? out : null;
   } catch {
     return null;
   }

@@ -1642,7 +1642,9 @@ export function createApp(
         400,
       );
     }
-    const { scope, scopes } = normalizeOauthScope(formValue(body, "scope"));
+    const requested = normalizeOauthScope(formValue(body, "scope"));
+    let scope = requested.scope;
+    let scopes = requested.scopes;
     const back = (error: string) =>
       c.html(
         consentPage({
@@ -1657,19 +1659,27 @@ export function createApp(
         }),
         401,
       );
+    const credential = adminToken.trim().replace(/^bearer\s+/i, "").trim();
     let approver: { workspaceId: string; keyId: string | null } | null = null;
-    if (cfg.adminToken && safeEqualStr(adminToken, cfg.adminToken)) {
+    if (cfg.adminToken && safeEqualStr(credential, cfg.adminToken)) {
       approver = {
         workspaceId: store.ensureWorkspace(cfg.workspaceName).id,
         keyId: null,
       };
     } else {
-      const key = store.authenticateApiKey(adminToken);
-      if (key && isAdminScopes(key.scopes)) {
+      const key = store.authenticateApiKey(credential);
+      if (key) {
         approver = { workspaceId: key.workspaceId, keyId: key.keyId };
+        // The connector cannot outrank the key that approved it.
+        scopes = key.scopes;
+        scope = key.scopes?.admin ? "mcp mcp:admin" : "mcp";
       }
     }
-    if (!approver) return back("Admin token was not accepted.");
+    if (!approver) {
+      return back(
+        "That key was not accepted. Paste an agent key (mf_…) from Keys, or the admin token.",
+      );
+    }
     const location = new URL(redirectUri);
     if (decision !== "allow") {
       location.searchParams.set("error", "access_denied");

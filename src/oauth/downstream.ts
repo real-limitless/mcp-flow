@@ -148,8 +148,9 @@ export function consentPage(input: {
     ${hidden("state", input.state)}
     ${hidden("code_challenge", input.codeChallenge)}
     ${hidden("resource", input.resource)}
-    <label for="admin_token">Admin token</label>
+    <label for="admin_token">Agent key or admin token</label>
     <input id="admin_token" name="admin_token" type="password" autocomplete="off" required />
+    <p>The connector gets this key's scopes. Paste an <code>mf_…</code> key from Keys, or the admin token.</p>
     <div class="row">
       <button class="allow" name="decision" value="allow" type="submit">Allow</button>
       <button class="deny" name="decision" value="deny" type="submit">Deny</button>

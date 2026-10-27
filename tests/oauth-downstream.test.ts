@@ -203,4 +203,68 @@ describe("downstream OAuth login", () => {
     });
     expect(after.status).toBe(401);
   });
+
+  it("accepts an agent key and copies that key's scopes onto the grant", async () => {
+    const gw = await boot();
+    const headers = {
+      Authorization: `Bearer ${admin}`,
+      "Content-Type": "application/json",
+    };
+    const created = await fetch(`${gw.url}/v1/keys`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        name: "cursor",
+        toolPrefixAllowlist: ["github__"],
+      }),
+    });
+    expect(created.status).toBe(201);
+    const agentKey = ((await created.json()) as { key: { token: string } }).key.token;
+    expect(agentKey.startsWith("mf_")).toBe(true);
+
+    const connector = (await (
+      await fetch(`${gw.url}/v1/oauth/connector`, {
+        headers: { Authorization: `Bearer ${admin}` },
+      })
+    ).json()) as { clientId: string };
+    const { verifier, challenge } = pkce();
+    const redirectUri = "http://127.0.0.1:9/cb";
+    const allowed = await fetch(`${gw.url}/oauth/authorize`, {
+      method: "POST",
+      body: new URLSearchParams({
+        client_id: connector.clientId,
+        redirect_uri: redirectUri,
+        code_challenge: challenge,
+        scope: "mcp:admin",
+        state: "agent",
+        decision: "allow",
+        admin_token: `Bearer ${agentKey}`,
+      }),
+      redirect: "manual",
+    });
+    expect(allowed.status).toBe(303);
+    const code = new URL(allowed.headers.get("location")!).searchParams.get("code");
+    expect(code).toBeTruthy();
+    const tokenRes = await fetch(`${gw.url}/oauth/token`, {
+      method: "POST",
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code!,
+        redirect_uri: redirectUri,
+        client_id: connector.clientId,
+        code_verifier: verifier,
+      }),
+    });
+    const token = (await tokenRes.json()) as { scope: string };
+    expect(token.scope).toBe("mcp");
+    const grants = (await (
+      await fetch(`${gw.url}/v1/oauth/grants`, {
+        headers: { Authorization: `Bearer ${admin}` },
+      })
+    ).json()) as {
+      grants: Array<{ scopes: { admin?: boolean; toolPrefixAllowlist?: string[] } | null }>;
+    };
+    expect(grants.grants[0]?.scopes?.admin).toBeUndefined();
+    expect(grants.grants[0]?.scopes?.toolPrefixAllowlist).toEqual(["github__"]);
+  });
 });
