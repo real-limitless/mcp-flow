@@ -105,7 +105,7 @@ Prefer operator keys over pasting the env admin token into IDE config (revocable
 
 Clients that ask for an OAuth client id, authorization endpoint, and token endpoint (Grok's custom connector) use the values on **Admin → Keys → OAuth connector**. Leave the client secret empty. Token auth method is `none` (PKCE). Scope `mcp` is an agent; `mcp:admin` is an operator.
 
-A client that discovers MCP OAuth reads `/.well-known/oauth-protected-resource/mcp`, then the authorization server metadata, and does not need that form. Dynamic registration is `POST /oauth/register`. The consent page asks for the admin token, then the gateway issues a bearer for `/mcp`. Grants are listed and revoked next to keys. Access tokens are stored as SHA-256 hashes, not returned by the API.
+A client that discovers MCP OAuth reads `/.well-known/oauth-protected-resource/mcp`, then the authorization server metadata, and does not need that form. Dynamic registration is `POST /oauth/register`. The consent page accepts an agent key from Keys, or the admin token. The connector receives that key's scopes and cannot gain operator access from an agent key. Grants are listed and revoked next to keys. Access tokens are stored as SHA-256 hashes, not returned by the API.
 
 ### Projects (per-chat tool collections)
 
