@@ -187,6 +187,7 @@ function loadWrapped(dir: string, kekFile: string, production: boolean, now: num
     argsEnc: material.get("args-enc")!,
     resultEnc: material.get("result-enc")!,
     auditEnc: material.get("audit-enc")!,
+    secretsIndex: material.get("secrets-index")!,
     keyRef: version,
     legacy: loadDevSlot(dir, kek, production, now),
   };
