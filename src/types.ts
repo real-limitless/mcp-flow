@@ -374,6 +374,11 @@ export interface CreateBackendInput {
 export interface UpdateBackendInput {
   title?: string;
   transport?: TransportKind;
+  /**
+   * Upstream URL. Changing scheme, host, or port drops sealed headers, the
+   * stored apiKey, and OAuth tokens unless this update supplies new headers
+   * or a new apiKey. OAuth tokens are always dropped on an origin change.
+   */
   url?: string | null;
   image?: string | null;
   command?: string[] | null;

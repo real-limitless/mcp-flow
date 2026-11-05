@@ -62,11 +62,13 @@ import { assertOauthBackendConfig } from "../oauth/policy.js";
 import {
   authPublicByWorkspace,
   authPublicForBackend,
+  clearOauthTokens,
   deleteOauthBackend,
   getOauthRow,
   insertOauthBackend,
   upsertOauthSettings,
 } from "./oauth-store.js";
+import { urlOriginChanged } from "./url-origin.js";
 import {
   authzMatchHasConstraint,
   clampAuthzTtl,
@@ -1353,6 +1355,14 @@ export class Store {
     let nextHeaders = this.decryptHeaders(existing);
     const apiKeySets =
       typeof input.apiKey === "string" && input.apiKey.trim() !== "";
+    const originsDiffer = urlOriginChanged(existing.url, url);
+    if (originsDiffer) {
+      // Headers and apiKey authenticate the previous origin. A scheme, host,
+      // or port change drops them. Only values re-supplied in this update
+      // are sealed for the new origin. A blank "keep" does not count.
+      nextHeaders = {};
+      headersEnc = null;
+    }
     if (input.headers !== undefined || apiKeySets) {
       if (input.headers === null && !apiKeySets) {
         headersEnc = null;
@@ -1454,6 +1464,20 @@ export class Store {
         deleteOauthBackend(this.db, existing.id);
       } else if (input.auth?.type === "oauth") {
         upsertOauthSettings(this.oauthConn(), existing.id, input.auth);
+      }
+      if (
+        originsDiffer &&
+        input.auth?.type !== "static" &&
+        getOauthRow(this.db, existing.id)
+      ) {
+        // Tokens are bound to the previous origin and cannot be re-supplied
+        // on this update. Client id and client secret stay; the grant must
+        // be authorized again.
+        clearOauthTokens(
+          this.oauthConn(),
+          existing.id,
+          "upstream origin changed",
+        );
       }
       this.db.exec("COMMIT");
     } catch (err) {

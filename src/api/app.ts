@@ -724,7 +724,7 @@ export function createApp(
       backendSlug: backend.slug,
       placement: backend.placement.mode,
       deviceId: backend.placement.deviceId ?? null,
-      detail: backendUpdateAuditDetail(body),
+      detail: backendUpdateAuditDetail(body, { previousUrl: existing.url }),
       ip: clientIp(c),
     });
     return c.json({ backend });

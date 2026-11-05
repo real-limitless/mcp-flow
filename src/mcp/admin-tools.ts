@@ -143,7 +143,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
   {
     name: "mf_admin_update_backend",
     description:
-      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). Secret values are write-only. Requires admin key.",
+      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). A URL change of scheme, host, or port clears sealed headers, apiKey, and OAuth tokens unless this update supplies replacements. Secret values are write-only. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -151,14 +151,18 @@ export const ADMIN_META_TOOLS: Tool[] = [
         enabled: { type: "boolean" },
         title: { type: "string" },
         transport: { type: "string" },
-        url: { type: ["string", "null"] },
+        url: {
+          type: ["string", "null"],
+          description:
+            "Changing scheme, host, or port clears sealed headers, apiKey, and OAuth tokens unless this update supplies replacements.",
+        },
         image: { type: ["string", "null"] },
         command: { type: ["array", "null"], items: { type: "string" } },
         headers: {
           type: ["object", "null"],
           additionalProperties: { type: ["string", "null"] },
           description:
-            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced.",
+            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced. An origin change drops every header this update does not set.",
         },
         headerMode: {
           type: "string",
@@ -891,7 +895,7 @@ export async function handleAdminTool(
           "backend.update",
           {
             via: "mf_admin",
-            ...backendUpdateAuditDetail(body),
+            ...backendUpdateAuditDetail(body, { previousUrl: existing.url }),
           },
           { backendSlug: backend.slug },
         );
