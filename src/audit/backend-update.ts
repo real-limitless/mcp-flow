@@ -1,3 +1,4 @@
+import { urlOrigin, urlOriginChanged } from "../db/url-origin.js";
 import type { UpdateBackendInput } from "../types.js";
 
 /**
@@ -71,6 +72,7 @@ function unsetNames(raw: unknown): string[] {
 
 export function backendUpdateAuditDetail(
   input: UpdateBackendInput,
+  context?: { previousUrl?: string | null },
 ): Record<string, unknown> {
   const changed: string[] = [];
   for (const field of SCALAR_FIELDS) {
@@ -125,6 +127,15 @@ export function backendUpdateAuditDetail(
       if (set.length) detail.envSet = named(set);
       if (unset.length) detail.envUnset = named(unset);
     }
+  }
+
+  if (
+    context &&
+    input.url !== undefined &&
+    urlOriginChanged(context.previousUrl, input.url)
+  ) {
+    detail.previousOrigin = urlOrigin(context.previousUrl);
+    detail.origin = urlOrigin(input.url);
   }
 
   detail.changed = fields(changed);

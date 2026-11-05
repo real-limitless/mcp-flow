@@ -1,11 +1,14 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
+import { DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS, DEFAULT_BACKEND_INIT_TIMEOUT_MS } from "../config.js";
 import { type Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
 import type { BackendRecord, Placement } from "../types.js";
+import { splitQualifiedToolName } from "../types.js";
 import { connectOci } from "./runners/oci.js";
 import {
   armStdioReap,
@@ -13,7 +16,6 @@ import {
   disarmStdioReap,
   isLiving,
   killLiveStdio,
-  STDIO_GROUP_KILL_BUDGET_MS,
 } from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { redactLog } from "../log/redact-lines.js";
@@ -38,15 +40,15 @@ export function namespaceTool(slug: string, name: string): string {
 /** tools/call result plus whether a request was sent to the backend. */
 export type UpstreamCallResult = CallToolResult & { sent: boolean };
 
+/**
+ * Split "slug__tool". Pass the workspace's backend slugs so a legacy slug containing "__" resolves to
+ * the longest matching backend (QA v5.6 check 6); without them the first "__" splits.
+ */
 export function parseNamespacedTool(
   namespaced: string,
+  slugs?: Iterable<string>,
 ): { slug: string; tool: string } | null {
-  const idx = namespaced.indexOf("__");
-  if (idx <= 0) return null;
-  return {
-    slug: namespaced.slice(0, idx),
-    tool: namespaced.slice(idx + 2),
-  };
+  return splitQualifiedToolName(namespaced, slugs);
 }
 
 interface PooledClient {
@@ -66,14 +68,11 @@ interface PooledClient {
 const TOOL_CACHE_MS = 30_000;
 
 /**
- * How long closeAll waits for an in-flight connect before killing the spawn.
- * 10s shutdown − 8s drain − process-group kill. A slow npx install or a hung
- * initialize cannot stretch shutdown past that budget.
+ * How long closeAll waits for an in-flight connect before killing the spawn. A slow npx install or a
+ * hung initialize cannot stretch shutdown past the budget: 7 s max grace + this + the 1 s group kill
+ * leaves >= 1 s of the 10 s stop budget (V53 headroom; asserted in server.ts and tests).
  */
-export const INFLIGHT_CLOSE_DEADLINE_MS = Math.max(
-  0,
-  10_000 - 8_000 - STDIO_GROUP_KILL_BUDGET_MS,
-);
+export const INFLIGHT_CLOSE_DEADLINE_MS = 500;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -153,6 +152,86 @@ function messageAcksRequest(message: unknown, requestId: string | number): boole
   );
 }
 
+/**
+ * V53-F4: a backend that did not finish initialize + tools/list within the init timeout, or is in
+ * the fail-fast cooldown after one. Typed so the gateway returns backend_unavailable instead of
+ * waiting (QA v5.3/v5.4: one hung backend made every agent call wait ~60 s).
+ */
+export type BackendUnavailableCause =
+  /** still initializing past the caller wait; the init continues in the background */
+  | "starting"
+  /** the attempt hit the hard ceiling and was killed; backing off */
+  | "init_timeout"
+  /** the process exited / errored during init; backing off */
+  | "init_failed"
+  /** in the backoff window after init_timeout / init_failed */
+  | "cooling_down";
+
+export class BackendUnavailableError extends Error {
+  readonly code = "backend_unavailable";
+  constructor(
+    readonly backendSlug: string,
+    readonly cause_: BackendUnavailableCause,
+    readonly retryAfterMs: number,
+  ) {
+    super(
+      cause_ === "starting"
+        ? `backend ${backendSlug} is still starting; retry in ${retryAfterMs} ms (backend_unavailable)`
+        : cause_ === "init_timeout"
+          ? `backend ${backendSlug} did not initialize in time (backend_unavailable)`
+          : cause_ === "init_failed"
+            ? `backend ${backendSlug} failed to start; retry in ${retryAfterMs} ms (backend_unavailable)`
+            : `backend ${backendSlug} is unavailable after a failed start; retry in ${retryAfterMs} ms (backend_unavailable)`,
+    );
+    this.name = "BackendUnavailableError";
+  }
+}
+
+/** SDK request timeout (McpError RequestTimeout -32001). */
+function isRequestTimeout(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  const message = err instanceof Error ? err.message : String(err);
+  return code === -32001 || /request timed out/i.test(message);
+}
+
+export interface UpstreamPoolOptions {
+  /**
+   * How long a caller waits for a backend that is still starting (ms), and the bound for a
+   * tools/list refresh on an open client. Past it the caller gets backend_unavailable ("starting");
+   * the init itself is NOT cut off (QA v5.5: a 25 s cold start must come up, not loop).
+   */
+  initTimeoutMs?: number;
+  /** Absolute ceiling for one init attempt (ms); past it the spawn is killed and the backend backs off. */
+  initHardTimeoutMs?: number;
+  /** How long a workspace listing waits for one backend before omitting it from that listing (ms). */
+  listWaitMs?: number;
+  /** First backoff after a hard-ceiling timeout (ms); doubles per consecutive failure up to stuckBackoffMaxMs. */
+  stuckCooldownMs?: number;
+  stuckBackoffMaxMs?: number;
+  /** First backoff after a process exit / error during init (ms); doubles up to crashBackoffMaxMs. */
+  crashBackoffMs?: number;
+  crashBackoffMaxMs?: number;
+}
+
+export const DEFAULT_LIST_WAIT_MS = 5_000;
+export const DEFAULT_STUCK_COOLDOWN_MS = 30_000;
+export const DEFAULT_STUCK_BACKOFF_MAX_MS = 600_000;
+export const DEFAULT_CRASH_BACKOFF_MS = 1_000;
+export const DEFAULT_CRASH_BACKOFF_MAX_MS = 60_000;
+/** retry_after_ms suggested to a caller that gave up on a backend that is still starting. */
+export const STARTING_RETRY_MS = 5_000;
+
+/** Exponential backoff: base * 2^(failures-1), capped. */
+export function backoffMs(failures: number, base: number, max: number): number {
+  return Math.min(max, base * 2 ** Math.min(Math.max(failures, 1) - 1, 30));
+}
+
+interface BackendHealth {
+  failures: number;
+  until: number;
+  cause: "init_timeout" | "init_failed";
+}
+
 function parsePlacement(backend: BackendRecord): Placement {
   try {
     return JSON.parse(backend.placementJson) as Placement;
@@ -181,14 +260,78 @@ export class UpstreamPool {
    */
   private knownNames = new Map<string, Set<string>>();
 
+  private readonly initTimeoutMs: number;
+  private readonly initHardTimeoutMs: number;
+  private readonly listWaitMs: number;
+  private readonly stuckCooldownMs: number;
+  private readonly stuckBackoffMaxMs: number;
+  private readonly crashBackoffMs: number;
+  private readonly crashBackoffMaxMs: number;
+  /** QA v5.5: backendId -> consecutive init failures and the end of the current backoff window. */
+  private health = new Map<string, BackendHealth>();
+  /** Start time of the in-flight init attempt (callers wait until start + initTimeoutMs at most). */
+  private attemptStart = new Map<string, number>();
+  /** Backends whose current attempt was given up on by a caller or omitted from a listing. */
+  private lateAttempt = new Set<string>();
+  private toolsChangedListeners = new Set<(workspaceId: string, backendSlug: string) => void>();
+  /** Last record seen per pooled backend id (workspace + slug for tools-changed events). */
+  private backendRecords = new Map<string, BackendRecord>();
+  /** Number of init attempts started per backend id (tests / diagnostics). */
+  readonly spawnCount = new Map<string, number>();
+
   constructor(
     private store: Store,
-    opts?: { allowPrivateUrls?: boolean },
+    opts: UpstreamPoolOptions & { allowPrivateUrls?: boolean } = {},
   ) {
-    this.allowPrivateUrls = opts?.allowPrivateUrls ?? false;
+    this.allowPrivateUrls = opts.allowPrivateUrls ?? false;
+    this.initTimeoutMs = opts.initTimeoutMs ?? DEFAULT_BACKEND_INIT_TIMEOUT_MS;
+    // config clamps hard >= soft; a pool built with hard < soft simply fails callers at the hard ceiling
+    this.initHardTimeoutMs = opts.initHardTimeoutMs ?? Math.max(this.initTimeoutMs, DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS);
+    this.listWaitMs = Math.min(opts.listWaitMs ?? DEFAULT_LIST_WAIT_MS, this.initTimeoutMs);
+    this.stuckCooldownMs = opts.stuckCooldownMs ?? DEFAULT_STUCK_COOLDOWN_MS;
+    this.stuckBackoffMaxMs = Math.max(this.stuckCooldownMs, opts.stuckBackoffMaxMs ?? DEFAULT_STUCK_BACKOFF_MAX_MS);
+    this.crashBackoffMs = opts.crashBackoffMs ?? DEFAULT_CRASH_BACKOFF_MS;
+    this.crashBackoffMaxMs = Math.max(this.crashBackoffMs, opts.crashBackoffMaxMs ?? DEFAULT_CRASH_BACKOFF_MAX_MS);
     store.onBackendRetired((workspaceId, slug) => {
       this.forgetBackendTools(workspaceId, slug);
     });
+  }
+
+  /**
+   * QA v5.5 item 2: subscribe to "this backend's tools changed" (a late init finished, or a refresh
+   * returned a different tool set). The gateway turns it into notifications/tools/list_changed.
+   */
+  onToolsChanged(fn: (workspaceId: string, backendSlug: string) => void): () => void {
+    this.toolsChangedListeners.add(fn);
+    return () => {
+      this.toolsChangedListeners.delete(fn);
+    };
+  }
+
+  private emitToolsChanged(backend: BackendRecord): void {
+    for (const fn of [...this.toolsChangedListeners]) {
+      try {
+        fn(backend.workspaceId, backend.slug);
+      } catch {
+        /* a listener failure never affects the pool */
+      }
+    }
+  }
+
+  /** Record a failed init attempt; returns the typed error for the caller that owned it. */
+  private recordFailure(backend: BackendRecord, cause: "init_timeout" | "init_failed"): BackendUnavailableError {
+    const failures = (this.health.get(backend.id)?.failures ?? 0) + 1;
+    const delay =
+      cause === "init_timeout"
+        ? backoffMs(failures, this.stuckCooldownMs, this.stuckBackoffMaxMs)
+        : backoffMs(failures, this.crashBackoffMs, this.crashBackoffMaxMs);
+    this.health.set(backend.id, { failures, until: Date.now() + delay, cause });
+    console.error(
+      cause === "init_timeout"
+        ? `[mcp-flow] backend ${backend.slug} did not initialize within the ${this.initHardTimeoutMs} ms hard ceiling; stopped it; next attempt in ${delay} ms (failure ${failures})`
+        : `[mcp-flow] backend ${backend.slug} failed during init; next attempt in ${delay} ms (failure ${failures})`,
+    );
+    return new BackendUnavailableError(backend.slug, cause, delay);
   }
 
   setEdgeRouter(router: EdgeRouter | null): void {
@@ -208,7 +351,7 @@ export class UpstreamPool {
     const known = this.knownNames.get(workspaceId);
     if (!known) return;
     for (const name of known) {
-      if (parseNamespacedTool(name)?.slug === slug) known.delete(name);
+      if (parseNamespacedTool(name, this.backendSlugs(workspaceId))?.slug === slug) known.delete(name);
     }
   }
 
@@ -225,7 +368,7 @@ export class UpstreamPool {
 
   /** Cached name still belongs to an enabled backend and its current allowlist. */
   private nameStillListed(workspaceId: string, name: string): boolean {
-    const parsed = parseNamespacedTool(name);
+    const parsed = parseNamespacedTool(name, this.backendSlugs(workspaceId));
     if (!parsed) return false;
     const backend = this.store.getBackend(workspaceId, parsed.slug);
     if (!backend?.enabled) return false;
@@ -264,6 +407,15 @@ export class UpstreamPool {
       } catch {
         /* ignore */
       }
+      // V53-F3: Client.close() skips the transport once it has already closed (backend crashed),
+      // so close a stdio transport directly too; its group kill is idempotent.
+      if (entry.transport instanceof StdioClientTransport) {
+        try {
+          await entry.transport.close();
+        } catch {
+          /* ignore */
+        }
+      }
       if (entry.dispose) {
         try {
           await entry.dispose();
@@ -287,6 +439,10 @@ export class UpstreamPool {
   private async drainPool(): Promise<void> {
     this.closing = true;
     this.generation += 1;
+    // QA v5.5 note: no backoff / attempt state survives closeAll
+    this.health.clear();
+    this.attemptStart.clear();
+    this.lateAttempt.clear();
     try {
       const pending = [...this.inflight.values()];
       this.inflight.clear();
@@ -424,8 +580,10 @@ export class UpstreamPool {
     }
 
     try {
-      await client.connect(transport);
-      const listed = await client.listTools();
+      // QA v5.5: the attempt itself is bounded by the hard ceiling; callers stop waiting much earlier
+      const opts = { timeout: this.initHardTimeoutMs };
+      await client.connect(transport, opts);
+      const listed = await client.listTools(undefined, opts);
       return {
         backendId: backend.id,
         client,
@@ -458,6 +616,7 @@ export class UpstreamPool {
       const run = await connectStdioCommand({
         command: pub.command,
         env,
+        timeoutMs: this.initHardTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -480,6 +639,7 @@ export class UpstreamPool {
         command: pub.command,
         env,
         sandbox: pub.sandbox,
+        timeoutMs: this.initHardTimeoutMs,
       });
       return {
         backendId: backend.id,
@@ -527,16 +687,22 @@ export class UpstreamPool {
     const current = this.refreshInflight.get(entry.backendId);
     if (current) return current;
     const job = (async () => {
-      const listed = await entry.client.listTools();
+      const listed = await entry.client.listTools(undefined, { timeout: this.initTimeoutMs });
+      const names = (t: Tool[]) => t.map((x) => x.name).sort().join("\n");
+      const changed = names(entry.tools) !== names(listed.tools ?? []);
       entry.tools = listed.tools ?? [];
       entry.fetchedAt = Date.now();
+      const backend = this.backendRecords.get(entry.backendId);
+      if (changed && backend && this.pool.get(entry.backendId) === entry) this.emitToolsChanged(backend);
     })();
     this.refreshInflight.set(entry.backendId, job);
-    void job.finally(() => {
+    // then(f, f), not finally(): a failed refresh (V53-F4 timeout) must not become an unhandled rejection
+    const done = () => {
       if (this.refreshInflight.get(entry.backendId) === job) {
         this.refreshInflight.delete(entry.backendId);
       }
-    });
+    };
+    job.then(done, done);
     return job;
   }
 
@@ -596,6 +762,11 @@ export class UpstreamPool {
         try {
           await this.refreshTools(existing);
         } catch (err) {
+          if (isRequestTimeout(err)) {
+            // V53-F4: an open client that stopped answering tools/list is retired, not waited on
+            if (this.pool.get(backend.id) === existing) await this.retire(backend.id);
+            throw this.recordFailure(backend, "init_timeout");
+          }
           if (this.pool.get(backend.id) === existing) await this.retire(backend.id);
           if (!isTransportOrConnectionError(err)) throw err;
         }
@@ -611,83 +782,214 @@ export class UpstreamPool {
       await this.retire(backend.id);
     }
 
-    const pending = this.inflight.get(backend.id);
-    if (pending) return pending;
+    let pending = this.inflight.get(backend.id);
+    if (!pending) {
+      // QA v5.5: fail fast (no respawn) inside the backoff window after a failed attempt
+      const h = this.health.get(backend.id);
+      if (h && Date.now() < h.until) {
+        throw new BackendUnavailableError(backend.slug, "cooling_down", h.until - Date.now());
+      }
+      pending = this.startAttempt(backend);
+    }
+    return this.waitForAttempt(backend, pending);
+  }
 
-    const promise = this.connectAndStore(backend);
+  /**
+   * One init attempt, shared by every caller. It runs until it succeeds, the process exits/errors
+   * (backoff 1 s, 2 s, ... 60 s) or the hard ceiling (killed; backoff 30 s, 60 s, ... 10 min).
+   * Callers giving up never cut it short (QA v5.5 item 1).
+   */
+  private startAttempt(backend: BackendRecord): Promise<PooledClient> {
+    const generation = this.generation;
+    this.spawnCount.set(backend.id, (this.spawnCount.get(backend.id) ?? 0) + 1);
+    this.backendRecords.set(backend.id, backend);
+    const promise = (async () => {
+      const attempt = this.connectAndStore(backend);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // backstop for a spawn that never reaches the SDK request timeouts
+      const backstop = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new BackendUnavailableError(backend.slug, "init_timeout", 0)), this.initHardTimeoutMs + 2_000);
+      });
+      try {
+        const entry = await Promise.race([attempt, backstop]);
+        this.health.delete(backend.id);
+        if (this.lateAttempt.delete(backend.id)) this.emitToolsChanged(backend);
+        return entry;
+      } catch (err) {
+        this.lateAttempt.delete(backend.id);
+        if (this.closing || generation !== this.generation) throw err; // shutdown, not a backend failure
+        if (err instanceof BackendUnavailableError || isRequestTimeout(err)) {
+          // backstop case: a connect that still succeeds later is pooled and clears the backoff
+          attempt.then(
+            () => {
+              this.health.delete(backend.id);
+              this.emitToolsChanged(backend);
+            },
+            () => {},
+          );
+          throw this.recordFailure(backend, "init_timeout");
+        }
+        this.recordFailure(backend, "init_failed");
+        throw err;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    })();
     this.inflight.set(backend.id, promise);
-    try {
-      return await promise;
-    } finally {
+    this.attemptStart.set(backend.id, Date.now());
+    const done = () => {
       if (this.inflight.get(backend.id) === promise) {
         this.inflight.delete(backend.id);
+        this.attemptStart.delete(backend.id);
       }
+    };
+    promise.then(done, done);
+    return promise;
+  }
+
+  /** Wait for the shared attempt, but never past attempt start + initTimeoutMs. */
+  private async waitForAttempt(backend: BackendRecord, attempt: Promise<PooledClient>): Promise<PooledClient> {
+    const started = this.attemptStart.get(backend.id) ?? Date.now();
+    const remaining = started + this.initTimeoutMs - Date.now();
+    const giveUp = (): never => {
+      attempt.catch(() => {}); // settles later: pooled (then list_changed) or a recorded failure
+      if (!this.lateAttempt.has(backend.id)) {
+        this.lateAttempt.add(backend.id);
+        console.error(
+          `[mcp-flow] backend ${backend.slug} still initializing after ${this.initTimeoutMs} ms; callers get backend_unavailable while it continues (hard ceiling ${this.initHardTimeoutMs} ms)`,
+        );
+      }
+      const hardLeft = Math.max(1, started + this.initHardTimeoutMs - Date.now());
+      throw new BackendUnavailableError(backend.slug, "starting", Math.min(STARTING_RETRY_MS, hardLeft));
+    };
+    if (remaining <= 0) return giveUp();
+    const notReady = Symbol("not-ready");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const got = await Promise.race([
+        attempt,
+        new Promise<typeof notReady>((resolve) => {
+          timer = setTimeout(() => resolve(notReady), remaining);
+        }),
+      ]);
+      if (got === notReady) return giveUp();
+      return got;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 
-  async listNamespacedTools(workspaceId: string): Promise<NamespacedTool[]> {
-    const backends = this.store.listEnabledBackends(workspaceId);
+  /** Namespaced, allowlisted tools of one backend. Throws on failure (BackendUnavailableError when stuck). */
+  private async toolsOf(backend: BackendRecord): Promise<NamespacedTool[]> {
+    const placement = parsePlacement(backend);
+    let tools: Tool[];
+    if (placement.mode === "edge-sandbox" || placement.mode === "edge-bare") {
+      if (!this.edgeRouter) return [];
+      tools = await this.edgeRouter.listTools(backend);
+    } else {
+      tools = (await this.getClient(backend)).tools;
+    }
+    const allow = backend.toolAllowlistJson
+      ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
+      : null;
+    const out: NamespacedTool[] = [];
+    for (const t of tools) {
+      if (allow && !allow.has(t.name)) continue;
+      out.push({
+        ...t,
+        name: namespaceTool(backend.slug, t.name),
+        description: t.description
+          ? `[${backend.slug}] ${t.description}`
+          : `[${backend.slug}] ${t.name}`,
+        upstreamName: t.name,
+        backendSlug: backend.slug,
+        backendId: backend.id,
+      });
+    }
+    return out;
+  }
+
+  /**
+   * V53-F4: tools of ONE backend, for routing an agent call. Never waits on other backends.
+   * A disabled backend lists nothing. Waits at most the init timeout, then throws
+   * BackendUnavailableError (also at once during the cooldown).
+   */
+  async listBackendTools(workspaceId: string, backend: BackendRecord): Promise<NamespacedTool[]> {
+    if (!backend.enabled || backend.workspaceId !== workspaceId) return [];
+    try {
+      return await this.toolsOf(backend);
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) throw err;
+      if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+      // QA v5.5: an init that exited / errored is typed for agents too (not "unknown_tool")
+      const h = this.health.get(backend.id);
+      if (h?.cause === "init_failed" && Date.now() < h.until) {
+        throw new BackendUnavailableError(backend.slug, "init_failed", h.until - Date.now());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * All enabled backends' tools. V53-F4: each backend gets at most listWaitMs; a backend that is not
+   * ready by then (still starting, stuck, or cooling down) is left out of this listing and its
+   * connect continues in the background, bounded by the init timeout.
+   */
+  async listNamespacedTools(workspaceId: string, onlySlugs?: ReadonlySet<string>): Promise<NamespacedTool[]> {
+    // QA v5.5 note A: a caller scoped to a project never waits on (or starts) backends outside it
+    const backends = this.store.listEnabledBackends(workspaceId).filter((b) => !onlySlugs || onlySlugs.has(b.slug));
+    // QA v5.6 check 6: resolution set read up front (sync), never after the awaits below (store may be closed)
+    const slugs = this.backendSlugs(workspaceId);
     const out: NamespacedTool[] = [];
 
     await Promise.all(
       backends.map(async (backend) => {
-        const placement = parsePlacement(backend);
+        const job = this.toolsOf(backend);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const notReady = Symbol("not-ready");
         try {
-          if (
-            placement.mode === "edge-sandbox" ||
-            placement.mode === "edge-bare"
-          ) {
-            if (!this.edgeRouter) return;
-            const tools = await this.edgeRouter.listTools(backend);
-            const allow = backend.toolAllowlistJson
-              ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
-              : null;
-            for (const t of tools) {
-              if (allow && !allow.has(t.name)) continue;
-              out.push({
-                ...t,
-                name: namespaceTool(backend.slug, t.name),
-                description: t.description
-                  ? `[${backend.slug}] ${t.description}`
-                  : `[${backend.slug}] ${t.name}`,
-                upstreamName: t.name,
-                backendSlug: backend.slug,
-                backendId: backend.id,
-              });
-            }
+          const got = await Promise.race([
+            job,
+            new Promise<typeof notReady>((resolve) => {
+              timer = setTimeout(() => resolve(notReady), this.listWaitMs);
+            }),
+          ]);
+          if (got === notReady) {
+            job.catch(() => {}); // settles later (pooled, or typed failure); nothing to wait for here
+            // QA v5.5 item 2: when this backend's init finishes, clients get tools/list_changed
+            if (this.inflight.has(backend.id)) this.lateAttempt.add(backend.id);
+            console.error(`[mcp-flow] tools/list: backend ${backend.slug} not ready after ${this.listWaitMs} ms; omitted from this listing`);
             return;
           }
-
-          const pooled = await this.getClient(backend);
-          const allow = backend.toolAllowlistJson
-            ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
-            : null;
-          for (const t of pooled.tools) {
-            if (allow && !allow.has(t.name)) continue;
-            out.push({
-              ...t,
-              name: namespaceTool(backend.slug, t.name),
-              description: t.description
-                ? `[${backend.slug}] ${t.description}`
-                : `[${backend.slug}] ${t.name}`,
-              upstreamName: t.name,
-              backendSlug: backend.slug,
-              backendId: backend.id,
-            });
-          }
+          out.push(...got);
         } catch (err) {
           console.error(
             `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
             publicUpstreamError(err),
           );
-          if (isTransportOrConnectionError(err)) await this.retire(backend.id);
+          if (!(err instanceof BackendUnavailableError) && isTransportOrConnectionError(err)) await this.retire(backend.id);
+        } finally {
+          if (timer) clearTimeout(timer);
         }
       }),
     );
 
-    out.sort((a, b) => a.name.localeCompare(b.name));
-    this.rememberNames(workspaceId, out.map((tool) => tool.name));
-    return out;
+    // QA v5.6 check 6: a name owned by a longer slug ("a__b__echo" -> "a__b") is never listed for the
+    // shorter one ("a", tool "b__echo"): it could not be called. Names stay unique.
+    const seen = new Set<string>();
+    const listed = out.filter((t) => {
+      if (parseNamespacedTool(t.name, slugs)?.slug !== t.backendSlug || seen.has(t.name)) return false;
+      seen.add(t.name);
+      return true;
+    });
+    listed.sort((a, b) => a.name.localeCompare(b.name));
+    this.rememberNames(workspaceId, listed.map((tool) => tool.name));
+    return listed;
+  }
+
+  /** Every backend slug in the workspace (enabled or not): the set qualified names resolve against. */
+  backendSlugs(workspaceId: string): string[] {
+    return this.store.listBackends(workspaceId).map((b) => b.slug);
   }
 
   /**
@@ -695,7 +997,7 @@ export class UpstreamPool {
    * Looks up that backend only. Does not use the audit name cache and does not send a tools/call.
    */
   async toolIsCallable(workspaceId: string, namespacedName: string): Promise<boolean> {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) return false;
     const backend = this.store.getBackend(workspaceId, parsed.slug);
     if (!backend?.enabled) return false;
@@ -711,6 +1013,7 @@ export class UpstreamPool {
       const pooled = await this.getClient(backend);
       return pooled.tools.some((tool) => tool.name === parsed.tool);
     } catch (err) {
+      if (err instanceof BackendUnavailableError) throw err;
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);
       return false;
     }
@@ -750,7 +1053,7 @@ export class UpstreamPool {
     namespacedName: string,
     args: Record<string, unknown> | undefined,
   ): Promise<UpstreamCallResult> {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) return this.notSent("tool not found");
 
     const backend = this.store.getBackend(workspaceId, parsed.slug);
@@ -858,7 +1161,7 @@ export class UpstreamPool {
     placement: string | null;
     deviceId: string | null;
   } {
-    const parsed = parseNamespacedTool(namespacedName);
+    const parsed = parseNamespacedTool(namespacedName, this.backendSlugs(workspaceId));
     if (!parsed) {
       return { backendSlug: null, placement: null, deviceId: null };
     }

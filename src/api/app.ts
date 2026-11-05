@@ -1,4 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
+import { bodyLimit } from "hono/body-limit";
+import { registerReadEndpoints } from "./read-endpoints.js";
+import { policyApprovalsRouter } from "./policy-approvals.js";
+import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
+import {
+  acceptClientSessionId,
+  agentAuthContext,
+  newAgentSessionId,
+} from "../identity/auth-context.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -44,7 +53,7 @@ import {
   mergeApiKeyScopes,
 } from "../mcp/admin-tools.js";
 import { globalSessionProjects } from "../mcp/session-project.js";
-import { forgetMcpSession } from "../mcp/session-tools.js";
+import { forgetMcpSession, sessionIdOwnedByOther } from "../mcp/session-tools.js";
 import { UpstreamPool } from "../mcp/upstream.js";
 import {
   assertBackendShape,
@@ -100,9 +109,12 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
+import { redactLog } from "../log/redact-lines.js";
 
 type Variables = {
   auth: AuthContext;
+  /** Set only when the admin caller is a human admin AGENT (not the env token or a legacy scopes.admin key) */
+  humanAdmin?: string;
 };
 
 function placementSandboxError(body: {
@@ -275,6 +287,20 @@ export function createApp(
       return;
     }
 
+    // T1.3 agent key or session of a human admin agent (agent.is_admin)
+    const agentRes = token.startsWith("mf_sess_")
+      ? store.identity.resolveSession(token)
+      : store.identity.resolveKey(token, clientIp(c));
+    if (agentRes.status === "ok" || agentRes.status === "forbidden") {
+      // QA V3-F2: authenticated but not a human admin -> 403 (401 stays for missing/bad tokens)
+      if (!agentRes.agent.isAdmin || agentRes.agent.kind !== "human") return c.json({ error: "forbidden" }, 403);
+      c.set("auth", agentAuthContext(agentRes.agent, { mcpSessionId: null }));
+      c.set("humanAdmin", agentRes.agent.agentId);
+      await next();
+      return;
+    }
+    if (agentRes.status !== "unknown") return c.json({ error: "unauthorized" }, 401);
+
     // Operator agent key (scopes.admin)
     const key = store.authenticateApiKey(token);
     if (key && isAdminScopes(key.scopes)) {
@@ -288,6 +314,7 @@ export function createApp(
       await next();
       return;
     }
+    if (key) return c.json({ error: "forbidden" }, 403); // valid legacy key without scopes.admin
 
     const grant = authenticateAccess(store.db, token);
     if (grant && isAdminScopes(grant.scopes)) {
@@ -697,7 +724,7 @@ export function createApp(
       backendSlug: backend.slug,
       placement: backend.placement.mode,
       deviceId: backend.placement.deviceId ?? null,
-      detail: backendUpdateAuditDetail(body),
+      detail: backendUpdateAuditDetail(body, { previousUrl: existing.url }),
       ip: clientIp(c),
     });
     return c.json({ backend });
@@ -1021,6 +1048,38 @@ export function createApp(
         400,
       );
     }
+  });
+
+  registerReadEndpoints(admin, store, pool);
+
+  // T3.3: per-call audit log (mcpflow_call_audit), admin only
+  admin.get("/audit/calls", (c) => {
+    const auth = c.get("auth");
+    const q = c.req.query();
+    const filter = callAuditFilterFrom(q);
+    const format = q.format;
+    if (format === "csv" || format === "json") {
+      const out = exportCallAudit(store.db, auth.workspaceId, filter, format, q.max_rows ? Number(q.max_rows) : undefined);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "audit.export",
+        detail: { via: "rest", format, rows: out.rows, truncated: out.truncated },
+        ip: clientIp(c),
+      });
+      return new Response(out.body, {
+        headers: {
+          "content-type": out.contentType,
+          "content-disposition": `attachment; filename="call-audit.${format}"`,
+          "x-mcp-flow-truncated": String(out.truncated),
+        },
+      });
+    }
+    const page = queryCallAudit(store.db, auth.workspaceId, filter, {
+      limit: q.limit ? Number(q.limit) : undefined,
+      cursor: q.cursor ? Number(q.cursor) : undefined,
+    });
+    return c.json({ rows: page.rows, next_cursor: page.nextCursor });
   });
 
   admin.get("/audit", (c) => {
@@ -1776,9 +1835,18 @@ export function createApp(
     });
   });
 
+  app.route("/v1/policy/approvals", policyApprovalsRouter(store));
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens
+  // Security T2.5 R-3: bound request bodies before anything (auth, progress peek, transport) reads them
+  app.use(
+    "/mcp",
+    bodyLimit({
+      maxSize: mcpMaxBodyBytes(),
+      onError: (c) => c.json({ jsonrpc: "2.0", error: { code: -32600, message: "request body too large" }, id: null }, 413),
+    }),
+  );
   app.all("/mcp", async (c) => {
     const token = bearer(c.req.header("authorization"));
     const origin = gatewayOrigin(c);
@@ -1794,8 +1862,70 @@ export function createApp(
 
     let auth: AuthContext;
 
-    const sess = store.authenticateProjectSession(token);
-    if (sess) {
+    // T1.3: per-agent identity first (mcpflow_* tables); legacy keys fall through.
+    const agentRes = token.startsWith("mf_sess_")
+      ? store.identity.resolveSession(token)
+      : store.identity.resolveKey(token, clientIp(c));
+    if (agentRes.status === "unauthorized") {
+      return c.json({ error: "invalid api key" }, 401);
+    }
+    if (agentRes.status === "forbidden") {
+      return c.json({ error: "agent has no permitted projects" }, 403);
+    }
+
+    // Security M-5 (cutover flag, default off): legacy shared keys / legacy project sessions refused on /mcp
+    if (agentRes.status === "unknown" && cfg.refuseLegacyMcpKeys) {
+      const legacy = store.authenticateProjectSession(token) ?? store.authenticateApiKey(token);
+      if (legacy) {
+        // QA V5-F1: the refusal leaves a trail (key id + name, never the secret)
+        try {
+          store.writeAudit({
+            workspaceId: legacy.workspaceId,
+            keyId: legacy.keyId ?? null,
+            action: "mcp.legacy_key_refused",
+            detail: { via: "projectSessionId" in legacy ? "legacy_project_session" : "legacy_api_key", key_name: legacy.keyName ?? null },
+            ip: clientIp(c),
+          });
+        } catch (err) {
+          console.error(`[mcp-flow] audit write failed for mcp.legacy_key_refused: ${redactLog(err)}`);
+        }
+        return c.json({ error: "legacy keys are not accepted on /mcp; use an agent key" }, 403);
+      }
+      return c.json({ error: "invalid api key" }, 401);
+    }
+    const sess =
+      agentRes.status === "unknown" ? store.authenticateProjectSession(token) : null;
+    /** Set when the gateway minted a fresh agent session id the client must echo back. */
+    let issuedSessionId: string | null = null;
+    if (agentRes.status === "ok") {
+      const agent = agentRes.agent;
+      let agentSid: string;
+      if (acceptClientSessionId(agent, mcpSessionId)) {
+        agentSid = mcpSessionId!;
+      } else {
+        agentSid = newAgentSessionId(agent);
+        issuedSessionId = agentSid;
+      }
+      let projectId: string | null = null;
+      let projectSlug: string | null = null;
+      if (agent.sessionProject) {
+        const p = store.getProjectBySlug(agent.workspaceId, agent.sessionProject);
+        if (!p) return c.json({ error: "session project not found" }, 403);
+        projectId = p.id;
+        projectSlug = p.slug;
+      } else {
+        const sticky = globalSessionProjects.get(agentSid);
+        if (
+          sticky &&
+          sticky.keyId === agent.keyId &&
+          agent.effectiveProjects.includes(sticky.projectSlug)
+        ) {
+          projectId = sticky.projectId;
+          projectSlug = sticky.projectSlug;
+        }
+      }
+      auth = agentAuthContext(agent, { mcpSessionId: agentSid, projectId, projectSlug });
+    } else if (sess) {
       auth = {
         kind: "project_session",
         workspaceId: sess.workspaceId,
@@ -1834,9 +1964,32 @@ export function createApp(
       };
     }
 
+    // Security R5-2: a session id already bound (sticky project / tool set) by another key is refused,
+    // never re-bound. The client reconnects without Mcp-Session-Id and gets a fresh id.
+    if (auth.mcpSessionId && sessionIdOwnedByOther(auth.mcpSessionId, auth.keyId)) {
+      return c.json({ error: "Mcp-Session-Id is bound to another key; reconnect without it to get a fresh session id" }, 409);
+    }
+
+    // A tools/call that carries a progressToken gets an SSE response so hold progress
+    // notifications can reach the client; everything else keeps plain JSON responses.
+    let wantsStream = false;
+    let isInitialize = false;
+    if (c.req.method === "POST") {
+      try {
+        const peek = (await c.req.raw.clone().json()) as unknown;
+        const msgs = Array.isArray(peek) ? peek : [peek];
+        isInitialize = msgs.some((m) => (m as { method?: string })?.method === "initialize");
+        wantsStream = msgs.some((m) => {
+          const msg = m as { method?: string; params?: { _meta?: { progressToken?: unknown } } };
+          return msg?.method === "tools/call" && msg.params?._meta?.progressToken !== undefined;
+        });
+      } catch {
+        wantsStream = false;
+      }
+    }
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
-      enableJsonResponse: true,
+      enableJsonResponse: !wantsStream,
     });
     const server = createGatewayServer({
       store,
@@ -1847,20 +2000,52 @@ export function createApp(
       edgeRouter,
       ip: clientIp(c),
       abortSignal: c.req.raw.signal,
-      approveBaseUrl: new URL(c.req.url).origin,
+      // Security T2.5 H-2: configured origin only, never the request's Host header
+      approveBaseUrl: cfg.publicUrl || null,
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);
     if (c.req.method === "DELETE") forgetMcpSession(mcpSessionId, auth.keyId);
+
+    // QA V5-F1: audit each successful MCP connect (initialize), with who connected and how
+    if (isInitialize && response.status < 400) {
+      try {
+        store.writeAudit({
+          workspaceId: auth.workspaceId,
+          keyId: auth.keyId ?? null,
+          action: "mcp.connect",
+          detail: {
+            auth_kind: auth.kind,
+            key_name: auth.keyName ?? null,
+            project: auth.projectSlug ?? null,
+            via: agentRes.status === "ok" ? (agentRes.agent.sessionId ? "agent_session" : "agent_key") : sess ? "legacy_project_session" : "legacy_api_key",
+          },
+          ip: clientIp(c),
+        });
+      } catch (err) {
+        console.error(`[mcp-flow] audit write failed for mcp.connect: ${redactLog(err)}`);
+      }
+    }
 
     const cleanup = () => {
       void transport.close().catch(() => undefined);
       void server.close().catch(() => undefined);
     };
 
+    // Fresh per-client agent session id (T1.1 §3.5); clients echo it as Mcp-Session-Id.
+    // Copy headers: the node adaptor may cache the original Response's init.
+    const outHeaders = new Headers(response.headers);
+    if (issuedSessionId) outHeaders.set("mcp-session-id", issuedSessionId);
+
     if (!response.body) {
       cleanup();
-      return response;
+      return issuedSessionId
+        ? new Response(null, {
+            status: response.status,
+            statusText: response.statusText,
+            headers: outHeaders,
+          })
+        : response;
     }
 
     const reader = response.body.getReader();
@@ -1888,7 +2073,7 @@ export function createApp(
     return new Response(stream, {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: outHeaders,
     });
   });
 
@@ -1900,3 +2085,10 @@ export function createApp(
 export type AppType = ReturnType<typeof createApp>;
 
 export { toPublicBackend };
+
+/** Max /mcp request body (bytes), MCP_FLOW_MAX_BODY_BYTES, default 4 MiB, clamped 64 KiB..64 MiB. */
+export function mcpMaxBodyBytes(): number {
+  const n = Number(process.env.MCP_FLOW_MAX_BODY_BYTES ?? "");
+  if (Number.isFinite(n) && n >= 65_536 && n <= 67_108_864) return Math.floor(n);
+  return 4 * 1024 * 1024;
+}

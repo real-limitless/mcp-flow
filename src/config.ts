@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { parseRateLimitPerMin } from "./policy/rate-limit.js";
 
 export interface Config {
   host: string;
@@ -9,9 +10,132 @@ export interface Config {
   adminToken: string;
   allowPrivateUrls: boolean;
   workspaceName: string;
-  /** Public origin for the OAuth redirect URI. Empty when unset. */
+  /**
+   * Public origin from MCP_FLOW_PUBLIC_URL.
+   * OAuth redirect issuer when set (empty when unset; the request origin is used then).
+   * Approve links use only this value, never a request-derived origin (Security T2.5 H-2).
+   * When set, must be an https origin (http only for localhost), with no path, query, or credentials.
+   */
   publicUrl: string;
   trustProxy: boolean;
+  /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
+  policyDevKeyRaw?: string;
+  /**
+   * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
+   * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
+   * MCP_FLOW_REFUSE_LEGACY_MCP_KEYS=true. Default OFF; turning it on is a cutover step that needs Chen.
+   */
+  refuseLegacyMcpKeys?: boolean;
+  /**
+   * QA V51-F1: on SIGTERM/SIGINT, how long dispatched calls may finish before they are recorded as
+   * outcome unknown. MCP_FLOW_SHUTDOWN_GRACE_MS, default 8000, clamped to 0..8000 so the drain plus
+   * the upstream close (connect deadline + process-group kill, about 2 s) fits inside Docker's default
+   * 10 s stop timeout.
+   */
+  shutdownGraceMs?: number;
+  /**
+   * PM: PRAGMA journal_size_limit, from MCP_FLOW_JOURNAL_SIZE_LIMIT_MB (whole MiB, default 64, clamped
+   * 1..4096; unset/invalid = default). Bounds the WAL file kept on disk after checkpoints.
+   */
+  journalSizeLimitBytes: number;
+  /**
+   * PM: per-agent tools/call rate limit (token bucket, in memory), MCP_FLOW_RATE_LIMIT_PER_MIN.
+   * Whole calls per minute per agent_id; 0 or unset = off (default).
+   */
+  rateLimitPerMin?: number;
+  /**
+   * QA v5.5: how long a CALLER waits for a backend that is still starting (MCP_FLOW_BACKEND_INIT_TIMEOUT_MS,
+   * default 20000, clamped 1000..120000). Past it the caller gets backend_unavailable (reason
+   * "starting") but the backend is NOT killed: its init continues and later calls succeed.
+   */
+  backendInitTimeoutMs?: number;
+  /**
+   * QA v5.5: absolute ceiling for one init attempt (MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS, default
+   * 300000, clamped to backendInitTimeoutMs..1800000). Past it the spawn is killed and the backend
+   * backs off exponentially (30 s, 60 s, ... capped at 10 min) before the next attempt.
+   */
+  backendInitHardTimeoutMs?: number;
+}
+
+/**
+ * V53 headroom: max grace 7000 ms, so the worst case (full grace + connect deadline + process-group
+ * kill + overhead) leaves >= 1 s of the 10 s Docker stop budget (see SHUTDOWN_HEADROOM_MS in server.ts).
+ */
+export const DEFAULT_SHUTDOWN_GRACE_MS = 7000;
+export const MAX_SHUTDOWN_GRACE_MS = 7000;
+
+export function parseShutdownGraceMs(raw: string | number | undefined | null): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_SHUTDOWN_GRACE_MS;
+  return Math.min(MAX_SHUTDOWN_GRACE_MS, Math.max(0, Math.floor(n)));
+}
+
+export const DEFAULT_BACKEND_INIT_TIMEOUT_MS = 20_000;
+export const MIN_BACKEND_INIT_TIMEOUT_MS = 1_000;
+export const MAX_BACKEND_INIT_TIMEOUT_MS = 120_000;
+
+export function parseBackendInitTimeoutMs(raw: string | number | undefined | null): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_BACKEND_INIT_TIMEOUT_MS;
+  return Math.min(MAX_BACKEND_INIT_TIMEOUT_MS, Math.max(MIN_BACKEND_INIT_TIMEOUT_MS, Math.floor(n)));
+}
+
+export const DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS = 300_000;
+export const MAX_BACKEND_INIT_HARD_TIMEOUT_MS = 1_800_000;
+
+/** Hard init ceiling: unset/invalid -> 300000; clamped to [soft, 1800000] (never below the caller wait). */
+export function parseBackendInitHardTimeoutMs(raw: string | number | undefined | null, softMs: number): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  const v = Number.isFinite(n) ? Math.floor(n) : DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS;
+  return Math.min(MAX_BACKEND_INIT_HARD_TIMEOUT_MS, Math.max(softMs, v));
+}
+
+/**
+ * QA v5.5 note: an invalid or out-of-range timeout used to be replaced silently. Returns a warning
+ * line (no value echoed beyond the env name and the value used) when raw is set and was not used as-is.
+ */
+export function timeoutEnvWarning(name: string, raw: string | undefined, used: number): string | null {
+  if (raw === undefined || raw.trim() === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return `[mcp-flow] ${name} is not a number; using ${used} ms`;
+  if (Math.floor(n) !== used) return `[mcp-flow] ${name} out of range or not whole; using ${used} ms`;
+  return null;
+}
+
+export const DEFAULT_JOURNAL_SIZE_LIMIT_MB = 64;
+const MAX_JOURNAL_SIZE_LIMIT_MB = 4096;
+
+/** MCP_FLOW_JOURNAL_SIZE_LIMIT_MB -> bytes: whole MiB, clamped 1..4096; unset/invalid -> 64 MiB. */
+export function parseJournalSizeLimitBytes(raw: string | number | undefined | null): number {
+  const s = raw == null ? "" : String(raw).trim();
+  const n = s === "" || !/^\d+$/.test(s) ? NaN : Number(s);
+  const mb = Number.isSafeInteger(n) ? Math.min(MAX_JOURNAL_SIZE_LIMIT_MB, Math.max(1, n)) : DEFAULT_JOURNAL_SIZE_LIMIT_MB;
+  return mb * 1024 * 1024;
+}
+
+/** R4-3: `true` (any case) or `1` is on; anything else (unset, false, 0, yes, typos) is off. */
+export function parseBoolFlag(raw: string | undefined | null): boolean {
+  const v = (raw ?? "").trim();
+  return v === "1" || v.toLowerCase() === "true";
+}
+
+/** Validate MCP_FLOW_PUBLIC_URL: https origin (http only for localhost), no path/query/credentials. */
+export function parsePublicUrl(raw: string | undefined | null): string | null {
+  if (!raw) return null;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error("MCP_FLOW_PUBLIC_URL is not a valid URL");
+  }
+  const local = u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+  if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) {
+    throw new Error("MCP_FLOW_PUBLIC_URL must be https (http only for localhost)");
+  }
+  if (u.username || u.password || u.search || u.hash || (u.pathname && u.pathname !== "/")) {
+    throw new Error("MCP_FLOW_PUBLIC_URL must be a bare origin, e.g. https://mcp-flow.example");
+  }
+  return u.origin;
 }
 
 function env(name: string, fallback?: string): string | undefined {
@@ -25,6 +149,19 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     overrides.dbPath ?? env("MCP_FLOW_DB_PATH", "./data/mcp-flow.db")!,
   );
   mkdirSync(dirname(dbPath), { recursive: true });
+
+  const initSoftRaw = env("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS");
+  const initHardRaw = env("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS");
+  const backendInitTimeoutMs = parseBackendInitTimeoutMs(overrides.backendInitTimeoutMs ?? initSoftRaw);
+  const backendInitHardTimeoutMs = parseBackendInitHardTimeoutMs(overrides.backendInitHardTimeoutMs ?? initHardRaw, backendInitTimeoutMs);
+  if (overrides.backendInitTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS", initSoftRaw, backendInitTimeoutMs);
+    if (w) console.error(w);
+  }
+  if (overrides.backendInitHardTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS", initHardRaw, backendInitHardTimeoutMs);
+    if (w) console.error(w);
+  }
 
   const masterKeyRaw =
     overrides.masterKeyRaw ?? env("MCP_FLOW_MASTER_KEY") ?? "";
@@ -41,12 +178,21 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       env("MCP_FLOW_ALLOW_PRIVATE_URLS", "false") === "true",
     workspaceName:
       overrides.workspaceName ?? env("MCP_FLOW_WORKSPACE_NAME", "default")!,
-    publicUrl: (
-      overrides.publicUrl ??
-      env("MCP_FLOW_PUBLIC_URL", "")!
-    ).replace(/\/$/, ""),
+    publicUrl:
+      (overrides.publicUrl !== undefined
+        ? parsePublicUrl(overrides.publicUrl)
+        : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL"))) ?? "",
     trustProxy:
       overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
+    policyDevKeyRaw:
+      overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
+    refuseLegacyMcpKeys:
+      overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
+    shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),
+    journalSizeLimitBytes: overrides.journalSizeLimitBytes ?? parseJournalSizeLimitBytes(env("MCP_FLOW_JOURNAL_SIZE_LIMIT_MB")),
+    rateLimitPerMin: overrides.rateLimitPerMin ?? parseRateLimitPerMin(env("MCP_FLOW_RATE_LIMIT_PER_MIN")),
+    backendInitTimeoutMs,
+    backendInitHardTimeoutMs,
   };
 }
 

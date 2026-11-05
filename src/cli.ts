@@ -3,7 +3,7 @@ import { Command } from "commander";
 import { loadConfig, requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
 import { UpstreamPool } from "./mcp/upstream.js";
-import { startServer } from "./server.js";
+import { installSignalHandlers, startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
 import { assertSafeUrl } from "./ssrf.js";
@@ -16,6 +16,7 @@ import {
 import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
+import { redactLog } from "./log/redact-lines.js";
 const program = new Command();
 
 program
@@ -35,17 +36,8 @@ program
       host: opts.host,
       dbPath: opts.db,
     });
-    const running = await startServer(cfg);
-    let stopping = false;
-    const stop = () => {
-      if (stopping) return;
-      stopping = true;
-      void running.close().finally(() => {
-        process.exit(0);
-      });
-    };
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    const gw = await startServer(cfg);
+    installSignalHandlers(gw); // QA V5-F2: docker stop / Ctrl-C close holds, DB and lock
   });
 
 program
@@ -84,7 +76,7 @@ function openStore(db?: string): { store: Store; workspaceId: string } {
   if (!cfg.masterKeyRaw) {
     throw new Error("MCP_FLOW_MASTER_KEY is required");
   }
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
   const ws = store.ensureWorkspace(cfg.workspaceName);
   return { store, workspaceId: ws.id };
 }
@@ -404,7 +396,7 @@ backendCmd
         headers = parseHeaderFlags(opts.header);
         env = parseHeaderFlags(opts.env);
       } catch (err) {
-        console.error(err instanceof Error ? err.message : err);
+        console.error(redactLog(err));
         process.exit(1);
       }
       const transport = opts.transport as
@@ -425,7 +417,7 @@ backendCmd
           | "edge-bare",
         deviceId: opts.deviceId,
       };
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const { assertBackendShape, assertPlacementAllowed } = await import(
@@ -452,7 +444,7 @@ backendCmd
             ),
           });
         } catch (err) {
-          console.error(err instanceof Error ? err.message : err);
+          console.error(redactLog(err));
           process.exit(1);
         }
         if ((opts.clientId || opts.clientSecret || opts.scope) && !opts.oauth) {
@@ -568,7 +560,7 @@ backendCmd
         try {
           if (opts.header.length) partial = parseHeaderFlags(opts.header);
         } catch (err) {
-          console.error(err instanceof Error ? err.message : err);
+          console.error(redactLog(err));
           process.exit(1);
         }
         if (opts.apiKey) {
@@ -693,7 +685,7 @@ oauthCmd
         console.error("timed out waiting for OAuth consent");
         process.exit(2);
       } catch (err) {
-        console.error(err instanceof Error ? err.message : err);
+        console.error(redactLog(err instanceof Error ? err.message : err));
         process.exit(1);
       } finally {
         store.close();
@@ -757,7 +749,7 @@ oauthCmd
         ),
       );
     } catch (err) {
-      console.error(err instanceof Error ? err.message : err);
+      console.error(redactLog(err instanceof Error ? err.message : err));
       process.exit(1);
     } finally {
       store.close();
@@ -1144,7 +1136,7 @@ catalogCmd
         ? parseHeaderFlags(opts.header)
         : undefined;
       const headers = withAuthorizationToken(parsed, opts.apiKey);
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const result = await installFromGallery(store, ws.id, {
@@ -1286,6 +1278,28 @@ program
     });
   });
 
+const dbCmd = program.command("db").description("Offline database maintenance (never run by the gateway)");
+
+dbCmd
+  .command("vacuum")
+  .description(
+    "One-time: switch an existing DB to auto_vacuum=INCREMENTAL and run a full VACUUM. " +
+      "Offline: refused while a gateway holds the DB. Back up first; needs free disk about the DB size.",
+  )
+  .option("--db <path>", "sqlite path")
+  .option("--check", "only report the current mode and free pages")
+  .action(async (opts: { db?: string; check?: boolean }) => {
+    const { convertToIncrementalVacuum } = await import("./db/maintenance.js");
+    const cfg = loadConfig({ dbPath: opts.db });
+    try {
+      const out = await convertToIncrementalVacuum(cfg.dbPath, { check: opts.check, pragmas: { journalSizeLimitBytes: cfg.journalSizeLimitBytes } });
+      console.log(JSON.stringify({ dbPath: cfg.dbPath, ...out }, null, 2));
+    } catch (err) {
+      console.error(`[mcp-flow] db vacuum: ${redactLog(err)}`);
+      process.exit(1);
+    }
+  });
+
 const wsCmd = program.command("workspace").description("Workspace settings");
 
 wsCmd
@@ -1418,7 +1432,7 @@ program
     };
     try {
       if (cfg.masterKeyRaw) {
-        const store = new Store(cfg.dbPath, cfg.masterKeyRaw);
+        const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;
         report.policy = ws.policy;
@@ -1590,6 +1604,6 @@ approvalsCmd
   );
 
 program.parseAsync(process.argv).catch((err: unknown) => {
-  console.error(err instanceof Error ? err.message : err);
+  console.error(redactLog(err));
   process.exit(1);
 });

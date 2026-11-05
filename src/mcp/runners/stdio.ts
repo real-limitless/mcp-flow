@@ -68,8 +68,8 @@ export function buildStdioEnv(
   };
 }
 
-/** SIGTERM grace before SIGKILL. Kept under 2s so an 8s request drain still fits in a 10s shutdown. */
-export const STDIO_GROUP_KILL_GRACE_MS = 1_000;
+/** SIGTERM grace before SIGKILL. With the 250 ms follow-up the group kill takes at most 1 s (V53 headroom). */
+export const STDIO_GROUP_KILL_GRACE_MS = 750;
 const STDIO_GROUP_KILL_FOLLOWUP_MS = 250;
 export const STDIO_GROUP_KILL_BUDGET_MS =
   STDIO_GROUP_KILL_GRACE_MS + STDIO_GROUP_KILL_FOLLOWUP_MS;
@@ -189,6 +189,8 @@ interface StdioInternals {
  * which leaves grandchildren (shell and node under npm/npx) running.
  */
 const liveStdio = new Set<GroupedStdioClientTransport>();
+/** Leader pids (= pgids) of every group spawned here, until a group kill finds it empty. */
+const spawnedGroups = new Set<number>();
 let stdioReapArmed = false;
 
 /** While armed, a spawn closes itself. closeAll sets this at the connect deadline. */
@@ -198,6 +200,27 @@ export function armStdioReap(): void {
 
 export function disarmStdioReap(): void {
   stdioReapArmed = false;
+}
+
+/**
+ * V53-F1: last-resort synchronous kill for a forced stop. SIGKILL every process group this
+ * process spawned that still has a living member (pooled, connecting, or mid-close), so a
+ * forced exit never leaves stdio backends or their children behind.
+ */
+export function killLiveStdioSync(): number {
+  let signalled = 0;
+  for (const pgid of [...spawnedGroups]) {
+    const leader = process.platform === "linux" ? procStat(pgid) : null;
+    // A living leader that is not our child means the pid was reused: not our group.
+    const reused = leader !== null && leader.state !== "Z" && (leader.ppid !== process.pid || leader.pgrp !== pgid);
+    if (reused || livingGroupMembers(pgid).length === 0) {
+      spawnedGroups.delete(pgid);
+      continue;
+    }
+    signalTree(pgid, "SIGKILL", process.platform !== "win32");
+    signalled++;
+  }
+  return signalled;
 }
 
 /** Close every stdio transport that has spawned but may not be in the pool yet. */
@@ -240,7 +263,10 @@ class GroupedStdioClientTransport extends StdioClientTransport {
         detached,
       });
       self._process = child;
-      if (detached && child.pid) this.leaderPid = child.pid;
+      if (detached && child.pid) {
+        this.leaderPid = child.pid;
+        spawnedGroups.add(child.pid);
+      }
       if (child.pid) this.track();
       child.on("error", (error: Error) => {
         reject(error);
@@ -249,6 +275,12 @@ class GroupedStdioClientTransport extends StdioClientTransport {
       child.on("spawn", () => {
         this.track();
         resolve();
+      });
+      // V53-F3: when the leader exits on its own (crash), reap the rest of its process group now.
+      // The SDK Client drops its transport on close, so a later client.close() never reaches
+      // close() here and the group kill would otherwise never run.
+      child.on("exit", () => {
+        if (this.leaderPid !== null) void this.close();
       });
       child.on("close", () => {
         self._process = undefined;
@@ -282,7 +314,10 @@ class GroupedStdioClientTransport extends StdioClientTransport {
     this.groupClose = (async () => {
       const pid = this.leaderPid;
       this.leaderPid = null;
-      if (pid) await killProcessGroup(pid, true);
+      if (pid) {
+        await killProcessGroup(pid, true);
+        if (livingGroupMembers(pid).length === 0) spawnedGroups.delete(pid);
+      }
       await super.close();
     })();
     return this.groupClose;
@@ -338,6 +373,7 @@ async function connectOnce(
   command: string[],
   env: Record<string, string>,
   cwd?: string,
+  timeoutMs?: number,
 ): Promise<StdioRunResult> {
   const [cmd, ...args] = command;
   const transport = new GroupedStdioClientTransport({
@@ -372,8 +408,11 @@ async function connectOnce(
     { capabilities: {} },
   );
   try {
-    await client.connect(transport);
-    const listed = await client.listTools();
+    // V53-F4: initialize and the first tools/list are bounded (SDK default is 60 s); on timeout the
+    // client is closed below, which kills the backend's process group.
+    const opts = timeoutMs ? { timeout: timeoutMs } : undefined;
+    await client.connect(transport, opts);
+    const listed = await client.listTools(undefined, opts);
     initDone = true;
     return {
       client,
@@ -398,13 +437,15 @@ export async function connectStdioCommand(opts: {
   command: string[];
   env: Record<string, string>;
   cwd?: string;
+  /** V53-F4: bound for initialize + first tools/list (ms). */
+  timeoutMs?: number;
 }): Promise<StdioRunResult> {
   if (!opts.command.length) {
     throw new Error("stdio command is empty");
   }
   const env = buildStdioEnv(opts.env);
   try {
-    return await connectOnce(opts.command, env, opts.cwd);
+    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!isNpxLikeCommand(opts.command) || !isNpxCacheCorruption(msg)) {
@@ -415,7 +456,7 @@ export async function connectStdioCommand(opts: {
       `[mcp-flow] npx extract looks corrupt (${redactLog(msg.split("\n")[0])}); clearing ${npxExtractStore(cache)} and retrying`,
     );
     clearNpxExtractStore(cache);
-    return await connectOnce(opts.command, env, opts.cwd);
+    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
   }
 }
 

@@ -39,6 +39,10 @@ import {
 } from "../audit/redact-admin-args.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
+import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
+import { AgentDirectory } from "../identity/agents.js";
+import { derivePolicyKeys, type PolicyKeys } from "../identity/dev-keys.js";
+import { PolicyEnforcer } from "../policy/enforcer.js";
 import {
   applyHeaderPatch,
   compactEnvRecord,
@@ -58,11 +62,13 @@ import { assertOauthBackendConfig } from "../oauth/policy.js";
 import {
   authPublicByWorkspace,
   authPublicForBackend,
+  clearOauthTokens,
   deleteOauthBackend,
   getOauthRow,
   insertOauthBackend,
   upsertOauthSettings,
 } from "./oauth-store.js";
+import { urlOriginChanged } from "./url-origin.js";
 import {
   authzMatchHasConstraint,
   clampAuthzTtl,
@@ -793,13 +799,24 @@ export class Store {
     (workspaceId: string, slug: string) => void
   >();
 
-  constructor(dbPath: string, masterKeyRaw: string) {
+  readonly identity: AgentDirectory;
+  readonly policy: PolicyEnforcer;
+  readonly policyKeys: PolicyKeys;
+
+  constructor(
+    dbPath: string,
+    masterKeyRaw: string,
+    opts: { policyDevKeyRaw?: string; journalSizeLimitBytes?: number; rateLimitPerMin?: number } = {},
+  ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
-    this.db.exec("PRAGMA journal_mode = WAL;");
-    this.db.exec("PRAGMA foreign_keys = ON;");
+    applyConnectionPragmas(this.db, { journalSizeLimitBytes: opts.journalSizeLimitBytes });
     this.db.exec(SCHEMA);
     this.migrate();
+    runMigrations(this.db);
+    this.policyKeys = derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`);
+    this.identity = new AgentDirectory(this.db, this.policyKeys);
+    this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys, rateLimitPerMin: opts.rateLimitPerMin });
   }
 
   private migrate(): void {
@@ -934,6 +951,7 @@ export class Store {
   }
 
   close(): void {
+    this.policy.close();
     this.db.close();
   }
 
@@ -1163,6 +1181,11 @@ export class Store {
         "slug must be lowercase alphanumeric/underscore/hyphen, start with a letter",
       );
     }
+    // QA v5.5 note B: "__" separates backend and tool in namespaced names (slug__tool), so a slug
+    // containing it could collide with another backend's tool and misroute legacy calls
+    if (slug.includes("__")) {
+      throw new Error('slug must not contain "__" (it separates backend and tool names)');
+    }
     validateCreateSecrets(input);
     const placement = placementForWrite(
       input.placement ?? { ...DEFAULT_PLACEMENT },
@@ -1332,6 +1355,14 @@ export class Store {
     let nextHeaders = this.decryptHeaders(existing);
     const apiKeySets =
       typeof input.apiKey === "string" && input.apiKey.trim() !== "";
+    const originsDiffer = urlOriginChanged(existing.url, url);
+    if (originsDiffer) {
+      // Headers and apiKey authenticate the previous origin. A scheme, host,
+      // or port change drops them. Only values re-supplied in this update
+      // are sealed for the new origin. A blank "keep" does not count.
+      nextHeaders = {};
+      headersEnc = null;
+    }
     if (input.headers !== undefined || apiKeySets) {
       if (input.headers === null && !apiKeySets) {
         headersEnc = null;
@@ -1433,6 +1464,20 @@ export class Store {
         deleteOauthBackend(this.db, existing.id);
       } else if (input.auth?.type === "oauth") {
         upsertOauthSettings(this.oauthConn(), existing.id, input.auth);
+      }
+      if (
+        originsDiffer &&
+        input.auth?.type !== "static" &&
+        getOauthRow(this.db, existing.id)
+      ) {
+        // Tokens are bound to the previous origin and cannot be re-supplied
+        // on this update. Client id and client secret stay; the grant must
+        // be authorized again.
+        clearOauthTokens(
+          this.oauthConn(),
+          existing.id,
+          "upstream origin changed",
+        );
       }
       this.db.exec("COMMIT");
     } catch (err) {
@@ -2457,6 +2502,8 @@ export class Store {
     endpoint: string;
     p256dh: string;
     auth: string;
+    /** T2.4: human approver agent that owns this device (agt_…); null = workspace operator device */
+    agentId?: string | null;
   }): PushSubscriptionPublic {
     const endpoint = String(input.endpoint ?? "").trim();
     const p256dh = String(input.p256dh ?? "").trim();
@@ -2472,12 +2519,13 @@ export class Store {
     if (existing) {
       this.db
         .prepare(
-          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?,
+          `UPDATE push_subscriptions SET workspace_id = ?, operator_key_id = ?, agent_id = ?,
            p256dh = ?, auth = ?, created_at = ? WHERE id = ?`,
         )
         .run(
           input.workspaceId,
           input.operatorKeyId,
+          input.agentId ?? null,
           p256dh,
           auth,
           now,
@@ -2497,19 +2545,49 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO push_subscriptions (
-          id, workspace_id, operator_key_id, endpoint, p256dh, auth, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          id, workspace_id, operator_key_id, agent_id, endpoint, p256dh, auth, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.workspaceId,
         input.operatorKeyId,
+        input.agentId ?? null,
         endpoint,
         p256dh,
         auth,
         now,
       );
     return { id, endpointHint: endpointHint(endpoint), createdAt: now };
+  }
+
+  /** T2.4: subscriptions owned by the given human approver agents. */
+  listApproverPushSubscriptions(
+    workspaceId: string,
+    agentIds: string[],
+  ): Array<{ id: string; agentId: string; endpoint: string; p256dh: string; auth: string }> {
+    if (!agentIds.length) return [];
+    const rows = this.db
+      .prepare(
+        `SELECT id, agent_id, endpoint, p256dh, auth FROM push_subscriptions
+          WHERE workspace_id = ? AND agent_id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(workspaceId, JSON.stringify(agentIds)) as Record<string, unknown>[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      agentId: String(r.agent_id),
+      endpoint: String(r.endpoint),
+      p256dh: String(r.p256dh),
+      auth: String(r.auth),
+    }));
+  }
+
+  /** Link an existing subscription to a human approver agent (trigger rejects non-humans). */
+  setPushSubscriptionAgent(workspaceId: string, id: string, agentId: string | null): boolean {
+    const res = this.db
+      .prepare(`UPDATE push_subscriptions SET agent_id = ? WHERE id = ? AND workspace_id = ?`)
+      .run(agentId, id, workspaceId);
+    return Number(res.changes) > 0;
   }
 
   deletePushSubscription(workspaceId: string, id: string): boolean {

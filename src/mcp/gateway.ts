@@ -50,12 +50,36 @@ import {
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
+  BackendUnavailableError,
+  namespaceTool,
   parseNamespacedTool,
   UpstreamPool,
   type NamespacedTool,
 } from "./upstream.js";
 
 const META_TOOLS: Tool[] = [
+  {
+    name: "mf_pending_result",
+    description:
+      "Read the outcome of a call that returned approval_pending (same agent, any of its keys). Returns not_ready while it is still held. The result stays readable until it expires (24 h after it is stored); every read is audited.",
+    inputSchema: {
+      type: "object",
+      properties: { pending_call_id: { type: "string" } },
+      required: ["pending_call_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_pending_status",
+    description:
+      "Status of a call held for human approval (pending_call_id from a policy result). Agent keys only.",
+    inputSchema: {
+      type: "object",
+      properties: { pending_call_id: { type: "string" } },
+      required: ["pending_call_id"],
+      additionalProperties: false,
+    },
+  },
   {
     name: "mf_list_backends",
     description:
@@ -180,16 +204,18 @@ function filterTools(
   tools: Tool[],
   auth: AuthContext,
   project: Project | null,
+  slugs?: Iterable<string>,
 ): Tool[] {
   return tools.filter(
     (t) =>
       toolAllowedByScopes(t.name, auth.scopes) &&
-      toolAllowedByProject(t.name, project),
+      toolAllowedByProject(t.name, project, slugs),
   );
 }
 
 function stickySessionId(auth: AuthContext): string | null {
-  return auth.mcpSessionId || (auth.keyId ? `key:${auth.keyId}` : null);
+  if (auth.mcpSessionId) return auth.mcpSessionId;
+  return auth.keyId ? `key:${auth.keyId}` : null;
 }
 
 function workingSetFor(auth: AuthContext): Set<string> {
@@ -219,6 +245,16 @@ function resolveActiveProject(
   if (slug) {
     const p = store.getProjectBySlug(auth.workspaceId, slug);
     if (p && keyMayUseProject(auth.scopes, p.slug)) return p;
+  }
+  if (auth.agentId) {
+    // Agents never fall back to a project outside key ∩ agent projects (T1.1 §3.4).
+    const allowed = auth.effectiveProjects ?? [];
+    if (def && allowed.includes(def.slug)) return def;
+    for (const s of allowed) {
+      const p = store.getProjectBySlug(auth.workspaceId, s);
+      if (p) return p;
+    }
+    return null;
   }
   return def;
 }
@@ -255,7 +291,117 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     },
   );
 
+  // QA v5.5 item 2: tools.listChanged is advertised, so tell this client when a backend of its
+  // workspace finishes a late init (it was left out of an earlier listing) or its tool set changes.
+  // Delivered on the client's standalone GET SSE stream; a request-scoped server is closed (and
+  // unsubscribed) when its response ends.
+  const unsubscribeToolsChanged = upstream.onToolsChanged?.((workspaceId) => {
+    if (workspaceId !== ctx.workspaceId) return;
+    void server.sendToolListChanged().catch(() => undefined);
+  });
+  const priorOnClose = server.onclose;
+  server.onclose = () => {
+    unsubscribeToolsChanged?.();
+    priorOnClose?.();
+  };
+
   const edgeEnabled = Boolean(edgeHub);
+
+  /**
+   * T2.2: per-agent policy enforcement before any byte reaches a backend or edge device.
+   * Matches on the routing-resolved (backend slug, backend tool), never on the caller's spelling.
+   * Legacy (non-agent) keys keep the existing authz gate until the T1.4 cutover.
+   */
+  const agentPolicyCall = async (
+    qualified: string,
+    callArgs: Record<string, unknown>,
+    project: Project | null,
+    hold: { asyncApproval?: boolean; idempotencyKey?: string | null; onProgress?: (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => void } = {},
+  ): Promise<CallToolResult> => {
+    const who = {
+      workspaceId: ctx.workspaceId, agentId: ctx.agentId!, agentName: ctx.agentName ?? "",
+      keyId: ctx.keyId!, keyPrefix: ctx.keyPrefix ?? null, projectId: project?.slug,
+    };
+    // PM: per-agent rate limit first, so no refusal path can be used to flood the audit log either
+    const limited = store.policy.rateLimit(who, qualified, callArgs);
+    if (limited) return limited;
+    if (!project) return store.policy.refuseBeforePolicy(who, "no_active_project", qualified, callArgs);
+    // QA T2.5 F1: resolve the caller's string EXACTLY against the live catalog. No trimming, case
+    // folding or Unicode normalization: anything not byte-identical to a listed tool is refused.
+    const parsed = parseNamespacedTool(qualified, upstream.backendSlugs(ctx.workspaceId));
+    const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
+    if (!parsed || !backend || backend.slug !== parsed.slug) {
+      return store.policy.refuseBeforePolicy(who, "unknown_backend", qualified, callArgs);
+    }
+    // V53-F4: resolve against the target backend only, so a stuck backend elsewhere in the
+    // workspace never delays this call; a stuck target gets a typed backend_unavailable refusal.
+    let catalog: NamespacedTool[];
+    try {
+      catalog = await upstream.listBackendTools(ctx.workspaceId, backend);
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) {
+        const res = store.policy.refuseBeforePolicy({ ...who, backendSlug: backend.slug }, "backend_unavailable", qualified, callArgs);
+        const first = res.content[0] as { type: string; text: string };
+        try {
+          const payload = JSON.parse(first.text) as Record<string, unknown>;
+          if (payload.reason === "backend_unavailable") {
+            payload.backend = backend.slug;
+            payload.retry_after_ms = err.retryAfterMs;
+            first.text = JSON.stringify(payload);
+          }
+        } catch {
+          /* keep the refusal as written */
+        }
+        return res;
+      }
+      catalog = [];
+    }
+    const entry = catalog.find((t) => t.name === qualified);
+    const canonical = entry ? parseNamespacedTool(entry.name, upstream.backendSlugs(ctx.workspaceId)) : null;
+    if (!entry || !canonical || canonical.slug !== backend.slug || namespaceTool(canonical.slug, canonical.tool) !== qualified) {
+      return store.policy.refuseBeforePolicy({ ...who, backendSlug: backend.slug }, "unknown_tool", qualified, callArgs);
+    }
+    // from here on only the catalog's own name is used for policy and dispatch
+    const routed = entry.name;
+    const info = upstream.resolveCallContext(ctx.workspaceId, routed);
+    parsed.tool = canonical.tool;
+    return store.policy.enforce({
+      ctx: {
+        workspaceId: ctx.workspaceId,
+        agentId: ctx.agentId!,
+        agentName: ctx.agentName ?? "",
+        keyId: ctx.keyId!,
+        keyPrefix: ctx.keyPrefix ?? null,
+        sessionId: ctx.projectSessionId ?? null,
+        projectId: project.slug,
+        backendSlug: backend.slug,
+        tool: parsed.tool,
+        qualifiedTool: routed,
+        placement: info.placement,
+        deviceId: info.deviceId,
+      },
+      args: callArgs,
+      signal: deps.abortSignal,
+      approveBaseUrl: deps.approveBaseUrl ?? null,
+      asyncApproval: hold.asyncApproval,
+      idempotencyKey: hold.idempotencyKey,
+      onProgress: hold.onProgress,
+      dispatch: (frozen) => upstream.callTool(ctx.workspaceId, routed, frozen),
+    });
+  };
+
+  /** QA T2.5 F2: every refused upstream-call attempt by an agent also lands in mcpflow_call_audit. */
+  const agentEarlyRefuse = (qualified: string, callArgs: Record<string, unknown>, project: Project | null) => {
+    if (!ctx.agentId || !ctx.keyId || qualified.startsWith("mf_")) return;
+    const parsed = parseNamespacedTool(qualified, upstream.backendSlugs(ctx.workspaceId));
+    const backend = parsed ? store.getBackend(ctx.workspaceId, parsed.slug) : null;
+    store.policy.refuseBeforePolicy(
+      { workspaceId: ctx.workspaceId, agentId: ctx.agentId, agentName: ctx.agentName ?? "", keyId: ctx.keyId,
+        keyPrefix: ctx.keyPrefix ?? null, projectId: project?.slug, backendSlug: backend?.slug },
+      !project ? "no_active_project" : backend && backend.slug === parsed?.slug ? "unknown_tool" : "unknown_backend",
+      qualified, callArgs,
+    );
+  };
 
   const activeProject = (): Project | null =>
     resolveActiveProject(store, ctx);
@@ -263,12 +409,21 @@ export function createGatewayServer(deps: GatewayDeps): Server {
   const catalogInScope = async (
     project: Project | null,
   ): Promise<NamespacedTool[]> => {
-    const all = await upstream.listNamespacedTools(ctx.workspaceId);
-    return all.filter(
+    // QA v5.5 note A: only the project's backends are listed (and waited on); toolAllowedByProject
+    // below would drop the others anyway
+    const all = await upstream.listNamespacedTools(ctx.workspaceId, project ? new Set(project.backendSlugs) : undefined);
+    const wsSlugs = upstream.backendSlugs(ctx.workspaceId);
+    const inScope = all.filter(
       (t) =>
         toolAllowedByScopes(t.name, ctx.scopes) &&
-        toolAllowedByProject(t.name, project),
+        toolAllowedByProject(t.name, project, wsSlugs),
     );
+    // PM-approved: agents don't see tools policy would deny for every possible args.
+    // Display only; enforcement still runs on every call.
+    if (!ctx.agentId || !project) return inScope;
+    return store.policy.hideAlwaysDenied(inScope, {
+      workspaceId: ctx.workspaceId, agentId: ctx.agentId, projectId: project.slug,
+    });
   };
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -297,6 +452,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       ],
       ctx,
       project,
+      upstream.backendSlugs(ctx.workspaceId),
     );
     store.writeAudit({
       workspaceId: ctx.workspaceId,
@@ -312,7 +468,33 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     return { tools };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    // hold UX: MCP progress notifications (when the client sent a progressToken) and the
+    // opt-in approval_pending early return (_meta["mcp-flow/approval"] = "async")
+    const meta = (request.params._meta ?? {}) as Record<string, unknown>;
+    const progressToken = meta.progressToken as string | number | undefined;
+    const holdOpts = (asyncApproval: boolean, idempotencyKey?: unknown) => ({
+      asyncApproval,
+      idempotencyKey: idempotencyKey == null ? undefined : String(idempotencyKey),
+      onProgress:
+        progressToken === undefined
+          ? undefined
+          : (p: { pendingCallId: string; elapsedMs: number; expiresAt: string }) => {
+              const total = Math.max(p.elapsedMs, Date.parse(p.expiresAt) - (Date.now() - p.elapsedMs));
+              void extra
+                .sendNotification({
+                  method: "notifications/progress",
+                  params: {
+                    progressToken,
+                    progress: Math.floor(p.elapsedMs / 1000),
+                    total: Math.ceil(total / 1000),
+                    message: `waiting for human approval (pending_call_id ${p.pendingCallId}, expires ${p.expiresAt})`,
+                  },
+                })
+                .catch(() => undefined);
+            },
+    });
+    const wantsAsync = meta["mcp-flow/approval"] === "async";
     const name = request.params.name;
     const args = (request.params.arguments ?? {}) as Record<string, unknown>;
     const started = Date.now();
@@ -404,15 +586,17 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     if (!toolAllowedByScopes(name, ctx.scopes)) {
       const result = textResult("Tool not allowed by API key scopes", true);
       await auditCall(result, { denied: true, reason: "scope" });
+      agentEarlyRefuse(name, args, project);
       return result;
     }
 
-    if (!toolAllowedByProject(name, project)) {
+    if (!toolAllowedByProject(name, project, upstream.backendSlugs(ctx.workspaceId))) {
       const result = textResult(
         `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
         true,
       );
       await auditCall(result, { denied: true, reason: "project" });
+      agentEarlyRefuse(name, args, project);
       return result;
     }
 
@@ -545,6 +729,15 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
+      if (ctx.agentId && !(ctx.effectiveProjects ?? []).includes(slug)) {
+        // T1.1 §3.4: project outside key ∩ agent projects -> 403
+        const result = textResult(
+          { error: "forbidden", status: 403, message: `project not permitted for agent: ${slug}` },
+          true,
+        );
+        auditCall(result, { meta: true });
+        return result;
+      }
       if (!keyMayUseProject(ctx.scopes, slug)) {
         const result = textResult("key cannot use project", true);
         await auditCall(result, { meta: true });
@@ -557,9 +750,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       // Bind MCP session sticky when we have a session id
-      const sid =
-        ctx.mcpSessionId ||
-        (ctx.keyId ? `key:${ctx.keyId}` : null);
+      const sid = stickySessionId(ctx);
       if (sid && ctx.keyId) {
         globalSessionProjects.set(sid, {
           projectId: target.id,
@@ -576,7 +767,23 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       let sessionMeta: Record<string, unknown> | undefined;
       const mint =
         args.mintSessionToken !== false && Boolean(ctx.keyId);
-      if (mint && ctx.keyId) {
+      if (mint && ctx.keyId && ctx.agentId) {
+        const sess = store.identity.createSession(
+          {
+            agentId: ctx.agentId,
+            keyId: ctx.keyId,
+            keyExpiresAt: ctx.keyExpiresAt ?? new Date().toISOString(),
+            effectiveProjects: ctx.effectiveProjects ?? [],
+          },
+          target.slug,
+        );
+        sessionToken = sess.token;
+        sessionMeta = {
+          sessionId: sess.sessionId,
+          expiresAt: sess.expiresAt,
+          token: sess.token,
+        };
+      } else if (mint && ctx.keyId) {
         const sess = store.createProjectSession(
           ctx.workspaceId,
           ctx.keyId,
@@ -634,6 +841,18 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         keyId: ctx.keyId ?? null,
         keyName: ctx.keyName ?? null,
         scopes: ctx.scopes ?? null,
+        agent: ctx.agentId
+          ? {
+              id: ctx.agentId,
+              name: ctx.agentName ?? null,
+              owner: ctx.agentOwner ?? null,
+              kind: ctx.agentKind ?? null,
+              keyId: ctx.keyId ?? null,
+              keyPrefix: ctx.keyPrefix ?? null,
+              keyExpiresAt: ctx.keyExpiresAt ?? null,
+              effectiveProjects: ctx.effectiveProjects ?? [],
+            }
+          : null,
         project: project
           ? { slug: project.slug, backendSlugs: project.backendSlugs }
           : null,
@@ -707,7 +926,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!toolAllowedByProject(toolName, project)) {
+      if (!toolAllowedByProject(toolName, project, upstream.backendSlugs(ctx.workspaceId))) {
         const result = textResult(
           `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
           true,
@@ -775,8 +994,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         for (const n of names) {
           if (working.has(n)) toRemove.add(n);
         }
+        const wsSlugs = upstream.backendSlugs(ctx.workspaceId);
         for (const toolName of working) {
-          const parsed = parseNamespacedTool(toolName);
+          const parsed = parseNamespacedTool(toolName, wsSlugs);
           if (parsed && backends.includes(parsed.slug)) toRemove.add(toolName);
           if (prefixes.some((p) => p.length > 0 && toolName.startsWith(p))) {
             toRemove.add(toolName);
@@ -869,6 +1089,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
     }
 
     if (name === "mf_call_tool") {
+      // no trimming: the exact-name resolver decides (QA T2.5 F1)
       if (typeof args.name !== "string") {
         const result = textResult("name required", true);
         await auditCall(result, { meta: true });
@@ -893,6 +1114,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         return result;
       }
       if (!toolAllowedByScopes(innerName, ctx.scopes)) {
+        agentEarlyRefuse(innerName, innerArgs, project);
         const result = textResult(
           "Tool not allowed by API key scopes",
           true,
@@ -900,7 +1122,8 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!toolAllowedByProject(innerName, project)) {
+      if (!toolAllowedByProject(innerName, project, upstream.backendSlugs(ctx.workspaceId))) {
+        agentEarlyRefuse(innerName, innerArgs, project);
         const result = textResult(
           `Tool not in active project (${project?.slug ?? "none"}). Use mf_use_project or mf_list_projects.`,
           true,
@@ -919,12 +1142,26 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!(await upstream.toolIsCallable(ctx.workspaceId, innerName))) {
-        const result = textResult("tool not found", true);
-        await auditCall(result, { meta: true });
+      if (ctx.agentId) {
+        const result = await agentPolicyCall(innerName, innerArgs, project, holdOpts(wantsAsync || args.async_approval === true, args.idempotency_key ?? meta["mcp-flow/idempotency_key"]));
+        auditCall(result, { meta: true });
         return result;
       }
-      const parsed = parseNamespacedTool(innerName);
+      try {
+        if (!(await upstream.toolIsCallable(ctx.workspaceId, innerName))) {
+          const result = textResult("tool not found", true);
+          await auditCall(result, { meta: true });
+          return result;
+        }
+      } catch (err) {
+        if (err instanceof BackendUnavailableError) {
+          const result = textResult(err.message, true);
+          await auditCall(result, { meta: true });
+          return result;
+        }
+        throw err;
+      }
+      const parsed = parseNamespacedTool(innerName, upstream.backendSlugs(ctx.workspaceId));
       const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
       const innerCtx: AuthzEvalContext = {
         tool: innerName,
@@ -1018,6 +1255,33 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
+    if (name === "mf_pending_result") {
+      const pid = String(args.pending_call_id ?? "");
+      const r = ctx.agentId ? store.policy.takeAsyncResult(pid, ctx.agentId) : "gone";
+      const result =
+        r === "not_ready"
+          ? textResult({ pending_call_id: pid, status: "not_ready" })
+          : r === "gone"
+            ? textResult("no result for this pending call (unknown pending_call_id, or not yours)", true)
+            : r;
+      auditCall(result, { meta: true });
+      return result;
+    }
+
+    if (name === "mf_pending_status") {
+      const pid = String(args.pending_call_id ?? "");
+      const st = ctx.agentId ? store.policy.pendingStatus(pid, ctx.agentId) : null;
+      const result = st
+        ? textResult({
+            pending_call_id: pid, status: st.status, expires_at: st.expiresAt, outcome: st.outcome,
+            final_outcome: st.finalOutcome, result_status: st.resultStatus, dispatched: st.dispatched,
+            ...(st.cancelReason ? { cancel_reason: st.cancelReason } : {}),
+          })
+        : textResult("pending call not found for this agent", true);
+      await auditCall(result, { meta: true });
+      return result;
+    }
+
     if (/^mf_admin_/i.test(name)) {
       const result = textResult("Unknown admin tool", true);
       await auditCall(result, { meta: true });
@@ -1038,17 +1302,32 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         "Tool not enabled for this key (dynamicTools). Search with mf_list_tools then mf_enable_tools.",
         true,
       );
+      agentEarlyRefuse(name, args, project);
       await auditCall(result, { denied: true, reason: "dynamic_working_set" });
       return result;
     }
 
-    if (!(await upstream.toolIsCallable(ctx.workspaceId, name))) {
-      const result = textResult("tool not found", true);
-      await auditCall(result);
+    if (ctx.agentId) {
+      const result = await agentPolicyCall(name, args, project, holdOpts(wantsAsync, meta["mcp-flow/idempotency_key"]));
+      auditCall(result);
       return result;
     }
 
-    const parsed = parseNamespacedTool(name);
+    try {
+      if (!(await upstream.toolIsCallable(ctx.workspaceId, name))) {
+        const result = textResult("tool not found", true);
+        await auditCall(result);
+        return result;
+      }
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) {
+        const result = textResult(err.message, true);
+        await auditCall(result);
+        return result;
+      }
+      throw err;
+    }
+    const parsed = parseNamespacedTool(name, upstream.backendSlugs(ctx.workspaceId));
     const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, name);
     const gate = await runAuthzGate({
       store,

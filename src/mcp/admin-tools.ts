@@ -1,6 +1,8 @@
 /**
  * Operator MCP tools (mf_admin_*) — only for keys with scopes.admin.
  */
+import { redactSecrets } from "../audit/sanitize.js";
+import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { installFromGallery } from "../catalog/install.js";
 import { readEntryFile } from "../catalog/shard.js";
@@ -141,7 +143,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
   {
     name: "mf_admin_update_backend",
     description:
-      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). Secret values are write-only. Requires admin key.",
+      "Patch backend by id or slug. env and headers merge per key by default (omit a key to keep it, null or unsetEnv to delete it, envMode or headerMode replace to swap the map). A URL change of scheme, host, or port clears sealed headers, apiKey, and OAuth tokens unless this update supplies replacements. Secret values are write-only. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -149,14 +151,18 @@ export const ADMIN_META_TOOLS: Tool[] = [
         enabled: { type: "boolean" },
         title: { type: "string" },
         transport: { type: "string" },
-        url: { type: ["string", "null"] },
+        url: {
+          type: ["string", "null"],
+          description:
+            "Changing scheme, host, or port clears sealed headers, apiKey, and OAuth tokens unless this update supplies replacements.",
+        },
         image: { type: ["string", "null"] },
         command: { type: ["array", "null"], items: { type: "string" } },
         headers: {
           type: ["object", "null"],
           additionalProperties: { type: ["string", "null"] },
           description:
-            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced.",
+            "Per-key merge by default. Null deletes that header. Empty string keeps the sealed value. Authorization is kept unless cleared or replaced. An origin change drops every header this update does not set.",
         },
         headerMode: {
           type: "string",
@@ -359,6 +365,55 @@ export const ADMIN_META_TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: { allowEdgeBare: { type: "boolean" } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_query_audit",
+    description:
+      "Query the append-only per-call audit log (agent, decision, outcome, latency). Newest first; pass next_cursor to page. Admin only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "ISO time, inclusive" },
+        to: { type: "string", description: "ISO time, exclusive" },
+        agent_id: { type: "string" },
+        key_id: { type: "string" },
+        project_id: { type: "string" },
+        backend_slug: { type: "string" },
+        tool: { type: "string" },
+        event_type: { type: "string", enum: ["decision", "completion", "lifecycle", "result_read", "result_purge"] },
+        policy_decision: { type: "string", enum: ["allow", "deny", "require_approval"] },
+        final_outcome: { type: "string" },
+        call_id: { type: "string" },
+        pending_call_id: { type: "string" },
+        limit: { type: "number", description: "1-500, default 100" },
+        cursor: { type: "number" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "mf_admin_export_audit",
+    description: "Export the per-call audit log as CSV or JSON (oldest first, max 10000 rows, redacted). Admin only.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        from: { type: "string", description: "ISO time, inclusive" },
+        to: { type: "string", description: "ISO time, exclusive" },
+        agent_id: { type: "string" },
+        key_id: { type: "string" },
+        project_id: { type: "string" },
+        backend_slug: { type: "string" },
+        tool: { type: "string" },
+        event_type: { type: "string", enum: ["decision", "completion", "lifecycle", "result_read", "result_purge"] },
+        policy_decision: { type: "string", enum: ["allow", "deny", "require_approval"] },
+        final_outcome: { type: "string" },
+        call_id: { type: "string" },
+        pending_call_id: { type: "string" },
+        format: { type: "string", enum: ["csv", "json"] },
+        max_rows: { type: "number" },
+      },
       additionalProperties: false,
     },
   },
@@ -840,7 +895,7 @@ export async function handleAdminTool(
           "backend.update",
           {
             via: "mf_admin",
-            ...backendUpdateAuditDetail(body),
+            ...backendUpdateAuditDetail(body, { previousUrl: existing.url }),
           },
           { backendSlug: backend.slug },
         );
@@ -1070,6 +1125,32 @@ export async function handleAdminTool(
         return textResult({ workspace: ws });
       }
 
+      case "mf_admin_query_audit": {
+        const out = queryCallAudit(store.db, wsId, callAuditFilterFrom(args), {
+          limit: args.limit == null ? undefined : Number(args.limit),
+          cursor: args.cursor == null ? undefined : Number(args.cursor),
+        });
+        return textResult({ rows: out.rows, next_cursor: out.nextCursor });
+      }
+
+      case "mf_admin_export_audit": {
+        const format = args.format === "json" ? "json" : "csv";
+        const out = exportCallAudit(
+          store.db,
+          wsId,
+          callAuditFilterFrom(args),
+          format,
+          args.max_rows == null ? undefined : Number(args.max_rows),
+        );
+        audit("audit.export", { via: "mf_admin", format, rows: out.rows, truncated: out.truncated });
+        return {
+          content: [
+            { type: "text", text: JSON.stringify({ format, rows: out.rows, truncated: out.truncated }) },
+            { type: "text", text: out.body },
+          ],
+        };
+      }
+
       case "mf_admin_list_audit": {
         const limit = Number(args.limit ?? 40);
         const before =
@@ -1189,6 +1270,14 @@ export async function handleAdminTool(
         return textResult("Unknown admin tool", true);
     }
   } catch (err) {
-    return textResult(err instanceof Error ? err.message : String(err), true);
+    // Security T2.5 L-9: redact and cap; full detail stays in the server log
+    return textResult(adminErrorText(name, err), true);
   }
+}
+
+/** Security T2.5 L-9: redacted, capped error text for admin tools; full (redacted) detail is logged. */
+export function adminErrorText(tool: string, err: unknown): string {
+  const msg = redactSecrets(err instanceof Error ? err.message : String(err));
+  console.error(`[mcp-flow] admin tool ${tool} failed: ${msg}`);
+  return msg.length > 300 ? `${msg.slice(0, 300)}…` : msg;
 }
