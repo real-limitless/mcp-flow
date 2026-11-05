@@ -126,7 +126,7 @@ export class SecretDirectory {
     return row;
   }
 
-  /** Create, rotate, and delete are human-admin writes. The row is the check, not the caller flag. */
+  /** Create, rotate, delete, and list require a human admin. The row is the check, not the caller flag. */
   private requireHumanAdmin(row: ActorRow): void {
     if (row.kind !== "human" || row.is_admin !== 1) {
       throw new SecretError("human admin required", 403);
@@ -252,7 +252,7 @@ export class SecretDirectory {
   }
 
   list(input: SecretActor & { project?: string | null; q?: string | null }): { secrets: SecretListItem[] } {
-    this.actor(input);
+    this.requireHumanAdmin(this.actor(input));
     const project = input.project ?? null;
     if (project != null) this.allowProject(input, project);
     const q = input.q ?? null;

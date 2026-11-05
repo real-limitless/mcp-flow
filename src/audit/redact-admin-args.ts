@@ -173,6 +173,7 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_secret_create",
   "mf_secret_rotate",
   "mf_secret_delete",
+  "mf_secret_list",
 ]);
 
 /** A tool name that may be stored for a call that was not dispatched. */
@@ -212,7 +213,7 @@ export function redactAdminToolAuditArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!args || typeof args !== "object" || Array.isArray(args)) return args;
-  if (!/^mf_admin_/i.test(tool) && !/^mf_secret_(create|rotate|delete)$/i.test(tool)) return args;
+  if (!/^mf_admin_/i.test(tool) && !/^mf_secret_(create|rotate|delete|list)$/i.test(tool)) return args;
   const projected = projectSchemaArgs(tool, args);
   if (!hasSecretShape(projected)) return projected;
   return redactLevel(projected);

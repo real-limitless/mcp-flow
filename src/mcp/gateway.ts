@@ -47,7 +47,7 @@ import {
   searchCatalogTools,
   stringList,
 } from "./dynamic-tools.js";
-import { callSecretTool, isSecretTool, isSecretWriteTool, SECRET_META_TOOLS, secretToolError, secretToolResult } from "../secrets/tools.js";
+import { callSecretTool, isSecretTool, isSecretWriteTool, secretToolError, secretToolResult } from "../secrets/tools.js";
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
@@ -186,7 +186,6 @@ const META_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
-  ...SECRET_META_TOOLS,
 ];
 
 function textResult(data: unknown, isError = false): CallToolResult {

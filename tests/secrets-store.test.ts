@@ -14,7 +14,7 @@ import { dekAad, openSecretValue, sealSecretValue } from "../src/secrets/envelop
 import { entropyBits, generateSecret, MIN_ENTROPY_BITS, unbiasedIndex } from "../src/secrets/generate.js";
 import { parseProtectedTargets } from "../src/secrets/protected.js";
 import { secureReclaim } from "../src/secrets/purge.js";
-import { isSecretTool, isSecretWriteTool, SECRET_META_TOOLS, SECRET_WRITE_TOOLS, callSecretTool } from "../src/secrets/tools.js";
+import { isSecretTool, isSecretWriteTool, SECRET_WRITE_TOOLS, callSecretTool } from "../src/secrets/tools.js";
 import { toolAllowedByScopes } from "../src/types.js";
 import { derivePolicyKeys } from "../src/identity/dev-keys.js";
 import { EXACT_ADMIN_TOOL_NAMES } from "../src/audit/redact-admin-args.js";
@@ -230,7 +230,7 @@ describe("secret store", () => {
     const value = plain.toString("utf8");
     expect(JSON.stringify(created)).not.toContain(value);
     expect(dump(store)).not.toContain(value);
-    const listed = store.secrets.list({ ...reader, project: "default" });
+    const listed = store.secrets.list({ ...who, project: "default" });
     expect(listed.secrets).toHaveLength(1);
     expect(listed.secrets[0]).toMatchObject({ ref: created.ref, type: "token", current_version: 1, grants: 0 });
     expect(JSON.stringify(listed)).not.toContain(value);
@@ -249,7 +249,8 @@ describe("secret store", () => {
     expect(() => store.secrets.rotate({ ...reader, ref: created.ref })).toThrow(/human admin/);
     expect(() => store.secrets.delete({ ...reader, ref: created.ref, purge: true })).toThrow(/human admin/);
     expect(store.secrets.delete({ ...who, ref: created.ref })).toEqual({ ref: created.ref, deleted: true });
-    expect(store.secrets.list({ ...reader }).secrets).toEqual([]);
+    expect(() => store.secrets.list({ ...reader })).toThrow(/human admin/);
+    expect(store.secrets.list({ ...who }).secrets).toEqual([]);
     expect(() => store.secrets.rotate({ ...who, ref: created.ref })).toThrow(/not found/);
     const admin = {
       workspaceId: ws,
@@ -271,7 +272,7 @@ describe("secret store", () => {
     store.close();
   });
 
-  it("denies an AI agent key on create, rotate, and delete even when the caller flag says admin", () => {
+  it("denies an AI agent key on create, rotate, delete, and list even when the caller flag says admin", () => {
     const { store, chen, bot, ws } = openReady();
     const botKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(bot) as { id: string };
     const adminKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(chen) as { id: string };
@@ -295,7 +296,7 @@ describe("secret store", () => {
     store.secrets.create({ ...admin, project: "default", name: "kept", type: "uuid" });
     expect(() => store.secrets.rotate({ ...ai, ref: "secret://default/kept" })).toThrow(/human admin/);
     expect(() => store.secrets.delete({ ...ai, ref: "secret://default/kept", purge: true })).toThrow(/human admin/);
-    expect(store.secrets.list({ ...ai, humanAdmin: false }).secrets.map((row) => row.ref)).toEqual(["secret://default/kept"]);
+    expect(() => store.secrets.list({ ...ai, humanAdmin: false })).toThrow(/human admin/);
     const n = store.db.prepare(`SELECT count(*) AS n FROM mcpflow_secret WHERE name = 'nope'`).get() as { n: number };
     expect(n.n).toBe(0);
     store.close();
@@ -449,18 +450,18 @@ describe("secret store", () => {
     });
     expect(old.status).toBe(403);
     expect(isSecretTool("mf_secret_import")).toBe(false);
-    expect(isSecretWriteTool("mf_secret_list")).toBe(false);
-    expect(SECRET_META_TOOLS.map((tool) => tool.name)).toEqual(["mf_secret_list"]);
+    expect(isSecretWriteTool("mf_secret_list")).toBe(true);
     expect(SECRET_WRITE_TOOLS.map((tool) => tool.name)).toEqual([
       "mf_secret_create",
       "mf_secret_rotate",
       "mf_secret_delete",
+      "mf_secret_list",
     ]);
     for (const name of SECRET_WRITE_TOOLS) expect(EXACT_ADMIN_TOOL_NAMES.has(name.name)).toBe(true);
-    expect(EXACT_ADMIN_TOOL_NAMES.has("mf_secret_list")).toBe(false);
     expect(toolAllowedByScopes("mf_secret_create", null)).toBe(false);
+    expect(toolAllowedByScopes("mf_secret_list", null)).toBe(false);
     expect(toolAllowedByScopes("mf_secret_create", { admin: true })).toBe(true);
-    expect(toolAllowedByScopes("mf_secret_list", null)).toBe(true);
+    expect(toolAllowedByScopes("mf_secret_list", { admin: true })).toBe(true);
     for (const name of EXACT_ADMIN_TOOL_NAMES) expect(name).not.toMatch(/secret_reveal|secret_import|payload/);
     const bot = store.identity.createAgent({
       workspaceId: ws.id,
@@ -471,17 +472,18 @@ describe("secret store", () => {
       createdBy: chen,
     });
     const botKey = store.identity.createKey({ agentId: bot, createdBy: chen, projects: ["app"] });
-    const viaTool = callSecretTool(store.secrets, "mf_secret_list", { project: "app" }, {
+    const botCaller = {
       workspaceId: ws.id,
       keyId: botKey.keyId,
       agentId: bot,
-      agentKind: "grokbot",
+      agentKind: "grokbot" as const,
       admin: false,
       allowedProjects: ["app"],
       activeProject: "app",
-    }) as { secrets: Array<{ ref: string }> };
-    expect(viaTool.secrets.map((row) => row.ref)).toEqual(["secret://app/hook"]);
-    expect(JSON.stringify(viaTool)).not.toContain(plain);
+    };
+    expect(() => callSecretTool(store.secrets, "mf_secret_list", { project: "app" }, botCaller)).toThrow(/human admin/);
+    expect(() => callSecretTool(store.secrets, "mf_secret_rotate", { ref: "secret://app/hook" }, botCaller)).toThrow(/human admin/);
+    expect(() => callSecretTool(store.secrets, "mf_secret_delete", { ref: "secret://app/hook" }, botCaller)).toThrow(/human admin/);
     expect(() => callSecretTool(store.secrets, "mf_secret_create", { project: "app", name: "x", type: "token" }, {
       workspaceId: ws.id,
       keyId: "key_" + "0".repeat(24),

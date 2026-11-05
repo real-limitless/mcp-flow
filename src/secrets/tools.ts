@@ -1,7 +1,7 @@
 /**
- * mf_secret_list is a meta read. Create, rotate, and delete are admin writes
- * (human admin in the directory, and EXACT_ADMIN_TOOL_NAMES / ADMIN_META_TOOLS).
- * Results are refs and metadata. Import, reveal, and resync are not registered.
+ * mf_secret_create / rotate / delete / list are human-admin tools.
+ * They are on ADMIN_META_TOOLS and EXACT_ADMIN_TOOL_NAMES, and the store
+ * checks kind=human and is_admin=1. Import, reveal, and resync are not registered.
  */
 
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -54,13 +54,9 @@ export const SECRET_WRITE_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
-];
-
-/** Read path. Stays on the meta tool list and is scoped to the caller's projects. */
-export const SECRET_META_TOOLS: Tool[] = [
   {
     name: "mf_secret_list",
-    description: "List secret metadata for projects this key may use. Never returns a secret value.",
+    description: "List secret metadata for projects this key may use. Human admin only. Never returns a secret value.",
     inputSchema: {
       type: "object",
       properties: {
@@ -73,10 +69,7 @@ export const SECRET_META_TOOLS: Tool[] = [
 ];
 
 const SECRET_WRITE_NAMES = new Set(SECRET_WRITE_TOOLS.map((tool) => tool.name));
-const SECRET_TOOL_NAMES = new Set([
-  ...SECRET_WRITE_TOOLS.map((tool) => tool.name),
-  ...SECRET_META_TOOLS.map((tool) => tool.name),
-]);
+const SECRET_TOOL_NAMES = SECRET_WRITE_NAMES;
 
 export function isSecretWriteTool(name: string): boolean {
   return SECRET_WRITE_NAMES.has(name);

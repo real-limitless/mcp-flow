@@ -60,10 +60,9 @@ describe("legacy secret:// refusal", () => {
   });
 
   it("registers secret writes as admin tools and keeps reveal and payload out", () => {
-    for (const name of ["mf_secret_create", "mf_secret_rotate", "mf_secret_delete"]) {
+    for (const name of ["mf_secret_create", "mf_secret_rotate", "mf_secret_delete", "mf_secret_list"]) {
       expect(EXACT_ADMIN_TOOL_NAMES.has(name)).toBe(true);
     }
-    expect(EXACT_ADMIN_TOOL_NAMES.has("mf_secret_list")).toBe(false);
     for (const name of EXACT_ADMIN_TOOL_NAMES) {
       expect(name).not.toMatch(/payload|secret_reveal|secret_import/);
     }
