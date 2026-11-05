@@ -2001,7 +2001,7 @@ export function createApp(
       ip: clientIp(c),
       abortSignal: c.req.raw.signal,
       // Security T2.5 H-2: configured origin only, never the request's Host header
-      approveBaseUrl: cfg.publicUrl ?? null,
+      approveBaseUrl: cfg.publicUrl || null,
     });
     await server.connect(transport);
     const response = await transport.handleRequest(c.req.raw);

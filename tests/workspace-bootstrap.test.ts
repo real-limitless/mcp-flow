@@ -47,11 +47,13 @@ describe("(a) workspace creation is ops-only", () => {
     expect(inserts.map((s) => s.split(":")[0]).sort()).toEqual(["src/db/store.ts", "src/identity/agents.ts"]);
     // mcpflow_workspace (+ bootstrap admin) is created by no production code path at all: ops/CLI/test only
     expect(bootstrapCalls).toEqual([]);
-    // the legacy `workspaces` row: never from MCP tool code; from the API only on the break-glass env admin
-    // token path (ops secret; name from config, not the request)
+    // the legacy `workspaces` row: never from MCP tool code; from the API only when the env admin
+    // token is presented (ops secret; name from config, not the request). OAuth consent is the second site.
     expect(ensureCalls.filter((f) => f.startsWith("src/mcp/") || f.startsWith("src/edge/") || f.startsWith("src/http/"))).toEqual([]);
-    expect(ensureCalls.filter((f) => f.startsWith("src/api/"))).toEqual(["src/api/app.ts"]);
-    expect(readFileSync(join(ROOT, "src/api/app.ts"), "utf8")).toMatch(/cfg\.adminToken && safeEqualStr\(token, cfg\.adminToken\)\) \{\s*const ws = store\.ensureWorkspace\(cfg\.workspaceName\)/);
+    expect(ensureCalls.filter((f) => f.startsWith("src/api/"))).toEqual(["src/api/app.ts", "src/api/app.ts"]);
+    const api = readFileSync(join(ROOT, "src/api/app.ts"), "utf8");
+    expect(api).toMatch(/cfg\.adminToken && safeEqualStr\(token, cfg\.adminToken\)\) \{\s*const ws = store\.ensureWorkspace\(cfg\.workspaceName\)/);
+    expect(api).toMatch(/safeEqualStr\(credential, cfg\.adminToken\)\) \{\s*approver = \{\s*workspaceId: store\.ensureWorkspace\(cfg\.workspaceName\)\.id/);
   });
 
   describe("dynamic: every API route and every mf_ tool, as agent / human admin / anonymous, creates no workspace", () => {

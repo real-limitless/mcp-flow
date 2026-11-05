@@ -160,6 +160,8 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_admin_revoke_device",
   "mf_admin_set_policy",
   "mf_admin_list_audit",
+  "mf_admin_query_audit",
+  "mf_admin_export_audit",
   "mf_admin_catalog_search",
   "mf_admin_catalog_install",
   "mf_admin_list_projects",

@@ -1013,6 +1013,7 @@ export class UpstreamPool {
       const pooled = await this.getClient(backend);
       return pooled.tools.some((tool) => tool.name === parsed.tool);
     } catch (err) {
+      if (err instanceof BackendUnavailableError) throw err;
       if (isTransportOrConnectionError(err)) await this.retire(backend.id);
       return false;
     }

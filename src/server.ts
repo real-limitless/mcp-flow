@@ -287,7 +287,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   console.error(`  Health: ${url}/health`);
 
   // T2.4: approver notification on one channel (Web Push)
-  store.policy.setNotifier(createPendingCallNotifier(store, { approveBaseUrl: cfg.publicUrl ?? null }));
+  store.policy.setNotifier(createPendingCallNotifier(store, { approveBaseUrl: cfg.publicUrl || null }));
 
   // Timeout = deny even for holds whose waiter is gone (restart, crash): sweep overdue pending calls.
   const sweeper = setInterval(() => {

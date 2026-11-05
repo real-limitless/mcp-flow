@@ -1142,15 +1142,24 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(result, { meta: true });
         return result;
       }
-      if (!(await upstream.toolIsCallable(ctx.workspaceId, innerName))) {
-        const result = textResult("tool not found", true);
-        await auditCall(result, { meta: true });
-        return result;
-      }
       if (ctx.agentId) {
         const result = await agentPolicyCall(innerName, innerArgs, project, holdOpts(wantsAsync || args.async_approval === true, args.idempotency_key ?? meta["mcp-flow/idempotency_key"]));
         auditCall(result, { meta: true });
         return result;
+      }
+      try {
+        if (!(await upstream.toolIsCallable(ctx.workspaceId, innerName))) {
+          const result = textResult("tool not found", true);
+          await auditCall(result, { meta: true });
+          return result;
+        }
+      } catch (err) {
+        if (err instanceof BackendUnavailableError) {
+          const result = textResult(err.message, true);
+          await auditCall(result, { meta: true });
+          return result;
+        }
+        throw err;
       }
       const parsed = parseNamespacedTool(innerName, upstream.backendSlugs(ctx.workspaceId));
       const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, innerName);
@@ -1298,16 +1307,25 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       return result;
     }
 
-    if (!(await upstream.toolIsCallable(ctx.workspaceId, name))) {
-      const result = textResult("tool not found", true);
-      await auditCall(result);
-      return result;
-    }
-
     if (ctx.agentId) {
       const result = await agentPolicyCall(name, args, project, holdOpts(wantsAsync, meta["mcp-flow/idempotency_key"]));
       auditCall(result);
       return result;
+    }
+
+    try {
+      if (!(await upstream.toolIsCallable(ctx.workspaceId, name))) {
+        const result = textResult("tool not found", true);
+        await auditCall(result);
+        return result;
+      }
+    } catch (err) {
+      if (err instanceof BackendUnavailableError) {
+        const result = textResult(err.message, true);
+        await auditCall(result);
+        return result;
+      }
+      throw err;
     }
     const parsed = parseNamespacedTool(name, upstream.backendSlugs(ctx.workspaceId));
     const ctxInfo = upstream.resolveCallContext(ctx.workspaceId, name);

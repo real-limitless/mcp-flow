@@ -10,16 +10,16 @@ export interface Config {
   adminToken: string;
   allowPrivateUrls: boolean;
   workspaceName: string;
-  /** Public origin for the OAuth redirect URI. Empty when unset. */
+  /**
+   * Public origin from MCP_FLOW_PUBLIC_URL.
+   * OAuth redirect issuer when set (empty when unset; the request origin is used then).
+   * Approve links use only this value, never a request-derived origin (Security T2.5 H-2).
+   * When set, must be an https origin (http only for localhost), with no path, query, or credentials.
+   */
   publicUrl: string;
   trustProxy: boolean;
   /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
   policyDevKeyRaw?: string;
-  /**
-   * Public origin for links sent to humans (approve links in Web Push etc.), from MCP_FLOW_PUBLIC_URL.
-   * Never derived from request headers (Security T2.5 H-2). Unset = no absolute links are sent.
-   */
-  publicUrl?: string | null;
   /**
    * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
    * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
@@ -178,16 +178,14 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       env("MCP_FLOW_ALLOW_PRIVATE_URLS", "false") === "true",
     workspaceName:
       overrides.workspaceName ?? env("MCP_FLOW_WORKSPACE_NAME", "default")!,
-    publicUrl: (
-      overrides.publicUrl ??
-      env("MCP_FLOW_PUBLIC_URL", "")!
-    ).replace(/\/$/, ""),
+    publicUrl:
+      (overrides.publicUrl !== undefined
+        ? parsePublicUrl(overrides.publicUrl)
+        : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL"))) ?? "",
     trustProxy:
       overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
     policyDevKeyRaw:
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
-    publicUrl:
-      overrides.publicUrl !== undefined ? parsePublicUrl(overrides.publicUrl) : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL")),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),

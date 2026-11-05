@@ -685,7 +685,7 @@ oauthCmd
         console.error("timed out waiting for OAuth consent");
         process.exit(2);
       } catch (err) {
-        console.error(err instanceof Error ? err.message : err);
+        console.error(redactLog(err instanceof Error ? err.message : err));
         process.exit(1);
       } finally {
         store.close();
@@ -749,7 +749,7 @@ oauthCmd
         ),
       );
     } catch (err) {
-      console.error(err instanceof Error ? err.message : err);
+      console.error(redactLog(err instanceof Error ? err.message : err));
       process.exit(1);
     } finally {
       store.close();
