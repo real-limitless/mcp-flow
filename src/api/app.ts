@@ -1083,8 +1083,8 @@ export function createApp(
     return c.json({ rows: page.rows, next_cursor: page.nextCursor });
   });
 
-  // A1: scrubbed call payload. Human admin agents and the break-glass owner principal only.
-  // Legacy and OAuth api_key grants (kind api_key, no human agent) are refused — do not widen M53-1.
+  // A1: scrubbed call payload. Human admin agent only.
+  // Break-glass, legacy api_key, and OAuth grants are refused — do not widen M53-1.
   admin.get("/audit/call-payload", (c) => {
     const callId = c.req.query("call_id") ?? "";
     const phase = c.req.query("phase");
