@@ -14,6 +14,10 @@ import { MIGRATION_0012 } from "./0012_call_outcome_v11.js";
 import { MIGRATION_0013 } from "./0013_call_audit_purge_actor.js";
 import { MIGRATION_0014 } from "./0014_agent_bootstrap_upd_scope.js";
 import { MIGRATION_0015 } from "./0015_call_payload.js";
+import { MIGRATION_0016 } from "./0016_secret.js";
+import { MIGRATION_0017 } from "./0017_secret_sink_grant.js";
+import { MIGRATION_0018 } from "./0018_secret_value_index.js";
+import { MIGRATION_0019 } from "./0019_secret_reveal.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -50,8 +54,12 @@ export const MIGRATIONS: readonly Migration[] = [
     preflight: tableRebuildPreflight("0013_call_audit_purge_actor", "mcpflow_call_audit"),
   },
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
-  // Secrets A1. 0016–0019 are reserved; see docs/db-migration-registry.md.
   { id: "0015_call_payload", sql: MIGRATION_0015 },
+  // Secrets B. 0020 is the next free id; see docs/db-migration-registry.md.
+  { id: "0016_secret", sql: MIGRATION_0016 },
+  { id: "0017_secret_sink_grant", sql: MIGRATION_0017 },
+  { id: "0018_secret_value_index", sql: MIGRATION_0018 },
+  { id: "0019_secret_reveal", sql: MIGRATION_0019 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
