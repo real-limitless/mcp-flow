@@ -3,6 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import { registerReadEndpoints } from "./read-endpoints.js";
 import { policyApprovalsRouter } from "./policy-approvals.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
+import { readCallPayload } from "../audit/call-payload.js";
 import {
   acceptClientSessionId,
   agentAuthContext,
@@ -1080,6 +1081,37 @@ export function createApp(
       cursor: q.cursor ? Number(q.cursor) : undefined,
     });
     return c.json({ rows: page.rows, next_cursor: page.nextCursor });
+  });
+
+  // A1: scrubbed call payload. Human admin agents and the break-glass owner principal only.
+  // Legacy and OAuth api_key grants (kind api_key, no human agent) are refused — do not widen M53-1.
+  admin.get("/audit/call-payload", (c) => {
+    const callId = c.req.query("call_id") ?? "";
+    const phase = c.req.query("phase");
+    if (!callId) return c.json({ error: "call_id required" }, 400);
+    if (phase !== "request" && phase !== "result") return c.json({ error: "phase must be request or result" }, 400);
+    // humanAdmin is set only for a human admin agent. Break-glass, legacy api_key, and OAuth grants are refused.
+    const auth = c.get("auth");
+    const actor = c.get("humanAdmin");
+    if (!actor) return c.json({ error: "call payload reads require a human admin agent" }, 403);
+    try {
+      const out = readCallPayload(store.db, store.policyKeys, {
+        workspaceId: auth.workspaceId,
+        callId,
+        phase,
+        actor,
+      });
+      return c.json({
+        call_id: out.callId,
+        phase: out.phase,
+        truncated: out.truncated,
+        plaintext_suspected: out.plaintextSuspected,
+        body: out.body,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "refused";
+      return c.json({ error: msg }, msg.includes("not found") ? 404 : 403);
+    }
   });
 
   admin.get("/audit", (c) => {

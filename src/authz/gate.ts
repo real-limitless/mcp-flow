@@ -1,5 +1,7 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { placeholderWriteBlock } from "../audit/placeholder-guard.js";
 import { redactAdminToolAuditArgs } from "../audit/redact-admin-args.js";
+import { containsSecretRef } from "../audit/secret-ref.js";
 import { sanitizeForAudit } from "../audit/sanitize.js";
 import type { Store } from "../db/store.js";
 import type { PlacementMode } from "../types.js";
@@ -15,7 +17,13 @@ import {
 } from "./waiters.js";
 import { notifyApprovalPush } from "./push.js";
 
-export type AuthzDenyReason = "authz_denied" | "authz_timeout" | "authz_busy" | "authz_not_dispatched";
+export type AuthzDenyReason =
+  | "authz_denied"
+  | "authz_timeout"
+  | "authz_busy"
+  | "authz_not_dispatched"
+  | "legacy_secret_ref"
+  | "placeholder_write";
 
 export function asPlacementMode(raw: string | null | undefined): PlacementMode | null {
   if (
@@ -53,6 +61,10 @@ export function authzErrorResult(opts: {
   } else if (opts.reason === "authz_not_dispatched") {
     payload.message =
       "This call was approved, but its approved arguments could not be read back, so it was not run. Retry the tool call.";
+  } else if (opts.reason === "legacy_secret_ref") {
+    payload.message = "secret:// refs are refused on legacy authorization paths.";
+  } else if (opts.reason === "placeholder_write") {
+    payload.message = "This write contains a redaction placeholder and was not sent.";
   } else {
     payload.message =
       "Too many gated tool calls are waiting for human approval. Retry shortly.";
@@ -98,6 +110,13 @@ export async function runAuthzGate(opts: {
   | { proceed: false; result: CallToolResult }
 > {
   const tool = opts.tool;
+  // Secrets §0.12: every legacy authorization path refuses secret:// before it can be stored or dispatched.
+  if (containsSecretRef(opts.args) || containsSecretRef(tool)) {
+    return { proceed: false, result: authzErrorResult({ reason: "legacy_secret_ref", tool }) };
+  }
+  if (placeholderWriteBlock(tool, opts.args)) {
+    return { proceed: false, result: authzErrorResult({ reason: "placeholder_write", tool }) };
+  }
   if (isAuthzExemptTool(tool) && opts.contexts.every((c) => isAuthzExemptTool(c.tool))) {
     return { proceed: true, frozenArgs: opts.args };
   }

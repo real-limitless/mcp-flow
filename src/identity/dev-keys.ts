@@ -1,9 +1,23 @@
 import { hkdfSync } from "node:crypto";
 
 /**
+ * Decrypt-only dev-v1 material sealed at cutover. Usable for at most 24h (Secrets §5.1).
+ * The slot lives on the keyring; new writes use the current keyRef.
+ */
+export interface LegacyKeySlot {
+  until: number;
+  pepper: Buffer;
+  argsHmac: Buffer;
+  argsEnc: Buffer;
+  resultEnc: Buffer;
+  auditEnc: Buffer;
+}
+
+/**
  * Per-purpose keys for identity + policy (T1.3 / T2.2).
- * DEV ONLY until SecOPS supplies real key management (db-t2.1 Q2/Q3):
- * derived via HKDF from MCP_FLOW_POLICY_DEV_KEY, or from the master key when unset.
+ * DEV ONLY until the keyring is loaded (Secrets §0.1): derived via HKDF from
+ * MCP_FLOW_POLICY_DEV_KEY, or from the master key when unset.
+ * Production refuses this derivation and loads the keyring instead.
  */
 export interface PolicyKeys {
   /** HMAC pepper for api key / session secret hashes */
@@ -14,8 +28,12 @@ export interface PolicyKeys {
   resultEnc: Buffer;
   /** HMAC key for args_hash (audit + pending) */
   argsHmac: Buffer;
+  /** AES-256-GCM key for mcpflow_call_payload (audit-enc purpose) */
+  auditEnc: Buffer;
   /** Stored in args_key_ref / hash scheme ids; never the key itself */
   keyRef: string;
+  /** Decrypt-only previous keyrings, keyed by keyRef. Absent in normal dev. */
+  legacy?: ReadonlyMap<string, LegacyKeySlot>;
 }
 
 export const DEV_KEY_REF = "dev-v1";
@@ -31,6 +49,7 @@ export function derivePolicyKeys(raw: string): PolicyKeys {
     argsEnc: derive(raw, "args-enc"),
     resultEnc: derive(raw, "result-enc"),
     argsHmac: derive(raw, "args-hmac"),
+    auditEnc: derive(raw, "audit-enc"),
     keyRef: DEV_KEY_REF,
   };
 }

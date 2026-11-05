@@ -13,6 +13,7 @@ import { MIGRATION_0011 } from "./0011_policy_v10.js";
 import { MIGRATION_0012 } from "./0012_call_outcome_v11.js";
 import { MIGRATION_0013 } from "./0013_call_audit_purge_actor.js";
 import { MIGRATION_0014 } from "./0014_agent_bootstrap_upd_scope.js";
+import { MIGRATION_0015 } from "./0015_call_payload.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -49,6 +50,8 @@ export const MIGRATIONS: readonly Migration[] = [
     preflight: tableRebuildPreflight("0013_call_audit_purge_actor", "mcpflow_call_audit"),
   },
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
+  // Secrets A1. 0016–0019 are reserved; see docs/db-migration-registry.md.
+  { id: "0015_call_payload", sql: MIGRATION_0015 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
@@ -67,6 +70,9 @@ export function applyConnectionPragmas(db: DatabaseSync, opts: ConnectionPragmaO
   // Existing DBs keep their mode until the offline `mcp-flow db vacuum` (src/db/maintenance.ts).
   const empty = Number((db.prepare(`SELECT count(*) AS n FROM sqlite_master`).get() as { n: number }).n) === 0;
   if (empty) db.exec("PRAGMA auto_vacuum = INCREMENTAL;");
+  // Secrets §0.5: overwrite deleted pages on every connection. Existing databases still need
+  // one offline `mcp-flow db vacuum` before auto_vacuum=INCREMENTAL takes effect (see maintenance.ts).
+  db.exec("PRAGMA secure_delete = ON;");
   db.exec("PRAGMA foreign_keys = ON;");
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec(`PRAGMA busy_timeout = ${SQLITE_BUSY_TIMEOUT_MS};`);

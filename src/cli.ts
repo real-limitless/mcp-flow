@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { loadConfig, requireSecrets } from "./config.js";
+import { loadConfig, parseBoolFlag, requireSecrets } from "./config.js";
 import { Store } from "./db/store.js";
 import { UpstreamPool } from "./mcp/upstream.js";
 import { installSignalHandlers, startServer } from "./server.js";
@@ -71,12 +71,26 @@ program
     await runTui(cfg);
   });
 
+function cliProduction(): boolean {
+  return parseBoolFlag(process.env.MCP_FLOW_PRODUCTION) || process.env.NODE_ENV === "production";
+}
+
+function storeOpts(cfg: ReturnType<typeof loadConfig>) {
+  return {
+    journalSizeLimitBytes: cfg.journalSizeLimitBytes,
+    policyDevKeyRaw: cfg.production ? undefined : cfg.policyDevKeyRaw,
+    production: cfg.production,
+    keyringDir: cfg.keyringDir,
+    kekFile: cfg.kekFile,
+  };
+}
+
 function openStore(db?: string): { store: Store; workspaceId: string } {
   const cfg = loadConfig({ dbPath: db });
   if (!cfg.masterKeyRaw) {
     throw new Error("MCP_FLOW_MASTER_KEY is required");
   }
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
   const ws = store.ensureWorkspace(cfg.workspaceName);
   return { store, workspaceId: ws.id };
 }
@@ -417,7 +431,7 @@ backendCmd
           | "edge-bare",
         deviceId: opts.deviceId,
       };
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const { assertBackendShape, assertPlacementAllowed } = await import(
@@ -1136,7 +1150,7 @@ catalogCmd
         ? parseHeaderFlags(opts.header)
         : undefined;
       const headers = withAuthorizationToken(parsed, opts.apiKey);
-      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
+      const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
       try {
         const ws = store.ensureWorkspace(cfg.workspaceName);
         const result = await installFromGallery(store, ws.id, {
@@ -1159,7 +1173,7 @@ catalogCmd
     },
   );
 
-program
+const auditCmd = program
   .command("audit")
   .description("List recent audit events")
   .option("--limit <n>", "max events", "50")
@@ -1284,7 +1298,9 @@ dbCmd
   .command("vacuum")
   .description(
     "One-time: switch an existing DB to auto_vacuum=INCREMENTAL and run a full VACUUM. " +
-      "Offline: refused while a gateway holds the DB. Back up first; needs free disk about the DB size.",
+      "New databases already enable INCREMENTAL. Every connection sets secure_delete=ON; " +
+      "this offline VACUUM is what reclaims pages already freed in an existing file. " +
+      "Refused while a gateway holds the DB. Back up first; needs free disk about the DB size.",
   )
   .option("--db <path>", "sqlite path")
   .option("--check", "only report the current mode and free pages")
@@ -1432,7 +1448,7 @@ program
     };
     try {
       if (cfg.masterKeyRaw) {
-        const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
+        const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;
         report.policy = ws.policy;
@@ -1602,6 +1618,104 @@ approvalsCmd
       if (!res.ok) process.exit(1);
     },
   );
+
+const keyringCmd = program.command("keyring").description("Host keyring maintenance (never an MCP tool)");
+
+keyringCmd
+  .command("init")
+  .description("Create a KEK file and wrapped per-purpose keys. Prints paths only.")
+  .requiredOption("--dir <path>", "keyring directory")
+  .requiredOption("--kek-file <path>", "32-byte KEK file path (created if missing)")
+  .option("--dev-material <material>", "carry the pepper from this dev material once")
+  .option("--new-pepper", "mint a new pepper for a fresh install")
+  .action(async (opts: { dir: string; kekFile: string; devMaterial?: string; newPepper?: boolean }) => {
+    const { initKeyring } = await import("./crypto/keyring.js");
+    const out = initKeyring({
+      dir: opts.dir,
+      kekFile: opts.kekFile,
+      devMaterial: opts.devMaterial ?? null,
+      newPepper: opts.newPepper === true,
+      production: cliProduction(),
+    });
+    console.log(JSON.stringify({ dir: opts.dir, kekFile: opts.kekFile, created: out.created, pepper: out.pepper }, null, 2));
+  });
+
+keyringCmd
+  .command("carry-pepper")
+  .description("Write the derived pepper into the keyring once. Refused in production and on mismatch.")
+  .requiredOption("--dir <path>", "keyring directory")
+  .requiredOption("--kek-file <path>", "32-byte KEK file path")
+  .requiredOption("--dev-material <material>", "dev key material whose pepper is carried")
+  .action(async (opts: { dir: string; kekFile: string; devMaterial: string }) => {
+    const { carryPepper } = await import("./crypto/keyring.js");
+    const out = carryPepper({ dir: opts.dir, kekFile: opts.kekFile, devMaterial: opts.devMaterial, production: cliProduction() });
+    console.log(JSON.stringify({ dir: opts.dir, wrote: out.wrote }, null, 2));
+  });
+
+keyringCmd
+  .command("seal-dev")
+  .description("One-shot 24h dev-v1 decrypt slot. Refused in production and if a slot already exists.")
+  .requiredOption("--dir <path>", "keyring directory")
+  .requiredOption("--kek-file <path>", "32-byte KEK file path")
+  .requiredOption("--dev-material <material>", "dev key material to seal")
+  .action(async (opts: { dir: string; kekFile: string; devMaterial: string }) => {
+    const { sealDevDecryptSlot } = await import("./crypto/keyring.js");
+    const out = sealDevDecryptSlot({ dir: opts.dir, kekFile: opts.kekFile, devMaterial: opts.devMaterial, production: cliProduction() });
+    console.log(JSON.stringify({ until: out.until }, null, 2));
+  });
+
+auditCmd
+  .command("payload-read")
+  .description("Decrypt one call payload row. Requires an active human admin in the workspace.")
+  .requiredOption("--call <id>", "call id")
+  .requiredOption("--phase <phase>", "request or result")
+  .requiredOption("--actor <id>", "active human admin agent id")
+  .option("--db <path>", "sqlite path")
+  .action(async (opts: { call: string; phase: string; actor: string; db?: string }) => {
+    const { readCallPayload } = await import("./audit/call-payload.js");
+    const { store } = openStore(opts.db);
+    try {
+      const phase = opts.phase === "request" || opts.phase === "result" ? opts.phase : null;
+      if (!phase) throw new Error("phase must be request or result");
+      const actor = store.db.prepare(`SELECT workspace_id FROM mcpflow_agent WHERE id = ?`).get(opts.actor) as { workspace_id: string } | undefined;
+      if (!actor) throw new Error("actor not found");
+      const out = readCallPayload(store.db, store.policyKeys, {
+        workspaceId: actor.workspace_id,
+        callId: opts.call,
+        phase,
+        actor: opts.actor,
+      });
+      console.log(JSON.stringify({ callId: out.callId, phase: out.phase, truncated: out.truncated, plaintextSuspected: out.plaintextSuspected, body: out.body }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+auditCmd
+  .command("payload-purge")
+  .description("Delete call payloads older than 90 days. Dry-run unless --execute. call_audit rows stay.")
+  .requiredOption("--actor <id>", "active human admin agent id")
+  .option("--db <path>", "sqlite path")
+  .option("--before <iso>", "ISO cutoff (default: 90 days ago)")
+  .option("--execute", "perform the delete")
+  .action(async (opts: { actor: string; db?: string; before?: string; execute?: boolean }) => {
+    const { purgeCallPayloads, payloadRetentionCutoff } = await import("./audit/call-payload.js");
+    const { store } = openStore(opts.db);
+    try {
+      const actor = store.db.prepare(`SELECT workspace_id FROM mcpflow_agent WHERE id = ?`).get(opts.actor) as { workspace_id: string } | undefined;
+      if (!actor) throw new Error("actor not found");
+      const before = opts.before ?? payloadRetentionCutoff(new Date());
+      const out = purgeCallPayloads(store.db, {
+        workspaceId: actor.workspace_id,
+        actor: opts.actor,
+        before,
+        execute: opts.execute === true,
+      });
+      console.log(JSON.stringify(out, null, 2));
+    } finally {
+      store.close();
+    }
+  });
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(redactLog(err));

@@ -753,7 +753,7 @@ export function summarizeCallToolResult(result: CallToolResult): unknown {
     content: summarized,
   };
   if ("structuredContent" in result && result.structuredContent !== undefined) {
-    out.structuredContent = result.structuredContent;
+    out.structuredContent = sanitizeForAudit(result.structuredContent);
   }
   return out;
 }

@@ -57,11 +57,11 @@ describe("0014 (R5-5)", () => {
   it("down/up restores the 0009 trigger text exactly", () => {
     const { d } = withViolation();
     const before = schemaSnapshot(d);
-    runMigrations(d);
+    runMigrations(d, ID);
     expect(schemaSnapshot(d)).not.toEqual(before);
     rollback(d, ID, MIGRATION_0014_DOWN);
     expect(schemaSnapshot(d)).toEqual(before);
-    runMigrations(d);
+    runMigrations(d, ID);
     expect((d.prepare(`SELECT sql FROM sqlite_master WHERE name = 'mcpflow_agent_bootstrap_upd'`).get() as { sql: string }).sql).toMatch(/BEFORE UPDATE OF created_by, kind, is_admin ON mcpflow_agent/);
   });
 });

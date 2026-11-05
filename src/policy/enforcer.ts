@@ -13,13 +13,17 @@
  *  - deny / approval_denied / approval_expired / cancelled : result_status='not_dispatched'
  */
 import { auditText, CALL_AUDIT_NOTE_MAX, sanitizeCallAuditCols } from "../audit/call-audit-cols.js";
+import { insertCallPayload, isRevealTool, prepareCallPayload } from "../audit/call-payload.js";
+import { placeholderWriteBlock } from "../audit/placeholder-guard.js";
+import { redactBeforePersist } from "../audit/redact-persist.js";
 import { createHash, randomBytes } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 import { AgentRateLimiter } from "./rate-limit.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
+import { decryptForKey } from "../crypto/keyring.js";
 import type { PolicyKeys } from "../identity/dev-keys.js";
-import { argsHash, canonicalJson, decryptArgs, encryptArgs } from "./crypto.js";
+import { argsHash, canonicalJson, encryptArgs } from "./crypto.js";
 import { alwaysDenied, evaluate, loadActiveRules, type CallContext, type Decision, type PolicyRule } from "./engine.js";
 import { allArgsMatch, validateArgMatchers, type ArgMatcher } from "./matchers.js";
 import { redactLog } from "../log/redact-lines.js";
@@ -42,7 +46,8 @@ export type DenyReason =
   | "gateway_shutting_down"
   | "no_active_approver"
   | "rate_limited"
-  | "backend_unavailable";
+  | "backend_unavailable"
+  | "placeholder_write";
 
 export interface PendingNotice {
   pendingCallId: string;
@@ -218,6 +223,7 @@ const DEFAULT_MESSAGES: Record<DenyReason, string> = {
   idempotency_conflict: "This idempotency key was already used with different arguments; nothing was dispatched.",
   gateway_shutting_down: "The gateway is shutting down; nothing was dispatched. Retry after it restarts.",
   no_active_approver: "No listed approver is an active human, so this call cannot be approved; nothing was dispatched.",
+  placeholder_write: "This write contains a redaction placeholder and was not sent.",
 };
 
 export class PolicyEnforcer {
@@ -383,6 +389,7 @@ export class PolicyEnforcer {
     args: Record<string, unknown>,
   ): CallToolResult {
     const callId = newId("call");
+    const prepared = prepareCallPayload(this.deps.keys, "request", args ?? {}, requested);
     const cols = {
       call_id: callId,
       workspace_id: ctx.workspaceId,
@@ -397,10 +404,16 @@ export class PolicyEnforcer {
       qualified_tool: null,
       args_redacted: JSON.stringify(sanitizeForAudit(args ?? {})),
       args_hash: argsHash(this.deps.keys.argsHmac, args ?? {}),
+      ...prepared.fields,
     };
     try {
       this.tx(() => {
         this.writeAudit({ event_type: "decision", ...cols, policy_decision: "deny", error_code: reason });
+        if (!prepared.skip) {
+          insertCallPayload(this.deps.db, this.deps.keys, {
+            callId, phase: "request", workspaceId: ctx.workspaceId, red: prepared.red,
+          });
+        }
         this.writeAudit({
           // a rate-limited call is a deny (final_outcome denied); the others are gateway errors (Q6)
           event_type: "completion", ...cols, final_outcome: reason === "rate_limited" ? "denied" : "error", result_status: "not_dispatched",
@@ -448,10 +461,10 @@ export class PolicyEnforcer {
    */
   approverArgs(pendingCallId: string): { args: Record<string, unknown>; sha256: string } | null {
     const row = this.deps.db
-      .prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`)
-      .get(pendingCallId) as { args_ciphertext: Uint8Array | null; args_hash: string } | undefined;
+      .prepare(`SELECT args_ciphertext, args_hash, args_key_ref FROM mcpflow_pending_call WHERE id = ?`)
+      .get(pendingCallId) as { args_ciphertext: Uint8Array | null; args_hash: string; args_key_ref: string | null } | undefined;
     if (!row?.args_ciphertext) return null;
-    const args = decryptArgs(this.deps.keys.argsEnc, row.args_ciphertext);
+    const args = this.decryptStored("args", row.args_ciphertext, row.args_key_ref);
     if (argsHash(this.deps.keys.argsHmac, args) !== row.args_hash) throw new Error("args hash mismatch");
     return { args, sha256: createHash("sha256").update(canonicalJson(args), "utf8").digest("hex") };
   }
@@ -496,6 +509,41 @@ export class PolicyEnforcer {
     const started = this.clock();
     const redacted = sanitizeForAudit(args ?? {});
     const hash = argsHash(this.deps.keys.argsHmac, args);
+    const preparedReq = prepareCallPayload(this.deps.keys, "request", args ?? {}, ctx.qualifiedTool);
+
+    if (placeholderWriteBlock(ctx.qualifiedTool, args)) {
+      try {
+        this.tx(() => {
+          this.writeAudit({
+            event_type: "decision",
+            call_id: callId,
+            ...this.ctxCols(ctx),
+            args_redacted: JSON.stringify(redacted),
+            args_hash: hash,
+            policy_decision: "deny",
+            error_code: "placeholder_write",
+            ...preparedReq.fields,
+          });
+          if (!preparedReq.skip) {
+            insertCallPayload(this.deps.db, this.deps.keys, {
+              callId, phase: "request", workspaceId: ctx.workspaceId, red: preparedReq.red,
+            });
+          }
+          this.writeAudit({
+            event_type: "completion",
+            call_id: callId,
+            ...this.ctxCols(ctx),
+            final_outcome: "denied",
+            result_status: "not_dispatched",
+            error_code: "placeholder_write",
+            latency_ms: 0,
+          });
+        });
+      } catch {
+        return policyDeniedResult({ reason: "audit_unavailable", tool: ctx.qualifiedTool });
+      }
+      return policyDeniedResult({ reason: "placeholder_write", tool: ctx.qualifiedTool });
+    }
 
     // 1) evaluate; any error -> deny (fail closed)
     let decision: Decision;
@@ -532,6 +580,7 @@ export class PolicyEnforcer {
           ...this.ctxCols(ctx),
           args_redacted: JSON.stringify(redacted),
           args_hash: hash,
+          ...preparedReq.fields,
           // T2.1 §10: a require_approval covered by a live grant is an allow; rule_id stays the overridden rule
           policy_decision: grantId ? "allow" : decision.decision,
           rule_id: decision.rule?.ruleId ?? null,
@@ -540,6 +589,11 @@ export class PolicyEnforcer {
           grant_id: grantId,
           error_code: decision.decision === "deny" ? decision.reason : busy ? "approval_busy" : noApprover ? "no_active_approver" : null,
         });
+        if (!preparedReq.skip) {
+          insertCallPayload(this.deps.db, this.deps.keys, {
+            callId, phase: "request", workspaceId: ctx.workspaceId, red: preparedReq.red,
+          });
+        }
         if (decision.decision === "require_approval" && !grantId && !busy && !noApprover) {
           pendingId = newId("pc");
           const created = this.clock();
@@ -641,13 +695,14 @@ export class PolicyEnforcer {
           notDispatched("error", { error_code: "dispatch_conflict", approver: row.decided_by });
           return policyDeniedResult({ reason: "dispatch_conflict", tool: ctx.qualifiedTool, pendingCallId: pc });
         }
-        const stored = db.prepare(`SELECT args_ciphertext, args_hash FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
+        const stored = db.prepare(`SELECT args_ciphertext, args_hash, args_key_ref FROM mcpflow_pending_call WHERE id = ?`).get(pc) as {
           args_ciphertext: Uint8Array | null;
           args_hash: string;
+          args_key_ref: string | null;
         };
         let frozen: Record<string, unknown>;
         try {
-          frozen = decryptArgs(this.deps.keys.argsEnc, stored.args_ciphertext!);
+          frozen = this.decryptStored("args", stored.args_ciphertext!, stored.args_key_ref);
           // Security T2.5 H-1: dispatch only the exact payload the approver was shown and approved
           if (argsHash(this.deps.keys.argsHmac, frozen) !== stored.args_hash) throw new Error("args hash mismatch");
         } catch {
@@ -776,7 +831,12 @@ export class PolicyEnforcer {
    */
   private storeResult(callId: string, result: CallToolResult): void {
     try {
-      let json = JSON.stringify(result);
+      const storedTool = this.deps.db
+        .prepare(`SELECT qualified_tool FROM mcpflow_call_outcome WHERE call_id = ?`)
+        .get(callId) as { qualified_tool: string | null } | undefined;
+      if (isRevealTool(storedTool?.qualified_tool)) return;
+      const scrubbed = redactBeforePersist(result);
+      let json = JSON.stringify(scrubbed.withheld ? { withheld: "scrub_failed" } : scrubbed.value);
       let truncated = 0;
       const max = this.deps.maxResultBytes ?? MAX_RESULT_BYTES;
       if (Buffer.byteLength(json, "utf8") > max) {
@@ -931,7 +991,7 @@ export class PolicyEnforcer {
           reason = purged ? "purged:expired" : "expired";
         } else {
           try {
-            served = decryptArgs(this.deps.keys.resultEnc, row.result_ciphertext as Uint8Array) as unknown as CallToolResult;
+            served = this.decryptStored("result", row.result_ciphertext as Uint8Array, null) as unknown as CallToolResult;
           } catch {
             errorCode = "result_undecryptable"; // e.g. written under an older result key
           }
@@ -1089,7 +1149,7 @@ export class PolicyEnforcer {
       }
       if (!opts.matchArgs.length) return { ok: false, error: "invalid match_args: required when same_args_only is false" };
       try {
-        if (!allArgsMatch(opts.matchArgs, decryptArgs(this.deps.keys.argsEnc, pc.args_ciphertext as Uint8Array))) {
+        if (!allArgsMatch(opts.matchArgs, this.decryptStored("args", pc.args_ciphertext as Uint8Array, (pc.args_key_ref as string | null) ?? null))) {
           return { ok: false, error: "invalid match_args: does not match the call being approved" };
         }
       } catch {
@@ -1359,7 +1419,7 @@ export class PolicyEnforcer {
       pending_call_id: extra.pendingCallId ?? null,
       approver: extra.approver ?? null,
       approver_note: extra.approverNote ?? null,
-    });
+    }, result);
     return result;
   }
 
@@ -1380,11 +1440,26 @@ export class PolicyEnforcer {
   }
 
   /** Completion rows are best effort after the fact: the decision row already committed. */
-  private completion(callId: string, ctx: CallContext, cols: Record<string, unknown>): void {
+  private completion(callId: string, ctx: CallContext, cols: Record<string, unknown>, resultBody?: unknown): void {
     // exactly one completion per call: recovery may already have closed this call out
     if (this.deps.db.prepare(`SELECT 1 FROM mcpflow_call_audit WHERE call_id = ? AND event_type = 'completion'`).get(callId)) return;
+    const body = resultBody !== undefined ? resultBody : { result_status: cols.result_status ?? null, error_code: cols.error_code ?? null };
+    const prepared = isRevealTool(ctx.qualifiedTool) ? null : prepareCallPayload(this.deps.keys, "result", body, ctx.qualifiedTool);
     try {
-      this.writeAudit({ event_type: "completion", call_id: callId, ...this.ctxCols(ctx), ...cols });
+      this.tx(() => {
+        this.writeAudit({
+          event_type: "completion",
+          call_id: callId,
+          ...this.ctxCols(ctx),
+          ...cols,
+          ...(prepared && !prepared.skip ? prepared.fields : {}),
+        });
+        if (prepared && !prepared.skip) {
+          insertCallPayload(this.deps.db, this.deps.keys, {
+            callId, phase: "result", workspaceId: ctx.workspaceId, red: prepared.red,
+          });
+        }
+      });
     } catch (err) {
       console.error(`[mcp-flow] completion audit write failed for ${callId}: ${redactLog(err)}`);
     }
@@ -1397,6 +1472,10 @@ export class PolicyEnforcer {
     } catch (err) {
       console.error(`[mcp-flow] outcome write failed for ${callId}: ${redactLog(err)}`);
     }
+  }
+
+  private decryptStored(purpose: "args" | "result", blob: Uint8Array, keyRef: string | null): Record<string, unknown> {
+    return decryptForKey(this.deps.keys, purpose, blob, keyRef);
   }
 
   /** Every enforcer call_audit write goes through here: text columns sanitized + actor shape-checked (SecOPS 7). */

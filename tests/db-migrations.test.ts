@@ -131,8 +131,10 @@ describe("connection and runner", () => {
   it("sets the required pragmas", () => {
     const fk = db.prepare("PRAGMA foreign_keys").get() as Record<string, number>;
     const bt = db.prepare("PRAGMA busy_timeout").get() as Record<string, number>;
+    const sd = db.prepare("PRAGMA secure_delete").get() as Record<string, number>;
     expect(Object.values(fk)[0]).toBe(1);
     expect(Object.values(bt)[0]).toBe(5000);
+    expect(Object.values(sd)[0]).toBe(1);
   });
 
   it("is idempotent and records every migration", () => {
@@ -148,7 +150,7 @@ describe("connection and runner", () => {
       .map((r) => (r as { name: string }).name);
     for (const t of [
       "mcpflow_workspace", "mcpflow_agent", "mcpflow_api_key", "mcpflow_session",
-      "mcpflow_call_audit", "mcpflow_policy_rule", "mcpflow_policy_rule_version",
+      "mcpflow_call_audit", "mcpflow_call_payload", "mcpflow_policy_rule", "mcpflow_policy_rule_version",
       "mcpflow_pending_call", "mcpflow_policy_grant",
     ]) expect(strict).toContain(t);
   });
