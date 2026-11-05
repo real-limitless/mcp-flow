@@ -126,6 +126,13 @@ export class SecretDirectory {
     return row;
   }
 
+  /** Create, rotate, and delete are human-admin writes. The row is the check, not the caller flag. */
+  private requireHumanAdmin(row: ActorRow): void {
+    if (row.kind !== "human" || row.is_admin !== 1) {
+      throw new SecretError("human admin required", 403);
+    }
+  }
+
   private allowProject(input: SecretActor, project: string): void {
     if (!NAME.test(project)) throw new SecretError("invalid project");
     if (input.allowedProjects && !input.allowedProjects.includes(project)) {
@@ -154,6 +161,7 @@ export class SecretDirectory {
     description?: string | null;
   }): SecretCreated {
     const actor = this.actor(input);
+    this.requireHumanAdmin(actor);
     if (input.type === "import") throw new SecretError("import is not available");
     if (!NAME.test(input.name)) throw new SecretError("invalid name");
     this.allowProject(input, input.project);
@@ -309,7 +317,7 @@ export class SecretDirectory {
   }
 
   rotate(input: SecretActor & { ref: string; graceSeconds?: number | null; resync?: boolean }): SecretCreated {
-    this.actor(input);
+    this.requireHumanAdmin(this.actor(input));
     if (input.resync) throw new SecretError("resync is not available");
     if (input.graceSeconds != null) {
       if (!Number.isInteger(input.graceSeconds) || input.graceSeconds < 0 || input.graceSeconds > MAX_GRACE_SECONDS) {
@@ -378,15 +386,12 @@ export class SecretDirectory {
   }
 
   delete(input: SecretActor & { ref: string; purge?: boolean }): { ref: string; deleted: true; purged?: true } {
-    const actor = this.actor(input);
+    this.requireHumanAdmin(this.actor(input));
     this.guardInputs({ ref: input.ref, purge: input.purge === true });
     const parsed = parseSecretRef(input.ref);
     this.allowProject(input, parsed.project);
     const secret = this.liveSecret(input.workspaceId, parsed.project, parsed.name);
     const purge = input.purge === true;
-    if (purge && !(input.humanAdmin && actor.kind === "human" && actor.is_admin === 1)) {
-      throw new SecretError("purge requires a human admin", 403);
-    }
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE;");
     try {

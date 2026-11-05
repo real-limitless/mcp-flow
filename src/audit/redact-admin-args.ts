@@ -140,7 +140,7 @@ function projectSchemaArgs(
 }
 
 /**
- * Exact mf_admin_* tool names. The audit tool column keeps these as written.
+ * Exact admin tool names, including secret writes. The audit tool column keeps these as written.
  * The content sanitizer would otherwise match them as long mf_ tokens.
  */
 export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -170,6 +170,9 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_admin_delete_project",
   "mf_admin_oauth_start",
   "mf_admin_oauth_revoke",
+  "mf_secret_create",
+  "mf_secret_rotate",
+  "mf_secret_delete",
 ]);
 
 /** A tool name that may be stored for a call that was not dispatched. */
@@ -209,7 +212,7 @@ export function redactAdminToolAuditArgs(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!args || typeof args !== "object" || Array.isArray(args)) return args;
-  if (!/^mf_admin_/i.test(tool)) return args;
+  if (!/^mf_admin_/i.test(tool) && !/^mf_secret_(create|rotate|delete)$/i.test(tool)) return args;
   const projected = projectSchemaArgs(tool, args);
   if (!hasSecretShape(projected)) return projected;
   return redactLevel(projected);

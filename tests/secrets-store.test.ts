@@ -14,7 +14,8 @@ import { dekAad, openSecretValue, sealSecretValue } from "../src/secrets/envelop
 import { entropyBits, generateSecret, MIN_ENTROPY_BITS, unbiasedIndex } from "../src/secrets/generate.js";
 import { parseProtectedTargets } from "../src/secrets/protected.js";
 import { secureReclaim } from "../src/secrets/purge.js";
-import { isSecretTool, SECRET_META_TOOLS, callSecretTool } from "../src/secrets/tools.js";
+import { isSecretTool, isSecretWriteTool, SECRET_META_TOOLS, SECRET_WRITE_TOOLS, callSecretTool } from "../src/secrets/tools.js";
+import { toolAllowedByScopes } from "../src/types.js";
 import { derivePolicyKeys } from "../src/identity/dev-keys.js";
 import { EXACT_ADMIN_TOOL_NAMES } from "../src/audit/redact-admin-args.js";
 
@@ -206,17 +207,22 @@ describe("secret store", () => {
     expect(autoVacuumMode(store.db)).toBe("incremental");
     const secure = store.db.prepare("PRAGMA secure_delete").get() as { secure_delete: number };
     expect(secure.secure_delete).toBe(1);
-    const actor = {
+    const botKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ? AND status = 'active'`).get(bot) as { id: string };
+    const adminKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ? AND status = 'active'`).get(chen) as { id: string };
+    const reader = {
       workspaceId: ws,
-      keyId: store.identity.createKey({ agentId: bot, createdBy: chen, projects: ["default"] }).keyId,
+      keyId: botKey.id,
       agentId: bot,
       allowedProjects: ["default"] as const,
       humanAdmin: false,
     };
-    // the helper already minted one bot key; a second live key is refused. Use the first.
-    store.identity.revokeKey(actor.keyId, chen, "test cleanup");
-    const first = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ? AND status = 'active'`).get(bot) as { id: string };
-    const who = { ...actor, keyId: first.id };
+    const who = {
+      workspaceId: ws,
+      keyId: adminKey.id,
+      agentId: chen,
+      allowedProjects: null,
+      humanAdmin: true,
+    };
     const created = store.secrets.create({ ...who, project: "default", name: "db-pass", type: "token", params: { bytes: 32 } });
     expect(created).toEqual({ ref: "secret://default/db-pass", version: 1 });
     expect(Object.keys(created).sort()).toEqual(["ref", "version"]);
@@ -224,7 +230,7 @@ describe("secret store", () => {
     const value = plain.toString("utf8");
     expect(JSON.stringify(created)).not.toContain(value);
     expect(dump(store)).not.toContain(value);
-    const listed = store.secrets.list({ ...who, project: "default" });
+    const listed = store.secrets.list({ ...reader, project: "default" });
     expect(listed.secrets).toHaveLength(1);
     expect(listed.secrets[0]).toMatchObject({ ref: created.ref, type: "token", current_version: 1, grants: 0 });
     expect(JSON.stringify(listed)).not.toContain(value);
@@ -240,11 +246,11 @@ describe("secret store", () => {
     ).all();
     expect(states).toEqual([{ version: 1, state: "previous" }, { version: 2, state: "active" }]);
     expect(() => store.secrets.rotate({ ...who, ref: created.ref, resync: true })).toThrow(/resync/);
-    expect(() => store.secrets.delete({ ...who, ref: created.ref, purge: true })).toThrow(/human admin/);
+    expect(() => store.secrets.rotate({ ...reader, ref: created.ref })).toThrow(/human admin/);
+    expect(() => store.secrets.delete({ ...reader, ref: created.ref, purge: true })).toThrow(/human admin/);
     expect(store.secrets.delete({ ...who, ref: created.ref })).toEqual({ ref: created.ref, deleted: true });
-    expect(store.secrets.list({ ...who }).secrets).toEqual([]);
+    expect(store.secrets.list({ ...reader }).secrets).toEqual([]);
     expect(() => store.secrets.rotate({ ...who, ref: created.ref })).toThrow(/not found/);
-    const adminKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(chen) as { id: string };
     const admin = {
       workspaceId: ws,
       keyId: adminKey.id,
@@ -265,15 +271,45 @@ describe("secret store", () => {
     store.close();
   });
 
+  it("denies an AI agent key on create, rotate, and delete even when the caller flag says admin", () => {
+    const { store, chen, bot, ws } = openReady();
+    const botKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(bot) as { id: string };
+    const adminKey = store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(chen) as { id: string };
+    const ai = {
+      workspaceId: ws,
+      keyId: botKey.id,
+      agentId: bot,
+      allowedProjects: ["default"] as const,
+      humanAdmin: true,
+    };
+    expect(() => store.secrets.create({ ...ai, project: "default", name: "nope", type: "token" })).toThrow(/human admin/);
+    expect(() => store.secrets.rotate({ ...ai, ref: "secret://default/nope" })).toThrow(/human admin/);
+    expect(() => store.secrets.delete({ ...ai, ref: "secret://default/nope" })).toThrow(/human admin/);
+    const admin = {
+      workspaceId: ws,
+      keyId: adminKey.id,
+      agentId: chen,
+      allowedProjects: null,
+      humanAdmin: true,
+    };
+    store.secrets.create({ ...admin, project: "default", name: "kept", type: "uuid" });
+    expect(() => store.secrets.rotate({ ...ai, ref: "secret://default/kept" })).toThrow(/human admin/);
+    expect(() => store.secrets.delete({ ...ai, ref: "secret://default/kept", purge: true })).toThrow(/human admin/);
+    expect(store.secrets.list({ ...ai, humanAdmin: false }).secrets.map((row) => row.ref)).toEqual(["secret://default/kept"]);
+    const n = store.db.prepare(`SELECT count(*) AS n FROM mcpflow_secret WHERE name = 'nope'`).get() as { n: number };
+    expect(n.n).toBe(0);
+    store.close();
+  });
+
   it("fails closed on a protected deployment id and on an unparseable host list", () => {
     const ready = openReady({ protectedRaw: "deploy-example-1" });
-    const key = ready.store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(ready.bot) as { id: string };
+    const key = ready.store.db.prepare(`SELECT id FROM mcpflow_api_key WHERE agent_id = ?`).get(ready.chen) as { id: string };
     const who = {
       workspaceId: ready.ws,
       keyId: key.id,
-      agentId: ready.bot,
-      allowedProjects: ["default"] as const,
-      humanAdmin: false,
+      agentId: ready.chen,
+      allowedProjects: null,
+      humanAdmin: true,
     };
     expect(() => ready.store.secrets.create({
       ...who,
@@ -413,13 +449,19 @@ describe("secret store", () => {
     });
     expect(old.status).toBe(403);
     expect(isSecretTool("mf_secret_import")).toBe(false);
-    expect(SECRET_META_TOOLS.map((tool) => tool.name)).toEqual([
+    expect(isSecretWriteTool("mf_secret_list")).toBe(false);
+    expect(SECRET_META_TOOLS.map((tool) => tool.name)).toEqual(["mf_secret_list"]);
+    expect(SECRET_WRITE_TOOLS.map((tool) => tool.name)).toEqual([
       "mf_secret_create",
-      "mf_secret_list",
       "mf_secret_rotate",
       "mf_secret_delete",
     ]);
-    for (const name of EXACT_ADMIN_TOOL_NAMES) expect(name).not.toMatch(/secret_create|secret_import/);
+    for (const name of SECRET_WRITE_TOOLS) expect(EXACT_ADMIN_TOOL_NAMES.has(name.name)).toBe(true);
+    expect(EXACT_ADMIN_TOOL_NAMES.has("mf_secret_list")).toBe(false);
+    expect(toolAllowedByScopes("mf_secret_create", null)).toBe(false);
+    expect(toolAllowedByScopes("mf_secret_create", { admin: true })).toBe(true);
+    expect(toolAllowedByScopes("mf_secret_list", null)).toBe(true);
+    for (const name of EXACT_ADMIN_TOOL_NAMES) expect(name).not.toMatch(/secret_reveal|secret_import|payload/);
     const bot = store.identity.createAgent({
       workspaceId: ws.id,
       name: "bot",

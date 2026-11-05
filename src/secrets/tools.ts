@@ -1,5 +1,6 @@
 /**
- * mf_secret_create / list / rotate / delete.
+ * mf_secret_list is a meta read. Create, rotate, and delete are admin writes
+ * (human admin in the directory, and EXACT_ADMIN_TOOL_NAMES / ADMIN_META_TOOLS).
  * Results are refs and metadata. Import, reveal, and resync are not registered.
  */
 
@@ -8,11 +9,11 @@ import type { SecretActor, SecretDirectory } from "./directory.js";
 import { SecretError } from "./directory.js";
 import { ProtectedTargetError } from "./protected.js";
 
-export const SECRET_META_TOOLS: Tool[] = [
+export const SECRET_WRITE_TOOLS: Tool[] = [
   {
     name: "mf_secret_create",
     description:
-      "Generate and store a secret. Returns a ref and version, and the public key for a keypair. Never returns the secret value.",
+      "Generate and store a secret. Human admin only. Returns a ref and version, and the public key for a keypair. Never returns the secret value.",
     inputSchema: {
       type: "object",
       properties: {
@@ -27,20 +28,8 @@ export const SECRET_META_TOOLS: Tool[] = [
     },
   },
   {
-    name: "mf_secret_list",
-    description: "List secret metadata for projects this key may use. Never returns a secret value.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        project: { type: "string" },
-        q: { type: "string" },
-      },
-      additionalProperties: false,
-    },
-  },
-  {
     name: "mf_secret_rotate",
-    description: "Create a new secret version from the stored generator. Returns the new ref and version, never the value.",
+    description: "Create a new secret version from the stored generator. Human admin only. Returns the new ref and version, never the value.",
     inputSchema: {
       type: "object",
       properties: {
@@ -54,7 +43,7 @@ export const SECRET_META_TOOLS: Tool[] = [
   },
   {
     name: "mf_secret_delete",
-    description: "Soft-delete a secret so its ref fails closed. purge destroys ciphertext and is human-admin only.",
+    description: "Soft-delete a secret so its ref fails closed. Human admin only. purge destroys ciphertext.",
     inputSchema: {
       type: "object",
       properties: {
@@ -67,7 +56,31 @@ export const SECRET_META_TOOLS: Tool[] = [
   },
 ];
 
-const SECRET_TOOL_NAMES = new Set(SECRET_META_TOOLS.map((tool) => tool.name));
+/** Read path. Stays on the meta tool list and is scoped to the caller's projects. */
+export const SECRET_META_TOOLS: Tool[] = [
+  {
+    name: "mf_secret_list",
+    description: "List secret metadata for projects this key may use. Never returns a secret value.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string" },
+        q: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+];
+
+const SECRET_WRITE_NAMES = new Set(SECRET_WRITE_TOOLS.map((tool) => tool.name));
+const SECRET_TOOL_NAMES = new Set([
+  ...SECRET_WRITE_TOOLS.map((tool) => tool.name),
+  ...SECRET_META_TOOLS.map((tool) => tool.name),
+]);
+
+export function isSecretWriteTool(name: string): boolean {
+  return SECRET_WRITE_NAMES.has(name);
+}
 
 export function isSecretTool(name: string): boolean {
   return SECRET_TOOL_NAMES.has(name);

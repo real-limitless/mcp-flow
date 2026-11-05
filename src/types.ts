@@ -505,8 +505,8 @@ export function toolAllowedByScopes(
   toolName: string,
   scopes: ApiKeyScopes | null | undefined,
 ): boolean {
-  // Admin tools only for operator keys
-  if (/^mf_admin_/i.test(toolName)) {
+  // Admin tools only for operator keys. Secret writes are admin-class (human admin in the store).
+  if (/^mf_admin_/i.test(toolName) || /^mf_secret_(create|rotate|delete)$/i.test(toolName)) {
     return isAdminScopes(scopes);
   }
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;

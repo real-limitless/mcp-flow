@@ -47,7 +47,7 @@ import {
   searchCatalogTools,
   stringList,
 } from "./dynamic-tools.js";
-import { callSecretTool, isSecretTool, SECRET_META_TOOLS, secretToolError, secretToolResult } from "../secrets/tools.js";
+import { callSecretTool, isSecretTool, isSecretWriteTool, SECRET_META_TOOLS, secretToolError, secretToolResult } from "../secrets/tools.js";
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
@@ -1243,6 +1243,32 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       if (!adminGate.proceed) {
         await auditCall(adminGate.result, { meta: true });
         return adminGate.result;
+      }
+      if (isSecretWriteTool(name)) {
+        if (!ctx.agentId || !ctx.keyId || ctx.agentKind !== "human") {
+          const result = textResult("human admin required", true);
+          await auditCall(result, { meta: true, denied: true, reason: "human_admin_required" });
+          return result;
+        }
+        try {
+          const body = callSecretTool(store.secrets, name, adminGate.frozenArgs, {
+            workspaceId: ctx.workspaceId,
+            keyId: ctx.keyId,
+            agentId: ctx.agentId,
+            agentKind: ctx.agentKind,
+            admin: true,
+            allowedProjects: ctx.effectiveProjects ?? [],
+            activeProject: project?.slug ?? ctx.projectSlug ?? null,
+          });
+          const result = secretToolResult(body);
+          await auditCall(result, { meta: true }, "admin");
+          return result;
+        } catch (err) {
+          const failed = secretToolError(err);
+          const result = secretToolResult(failed.message, true);
+          await auditCall(result, { meta: true, denied: true, reason: "secret" });
+          return result;
+        }
       }
       const result = await handleAdminTool(name, adminGate.frozenArgs, {
         store,
