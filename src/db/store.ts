@@ -41,7 +41,9 @@ import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import { AgentDirectory } from "../identity/agents.js";
-import { derivePolicyKeys, type PolicyKeys } from "../identity/dev-keys.js";
+import { loadPolicyKeys } from "../crypto/keyring.js";
+import { containsSecretRef, LegacySecretRefError } from "../audit/secret-ref.js";
+import { type PolicyKeys } from "../identity/dev-keys.js";
 import { PolicyEnforcer } from "../policy/enforcer.js";
 import {
   applyHeaderPatch,
@@ -806,7 +808,15 @@ export class Store {
   constructor(
     dbPath: string,
     masterKeyRaw: string,
-    opts: { policyDevKeyRaw?: string; journalSizeLimitBytes?: number; rateLimitPerMin?: number } = {},
+    opts: {
+      policyDevKeyRaw?: string;
+      journalSizeLimitBytes?: number;
+      rateLimitPerMin?: number;
+      production?: boolean;
+      keyringDir?: string | null;
+      kekFile?: string | null;
+      env?: NodeJS.ProcessEnv;
+    } = {},
   ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
     this.db = new DatabaseSync(dbPath);
@@ -814,7 +824,17 @@ export class Store {
     this.db.exec(SCHEMA);
     this.migrate();
     runMigrations(this.db);
-    this.policyKeys = derivePolicyKeys(opts.policyDevKeyRaw || `dev:${masterKeyRaw}`);
+    const production = opts.production === true;
+    if (production && opts.policyDevKeyRaw) {
+      throw new Error("production refuses a derived or dev policy key");
+    }
+    this.policyKeys = loadPolicyKeys({
+      production,
+      keyringDir: opts.keyringDir,
+      kekFile: opts.kekFile,
+      devMaterial: production ? null : (opts.policyDevKeyRaw || `dev:${masterKeyRaw}`),
+      env: opts.env,
+    });
     this.identity = new AgentDirectory(this.db, this.policyKeys);
     this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys, rateLimitPerMin: opts.rateLimitPerMin });
   }
@@ -2065,6 +2085,9 @@ export class Store {
     requirement: AuthzRequirement;
     ttlSeconds: number;
   }): { approval: Approval; decideToken: string | null } {
+    if (containsSecretRef(input.arguments) || containsSecretRef(input.tool)) {
+      throw new LegacySecretRefError();
+    }
     const now = nowIso();
     const ttl = clampAuthzTtl(input.ttlSeconds);
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();

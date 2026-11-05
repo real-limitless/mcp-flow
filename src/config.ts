@@ -18,8 +18,17 @@ export interface Config {
    */
   publicUrl: string;
   trustProxy: boolean;
-  /** DEV ONLY key material for key pepper / args encryption / args_hash (until SecOPS keys land) */
+  /** DEV ONLY key material for key pepper / args encryption / args_hash (until the keyring is loaded) */
   policyDevKeyRaw?: string;
+  /**
+   * Production keyring (Secrets §0.1). Set by MCP_FLOW_PRODUCTION=true or NODE_ENV=production.
+   * Production refuses env and HKDF keys, including MCP_FLOW_POLICY_DEV_KEY and the pepper.
+   */
+  production: boolean;
+  /** Directory of wrapped per-purpose keyring files. Required in production. */
+  keyringDir: string | null;
+  /** Path to the 32-byte KEK file (mode 0400). Required in production. Never an env key value. */
+  kekFile: string | null;
   /**
    * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
    * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
@@ -184,8 +193,13 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
         : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL"))) ?? "",
     trustProxy:
       overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
+    production:
+      overrides.production ??
+      (parseBoolFlag(env("MCP_FLOW_PRODUCTION")) || process.env.NODE_ENV === "production"),
     policyDevKeyRaw:
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
+    keyringDir: overrides.keyringDir !== undefined ? overrides.keyringDir : (env("MCP_FLOW_KEYRING_DIR") ?? null),
+    kekFile: overrides.kekFile !== undefined ? overrides.kekFile : (env("MCP_FLOW_KEK_FILE") ?? null),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),

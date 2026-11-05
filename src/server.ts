@@ -122,7 +122,17 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   });
   let store: Store;
   try {
-    store = new Store(cfg.dbPath, cfg.masterKeyRaw, { policyDevKeyRaw: cfg.policyDevKeyRaw, journalSizeLimitBytes: cfg.journalSizeLimitBytes, rateLimitPerMin: cfg.rateLimitPerMin });
+    if (cfg.production && cfg.policyDevKeyRaw) {
+      throw new Error("production refuses MCP_FLOW_POLICY_DEV_KEY");
+    }
+    store = new Store(cfg.dbPath, cfg.masterKeyRaw, {
+      policyDevKeyRaw: cfg.production ? undefined : cfg.policyDevKeyRaw,
+      journalSizeLimitBytes: cfg.journalSizeLimitBytes,
+      rateLimitPerMin: cfg.rateLimitPerMin,
+      production: cfg.production,
+      keyringDir: cfg.keyringDir,
+      kekFile: cfg.kekFile,
+    });
   } catch (err) {
     lock?.release();
     throw err;
