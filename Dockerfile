@@ -1,6 +1,9 @@
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
+# prepare runs during npm ci. The guard script no-ops until sources exist;
+# the next layer builds dist/ after src/ is copied.
 COPY package.json package-lock.json* ./
+COPY scripts/prepare-package.mjs scripts/prepare-package.mjs
 RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
