@@ -72,7 +72,7 @@ docs/campaign/        # storyboard frames + styles (design SoT for site)
 
 Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN`, optional `MCP_FLOW_API_KEY` for harnesses.
 
-Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile.edge`: git, gh, `/repos`, `gh` config volume) + Tailscale sidecar. Do not auto-register GitHub/fs backends: add them in Admin (edge-sandbox → compose-edge).
+Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile.edge`: git, gh, `/repos`, `gh` config volume) + Tailscale sidecar. Do not auto-register GitHub/fs backends: add them in Admin (edge-sandbox → compose-edge). Edge stdio backends use the PATH commands `shell-mcp` and `github-mcp` (global `npm install -g`, or the edge image's `/usr/local/bin` links). Keep the stored command as that name; a checkout-specific absolute path does not match the directory the edge host runs.
 
 ---
 
