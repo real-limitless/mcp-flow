@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SandboxConfig } from "../../types.js";
+import { portableHelperCommand } from "./helper-command.js";
 import { connectStdioCommand, type StdioRunResult } from "./stdio.js";
 
 export function containerRuntime(): string {
@@ -29,7 +30,7 @@ export function ociRunArgs(opts: {
   }
   args.push(opts.image);
   if (opts.command?.length) {
-    args.push(...opts.command);
+    args.push(...portableHelperCommand(opts.command).command);
   }
   return args;
 }

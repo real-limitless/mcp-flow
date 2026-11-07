@@ -1,9 +1,14 @@
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   installedHelperFile,
+  portableHelperCommand,
   resolveInstalledHelperCommand,
+  resolveSpawnCommand,
 } from "../src/mcp/runners/helper-command.js";
 
 const installedShell = "/usr/lib/node_modules/mcp-flow/docker/shell-mcp.mjs";
@@ -75,6 +80,43 @@ describe("installed helper command", () => {
     expect(resolved.command).toEqual(command);
   });
 
+  it("sends a checkout path to another machine as the PATH name", () => {
+    expect(portableHelperCommand(["node", missingCheckout]).command).toEqual(["shell-mcp"]);
+    expect(
+      portableHelperCommand([
+        "docker",
+        "run",
+        "-i",
+        "--rm",
+        "ghcr.io/example/mcp:latest",
+        "node",
+        "/opt/checkout/docker/shell-mcp.mjs",
+      ]).command,
+    ).toEqual(["docker", "run", "-i", "--rm", "ghcr.io/example/mcp:latest", "shell-mcp"]);
+    expect(portableHelperCommand(["/usr/bin/env", "node", "/opt/checkout/docker/github-mcp.sh"]).command).toEqual([
+      "/usr/bin/env",
+      "github-mcp",
+    ]);
+  });
+
+  it("rewrites a helper path inside a container argv instead of using a host file", () => {
+    const resolved = resolveSpawnCommand(
+      ["docker", "run", "--rm", "ghcr.io/example/edge:local", "node", missingCheckout],
+      {
+        exists: () => true,
+        execPath: "/usr/bin/node",
+        helperFile: () => installedShell,
+      },
+    );
+    expect(resolved.command).toEqual([
+      "docker",
+      "run",
+      "--rm",
+      "ghcr.io/example/edge:local",
+      "shell-mcp",
+    ]);
+  });
+
   it("falls back to the PATH name when the install has no helper file", () => {
     const resolved = resolveInstalledHelperCommand(["node", missingCheckout], {
       exists: () => false,
@@ -82,5 +124,23 @@ describe("installed helper command", () => {
       helperFile: () => "/missing/docker/shell-mcp.mjs",
     });
     expect(resolved.command).toEqual(["shell-mcp"]);
+  });
+});
+
+describe("link edge helpers", () => {
+  it("symlinks shell-mcp onto a bin dir and onto a missing checkout path", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-link-"));
+    const bin = join(dir, "bin");
+    const missing = join(dir, "missing", "docker", "shell-mcp.mjs");
+    const script = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "link-edge-helpers.mjs");
+    const result = spawnSync(process.execPath, [script, "--bind-missing", missing], {
+      cwd: dir,
+      env: { ...process.env, MCP_FLOW_BIN_DIR: bin },
+      encoding: "utf8",
+    });
+    expect(result.status, `${script}\n${result.stderr || result.stdout}`).toBe(0);
+    expect(readlinkSync(join(bin, "shell-mcp"))).toContain("shell-mcp.mjs");
+    expect(readlinkSync(join(bin, "github-mcp"))).toContain("github-mcp.sh");
+    expect(readlinkSync(missing)).toContain("shell-mcp.mjs");
   });
 });

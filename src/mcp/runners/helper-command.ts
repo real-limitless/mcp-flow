@@ -32,6 +32,51 @@ function isNodeBin(token: string): boolean {
   return base === "node" || base === "nodejs" || base === "node.exe" || base === "nodejs.exe";
 }
 
+const CONTAINER_RUNTIMES = new Set(["docker", "podman", "nerdctl"]);
+
+export function isContainerRuntime(token: string): boolean {
+  const base = basename(token.replaceAll("\\", "/")).toLowerCase();
+  return CONTAINER_RUNTIMES.has(base);
+}
+
+function findHelperToken(command: string[]): { helper: HelperName; index: number } | null {
+  for (let i = 0; i < command.length; i++) {
+    const helper = helperFromToken(command[i] ?? "");
+    if (helper) return { helper, index: i };
+  }
+  return null;
+}
+
+/**
+ * Command to send to another machine or into a container. A checkout path such as
+ * docker/shell-mcp.mjs is only valid on the machine that stored it, so the
+ * receiver gets the PATH name shell-mcp / github-mcp.
+ */
+export function portableHelperCommand(command: string[]): {
+  command: string[];
+  rewritten: boolean;
+  helper: HelperName | null;
+} {
+  const found = findHelperToken(command);
+  if (!found) return { command, rewritten: false, helper: null };
+  const token = command[found.index] ?? "";
+  if (token === found.helper) return { command, rewritten: false, helper: found.helper };
+  const next = command.slice();
+  next[found.index] = found.helper;
+  const launcher = found.index - 1;
+  if (launcher >= 0 && isNodeBin(next[launcher] ?? "")) next.splice(launcher, 1);
+  return { command: next, rewritten: true, helper: found.helper };
+}
+
+export function resolveSpawnCommand(
+  command: string[],
+  opts: ResolveHelperOptions = {},
+): { command: string[]; rewritten: boolean; helper: HelperName | null } {
+  const head = command[0] ?? "";
+  if (isContainerRuntime(head)) return portableHelperCommand(command);
+  return resolveInstalledHelperCommand(command, opts);
+}
+
 function onPath(name: string, pathEnv: string, exists: (path: string) => boolean): boolean {
   for (const dir of pathEnv.split(delimiter)) {
     if (!dir) continue;
@@ -56,11 +101,10 @@ export function resolveInstalledHelperCommand(
   const shellBin = opts.shellBin ?? "/bin/sh";
   const helperFile = opts.helperFile ?? installedHelperFile;
 
-  const head = command[0] ?? "";
-  const scriptIndex = isNodeBin(head) && command.length > 1 ? 1 : 0;
-  const token = command[scriptIndex] ?? "";
-  const helper = helperFromToken(token);
-  if (!helper) return { command, rewritten: false, helper: null };
+  const found = findHelperToken(command);
+  if (!found) return { command, rewritten: false, helper: null };
+  const helper = found.helper;
+  const token = command[found.index] ?? "";
 
   const isPathToken = token.includes("/") || token.includes("\\") || token.endsWith(".mjs") || token.endsWith(".sh");
   if (!isPathToken) {
@@ -70,7 +114,7 @@ export function resolveInstalledHelperCommand(
   }
 
   const file = helperFile(helper);
-  const argsAfter = command.slice(scriptIndex + 1);
+  const argsAfter = command.slice(found.index + 1);
   if (!exists(file)) {
     if (!isPathToken) return { command, rewritten: false, helper };
     return { command: [helper, ...argsAfter], rewritten: true, helper };
