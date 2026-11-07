@@ -70,7 +70,7 @@ npm install -g mcp-flow
 
 A global install links `mcp-flow`, `shell-mcp`, and `github-mcp`. Installing from a git URL runs `prepare`, which builds `dist/` before the package is packed. A packed tarball already contains that build, `docker/shell-mcp.mjs`, and `docker/github-mcp.sh`.
 
-Edge stdio backends use those command names. `shell-mcp` and `github-mcp` are on `PATH` after the global install and inside the Docker edge image (`/usr/local/bin`). Store the backend command as `shell-mcp`. A checkout-specific absolute path such as `/opt/checkout/docker/shell-mcp.mjs` points at a different directory than the one the edge host runs, so Node cannot find the file.
+Edge stdio backends use those command names. `shell-mcp` and `github-mcp` are on `PATH` after the global install and inside the Docker edge image (`/usr/local/bin`). Store the backend command as `shell-mcp`. A checkout-specific absolute path such as `/opt/checkout/docker/shell-mcp.mjs` points at a different directory than the one the edge host runs, so Node cannot find the file. When that stored path is missing, the edge process starts `docker/shell-mcp.mjs` from the mcp-flow install that is actually running (the same for `github-mcp`). It uses that process's Node binary, so this still works when the edge agent runs as root and root's PATH does not include a user-level npm bin.
 
 ```bash
 git clone -b DEVELOPMENT https://github.com/real-limitless/mcp-flow.git
@@ -270,7 +270,7 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 | **shell** | stdio | `shell-mcp` |
 | **github** | stdio | `github-mcp` |
 
-Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). A checkout-specific absolute path to `docker/shell-mcp.mjs` does not match the directory the edge host runs.
+Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). A checkout-specific absolute path to `docker/shell-mcp.mjs` does not match the directory the edge host runs. If that path is still stored and the file is missing, the running install's helper is used instead, including when the edge process runs as root.
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
