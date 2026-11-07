@@ -48,9 +48,13 @@ describe("npm package bins", () => {
       ]),
     );
     expect(pkg.scripts.prepare).toBe("node scripts/prepare-package.mjs");
-    expect(pkg.scripts.build).toContain("tsc");
-    expect(read("scripts/prepare-package.mjs")).toContain("npm");
-    expect(read("scripts/prepare-package.mjs")).toContain("src/cli.ts");
+    expect(pkg.scripts.build).toBe("node scripts/prepare-package.mjs --build");
+    const prepare = read("scripts/prepare-package.mjs");
+    expect(prepare).toContain("src/cli.ts");
+    expect(prepare).toContain('"typescript"');
+    expect(prepare).toContain('"tsc.js"');
+    expect(prepare).toContain("--include=dev");
+    expect(prepare).toContain("--ignore-scripts");
   });
 
   it("gives each bin a shebang", () => {
