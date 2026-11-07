@@ -52,6 +52,26 @@ Typical cases:
 
 Requirements: **Node.js ≥ 22**.
 
+### CLI on PATH
+
+This package is not on the npm registry yet. From a checkout:
+
+```bash
+npm install
+npm run build
+npm install -g .
+```
+
+Once it is published:
+
+```bash
+npm install -g mcp-flow
+```
+
+A global install links `mcp-flow`, `shell-mcp`, and `github-mcp`. Installing from a git URL runs `prepare`, which builds `dist/` before the package is packed. A packed tarball already contains that build, `docker/shell-mcp.mjs`, and `docker/github-mcp.sh`.
+
+Edge stdio backends use those command names. `shell-mcp` and `github-mcp` are on `PATH` after the global install and inside the Docker edge image (`/usr/local/bin`). Store the backend command as `shell-mcp`. A checkout-specific absolute path such as `/opt/checkout/docker/shell-mcp.mjs` points at a different directory than the one the edge host runs, so Node cannot find the file.
+
 ```bash
 git clone -b DEVELOPMENT https://github.com/real-limitless/mcp-flow.git
 cd mcp-flow
@@ -249,6 +269,8 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 | **fs** | stdio | `mcp-server-filesystem /repos` |
 | **shell** | stdio | `shell-mcp` |
 | **github** | stdio | `github-mcp` |
+
+Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). A checkout-specific absolute path to `docker/shell-mcp.mjs` does not match the directory the edge host runs.
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
