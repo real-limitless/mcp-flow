@@ -61,6 +61,16 @@ describe("edge-sandbox OCI args", () => {
       "server.js",
     ]);
   });
+
+  it("sends shell-mcp by name when the stored command is a checkout path", () => {
+    const args = ociRunArgs({
+      image: "ghcr.io/example/edge:local",
+      command: ["node", "/opt/checkout/docker/shell-mcp.mjs"],
+      env: {},
+    });
+    expect(args.at(-1)).toBe("shell-mcp");
+    expect(args.join(" ")).not.toContain("/opt/checkout");
+  });
 });
 
 describe("edge-sandbox OCI runtime", () => {

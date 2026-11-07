@@ -13,7 +13,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { PassThrough } from "node:stream";
 import { redactSecrets } from "../../audit/sanitize.js";
 import { lineRedactor, redactLog } from "../../log/redact-lines.js";
-import { resolveInstalledHelperCommand } from "./helper-command.js";
+import { resolveSpawnCommand } from "./helper-command.js";
 
 export interface StdioRunResult {
   client: Client;
@@ -445,7 +445,7 @@ export async function connectStdioCommand(opts: {
     throw new Error("stdio command is empty");
   }
   const env = buildStdioEnv(opts.env);
-  const resolved = resolveInstalledHelperCommand(opts.command, { pathEnv: env.PATH });
+  const resolved = resolveSpawnCommand(opts.command, { pathEnv: env.PATH });
   if (resolved.rewritten && resolved.helper) {
     console.error(
       `[mcp-flow] ${resolved.helper} is not at the stored path; starting the helper from this install`,

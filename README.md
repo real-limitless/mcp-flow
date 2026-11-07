@@ -272,7 +272,19 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 | **shell** | stdio | `shell-mcp` |
 | **github** | stdio | `github-mcp` |
 
-Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). A checkout-specific absolute path to `docker/shell-mcp.mjs` does not match the directory the edge host runs. If that path is still stored and the file is missing, the running install's helper is used instead, including when the edge process runs as root.
+Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). The gateway rewrites a stored checkout path such as `docker/shell-mcp.mjs` to the command name `shell-mcp` before it asks an edge device to start it, including when that command is the process inside a container. Restart the gateway after upgrading so the running process picks that up.
+
+On a host edge, as root, from the checkout (no TypeScript build):
+
+```bash
+node scripts/link-edge-helpers.mjs
+```
+
+That links `shell-mcp` and `github-mcp` into `/usr/local/bin`. Restart `mcp-flow edge` afterward. If an older edge process is still launching the checkout path from the Node error, point that path at the real helper:
+
+```bash
+node scripts/link-edge-helpers.mjs --bind-missing /path/from/the/node/error
+```
 
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
