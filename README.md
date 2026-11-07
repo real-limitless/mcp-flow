@@ -57,10 +57,12 @@ Requirements: **Node.js ≥ 22**.
 This package is not on the npm registry yet. From a checkout:
 
 ```bash
-npm install
+npm install --include=dev
 npm run build
 npm install -g .
 ```
+
+`npm install -g .` also installs the TypeScript compiler into the checkout when `node_modules` does not already have it, then builds `dist/`. That covers a root shell with `NODE_ENV=production`, which otherwise skips devDependencies and leaves `tsc` missing. The compiler is invoked as `node node_modules/typescript/lib/tsc.js`, so it does not need to be on `PATH`.
 
 Once it is published:
 
