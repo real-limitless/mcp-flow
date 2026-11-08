@@ -6,6 +6,7 @@ import { UpstreamPool } from "./mcp/upstream.js";
 import { installSignalHandlers, startServer } from "./server.js";
 import { runStdioBridge } from "./stdio-bridge.js";
 import { parseHeaderFlags, withAuthorizationToken } from "./headers.js";
+import { connectionRequested, withSidecarHealth } from "./egress/sidecar.js";
 import { assertSafeUrl } from "./ssrf.js";
 import { resolveRedirectUri } from "./oauth/origin.js";
 import {
@@ -94,6 +95,7 @@ function openStore(db?: string): { store: Store; workspaceId: string } {
   }
   const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
   const ws = store.ensureWorkspace(cfg.workspaceName);
+  store.seedSidecars(ws.id, process.env.MCP_FLOW_SIDECARS);
   return { store, workspaceId: ws.id };
 }
 
@@ -355,6 +357,10 @@ backendCmd
   )
   .option("--device-id <id>", "edge device id")
   .option(
+    "--connection <slug>",
+    "named sidecar connection for this backend's egress (omit for the normal network)",
+  )
+  .option(
     "--header <name=value>",
     "HTTP header (repeatable). Name=value or Name: value — sealed at rest",
     (v: string, acc: string[]) => {
@@ -392,6 +398,7 @@ backendCmd
       toolAllowlist: string[];
       placement?: string;
       deviceId?: string;
+      connection?: string;
       header: string[];
       apiKey?: string;
       oauth?: boolean;
@@ -404,7 +411,9 @@ backendCmd
       const cfg = loadConfig({ dbPath: opts.db });
       requireSecrets(cfg);
       if (opts.url) {
-        await assertSafeUrl(opts.url, cfg.allowPrivateUrls);
+        await assertSafeUrl(opts.url, cfg.allowPrivateUrls, {
+          viaSidecar: connectionRequested(opts.connection),
+        });
       }
       let headers: Record<string, string> = {};
       let env: Record<string, string> = {};
@@ -492,6 +501,7 @@ backendCmd
             : undefined,
           enabled: Boolean(opts.enable),
           placement,
+          connectionId: opts.connection,
         });
         store.writeAudit({
           workspaceId: ws.id,
@@ -1189,6 +1199,176 @@ const auditCmd = program
         before: opts.before,
       });
       console.log(JSON.stringify({ events }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+const connectionCmd = program
+  .command("connection")
+  .description("Named sidecar connections for backend egress");
+
+connectionCmd
+  .command("list")
+  .description("List sidecar connections and whether their proxy port is up")
+  .option("--db <path>", "sqlite path")
+  .action(async (opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const connections = await withSidecarHealth(store.listSidecars(workspaceId));
+      console.log(JSON.stringify({ connections }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+connectionCmd
+  .command("add")
+  .description("Register a sidecar connection. Nothing uses it until a backend selects it.")
+  .requiredOption("--slug <slug>", "stable id")
+  .requiredOption("--name <name>", "display name")
+  .option("--kind <kind>", "tailscale | generic", "generic")
+  .option("--http-proxy <url>", "HTTP proxy URL, no credentials")
+  .option("--socks-proxy <url>", "SOCKS5 proxy URL, no credentials")
+  .option("--scope <scope>", "gateway | device", "gateway")
+  .option("--device-id <id>", "required when scope is device")
+  .option("--db <path>", "sqlite path")
+  .action(async (opts: {
+    slug: string;
+    name: string;
+    kind: string;
+    httpProxy?: string;
+    socksProxy?: string;
+    scope: string;
+    deviceId?: string;
+    db?: string;
+  }) => {
+    if (opts.kind !== "tailscale" && opts.kind !== "generic") {
+      console.error("kind must be tailscale or generic");
+      process.exit(1);
+    }
+    if (opts.scope !== "gateway" && opts.scope !== "device") {
+      console.error("scope must be gateway or device");
+      process.exit(1);
+    }
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const connection = store.createSidecar(workspaceId, {
+        slug: opts.slug,
+        displayName: opts.name,
+        kind: opts.kind,
+        httpProxy: opts.httpProxy,
+        socksProxy: opts.socksProxy,
+        scope: opts.scope,
+        deviceId: opts.deviceId,
+      });
+      store.writeAudit({
+        workspaceId,
+        action: "connection.create",
+        detail: { slug: connection.slug, kind: connection.kind, scope: connection.scope },
+      });
+      console.log(JSON.stringify({ connection }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+connectionCmd
+  .command("rename")
+  .description("Change a connection's display name. The slug stays.")
+  .argument("<slug>", "connection slug or id")
+  .requiredOption("--name <name>", "new display name")
+  .option("--db <path>", "sqlite path")
+  .action(async (slug: string, opts: { name: string; db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const connection = store.updateSidecar(workspaceId, slug, { displayName: opts.name });
+      if (!connection) {
+        console.error("sidecar connection not found");
+        process.exit(1);
+      }
+      store.writeAudit({
+        workspaceId,
+        action: "connection.update",
+        detail: { slug: connection.slug, displayName: connection.displayName },
+      });
+      console.log(JSON.stringify({ connection }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+connectionCmd
+  .command("assign")
+  .description("Use a named connection for one backend's egress")
+  .argument("<slug>", "connection slug or id")
+  .requiredOption("--backend <idOrSlug>", "backend id or slug")
+  .option("--db <path>", "sqlite path")
+  .action(async (slug: string, opts: { backend: string; db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const backend = store.updateBackend(workspaceId, opts.backend, { connectionId: slug });
+      if (!backend) {
+        console.error("backend not found");
+        process.exit(1);
+      }
+      store.writeAudit({
+        workspaceId,
+        action: "backend.update",
+        backendSlug: backend.slug,
+        detail: { changed: [{ field: "connectionId" }] },
+      });
+      console.log(JSON.stringify({ backend }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+connectionCmd
+  .command("unassign")
+  .description("Return a backend to the normal network path")
+  .requiredOption("--backend <idOrSlug>", "backend id or slug")
+  .option("--db <path>", "sqlite path")
+  .action(async (opts: { backend: string; db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const backend = store.updateBackend(workspaceId, opts.backend, { connectionId: null });
+      if (!backend) {
+        console.error("backend not found");
+        process.exit(1);
+      }
+      store.writeAudit({
+        workspaceId,
+        action: "backend.update",
+        backendSlug: backend.slug,
+        detail: { changed: [{ field: "connectionId" }] },
+      });
+      console.log(JSON.stringify({ backend }, null, 2));
+    } finally {
+      store.close();
+    }
+  });
+
+connectionCmd
+  .command("rm")
+  .description("Delete a sidecar connection that no backend uses")
+  .argument("<slug>", "connection slug or id")
+  .option("--db <path>", "sqlite path")
+  .action(async (slug: string, opts: { db?: string }) => {
+    const { store, workspaceId } = openStore(opts.db);
+    try {
+      const existing = store.getSidecar(workspaceId, slug);
+      if (!existing) {
+        console.error("sidecar connection not found");
+        process.exit(1);
+      }
+      store.deleteSidecar(workspaceId, existing.id);
+      store.writeAudit({
+        workspaceId,
+        action: "connection.delete",
+        detail: { slug: existing.slug },
+      });
+      console.log(JSON.stringify({ ok: true }));
     } finally {
       store.close();
     }

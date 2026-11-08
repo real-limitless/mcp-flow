@@ -83,6 +83,62 @@ export interface SandboxConfig {
   networkMode?: string;
 }
 
+/** VPN/sidecar product. `generic` is any later proxy-shaped VPN. */
+export type SidecarConnectionKind = "tailscale" | "generic";
+
+/** Where the proxy is reachable from. */
+export type SidecarConnectionScope = "gateway" | "device";
+
+export type SidecarHealth = "online" | "offline" | "unknown";
+
+/** Operator-named egress path. Proxy URLs have no credentials. */
+export interface SidecarConnectionPublic {
+  id: string;
+  workspaceId: string;
+  slug: string;
+  displayName: string;
+  kind: SidecarConnectionKind;
+  httpProxy: string | null;
+  socksProxy: string | null;
+  scope: SidecarConnectionScope;
+  deviceId: string | null;
+  enabled: boolean;
+  /** Filled by list/probe. Store writes leave this `unknown`. */
+  health: SidecarHealth;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Shown on a backend. Proxy URLs stay on the connection resource. */
+export interface SidecarConnectionSummary {
+  id: string;
+  slug: string;
+  displayName: string;
+  kind: SidecarConnectionKind;
+  scope: SidecarConnectionScope;
+}
+
+export interface CreateSidecarInput {
+  slug: string;
+  displayName: string;
+  kind?: SidecarConnectionKind;
+  httpProxy?: string | null;
+  socksProxy?: string | null;
+  scope?: SidecarConnectionScope;
+  deviceId?: string | null;
+  enabled?: boolean;
+}
+
+export interface UpdateSidecarInput {
+  displayName?: string;
+  kind?: SidecarConnectionKind;
+  httpProxy?: string | null;
+  socksProxy?: string | null;
+  scope?: SidecarConnectionScope;
+  deviceId?: string | null;
+  enabled?: boolean;
+}
+
 /** null/undefined scopes = full workspace tool access (non-admin) */
 export interface ApiKeyScopes {
   /** Match tool names by prefix, e.g. "yh-finance__", "mf_" */
@@ -280,6 +336,8 @@ export interface BackendRecord {
   toolAllowlistJson: string | null;
   placementJson: string;
   sandboxJson: string | null;
+  /** Selected sidecar connection, or null for the normal network path. */
+  connectionId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -340,6 +398,10 @@ export interface BackendPublic {
   toolAllowlist: string[] | null;
   placement: Placement;
   sandbox: SandboxConfig | null;
+  /** Null means this backend uses the normal network path. */
+  connectionId: string | null;
+  /** Display fields for the selected connection. Null when none is selected. */
+  connection: SidecarConnectionSummary | null;
   /** Static headers, or an OAuth grant. Secret values are never included. */
   auth: BackendAuthPublic;
   createdAt: string;
@@ -369,6 +431,11 @@ export interface CreateBackendInput {
   toolAllowlist?: string[];
   placement?: Placement;
   sandbox?: SandboxConfig | null;
+  /**
+   * Sidecar connection id or slug. Omit to leave unset on create.
+   * Null or "" keeps the normal network path.
+   */
+  connectionId?: string | null;
 }
 
 export interface UpdateBackendInput {
@@ -410,6 +477,11 @@ export interface UpdateBackendInput {
   toolAllowlist?: string[] | null;
   placement?: Placement;
   sandbox?: SandboxConfig | null;
+  /**
+   * Sidecar connection id or slug. Null clears it (normal network path).
+   * Omit to leave the current selection unchanged.
+   */
+  connectionId?: string | null;
 }
 
 export interface AuthContext {
@@ -464,7 +536,10 @@ export type AuditAction =
   | "oauth.authorize"
   | "oauth.reauth"
   | "oauth.refresh_failure"
-  | "oauth.revoke";
+  | "oauth.revoke"
+  | "connection.create"
+  | "connection.update"
+  | "connection.delete";
 
 export interface AuditEvent {
   id: string;

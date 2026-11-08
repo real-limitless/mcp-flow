@@ -92,7 +92,24 @@ import { mintDecideToken, hashDecideToken } from "../authz/decide-token.js";
 import {
   DEFAULT_PLACEMENT,
   DEFAULT_WORKSPACE_POLICY,
+  type SidecarConnectionPublic,
+  type CreateSidecarInput,
+  type UpdateSidecarInput,
 } from "../types.js";
+import {
+  assertConnectionForPlacement,
+  createSidecar,
+  deleteSidecar,
+  egressForBackend,
+  getSidecar,
+  listSidecars,
+  resolveConnectionId,
+  seedSidecarConnections,
+  sidecarSummary,
+  updateSidecar,
+  type SidecarSeedResult,
+} from "./sidecars.js";
+import type { EgressProxy } from "../egress/sidecar.js";
 
 function sealSecretMap(
   masterKey: Buffer,
@@ -459,6 +476,8 @@ function rowBackend(r: Record<string, unknown>): BackendRecord {
       r.tool_allowlist_json == null ? null : String(r.tool_allowlist_json),
     placementJson: String(r.placement_json),
     sandboxJson: r.sandbox_json == null ? null : String(r.sandbox_json),
+    connectionId:
+      r.connection_id == null || r.connection_id === "" ? null : String(r.connection_id),
     createdAt: String(r.created_at),
     updatedAt: String(r.updated_at),
   };
@@ -772,6 +791,7 @@ function parsePlacement(json: string): Placement {
 export function toPublicBackend(
   b: BackendRecord,
   auth: BackendPublic["auth"] = { type: "static" },
+  connection: BackendPublic["connection"] = null,
 ): BackendPublic {
   return {
     id: b.id,
@@ -792,6 +812,8 @@ export function toPublicBackend(
       : null,
     placement: parsePlacement(b.placementJson),
     sandbox: parseSandbox(b.sandboxJson),
+    connectionId: b.connectionId,
+    connection,
     auth,
     createdAt: b.createdAt,
     updatedAt: b.updatedAt,
@@ -1249,6 +1271,8 @@ export class Store {
           ? JSON.stringify(sandboxPicked)
           : null
         : null;
+    const connectionId = resolveConnectionId(this.db, workspaceId, input.connectionId);
+    assertConnectionForPlacement(this.db, workspaceId, connectionId, placement, slug);
     const rec: BackendRecord = {
       id: newId("be"),
       workspaceId,
@@ -1270,6 +1294,7 @@ export class Store {
         : null,
       placementJson: JSON.stringify(placement),
       sandboxJson,
+      connectionId,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -1280,8 +1305,8 @@ export class Store {
           `INSERT INTO backends (
             id, workspace_id, slug, title, transport, url, image, command_json,
             headers_enc, env_enc, enabled, tool_allowlist_json, placement_json,
-            sandbox_json, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            sandbox_json, connection_id, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           rec.id,
@@ -1298,6 +1323,7 @@ export class Store {
           rec.toolAllowlistJson,
           rec.placementJson,
           rec.sandboxJson,
+          rec.connectionId,
           rec.createdAt,
           rec.updatedAt,
         );
@@ -1365,7 +1391,11 @@ export class Store {
     auth: BackendPublic["auth"] = authPublicForBackend(this.oauthConn(), rec.id),
   ): BackendPublic {
     return {
-      ...toPublicBackend(rec, auth),
+      ...toPublicBackend(
+        rec,
+        auth,
+        sidecarSummary(this.db, rec.workspaceId, rec.connectionId),
+      ),
       envKeys: Object.keys(this.decryptEnv(rec)).sort(),
       headerNames: Object.keys(this.decryptHeaders(rec)).sort(),
     };
@@ -1459,6 +1489,17 @@ export class Store {
             : null
           : null
         : existing.sandboxJson;
+    const connectionId =
+      input.connectionId !== undefined
+        ? resolveConnectionId(this.db, workspaceId, input.connectionId)
+        : existing.connectionId;
+    assertConnectionForPlacement(
+      this.db,
+      workspaceId,
+      connectionId,
+      parsePlacement(placementJson),
+      existing.slug,
+    );
     const updatedAt = nowIso();
     const placement = input.placement ?? parsePlacement(existing.placementJson);
     const keepingOauth =
@@ -1483,7 +1524,7 @@ export class Store {
           `UPDATE backends SET
             title = ?, transport = ?, url = ?, image = ?, command_json = ?,
             headers_enc = ?, env_enc = ?, enabled = ?, tool_allowlist_json = ?,
-            placement_json = ?, sandbox_json = ?, updated_at = ?
+            placement_json = ?, sandbox_json = ?, connection_id = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(
@@ -1498,6 +1539,7 @@ export class Store {
           toolAllowlistJson,
           placementJson,
           sandboxJson,
+          connectionId,
           updatedAt,
           existing.id,
         );
@@ -1536,6 +1578,39 @@ export class Store {
 
   private emitBackendRetired(workspaceId: string, slug: string): void {
     for (const listener of this.backendRetiredListeners) listener(workspaceId, slug);
+  }
+
+  listSidecars(workspaceId: string): SidecarConnectionPublic[] {
+    return listSidecars(this.db, workspaceId);
+  }
+
+  getSidecar(workspaceId: string, idOrSlug: string): SidecarConnectionPublic | null {
+    return getSidecar(this.db, workspaceId, idOrSlug);
+  }
+
+  createSidecar(workspaceId: string, input: CreateSidecarInput): SidecarConnectionPublic {
+    return createSidecar(this.db, workspaceId, input);
+  }
+
+  updateSidecar(
+    workspaceId: string,
+    idOrSlug: string,
+    input: UpdateSidecarInput,
+  ): SidecarConnectionPublic | null {
+    return updateSidecar(this.db, workspaceId, idOrSlug, input);
+  }
+
+  deleteSidecar(workspaceId: string, idOrSlug: string): boolean {
+    return deleteSidecar(this.db, workspaceId, idOrSlug);
+  }
+
+  /** Null when this backend did not select a connection. Throws if the selection cannot be used. */
+  egressFor(backend: BackendRecord): EgressProxy | null {
+    return egressForBackend(this.db, backend);
+  }
+
+  seedSidecars(workspaceId: string, raw: string | undefined): SidecarSeedResult {
+    return seedSidecarConnections(this.db, workspaceId, raw);
   }
 
   deleteBackend(workspaceId: string, idOrSlug: string): boolean {

@@ -13,6 +13,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { PassThrough } from "node:stream";
 import { redactSecrets } from "../../audit/sanitize.js";
 import { lineRedactor, redactLog } from "../../log/redact-lines.js";
+import { resolveSpawnCommand } from "./helper-command.js";
 
 export interface StdioRunResult {
   client: Client;
@@ -444,11 +445,18 @@ export async function connectStdioCommand(opts: {
     throw new Error("stdio command is empty");
   }
   const env = buildStdioEnv(opts.env);
+  const resolved = resolveSpawnCommand(opts.command, { pathEnv: env.PATH });
+  if (resolved.rewritten && resolved.helper) {
+    console.error(
+      `[mcp-flow] ${resolved.helper} is not at the stored path; starting the helper from this install`,
+    );
+  }
+  const command = resolved.command;
   try {
-    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
+    return await connectOnce(command, env, opts.cwd, opts.timeoutMs);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (!isNpxLikeCommand(opts.command) || !isNpxCacheCorruption(msg)) {
+    if (!isNpxLikeCommand(command) || !isNpxCacheCorruption(msg)) {
       throw err;
     }
     const cache = env.npm_config_cache || resolveNpmCacheDir();
@@ -456,7 +464,7 @@ export async function connectStdioCommand(opts: {
       `[mcp-flow] npx extract looks corrupt (${redactLog(msg.split("\n")[0])}); clearing ${npxExtractStore(cache)} and retrying`,
     );
     clearNpxExtractStore(cache);
-    return await connectOnce(opts.command, env, opts.cwd, opts.timeoutMs);
+    return await connectOnce(command, env, opts.cwd, opts.timeoutMs);
   }
 }
 

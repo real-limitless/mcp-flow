@@ -52,6 +52,28 @@ Typical cases:
 
 Requirements: **Node.js ≥ 22**.
 
+### CLI on PATH
+
+This package is not on the npm registry yet. From a checkout:
+
+```bash
+npm install --include=dev
+npm run build
+npm install -g .
+```
+
+`npm install -g .` also installs the TypeScript compiler into the checkout when `node_modules` does not already have it, then builds `dist/`. That covers a root shell with `NODE_ENV=production`, which otherwise skips devDependencies and leaves `tsc` missing. The compiler is invoked as `node node_modules/typescript/lib/tsc.js`, so it does not need to be on `PATH`.
+
+Once it is published:
+
+```bash
+npm install -g mcp-flow
+```
+
+A global install links `mcp-flow`, `shell-mcp`, and `github-mcp`. Installing from a git URL runs `prepare`, which builds `dist/` before the package is packed. A packed tarball already contains that build, `docker/shell-mcp.mjs`, and `docker/github-mcp.sh`.
+
+Edge stdio backends use those command names. `shell-mcp` and `github-mcp` are on `PATH` after the global install and inside the Docker edge image (`/usr/local/bin`). Store the backend command as `shell-mcp`. A checkout-specific absolute path such as `/opt/checkout/docker/shell-mcp.mjs` points at a different directory than the one the edge host runs, so Node cannot find the file. When that stored path is missing, the edge process starts `docker/shell-mcp.mjs` from the mcp-flow install that is actually running (the same for `github-mcp`). It uses that process's Node binary, so this still works when the edge agent runs as root and root's PATH does not include a user-level npm bin.
+
 ```bash
 git clone -b DEVELOPMENT https://github.com/real-limitless/mcp-flow.git
 cd mcp-flow
@@ -192,7 +214,7 @@ npx mcp-flow backend oauth revoke vendor
 
 Set `MCP_FLOW_PUBLIC_URL` to the origin browsers use to reach the gateway (include the port). The admin UI shows the same redirect URL on the backend form. Connect / Reconnect opens the provider consent page; Revoke drops the grant and keeps the client so you can authorize again without recreating the backend.
 
-Some providers only register loopback redirect URLs (for example Swaybyte rejects `https://mcp-flow.z.srl/oauth/callback`). When that server also offers the device-code grant, Connect shows a user code and a verification page instead of failing with `server_error`. Approve that code in the browser; the gateway polls and stores the tokens.
+Some providers only register loopback redirect URLs (for example Swaybyte rejects `https://mcp.example.com/oauth/callback`). When that server also offers the device-code grant, Connect shows a user code and a verification page instead of failing with `server_error`. Approve that code in the browser; the gateway polls and stores the tokens.
 
 Access and refresh tokens and the client secret are sealed with `MCP_FLOW_MASTER_KEY`. They are not returned by the API or UI, not written to the audit log, and not stored in plaintext. The gateway refreshes the access token before it expires. If refresh fails, the backend shows **re-auth** and tool calls fail with a re-authorization error until an admin runs the consent flow again.
 
@@ -250,6 +272,20 @@ Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-e
 | **shell** | stdio | `shell-mcp` |
 | **github** | stdio | `github-mcp` |
 
+Register `shell-mcp` and `github-mcp` by those names. Both are on `PATH` in the edge image and after `npm install -g` (from the registry, once published, or `npm install -g .` from a checkout). The gateway rewrites a stored checkout path such as `docker/shell-mcp.mjs` to the command name `shell-mcp` before it asks an edge device to start it, including when that command is the process inside a container. Restart the gateway after upgrading so the running process picks that up.
+
+On a host edge, as root, from the checkout (no TypeScript build):
+
+```bash
+node scripts/link-edge-helpers.mjs
+```
+
+That links `shell-mcp` and `github-mcp` into `/usr/local/bin`. Restart `mcp-flow edge` afterward. If an older edge process is still launching the checkout path from the Node error, point that path at the real helper:
+
+```bash
+node scripts/link-edge-helpers.mjs --bind-missing /path/from/the/node/error
+```
+
 Then from a shell-capable agent: `gh auth login` (device-code OAuth). After that `github__*` uses that account. Clone with `git clone … /repos/<project>`.
 
 ### Edge only
@@ -273,7 +309,7 @@ docker compose -f docker-compose.edge.yaml up --build -d
 
 Dokploy: create a compose application from `docker-compose.edge.yaml` and set `MCP_FLOW_URL` and `MCP_FLOW_DEVICE_TOKEN` in that application's environment. Dokploy interpolates those variables into the edge service. Do not commit the token. After the container is running it dials `MCP_FLOW_URL` with the device token and shows up as an online device on the server.
 
-Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN. Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet.
+Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN_SERVER` in `.env`. The sidecar starts with the stack (userspace, no TUN. Dokploy-safe) and TCP-forwards `:8787` to the gateway. MCP is `http://<TS_HOSTNAME>:8787/mcp` on the tailnet. That publish path does not route backend egress. A backend reaches the tailnet only when Connect via names the sidecar. See [docs/sidecar-connections.md](docs/sidecar-connections.md). Backend URL example: `https://mcp.example.com/mcp`.
 
 ### Admin REST
 
@@ -287,6 +323,7 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 | `POST` | `/v1/backends` | Create (GET redacts sealed headers/env) |
 | `GET` | `/v1/backends` | List (redacted) |
 | `PATCH` | `/v1/backends/:id` | Update / enable. `env` and `headers` merge per key (`envMode=replace` or `headerMode=replace` swaps that map; `unsetEnv`, a null env value, or a null header value deletes one key). A non-blank `apiKey` updates Authorization and keeps the other headers. Responses list `envKeys` and `headerNames` only — values are never returned. |
+| `GET/POST/PATCH/DELETE` | `/v1/connections` | Named sidecar connections. Nothing is routed through one until a backend's `connectionId` selects it. |
 | `POST` | `/v1/backends/:id/test` | Upstream tools/list smoke |
 | `POST` | `/v1/backends/:id/oauth/start` | OAuth consent URL (PKCE). Tokens stay sealed |
 | `POST` | `/v1/backends/:id/oauth/revoke` | Drop the grant; keep the client registration |

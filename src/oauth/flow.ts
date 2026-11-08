@@ -24,6 +24,14 @@ import {
 import { createSafeFetch } from "./fetch.js";
 import { StoreOauthProvider, oauthErrorCode } from "./provider.js";
 
+function fetchForBackend(
+  store: Store,
+  backend: BackendRecord,
+  allowPrivateUrls: boolean,
+) {
+  return createSafeFetch(allowPrivateUrls, { egress: store.egressFor(backend) });
+}
+
 const SETUP_HINT =
   "This server does not offer dynamic client registration. Enter a client id and, if the provider uses a confidential client, a client secret.";
 
@@ -68,7 +76,7 @@ export async function startOauthAuthorization(opts: {
   if (!row) throw new Error("backend is not configured for OAuth");
   if (!opts.backend.url) throw new Error("backend has no url");
 
-  const fetchFn = createSafeFetch(opts.allowPrivateUrls);
+  const fetchFn = fetchForBackend(opts.store, opts.backend, opts.allowPrivateUrls);
   let info;
   try {
     info = await discoverOAuthServerInfo(opts.backend.url, { fetchFn });
@@ -345,7 +353,7 @@ export async function pollOauthDevice(opts: {
     device_code: device.deviceCode,
     client_id: row.clientId,
   });
-  const response = await createSafeFetch(opts.allowPrivateUrls)(tokenEndpoint, {
+  const response = await fetchForBackend(opts.store, opts.backend, opts.allowPrivateUrls)(tokenEndpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -463,7 +471,7 @@ export async function completeOauthCallback(opts: {
     const result = await auth(provider, {
       serverUrl: backend.url,
       authorizationCode: opts.code,
-      fetchFn: createSafeFetch(opts.allowPrivateUrls),
+      fetchFn: fetchForBackend(opts.store, backend, opts.allowPrivateUrls),
       ...(row.scope ? { scope: row.scope } : {}),
     });
     if (result !== "AUTHORIZED") {
@@ -511,7 +519,7 @@ export async function revokeOauthGrant(opts: {
         );
         headers.set("Authorization", `Basic ${basic}`);
       }
-      await createSafeFetch(opts.allowPrivateUrls)(endpoint, {
+      await fetchForBackend(opts.store, opts.backend, opts.allowPrivateUrls)(endpoint, {
         method: "POST",
         headers,
         body: new URLSearchParams({

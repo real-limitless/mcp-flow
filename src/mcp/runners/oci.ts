@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { SandboxConfig } from "../../types.js";
+import { portableHelperCommand } from "./helper-command.js";
 import { connectStdioCommand, type StdioRunResult } from "./stdio.js";
 
 export function containerRuntime(): string {
@@ -14,9 +15,11 @@ export function ociRunArgs(opts: {
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
+  /** Resolved network. When set, this wins over sandbox.networkMode. */
+  networkMode?: string;
 }): string[] {
   const args: string[] = ["run", "-i", "--rm"];
-  const net = opts.sandbox?.networkMode ?? "bridge";
+  const net = opts.networkMode ?? opts.sandbox?.networkMode ?? "bridge";
   args.push("--network", net);
   if (opts.sandbox?.memory) {
     args.push("--memory", opts.sandbox.memory);
@@ -29,7 +32,7 @@ export function ociRunArgs(opts: {
   }
   args.push(opts.image);
   if (opts.command?.length) {
-    args.push(...opts.command);
+    args.push(...portableHelperCommand(opts.command).command);
   }
   return args;
 }
@@ -39,6 +42,7 @@ export async function connectOci(opts: {
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
+  networkMode?: string;
   /** V53-F4: bound for initialize + first tools/list (ms). */
   timeoutMs?: number;
 }): Promise<StdioRunResult> {

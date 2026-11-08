@@ -1,7 +1,9 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import { applySidecarEnv } from "../egress/sidecar.js";
 import type { BackendRecord, Placement } from "../types.js";
+import { portableHelperCommand } from "../mcp/runners/helper-command.js";
 import type { EdgeHub } from "./hub.js";
 import type {
   EdgeToolsCallResult,
@@ -125,14 +127,23 @@ export class EdgeRouter {
   private runtimePayload(backend: BackendRecord): Record<string, unknown> {
     const pub = toPublicBackend(backend);
     const placement = this.placement(backend);
-    const env = this.store.decryptEnv(backend);
+    const env = applySidecarEnv(
+      this.store.decryptEnv(backend),
+      this.store.egressFor(backend),
+    );
+    const sent = pub.command?.length ? portableHelperCommand(pub.command) : null;
+    if (sent?.rewritten && sent.helper) {
+      console.error(
+        `[mcp-flow] backend ${backend.slug} stored a checkout path; sending ${sent.helper}`,
+      );
+    }
     return {
       backendId: backend.id,
       slug: backend.slug,
       transport: backend.transport,
       mode: placement.mode,
       image: backend.image,
-      command: pub.command,
+      command: sent ? sent.command : pub.command,
       env,
       sandbox: pub.sandbox,
     };

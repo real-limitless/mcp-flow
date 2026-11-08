@@ -19,6 +19,7 @@ const SCALAR_FIELDS = [
   "placement",
   "sandbox",
   "toolAllowlist",
+  "connectionId",
 ] as const;
 
 const DROPPED = new Set(["__proto__", "constructor", "prototype"]);

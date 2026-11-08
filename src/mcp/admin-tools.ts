@@ -29,6 +29,7 @@ import {
   PlacementError,
   supportedPlacementModes,
 } from "../placement.js";
+import { connectionRequested } from "../egress/sidecar.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
 import { assertOauthBackendConfig } from "../oauth/policy.js";
 import { resolveRedirectUri } from "../oauth/origin.js";
@@ -789,7 +790,9 @@ export async function handleAdminTool(
           body.url
         ) {
           try {
-            await assertSafeUrl(body.url, cfg.allowPrivateUrls);
+            await assertSafeUrl(body.url, cfg.allowPrivateUrls, {
+              viaSidecar: connectionRequested(body.connectionId),
+            });
           } catch (err) {
             return textResult(
               err instanceof SsrfError ? err.message : "invalid url",
@@ -848,8 +851,14 @@ export async function handleAdminTool(
           return textResult("headerMode must be merge or replace", true);
         }
         if (body.url) {
+          const viaSidecar =
+            body.connectionId === null
+              ? false
+              : body.connectionId !== undefined
+                ? connectionRequested(body.connectionId)
+                : connectionRequested(existing.connectionId);
           try {
-            await assertSafeUrl(body.url, cfg.allowPrivateUrls);
+            await assertSafeUrl(body.url, cfg.allowPrivateUrls, { viaSidecar });
           } catch (err) {
             return textResult(
               err instanceof SsrfError ? err.message : "invalid url",

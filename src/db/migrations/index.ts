@@ -18,6 +18,7 @@ import { MIGRATION_0016 } from "./0016_secret.js";
 import { MIGRATION_0017 } from "./0017_secret_sink_grant.js";
 import { MIGRATION_0018 } from "./0018_secret_value_index.js";
 import { MIGRATION_0019 } from "./0019_secret_reveal.js";
+import { applySidecarConnectionColumn, MIGRATION_0020 } from "./0020_sidecar_connections.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -25,6 +26,8 @@ export interface Migration {
   sql: string;
   /** Runs before BEGIN IMMEDIATE when the migration is pending; throw to refuse (nothing applied). */
   preflight?: (db: DatabaseSync, deps?: PreflightDeps) => void;
+  /** Runs inside the migration transaction, after `sql`. */
+  after?: (db: DatabaseSync) => void;
 }
 
 /** Ordered, append-only list. Never edit a shipped migration; add a new one. */
@@ -55,11 +58,16 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
   { id: "0015_call_payload", sql: MIGRATION_0015 },
-  // Secrets B. 0020 is the next free id; see docs/db-migration-registry.md.
+  // Secrets B, then sidecar connections. 0021 is the next free id.
   { id: "0016_secret", sql: MIGRATION_0016 },
   { id: "0017_secret_sink_grant", sql: MIGRATION_0017 },
   { id: "0018_secret_value_index", sql: MIGRATION_0018 },
   { id: "0019_secret_reveal", sql: MIGRATION_0019 },
+  {
+    id: "0020_sidecar_connections",
+    sql: MIGRATION_0020,
+    after: applySidecarConnectionColumn,
+  },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
@@ -120,6 +128,7 @@ export function runMigrations(db: DatabaseSync, upTo?: string, opts: RunMigratio
       db.exec("BEGIN IMMEDIATE;");
       try {
         db.exec(m.sql);
+        m.after?.(db);
         db.prepare(`INSERT INTO mcpflow_schema_migrations (id, applied_at) VALUES (?, ?)`).run(
           m.id,
           new Date().toISOString(),
