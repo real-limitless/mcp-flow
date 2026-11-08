@@ -59,9 +59,12 @@ describe("legacy secret:// refusal", () => {
     store.close();
   });
 
-  it("does not add a payload or secret tool to the admin tool catalog", () => {
+  it("registers secret writes as admin tools and keeps reveal and payload out", () => {
+    for (const name of ["mf_secret_create", "mf_secret_rotate", "mf_secret_delete", "mf_secret_list"]) {
+      expect(EXACT_ADMIN_TOOL_NAMES.has(name)).toBe(true);
+    }
     for (const name of EXACT_ADMIN_TOOL_NAMES) {
-      expect(name).not.toMatch(/payload|secret_reveal|secret_create/);
+      expect(name).not.toMatch(/payload|secret_reveal|secret_import/);
     }
   });
 });

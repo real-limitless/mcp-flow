@@ -3,7 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 /**
  * 0020_sidecar_connections. Named VPN/sidecar endpoints and an optional
  * backends.connection_id. Null means the backend keeps the normal network path.
- * 0016–0019 stay reserved. The column add is conditional: migration-only
+ * 0016–0019 are the secrets store. The column add is conditional: migration-only
  * databases (no legacy `backends` table) still apply this id.
  */
 export const MIGRATION_0020 = `

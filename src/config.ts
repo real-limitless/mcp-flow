@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { parseRateLimitPerMin } from "./policy/rate-limit.js";
+import { parseProtectedTargets, type ProtectedTargets } from "./secrets/protected.js";
 
 export interface Config {
   host: string;
@@ -29,6 +30,14 @@ export interface Config {
   keyringDir: string | null;
   /** Path to the 32-byte KEK file (mode 0400). Required in production. Never an env key value. */
   kekFile: string | null;
+  /**
+   * Secrets KEK source. `file` reads MCP_FLOW_KEK_FILE (also a Docker secret mount).
+   * `kms` is the hook only; this process does not load KMS credentials from the environment.
+   * `invalid` fails secret operations closed.
+   */
+  kekProvider: "file" | "kms" | "invalid";
+  /** Host-only deployment ids. Never returned by an API. Invalid text fails secret APIs closed. */
+  protectedTargets: ProtectedTargets;
   /**
    * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
    * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
@@ -147,6 +156,13 @@ export function parsePublicUrl(raw: string | undefined | null): string | null {
   return u.origin;
 }
 
+function parseKekProvider(raw: string | undefined): "file" | "kms" | "invalid" {
+  const value = (raw ?? "").trim().toLowerCase();
+  if (value === "" || value === "file") return "file";
+  if (value === "kms") return "kms";
+  return "invalid";
+}
+
 function env(name: string, fallback?: string): string | undefined {
   const v = process.env[name];
   if (v === undefined || v === "") return fallback;
@@ -200,6 +216,8 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
     keyringDir: overrides.keyringDir !== undefined ? overrides.keyringDir : (env("MCP_FLOW_KEYRING_DIR") ?? null),
     kekFile: overrides.kekFile !== undefined ? overrides.kekFile : (env("MCP_FLOW_KEK_FILE") ?? null),
+    kekProvider: overrides.kekProvider ?? parseKekProvider(env("MCP_FLOW_KEK_PROVIDER")),
+    protectedTargets: overrides.protectedTargets ?? parseProtectedTargets(env("MCP_FLOW_PROTECTED_TARGETS")),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),

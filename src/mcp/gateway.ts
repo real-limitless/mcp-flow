@@ -47,6 +47,7 @@ import {
   searchCatalogTools,
   stringList,
 } from "./dynamic-tools.js";
+import { callSecretTool, isSecretTool, isSecretWriteTool, secretToolError, secretToolResult } from "../secrets/tools.js";
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
@@ -1242,6 +1243,32 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         await auditCall(adminGate.result, { meta: true });
         return adminGate.result;
       }
+      if (isSecretWriteTool(name)) {
+        if (!ctx.agentId || !ctx.keyId || ctx.agentKind !== "human") {
+          const result = textResult("human admin required", true);
+          await auditCall(result, { meta: true, denied: true, reason: "human_admin_required" });
+          return result;
+        }
+        try {
+          const body = callSecretTool(store.secrets, name, adminGate.frozenArgs, {
+            workspaceId: ctx.workspaceId,
+            keyId: ctx.keyId,
+            agentId: ctx.agentId,
+            agentKind: ctx.agentKind,
+            admin: true,
+            allowedProjects: ctx.effectiveProjects ?? [],
+            activeProject: project?.slug ?? ctx.projectSlug ?? null,
+          });
+          const result = secretToolResult(body);
+          await auditCall(result, { meta: true }, "admin");
+          return result;
+        } catch (err) {
+          const failed = secretToolError(err);
+          const result = secretToolResult(failed.message, true);
+          await auditCall(result, { meta: true, denied: true, reason: "secret" });
+          return result;
+        }
+      }
       const result = await handleAdminTool(name, adminGate.frozenArgs, {
         store,
         pool: upstream,
@@ -1280,6 +1307,33 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         : textResult("pending call not found for this agent", true);
       await auditCall(result, { meta: true });
       return result;
+    }
+
+    if (isSecretTool(name)) {
+      if (!ctx.agentId || !ctx.keyId) {
+        const result = textResult("secret tools require an agent key", true);
+        await auditCall(result, { meta: true, denied: true, reason: "agent_key_required" });
+        return result;
+      }
+      try {
+        const body = callSecretTool(store.secrets, name, args, {
+          workspaceId: ctx.workspaceId,
+          keyId: ctx.keyId,
+          agentId: ctx.agentId,
+          agentKind: ctx.agentKind ?? null,
+          admin: Boolean(ctx.scopes?.admin),
+          allowedProjects: ctx.effectiveProjects ?? [],
+          activeProject: project?.slug ?? ctx.projectSlug ?? null,
+        });
+        const result = secretToolResult(body);
+        await auditCall(result, { meta: true }, "collapsed");
+        return result;
+      } catch (err) {
+        const failed = secretToolError(err);
+        const result = secretToolResult(failed.message, true);
+        await auditCall(result, { meta: true, denied: true, reason: "secret" });
+        return result;
+      }
     }
 
     if (/^mf_admin_/i.test(name)) {

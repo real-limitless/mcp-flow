@@ -112,6 +112,7 @@ import type {
 } from "../types.js";
 import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 import { redactLog } from "../log/redact-lines.js";
+import { registerSecretRoutes } from "../secrets/http.js";
 
 type Variables = {
   auth: AuthContext;
@@ -1985,6 +1986,8 @@ export function createApp(
   });
 
   app.route("/v1/policy/approvals", policyApprovalsRouter(store));
+  registerSecretRoutes(admin, store.secrets);
+
   app.route("/v1", admin);
 
   // MCP Streamable HTTP — agent API keys or project session tokens

@@ -1,5 +1,6 @@
 /**
- * Operator MCP tools (mf_admin_*) — only for keys with scopes.admin.
+ * Operator MCP tools (mf_admin_* and secret writes) — only for keys with scopes.admin.
+ * Secret create/rotate/delete also require a human admin row in the secrets store.
  */
 import { redactSecrets } from "../audit/sanitize.js";
 import { callAuditFilterFrom, exportCallAudit, queryCallAudit } from "../audit/call-audit.js";
@@ -45,6 +46,7 @@ import type {
   UpdateBackendInput,
   WorkspacePolicy,
 } from "../types.js";
+import { SECRET_WRITE_TOOLS } from "../secrets/tools.js";
 import { DEFAULT_PLACEMENT, isAdminScopes, scopesHasFields } from "../types.js";
 import type { UpstreamPool } from "./upstream.js";
 
@@ -507,6 +509,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
+  ...SECRET_WRITE_TOOLS,
 ];
 
 function textResult(data: unknown, isError = false): CallToolResult {

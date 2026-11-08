@@ -42,6 +42,10 @@ import { applyEnvPatch } from "./env-patch.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import { AgentDirectory } from "../identity/agents.js";
 import { loadPolicyKeys } from "../crypto/keyring.js";
+import { FileKekProvider, type KekProvider } from "../crypto/kek.js";
+import { SecretDirectory } from "../secrets/directory.js";
+import { parseProtectedTargets, type ProtectedTargets } from "../secrets/protected.js";
+import { verifyAutoVacuumOnStartup } from "../secrets/purge.js";
 import { containsSecretRef, LegacySecretRefError } from "../audit/secret-ref.js";
 import { type PolicyKeys } from "../identity/dev-keys.js";
 import { PolicyEnforcer } from "../policy/enforcer.js";
@@ -826,6 +830,9 @@ export class Store {
   readonly identity: AgentDirectory;
   readonly policy: PolicyEnforcer;
   readonly policyKeys: PolicyKeys;
+  readonly secrets: SecretDirectory;
+  /** Secrets §0.5: mode read at open. New databases are INCREMENTAL (A1). */
+  readonly autoVacuum: ReturnType<typeof verifyAutoVacuumOnStartup>;
 
   constructor(
     dbPath: string,
@@ -837,6 +844,9 @@ export class Store {
       production?: boolean;
       keyringDir?: string | null;
       kekFile?: string | null;
+      kek?: KekProvider | null;
+      kekProvider?: "file" | "kms" | "invalid";
+      protectedTargets?: ProtectedTargets;
       env?: NodeJS.ProcessEnv;
     } = {},
   ) {
@@ -859,6 +869,17 @@ export class Store {
     });
     this.identity = new AgentDirectory(this.db, this.policyKeys);
     this.policy = new PolicyEnforcer({ db: this.db, keys: this.policyKeys, rateLimitPerMin: opts.rateLimitPerMin });
+    this.autoVacuum = verifyAutoVacuumOnStartup(this.db);
+    const kekProvider = opts.kekProvider ?? "file";
+    const kek = opts.kek !== undefined
+      ? opts.kek
+      : kekProvider === "file" && opts.kekFile
+        ? new FileKekProvider(opts.kekFile)
+        : null;
+    const protectedTargets = opts.protectedTargets ?? parseProtectedTargets(undefined);
+    this.secrets = new SecretDirectory(this.db, this.policyKeys, kek, protectedTargets, (event) => {
+      this.writeAudit(event);
+    });
   }
 
   private migrate(): void {

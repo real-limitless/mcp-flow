@@ -30,6 +30,8 @@ export interface PolicyKeys {
   argsHmac: Buffer;
   /** AES-256-GCM key for mcpflow_call_payload (audit-enc purpose) */
   auditEnc: Buffer;
+  /** HMAC key for secret value indexes (secrets-index purpose). Not a KEK. */
+  secretsIndex: Buffer;
   /** Stored in args_key_ref / hash scheme ids; never the key itself */
   keyRef: string;
   /** Decrypt-only previous keyrings, keyed by keyRef. Absent in normal dev. */
@@ -50,6 +52,7 @@ export function derivePolicyKeys(raw: string): PolicyKeys {
     resultEnc: derive(raw, "result-enc"),
     argsHmac: derive(raw, "args-hmac"),
     auditEnc: derive(raw, "audit-enc"),
+    secretsIndex: derive(raw, "secrets-index"),
     keyRef: DEV_KEY_REF,
   };
 }

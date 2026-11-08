@@ -132,6 +132,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       production: cfg.production,
       keyringDir: cfg.keyringDir,
       kekFile: cfg.kekFile,
+      kekProvider: cfg.kekProvider,
+      protectedTargets: cfg.protectedTargets,
     });
   } catch (err) {
     lock?.release();

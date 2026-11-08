@@ -83,6 +83,8 @@ function storeOpts(cfg: ReturnType<typeof loadConfig>) {
     production: cfg.production,
     keyringDir: cfg.keyringDir,
     kekFile: cfg.kekFile,
+    kekProvider: cfg.kekProvider,
+    protectedTargets: cfg.protectedTargets,
   };
 }
 
