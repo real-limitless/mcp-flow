@@ -161,7 +161,20 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   } catch (err) {
     console.error(`[mcp-flow] orphan recovery failed: ${redactLog(err)}`);
   }
-  store.ensureWorkspace(cfg.workspaceName);
+  const workspace = store.ensureWorkspace(cfg.workspaceName);
+  try {
+    const seeded = store.seedSidecars(workspace.id, process.env.MCP_FLOW_SIDECARS);
+    if (seeded.created.length || seeded.refreshed.length) {
+      console.error(
+        `[mcp-flow] sidecar connections: ${seeded.created.length} created, ${seeded.refreshed.length} endpoints refreshed`,
+      );
+    }
+  } catch (err) {
+    console.error(`[mcp-flow] MCP_FLOW_SIDECARS: ${redactLog(err)}`);
+    store.close();
+    lock?.release();
+    throw err;
+  }
   // raw approval arguments must not outlive a decision made while no gate was waiting
   store.sweepResolvedSealedApprovalArgs();
   // QA v5.6 check 6: legacy slugs containing "__" can shadow another backend's tools

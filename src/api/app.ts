@@ -62,6 +62,7 @@ import {
   PlacementError,
   supportedPlacementModes,
 } from "../placement.js";
+import { connectionRequested, withSidecarHealth } from "../egress/sidecar.js";
 import { assertSafeUrl, SsrfError } from "../ssrf.js";
 import { assertOauthBackendConfig } from "../oauth/policy.js";
 import { resolveRedirectUri } from "../oauth/origin.js";
@@ -543,6 +544,114 @@ export function createApp(
     return c.json({ ok: true });
   });
 
+  admin.get("/connections", async (c) => {
+    const auth = c.get("auth");
+    const connections = await withSidecarHealth(store.listSidecars(auth.workspaceId));
+    return c.json({ connections });
+  });
+
+  admin.get("/connections/:id", async (c) => {
+    const auth = c.get("auth");
+    const row = store.getSidecar(auth.workspaceId, c.req.param("id"));
+    if (!row) return c.json({ error: "not found" }, 404);
+    const [connection] = await withSidecarHealth([row]);
+    return c.json({ connection });
+  });
+
+  admin.post("/connections", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      slug?: string;
+      displayName?: string;
+      kind?: "tailscale" | "generic";
+      httpProxy?: string | null;
+      socksProxy?: string | null;
+      scope?: "gateway" | "device";
+      deviceId?: string | null;
+      enabled?: boolean;
+    };
+    if (!body.slug) return c.json({ error: "slug required" }, 400);
+    if (!body.displayName) return c.json({ error: "displayName required" }, 400);
+    try {
+      const created = store.createSidecar(auth.workspaceId, {
+        slug: body.slug,
+        displayName: body.displayName,
+        kind: body.kind,
+        httpProxy: body.httpProxy,
+        socksProxy: body.socksProxy,
+        scope: body.scope,
+        deviceId: body.deviceId,
+        enabled: body.enabled,
+      });
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "connection.create",
+        detail: { slug: created.slug, kind: created.kind, scope: created.scope },
+        ip: clientIp(c),
+      });
+      const [connection] = await withSidecarHealth([created]);
+      return c.json({ connection }, 201);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  admin.patch("/connections/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      displayName?: string;
+      kind?: "tailscale" | "generic";
+      httpProxy?: string | null;
+      socksProxy?: string | null;
+      scope?: "gateway" | "device";
+      deviceId?: string | null;
+      enabled?: boolean;
+    };
+    try {
+      const updated = store.updateSidecar(auth.workspaceId, c.req.param("id"), body);
+      if (!updated) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "connection.update",
+        detail: {
+          slug: updated.slug,
+          ...(body.displayName !== undefined ? { displayName: updated.displayName } : {}),
+          ...(body.httpProxy !== undefined || body.socksProxy !== undefined
+            ? { endpoints: true }
+            : {}),
+          ...(body.scope !== undefined ? { scope: updated.scope } : {}),
+          ...(body.enabled !== undefined ? { enabled: updated.enabled } : {}),
+        },
+        ip: clientIp(c),
+      });
+      const [connection] = await withSidecarHealth([updated]);
+      return c.json({ connection });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  admin.delete("/connections/:id", (c) => {
+    const auth = c.get("auth");
+    const existing = store.getSidecar(auth.workspaceId, c.req.param("id"));
+    if (!existing) return c.json({ error: "not found" }, 404);
+    try {
+      store.deleteSidecar(auth.workspaceId, existing.id);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
+      action: "connection.delete",
+      detail: { slug: existing.slug },
+      ip: clientIp(c),
+    });
+    return c.json({ ok: true });
+  });
+
   admin.get("/backends", (c) => {
     const auth = c.get("auth");
     return c.json({ backends: store.listBackends(auth.workspaceId) });
@@ -615,7 +724,9 @@ export function createApp(
       body.url
     ) {
       try {
-        await assertSafeUrl(body.url, cfg.allowPrivateUrls);
+        await assertSafeUrl(body.url, cfg.allowPrivateUrls, {
+          viaSidecar: connectionRequested(body.connectionId),
+        });
       } catch (err) {
         const msg = err instanceof SsrfError ? err.message : "invalid url";
         return c.json({ error: msg }, 400);
@@ -669,8 +780,14 @@ export function createApp(
     }
 
     if (body.url) {
+      const viaSidecar =
+        body.connectionId === null
+          ? false
+          : body.connectionId !== undefined
+            ? connectionRequested(body.connectionId)
+            : connectionRequested(existing.connectionId);
       try {
-        await assertSafeUrl(body.url, cfg.allowPrivateUrls);
+        await assertSafeUrl(body.url, cfg.allowPrivateUrls, { viaSidecar });
       } catch (err) {
         const msg = err instanceof SsrfError ? err.message : "invalid url";
         return c.json({ error: msg }, 400);

@@ -19,6 +19,7 @@ import {
 } from "./runners/stdio.js";
 import type { EdgeRouter } from "../edge/router.js";
 import { redactLog } from "../log/redact-lines.js";
+import { applySidecarEnv, ociNetworkMode } from "../egress/sidecar.js";
 import { createSafeFetch } from "../oauth/fetch.js";
 import { getOauthRow } from "../db/oauth-store.js";
 import {
@@ -530,6 +531,7 @@ export class UpstreamPool {
 
     const headers = { ...this.store.decryptHeaders(backend) };
     const url = new URL(backend.url);
+    const egress = this.store.egressFor(backend);
 
     const client = new Client(
       { name: "mcp-flow-upstream", version: "0.1.0" },
@@ -561,7 +563,7 @@ export class UpstreamPool {
       });
       await provider.prepareForConnect();
       const requestInit: RequestInit = { headers };
-      const fetch = createSafeFetch(this.allowPrivateUrls);
+      const fetch = createSafeFetch(this.allowPrivateUrls, { egress });
       // Do not set SSE eventSourceInit: the SDK then skips the bearer token.
       transport =
         backend.transport === "sse"
@@ -571,6 +573,16 @@ export class UpstreamPool {
               requestInit,
               fetch,
             });
+    } else if (egress) {
+      const requestInit: RequestInit = { headers };
+      const fetch = createSafeFetch(this.allowPrivateUrls, {
+        egress,
+        requireHttps: false,
+      });
+      transport =
+        backend.transport === "sse"
+          ? new SSEClientTransport(url, { requestInit, fetch })
+          : new StreamableHTTPClientTransport(url, { requestInit, fetch });
     } else {
       const requestInit: RequestInit = { headers };
       transport =
@@ -606,7 +618,8 @@ export class UpstreamPool {
   private async connectCentralSandbox(
     backend: BackendRecord,
   ): Promise<PooledClient> {
-    const env = this.store.decryptEnv(backend);
+    const egress = this.store.egressFor(backend);
+    const env = applySidecarEnv(this.store.decryptEnv(backend), egress);
     const pub = toPublicBackend(backend);
 
     if (backend.transport === "stdio") {
@@ -639,6 +652,7 @@ export class UpstreamPool {
         command: pub.command,
         env,
         sandbox: pub.sandbox,
+        networkMode: ociNetworkMode(pub.sandbox, egress),
         timeoutMs: this.initHardTimeoutMs,
       });
       return {

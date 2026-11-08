@@ -79,6 +79,13 @@ export class StoreOauthProvider implements OAuthClientProvider {
 
   constructor(private readonly opts: StoreOauthProviderOptions) {}
 
+  /** Selected sidecar, or null. Throws when the selection cannot be used. */
+  private egress() {
+    const backend = this.opts.store.getBackendById(this.opts.backendId);
+    if (!backend) return null;
+    return this.opts.store.egressFor(backend);
+  }
+
   get redirectUrl(): string {
     return this.opts.redirectUri;
   }
@@ -310,7 +317,7 @@ export class StoreOauthProvider implements OAuthClientProvider {
           : { client_id: row.clientId },
         refreshToken,
         ...(resource ? { resource } : {}),
-        fetchFn: createSafeFetch(this.opts.allowPrivateUrls),
+        fetchFn: createSafeFetch(this.opts.allowPrivateUrls, { egress: this.egress() }),
       });
       await this.saveTokens(next);
       return next;

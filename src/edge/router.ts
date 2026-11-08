@@ -1,6 +1,7 @@
 import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import { applySidecarEnv } from "../egress/sidecar.js";
 import type { BackendRecord, Placement } from "../types.js";
 import { portableHelperCommand } from "../mcp/runners/helper-command.js";
 import type { EdgeHub } from "./hub.js";
@@ -126,7 +127,10 @@ export class EdgeRouter {
   private runtimePayload(backend: BackendRecord): Record<string, unknown> {
     const pub = toPublicBackend(backend);
     const placement = this.placement(backend);
-    const env = this.store.decryptEnv(backend);
+    const env = applySidecarEnv(
+      this.store.decryptEnv(backend),
+      this.store.egressFor(backend),
+    );
     const sent = pub.command?.length ? portableHelperCommand(pub.command) : null;
     if (sent?.rewritten && sent.helper) {
       console.error(
