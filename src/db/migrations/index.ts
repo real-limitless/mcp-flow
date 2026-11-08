@@ -14,6 +14,7 @@ import { MIGRATION_0012 } from "./0012_call_outcome_v11.js";
 import { MIGRATION_0013 } from "./0013_call_audit_purge_actor.js";
 import { MIGRATION_0014 } from "./0014_agent_bootstrap_upd_scope.js";
 import { MIGRATION_0015 } from "./0015_call_payload.js";
+import { applySidecarConnectionColumn, MIGRATION_0020 } from "./0020_sidecar_connections.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -21,6 +22,8 @@ export interface Migration {
   sql: string;
   /** Runs before BEGIN IMMEDIATE when the migration is pending; throw to refuse (nothing applied). */
   preflight?: (db: DatabaseSync, deps?: PreflightDeps) => void;
+  /** Runs inside the migration transaction, after `sql`. */
+  after?: (db: DatabaseSync) => void;
 }
 
 /** Ordered, append-only list. Never edit a shipped migration; add a new one. */
@@ -52,6 +55,11 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
   // Secrets A1. 0016–0019 are reserved; see docs/db-migration-registry.md.
   { id: "0015_call_payload", sql: MIGRATION_0015 },
+  {
+    id: "0020_sidecar_connections",
+    sql: MIGRATION_0020,
+    after: applySidecarConnectionColumn,
+  },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
@@ -112,6 +120,7 @@ export function runMigrations(db: DatabaseSync, upTo?: string, opts: RunMigratio
       db.exec("BEGIN IMMEDIATE;");
       try {
         db.exec(m.sql);
+        m.after?.(db);
         db.prepare(`INSERT INTO mcpflow_schema_migrations (id, applied_at) VALUES (?, ?)`).run(
           m.id,
           new Date().toISOString(),

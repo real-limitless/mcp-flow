@@ -48,6 +48,26 @@ export class SsrfError extends Error {
   }
 }
 
+export interface AssertSafeUrlOptions {
+  /**
+   * A named sidecar connection will dial this URL. MagicDNS names that do not
+   * resolve here are allowed (the proxy resolves them). Tailnet addresses are
+   * allowed. Other private targets stay blocked unless allowPrivate is set.
+   */
+  viaSidecar?: boolean;
+}
+
+/** Tailnet IPv4 (CGNAT) and Tailscale's IPv6 ULA, only when a sidecar is selected. */
+function isTailnetAddress(ip: string): boolean {
+  if (isIP(ip) === 4) {
+    const parts = ip.split(".").map(Number);
+    const a = parts[0];
+    const b = parts[1];
+    return a === 100 && b !== undefined && b >= 64 && b <= 127;
+  }
+  return ip.toLowerCase().startsWith("fd7a:115c:a1e0:");
+}
+
 /**
  * Validate a backend URL before storing or connecting.
  * When allowPrivate is false, blocks private/link-local/metadata targets.
@@ -55,6 +75,7 @@ export class SsrfError extends Error {
 export async function assertSafeUrl(
   urlStr: string,
   allowPrivate: boolean,
+  options: AssertSafeUrlOptions = {},
 ): Promise<URL> {
   let url: URL;
   try {
@@ -82,6 +103,7 @@ export async function assertSafeUrl(
   const ipVersion = isIP(host);
   if (ipVersion) {
     if (!allowPrivate && isPrivateIp(host)) {
+      if (options.viaSidecar && isTailnetAddress(host)) return url;
       throw new SsrfError(`private IP not allowed: ${host}`);
     }
     return url;
@@ -89,7 +111,8 @@ export async function assertSafeUrl(
 
   if (allowPrivate) return url;
 
-  // Resolve and reject if any answer is private
+  // Resolve and reject if any answer is private. A sidecar proxy resolves
+  // MagicDNS itself, so a name that does not resolve here is still dialable.
   try {
     const results = await lookup(host, { all: true });
     for (const r of results) {
@@ -101,6 +124,7 @@ export async function assertSafeUrl(
     }
   } catch (err) {
     if (err instanceof SsrfError) throw err;
+    if (options.viaSidecar) return url;
     throw new SsrfError(`DNS lookup failed for ${host}`);
   }
 

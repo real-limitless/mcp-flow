@@ -7,7 +7,8 @@ Shipped migrations `0001`–`0014` are immutable. Never edit their SQL.
 | 0001–0014 | shipped | Immutable. |
 | 0015_call_payload | shipped (Secrets A1) | `mcpflow_call_payload` plus hash and redaction columns on `mcpflow_call_audit`. DOWN refuses while any ciphertext row exists. |
 | 0016–0019 | reserved | Later Secrets phases. Do not add empty migration files for these ids. |
-| 0020 | next free | |
+| 0020_sidecar_connections | shipped | `sidecar_connections` plus nullable `backends.connection_id`. The column add no-ops when the legacy `backends` table is absent. |
+| 0021 | next free | |
 
 ## Connection pragmas
 

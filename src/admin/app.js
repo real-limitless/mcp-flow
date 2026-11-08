@@ -135,6 +135,10 @@ function esc(s) {
     .replace(/>/g, "&gt;");
 }
 
+function escAttr(s) {
+  return esc(s).replace(/"/g, "&quot;");
+}
+
 function surface(title, bodyHtml, rightTitle = "") {
   return `
     <div class="surface">
@@ -1019,6 +1023,7 @@ let beLastRemoteTransport = "streamable-http";
 let beLastLocalTransport = "stdio";
 let beTransportKind = "";
 let backendById = new Map();
+let sidecarConnections = [];
 
 function allowedPlacementModes(modes) {
   const have = modes || [];
@@ -1178,6 +1183,7 @@ function syncBackendFormFields() {
   show("#beFieldCommand", !isRemote && isStdio);
   show("#beFieldImage", !isRemote && isOci);
   show("#beEnvEditor", !isRemote);
+  refreshBackendConnectionSelect();
 
   const hint = $("#beModeHint");
   if (hint) {
@@ -1190,6 +1196,213 @@ function syncBackendFormFields() {
 function backendEndpointCell(b) {
   const label = backendTargetLabel(b);
   return `<td class="mono" title="${esc(label)}">${esc(truncateUrl(label, 40))}</td>`;
+}
+
+function edgePlacement(mode) {
+  return mode === "edge-sandbox" || mode === "edge-bare";
+}
+
+function connectionsForPlacement(mode, deviceId) {
+  return sidecarConnections.filter((c) => {
+    if (c.enabled === false) return false;
+    if (edgePlacement(mode)) {
+      return c.scope === "device" && (!deviceId || c.deviceId === deviceId);
+    }
+    return c.scope === "gateway";
+  });
+}
+
+function connectionOptionsHtml(mode, deviceId, selected) {
+  const rows = connectionsForPlacement(mode, deviceId);
+  const opts = [`<option value="">Direct — no sidecar</option>`];
+  for (const c of rows) {
+    const mark = c.id === selected ? " selected" : "";
+    opts.push(
+      `<option value="${escAttr(c.id)}"${mark}>${esc(c.displayName)} · ${esc(c.slug)}</option>`,
+    );
+  }
+  if (selected && !rows.some((c) => c.id === selected)) {
+    const current = sidecarConnections.find((c) => c.id === selected);
+    const label = current ? `${current.displayName} · current` : "current connection";
+    opts.push(`<option value="${escAttr(selected)}" selected>${esc(label)}</option>`);
+  }
+  return opts.join("");
+}
+
+function refreshBackendConnectionSelect(selected) {
+  const sel = $("#beConnection");
+  if (!sel) return;
+  const mode = $("#beMode")?.value || "remote";
+  const deviceId = $("#beDevice")?.value || "";
+  const keep = selected !== undefined ? selected : sel.value;
+  const allowed = !keep || connectionsForPlacement(mode, deviceId).some((c) => c.id === keep);
+  const value = allowed ? keep : "";
+  sel.innerHTML = connectionOptionsHtml(mode, deviceId, value);
+  sel.value = value;
+}
+
+function healthPill(health) {
+  const kind = health === "online" ? "on" : health === "offline" ? "off" : "warn";
+  return `<span class="pill ${kind}">${esc(health || "unknown")}</span>`;
+}
+
+function connectionsPanelHtml(devices) {
+  const rows = sidecarConnections.length
+    ? sidecarConnections
+        .map((c) => {
+          const proxies = [c.httpProxy, c.socksProxy].filter(Boolean).join(" · ");
+          const where =
+            c.scope === "device"
+              ? `device ${esc(String(c.deviceId || "").slice(0, 8))}`
+              : "gateway";
+          return `<tr>
+            <td><input data-sc-name value="${escAttr(c.displayName)}" aria-label="Display name for ${escAttr(c.slug)}" /></td>
+            <td class="mono">${esc(c.slug)}</td>
+            <td>${esc(c.kind)}</td>
+            <td class="mono">${where}</td>
+            <td class="mono">${esc(proxies)}</td>
+            <td>${healthPill(c.health)}</td>
+            <td class="row-actions">
+              <button type="button" class="pill-btn" data-sc-rename="${escAttr(c.id)}">Rename</button>
+              <button type="button" class="pill-btn danger" data-sc-del="${escAttr(c.id)}" data-slug="${escAttr(c.slug)}">Delete</button>
+            </td>
+          </tr>`;
+        })
+        .join("")
+    : `<tr><td colspan="7" class="muted">No sidecar connections. Direct egress stays the default.</td></tr>`;
+  return surface(
+    "Sidecar connections",
+    `
+      <p class="muted" style="margin-bottom:12px">
+        Named VPN paths. A backend uses one only when Connect via selects it. Direct is unchanged.
+      </p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>name</th><th>slug</th><th>kind</th><th>where</th><th>proxy</th><th>health</th><th></th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="form-grid" style="margin-top:14px">
+        <div class="form-field">
+          <label class="field-label" for="scName">Display name</label>
+          <input id="scName" placeholder="Office tailnet" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="scSlug">Slug</label>
+          <input id="scSlug" placeholder="office" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="scKind">Kind</label>
+          <select id="scKind">
+            <option value="tailscale">tailscale</option>
+            <option value="generic">generic</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="scScope">Reachable from</label>
+          <select id="scScope">
+            <option value="gateway">gateway</option>
+            <option value="device">device</option>
+          </select>
+        </div>
+        <div class="form-field" id="scFieldDevice" hidden style="grid-column: 1 / -1">
+          <label class="field-label" for="scDevice">Edge device</label>
+          <select id="scDevice">${deviceOptionsHtml(devices)}</select>
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1">
+          <label class="field-label" for="scHttp">HTTP proxy</label>
+          <input id="scHttp" class="mono" placeholder="http://tailscale:1055" autocomplete="off" />
+        </div>
+        <div class="form-field" style="grid-column: 1 / -1">
+          <label class="field-label" for="scSocks">SOCKS proxy</label>
+          <input id="scSocks" class="mono" placeholder="socks5h://tailscale:1056" autocomplete="off" />
+        </div>
+      </div>
+      <div class="row-actions" style="margin-top:14px">
+        <button type="button" id="scCreate" class="pill-btn primary">Add connection</button>
+      </div>
+    `,
+    "opt-in egress",
+  );
+}
+
+function wireConnectionPanel(devices) {
+  const mount = $("#scMount");
+  if (!mount) return;
+  mount.innerHTML = connectionsPanelHtml(devices);
+  const scope = $("#scScope");
+  const deviceField = $("#scFieldDevice");
+  const syncScope = () => {
+    if (deviceField) deviceField.hidden = scope?.value !== "device";
+  };
+  scope?.addEventListener("change", syncScope);
+  syncScope();
+  $("#scCreate")?.addEventListener("click", () => void onCreateConnection());
+  mount.querySelectorAll("[data-sc-rename]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-sc-rename");
+      const name = btn.closest("tr")?.querySelector("[data-sc-name]")?.value?.trim();
+      if (!name) {
+        showErr("display name is required");
+        return;
+      }
+      try {
+        showErr("");
+        await api(`/v1/connections/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ displayName: name }),
+        });
+        await renderBackends();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+  mount.querySelectorAll("[data-sc-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const slug = btn.getAttribute("data-slug") || "connection";
+      if (!confirm(`Delete sidecar connection “${slug}”? Backends using it must be unassigned first.`)) return;
+      try {
+        await api(`/v1/connections/${btn.getAttribute("data-sc-del")}`, { method: "DELETE" });
+        await renderBackends();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+}
+
+async function onCreateConnection() {
+  try {
+    showErr("");
+    const displayName = $("#scName")?.value?.trim();
+    const slug = $("#scSlug")?.value?.trim();
+    if (!displayName) throw new Error("display name is required");
+    if (!slug) throw new Error("slug is required");
+    const httpProxy = $("#scHttp")?.value?.trim();
+    const socksProxy = $("#scSocks")?.value?.trim();
+    if (!httpProxy && !socksProxy) throw new Error("set an HTTP proxy, a SOCKS proxy, or both");
+    const scope = $("#scScope")?.value || "gateway";
+    const body = {
+      slug,
+      displayName,
+      kind: $("#scKind")?.value || "tailscale",
+      scope,
+    };
+    if (httpProxy) body.httpProxy = httpProxy;
+    if (socksProxy) body.socksProxy = socksProxy;
+    if (scope === "device") {
+      const deviceId = $("#scDevice")?.value?.trim();
+      if (!deviceId) throw new Error("edge device required");
+      body.deviceId = deviceId;
+    }
+    await api("/v1/connections", { method: "POST", body: JSON.stringify(body) });
+    await renderBackends();
+  } catch (e) {
+    showErr(e.message);
+  }
 }
 
 function addBackendFormHtml(modes, devices) {
@@ -1228,6 +1441,11 @@ function addBackendFormHtml(modes, devices) {
         <div class="form-field" id="beFieldDevice" hidden style="grid-column: 1 / -1">
           <label class="field-label" for="beDevice">Edge device</label>
           <select id="beDevice">${deviceOptionsHtml(devices)}</select>
+        </div>
+        <div class="form-field" id="beFieldConnection" style="grid-column: 1 / -1">
+          <label class="field-label" for="beConnection">Connect via</label>
+          <select id="beConnection"></select>
+          <span class="dim" style="font-size:11px;margin-top:4px">Direct keeps today's network path. A connection is used only when you select it.</span>
         </div>
         <div class="form-field" id="beFieldUrl" style="grid-column: 1 / -1">
           <label class="field-label" for="beUrl">URL</label>
@@ -1305,6 +1523,7 @@ function backendsTableHtml(backends) {
               <th>target</th>
               <th>transport</th>
               <th>placement</th>
+              <th>via</th>
               <th>secrets</th>
               <th>auth</th>
               <th>enabled</th>
@@ -1344,6 +1563,7 @@ function backendsTableHtml(backends) {
               ${backendEndpointCell(b)}
               <td>${esc(b.transport)}</td>
               <td class="mono">${esc(b.placement?.mode)}${b.placement?.deviceId ? " @" + esc(String(b.placement.deviceId).slice(0, 8)) : ""}</td>
+              <td>${b.connection ? esc(b.connection.displayName) : '<span class="muted">direct</span>'}</td>
               <td>${secrets ? `<span class="pill vault">${esc(secrets)}</span>` : '<span class="pill off">none</span>'}</td>
               <td><span class="pill ${authClass}"${oauth?.clientId ? ` title="client ${esc(oauth.clientId)}"` : ""}>${esc(authLabel)}</span></td>
               <td><span class="pill ${b.enabled ? "on" : "off"}">${b.enabled ? "on" : "off"}</span></td>
@@ -1357,7 +1577,7 @@ function backendsTableHtml(backends) {
             </tr>`;
                     })
                     .join("")
-                : `<tr><td colspan="8" class="muted">No backends — add one above</td></tr>`
+                : `<tr><td colspan="9" class="muted">No backends — add one above</td></tr>`
             }
           </tbody>
         </table>
@@ -1374,6 +1594,7 @@ function backendsTableHtml(backends) {
 
 async function onCreateBackend() {
   try {
+    showErr("");
     const slug = $("#beSlug").value.trim();
     if (!slug) throw new Error("slug required");
     const mode = $("#beMode").value || "remote";
@@ -1424,6 +1645,8 @@ async function onCreateBackend() {
       const env = collectEnvPairs($("#beEnvEditor") || document);
       if (Object.keys(env).length) body.env = env;
     }
+    const connectionId = $("#beConnection")?.value?.trim();
+    if (connectionId) body.connectionId = connectionId;
 
     await api("/v1/backends", { method: "POST", body: JSON.stringify(body) });
     const apiKeyEl = $("#beApiKey");
@@ -1443,6 +1666,7 @@ function wireBackendForm() {
   wirePlacementSeg($("#beModeSeg"));
   wireTransportSeg($("#beTransportSeg"));
   $("#beCreate")?.addEventListener("click", () => void onCreateBackend());
+  $("#beDevice")?.addEventListener("change", () => refreshBackendConnectionSelect());
   $("#beAuthSeg")?.querySelectorAll("[data-auth]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const value = btn.getAttribute("data-auth") || "static";
@@ -1483,6 +1707,11 @@ function backendEditHtml(b) {
       Removing an env row deletes that key and leaves the others in place.
     </p>
     <div class="form-grid">
+      <div class="form-field" style="grid-column: 1 / -1">
+        <label class="field-label" for="beEditConnection">Connect via</label>
+        <select id="beEditConnection">${connectionOptionsHtml(b.placement?.mode || "remote", b.placement?.deviceId || "", b.connectionId || "")}</select>
+        <span class="dim" style="font-size:11px;margin-top:4px">Direct clears the sidecar. Other backends are not moved.</span>
+      </div>
       ${
         remote
           ? `<div class="form-field" style="grid-column: 1 / -1">
@@ -1568,6 +1797,12 @@ async function saveBackendEdit(backend, panel, dropped) {
     }
     const unsetEnv = [...dropped].filter((name) => !Object.prototype.hasOwnProperty.call(env, name));
     if (unsetEnv.length) body.unsetEnv = unsetEnv;
+    const viaEl = panel.querySelector("#beEditConnection");
+    if (viaEl) {
+      const next = viaEl.value || null;
+      const prev = backend.connectionId || null;
+      if (next !== prev) body.connectionId = next;
+    }
     if (!Object.keys(body).length) {
       throw new Error("Nothing to update. Blank secrets are left unchanged.");
     }
@@ -1721,19 +1956,22 @@ function wireBackendTable(root) {
 }
 
 async function renderBackends() {
-  const [{ backends }, devicesRes, wsRes] = await Promise.all([
+  const [{ backends }, devicesRes, wsRes, connRes] = await Promise.all([
     api("/v1/backends"),
     soft("backends", "Devices", api("/v1/devices"), () => ({ devices: [] })),
     soft("backends", "Workspace placement modes", api("/v1/workspace"), () => ({ placementModes: ["remote", "central-sandbox"] })),
+    soft("backends", "Connections", api("/v1/connections"), () => ({ connections: [] })),
   ]);
   const devices = devicesRes.devices || [];
   const modes = wsRes.placementModes || ["remote", "central-sandbox"];
+  sidecarConnections = connRes.connections || [];
   backendById = new Map(backends.map((b) => [b.id, b]));
   const formMounted = Boolean($("#beAddForm"));
   const oauthRedirectUri = wsRes.oauthRedirectUri || "";
 
   if (!formMounted) {
     $("#tab-backends").innerHTML = `
+      <div id="scMount"></div>
       <div id="beAddForm">${addBackendFormHtml(modes, devices)}</div>
       <div id="beListMount"></div>
     `;
@@ -1742,6 +1980,8 @@ async function renderBackends() {
     updatePlacementSeg(modes);
     updateDeviceSelect(devices);
   }
+  wireConnectionPanel(devices);
+  refreshBackendConnectionSelect();
   setOauthRedirectHint(oauthRedirectUri);
 
   const list = $("#beListMount");

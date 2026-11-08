@@ -15,9 +15,11 @@ export function ociRunArgs(opts: {
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
+  /** Resolved network. When set, this wins over sandbox.networkMode. */
+  networkMode?: string;
 }): string[] {
   const args: string[] = ["run", "-i", "--rm"];
-  const net = opts.sandbox?.networkMode ?? "bridge";
+  const net = opts.networkMode ?? opts.sandbox?.networkMode ?? "bridge";
   args.push("--network", net);
   if (opts.sandbox?.memory) {
     args.push("--memory", opts.sandbox.memory);
@@ -40,6 +42,7 @@ export async function connectOci(opts: {
   command?: string[] | null;
   env: Record<string, string>;
   sandbox?: SandboxConfig | null;
+  networkMode?: string;
   /** V53-F4: bound for initialize + first tools/list (ms). */
   timeoutMs?: number;
 }): Promise<StdioRunResult> {
