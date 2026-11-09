@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { parseRateLimitPerMin } from "./policy/rate-limit.js";
 import { parseProtectedTargets, type ProtectedTargets } from "./secrets/protected.js";
 
@@ -26,9 +26,13 @@ export interface Config {
    * Production refuses env and HKDF keys, including MCP_FLOW_POLICY_DEV_KEY and the pepper.
    */
   production: boolean;
-  /** Directory of wrapped per-purpose keyring files. Required in production. */
+  /** Directory of wrapped per-purpose keyring files. Required in production.
+   *  When unset in production, defaults beside the data directory (`keyring`).
+   */
   keyringDir: string | null;
-  /** Path to the 32-byte KEK file (mode 0400). Required in production. Never an env key value. */
+  /** Path to the 32-byte KEK file (mode 0400). Required in production. Never an env key value.
+   *  When unset in production, defaults beside the data directory (`kek`). First boot creates it.
+   */
   kekFile: string | null;
   /**
    * Secrets KEK source. `file` reads MCP_FLOW_KEK_FILE (also a Docker secret mount).
@@ -191,6 +195,15 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   const masterKeyRaw =
     overrides.masterKeyRaw ?? env("MCP_FLOW_MASTER_KEY") ?? "";
   const adminToken = overrides.adminToken ?? env("MCP_FLOW_ADMIN_TOKEN") ?? "";
+  const production =
+    overrides.production ??
+    (parseBoolFlag(env("MCP_FLOW_PRODUCTION")) || process.env.NODE_ENV === "production");
+  const dataDir = env("MCP_FLOW_DATA_DIR");
+  const keyringBase = dataDir
+    ? resolve(dataDir)
+    : dbPath === ":memory:"
+      ? resolve("data")
+      : dirname(dbPath);
 
   return {
     host: overrides.host ?? env("MCP_FLOW_HOST", "127.0.0.1")!,
@@ -209,13 +222,17 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
         : parsePublicUrl(env("MCP_FLOW_PUBLIC_URL"))) ?? "",
     trustProxy:
       overrides.trustProxy ?? env("MCP_FLOW_TRUST_PROXY", "false") === "true",
-    production:
-      overrides.production ??
-      (parseBoolFlag(env("MCP_FLOW_PRODUCTION")) || process.env.NODE_ENV === "production"),
+    production,
     policyDevKeyRaw:
       overrides.policyDevKeyRaw ?? env("MCP_FLOW_POLICY_DEV_KEY"),
-    keyringDir: overrides.keyringDir !== undefined ? overrides.keyringDir : (env("MCP_FLOW_KEYRING_DIR") ?? null),
-    kekFile: overrides.kekFile !== undefined ? overrides.kekFile : (env("MCP_FLOW_KEK_FILE") ?? null),
+    keyringDir:
+      overrides.keyringDir !== undefined
+        ? overrides.keyringDir
+        : (env("MCP_FLOW_KEYRING_DIR") ?? (production ? join(keyringBase, "keyring") : null)),
+    kekFile:
+      overrides.kekFile !== undefined
+        ? overrides.kekFile
+        : (env("MCP_FLOW_KEK_FILE") ?? (production ? join(keyringBase, "kek") : null)),
     kekProvider: overrides.kekProvider ?? parseKekProvider(env("MCP_FLOW_KEK_PROVIDER")),
     protectedTargets: overrides.protectedTargets ?? parseProtectedTargets(env("MCP_FLOW_PROTECTED_TARGETS")),
     refuseLegacyMcpKeys:
