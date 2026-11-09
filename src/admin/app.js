@@ -3712,6 +3712,56 @@ async function renderAccessMapLegacy() {
   root.innerHTML = surface("Access map", legend + table + gaps, `${live.length} keys × ${(backends || []).length} backends`);
 }
 
+async function renderSecrets() {
+  const { secrets } = await api("/v1/secrets");
+  const rows = Array.isArray(secrets) ? secrets : [];
+  $("#tab-secrets").innerHTML = surface(
+    "Secrets",
+    `
+      <p class="muted" style="margin-bottom:12px">
+        Metadata for secrets created in this workspace. Values stay sealed.
+      </p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>project</th>
+              <th>name</th>
+              <th>ref</th>
+              <th>type</th>
+              <th>version</th>
+              <th>created</th>
+              <th>grants</th>
+              <th>public part</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              rows.length
+                ? rows
+                    .map(
+                      (row) => `<tr>
+              <td class="mono">${esc(row.project)}</td>
+              <td class="mono">${esc(row.name)}</td>
+              <td class="mono">${esc(row.ref)}</td>
+              <td>${esc(row.type)}</td>
+              <td class="mono">${esc(row.current_version)}</td>
+              <td class="mono">${esc(row.created_at)}</td>
+              <td class="mono">${esc(row.grants)}</td>
+              <td class="mono">${row.public_part ? esc(row.public_part) : '<span class="dim">—</span>'}</td>
+            </tr>`,
+                    )
+                    .join("")
+                : `<tr><td colspan="8" class="muted">No secrets</td></tr>`
+            }
+          </tbody>
+        </table>
+      </div>
+    `,
+    `${rows.length}`,
+  );
+}
+
 async function refresh() {
   showErr("");
   const tab =
@@ -3720,6 +3770,7 @@ async function refresh() {
   try {
     if (tab === "status") await renderStatus();
     if (tab === "keys") await renderKeys();
+    if (tab === "secrets") await renderSecrets();
     if (tab === "backends") await renderBackends();
     if (tab === "projects") await renderProjects();
     if (tab === "devices") await renderDevices();

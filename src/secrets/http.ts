@@ -1,7 +1,9 @@
 /**
- * Admin REST for the secrets store. Human admin agents only.
- * Break-glass, legacy api_key, and OAuth grants are refused (do not widen M53-1).
- * Responses are refs and metadata. There is no import or reveal route.
+ * Admin REST for the secrets store.
+ * Create, rotate, and delete require a human admin agent.
+ * GET is that same agent, or the env admin token used by the portal.
+ * Legacy api_key and OAuth grants are refused. Responses are refs and metadata.
+ * There is no import or reveal route.
  */
 
 import type { Context, Hono } from "hono";
@@ -62,15 +64,16 @@ export function registerSecretRoutes(
   });
 
   admin.get("/secrets", (c) => {
-    const who = actor(c);
-    if (!who) return c.json({ error: "secret routes require a human admin agent" }, 403);
+    const auth = c.get("auth");
+    const project = c.req.query("project") ?? null;
+    const q = c.req.query("q") ?? null;
     try {
-      const out = secrets.list({
-        ...who,
-        project: c.req.query("project") ?? null,
-        q: c.req.query("q") ?? null,
-      });
-      return c.json(out);
+      if (auth?.kind === "admin" && auth.workspaceId) {
+        return c.json(secrets.listForPortalAdmin({ workspaceId: auth.workspaceId, project, q }));
+      }
+      const who = actor(c);
+      if (!who) return c.json({ error: "secret routes require a human admin agent" }, 403);
+      return c.json(secrets.list({ ...who, project, q }));
     } catch (err) {
       const failed = fail(err);
       return c.json(failed.body, failed.status);
