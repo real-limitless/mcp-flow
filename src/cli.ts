@@ -18,6 +18,7 @@ import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
 import { redactLog } from "./log/redact-lines.js";
+import { KeyringError } from "./crypto/keyring.js";
 const program = new Command();
 
 program
@@ -37,8 +38,16 @@ program
       host: opts.host,
       dbPath: opts.db,
     });
-    const gw = await startServer(cfg);
-    installSignalHandlers(gw); // QA V5-F2: docker stop / Ctrl-C close holds, DB and lock
+    try {
+      const gw = await startServer(cfg);
+      installSignalHandlers(gw); // QA V5-F2: docker stop / Ctrl-C close holds, DB and lock
+    } catch (err) {
+      if (err instanceof KeyringError) {
+        console.error(`mcp-flow: ${redactLog(err)}`);
+        process.exit(1);
+      }
+      throw err;
+    }
   });
 
 program
@@ -1805,11 +1814,11 @@ const keyringCmd = program.command("keyring").description("Host keyring maintena
 
 keyringCmd
   .command("init")
-  .description("Create a KEK file and wrapped per-purpose keys if missing. Prints paths only. Production boot does this itself.")
+  .description("Create a missing KEK file and missing purpose files. Does not overwrite an existing KEK, pepper, or purpose file. Prints paths only.")
   .requiredOption("--dir <path>", "keyring directory")
   .requiredOption("--kek-file <path>", "32-byte KEK file path (created if missing)")
   .option("--dev-material <material>", "carry the pepper from this dev material once")
-  .option("--new-pepper", "mint a new pepper for a fresh install")
+  .option("--new-pepper", "mint a pepper only when the pepper file is absent; does not replace an existing pepper")
   .action(async (opts: { dir: string; kekFile: string; devMaterial?: string; newPepper?: boolean }) => {
     const { initKeyring } = await import("./crypto/keyring.js");
     const out = initKeyring({

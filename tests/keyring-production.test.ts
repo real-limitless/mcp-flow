@@ -1,8 +1,10 @@
 /** Secrets A1 §0.1: production refuses env and HKDF keys. Pepper carry-over is one-shot. */
 import { randomBytes } from "node:crypto";
 import { chmodSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   carryPepper,
@@ -200,4 +202,119 @@ describe("production key refusal", () => {
       }
     }
   });
+
+  it("creates a missing pepper without rewriting an existing KEK, and leaves both in place on restart", () => {
+    const { dir, kekFile } = scratch();
+    ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} });
+    const kek = snap(kekFile);
+    const pepperPath = join(dir, "pepper");
+    unlinkSync(pepperPath);
+    const created = ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} });
+    expect(created?.pepper).toBe("new");
+    expect(created?.created).toContain("pepper");
+    expect(snap(kekFile)).toEqual(kek);
+    const pepper = snap(pepperPath);
+    expect(pepper.mode).toBe(0o400);
+    expect(pepper.bytes.length).toBeGreaterThanOrEqual(60);
+    const again = ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} });
+    expect(again?.pepper).toBe("existing");
+    expect(again?.created).toEqual([]);
+    expect(snap(pepperPath)).toEqual(pepper);
+    expect(snap(kekFile)).toEqual(kek);
+    const rotated = initKeyring({ dir, kekFile, newPepper: true, production: true });
+    expect(rotated.pepper).toBe("existing");
+    expect(snap(pepperPath)).toEqual(pepper);
+    expect(snap(kekFile)).toEqual(kek);
+  });
+
+  it("refuses a new pepper when API key hashes exist and does not retry into a write", () => {
+    const { dir, kekFile } = scratch();
+    const body = randomBytes(32);
+    write0400(kekFile, body);
+    const kek = snap(kekFile);
+    const dbPath = join(dirname(kekFile), "hashes.db");
+    const db = new DatabaseSync(dbPath);
+    db.exec("CREATE TABLE mcpflow_api_key (id TEXT)");
+    db.exec("INSERT INTO mcpflow_api_key (id) VALUES ('key_existing')");
+    db.close();
+    const boot = () => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, dbPath, env: {} });
+    expect(boot).toThrow(/Refusing to create a pepper/);
+    expect(existsSync(join(dir, "pepper"))).toBe(false);
+    expect(snap(kekFile)).toEqual(kek);
+    expect(boot).toThrow(/Refusing to create a pepper/);
+    expect(existsSync(join(dir, "pepper"))).toBe(false);
+    expect(snap(kekFile)).toEqual(kek);
+  });
+
+  it("refuses a new KEK when ciphertext already exists and does not create the file", () => {
+    const { dir, kekFile } = scratch();
+    const dbPath = join(dirname(kekFile), "sealed.db");
+    const db = new DatabaseSync(dbPath);
+    db.exec("CREATE TABLE mcpflow_secret_version (ciphertext BLOB, wrapped_dek BLOB)");
+    db.exec("INSERT INTO mcpflow_secret_version (ciphertext, wrapped_dek) VALUES (X'00', X'01')");
+    db.close();
+    const boot = () => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, dbPath, env: {} });
+    expect(boot).toThrow(/Refusing to mint a new KEK/);
+    expect(existsSync(kekFile)).toBe(false);
+    expect(existsSync(dir)).toBe(false);
+    expect(boot).toThrow(/Refusing to mint a new KEK/);
+    expect(existsSync(kekFile)).toBe(false);
+  });
+
+  it("leaves an unusable KEK in place and still refuses env and HKDF key material", () => {
+    const { dir, kekFile } = scratch();
+    write0400(kekFile, randomBytes(16));
+    const short = snap(kekFile);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} })).toThrow(/32/);
+    expect(snap(kekFile)).toEqual(short);
+    unlinkSync(kekFile);
+    write0400(kekFile, randomBytes(32));
+    chmodSync(kekFile, 0o644);
+    const loose = snap(kekFile);
+    expect(loose.mode).toBe(0o644);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} })).toThrow(/0400/);
+    expect(snap(kekFile)).toEqual(loose);
+    unlinkSync(kekFile);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: { MCP_FLOW_KEK: "x" } })).toThrow(/MCP_FLOW_KEK/);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: { MCP_FLOW_POLICY_DEV_KEY: "x" } })).toThrow(/MCP_FLOW_POLICY_DEV_KEY/);
+    expect(existsSync(kekFile)).toBe(false);
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("does not replace a KEK that cannot unwrap the existing pepper", () => {
+    const { dir, kekFile } = scratch();
+    ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} });
+    const pepper = snap(join(dir, "pepper"));
+    const wrong = randomBytes(32);
+    write0400(kekFile, wrong);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile, env: {} })).toThrow(/does not unwrap/);
+    expect(snap(kekFile).bytes.equals(wrong)).toBe(true);
+    expect(snap(kekFile).mode).toBe(0o400);
+    expect(snap(join(dir, "pepper"))).toEqual(pepper);
+  });
+
+  it("wires first boot through the gateway entrypoint and the data-volume paths", () => {
+    const root = dirname(fileURLToPath(import.meta.url));
+    const read = (rel: string) => readFileSync(join(root, "..", rel), "utf8");
+    const entry = read("docker/entrypoint.mjs");
+    expect(entry).toMatch(/if \(verb === "serve"\) \{\s*await ensureProductionKeyring\(\)/);
+    expect(entry.match(/await ensureProductionKeyring\(/g)).toHaveLength(1);
+    expect(entry).toContain("process.exit(1)");
+    expect(entry).toContain("ensureBootKeyring");
+    const image = read("Dockerfile");
+    expect(image).toContain("NODE_ENV=production");
+    expect(image).toContain("MCP_FLOW_KEYRING_DIR=/data/keyring");
+    expect(image).toContain("MCP_FLOW_KEK_FILE=/data/kek");
+    const compose = read("docker-compose.yml");
+    expect(compose).toMatch(/MCP_FLOW_KEYRING_DIR: \/data\/keyring/);
+    expect(compose).toMatch(/MCP_FLOW_KEK_FILE: \/data\/kek/);
+    expect(compose).not.toMatch(/^\s*MCP_FLOW_KEK:/m);
+    expect(read("README.md")).toContain("Keyring on first boot");
+    expect(read("docs/secrets-restore-drill.md")).toContain("MCP_FLOW_KEYRING_DIR");
+    expect(read("docs/secrets-restore-drill.md")).toContain("pepper");
+  });
 });
+
+function snap(path: string): { bytes: Buffer; mode: number } {
+  return { bytes: readFileSync(path), mode: statSync(path).mode & 0o777 };
+}

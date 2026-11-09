@@ -79,6 +79,7 @@ Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile
 ## Gateway (P1)
 
 - **Serve:** `npx mcp-flow serve --port 8787` → `POST/GET /mcp`, admin under `/v1/*` with Bearer admin token.
+- **Production keyring:** `MCP_FLOW_KEYRING_DIR` and `MCP_FLOW_KEK_FILE` are paths (image/Compose: `/data/keyring` and `/data/kek` on the data volume). The gateway entrypoint creates the directory, a 32-byte mode-0400 KEK, and the `pepper` file inside the keyring when they are missing and the volume has no sealed material. It does not overwrite an existing KEK or rotate an existing pepper. A missing file next to sealed rows or API key hashes exits once instead of minting a replacement. Leave `MCP_FLOW_KEK` unset. The compose bootstrap service does not open the keyring.
 - **Tools:** `{slug}__{upstreamTool}`; meta `mf_*`.
 - **Keys:** hashed at rest; optional tool-prefix scopes; optional `scopes.admin` operator keys (`mf_admin_*` + `/v1`); audit log.
 - **Backends:** remote streamable-http / SSE; multi-header seal; SSRF guards.

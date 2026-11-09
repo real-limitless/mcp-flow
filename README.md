@@ -254,6 +254,26 @@ docker compose logs -f bootstrap   # wait until it writes /data/mcp-client.json
 
 Secrets are generated into the `mcp-flow-data` volume if `.env` is empty.
 
+### Keyring on first boot
+
+The gateway image sets `NODE_ENV=production`, so these files are required even when a compose file sets `ENVIRONMENT` to staging. They live on the named data volume mounted at the data directory (`/data` in Compose).
+
+| File | Variable | What a new install gets |
+| --- | --- | --- |
+| Keyring directory | `MCP_FLOW_KEYRING_DIR` | `/data/keyring` on the data volume. Holds one wrapped file per purpose. |
+| KEK file | `MCP_FLOW_KEK_FILE` | `/data/kek`, 32 bytes, mode 0400. |
+| Pepper | file `pepper` inside the keyring directory | Wrapped API-key pepper. The file name is `pepper`. |
+
+Leave `MCP_FLOW_KEK`, `MCP_FLOW_PEPPER`, and `MCP_FLOW_POLICY_DEV_KEY` unset. Production refuses environment and HKDF key material.
+
+The gateway entrypoint runs this before `serve`. The compose bootstrap service does not open the keyring.
+
+- **Missing on an empty volume:** create the directory (mode 0700), the KEK file (32 bytes, mode 0400), and the pepper and other purpose files. A fresh deploy does not need someone to hand-mint those files.
+- **Already present:** leave the KEK, the pepper, and every other purpose file byte-for-byte as they are, including mode. A restart does not rotate the pepper and does not mint a new one when `pepper` already exists. Rotating the pepper would invalidate API key hashes.
+- **Unsafe to create:** if the KEK is missing and the volume already has sealed material (a non-empty keyring, secret ciphertext, or API key hashes), or if `pepper` is missing and API key or session hashes already exist, the process prints one error and exits. It names the path to restore and does not invent a replacement key. Restore the escrowed KEK and keyring, including `pepper`. See [docs/secrets-restore-drill.md](docs/secrets-restore-drill.md).
+
+When the two path variables are unset, production defaults them to `keyring/` and `kek` beside `MCP_FLOW_DATA_DIR` (or beside the database file). Compose and the image set them explicitly to the paths above.
+
 | | |
 | --- | --- |
 | **MCP (agents)** | `http://127.0.0.1:8787/mcp` (container port **8787**, `expose` only: map a domain in Dokploy/Traefik) |

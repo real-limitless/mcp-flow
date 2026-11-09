@@ -865,6 +865,8 @@ export class Store {
         production,
         keyringDir: opts.keyringDir,
         kekFile: opts.kekFile,
+        dbPath,
+        env: opts.env,
       });
     }
     this.policyKeys = loadPolicyKeys({

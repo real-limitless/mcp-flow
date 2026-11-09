@@ -79,6 +79,47 @@ process.env.MCP_FLOW_HOST ||= "0.0.0.0";
 process.env.MCP_FLOW_PORT ||= "8787";
 process.env.MCP_FLOW_DB_PATH ||= "/data/mcp-flow.db";
 
+function productionMode() {
+  const flag = String(process.env.MCP_FLOW_PRODUCTION ?? "").trim().toLowerCase();
+  return process.env.NODE_ENV === "production" || flag === "true" || flag === "1";
+}
+
+function pathOr(value, fallback) {
+  return typeof value === "string" && value.trim() !== "" ? value : fallback;
+}
+
+/**
+ * One exit on failure. Does not retry, and does not start serve, so a missing
+ * or unsafe keyring does not crash-loop inside the gateway process.
+ * Paths default beside the data directory, matching loadConfig.
+ */
+async function ensureProductionKeyring() {
+  if (!productionMode()) return;
+  const dbPath = process.env.MCP_FLOW_DB_PATH;
+  const base = pathOr(process.env.MCP_FLOW_DATA_DIR, DATA);
+  let ensureBootKeyring;
+  let redactLog = (value) => (value instanceof Error ? value.message : "keyring bootstrap failed");
+  try {
+    ({ ensureBootKeyring } = await import(new URL("../dist/crypto/keyring.js", import.meta.url)));
+    ({ redactLog } = await import(new URL("../dist/log/redact-lines.js", import.meta.url)));
+  } catch {
+    console.error("mcp-flow: keyring bootstrap could not be loaded. The image is missing dist/crypto/keyring.js.");
+    process.exit(1);
+  }
+  try {
+    ensureBootKeyring({
+      production: true,
+      keyringDir: pathOr(process.env.MCP_FLOW_KEYRING_DIR, `${base}/keyring`),
+      kekFile: pathOr(process.env.MCP_FLOW_KEK_FILE, `${base}/kek`),
+      dbPath,
+      env: process.env,
+    });
+  } catch (err) {
+    console.error(`mcp-flow: ${redactLog(err)}`);
+    process.exit(1);
+  }
+}
+
 const args = process.argv.slice(2);
 const verb = args[0] || "serve";
 
@@ -121,6 +162,10 @@ if (verb === "edge") {
   }
   await execCli(plan.cliArgs);
   process.exit(0);
+}
+
+if (verb === "serve") {
+  await ensureProductionKeyring();
 }
 
 await execCli(args.length ? args : ["serve"]);

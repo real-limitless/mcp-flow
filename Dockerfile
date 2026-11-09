@@ -16,6 +16,8 @@ ENV NODE_ENV=production \
     MCP_FLOW_PORT=8787 \
     MCP_FLOW_DB_PATH=/data/mcp-flow.db \
     MCP_FLOW_DATA_DIR=/data \
+    MCP_FLOW_KEYRING_DIR=/data/keyring \
+    MCP_FLOW_KEK_FILE=/data/kek \
     npm_config_cache=/data/npm-cache
 RUN mkdir -p /data /data/npm-cache /app/catalog && chown node:node /data /data/npm-cache /app/catalog
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker

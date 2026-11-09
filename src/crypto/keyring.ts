@@ -14,6 +14,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { decryptArgs } from "../policy/crypto.js";
 import { derivePolicyKeys, DEV_KEY_REF, type LegacyKeySlot, type PolicyKeys } from "../identity/dev-keys.js";
@@ -218,7 +219,10 @@ function loadDevSlot(dir: string, kek: Buffer, production: boolean, now: number)
 export interface KeyringInitOptions {
   dir: string;
   kekFile: string;
-  /** Mint a new pepper. Refused when a pepper file already exists. */
+  /**
+   * Mint a pepper only when the pepper file is absent.
+   * Ignored when that file exists: an existing pepper is never rewritten.
+   */
   newPepper?: boolean;
   /** Dev material used only by carry-pepper, never in production. */
   devMaterial?: string | null;
@@ -279,40 +283,226 @@ export function initKeyring(opts: KeyringInitOptions): { created: string[]; pepp
   return { created, pepper };
 }
 
+const WRAPPED_LEN = IV + TAG + KEY_LEN;
+
+interface SealedFinding {
+  label: string;
+  purposes: readonly KeyringPurpose[];
+}
+
+/** Rows that a newly generated KEK or purpose key would not be able to open. */
+const SEALED_QUERIES: readonly {
+  table: string;
+  where: string;
+  label: string;
+  purposes: readonly KeyringPurpose[];
+}[] = [
+  { table: "mcpflow_api_key", where: "1=1", label: "API key hashes", purposes: ["pepper"] },
+  { table: "mcpflow_session", where: "1=1", label: "session token hashes", purposes: ["pepper"] },
+  { table: "mcpflow_secret_version", where: "ciphertext IS NOT NULL OR wrapped_dek IS NOT NULL", label: "sealed secret versions", purposes: ["secrets-index", "secrets-data"] },
+  { table: "mcpflow_call_payload", where: "ciphertext IS NOT NULL", label: "call payload ciphertext", purposes: ["audit-enc"] },
+  { table: "mcpflow_pending_call", where: "args_ciphertext IS NOT NULL", label: "pending call ciphertext", purposes: ["args-enc", "args-hmac"] },
+  { table: "mcpflow_call_outcome", where: "result_ciphertext IS NOT NULL", label: "call result ciphertext", purposes: ["result-enc"] },
+];
+
+function modeText(mode: number): string {
+  return `0${mode.toString(8)}`;
+}
+
+function assertReadable(path: string, label: string): void {
+  let fd: number | null = null;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    throw new KeyringError(`${label} at ${path} could not be read. Restore the escrowed file. Startup did not replace it.`);
+  } finally {
+    if (fd != null) closeSync(fd);
+  }
+}
+
+/** Read-only check. Does not chmod or rewrite the file. */
+function assertExistingKek(path: string): void {
+  let st;
+  try {
+    st = statSync(path);
+  } catch {
+    throw new KeyringError(
+      `KEK file at ${path} could not be read. Restore the escrowed 32-byte mode-0400 file at MCP_FLOW_KEK_FILE. Startup did not replace it. Do not set MCP_FLOW_KEK.`,
+    );
+  }
+  if (!st.isFile()) {
+    throw new KeyringError(
+      `MCP_FLOW_KEK_FILE (${path}) is not a file. Restore the escrowed 32-byte mode-0400 file. Startup did not replace it. Do not set MCP_FLOW_KEK.`,
+    );
+  }
+  const mode = st.mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new KeyringError(
+      `KEK file at ${path} is mode ${modeText(mode)}, which is not 0400. Restore a mode-0400 file at MCP_FLOW_KEK_FILE. Startup did not change this file. Do not set MCP_FLOW_KEK.`,
+    );
+  }
+  if (st.size !== KEY_LEN) {
+    throw new KeyringError(
+      `KEK file at ${path} is ${st.size} bytes, not 32. Restore the escrowed 32-byte mode-0400 file at MCP_FLOW_KEK_FILE. Startup did not replace it. Do not set MCP_FLOW_KEK.`,
+    );
+  }
+  assertReadable(path, "KEK file");
+}
+
+/** Read-only check for a wrapped purpose file, including pepper. Does not chmod or rewrite it. */
+function assertExistingPurpose(path: string, purpose: string): void {
+  let st;
+  try {
+    st = statSync(path);
+  } catch {
+    throw new KeyringError(
+      `Keyring file ${purpose} at ${path} could not be read. Restore it from escrow into MCP_FLOW_KEYRING_DIR. Startup did not replace it.`,
+    );
+  }
+  if (!st.isFile()) {
+    throw new KeyringError(
+      `Keyring file ${purpose} at ${path} is not a file. Restore it from escrow. Startup did not replace it.`,
+    );
+  }
+  const mode = st.mode & 0o777;
+  if ((mode & 0o077) !== 0) {
+    throw new KeyringError(
+      `Keyring file ${purpose} at ${path} is mode ${modeText(mode)}, which is not 0400. Restore a mode-0400 file. Startup did not change it.`,
+    );
+  }
+  if (st.size < WRAPPED_LEN) {
+    throw new KeyringError(
+      `Keyring file ${purpose} at ${path} is too short to be a wrapped key. Restore it from escrow. Startup did not replace it.`,
+    );
+  }
+  assertReadable(path, `Keyring file ${purpose}`);
+}
+
+function assertKekUnwrapsPepper(dir: string, kekFile: string): void {
+  const pepperPath = join(dir, "pepper");
+  if (!existsSync(pepperPath)) return;
+  const kek = readKek(kekFile, true);
+  try {
+    const key = unwrapPurposeKey(kek, "pepper", readFileSync(pepperPath));
+    key.fill(0);
+  } catch {
+    throw new KeyringError(
+      `KEK file at ${kekFile} does not unwrap keyring/pepper. Restore the escrowed 32-byte mode-0400 KEK that wrapped this keyring. Startup did not replace the KEK or the pepper.`,
+    );
+  } finally {
+    kek.fill(0);
+  }
+}
+
+function sealedFindings(dbPath: string | null | undefined): SealedFinding[] {
+  if (!dbPath || dbPath === ":memory:" || !existsSync(dbPath)) return [];
+  let db: DatabaseSync;
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true });
+  } catch {
+    throw new KeyringError(
+      `Could not read the database at MCP_FLOW_DB_PATH (${dbPath}). Refusing to generate a KEK or pepper. Restore the escrowed keyring and KEK, or use an empty data volume. Startup did not create a key.`,
+    );
+  }
+  try {
+    const found: SealedFinding[] = [];
+    for (const query of SEALED_QUERIES) {
+      const table = db.prepare(`SELECT 1 AS ok FROM sqlite_master WHERE type = 'table' AND name = ?`).get(query.table) as { ok: number } | undefined;
+      if (!table) continue;
+      const row = db.prepare(`SELECT count(*) AS n FROM ${query.table} WHERE ${query.where}`).get() as { n: number };
+      if (Number(row.n) > 0) found.push({ label: query.label, purposes: query.purposes });
+    }
+    return found;
+  } finally {
+    db.close();
+  }
+}
+
 /**
- * Production boot helper. Creates the keyring directory and a mode-0400 32-byte KEK
- * when the file is missing, then fills any missing purpose files. Does not overwrite
- * an existing KEK or purpose file. No key bytes are logged.
+ * Production boot helper. Creates a missing keyring directory, a missing
+ * mode-0400 32-byte KEK, and missing purpose files (including pepper) on a
+ * safe first boot. Never overwrites an existing KEK, purpose file, or pepper.
+ * newPepper is passed only when the pepper file is absent and minting it
+ * cannot invalidate stored API key hashes. No key bytes are logged.
  */
 export function ensureBootKeyring(opts: {
   production: boolean;
   keyringDir?: string | null;
   kekFile?: string | null;
+  dbPath?: string | null;
+  env?: NodeJS.ProcessEnv;
 }): { created: string[]; pepper: "existing" | "carried" | "new" } | null {
   if (!opts.production) return null;
+  assertProductionEnv(opts.env ?? process.env);
   if (!opts.keyringDir || !opts.kekFile) {
     throw new KeyringError(
-      "production requires MCP_FLOW_KEYRING_DIR and MCP_FLOW_KEK_FILE (filesystem paths). When unset, a production process defaults them beside the data directory and creates a mode-0400 32-byte KEK if the file is missing. It does not overwrite an existing KEK and does not read key material from the environment.",
+      "production requires MCP_FLOW_KEYRING_DIR and MCP_FLOW_KEK_FILE (filesystem paths). When unset, a production process defaults them beside the data directory and creates a mode-0400 32-byte KEK if the file is missing. It does not overwrite an existing KEK and does not read key material from the environment. Leave MCP_FLOW_KEK unset.",
     );
   }
+  const keyringDir = opts.keyringDir;
+  const kekFile = opts.kekFile;
+  if (existsSync(keyringDir) && !statSync(keyringDir).isDirectory()) {
+    throw new KeyringError(
+      `MCP_FLOW_KEYRING_DIR (${keyringDir}) exists and is not a directory. Startup did not replace it.`,
+    );
+  }
+  const kekExists = existsSync(kekFile);
+  if (kekExists) assertExistingKek(kekFile);
+  if (existsSync(keyringDir)) {
+    for (const purpose of KEYRING_PURPOSES) {
+      const path = join(keyringDir, purpose);
+      if (existsSync(path)) assertExistingPurpose(path, purpose);
+    }
+  }
+  if (kekExists) assertKekUnwrapsPepper(keyringDir, kekFile);
+
+  const findings = sealedFindings(opts.dbPath);
+  const pepperPath = join(keyringDir, "pepper");
+  const pepperExists = existsSync(pepperPath);
+  if (!kekExists && (directoryHasEntries(keyringDir) || findings.length > 0)) {
+    const why = [
+      directoryHasEntries(keyringDir) ? `keyring directory ${keyringDir} is not empty` : null,
+      ...findings.map((finding) => finding.label),
+    ].filter((item): item is string => item != null);
+    throw new KeyringError(
+      `Refusing to mint a new KEK at ${kekFile} because existing material would not match a new key (${why.join("; ")}). Restore the escrowed 32-byte mode-0400 KEK to MCP_FLOW_KEK_FILE and the keyring directory, including pepper, to MCP_FLOW_KEYRING_DIR. Leave MCP_FLOW_KEK unset. Startup did not create a key.`,
+    );
+  }
+  if (!pepperExists) {
+    const pepperBlocks = findings.filter((finding) => finding.purposes.includes("pepper"));
+    if (pepperBlocks.length) {
+      throw new KeyringError(
+        `Refusing to create a pepper in ${keyringDir} because ${pepperBlocks.map((finding) => finding.label).join("; ")} already exist and a new pepper would not match them. Restore the pepper file from escrow into MCP_FLOW_KEYRING_DIR. Startup did not create or rotate a pepper.`,
+      );
+    }
+  }
+  for (const purpose of KEYRING_PURPOSES) {
+    if (purpose === "pepper" || existsSync(join(keyringDir, purpose))) continue;
+    const blocks = findings.filter((finding) => finding.purposes.includes(purpose));
+    if (!blocks.length) continue;
+    throw new KeyringError(
+      `Refusing to create keyring file ${purpose} in ${keyringDir} because ${blocks.map((finding) => finding.label).join("; ")} already exist and a new key would not decrypt them. Restore that file from escrow. Startup did not replace keyring files.`,
+    );
+  }
+
   let out: { created: string[]; pepper: "existing" | "carried" | "new" };
   try {
     out = initKeyring({
-      dir: opts.keyringDir,
-      kekFile: opts.kekFile,
-      newPepper: true,
+      dir: keyringDir,
+      kekFile,
+      newPepper: !pepperExists,
       production: true,
     });
   } catch (err) {
     if (err instanceof KeyringError) throw err;
     const detail = err instanceof Error ? err.message : "unknown error";
     throw new KeyringError(
-      `could not create the keyring at ${opts.keyringDir} (KEK ${opts.kekFile}): ${detail}. The directory must be writable by the gateway user. The KEK file is mode 0400 and is not stored in the environment.`,
+      `could not create the keyring at ${keyringDir} (KEK ${kekFile}): ${detail}. The directory must be writable by the gateway user. The KEK file is mode 0400 and is not stored in the environment.`,
     );
   }
   if (out.created.length) {
     console.error(
-      `[mcp-flow] keyring init created ${out.created.join(", ")} under ${opts.keyringDir} (KEK ${opts.kekFile}, values not logged)`,
+      `[mcp-flow] keyring bootstrap created ${out.created.join(", ")} under ${keyringDir} (KEK ${kekFile}, values not logged)`,
     );
   }
   return out;
