@@ -13,7 +13,7 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, statSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { decryptArgs } from "../policy/crypto.js";
 import { derivePolicyKeys, DEV_KEY_REF, type LegacyKeySlot, type PolicyKeys } from "../identity/dev-keys.js";
@@ -234,9 +234,19 @@ function ensureKek(path: string): Buffer {
   return readKek(path, true);
 }
 
+function directoryHasEntries(dir: string): boolean {
+  if (!existsSync(dir)) return false;
+  return readdirSync(dir).length > 0;
+}
+
 /** Create missing purpose files. Does not overwrite. Pepper is carried or minted, never derived in production. */
 export function initKeyring(opts: KeyringInitOptions): { created: string[]; pepper: "existing" | "carried" | "new" } {
   if (opts.production && opts.devMaterial) throw new KeyringError("production refuses a derived pepper");
+  if (!existsSync(opts.kekFile) && directoryHasEntries(opts.dir)) {
+    throw new KeyringError(
+      `KEK file missing at ${opts.kekFile} but ${opts.dir} is not empty. Refusing to mint a new KEK. Restore the mode-0400 32-byte KEK file, or use an empty directory for a fresh install.`,
+    );
+  }
   mkdirSync(opts.dir, { recursive: true, mode: 0o700 });
   chmodSync(opts.dir, 0o700);
   const kek = ensureKek(opts.kekFile);
@@ -267,6 +277,45 @@ export function initKeyring(opts: KeyringInitOptions): { created: string[]; pepp
     created.push(purpose);
   }
   return { created, pepper };
+}
+
+/**
+ * Production boot helper. Creates the keyring directory and a mode-0400 32-byte KEK
+ * when the file is missing, then fills any missing purpose files. Does not overwrite
+ * an existing KEK or purpose file. No key bytes are logged.
+ */
+export function ensureBootKeyring(opts: {
+  production: boolean;
+  keyringDir?: string | null;
+  kekFile?: string | null;
+}): { created: string[]; pepper: "existing" | "carried" | "new" } | null {
+  if (!opts.production) return null;
+  if (!opts.keyringDir || !opts.kekFile) {
+    throw new KeyringError(
+      "production requires MCP_FLOW_KEYRING_DIR and MCP_FLOW_KEK_FILE (filesystem paths). When unset, a production process defaults them beside the data directory and creates a mode-0400 32-byte KEK if the file is missing. It does not overwrite an existing KEK and does not read key material from the environment.",
+    );
+  }
+  let out: { created: string[]; pepper: "existing" | "carried" | "new" };
+  try {
+    out = initKeyring({
+      dir: opts.keyringDir,
+      kekFile: opts.kekFile,
+      newPepper: true,
+      production: true,
+    });
+  } catch (err) {
+    if (err instanceof KeyringError) throw err;
+    const detail = err instanceof Error ? err.message : "unknown error";
+    throw new KeyringError(
+      `could not create the keyring at ${opts.keyringDir} (KEK ${opts.kekFile}): ${detail}. The directory must be writable by the gateway user. The KEK file is mode 0400 and is not stored in the environment.`,
+    );
+  }
+  if (out.created.length) {
+    console.error(
+      `[mcp-flow] keyring init created ${out.created.join(", ")} under ${opts.keyringDir} (KEK ${opts.kekFile}, values not logged)`,
+    );
+  }
+  return out;
 }
 
 /**

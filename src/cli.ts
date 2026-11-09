@@ -1805,7 +1805,7 @@ const keyringCmd = program.command("keyring").description("Host keyring maintena
 
 keyringCmd
   .command("init")
-  .description("Create a KEK file and wrapped per-purpose keys. Prints paths only.")
+  .description("Create a KEK file and wrapped per-purpose keys if missing. Prints paths only. Production boot does this itself.")
   .requiredOption("--dir <path>", "keyring directory")
   .requiredOption("--kek-file <path>", "32-byte KEK file path (created if missing)")
   .option("--dev-material <material>", "carry the pepper from this dev material once")

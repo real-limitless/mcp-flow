@@ -41,7 +41,7 @@ import { redactSecrets, sanitizeForAudit } from "../audit/sanitize.js";
 import { applyEnvPatch } from "./env-patch.js";
 import { applyConnectionPragmas, runMigrations } from "./migrations/index.js";
 import { AgentDirectory } from "../identity/agents.js";
-import { loadPolicyKeys } from "../crypto/keyring.js";
+import { ensureBootKeyring, loadPolicyKeys } from "../crypto/keyring.js";
 import { FileKekProvider, type KekProvider } from "../crypto/kek.js";
 import { SecretDirectory } from "../secrets/directory.js";
 import { parseProtectedTargets, type ProtectedTargets } from "../secrets/protected.js";
@@ -859,6 +859,13 @@ export class Store {
     const production = opts.production === true;
     if (production && opts.policyDevKeyRaw) {
       throw new Error("production refuses a derived or dev policy key");
+    }
+    if (production) {
+      ensureBootKeyring({
+        production,
+        keyringDir: opts.keyringDir,
+        kekFile: opts.kekFile,
+      });
     }
     this.policyKeys = loadPolicyKeys({
       production,

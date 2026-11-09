@@ -1,11 +1,12 @@
 /** Secrets A1 §0.1: production refuses env and HKDF keys. Pepper carry-over is one-shot. */
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, mkdtempSync, openSync, readFileSync, rmSync, unlinkSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   carryPepper,
+  ensureBootKeyring,
   initKeyring,
   loadPolicyKeys,
   sealDevDecryptSlot,
@@ -105,5 +106,98 @@ describe("production key refusal", () => {
     expect(decryptForKey(keys, "args", blob, DEV_KEY_REF, inside)).toEqual({ a: 1 });
     expect(() => loadPolicyKeys({ production: true, env: {}, keyringDir: dir, kekFile, now: Date.parse("2026-01-03T00:00:00.000Z") })).toThrow(/window has closed/);
     expect(() => sealDevDecryptSlot({ dir, kekFile, devMaterial: material, production: true })).toThrow(/production refuses a dev decrypt slot/);
+  });
+
+  it("mints a mode-0400 KEK on first production boot and does not replace it", () => {
+    const { dir, kekFile } = scratch();
+    const lines: string[] = [];
+    const orig = console.error;
+    console.error = (...args: unknown[]) => {
+      lines.push(args.map(String).join(" "));
+    };
+    try {
+      const first = ensureBootKeyring({ production: true, keyringDir: dir, kekFile });
+      expect(first?.pepper).toBe("new");
+      expect(first?.created).toContain("pepper");
+    } finally {
+      console.error = orig;
+    }
+    const kek = readFileSync(kekFile);
+    expect(kek.length).toBe(32);
+    expect(statSync(kekFile).mode & 0o777).toBe(0o400);
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    const text = lines.join("\n");
+    expect(text).toContain("values not logged");
+    expect(text).not.toContain(kek.toString("base64"));
+    expect(text).not.toContain(kek.toString("hex"));
+    const keys = loadPolicyKeys({ production: true, env: {}, keyringDir: dir, kekFile });
+    const second = ensureBootKeyring({ production: true, keyringDir: dir, kekFile });
+    expect(second?.created).toEqual([]);
+    expect(readFileSync(kekFile).equals(kek)).toBe(true);
+    const again = loadPolicyKeys({ production: true, env: {}, keyringDir: dir, kekFile });
+    expect(again.pepper.equals(keys.pepper)).toBe(true);
+  });
+
+  it("refuses to mint a KEK when keyring files already exist", () => {
+    const { dir, kekFile } = scratch();
+    ensureBootKeyring({ production: true, keyringDir: dir, kekFile });
+    unlinkSync(kekFile);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: dir, kekFile })).toThrow(/Refusing to mint a new KEK/);
+    expect(existsSync(kekFile)).toBe(false);
+  });
+
+  it("does not mint a keyring outside production and names missing production paths", () => {
+    const { dir, kekFile } = scratch();
+    expect(ensureBootKeyring({ production: false, keyringDir: dir, kekFile })).toBeNull();
+    expect(existsSync(kekFile)).toBe(false);
+    expect(() => ensureBootKeyring({ production: true, keyringDir: null, kekFile: null })).toThrow(/MCP_FLOW_KEYRING_DIR/);
+  });
+
+  it("opens a production store by creating a missing keyring", () => {
+    const root = mkdtempSync(join(tmpdir(), "mcp-flow-store-boot-"));
+    dirs.push(root);
+    const dir = join(root, "keyring");
+    const kekFile = join(root, "kek");
+    const master = Buffer.alloc(32, 7).toString("base64");
+    const store = new Store(join(root, "t.db"), master, { production: true, keyringDir: dir, kekFile });
+    const pepper = Buffer.from(store.policyKeys.pepper);
+    store.close();
+    const kek = readFileSync(kekFile);
+    expect(kek.length).toBe(32);
+    const again = new Store(join(root, "t.db"), master, { production: true, keyringDir: dir, kekFile });
+    expect(Buffer.from(again.policyKeys.pepper).equals(pepper)).toBe(true);
+    expect(readFileSync(kekFile).equals(kek)).toBe(true);
+    again.close();
+  });
+
+  it("defaults production keyring paths beside the data directory", () => {
+    const names = ["MCP_FLOW_KEYRING_DIR", "MCP_FLOW_KEK_FILE", "MCP_FLOW_DATA_DIR", "MCP_FLOW_PRODUCTION"] as const;
+    const prev = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+    const root = mkdtempSync(join(tmpdir(), "mcp-flow-cfg-"));
+    dirs.push(root);
+    try {
+      for (const name of names) delete process.env[name];
+      const db = join(root, "mcp-flow.db");
+      const prod = loadConfig({ dbPath: db, masterKeyRaw: "x", adminToken: "y", production: true });
+      expect(prod.keyringDir).toBe(join(root, "keyring"));
+      expect(prod.kekFile).toBe(join(root, "kek"));
+      const dev = loadConfig({ dbPath: db, masterKeyRaw: "x", adminToken: "y", production: false });
+      expect(dev.keyringDir).toBeNull();
+      expect(dev.kekFile).toBeNull();
+      process.env.MCP_FLOW_DATA_DIR = join(root, "vol");
+      const fromData = loadConfig({ dbPath: db, masterKeyRaw: "x", adminToken: "y", production: true });
+      expect(fromData.keyringDir).toBe(join(root, "vol", "keyring"));
+      expect(fromData.kekFile).toBe(join(root, "vol", "kek"));
+      process.env.MCP_FLOW_KEYRING_DIR = join(root, "custom-ring");
+      process.env.MCP_FLOW_KEK_FILE = join(root, "custom-kek");
+      const explicit = loadConfig({ dbPath: db, masterKeyRaw: "x", adminToken: "y", production: true });
+      expect(explicit.keyringDir).toBe(join(root, "custom-ring"));
+      expect(explicit.kekFile).toBe(join(root, "custom-kek"));
+    } finally {
+      for (const name of names) {
+        if (prev[name] === undefined) delete process.env[name];
+        else process.env[name] = prev[name];
+      }
+    }
   });
 });
