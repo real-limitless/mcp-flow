@@ -6,12 +6,24 @@ The KEK, the keyring, and the API-key pepper are escrowed offline and kept separ
 
 ## First boot
 
-When the KEK file is absent, production boot creates the keyring directory and a mode-0400 32-byte KEK, then wraps a fresh purpose key for each missing file. It does not overwrite an existing KEK. Paths come from `MCP_FLOW_KEYRING_DIR` and `MCP_FLOW_KEK_FILE`, or from `keyring` and `kek` beside the data directory when those are unset. The same step is `mcp-flow keyring init --dir <dir> --kek-file <file> --new-pepper`. After the first successful boot, escrow that KEK and the keyring directory. This drill restores an existing KEK; it does not replace one.
+Production (`MCP_FLOW_PRODUCTION=true` or `NODE_ENV=production`, which the gateway image sets) needs three pieces on the data volume. None of them is an environment value.
+
+| Piece | Where it lives | Variable |
+| --- | --- | --- |
+| Keyring directory | A directory of wrapped per-purpose files, mode 0700 when this process creates it | `MCP_FLOW_KEYRING_DIR` |
+| KEK file | 32 bytes, mode 0400 | `MCP_FLOW_KEK_FILE` |
+| Pepper | Wrapped file named `pepper` inside the keyring directory | (no variable; it is not `MCP_FLOW_PEPPER`) |
+
+When those paths are unset, production defaults them to `keyring/` and `kek` beside the data directory (`MCP_FLOW_DATA_DIR`, or the directory that contains the database). Compose and the gateway image point them at `/data/keyring` and `/data/kek` on the named data volume.
+
+On first boot the gateway entrypoint, before `serve`, creates whatever is missing when the volume has no sealed material: the directory, the KEK file, and the pepper plus the other purpose files. A later start does not overwrite the KEK, does not rewrite an existing pepper, and does not pass a new-pepper mint when `pepper` is already there. Leave `MCP_FLOW_KEK` unset. Production still refuses an environment or HKDF KEK.
+
+If the KEK file is missing and the keyring directory or the database already holds sealed material, or if `pepper` is missing and API key or session hashes already exist, startup prints one error and exits. It does not mint a replacement. Restore the escrowed KEK and the keyring directory, including `pepper`. After the first successful boot, escrow that KEK and the whole keyring directory. This drill restores an existing KEK; it does not replace one.
 
 ## Before the drill
 
-1. On the gateway host, confirm the KEK file at `MCP_FLOW_KEK_FILE` (mode 0400, 32 bytes). First boot creates it when the file is missing. Generate one with the OS CSPRNG only when no file exists yet. Do not put the KEK in an environment variable or in a deployment platform's env UI.
-2. Initialize the keyring (`mcp-flow keyring init`) so each purpose, including the secrets index, is a distinct file wrapped by that KEK.
+1. On the gateway host, confirm the KEK file at `MCP_FLOW_KEK_FILE` (mode 0400, 32 bytes) and the `pepper` file inside `MCP_FLOW_KEYRING_DIR`. First boot creates them when the volume is empty. Do not generate a second KEK or a second pepper when sealed rows or API key hashes already exist. Do not put the KEK in an environment variable or in a deployment platform's env UI.
+2. Confirm each purpose file is present, including the secrets index. First boot writes any purpose file that is missing when that is safe. Do not replace a purpose file that is already there.
 3. Create one canary secret with `mf_secret_create` (or `POST /v1/secrets`) and record its ref and version. Do not record the value.
 4. Take a database backup and a separate escrow copy of the KEK file, the keyring directory, and the pepper file.
 
