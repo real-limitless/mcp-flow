@@ -149,7 +149,7 @@ export class SecretDirectory {
     }
   }
 
-  private writeAudit(input: SecretActor, action: string, detail: Record<string, unknown>): void {
+  private writeAudit(input: { workspaceId: string; keyId: string | null }, action: string, detail: Record<string, unknown>): void {
     this.audit?.({ workspaceId: input.workspaceId, keyId: input.keyId, action, detail });
   }
 
@@ -253,9 +253,48 @@ export class SecretDirectory {
 
   list(input: SecretActor & { project?: string | null; q?: string | null }): { secrets: SecretListItem[] } {
     this.requireHumanAdmin(this.actor(input));
-    const project = input.project ?? null;
-    if (project != null) this.allowProject(input, project);
-    const q = input.q ?? null;
+    return this.queryList({
+      workspaceId: input.workspaceId,
+      keyId: input.keyId,
+      project: input.project ?? null,
+      q: input.q ?? null,
+      allowedProjects: input.allowedProjects,
+    });
+  }
+
+  /**
+   * Metadata read for the env admin token on the portal. There is no agent row.
+   * MCP and the mutate routes do not call this.
+   */
+  listForPortalAdmin(input: { workspaceId: string; project?: string | null; q?: string | null }): { secrets: SecretListItem[] } {
+    return this.queryList({
+      workspaceId: input.workspaceId,
+      keyId: null,
+      project: input.project ?? null,
+      q: input.q ?? null,
+      allowedProjects: null,
+      via: "portal_admin",
+    });
+  }
+
+  private queryList(input: {
+    workspaceId: string;
+    keyId: string | null;
+    project: string | null;
+    q: string | null;
+    allowedProjects: readonly string[] | null;
+    via?: string;
+  }): { secrets: SecretListItem[] } {
+    assertSecureDelete(this.db);
+    if (this.protectedTargets.invalid) throw new ProtectedTargetError();
+    const project = input.project;
+    if (project != null) {
+      if (!NAME.test(project)) throw new SecretError("invalid project");
+      if (input.allowedProjects && !input.allowedProjects.includes(project)) {
+        throw new SecretError("project is not permitted", 403);
+      }
+    }
+    const q = input.q;
     if (q != null && (typeof q !== "string" || q.length > 128)) throw new SecretError("invalid query");
     this.guardInputs({ project, q });
     const projects = input.allowedProjects;
@@ -312,7 +351,11 @@ export class SecretDirectory {
         versions: vers.map((item) => ({ version: item.version, state: item.state, created_at: item.created_at })),
       };
     });
-    this.writeAudit(input, "secret.list", { count: secrets.length, project });
+    this.writeAudit(input, "secret.list", {
+      count: secrets.length,
+      project,
+      ...(input.via ? { via: input.via } : {}),
+    });
     return { secrets };
   }
 

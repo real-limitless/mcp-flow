@@ -118,8 +118,23 @@ describe("secret authz matrix", () => {
     expect(listed.status).toBe(200);
     expect(listed.text).toContain("secret://app/hook");
 
+    const plain = store.secrets.openForTest({ workspaceId: ws.id, project: "app", name: "hook", version: 1 }).toString("utf8");
+    const glassList = await rest("GET", "/v1/secrets?project=app", "break-glass-placeholder");
+    expect(glassList.status).toBe(200);
+    expect(glassList.text).toContain("secret://app/hook");
+    expect(glassList.text).not.toContain(plain);
+    for (const path of [
+      ["POST", "/v1/secrets", { project: "app", name: "no-break-glass", type: "uuid" }],
+      ["POST", "/v1/secrets/rotate", { ref: "secret://app/hook" }],
+      ["POST", "/v1/secrets/delete", { ref: "secret://app/hook" }],
+    ] as const) {
+      const denied = await rest(path[0], path[1], "break-glass-placeholder", path[2]);
+      expect(denied.status).toBe(403);
+      expect(denied.text).not.toContain("secret://");
+      expect(denied.text).not.toContain(plain);
+    }
+
     const deniedRest: Array<[string, string]> = [
-      ["break-glass", "break-glass-placeholder"],
       ["legacy", legacy],
       ["oauth", oauth],
       ["grokbot", grokbot],
@@ -132,6 +147,7 @@ describe("secret authz matrix", () => {
       for (const res of [create, list, rotate, del]) {
         expect(res.status, label).toBe(403);
         expect(res.text, label).not.toContain("secret://");
+        expect(res.text, label).not.toContain(plain);
       }
     }
 
