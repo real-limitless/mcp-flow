@@ -85,6 +85,12 @@ describe("DEV compose template", () => {
     expect(stripped).toMatch(/MCP_FLOW_REFUSE_LEGACY_MCP_KEYS: "true"/);
     expect(stripped).toMatch(/MCP_FLOW_DB_PATH: \/data\/mcp-flow\.db/);
     expect(stripped).toMatch(/MCP_FLOW_LOCK_PATH: \/data\/mcp-flow\.lock/);
+    expect(stripped).toMatch(/^ {6}MCP_FLOW_KEYRING_DIR: \/data\/keyring$/m);
+    expect(stripped).toMatch(/^ {6}MCP_FLOW_KEK_FILE: \/data\/kek$/m);
+    expect(stripped).not.toMatch(/MCP_FLOW_KEK_PROVIDER:/);
+    expect(stripped).not.toMatch(/NODE_ENV:/);
+    expect(stripped).not.toMatch(/MCP_FLOW_PRODUCTION:/);
+    expect(stripped).not.toMatch(/\/var\/lib\/mcp-flow/);
     expect(stripped).toMatch(/MCP_FLOW_TRUST_PROXY: "true"/);
     expect(stripped).toMatch(
       /MCP_FLOW_PUBLIC_URL: "\$\{MCP_FLOW_DEV_PUBLIC_URL:-https:\/\/mcp-flow-dev\.example\.com\}"/,
