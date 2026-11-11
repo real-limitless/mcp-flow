@@ -1270,6 +1270,45 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           return result;
         }
       }
+      if (isEnvTool(name)) {
+        if (!ctx.agentId || !ctx.keyId) {
+          const result = textResult("env tools require an agent key", true);
+          await auditCall(result, { meta: true, denied: true, reason: "agent_key_required" });
+          return result;
+        }
+        try {
+          const body = await callEnvTool(
+            {
+              store,
+              secrets: store.secrets,
+              envGrants: store.envGrants,
+              envTemplates: store.envTemplates,
+              protectedTargets: cfg.protectedTargets,
+              provisionTargets: cfg.envProvisionTargets,
+              callTool: (n, a) => upstream.callTool(ctx.workspaceId, n, a),
+            },
+            name,
+            adminGate.frozenArgs,
+            {
+              workspaceId: ctx.workspaceId,
+              keyId: ctx.keyId,
+              agentId: ctx.agentId,
+              agentKind: ctx.agentKind ?? null,
+              admin: Boolean(ctx.scopes?.admin),
+              allowedProjects: ctx.effectiveProjects ?? [],
+              activeProject: project?.slug ?? ctx.projectSlug ?? null,
+            },
+          );
+          const result = envToolResult(body);
+          await auditCall(result, { meta: true }, "admin");
+          return result;
+        } catch (err) {
+          const failed = envToolError(err);
+          const result = envToolResult(failed.message, true);
+          await auditCall(result, { meta: true, denied: true, reason: "env" });
+          return result;
+        }
+      }
       const result = await handleAdminTool(name, adminGate.frozenArgs, {
         store,
         pool: upstream,

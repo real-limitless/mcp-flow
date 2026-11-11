@@ -271,6 +271,7 @@ export async function callEnvTool(
       throw new SecretError("values is required");
     }
     const vmap = values as Record<string, unknown>;
+    canWrite(deps, caller, humanAdmin, project, backend, composeId);
     const setMap: Record<string, string> = {};
     const refVersions: Record<string, string> = {};
     const refKeys: string[] = [];
@@ -293,7 +294,6 @@ export async function callEnvTool(
         plainKeys.push(key);
       }
     }
-    canWrite(deps, caller, humanAdmin, project, backend, composeId);
     const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
     await sink.apply(backend, composeId, setMap, []);
     for (const key of refKeys) {
@@ -430,15 +430,18 @@ export async function callEnvTool(
     const rows = deps.envTemplates.list(filter);
     const groups = new Map<string, typeof rows>();
     for (const r of rows) {
-      const key = `${r.backendSlug}|${r.composeId}`;
+      const project = projectFromRef(r.ref);
+      const key = `${r.backendSlug}|${r.composeId}|${project}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(r);
     }
     const resynced: Array<{ backend: string; compose_id: string; keys: string[]; ref: string }> = [];
     const skipped: Array<{ backend: string; compose_id: string; keys: string[]; ref: string }> = [];
     for (const [gkey, grows] of groups) {
-      const [backend, composeId] = gkey.split("|");
-      const project = projectFromRef(grows[0].ref);
+      const parts = gkey.split("|");
+      const backend = parts[0];
+      const composeId = parts[1];
+      const project = parts[2];
       canWrite(deps, caller, humanAdmin, project, backend, composeId);
       const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
       const changedKeys: string[] = [];

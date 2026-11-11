@@ -584,6 +584,10 @@ export function toolAllowedByScopes(
   if (/^mf_admin_/i.test(toolName) || /^mf_secret_(create|rotate|delete|list)$/i.test(toolName)) {
     return isAdminScopes(scopes);
   }
+  // Env tools are authorized internally (grant/human admin); never block them on tool prefixes.
+  if (/^mf_env_/i.test(toolName) || toolName === "mf_secret_resync") {
+    return true;
+  }
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
   if (!scopes?.toolPrefixAllowlist?.length) return true;
   // Admin keys may still use other mf_* metas when prefixes are set
