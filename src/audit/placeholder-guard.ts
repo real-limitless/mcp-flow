@@ -8,7 +8,7 @@
 const PLACEHOLDER_RE = /\[secret:[^\]]{0,128}\]|\[secret-redacted\]|\[redacted\]|\[REDACTED\]/;
 
 const WRITE_SEGMENT_RE =
-  /(?:^|[_\-./])(?:create|update|delete|write|set|put|patch|apply|deploy|upsert|insert|remove|edit|unset|grant|revoke|rotate|import|provision)(?:$|[_\-./])/i;
+  /(?:^|[_\-./])(?:create|update|delete|write|set|put|patch|apply|deploy|upsert|insert|remove|edit|unset|grant|revoke|rotate|import|provision|save)(?:$|[_\-./]|[A-Z])/i;
 
 const WRITE_FIELDS = new Set([
   "env",
