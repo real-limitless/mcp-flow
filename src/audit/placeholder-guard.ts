@@ -8,7 +8,10 @@
 const PLACEHOLDER_RE = /\[secret:[^\]]{0,128}\]|\[secret-redacted\]|\[redacted\]|\[REDACTED\]/;
 
 const WRITE_SEGMENT_RE =
-  /(?:^|[_\-./])(?:create|update|delete|write|set|put|patch|apply|deploy|upsert|insert|remove|edit|unset|grant|revoke|rotate|import|provision|save)(?:$|[_\-./]|[A-Z])/i;
+  /(?:^|[_\-./])(?:create|update|delete|write|set|put|patch|apply|deploy|upsert|insert|remove|edit|unset|grant|revoke|rotate|import|provision|save)(?:$|[_\-./])/i;
+
+/** camelCase writes such as compose-saveEnvironment. Case-sensitive so `saved` or `savepoint` stay reads. */
+const CAMEL_WRITE_RE = /(?:^|[_\-./])save[A-Z]/;
 
 const WRITE_FIELDS = new Set([
   "env",
@@ -40,7 +43,7 @@ function walkStrings(value: unknown, depth: number, hit: { placeholder: boolean;
 }
 
 export function isWriteIntent(tool: string, args: unknown): boolean {
-  if (WRITE_SEGMENT_RE.test(tool)) return true;
+  if (WRITE_SEGMENT_RE.test(tool) || CAMEL_WRITE_RE.test(tool)) return true;
   const hit = { placeholder: false, writeField: false };
   walkStrings(args, 0, hit);
   return hit.writeField;

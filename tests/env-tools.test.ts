@@ -220,11 +220,13 @@ describe("env tools", () => {
     expect(s.writes()).toBe(beforeWrites);
   });
 
-  it.skip("prefix-restricted keys need mf_env_ in their allowlist", () => { // TODO: finish outside cage
+  it("prefix-restricted keys need mf_env_ and mf_secret_resync in their allowlist", () => {
     expect(toolAllowedByScopes("mf_env_keys_list", { toolPrefixAllowlist: ["other__"] } as any)).toBe(false);
     expect(toolAllowedByScopes("mf_env_keys_list", { toolPrefixAllowlist: ["mf_env_"] } as any)).toBe(true);
     expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["other__"] } as any)).toBe(false);
-    expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["mf_env_"] } as any)).toBe(true);
+    expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["mf_env_"] } as any)).toBe(false);
+    expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["mf_env_", "mf_secret_resync"] } as any)).toBe(true);
+    expect(toolAllowedByScopes("mf_env_keys_set", null)).toBe(true);
   });
 
   it("no plaintext in outputs/audit/logs", async () => {
