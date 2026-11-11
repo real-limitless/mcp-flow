@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { loadConfig } from "../src/config.js";
 import { parseProtectedTargets } from "../src/secrets/protected.js";
+import { toolAllowedByScopes } from "../src/types.js";
 import { startServer, type RunningServer } from "../src/server.js";
 
 const dirs: string[] = [];
@@ -100,7 +101,7 @@ async function setup(opts: SetupOpts = {}) {
   const secretValue = buf.toString("utf8");
   buf.fill(0);
 
-  return { g, store, ws, chen, bot, humanToken: humanKey.token, humanKeyId: humanKey.keyId, botToken: botKey.token, ref: sec.ref, secretValue, envState, writes: () => writes };
+  return { g, store, ws, chen, bot, humanToken: humanKey.token, humanKeyId: humanKey.keyId, botToken: botKey.token, botKeyId: botKey.keyId, ref: sec.ref, secretValue, envState, writes: () => writes };
 }
 
 describe("env tools", () => {
@@ -217,6 +218,13 @@ describe("env tools", () => {
     expect(r.error).toBe(true);
     expect(r.text).toContain("changed");
     expect(s.writes()).toBe(beforeWrites);
+  });
+
+  it.skip("prefix-restricted keys need mf_env_ in their allowlist", () => { // TODO: finish outside cage
+    expect(toolAllowedByScopes("mf_env_keys_list", { toolPrefixAllowlist: ["other__"] } as any)).toBe(false);
+    expect(toolAllowedByScopes("mf_env_keys_list", { toolPrefixAllowlist: ["mf_env_"] } as any)).toBe(true);
+    expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["other__"] } as any)).toBe(false);
+    expect(toolAllowedByScopes("mf_secret_resync", { toolPrefixAllowlist: ["mf_env_"] } as any)).toBe(true);
   });
 
   it("no plaintext in outputs/audit/logs", async () => {

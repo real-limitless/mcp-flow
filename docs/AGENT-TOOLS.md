@@ -78,3 +78,14 @@ When `{slug}__{tool}` names do not appear in the connector listing, call JSON-RP
 `mcp-remote` requires `--allow-http` when the gateway is plain HTTP (it refuses non-HTTPS without it).
 
 Do not commit or publish real gateway URLs, keys, or session tokens.
+
+## Dokploy env sink (Secrets phase C)
+
+- `mf_env_keys_list {backend, compose_id, project}` — key names with `***` or a phase B ref.
+- `mf_env_keys_set {backend, compose_id, project, values}` — plain values or phase B refs.
+- `mf_env_keys_unset {backend, compose_id, project, keys}` — remove keys.
+- `mf_env_provision {backend, compose_id, project, keys}` — DEVELOPMENT compose ids only.
+- `mf_secret_resync {ref?, backend?, compose_id?}` — re-apply after rotate.
+- `mf_admin_env_grant_create {project, backend, compose_ids, key_id? | agent_id?}` — human admin only.
+- `mf_admin_env_grant_list {project?}` — human admin only.
+- `mf_admin_env_grant_revoke {grant_id}` — human admin only.

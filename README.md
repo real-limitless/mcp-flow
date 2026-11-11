@@ -458,6 +458,26 @@ AI harnesses  ──HTTP or stdio shim──►  mcp-flow /mcp  (API key)
               (P1)                   (P3)                      (P4–P5 / #3)
 ```
 
+## Dokploy env sink (Secrets phase C)
+
+Grok Bot redacts secret values to `[REDACTED]` in tool output, and Dokploy's `compose-saveEnvironment` replaces the whole env, so a read-modify-write by a bot can wipe real secrets. The gateway now does the read-merge-write server side.
+
+Tools:
+- `mf_env_keys_list {backend, compose_id, project}` — key names, `***` or a phase B ref.
+- `mf_env_keys_set {backend, compose_id, project, values}` — plain values or phase B refs.
+- `mf_env_keys_unset {backend, compose_id, project, keys}` — remove keys.
+- `mf_env_provision {backend, compose_id, project, keys}` — DEVELOPMENT compose ids only (see `MCP_FLOW_ENV_PROVISION_TARGETS`).
+- `mf_secret_resync {ref?, backend?, compose_id?}` — re-apply after a rotate.
+- `mf_admin_env_grant_create {project, backend, compose_ids, key_id? | agent_id?}` — human admin only.
+- `mf_admin_env_grant_list {project?}` — human admin only.
+- `mf_admin_env_grant_revoke {grant_id}` — human admin only.
+
+A human admin creates a grant for an agent key or bot agent on a project/backend/compose set. Protected targets (`MCP_FLOW_PROTECTED_TARGETS`) are refused for everyone. A key restricted by `toolPrefixAllowlist` must include `mf_env_` (and `mf_secret_resync`) in its allowlist to call these tools.
+
+Values never come back: tool output and audit rows carry key names, masked `***`, and phase B refs only. Read #2 vs read #1 digests make a concurrent change fail closed (`changed`); retry. A direct `compose-saveEnvironment` carrying a redaction placeholder is refused.
+
+Nothing new is required at boot: migration `0021` runs automatically and provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set.
+
 ## License
 
 Apache-2.0

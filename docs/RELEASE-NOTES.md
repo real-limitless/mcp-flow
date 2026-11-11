@@ -37,3 +37,10 @@ The first gateway start on this release applies migration `0013_call_audit_purge
 - Clients that listed tools before a slow backend was ready get `notifications/tools/list_changed` when its
   tools arrive (on the MCP GET event stream).
 - Invalid or out-of-range values for either timeout are now logged at startup instead of being replaced silently.
+
+## Secrets phase C: Dokploy env sink
+
+- Server-side read-merge-write for Dokploy `compose-saveEnvironment` with digest fail-closed concurrency.
+- New tools: `mf_env_keys_list`, `mf_env_keys_set`, `mf_env_keys_unset`, `mf_env_provision`, `mf_secret_resync`, and admin grant tools.
+- Grants scoped by project/backend/compose id; protected targets refused for everyone.
+- Migration `0021_env_sink_template` runs automatically; provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set. Values never returned or audited.
