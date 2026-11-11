@@ -11,7 +11,8 @@ Shipped migrations `0001`–`0014` are immutable. Never edit their SQL.
 | 0018_secret_value_index | shipped (Secrets B) | Echo-scrub index. B does not read it on dispatch. DOWN refuses while any row exists. |
 | 0019_secret_reveal | shipped (Secrets B) | Append-only `mcpflow_reveal_event` and human-only columns on `mcpflow_api_key`. DOWN refuses while a reveal row exists. |
 | 0020_sidecar_connections | shipped | `sidecar_connections` plus nullable `backends.connection_id`. The column add no-ops when the legacy `backends` table is absent. |
-| 0021 | next free | |
+| 0021_env_sink_template | shipped (Secrets phase C) | `mcpflow_env_template` storing ref form only for env resync. DOWN refuses while rows exist. |
+| 0022 | next free | |
 
 ## Connection pragmas
 
