@@ -19,6 +19,7 @@ import { MIGRATION_0017 } from "./0017_secret_sink_grant.js";
 import { MIGRATION_0018 } from "./0018_secret_value_index.js";
 import { MIGRATION_0019 } from "./0019_secret_reveal.js";
 import { applySidecarConnectionColumn, MIGRATION_0020 } from "./0020_sidecar_connections.js";
+import { MIGRATION_0021 } from "./0021_env_sink_template.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -68,6 +69,7 @@ export const MIGRATIONS: readonly Migration[] = [
     sql: MIGRATION_0020,
     after: applySidecarConnectionColumn,
   },
+  { id: "0021_env_sink_template", sql: MIGRATION_0021 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;

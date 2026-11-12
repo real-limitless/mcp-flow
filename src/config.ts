@@ -42,6 +42,8 @@ export interface Config {
   kekProvider: "file" | "kms" | "invalid";
   /** Host-only deployment ids. Never returned by an API. Invalid text fails secret APIs closed. */
   protectedTargets: ProtectedTargets;
+  /** Compose ids where mf_env_provision may create secrets. Empty/unset means provision is off. */
+  envProvisionTargets: ProtectedTargets;
   /**
    * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
    * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
@@ -235,6 +237,7 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
         : (env("MCP_FLOW_KEK_FILE") ?? (production ? join(keyringBase, "kek") : null)),
     kekProvider: overrides.kekProvider ?? parseKekProvider(env("MCP_FLOW_KEK_PROVIDER")),
     protectedTargets: overrides.protectedTargets ?? parseProtectedTargets(env("MCP_FLOW_PROTECTED_TARGETS")),
+    envProvisionTargets: overrides.envProvisionTargets ?? parseProtectedTargets(env("MCP_FLOW_ENV_PROVISION_TARGETS")),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),

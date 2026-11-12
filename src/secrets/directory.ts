@@ -461,6 +461,70 @@ export class SecretDirectory {
     return purge ? { ref, deleted: true, purged: true } : { ref, deleted: true };
   }
 
+  /** Resolve a phase B ref for the Dokploy env sink (internal; never a tool). */
+  resolveForSink(input: { workspaceId: string; ref: string }): { value: string; version: number; ref: string } {
+    const raw = input.ref.trim();
+    let wantPrivate = false;
+    let version: number | null = null;
+    let base = raw;
+    const hashIndex = base.indexOf("#");
+    if (hashIndex >= 0) {
+      const frag = base.slice(hashIndex + 1);
+      base = base.slice(0, hashIndex);
+      if (frag !== "private") throw new SecretError("invalid ref");
+      wantPrivate = true;
+    }
+    const atIndex = base.indexOf("@");
+    if (atIndex >= 0) {
+      const ver = base.slice(atIndex + 1);
+      base = base.slice(0, atIndex);
+      if (!/^[0-9]+$/.test(ver)) throw new SecretError("invalid ref");
+      version = Number(ver);
+    }
+    const parsed = parseSecretRef(base);
+    this.allowProject({ workspaceId: input.workspaceId, keyId: "", agentId: "", allowedProjects: null, humanAdmin: true } as SecretActor, parsed.project);
+    const secret = this.db
+      .prepare(
+        `SELECT id, type, current_version, deleted_at
+           FROM mcpflow_secret WHERE workspace_id = ? AND project_id = ? AND name = ?`,
+      )
+      .get(input.workspaceId, parsed.project, parsed.name) as
+      | { id: string; type: string; current_version: number; deleted_at: string | null }
+      | undefined;
+    if (!secret || secret.deleted_at) throw new SecretError("secret not found", 404);
+    const targetVersion = version ?? Number(secret.current_version);
+    const row = this.db
+      .prepare(
+        `SELECT state, ciphertext, wrapped_dek, kek_id
+           FROM mcpflow_secret_version WHERE secret_id = ? AND version = ?`,
+      )
+      .get(secret.id, targetVersion) as
+      | { state: string; ciphertext: Buffer | null; wrapped_dek: Buffer | null; kek_id: string }
+      | undefined;
+    if (!row || !row.ciphertext || !row.wrapped_dek) throw new SecretError("secret not found", 404);
+    if (row.state === "disabled" || row.state === "destroyed") {
+      throw new SecretError("secret not found", 404);
+    }
+    if (secret.type === "keypair" && !wantPrivate) {
+      throw new SecretError("keypair requires #private", 403);
+    }
+    if (secret.type !== "keypair" && wantPrivate) {
+      throw new SecretError("invalid ref", 400);
+    }
+    const buf = openSecretValue(this.kekOrThrow(), {
+      workspaceId: input.workspaceId,
+      projectId: parsed.project,
+      secretId: secret.id,
+      version: targetVersion,
+      ciphertext: Buffer.from(row.ciphertext),
+      wrappedDek: Buffer.from(row.wrapped_dek),
+      kekId: row.kek_id,
+    });
+    const value = buf.toString("utf8");
+    buf.fill(0);
+    return { value, version: targetVersion, ref: base };
+  }
+
   /** Round-trip used by tests. Not exposed as a tool. */
   openForTest(input: { workspaceId: string; project: string; name: string; version: number }): Buffer {
     const secret = this.db

@@ -47,6 +47,7 @@ import type {
   WorkspacePolicy,
 } from "../types.js";
 import { SECRET_WRITE_TOOLS } from "../secrets/tools.js";
+import { ENV_ADMIN_TOOLS } from "../secrets/env-tools.js";
 import { DEFAULT_PLACEMENT, isAdminScopes, scopesHasFields } from "../types.js";
 import type { UpstreamPool } from "./upstream.js";
 
@@ -510,6 +511,7 @@ export const ADMIN_META_TOOLS: Tool[] = [
     },
   },
   ...SECRET_WRITE_TOOLS,
+  ...ENV_ADMIN_TOOLS,
 ];
 
 function textResult(data: unknown, isError = false): CallToolResult {

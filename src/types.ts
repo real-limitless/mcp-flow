@@ -584,6 +584,9 @@ export function toolAllowedByScopes(
   if (/^mf_admin_/i.test(toolName) || /^mf_secret_(create|rotate|delete|list)$/i.test(toolName)) {
     return isAdminScopes(scopes);
   }
+  // Env tools are authorized internally, but a key with a toolPrefixAllowlist must still
+  // name them (or a matching prefix such as "mf_env_") to call them. Keys with no
+  // allowlist already pass below.
   if (ALWAYS_ALLOWED_META_TOOLS.has(toolName)) return true;
   if (!scopes?.toolPrefixAllowlist?.length) return true;
   // Admin keys may still use other mf_* metas when prefixes are set

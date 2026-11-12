@@ -44,6 +44,8 @@ import { AgentDirectory } from "../identity/agents.js";
 import { ensureBootKeyring, loadPolicyKeys } from "../crypto/keyring.js";
 import { FileKekProvider, type KekProvider } from "../crypto/kek.js";
 import { SecretDirectory } from "../secrets/directory.js";
+import { EnvGrantDirectory } from "../secrets/env-grants.js";
+import { EnvTemplateDirectory } from "../secrets/env-templates.js";
 import { parseProtectedTargets, type ProtectedTargets } from "../secrets/protected.js";
 import { verifyAutoVacuumOnStartup } from "../secrets/purge.js";
 import { containsSecretRef, LegacySecretRefError } from "../audit/secret-ref.js";
@@ -831,6 +833,9 @@ export class Store {
   readonly policy: PolicyEnforcer;
   readonly policyKeys: PolicyKeys;
   readonly secrets: SecretDirectory;
+  readonly envGrants: EnvGrantDirectory;
+  readonly envTemplates: EnvTemplateDirectory;
+  readonly protectedTargets: ProtectedTargets;
   /** Secrets §0.5: mode read at open. New databases are INCREMENTAL (A1). */
   readonly autoVacuum: ReturnType<typeof verifyAutoVacuumOnStartup>;
 
@@ -886,9 +891,12 @@ export class Store {
         ? new FileKekProvider(opts.kekFile)
         : null;
     const protectedTargets = opts.protectedTargets ?? parseProtectedTargets(undefined);
+    this.protectedTargets = protectedTargets;
     this.secrets = new SecretDirectory(this.db, this.policyKeys, kek, protectedTargets, (event) => {
       this.writeAudit(event);
     });
+    this.envGrants = new EnvGrantDirectory(this.db, protectedTargets);
+    this.envTemplates = new EnvTemplateDirectory(this.db);
   }
 
   private migrate(): void {
