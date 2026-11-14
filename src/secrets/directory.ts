@@ -162,6 +162,30 @@ export class SecretDirectory {
   }): SecretCreated {
     const actor = this.actor(input);
     this.requireHumanAdmin(actor);
+    return this.writeGenerated(actor, input);
+  }
+
+  /**
+   * Generate for a key that already passed secrets:project:write.
+   * Not an admin tool and not a reveal.
+   */
+  createForProjectKey(input: SecretActor & {
+    project: string;
+    name: string;
+    type: string;
+    params?: unknown;
+    description?: string | null;
+  }): SecretCreated {
+    return this.writeGenerated(this.actor(input), input);
+  }
+
+  private writeGenerated(actor: ActorRow, input: SecretActor & {
+    project: string;
+    name: string;
+    type: string;
+    params?: unknown;
+    description?: string | null;
+  }): SecretCreated {
     if (input.type === "import") throw new SecretError("import is not available");
     if (!NAME.test(input.name)) throw new SecretError("invalid name");
     this.allowProject(input, input.project);
@@ -259,6 +283,24 @@ export class SecretDirectory {
       project: input.project ?? null,
       q: input.q ?? null,
       allowedProjects: input.allowedProjects,
+    });
+  }
+
+  /** Metadata for a project-scope key. Values are not selected. */
+  listForProjects(input: {
+    workspaceId: string;
+    keyId: string;
+    project: string | null;
+    q: string | null;
+    allowedProjects: readonly string[];
+  }): { secrets: SecretListItem[] } {
+    return this.queryList({
+      workspaceId: input.workspaceId,
+      keyId: input.keyId,
+      project: input.project,
+      q: input.q,
+      allowedProjects: input.allowedProjects,
+      via: "project_scope",
     });
   }
 
@@ -361,6 +403,16 @@ export class SecretDirectory {
 
   rotate(input: SecretActor & { ref: string; graceSeconds?: number | null; resync?: boolean }): SecretCreated {
     this.requireHumanAdmin(this.actor(input));
+    return this.writeRotated(input);
+  }
+
+  /** Rotate for a key that already passed secrets:project:write. Never returns the value. */
+  rotateForProjectKey(input: SecretActor & { ref: string; graceSeconds?: number | null; resync?: boolean }): SecretCreated {
+    this.actor(input);
+    return this.writeRotated(input);
+  }
+
+  private writeRotated(input: SecretActor & { ref: string; graceSeconds?: number | null; resync?: boolean }): SecretCreated {
     if (input.resync) throw new SecretError("resync is not available");
     if (input.graceSeconds != null) {
       if (!Number.isInteger(input.graceSeconds) || input.graceSeconds < 0 || input.graceSeconds > MAX_GRACE_SECONDS) {
@@ -371,6 +423,7 @@ export class SecretDirectory {
     const parsed = parseSecretRef(input.ref);
     this.allowProject(input, parsed.project);
     const secret = this.liveSecret(input.workspaceId, parsed.project, parsed.name);
+    if (secret.type === "import") throw new SecretError("imported secrets cannot be rotated");
     const params = JSON.parse(String(secret.generator_json)) as unknown;
     let generated;
     try {
@@ -523,6 +576,90 @@ export class SecretDirectory {
     const value = buf.toString("utf8");
     buf.fill(0);
     return { value, version: targetVersion, ref: base };
+  }
+
+  /**
+   * Seal a value supplied out of band (upload link). Not an MCP tool.
+   * The buffer is wiped. The return value is a ref and version only.
+   */
+  storeImported(input: SecretActor & {
+    project: string;
+    name: string;
+    description?: string | null;
+    value: Buffer;
+  }): SecretCreated {
+    const actor = this.actor(input);
+    const wipe = () => input.value.fill(0);
+    try {
+      if (input.value.length < 1 || input.value.length > 64 * 1024) throw new SecretError("secret exceeds 64KiB");
+      if (input.value.includes(0) || input.value.includes(10) || input.value.includes(13)) {
+        throw new SecretError("import contains a forbidden character");
+      }
+      if (!NAME.test(input.name)) throw new SecretError("invalid name");
+      this.allowProject(input, input.project);
+      const description = input.description ?? null;
+      if (description != null && (typeof description !== "string" || description.length > 512 || /[\r\n\0]/.test(description))) {
+        throw new SecretError("invalid description");
+      }
+      this.guardInputs({ project: input.project, name: input.name, type: "import", description });
+      if (this.protectedTargets.ids.has(input.value.toString("utf8"))) throw new SecretError("secret operation failed");
+      const secretId = newId("sec");
+      const kek = this.kekOrThrow();
+      let sealed;
+      try {
+        sealed = sealSecretValue(kek, this.keys.secretsIndex, {
+          workspaceId: input.workspaceId,
+          projectId: input.project,
+          secretId,
+          version: 1,
+          value: input.value,
+        });
+      } catch {
+        throw new SecretError("KEK provider is not configured", 403);
+      }
+      const now = new Date().toISOString();
+      const ownTx = !this.db.isTransaction;
+      try {
+        if (ownTx) this.db.exec("BEGIN IMMEDIATE;");
+        this.db
+          .prepare(
+            `INSERT INTO mcpflow_secret (
+               id, workspace_id, project_id, name, type, imported, generator_json, current_version,
+               description, created_by_key, created_by_agent, created_at
+             ) VALUES (?, ?, ?, ?, 'import', 1, ?, 1, ?, ?, ?, ?)`,
+          )
+          .run(
+            secretId,
+            input.workspaceId,
+            input.project,
+            input.name,
+            JSON.stringify({ source: "upload" }),
+            description,
+            input.keyId,
+            input.agentId,
+            now,
+          );
+        this.db
+          .prepare(
+            `INSERT INTO mcpflow_secret_version (
+               secret_id, version, state, ciphertext, wrapped_dek, kek_id, value_hmac, public_part,
+               created_at, created_by_key
+             ) VALUES (?, 1, 'active', ?, ?, ?, ?, NULL, ?, ?)`,
+          )
+          .run(secretId, sealed.ciphertext, sealed.wrappedDek, sealed.kekId, sealed.valueHmac, now, input.keyId);
+        if (ownTx) this.db.exec("COMMIT;");
+      } catch (err) {
+        if (ownTx && this.db.isTransaction) this.db.exec("ROLLBACK;");
+        const message = err instanceof Error ? err.message : "";
+        if (/UNIQUE/i.test(message)) throw new SecretError("secret name already exists", 409);
+        throw new SecretError("secret operation failed");
+      }
+      const out = created(refOf(input.project, input.name), 1, null);
+      this.writeAudit(input, "secret.create", { ref: out.ref, version: 1, type: "import", actor: actor.kind, via: "upload" });
+      return out;
+    } finally {
+      wipe();
+    }
   }
 
   /** Round-trip used by tests. Not exposed as a tool. */

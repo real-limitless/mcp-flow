@@ -89,3 +89,15 @@ Do not commit or publish real gateway URLs, keys, or session tokens.
 - `mf_admin_env_grant_create {project, backend, compose_ids, key_id? | agent_id?}` — human admin only.
 - `mf_admin_env_grant_list {project?}` — human admin only.
 - `mf_admin_env_grant_revoke {grant_id}` — human admin only.
+
+## Project secret scope
+
+`secrets:project:write` is off until a human admin calls `mf_admin_secret_scope_set {key_id, enabled: true}`. The key can then generate and bind secrets only for its own projects. Responses never include a secret value.
+
+- `mf_project_secret_create {name, type, params?, project?, description?}` — generate on the server. `params.entries` stores a JSON map of generated tokens.
+- `mf_project_secret_rotate {ref}` — new version. Imported values cannot be rotated.
+- `mf_project_secret_list {project?, q?}` — metadata only.
+- `mf_project_secret_upload_link {name, project?, description?}` — one-time link for a human to supply a value. The bot does not see the value.
+- Bind with `mf_env_keys_set` / `mf_env_keys_unset` / `mf_secret_resync` on a target a human registered with `mf_admin_env_target_register {project, backend, compose_id, tier}`. Refs only. Protected targets are refused. PRODUCTION waits for `mf_admin_project_secret_approval_decide` unless that gate is turned off.
+
+See the README section Project secret scope for the optional env vars. None of them are required to boot.

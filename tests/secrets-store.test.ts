@@ -119,6 +119,13 @@ describe("generators", () => {
     expect(text).toMatch(/[A-Z]/);
     expect(text).toMatch(/[0-9]/);
     expect(text).not.toMatch(/['"`$\\ #=]/);
+    const map = generateSecret("token", { encoding: "hex", bytes: 16, entries: ["mailbox", "hook"] });
+    const parsed = JSON.parse(map.value.toString("utf8")) as Record<string, string>;
+    expect(Object.keys(parsed).sort()).toEqual(["hook", "mailbox"]);
+    expect(parsed.mailbox).toMatch(/^[0-9a-f]{32}$/);
+    expect(map.generatorJson).not.toContain(parsed.mailbox);
+    expect(map.generatorJson).not.toContain(parsed.hook);
+    map.value.fill(0);
     const uuid = generateSecret("uuid", {});
     expect(uuid.value.toString("utf8")).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     token.value.fill(0);

@@ -111,8 +111,24 @@ function finish(type: SecretType, value: string, publicPart: string | null, gene
   return { type, value: buf, publicPart, generatorJson: JSON.stringify(generator) };
 }
 
+function entryNames(value: unknown): string[] | null {
+  if (value === undefined) return null;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
+    throw new GeneratorError("entries must be 1..16 names");
+  }
+  const names: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !/^[a-z0-9_-]{1,64}$/.test(item) || names.includes(item)) {
+      throw new GeneratorError("entries names must be unique [a-z0-9_-]");
+    }
+    names.push(item);
+  }
+  return names;
+}
+
 function generateToken(params: Record<string, unknown>): GeneratedSecret {
-  unknownKeys(params, ["encoding", "bytes", "length"]);
+  unknownKeys(params, ["encoding", "bytes", "length", "entries"]);
+  const entries = entryNames(params.entries);
   const encoding = params.encoding === undefined ? "base64url" : params.encoding;
   if (encoding !== "hex" && encoding !== "base64" && encoding !== "base64url") {
     throw new GeneratorError("token encoding is invalid");
@@ -121,19 +137,30 @@ function generateToken(params: Record<string, unknown>): GeneratedSecret {
   const length = intField(params.length, "length");
   if (bytes !== undefined && length !== undefined) throw new GeneratorError("token accepts bytes or length, not both");
   const alphabet = TOKEN_ALPHABET[encoding]!;
+  const encodeOne = (n: number | undefined, chars: number | undefined): string => {
+    if (chars !== undefined) {
+      let out = "";
+      for (let i = 0; i < chars; i++) out += pickChar(alphabet);
+      return out;
+    }
+    const raw = randomBytes(n ?? 32);
+    return encoding === "hex" ? raw.toString("hex") : raw.toString(encoding).replace(/=+$/, "");
+  };
   if (length !== undefined) {
     if (length < 1 || length > 4096) throw new GeneratorError("token length is out of range");
     if (entropyBits(length, alphabet.length) < MIN_ENTROPY_BITS) throw new GeneratorError("token entropy is below 128 bits");
-    let out = "";
-    for (let i = 0; i < length; i++) out += pickChar(alphabet);
-    return finish("token", out, null, { encoding, length });
+    if (!entries) return finish("token", encodeOne(undefined, length), null, { encoding, length });
+    const map: Record<string, string> = {};
+    for (const name of entries) map[name] = encodeOne(undefined, length);
+    return finish("token", JSON.stringify(map), null, { encoding, length, entries });
   }
   const n = bytes ?? 32;
   if (n < 16 || n > 1024) throw new GeneratorError("token bytes must be 16..1024");
   if (n * 8 < MIN_ENTROPY_BITS) throw new GeneratorError("token entropy is below 128 bits");
-  const raw = randomBytes(n);
-  const encoded = encoding === "hex" ? raw.toString("hex") : raw.toString(encoding).replace(/=+$/, "");
-  return finish("token", encoded, null, { encoding, bytes: n });
+  if (!entries) return finish("token", encodeOne(n, undefined), null, { encoding, bytes: n });
+  const map: Record<string, string> = {};
+  for (const name of entries) map[name] = encodeOne(n, undefined);
+  return finish("token", JSON.stringify(map), null, { encoding, bytes: n, entries });
 }
 
 interface ClassSet {

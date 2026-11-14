@@ -478,6 +478,36 @@ Values never come back: tool output and audit rows carry key names, masked `***`
 
 Nothing new is required at boot: migration `0021` runs automatically and provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set.
 
+## Project secret scope
+
+An agent key cannot create or bind a secret until a human admin grants `secrets:project:write` on that key. The flag is off by default (`mcpflow_api_key.secrets_project_write = 0`). It does not grant platform admin, reveal, or access to another project.
+
+Tools for a key that holds the flag:
+
+- `mf_project_secret_create {name, type, params?, project?, description?}` — server-side generate. Returns `{ref, version, name, project, type}` and, for a keypair, `public_part`. Never the value. `type` is `token`, `password`, `uuid`, or `keypair`. A token may set `params.entries` to a list of names; the stored value is a JSON object of generated tokens and the response still has no value.
+- `mf_project_secret_rotate {ref}` — new version from the stored generator. Imported secrets cannot be rotated.
+- `mf_project_secret_list {project?, q?}` — metadata for the key's own projects.
+- `mf_project_secret_upload_link {name, project?, description?}` — short-lived single-use link. A person opens it and submits the value. The bot never sends or receives the value. The link token only authorizes that one upload.
+
+Self-bind uses the existing env tools, with no `mf_admin_env_grant_*` row:
+
+- A human admin registers the deployment with `mf_admin_env_target_register {project, backend, compose_id, tier}`. `tier` is `DEVELOPMENT` or `PRODUCTION`.
+- The key then calls `mf_env_keys_set` with `secret://` refs for its own project, `mf_env_keys_unset`, `mf_env_keys_list`, and `mf_secret_resync` on that registered target.
+- Plaintext values are refused on this path, so a secret cannot be typed into the tool call.
+- Protected deployment ids (`MCP_FLOW_PROTECTED_TARGETS`) cannot be registered or written.
+- PRODUCTION targets wait for `mf_admin_project_secret_approval_decide {approval_id, decision}` unless `MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL=false`. Approvals expire after 24 hours and store the ref only.
+
+Admin tools (human admin only): `mf_admin_secret_scope_set {key_id, enabled}`, `mf_admin_env_target_register`, `mf_admin_env_target_list`, `mf_admin_env_target_revoke {target_id}`, `mf_admin_project_secret_approval_decide`.
+
+Quota defaults to 32 secrets plus open upload tickets per project. A key with `toolPrefixAllowlist` must include `mf_project_secret_` (and `mf_env_` / `mf_secret_resync` to bind).
+
+Nothing new is required at boot. Migration `0022_project_secret_scope` runs on startup. Leave the optional variables unset to keep the defaults:
+
+- `MCP_FLOW_PROJECT_SECRET_QUOTA` — whole number 1..99999, default 32. A value that is set but not a number in that range stops startup and names this variable.
+- `MCP_FLOW_SECRET_UPLOAD_TTL_SEC` — 30..86400, default 900. Same startup refusal when set to something else.
+- `MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL` — `true` (default) or `false`. Anything else stops startup and names this variable.
+- `MCP_FLOW_PUBLIC_URL` — already optional. When set, upload links are absolute. When unset, the tool returns a path on this gateway.
+
 ## License
 
 Apache-2.0
