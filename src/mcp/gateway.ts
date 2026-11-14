@@ -49,6 +49,7 @@ import {
 } from "./dynamic-tools.js";
 import { callSecretTool, isSecretTool, isSecretWriteTool, secretToolError, secretToolResult } from "../secrets/tools.js";
 import { ENV_META_TOOLS, isEnvTool, callEnvTool, envToolError, envToolResult } from "../secrets/env-tools.js";
+import { PROJECT_SECRET_TOOLS, isProjectSecretTool, callProjectSecretTool } from "../secrets/project-tools.js";
 import { globalSessionProjects } from "./session-project.js";
 import { globalSessionToolSets } from "./session-tools.js";
 import {
@@ -442,7 +443,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
             .slice(0, listCap);
         })()
       : upstreamTools;
-    const metas = dynamic ? [...META_TOOLS, ...DYNAMIC_META_TOOLS, ...ENV_META_TOOLS] : [...META_TOOLS, ...ENV_META_TOOLS];
+    const metas = dynamic
+      ? [...META_TOOLS, ...DYNAMIC_META_TOOLS, ...ENV_META_TOOLS, ...PROJECT_SECRET_TOOLS]
+      : [...META_TOOLS, ...ENV_META_TOOLS, ...PROJECT_SECRET_TOOLS];
     const tools: Tool[] = filterTools(
       [
         ...metas,
@@ -508,6 +511,8 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         ...META_TOOLS.map((tool) => tool.name),
         ...DYNAMIC_META_TOOLS.map((tool) => tool.name),
         ...ADMIN_META_TOOLS.map((tool) => tool.name),
+        ...ENV_META_TOOLS.map((tool) => tool.name),
+        ...PROJECT_SECRET_TOOLS.map((tool) => tool.name),
       ]);
       for (const toolName of upstream.knownToolNames(ctx.workspaceId)) {
         names.add(toolName);
@@ -1281,6 +1286,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
             {
               store,
               secrets: store.secrets,
+              projectSecrets: store.projectSecrets,
               envGrants: store.envGrants,
               envTemplates: store.envTemplates,
               protectedTargets: cfg.protectedTargets,
@@ -1360,6 +1366,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           {
             store,
             secrets: store.secrets,
+            projectSecrets: store.projectSecrets,
             envGrants: store.envGrants,
             envTemplates: store.envTemplates,
             protectedTargets: cfg.protectedTargets,
@@ -1385,6 +1392,44 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         const failed = envToolError(err);
         const result = envToolResult(failed.message, true);
         await auditCall(result, { meta: true, denied: true, reason: "env" });
+        return result;
+      }
+    }
+
+    if (isProjectSecretTool(name)) {
+      if (!ctx.agentId || !ctx.keyId) {
+        const result = textResult("secret tools require an agent key", true);
+        await auditCall(result, { meta: true, denied: true, reason: "agent_key_required" });
+        return result;
+      }
+      try {
+        const body = await callProjectSecretTool(
+          {
+            store,
+            secrets: store.secrets,
+            projectSecrets: store.projectSecrets,
+            envTemplates: store.envTemplates,
+            protectedTargets: cfg.protectedTargets,
+            callTool: (n, a) => upstream.callTool(ctx.workspaceId, n, a),
+          },
+          name,
+          args,
+          {
+            workspaceId: ctx.workspaceId,
+            keyId: ctx.keyId,
+            agentId: ctx.agentId,
+            agentKind: ctx.agentKind ?? null,
+            admin: Boolean(ctx.scopes?.admin),
+            allowedProjects: ctx.effectiveProjects ?? [],
+          },
+        );
+        const result = envToolResult(body);
+        await auditCall(result, { meta: true }, "collapsed");
+        return result;
+      } catch (err) {
+        const failed = envToolError(err);
+        const result = envToolResult(failed.message, true);
+        await auditCall(result, { meta: true, denied: true, reason: "project_secret" });
         return result;
       }
     }

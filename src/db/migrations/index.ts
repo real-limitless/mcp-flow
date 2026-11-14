@@ -20,6 +20,7 @@ import { MIGRATION_0018 } from "./0018_secret_value_index.js";
 import { MIGRATION_0019 } from "./0019_secret_reveal.js";
 import { applySidecarConnectionColumn, MIGRATION_0020 } from "./0020_sidecar_connections.js";
 import { MIGRATION_0021 } from "./0021_env_sink_template.js";
+import { MIGRATION_0022 } from "./0022_project_secret_scope.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -59,7 +60,7 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   { id: "0014_agent_bootstrap_upd_scope", sql: MIGRATION_0014 },
   { id: "0015_call_payload", sql: MIGRATION_0015 },
-  // Secrets B, then sidecar connections. 0021 is the next free id.
+  // Secrets B, then sidecar connections, env templates, and project secret scope.
   { id: "0016_secret", sql: MIGRATION_0016 },
   { id: "0017_secret_sink_grant", sql: MIGRATION_0017 },
   { id: "0018_secret_value_index", sql: MIGRATION_0018 },
@@ -70,6 +71,7 @@ export const MIGRATIONS: readonly Migration[] = [
     after: applySidecarConnectionColumn,
   },
   { id: "0021_env_sink_template", sql: MIGRATION_0021 },
+  { id: "0022_project_secret_scope", sql: MIGRATION_0022 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;

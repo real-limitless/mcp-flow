@@ -44,3 +44,10 @@ The first gateway start on this release applies migration `0013_call_audit_purge
 - New tools: `mf_env_keys_list`, `mf_env_keys_set`, `mf_env_keys_unset`, `mf_env_provision`, `mf_secret_resync`, and admin grant tools.
 - Grants scoped by project/backend/compose id; protected targets refused for everyone.
 - Migration `0021_env_sink_template` runs automatically; provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set. Values never returned or audited.
+
+## Project secret scope
+
+- Agent keys can hold `secrets:project:write` (off by default) and generate, upload, and bind secrets for their own project without platform admin.
+- Upload links are single-use. The value is supplied by a person and is not returned to the bot.
+- PRODUCTION binds wait for a human admin unless `MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL=false`.
+- Migration `0022_project_secret_scope` runs automatically. No new env var is required to boot.

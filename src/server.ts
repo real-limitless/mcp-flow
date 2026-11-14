@@ -134,6 +134,10 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
       kekFile: cfg.kekFile,
       kekProvider: cfg.kekProvider,
       protectedTargets: cfg.protectedTargets,
+      projectSecretQuota: cfg.projectSecretQuota,
+      secretUploadTtlSec: cfg.secretUploadTtlSec,
+      projectSecretProductionApproval: cfg.projectSecretProductionApproval,
+      publicUrl: cfg.publicUrl,
     });
   } catch (err) {
     lock?.release();

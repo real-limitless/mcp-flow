@@ -177,6 +177,11 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_admin_env_grant_create",
   "mf_admin_env_grant_list",
   "mf_admin_env_grant_revoke",
+  "mf_admin_secret_scope_set",
+  "mf_admin_env_target_register",
+  "mf_admin_env_target_list",
+  "mf_admin_env_target_revoke",
+  "mf_admin_project_secret_approval_decide",
 ]);
 
 /** A tool name that may be stored for a call that was not dispatched. */

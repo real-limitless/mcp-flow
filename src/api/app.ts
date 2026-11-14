@@ -113,6 +113,7 @@ import type {
 import { DEFAULT_PLACEMENT, isAdminScopes } from "../types.js";
 import { redactLog } from "../log/redact-lines.js";
 import { registerSecretRoutes } from "../secrets/http.js";
+import { registerSecretUploadRoutes } from "../secrets/upload-http.js";
 
 type Variables = {
   auth: AuthContext;
@@ -1986,6 +1987,7 @@ export function createApp(
   });
 
   app.route("/v1/policy/approvals", policyApprovalsRouter(store));
+  registerSecretUploadRoutes(app, store.projectSecrets);
   registerSecretRoutes(admin, store.secrets);
 
   app.route("/v1", admin);
