@@ -46,6 +46,7 @@ import { FileKekProvider, type KekProvider } from "../crypto/kek.js";
 import { SecretDirectory } from "../secrets/directory.js";
 import { EnvGrantDirectory } from "../secrets/env-grants.js";
 import { EnvTemplateDirectory } from "../secrets/env-templates.js";
+import { ProjectSecretDirectory } from "../secrets/project-scope.js";
 import { parseProtectedTargets, type ProtectedTargets } from "../secrets/protected.js";
 import { verifyAutoVacuumOnStartup } from "../secrets/purge.js";
 import { containsSecretRef, LegacySecretRefError } from "../audit/secret-ref.js";
@@ -833,6 +834,7 @@ export class Store {
   readonly policy: PolicyEnforcer;
   readonly policyKeys: PolicyKeys;
   readonly secrets: SecretDirectory;
+  readonly projectSecrets: ProjectSecretDirectory;
   readonly envGrants: EnvGrantDirectory;
   readonly envTemplates: EnvTemplateDirectory;
   readonly protectedTargets: ProtectedTargets;
@@ -853,6 +855,10 @@ export class Store {
       kekProvider?: "file" | "kms" | "invalid";
       protectedTargets?: ProtectedTargets;
       env?: NodeJS.ProcessEnv;
+      projectSecretQuota?: number;
+      secretUploadTtlSec?: number;
+      projectSecretProductionApproval?: boolean;
+      publicUrl?: string;
     } = {},
   ) {
     this.masterKey = deriveMasterKey(masterKeyRaw);
@@ -895,6 +901,20 @@ export class Store {
     this.secrets = new SecretDirectory(this.db, this.policyKeys, kek, protectedTargets, (event) => {
       this.writeAudit(event);
     });
+    this.projectSecrets = new ProjectSecretDirectory(
+      this.db,
+      this.secrets,
+      protectedTargets,
+      {
+        quota: opts.projectSecretQuota ?? 32,
+        uploadTtlSec: opts.secretUploadTtlSec ?? 900,
+        productionApproval: opts.projectSecretProductionApproval ?? true,
+        publicUrl: opts.publicUrl ?? "",
+      },
+      (event) => {
+        this.writeAudit(event);
+      },
+    );
     this.envGrants = new EnvGrantDirectory(this.db, protectedTargets);
     this.envTemplates = new EnvTemplateDirectory(this.db);
   }

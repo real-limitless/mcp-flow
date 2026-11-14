@@ -8,6 +8,8 @@ import { EnvGrantDirectory } from "./env-grants.js";
 import { EnvGrantError } from "./env-grants.js";
 import { EnvTemplateDirectory } from "./env-templates.js";
 import { assertEnvValueSafe, MASK, envKeyNames } from "./env-text.js";
+import { callProjectSecretTool, isProjectSecretTool, PROJECT_SECRET_ADMIN_TOOLS } from "./project-tools.js";
+import type { ProjectSecretDirectory } from "./project-scope.js";
 
 
 export const ENV_META_TOOLS: Tool[] = [
@@ -82,6 +84,7 @@ export const ENV_META_TOOLS: Tool[] = [
 ];
 
 export const ENV_ADMIN_TOOLS: Tool[] = [
+  ...PROJECT_SECRET_ADMIN_TOOLS,
   {
     name: "mf_admin_env_grant_create",
     description: "Create an env sink grant. Human admin only.",
@@ -141,12 +144,15 @@ export interface EnvToolCaller {
 export interface EnvToolDeps {
   store: Store;
   secrets: SecretDirectory;
+  projectSecrets: ProjectSecretDirectory;
   envGrants: EnvGrantDirectory;
   envTemplates: EnvTemplateDirectory;
   protectedTargets: ProtectedTargets;
   provisionTargets: ProtectedTargets;
   callTool: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
 }
+
+type EnvAuth = { via: "admin" | "grant" | "project"; tier: "DEVELOPMENT" | "PRODUCTION" | null };
 
 function actor(caller: EnvToolCaller): SecretActor {
   return {
@@ -182,21 +188,21 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v;
 }
 
-function canWrite(
+function authorizeEnv(
   deps: EnvToolDeps,
   caller: EnvToolCaller,
   humanAdmin: boolean,
   project: string,
   backend: string,
   composeId: string,
-): void {
+): EnvAuth {
   if (deps.protectedTargets.invalid || deps.protectedTargets.ids.has(composeId)) {
     throw new ProtectedTargetError();
   }
   if (caller.allowedProjects && !caller.allowedProjects.includes(project)) {
     throw new SecretError("project is not permitted", 403);
   }
-  if (humanAdmin) return;
+  if (humanAdmin) return { via: "admin", tier: null };
   const ok = deps.envGrants.check({
     workspaceId: caller.workspaceId,
     keyId: caller.keyId,
@@ -205,7 +211,20 @@ function canWrite(
     backend,
     composeId,
   });
-  if (!ok) throw new SecretError("env operation requires a grant", 403);
+  if (ok) return { via: "grant", tier: null };
+  const registered = deps.projectSecrets.registeredTarget({
+    workspaceId: caller.workspaceId,
+    keyId: caller.keyId,
+    project,
+    backend,
+    composeId,
+  });
+  if (registered) return { via: "project", tier: registered.tier };
+  throw new SecretError("env operation requires a grant", 403);
+}
+
+function needsProductionApproval(deps: EnvToolDeps, auth: EnvAuth): boolean {
+  return auth.via === "project" && auth.tier === "PRODUCTION" && deps.projectSecrets.productionApproval();
 }
 
 function refBase(ref: string): string {
@@ -245,11 +264,15 @@ export async function callEnvTool(
   const who = actor(caller);
   const secretActor: SecretActor = { ...who, humanAdmin };
 
+  if (isProjectSecretTool(name)) {
+    return callProjectSecretTool(deps, name, args, caller);
+  }
+
   if (name === "mf_env_keys_list") {
     const backend = requireString(args, "backend");
     const composeId = requireString(args, "compose_id");
     const project = requireString(args, "project");
-    canWrite(deps, caller, humanAdmin, project, backend, composeId);
+    authorizeEnv(deps, caller, humanAdmin, project, backend, composeId);
     const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
     const read = await sink.readEnv(backend, composeId);
     const keys = read.env ? envKeyNames(read.env) : [];
@@ -271,7 +294,7 @@ export async function callEnvTool(
       throw new SecretError("values is required");
     }
     const vmap = values as Record<string, unknown>;
-    canWrite(deps, caller, humanAdmin, project, backend, composeId);
+    const auth = authorizeEnv(deps, caller, humanAdmin, project, backend, composeId);
     const setMap: Record<string, string> = {};
     const refVersions: Record<string, string> = {};
     const refKeys: string[] = [];
@@ -279,6 +302,9 @@ export async function callEnvTool(
     for (const [key, raw] of Object.entries(vmap)) {
       if (!KEY_RE.test(key)) throw new SecretError("invalid env key");
       if (typeof raw !== "string") throw new SecretError("invalid env value");
+      if (auth.via === "project" && !raw.startsWith("secret://")) {
+        throw new SecretError("project secret bind accepts only secret refs");
+      }
       if (raw.startsWith("secret://")) {
         const base = refBase(raw);
         const parsed = parseSecretRef(base);
@@ -293,6 +319,33 @@ export async function callEnvTool(
         setMap[key] = raw;
         plainKeys.push(key);
       }
+    }
+    if (needsProductionApproval(deps, auth)) {
+      const approvals = [];
+      for (const key of refKeys) {
+        const base = refVersions[key]!.split("@")[0]!;
+        const version = Number(refVersions[key]!.split("@").pop());
+        const queued = deps.projectSecrets.queueApproval({
+          caller,
+          project,
+          backend,
+          composeId,
+          envKey: key,
+          action: "set",
+          ref: base,
+          version,
+          privateRef: String(vmap[key] ?? "").includes("#private"),
+        });
+        approvals.push({ approval_id: queued.approval_id, env_key: key, ref: base, version, expires_at: queued.expires_at });
+      }
+      auditWrite(deps.store, caller, "project_secret.bind", {
+        backend,
+        compose_id: composeId,
+        project,
+        pending: true,
+        refs: refVersions,
+      });
+      return { pending: true, compose_id: composeId, approvals };
     }
     const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
     await sink.apply(backend, composeId, setMap, []);
@@ -316,7 +369,17 @@ export async function callEnvTool(
       project,
       keys: Object.keys(vmap),
       refs: refVersions,
+      via: auth.via,
     });
+    if (auth.via === "project") {
+      auditWrite(deps.store, caller, "project_secret.bind", {
+        backend,
+        compose_id: composeId,
+        project,
+        pending: false,
+        refs: refVersions,
+      });
+    }
     return { compose_id: composeId, set: Object.keys(vmap), refs: refVersions };
   }
 
@@ -330,7 +393,32 @@ export async function callEnvTool(
     }
     const keyList = keys as string[];
     for (const k of keyList) if (!KEY_RE.test(k)) throw new SecretError("invalid env key");
-    canWrite(deps, caller, humanAdmin, project, backend, composeId);
+    const unsetAuth = authorizeEnv(deps, caller, humanAdmin, project, backend, composeId);
+    if (needsProductionApproval(deps, unsetAuth)) {
+      const approvals = [];
+      for (const key of keyList) {
+        const queued = deps.projectSecrets.queueApproval({
+          caller,
+          project,
+          backend,
+          composeId,
+          envKey: key,
+          action: "unset",
+          ref: "",
+          version: 0,
+          privateRef: false,
+        });
+        approvals.push({ approval_id: queued.approval_id, env_key: key, expires_at: queued.expires_at });
+      }
+      auditWrite(deps.store, caller, "project_secret.bind", {
+        backend,
+        compose_id: composeId,
+        project,
+        pending: true,
+        unset: keyList,
+      });
+      return { pending: true, compose_id: composeId, approvals };
+    }
     const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
     await sink.apply(backend, composeId, {}, keyList);
     deps.envTemplates.deleteForKeys(caller.workspaceId, backend, composeId, keyList);
@@ -354,7 +442,10 @@ export async function callEnvTool(
     if (deps.provisionTargets.invalid || deps.provisionTargets.ids.size === 0 || !deps.provisionTargets.ids.has(composeId)) {
       throw new EnvSinkError("mf_env_provision is off: set MCP_FLOW_ENV_PROVISION_TARGETS to the DEVELOPMENT compose ids");
     }
-    canWrite(deps, caller, humanAdmin, project, backend, composeId);
+    const provisionAuth = authorizeEnv(deps, caller, humanAdmin, project, backend, composeId);
+    if (provisionAuth.via === "project") {
+      throw new SecretError("mf_env_provision requires an env grant or a human admin", 403);
+    }
     const kmap = keys as Record<string, unknown>;
     const setMap: Record<string, string> = {};
     const refVersions: Record<string, string> = {};
@@ -437,12 +528,13 @@ export async function callEnvTool(
     }
     const resynced: Array<{ backend: string; compose_id: string; keys: string[]; ref: string }> = [];
     const skipped: Array<{ backend: string; compose_id: string; keys: string[]; ref: string }> = [];
+    const pending: Array<{ approval_id: string; env_key: string; ref: string; version: number }> = [];
     for (const [gkey, grows] of groups) {
       const parts = gkey.split("|");
       const backend = parts[0];
       const composeId = parts[1];
       const project = parts[2];
-      canWrite(deps, caller, humanAdmin, project, backend, composeId);
+      const resyncAuth = authorizeEnv(deps, caller, humanAdmin, project, backend, composeId);
       const sink = new DokployEnvSink(deps.callTool, deps.protectedTargets);
       const changedKeys: string[] = [];
       const changedValues: Record<string, string> = {};
@@ -463,7 +555,23 @@ export async function callEnvTool(
           rowVersions.set(r.envKey, resolvedVersion);
         }
       }
-      if (changedKeys.length > 0) {
+      if (changedKeys.length > 0 && needsProductionApproval(deps, resyncAuth)) {
+        for (const key of changedKeys) {
+          const r = grows.find((x) => x.envKey === key)!;
+          const queued = deps.projectSecrets.queueApproval({
+            caller,
+            project,
+            backend,
+            composeId,
+            envKey: key,
+            action: "resync",
+            ref: r.ref,
+            version: rowVersions.get(key)!,
+            privateRef: false,
+          });
+          pending.push({ approval_id: queued.approval_id, env_key: key, ref: r.ref, version: rowVersions.get(key)! });
+        }
+      } else if (changedKeys.length > 0) {
         await sink.apply(backend, composeId, changedValues, []);
         for (const key of changedKeys) {
           const r = grows.find((x) => x.envKey === key)!;
@@ -487,7 +595,16 @@ export async function callEnvTool(
       ref: refFilter ?? null,
       resynced: resynced.map((r) => ({ backend: r.backend, compose_id: r.compose_id, keys: r.keys, ref: r.ref })),
     });
-    return { resynced, skipped };
+    if (pending.length) {
+      auditWrite(deps.store, caller, "project_secret.bind", {
+        backend: backendFilter ?? null,
+        compose_id: composeFilter ?? null,
+        ref: refFilter ?? null,
+        pending: true,
+        approvals: pending.map((item) => item.approval_id),
+      });
+    }
+    return pending.length ? { resynced, skipped, pending } : { resynced, skipped };
   }
 
   if (name === "mf_admin_env_grant_create") {

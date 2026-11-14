@@ -44,6 +44,15 @@ export interface Config {
   protectedTargets: ProtectedTargets;
   /** Compose ids where mf_env_provision may create secrets. Empty/unset means provision is off. */
   envProvisionTargets: ProtectedTargets;
+  /** Max secrets plus open upload tickets per project for secrets:project:write. Default 32. */
+  projectSecretQuota: number;
+  /** Lifetime of a single-use secret upload link, in seconds. Default 900. */
+  secretUploadTtlSec: number;
+  /**
+   * When true (the default), a project-scope bind to a PRODUCTION target waits
+   * for a human admin. Set MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL=false to apply immediately.
+   */
+  projectSecretProductionApproval: boolean;
   /**
    * Security M-5 (cutover): refuse legacy shared keys and legacy project sessions on /mcp, so only
    * T1.3 agent keys/sessions (which go through policy + call audit) can call tools.
@@ -162,6 +171,45 @@ export function parsePublicUrl(raw: string | undefined | null): string | null {
   return u.origin;
 }
 
+export const DEFAULT_PROJECT_SECRET_QUOTA = 32;
+export const DEFAULT_SECRET_UPLOAD_TTL_SEC = 900;
+
+export function parseProjectSecretQuota(raw: string | undefined): number {
+  if (raw == null || raw.trim() === "") return DEFAULT_PROJECT_SECRET_QUOTA;
+  if (!/^[1-9][0-9]{0,4}$/.test(raw.trim())) {
+    throw new Error(
+      "MCP_FLOW_PROJECT_SECRET_QUOTA must be a whole number from 1 to 99999. Unset uses 32. See the README section Project secret scope.",
+    );
+  }
+  return Number(raw.trim());
+}
+
+export function parseSecretUploadTtl(raw: string | undefined): number {
+  if (raw == null || raw.trim() === "") return DEFAULT_SECRET_UPLOAD_TTL_SEC;
+  if (!/^[1-9][0-9]{0,6}$/.test(raw.trim())) {
+    throw new Error(
+      "MCP_FLOW_SECRET_UPLOAD_TTL_SEC must be a whole number of seconds. Unset uses 900. See the README section Project secret scope.",
+    );
+  }
+  const n = Number(raw.trim());
+  if (n < 30 || n > 86_400) {
+    throw new Error(
+      "MCP_FLOW_SECRET_UPLOAD_TTL_SEC must be between 30 and 86400 seconds. Unset uses 900. See the README section Project secret scope.",
+    );
+  }
+  return n;
+}
+
+export function parseProjectSecretProductionApproval(raw: string | undefined): boolean {
+  if (raw == null || raw.trim() === "") return true;
+  const value = raw.trim().toLowerCase();
+  if (value === "1" || value === "true" || value === "on" || value === "yes") return true;
+  if (value === "0" || value === "false" || value === "off" || value === "no") return false;
+  throw new Error(
+    "MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL must be true or false. Unset means true, so a PRODUCTION bind waits for a human admin. See the README section Project secret scope.",
+  );
+}
+
 function parseKekProvider(raw: string | undefined): "file" | "kms" | "invalid" {
   const value = (raw ?? "").trim().toLowerCase();
   if (value === "" || value === "file") return "file";
@@ -238,6 +286,11 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     kekProvider: overrides.kekProvider ?? parseKekProvider(env("MCP_FLOW_KEK_PROVIDER")),
     protectedTargets: overrides.protectedTargets ?? parseProtectedTargets(env("MCP_FLOW_PROTECTED_TARGETS")),
     envProvisionTargets: overrides.envProvisionTargets ?? parseProtectedTargets(env("MCP_FLOW_ENV_PROVISION_TARGETS")),
+    projectSecretQuota: overrides.projectSecretQuota ?? parseProjectSecretQuota(env("MCP_FLOW_PROJECT_SECRET_QUOTA")),
+    secretUploadTtlSec: overrides.secretUploadTtlSec ?? parseSecretUploadTtl(env("MCP_FLOW_SECRET_UPLOAD_TTL_SEC")),
+    projectSecretProductionApproval:
+      overrides.projectSecretProductionApproval ??
+      parseProjectSecretProductionApproval(env("MCP_FLOW_PROJECT_SECRET_PRODUCTION_APPROVAL")),
     refuseLegacyMcpKeys:
       overrides.refuseLegacyMcpKeys ?? parseBoolFlag(env("MCP_FLOW_REFUSE_LEGACY_MCP_KEYS")),
     shutdownGraceMs: parseShutdownGraceMs(overrides.shutdownGraceMs ?? env("MCP_FLOW_SHUTDOWN_GRACE_MS")),

@@ -94,6 +94,10 @@ function storeOpts(cfg: ReturnType<typeof loadConfig>) {
     kekFile: cfg.kekFile,
     kekProvider: cfg.kekProvider,
     protectedTargets: cfg.protectedTargets,
+    projectSecretQuota: cfg.projectSecretQuota,
+    secretUploadTtlSec: cfg.secretUploadTtlSec,
+    projectSecretProductionApproval: cfg.projectSecretProductionApproval,
+    publicUrl: cfg.publicUrl,
   };
 }
 

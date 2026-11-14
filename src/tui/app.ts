@@ -105,7 +105,13 @@ export async function runTui(cfg: Config): Promise<void> {
     process.exit(1);
   }
 
-  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, { journalSizeLimitBytes: cfg.journalSizeLimitBytes });
+  const store = new Store(cfg.dbPath, cfg.masterKeyRaw, {
+    journalSizeLimitBytes: cfg.journalSizeLimitBytes,
+    projectSecretQuota: cfg.projectSecretQuota,
+    secretUploadTtlSec: cfg.secretUploadTtlSec,
+    projectSecretProductionApproval: cfg.projectSecretProductionApproval,
+    publicUrl: cfg.publicUrl,
+  });
   const ws = store.ensureWorkspace(cfg.workspaceName);
   const pool = new UpstreamPool(store, {
     allowPrivateUrls: cfg.allowPrivateUrls,
