@@ -24,6 +24,11 @@ export interface ResolvedAgent {
   keyPrefix: string;
   keyExpiresAt: string;
   effectiveProjects: string[];
+  /**
+   * Tool-name prefixes for this key. Empty means no extra prefix filter
+   * (project membership still applies).
+   */
+  toolPrefixAllowlist: string[];
   /** Set when resolved from an mf_sess_ token */
   sessionId?: string;
   sessionProject?: string;
@@ -60,6 +65,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 export class AgentDirectory {
   private cache = new Map<string, { at: number; version: number; epoch: number; result: ResolveResult }>();
+  private allowlistColumn: boolean | null = null;
 
   /** DB-side identity epoch (0006): changes made by any process invalidate every cache (Security T2.5 L-5). */
   private dbEpoch(): number {
@@ -91,6 +97,32 @@ export class AgentDirectory {
 
   hasWorkspace(workspaceId: string): boolean {
     return Boolean(this.db.prepare(`SELECT 1 FROM mcpflow_workspace WHERE id = ?`).get(workspaceId));
+  }
+
+  /**
+   * The workspace's bootstrap human admin (created_by IS NULL). Creates the
+   * identity workspace and that admin when the env operator mints the first agent key.
+   */
+  ensureBootstrapAdmin(workspaceId: string, owner: { name: string; owner: string }): string {
+    const existing = this.bootstrapAdminId(workspaceId);
+    if (existing) return existing;
+    try {
+      if (!this.hasWorkspace(workspaceId)) return this.bootstrapWorkspace(workspaceId, owner);
+    } catch (err) {
+      if (isUniqueViolation(err)) {
+        const again = this.bootstrapAdminId(workspaceId);
+        if (again) return again;
+      }
+      throw err;
+    }
+    throw new Error("identity workspace has no bootstrap admin");
+  }
+
+  private bootstrapAdminId(workspaceId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT id FROM mcpflow_agent WHERE workspace_id = ? AND created_by IS NULL`)
+      .get(workspaceId) as { id: string } | undefined;
+    return row?.id ?? null;
   }
 
   /** Workspace + its owning human agent in one transaction (deferred owner FK). */
@@ -145,8 +177,14 @@ export class AgentDirectory {
     projects?: string[];
     ttlDays?: number;
     predecessorKeyId?: string;
+    /** Empty or omitted stores NULL (no extra prefix filter). */
+    toolPrefixAllowlist?: string[];
   }): { keyId: string; token: string; prefix: string; expiresAt: string } {
     const ttl = Math.min(Math.max(input.ttlDays ?? DEFAULT_KEY_TTL_DAYS, 1), MAX_KEY_TTL_DAYS);
+    const allowJson = jsonAllowlist(input.toolPrefixAllowlist);
+    if (allowJson && !this.hasAllowlistColumn()) {
+      throw new Error("tool prefix allowlist requires migration 0023_agent_key_tool_allowlist");
+    }
     const ws = this.agentWorkspace(input.agentId);
     for (let attempt = 1; attempt <= 3; attempt++) {
       const token = KEY_TOKEN_PREFIX + randomBytes(32).toString("base64url");
@@ -170,6 +208,11 @@ export class AgentDirectory {
             `INSERT INTO mcpflow_api_key_project (key_id, agent_id, project_id) VALUES (?, ?, ?)`,
           );
           for (const p of new Set(input.projects ?? [])) ins.run(keyId, input.agentId, p);
+          if (allowJson) {
+            this.db
+              .prepare(`UPDATE mcpflow_api_key SET tool_prefix_allowlist = ? WHERE id = ?`)
+              .run(allowJson, keyId);
+          }
           this.lifecycle(ws, input.createdBy, "key_create", { keyId, agentId: input.agentId, prefix });
         });
         return { keyId, token, prefix, expiresAt };
@@ -359,6 +402,7 @@ export class AgentDirectory {
       keyPrefix: String(row.prefix),
       keyExpiresAt: String(row.expires_at),
       effectiveProjects,
+      toolPrefixAllowlist: this.toolPrefixAllowlist(keyId),
     };
     // forbidden still carries the identity: the gateway refuses it, but non-project
     // surfaces (approvals, admin) may accept e.g. a human approver with no projects.
@@ -371,6 +415,32 @@ export class AgentDirectory {
       return { status: "unauthorized" };
     }
     return result;
+  }
+
+  /** Stored tool prefixes. A corrupt value matches nothing (fail closed) rather than every tool. */
+  toolPrefixAllowlist(keyId: string): string[] {
+    if (!this.hasAllowlistColumn()) return [];
+    const row = this.db
+      .prepare(`SELECT tool_prefix_allowlist AS p FROM mcpflow_api_key WHERE id = ?`)
+      .get(keyId) as { p: string | null } | undefined;
+    if (!row?.p) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.p);
+    } catch {
+      return ["\u0000"];
+    }
+    if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== "string" || item.length === 0)) {
+      return ["\u0000"];
+    }
+    return parsed as string[];
+  }
+
+  private hasAllowlistColumn(): boolean {
+    if (this.allowlistColumn != null) return this.allowlistColumn;
+    const cols = this.db.prepare(`PRAGMA table_info(mcpflow_api_key)`).all() as Array<{ name: string }>;
+    this.allowlistColumn = cols.some((col) => col.name === "tool_prefix_allowlist");
+    return this.allowlistColumn;
   }
 
   private agentWorkspace(agentId: string): string {
@@ -427,6 +497,11 @@ export class AgentDirectory {
       throw err;
     }
   }
+}
+
+function jsonAllowlist(prefixes: string[] | undefined): string | null {
+  if (!prefixes?.length) return null;
+  return JSON.stringify([...new Set(prefixes)]);
 }
 
 function safeEqual(a: string, b: string): boolean {

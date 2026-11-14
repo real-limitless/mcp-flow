@@ -21,6 +21,7 @@ import {
   placementForWrite,
 } from "../db/secret-input.js";
 import type { Store } from "../db/store.js";
+import { MintAgentError, mintAgentKey, type MintAgentRequest } from "../identity/mint-agent.js";
 import type { EdgeHub } from "../edge/hub.js";
 import type { McpGalleryEntry } from "../catalog/types.js";
 import {
@@ -259,9 +260,27 @@ export const ADMIN_META_TOOLS: Tool[] = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
+    name: "mf_admin_create_agent",
+    description:
+      "Create an agent and mint one agent key (mcpflow_api_key). Token shown once. Pass projects and toolPrefixAllowlist to scope it. Pass agentId to mint another key for an existing agent (at most two live keys). Requires admin key.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+        agentId: { type: "string", description: "Existing agent id. Omit to create an agent." },
+        admin: { type: "boolean", description: "Human admin agent. Operator tools and /v1." },
+        kind: { type: "string", enum: ["grokbot", "cloud_agent", "human", "service"] },
+        projects: { type: "array", items: { type: "string" }, description: "Project slugs. Omit to bind every current project." },
+        toolPrefixAllowlist: { type: "array", items: { type: "string" } },
+        ttlDays: { type: "integer", minimum: 1, maximum: 365 },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "mf_admin_create_key",
     description:
-      "Mint agent API key. Token shown once. Set admin:true only as operator. Requires admin key.",
+      "Mint an API key. Token shown once. When legacy keys are refused on /mcp, this writes an agent key (same as mf_admin_create_agent) and does not write the legacy key table. Set admin:true only as operator. Requires admin key.",
     inputSchema: {
       type: "object",
       properties: {
@@ -713,6 +732,50 @@ export function unknownAdminArgumentMessage(
   return `unknown argument (${unknown.length})`;
 }
 
+function finishAgentMint(
+  deps: AdminToolDeps,
+  args: Record<string, unknown>,
+  audit: (action: string, detail?: Record<string, unknown>) => void,
+): CallToolResult {
+  const body: MintAgentRequest = {
+    name: typeof args.name === "string" ? args.name : undefined,
+    agentId: typeof args.agentId === "string" ? args.agentId : undefined,
+    admin: args.admin === true,
+    kind: typeof args.kind === "string" ? (args.kind as MintAgentRequest["kind"]) : undefined,
+    projects: Array.isArray(args.projects) ? (args.projects as string[]) : undefined,
+    toolPrefixAllowlist: Array.isArray(args.toolPrefixAllowlist)
+      ? (args.toolPrefixAllowlist as string[])
+      : undefined,
+    ttlDays: typeof args.ttlDays === "number" ? args.ttlDays : undefined,
+    dynamicTools: args.dynamicTools === true,
+    dynamicToolsHot: Array.isArray(args.dynamicToolsHot) ? (args.dynamicToolsHot as string[]) : undefined,
+    defaultProject: typeof args.defaultProject === "string" ? args.defaultProject : undefined,
+  };
+  try {
+    const minted = mintAgentKey(deps.store, {
+      workspaceId: deps.auth.workspaceId,
+      createdByAgentId: deps.auth.agentId ?? null,
+      body,
+    });
+    audit("key.create", {
+      via: "mf_admin",
+      keyId: minted.key.id,
+      agentId: minted.agent.id,
+      name: minted.agent.name,
+      projects: minted.key.scopes.projects,
+      toolPrefixCount: minted.key.scopes.toolPrefixAllowlist?.length ?? 0,
+    });
+    return textResult({
+      agent: minted.agent,
+      key: minted.key,
+      note: "token shown once — store it securely",
+    });
+  } catch (err) {
+    if (err instanceof MintAgentError) return textResult(err.message, true);
+    throw err;
+  }
+}
+
 export async function handleAdminTool(
   name: string,
   args: Record<string, unknown>,
@@ -1000,7 +1063,11 @@ export async function handleAdminTool(
       case "mf_admin_list_keys":
         return textResult({ keys: store.listApiKeys(wsId) });
 
+      case "mf_admin_create_agent":
+        return finishAgentMint(deps, args, audit);
+
       case "mf_admin_create_key": {
+        if (cfg.refuseLegacyMcpKeys) return finishAgentMint(deps, args, audit);
         const name = String(args.name ?? "default").trim() || "default";
         const scopes = buildScopesFromArgs({
           admin: args.admin === true,

@@ -12,16 +12,29 @@ import { toolAllowedByProject, type Project } from "../types.js";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AdminRouter = Hono<any>;
 
+function parseToolPrefixes(raw: unknown): string[] {
+  if (raw == null || raw === "") return [];
+  try {
+    const parsed = JSON.parse(String(raw)) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string" && item.length > 0);
+  } catch {
+    return [];
+  }
+}
+
 export function agentRow(store: Store, a: Record<string, unknown>) {
   const db = store.db;
   const projects = (db.prepare(`SELECT project_id FROM mcpflow_agent_project WHERE agent_id = ? ORDER BY project_id`).all(String(a.id)) as Array<{ project_id: string }>).map((r) => r.project_id);
   const keys = (db.prepare(
-    `SELECT id, status, valid_from, expires_at, last_used_at, created_at, revoked_at, predecessor_key_id
+    `SELECT id, status, valid_from, expires_at, last_used_at, created_at, revoked_at, predecessor_key_id,
+            tool_prefix_allowlist
        FROM mcpflow_api_key WHERE agent_id = ? ORDER BY created_at`,
   ).all(String(a.id)) as Array<Record<string, unknown>>).map((k) => ({
     id: k.id, status: k.status, valid_from: k.valid_from, expires_at: k.expires_at, last_used_at: k.last_used_at,
     created_at: k.created_at, revoked_at: k.revoked_at, predecessor_key_id: k.predecessor_key_id,
     projects: (db.prepare(`SELECT project_id FROM mcpflow_api_key_project WHERE key_id = ? ORDER BY project_id`).all(String(k.id)) as Array<{ project_id: string }>).map((r) => r.project_id),
+    toolPrefixAllowlist: parseToolPrefixes(k.tool_prefix_allowlist),
   }));
   return {
     id: a.id, name: a.name, owner: a.owner, kind: a.kind, is_admin: Number(a.is_admin) === 1, status: a.status,

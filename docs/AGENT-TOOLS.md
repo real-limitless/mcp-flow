@@ -24,7 +24,9 @@ npx mcp-flow key scopes <id> --dynamic-tools
 npx mcp-flow key scopes <id> --no-dynamic-tools
 ```
 
-REST: `POST /v1/keys` or `PATCH /v1/keys/:id` with `"dynamicTools": true|false` (optional `"dynamicToolsHot": ["github__"]`). Admin UI Keys tab: **discovery** toggle on each row, or **Edit**.
+REST: `POST /v1/keys` or `PATCH /v1/keys/:id` with `"dynamicTools": true|false` on a **legacy** key (optional `"dynamicToolsHot": ["demo__"]`). Admin UI Keys tab: **discovery** toggle on each legacy row, or **Edit**.
+
+Agent keys — the keys `/mcp` accepts when `MCP_FLOW_REFUSE_LEGACY_MCP_KEYS` is on — do not store `dynamicTools`. Mint them with `POST /v1/agents` (`projects`, `toolPrefixAllowlist`). See the README. Sending `dynamicTools` on that route, or on `POST /v1/keys` while refusal is on, is rejected and writes nothing.
 
 When the flag is on:
 

@@ -153,6 +153,7 @@ export const EXACT_ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set([
   "mf_admin_test_backend",
   "mf_admin_list_keys",
   "mf_admin_create_key",
+  "mf_admin_create_agent",
   "mf_admin_update_key_scopes",
   "mf_admin_revoke_key",
   "mf_admin_list_devices",

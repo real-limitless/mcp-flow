@@ -17,6 +17,7 @@ import {
 import { parseAuthzRequirement } from "./authz/types.js";
 import type { ApiKeyScopes } from "./types.js";
 import { scopesHasFields } from "./types.js";
+import { MintAgentError, mintAgentKey } from "./identity/mint-agent.js";
 import { redactLog } from "./log/redact-lines.js";
 import { KeyringError } from "./crypto/keyring.js";
 const program = new Command();
@@ -116,11 +117,22 @@ const keyCmd = program.command("key").description("Manage agent API keys");
 
 keyCmd
   .command("create")
-  .description("Mint an agent API key (secret shown once)")
+  .description(
+    "Mint an API key (secret shown once). When MCP_FLOW_REFUSE_LEGACY_MCP_KEYS is on, this writes an agent key.",
+  )
   .requiredOption("-n, --name <name>", "key name")
   .option(
+    "--project <slug>",
+    "project slug this key may use (repeatable). Omit to bind every current project when minting an agent key.",
+    (v: string, acc: string[]) => {
+      acc.push(v);
+      return acc;
+    },
+    [] as string[],
+  )
+  .option(
     "--scope-prefix <prefix>",
-    "tool name prefix allowlist (repeatable), e.g. yh-finance__",
+    "tool name prefix allowlist (repeatable), e.g. demo__",
     (v: string, acc: string[]) => {
       acc.push(v);
       return acc;
@@ -150,24 +162,71 @@ keyCmd
   .action(
     (opts: {
       name: string;
+      project: string[];
       scopePrefix: string[];
       admin?: boolean;
       dynamicTools?: boolean;
       dynamicToolsHot: string[];
       db?: string;
     }) => {
-    const { store, workspaceId } = openStore(opts.db);
+    const cfg = loadConfig({ dbPath: opts.db });
+    if (!cfg.masterKeyRaw) {
+      throw new Error("MCP_FLOW_MASTER_KEY is required");
+    }
+    const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
+    const workspaceId = store.ensureWorkspace(cfg.workspaceName).id;
+    store.seedSidecars(workspaceId, process.env.MCP_FLOW_SIDECARS);
+    let exitCode = 0;
     try {
+      if (cfg.refuseLegacyMcpKeys) {
+        try {
+          const minted = mintAgentKey(store, {
+            workspaceId,
+            createdByAgentId: null,
+            body: {
+              name: opts.name,
+              admin: Boolean(opts.admin),
+              projects: opts.project,
+              toolPrefixAllowlist: opts.scopePrefix,
+              dynamicTools: Boolean(opts.dynamicTools),
+              dynamicToolsHot: opts.dynamicToolsHot,
+            },
+          });
+          store.writeAudit({
+            workspaceId,
+            action: "key.create",
+            detail: {
+              keyId: minted.key.id,
+              agentId: minted.agent.id,
+              name: minted.agent.name,
+              projects: minted.key.scopes.projects,
+              toolPrefixCount: minted.key.scopes.toolPrefixAllowlist?.length ?? 0,
+              via: "cli",
+            },
+          });
+          console.log(JSON.stringify({ agent: minted.agent, key: minted.key }, null, 2));
+        } catch (err) {
+          if (err instanceof MintAgentError) {
+            console.error(`mcp-flow: ${redactLog(err.message)}`);
+            exitCode = 1;
+          } else {
+            throw err;
+          }
+        }
+        return;
+      }
       const scopes =
         opts.admin ||
         opts.scopePrefix.length ||
         opts.dynamicTools ||
-        opts.dynamicToolsHot.length
+        opts.dynamicToolsHot.length ||
+        opts.project.length
           ? {
               ...(opts.admin ? { admin: true as const } : {}),
               ...(opts.scopePrefix.length
                 ? { toolPrefixAllowlist: opts.scopePrefix }
                 : {}),
+              ...(opts.project.length ? { projects: opts.project } : {}),
               ...(opts.dynamicTools ? { dynamicTools: true as const } : {}),
               ...(opts.dynamicToolsHot.length
                 ? { dynamicToolsHot: opts.dynamicToolsHot }
@@ -183,6 +242,7 @@ keyCmd
       console.log(JSON.stringify({ key: created }, null, 2));
     } finally {
       store.close();
+      if (exitCode) process.exit(exitCode);
     }
   },
   );

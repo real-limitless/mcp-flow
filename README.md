@@ -104,18 +104,49 @@ Interactive terminal UI: list/add/enable/disable/test/delete backends, seal auth
 
 ### Mint an agent key
 
+`POST /v1/agents` creates an agent and one key in the agent key table. The token is returned once. Pass `projects` (slugs) and, optionally, `toolPrefixAllowlist` (tool names that start with one of those prefixes). Omit `projects` to bind every project that exists at mint time. A project created later is not added.
+
+Admin → Keys → **Create key** calls the same route. `mf_admin_create_agent` does it from `/mcp`.
+
 ```bash
-npx mcp-flow key create --name cursor
-# → { "key": { "token": "mf_…", "prefix": "mf_…", … } }  # secret shown once
+curl -sS -X POST "$MCP_FLOW_URL/v1/agents" \
+  -H "Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"agent","projects":["default"],"toolPrefixAllowlist":["demo__"]}'
 ```
+
+A second live key for that agent (at most two):
+
+```bash
+curl -sS -X POST "$MCP_FLOW_URL/v1/agents/$AGENT_ID/keys" \
+  -H "Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"projects":["default"],"toolPrefixAllowlist":["demo__"]}'
+```
+
+Revoke it with `DELETE /v1/agents/$AGENT_ID/keys/$KEY_ID`. The plaintext is not stored, so revocation is by id.
+
+When `MCP_FLOW_REFUSE_LEGACY_MCP_KEYS` is on, `POST /v1/keys`, `mf_admin_create_key`, and `mcp-flow key create` write an agent key too. They do not write the legacy key table. `dynamicTools`, `dynamicToolsHot`, and `defaultProject` are not stored on an agent key; the request is rejected and nothing is written.
+
+```bash
+npx mcp-flow key create --name agent --project default --scope-prefix demo__
+```
+
+With the flag off, `POST /v1/agents` still mints an agent key. `POST /v1/keys` still mints a legacy key, and `/mcp` accepts that legacy key only while the flag stays off.
+
+#### Keys minted the old way
+
+A key created before this change, or by `POST /v1/keys` / `mcp-flow key create` while `MCP_FLOW_REFUSE_LEGACY_MCP_KEYS` is off, is a legacy row. Only a hash is stored, so it cannot be converted into an agent key. With the flag on, `/mcp` responds `403` and `legacy keys are not accepted on /mcp; use an agent key`.
+
+Mint a replacement with `POST /v1/agents` using the same projects and tool prefixes, put the new token in the harness, then revoke the legacy row with `DELETE /v1/keys/:id`.
 
 ### Operator key (AI manages the gateway)
 
-Mint a key with `scopes.admin` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). Env `MCP_FLOW_ADMIN_TOKEN` remains break-glass for humans/UI.
+Mint a key with `admin: true` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). That key is a human admin agent. Env `MCP_FLOW_ADMIN_TOKEN` remains break-glass for humans/UI.
 
 ```bash
-npx mcp-flow key create --name openflow-ops --admin
-# Point the harness at http://127.0.0.1:8787/mcp with that mf_* token.
+npx mcp-flow key create --name operator --admin --project default
+# Point the harness at $MCP_FLOW_URL/mcp with that token.
 ```
 
 Examples of operator tools: `mf_admin_status`, `mf_admin_create_backend`, `mf_admin_create_key`,
@@ -337,9 +368,12 @@ Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, e
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| `POST` | `/v1/keys` | Mint agent key (token once) |
-| `GET` | `/v1/keys` | List keys (no secrets) |
-| `DELETE` | `/v1/keys/:id` | Revoke |
+| `POST` | `/v1/agents` | Create an agent and mint an agent key (token once). Body: `name`, `projects`, `toolPrefixAllowlist`, optional `admin` |
+| `POST` | `/v1/agents/:id/keys` | Mint another agent key (at most two live) |
+| `DELETE` | `/v1/agents/:agentId/keys/:keyId` | Revoke an agent key |
+| `POST` | `/v1/keys` | Legacy key when refusal is off. When `MCP_FLOW_REFUSE_LEGACY_MCP_KEYS` is on, mints an agent key instead and does not write the legacy table |
+| `GET` | `/v1/keys` | List legacy keys (no secrets) |
+| `DELETE` | `/v1/keys/:id` | Revoke a legacy key |
 | `POST` | `/v1/backends` | Create (GET redacts sealed headers/env) |
 | `GET` | `/v1/backends` | List (redacted) |
 | `PATCH` | `/v1/backends/:id` | Update / enable. `env` and `headers` merge per key (`envMode=replace` or `headerMode=replace` swaps that map; `unsetEnv`, a null env value, or a null header value deletes one key). A non-blank `apiKey` updates Authorization and keeps the other headers. Responses list `envKeys` and `headerNames` only — values are never returned. |

@@ -9,9 +9,10 @@ import {
   agentAuthContext,
   newAgentSessionId,
 } from "../identity/auth-context.js";
+import { MintAgentError, mintAgentKey, type MintAgentRequest } from "../identity/mint-agent.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { installFromGallery } from "../catalog/install.js";
@@ -383,7 +384,7 @@ export function createApp(
       dynamicTools?: boolean;
       dynamicToolsHot?: string[];
     };
-    const name = body.name?.trim() || "default";
+    const requestedName = body.name?.trim() || "";
     let scopes: ApiKeyScopes | null =
       body.scopes !== undefined
         ? body.scopes
@@ -417,6 +418,20 @@ export function createApp(
         dynamicToolsHot: body.dynamicToolsHot.map(String),
       };
     }
+    // Legacy refusal is on: this route must not write api_keys. Those keys are
+    // rejected by /mcp. Write an agent key (mcpflow_api_key) instead.
+    if (cfg.refuseLegacyMcpKeys) {
+      return respondMint(c, {
+        name: requestedName || undefined,
+        admin: scopes?.admin === true,
+        projects: scopes?.projects,
+        toolPrefixAllowlist: scopes?.toolPrefixAllowlist,
+        dynamicTools: scopes?.dynamicTools === true,
+        dynamicToolsHot: scopes?.dynamicToolsHot,
+        defaultProject: scopes?.defaultProject,
+      });
+    }
+    const name = requestedName || "default";
     const created = store.createApiKey(auth.workspaceId, name, scopes);
     store.writeAudit({
       workspaceId: auth.workspaceId,
@@ -498,6 +513,87 @@ export function createApp(
       workspaceId: auth.workspaceId,
       action: "key.revoke",
       detail: { keyId: c.req.param("id") },
+      ip: clientIp(c),
+    });
+    return c.json({ ok: true });
+  });
+
+  function respondMint(c: Context<{ Variables: Variables }>, body: MintAgentRequest) {
+    const auth = c.get("auth");
+    try {
+      const minted = mintAgentKey(store, {
+        workspaceId: auth.workspaceId,
+        createdByAgentId: c.get("humanAdmin") ?? null,
+        body,
+      });
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "key.create",
+        detail: {
+          keyId: minted.key.id,
+          agentId: minted.agent.id,
+          name: minted.agent.name,
+          projects: minted.key.scopes.projects,
+          toolPrefixCount: minted.key.scopes.toolPrefixAllowlist?.length ?? 0,
+          via: "agent",
+        },
+        ip: clientIp(c),
+      });
+      return c.json({ agent: minted.agent, key: minted.key }, 201);
+    } catch (err) {
+      if (err instanceof MintAgentError) return c.json({ error: err.message }, err.status);
+      throw err;
+    }
+  }
+
+  admin.post("/agents", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as MintAgentRequest & {
+      scopes?: ApiKeyScopes | null;
+    };
+    const scopes = body.scopes ?? undefined;
+    return respondMint(c, {
+      ...body,
+      agentId: undefined,
+      admin: body.admin === true || scopes?.admin === true,
+      projects: body.projects ?? scopes?.projects,
+      toolPrefixAllowlist: body.toolPrefixAllowlist ?? scopes?.toolPrefixAllowlist,
+      dynamicTools: body.dynamicTools === true || scopes?.dynamicTools === true,
+      dynamicToolsHot: body.dynamicToolsHot ?? scopes?.dynamicToolsHot,
+      defaultProject: body.defaultProject ?? scopes?.defaultProject ?? undefined,
+    });
+  });
+
+  admin.post("/agents/:id/keys", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as MintAgentRequest;
+    return respondMint(c, { ...body, agentId: c.req.param("id") });
+  });
+
+  admin.delete("/agents/:agentId/keys/:keyId", (c) => {
+    const auth = c.get("auth");
+    const agentId = c.req.param("agentId");
+    const keyId = c.req.param("keyId");
+    const row = store.db
+      .prepare(
+        `SELECT k.id FROM mcpflow_api_key k
+           JOIN mcpflow_agent a ON a.id = k.agent_id
+          WHERE k.id = ? AND a.id = ? AND a.workspace_id = ?`,
+      )
+      .get(keyId, agentId, auth.workspaceId) as { id: string } | undefined;
+    if (!row) return c.json({ error: "not found" }, 404);
+    const by =
+      c.get("humanAdmin") ??
+      store.identity.ensureBootstrapAdmin(auth.workspaceId, {
+        name: "bootstrap-admin",
+        owner: "admin",
+      });
+    const ok = store.identity.revokeKey(keyId, by, "revoked via admin API");
+    if (!ok) return c.json({ error: "not found" }, 404);
+    store.writeAudit({
+      workspaceId: auth.workspaceId,
+      keyId: auth.keyId,
+      action: "key.revoke",
+      detail: { keyId, agentId, via: "agent" },
       ip: clientIp(c),
     });
     return c.json({ ok: true });
