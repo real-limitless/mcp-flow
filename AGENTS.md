@@ -82,6 +82,7 @@ Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile
 - **Production keyring:** `MCP_FLOW_KEYRING_DIR` and `MCP_FLOW_KEK_FILE` are paths (image/Compose: `/data/keyring` and `/data/kek` on the data volume). The gateway entrypoint creates the directory, a 32-byte mode-0400 KEK, and the `pepper` file inside the keyring when they are missing and the volume has no sealed material. It does not overwrite an existing KEK or rotate an existing pepper. A missing file next to sealed rows or API key hashes exits once instead of minting a replacement. Leave `MCP_FLOW_KEK` unset. The compose bootstrap service does not open the keyring.
 - **Tools:** `{slug}__{upstreamTool}`; meta `mf_*`.
 - **Keys:** hashed at rest; optional tool-prefix scopes; optional `scopes.admin` operator keys (`mf_admin_*` + `/v1`); audit log.
+- **Agent keys:** `POST /v1/agents` writes `mcpflow_api_key` (project slugs + `toolPrefixAllowlist`) and returns the token once. With `MCP_FLOW_REFUSE_LEGACY_MCP_KEYS` on, `POST /v1/keys` does the same and does not write the legacy `api_keys` table. Legacy rows are refused on `/mcp` while that flag is on. A legacy key cannot be converted; mint a replacement and revoke the old id.
 - **Backends:** remote streamable-http / SSE; multi-header seal; SSRF guards.
 - **Install from gallery:** `npx mcp-flow catalog install '<id>' --enable` → remote or central-sandbox Backend.
 

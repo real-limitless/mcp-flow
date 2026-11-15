@@ -159,7 +159,7 @@ Storage v1: **SQLite** + `MCP_FLOW_MASTER_KEY`. Postgres later.
 
 | Interface | Purpose |
 | --- | --- |
-| `POST /v1/keys` | Mint agent API key (secret shown once) |
+| `POST /v1/agents` | Create an agent and mint an agent key (secret shown once). `POST /v1/keys` does this when legacy refusal is on |
 | `POST/PATCH/GET /v1/backends` | Library CRUD (GET redacts secrets) |
 | `POST /v1/backends/:id/test` | Connectivity + tools/list smoke |
 | `GET /mcp` | MCP Streamable HTTP for agents |

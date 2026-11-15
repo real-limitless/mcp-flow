@@ -47,6 +47,9 @@ export function agentAuthContext(
     scopes: {
       projects: [...agent.effectiveProjects],
       ...(agent.isAdmin ? { admin: true } : {}),
+      ...(agent.toolPrefixAllowlist.length
+        ? { toolPrefixAllowlist: [...agent.toolPrefixAllowlist] }
+        : {}),
     },
     projectId: opts.projectId ?? null,
     projectSlug: opts.projectSlug ?? null,

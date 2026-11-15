@@ -45,8 +45,9 @@ describe("(a) workspace creation is ops-only", () => {
     }
     // exactly two writers
     expect(inserts.map((s) => s.split(":")[0]).sort()).toEqual(["src/db/store.ts", "src/identity/agents.ts"]);
-    // mcpflow_workspace (+ bootstrap admin) is created by no production code path at all: ops/CLI/test only
-    expect(bootstrapCalls).toEqual([]);
+    // The only production caller is ensureBootstrapAdmin, used when an admin mints the first agent key
+    // and this workspace has no identity row yet. Every other path stays ops/CLI/test.
+    expect(bootstrapCalls).toEqual(["src/identity/agents.ts"]);
     // the legacy `workspaces` row: never from MCP tool code; from the API only when the env admin
     // token is presented (ops secret; name from config, not the request). OAuth consent is the second site.
     expect(ensureCalls.filter((f) => f.startsWith("src/mcp/") || f.startsWith("src/edge/") || f.startsWith("src/http/"))).toEqual([]);

@@ -547,7 +547,7 @@ async function renderKeys() {
       <div class="form-grid">
         <div class="form-field">
           <label class="field-label" for="keyName">Name</label>
-          <input id="keyName" placeholder="cursor / openflow-ops" autocomplete="off" />
+          <input id="keyName" placeholder="agent-name" autocomplete="off" />
         </div>
         <div class="form-field" style="grid-column: span 2">
           <span class="field-label">Role</span>
@@ -556,7 +556,7 @@ async function renderKeys() {
             <button type="button" class="seg-btn" data-role="operator">Operator</button>
           </div>
           <p class="dim role-hint" id="keyRoleHint" style="font-size:12px;margin-top:8px;max-width:42rem">
-            Agent: use upstream tools on <span class="mono">/mcp</span> only (optional tool-prefix scopes).
+            Agent key: accepted on <span class="mono">/mcp</span>. Limit it with a tool prefix and projects.
           </p>
           <input type="hidden" id="keyAdmin" value="0" />
         </div>
@@ -567,17 +567,11 @@ async function renderKeys() {
         <div class="form-field" style="grid-column:1/-1">
           <span class="field-label">Projects</span>
           <p class="dim" style="font-size:12px;margin-bottom:6px">
-            Leave unchecked = key may use <strong>all</strong> projects. Check to restrict.
+            Unchecked binds this agent key to every project that exists now. A project created later is not added. Check projects to limit the key.
           </p>
           <div class="proj-be-grid" id="keyProjGrid">
             ${projectCheckboxesHtml(projects, [], "data-key-proj")}
           </div>
-        </div>
-        <div class="form-field">
-          <label class="field-label" for="keyDefaultProj">Default project</label>
-          <select id="keyDefaultProj">
-            ${projectSelectOptions(projects, "")}
-          </select>
         </div>
         <div class="form-field" style="grid-column:1/-1">
           <label class="field-label" for="keyDynamicTools" style="display:flex;align-items:center;gap:8px">
@@ -585,9 +579,7 @@ async function renderKeys() {
             Dynamic tool discovery
           </label>
           <p class="dim" style="font-size:12px;margin-top:6px;max-width:42rem">
-            Hide upstream tools from <span class="mono">tools/list</span> (harness 200-tool caps).
-            Agent searches with <span class="mono">mf_list_tools</span>, then
-            <span class="mono">mf_enable_tools</span> / <span class="mono">mf_call_tool</span>.
+            Not stored on an agent key. Leave this off. The key is limited by the tool prefix and the projects above.
           </p>
         </div>
         <div class="form-field">
@@ -664,6 +656,11 @@ async function renderKeys() {
     ${surface(
       "Keys",
       `
+      <p class="muted" style="margin-bottom:10px;font-size:12px">
+        Legacy keys only. With legacy refusal on, <span class="mono">/mcp</span> rejects these.
+        New keys are agent keys: the token is shown once above, and the agent is listed on the access map.
+        Revoke an agent key with <span class="mono">DELETE /v1/agents/:agentId/keys/:keyId</span>.
+      </p>
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -709,7 +706,7 @@ async function renderKeys() {
             </tr>`,
                     )
                     .join("")
-                : `<tr><td colspan="7" class="muted">No keys yet</td></tr>`
+                : `<tr><td colspan="7" class="muted">No legacy keys.</td></tr>`
             }
           </tbody>
         </table>
@@ -782,18 +779,19 @@ async function renderKeys() {
 
   $("#createKey")?.addEventListener("click", async () => {
     try {
-      const name = $("#keyName").value.trim() || "default";
+      if ($("#keyDynamicTools")?.checked) {
+        throw new Error("Agent keys do not support dynamic discovery. Leave it off.");
+      }
+      const name = $("#keyName").value.trim();
       const scope = $("#keyScope").value.trim();
       const isOp = $("#keyAdmin")?.value === "1";
       const projSlugs = collectCheckedSlugs("#keyProjGrid", "data-key-proj");
-      const defaultProject = $("#keyDefaultProj")?.value?.trim() || "";
-      const body = { name };
+      const body = {};
+      if (name) body.name = name;
       if (scope) body.toolPrefixAllowlist = [scope];
       if (isOp) body.admin = true;
       if (projSlugs.length) body.projects = projSlugs;
-      if (defaultProject) body.defaultProject = defaultProject;
-      if ($("#keyDynamicTools")?.checked) body.dynamicTools = true;
-      const res = await api("/v1/keys", { method: "POST", body: JSON.stringify(body) });
+      const res = await api("/v1/agents", { method: "POST", body: JSON.stringify(body) });
       const onceToken = res.key.token;
       const wasOp = Boolean(res.key.scopes?.admin);
       await renderKeys();
@@ -812,11 +810,12 @@ async function renderKeys() {
         if (hint) {
           const projNote = res.key.scopes?.projects?.length
             ? ` Projects: ${res.key.scopes.projects.join(", ")}.`
-            : " All projects allowed.";
-          hint.textContent = wasOp
-            ? "Copy a harness JSON below with this bearer token to manage backends, keys, and catalog." +
-              projNote
-            : "Copy a harness JSON below with this bearer token." + projNote;
+            : " Every project that exists now.";
+          hint.textContent =
+            (wasOp
+              ? "Operator agent key, shown once. It is accepted on /mcp and is not a legacy key."
+              : "Agent key, shown once. It is accepted on /mcp and is not listed in the legacy table.") +
+            projNote;
         }
         const snips = $("#keyOnceSnips");
         if (snips) {
