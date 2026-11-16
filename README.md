@@ -313,6 +313,18 @@ When the two path variables are unset, production defaults them to `keyring/` an
 | **Agent key + client JSON** | `docker compose exec mcp-flow cat /data/mcp-client.json` |
 | **Admin token** | `docker compose exec mcp-flow cat /data/admin.token` |
 
+### Timeouts
+
+Tool lists are cached per backend and refreshed in the background (including at boot and when a backend reconnects). A new session reads that cache. Each backend has its own cap, `MCP_FLOW_TOOL_LIST_TIMEOUT_MS` (default `5000`). A backend that misses the cap is marked degraded and left out of that listing; the others are not held past the cap.
+
+The HTTP server sets `keepAliveTimeout` and `headersTimeout` so an idle reverse proxy does not send a request on a socket this process has already closed. Both are optional.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MCP_FLOW_KEEP_ALIVE_TIMEOUT_MS` | `120000` | Idle keep-alive. Above a 60s load-balancer idle timeout and nginx's 75s `keepalive_timeout`. Clamped 1000..600000. |
+| `MCP_FLOW_HEADERS_TIMEOUT_MS` | `125000` | Must stay above keep-alive. Unset uses keep-alive + 5000. Clamped to that floor..660000. |
+| `MCP_FLOW_TOOL_LIST_TIMEOUT_MS` | `5000` | Per-backend tools/list cap. Clamped 50..60000, and never above `MCP_FLOW_BACKEND_INIT_TIMEOUT_MS`. |
+
 Point Cursor / Claude / OpenCode at the `mcpServers` block in that JSON. The compose **edge** agent starts with the stack (device `compose-edge` should show **online**). It includes `git`, `gh`, `/repos` (clone many projects here), and persisted `gh` login.
 
 Add these in **Admin → Backends** (placement `edge-sandbox`, device `compose-edge`, enable):

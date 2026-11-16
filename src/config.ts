@@ -88,6 +88,23 @@ export interface Config {
    * backs off exponentially (30 s, 60 s, ... capped at 10 min) before the next attempt.
    */
   backendInitHardTimeoutMs?: number;
+  /**
+   * Node HTTP keepAliveTimeout (MCP_FLOW_KEEP_ALIVE_TIMEOUT_MS). Default 120000, above typical
+   * reverse-proxy idle timeouts (60s load balancers, 75s nginx) so the proxy closes an idle
+   * connection first. Clamped 1000..600000.
+   */
+  keepAliveTimeoutMs: number;
+  /**
+   * Node HTTP headersTimeout (MCP_FLOW_HEADERS_TIMEOUT_MS). Must stay above keepAliveTimeout.
+   * Unset uses keep-alive + 5000 (125000 at the default). Clamped to that floor..660000.
+   */
+  headersTimeoutMs: number;
+  /**
+   * Per-backend cap for one tools/list (MCP_FLOW_TOOL_LIST_TIMEOUT_MS). Default 5000, clamped
+   * 50..60000, and never above backendInitTimeoutMs. A backend that exceeds it is marked degraded
+   * and left out of that listing.
+   */
+  toolListTimeoutMs: number;
 }
 
 /**
@@ -115,6 +132,47 @@ export function parseBackendInitTimeoutMs(raw: string | number | undefined | nul
 
 export const DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS = 300_000;
 export const MAX_BACKEND_INIT_HARD_TIMEOUT_MS = 1_800_000;
+
+/** Above a 60s load-balancer idle timeout and nginx's 75s keepalive_timeout. */
+export const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 120_000;
+export const MIN_KEEP_ALIVE_TIMEOUT_MS = 1_000;
+export const MAX_KEEP_ALIVE_TIMEOUT_MS = 600_000;
+
+export function parseKeepAliveTimeoutMs(raw: string | number | undefined | null): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  if (!Number.isFinite(n)) return DEFAULT_KEEP_ALIVE_TIMEOUT_MS;
+  return Math.min(MAX_KEEP_ALIVE_TIMEOUT_MS, Math.max(MIN_KEEP_ALIVE_TIMEOUT_MS, Math.floor(n)));
+}
+
+export const DEFAULT_HEADERS_TIMEOUT_GAP_MS = 5_000;
+export const MIN_HEADERS_TIMEOUT_GAP_MS = 1_000;
+export const MAX_HEADERS_TIMEOUT_MS = 660_000;
+
+/**
+ * Headers must arrive before the keep-alive timer closes the socket, so the floor is
+ * keep-alive + 1s. Unset uses keep-alive + 5s.
+ */
+export function parseHeadersTimeoutMs(raw: string | number | undefined | null, keepAliveMs: number): number {
+  const floor = Math.min(MAX_HEADERS_TIMEOUT_MS, keepAliveMs + MIN_HEADERS_TIMEOUT_GAP_MS);
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  const chosen = Number.isFinite(n)
+    ? Math.floor(n)
+    : Math.min(MAX_HEADERS_TIMEOUT_MS, keepAliveMs + DEFAULT_HEADERS_TIMEOUT_GAP_MS);
+  return Math.min(MAX_HEADERS_TIMEOUT_MS, Math.max(floor, chosen));
+}
+
+export const DEFAULT_TOOL_LIST_TIMEOUT_MS = 5_000;
+export const MIN_TOOL_LIST_TIMEOUT_MS = 50;
+export const MAX_TOOL_LIST_TIMEOUT_MS = 60_000;
+
+/** Per-backend tools/list cap. Never waits longer than the caller init timeout. */
+export function parseToolListTimeoutMs(raw: string | number | undefined | null, initTimeoutMs: number): number {
+  const n = typeof raw === "number" ? raw : raw == null || String(raw).trim() === "" ? NaN : Number(raw);
+  const chosen = Number.isFinite(n)
+    ? Math.min(MAX_TOOL_LIST_TIMEOUT_MS, Math.max(MIN_TOOL_LIST_TIMEOUT_MS, Math.floor(n)))
+    : DEFAULT_TOOL_LIST_TIMEOUT_MS;
+  return Math.min(chosen, initTimeoutMs);
+}
 
 /** Hard init ceiling: unset/invalid -> 300000; clamped to [soft, 1800000] (never below the caller wait). */
 export function parseBackendInitHardTimeoutMs(raw: string | number | undefined | null, softMs: number): number {
@@ -233,12 +291,30 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
   const initHardRaw = env("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS");
   const backendInitTimeoutMs = parseBackendInitTimeoutMs(overrides.backendInitTimeoutMs ?? initSoftRaw);
   const backendInitHardTimeoutMs = parseBackendInitHardTimeoutMs(overrides.backendInitHardTimeoutMs ?? initHardRaw, backendInitTimeoutMs);
+  const keepAliveRaw = env("MCP_FLOW_KEEP_ALIVE_TIMEOUT_MS");
+  const headersRaw = env("MCP_FLOW_HEADERS_TIMEOUT_MS");
+  const toolListRaw = env("MCP_FLOW_TOOL_LIST_TIMEOUT_MS");
+  const keepAliveTimeoutMs = parseKeepAliveTimeoutMs(overrides.keepAliveTimeoutMs ?? keepAliveRaw);
+  const headersTimeoutMs = parseHeadersTimeoutMs(overrides.headersTimeoutMs ?? headersRaw, keepAliveTimeoutMs);
+  const toolListTimeoutMs = parseToolListTimeoutMs(overrides.toolListTimeoutMs ?? toolListRaw, backendInitTimeoutMs);
   if (overrides.backendInitTimeoutMs === undefined) {
     const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_TIMEOUT_MS", initSoftRaw, backendInitTimeoutMs);
     if (w) console.error(w);
   }
   if (overrides.backendInitHardTimeoutMs === undefined) {
     const w = timeoutEnvWarning("MCP_FLOW_BACKEND_INIT_HARD_TIMEOUT_MS", initHardRaw, backendInitHardTimeoutMs);
+    if (w) console.error(w);
+  }
+  if (overrides.keepAliveTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_KEEP_ALIVE_TIMEOUT_MS", keepAliveRaw, keepAliveTimeoutMs);
+    if (w) console.error(w);
+  }
+  if (overrides.headersTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_HEADERS_TIMEOUT_MS", headersRaw, headersTimeoutMs);
+    if (w) console.error(w);
+  }
+  if (overrides.toolListTimeoutMs === undefined) {
+    const w = timeoutEnvWarning("MCP_FLOW_TOOL_LIST_TIMEOUT_MS", toolListRaw, toolListTimeoutMs);
     if (w) console.error(w);
   }
 
@@ -298,6 +374,9 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     rateLimitPerMin: overrides.rateLimitPerMin ?? parseRateLimitPerMin(env("MCP_FLOW_RATE_LIMIT_PER_MIN")),
     backendInitTimeoutMs,
     backendInitHardTimeoutMs,
+    keepAliveTimeoutMs,
+    headersTimeoutMs,
+    toolListTimeoutMs,
   };
 }
 

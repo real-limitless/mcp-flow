@@ -1,4 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ListingClient } from "./listing-client.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -67,6 +68,50 @@ interface PooledClient {
 
 /** Re-list tools on the open client after this age. Do not reconnect. */
 const TOOL_CACHE_MS = 30_000;
+/** Background warm refreshes open clients at half the listing TTL so a session never fans out. */
+const TOOL_CACHE_REFRESH_MS = Math.floor(TOOL_CACHE_MS / 2);
+
+export interface ToolListHealth {
+  slug: string;
+  status: "ready" | "degraded" | "cold";
+  /** Why the last list left this backend out or stale. Null when ready or not yet listed. */
+  reason: string | null;
+  ageMs: number | null;
+}
+
+interface ToolListCacheEntry {
+  workspaceId: string;
+  slug: string;
+  fingerprint: string;
+  tools: NamespacedTool[];
+  fetchedAt: number;
+  status: "ready" | "degraded";
+  reason?: string;
+  /** Listings before this instant do not wait on the backend again. */
+  blockedUntil: number;
+}
+
+/** A tools/list waiter gave up. The fetch keeps running and may fill the cache later. */
+class ListTimeout extends Error {
+  constructor(readonly slug: string, readonly waitMs: number) {
+    super(`not ready after ${waitMs} ms`);
+    this.name = "ListTimeout";
+  }
+}
+
+function toolListFingerprint(backend: BackendRecord): string {
+  return [
+    backend.updatedAt,
+    backend.enabled ? "1" : "0",
+    backend.transport,
+    backend.url ?? "",
+    backend.commandJson ?? "",
+    backend.image ?? "",
+    backend.toolAllowlistJson ?? "",
+    backend.placementJson,
+    backend.connectionId ?? "",
+  ].join("\n");
+}
 
 /**
  * How long closeAll waits for an in-flight connect before killing the spawn. A slow npx install or a
@@ -279,6 +324,10 @@ export class UpstreamPool {
   private backendRecords = new Map<string, BackendRecord>();
   /** Number of init attempts started per backend id (tests / diagnostics). */
   readonly spawnCount = new Map<string, number>();
+  /** Namespaced tools served to sessions. Refreshed in the background. */
+  private toolLists = new Map<string, ToolListCacheEntry>();
+  private maintenance: ReturnType<typeof setInterval> | null = null;
+  private warmChain: Promise<void> = Promise.resolve();
 
   constructor(
     private store: Store,
@@ -350,9 +399,13 @@ export class UpstreamPool {
 
   private forgetBackendTools(workspaceId: string, slug: string): void {
     const known = this.knownNames.get(workspaceId);
-    if (!known) return;
-    for (const name of known) {
-      if (parseNamespacedTool(name, this.backendSlugs(workspaceId))?.slug === slug) known.delete(name);
+    if (known) {
+      for (const name of known) {
+        if (parseNamespacedTool(name, this.backendSlugs(workspaceId))?.slug === slug) known.delete(name);
+      }
+    }
+    for (const [id, entry] of this.toolLists) {
+      if (entry.workspaceId === workspaceId && entry.slug === slug) this.toolLists.delete(id);
     }
   }
 
@@ -440,6 +493,11 @@ export class UpstreamPool {
   private async drainPool(): Promise<void> {
     this.closing = true;
     this.generation += 1;
+    if (this.maintenance) {
+      clearInterval(this.maintenance);
+      this.maintenance = null;
+    }
+    this.toolLists.clear();
     // QA v5.5 note: no backoff / attempt state survives closeAll
     this.health.clear();
     this.attemptStart.clear();
@@ -483,6 +541,7 @@ export class UpstreamPool {
       void this.closeAll();
       return;
     }
+    this.toolLists.delete(backendId);
     void this.retire(backendId);
   }
 
@@ -491,6 +550,7 @@ export class UpstreamPool {
    * Callers that only need a best-effort drop can ignore the promise; getClient waits.
    */
   private retire(backendId: string): Promise<void> {
+    this.toolLists.delete(backendId);
     const current = this.retiring.get(backendId);
     if (current) return current;
     const entry = this.pool.get(backendId);
@@ -533,7 +593,7 @@ export class UpstreamPool {
     const url = new URL(backend.url);
     const egress = this.store.egressFor(backend);
 
-    const client = new Client(
+    const client = new ListingClient(
       { name: "mcp-flow-upstream", version: "0.1.0" },
       { capabilities: {} },
     );
@@ -893,16 +953,8 @@ export class UpstreamPool {
     }
   }
 
-  /** Namespaced, allowlisted tools of one backend. Throws on failure (BackendUnavailableError when stuck). */
-  private async toolsOf(backend: BackendRecord): Promise<NamespacedTool[]> {
-    const placement = parsePlacement(backend);
-    let tools: Tool[];
-    if (placement.mode === "edge-sandbox" || placement.mode === "edge-bare") {
-      if (!this.edgeRouter) return [];
-      tools = await this.edgeRouter.listTools(backend);
-    } else {
-      tools = (await this.getClient(backend)).tools;
-    }
+  /** Apply the current allowlist and namespace. Does not talk to the backend. */
+  private namespaceTools(backend: BackendRecord, tools: Tool[]): NamespacedTool[] {
     const allow = backend.toolAllowlistJson
       ? new Set(JSON.parse(backend.toolAllowlistJson) as string[])
       : null;
@@ -920,6 +972,72 @@ export class UpstreamPool {
         backendId: backend.id,
       });
     }
+    return out;
+  }
+
+  private writeReady(backend: BackendRecord, tools: NamespacedTool[], generation: number): void {
+    if (generation !== this.generation) return;
+    const current = this.store.getBackend(backend.workspaceId, backend.slug);
+    if (!current || toolListFingerprint(current) !== toolListFingerprint(backend)) return;
+    const placement = parsePlacement(current);
+    if (placement.mode !== "edge-sandbox" && placement.mode !== "edge-bare") {
+      const pooled = this.pool.get(backend.id);
+      if (!pooled || pooled.dead) return;
+    }
+    this.toolLists.set(backend.id, {
+      workspaceId: backend.workspaceId,
+      slug: backend.slug,
+      fingerprint: toolListFingerprint(backend),
+      tools,
+      fetchedAt: Date.now(),
+      status: "ready",
+      blockedUntil: 0,
+    });
+  }
+
+  private markDegraded(
+    backend: BackendRecord,
+    reason: string,
+    tools: NamespacedTool[],
+    blockedUntil: number,
+    generation: number,
+  ): void {
+    if (generation !== this.generation) return;
+    const current = this.store.getBackend(backend.workspaceId, backend.slug);
+    if (!current || toolListFingerprint(current) !== toolListFingerprint(backend)) return;
+    const existing = this.toolLists.get(backend.id);
+    if (existing?.status === "ready" && existing.fingerprint === toolListFingerprint(backend) && existing.tools.length > 0 && tools.length === 0) {
+      tools = existing.tools;
+    }
+    this.toolLists.set(backend.id, {
+      workspaceId: backend.workspaceId,
+      slug: backend.slug,
+      fingerprint: toolListFingerprint(backend),
+      tools,
+      fetchedAt: existing?.fetchedAt ?? Date.now(),
+      status: "degraded",
+      reason,
+      blockedUntil,
+    });
+  }
+
+  /**
+   * Namespaced, allowlisted tools of one backend. Throws on failure (BackendUnavailableError when stuck).
+   * `edgeTimeoutMs` bounds an edge tools.list RPC. Remote and stdio callers keep the init timeouts;
+   * the listing waiter applies listWaitMs around this call.
+   */
+  private async toolsOf(backend: BackendRecord, edgeTimeoutMs?: number): Promise<NamespacedTool[]> {
+    const generation = this.generation;
+    const placement = parsePlacement(backend);
+    let tools: Tool[];
+    if (placement.mode === "edge-sandbox" || placement.mode === "edge-bare") {
+      if (!this.edgeRouter) return [];
+      tools = await this.edgeRouter.listTools(backend, edgeTimeoutMs);
+    } else {
+      tools = (await this.getClient(backend)).tools;
+    }
+    const out = this.namespaceTools(backend, tools);
+    this.writeReady(backend, out, generation);
     return out;
   }
 
@@ -944,49 +1062,126 @@ export class UpstreamPool {
     }
   }
 
+  /** Ready namespaced tools younger than maxAge. Null when the caller should load. */
+  private cachedTools(backend: BackendRecord, maxAge: number): NamespacedTool[] | null {
+    const cached = this.toolLists.get(backend.id);
+    if (!cached || cached.status !== "ready") return null;
+    if (cached.fingerprint !== toolListFingerprint(backend)) return null;
+    if (Date.now() - cached.fetchedAt >= maxAge) return null;
+    const pooled = this.pool.get(backend.id);
+    if (pooled && Date.now() - pooled.fetchedAt >= maxAge) return null;
+    return cached.tools;
+  }
+
+  private async withListCap<T>(backend: BackendRecord, job: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new ListTimeout(backend.slug, this.listWaitMs)),
+        this.listWaitMs,
+      );
+    });
+    try {
+      return await Promise.race([job, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   /**
-   * All enabled backends' tools. V53-F4: each backend gets at most listWaitMs; a backend that is not
-   * ready by then (still starting, stuck, or cooling down) is left out of this listing and its
-   * connect continues in the background, bounded by the init timeout.
+   * One backend's tools for a listing. A fresh cache does not call upstream. A backend that
+   * already used up listWaitMs is not waited on again until that window passes. Any fetch is
+   * raced against listWaitMs so one slow backend cannot hold the others.
+   */
+  private async loadBackendTools(
+    backend: BackendRecord,
+    refreshIfOlderThan = TOOL_CACHE_MS,
+  ): Promise<{ tools: NamespacedTool[]; source: "cache" | "fetch" | "degraded" }> {
+    const hit = this.cachedTools(backend, refreshIfOlderThan);
+    if (hit) return { tools: hit, source: "cache" };
+
+    const fp = toolListFingerprint(backend);
+    const cached = this.toolLists.get(backend.id);
+    const pooled = this.pool.get(backend.id);
+    const pooledStale = Boolean(pooled && Date.now() - pooled.fetchedAt >= TOOL_CACHE_MS);
+    if (
+      cached &&
+      cached.fingerprint === fp &&
+      cached.status === "degraded" &&
+      cached.blockedUntil > Date.now() &&
+      !pooledStale
+    ) {
+      return { tools: cached.tools, source: "degraded" };
+    }
+
+    const generation = this.generation;
+    const started = Date.now();
+    const pooledOpen =
+      pooled && !pooled.dead && this.transportAlive(pooled) ? pooled : undefined;
+    const forceRefresh = Boolean(
+      pooledOpen && Date.now() - pooledOpen.fetchedAt >= refreshIfOlderThan,
+    );
+    const job = forceRefresh
+      ? this.refreshTools(pooledOpen!).then(() => this.namespaceTools(backend, pooledOpen!.tools))
+      : this.toolsOf(backend, this.listWaitMs);
+    job.catch(() => {});
+    try {
+      const tools = await this.withListCap(backend, job);
+      if (forceRefresh) this.writeReady(backend, tools, generation);
+      console.error(
+        `[mcp-flow] tools/list: backend ${backend.slug} ${tools.length} tools in ${Date.now() - started} ms`,
+      );
+      return { tools, source: "fetch" };
+    } catch (err) {
+      const elapsed = Date.now() - started;
+      const timedOut =
+        err instanceof ListTimeout ||
+        (err instanceof Error && /device_timeout/i.test(err.message));
+      if (timedOut) {
+        // QA v5.5 item 2: when this backend's init finishes, clients get tools/list_changed
+        if (this.inflight.has(backend.id)) this.lateAttempt.add(backend.id);
+        const reason = `not ready after ${this.listWaitMs} ms`;
+        const stale = cached && cached.fingerprint === fp ? cached.tools : [];
+        this.markDegraded(backend, reason, stale, Date.now() + this.listWaitMs, generation);
+        if (forceRefresh && pooledOpen) {
+          job.then(
+            (tools) => {
+              if (this.pool.get(backend.id) === pooledOpen) this.writeReady(backend, tools, generation);
+            },
+            () => {},
+          );
+        }
+        console.error(
+          stale.length
+            ? `[mcp-flow] tools/list: backend ${backend.slug} degraded (${reason}) after ${elapsed} ms; serving ${stale.length} cached tools`
+            : `[mcp-flow] tools/list: backend ${backend.slug} not ready after ${this.listWaitMs} ms; omitted from this listing`,
+        );
+        return { tools: stale, source: "degraded" };
+      }
+      const reason = publicUpstreamError(err);
+      console.error(`[mcp-flow] tools/list failed for backend ${backend.slug}:`, reason);
+      if (!(err instanceof BackendUnavailableError) && isTransportOrConnectionError(err)) {
+        await this.retire(backend.id);
+      }
+      const stale = cached && cached.fingerprint === fp ? cached.tools : [];
+      this.markDegraded(backend, reason, stale, 0, generation);
+      return { tools: stale, source: "degraded" };
+    }
+  }
+
+  /**
+   * All enabled backends' tools. Each backend is capped at listWaitMs. A fresh per-backend
+   * cache is returned without a fetch so a new session does not fan out. A backend that misses
+   * the cap is marked degraded; its connect keeps running and a later list picks up the tools.
    */
   async listNamespacedTools(workspaceId: string, onlySlugs?: ReadonlySet<string>): Promise<NamespacedTool[]> {
+    const started = Date.now();
     // QA v5.5 note A: a caller scoped to a project never waits on (or starts) backends outside it
     const backends = this.store.listEnabledBackends(workspaceId).filter((b) => !onlySlugs || onlySlugs.has(b.slug));
     // QA v5.6 check 6: resolution set read up front (sync), never after the awaits below (store may be closed)
     const slugs = this.backendSlugs(workspaceId);
-    const out: NamespacedTool[] = [];
-
-    await Promise.all(
-      backends.map(async (backend) => {
-        const job = this.toolsOf(backend);
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const notReady = Symbol("not-ready");
-        try {
-          const got = await Promise.race([
-            job,
-            new Promise<typeof notReady>((resolve) => {
-              timer = setTimeout(() => resolve(notReady), this.listWaitMs);
-            }),
-          ]);
-          if (got === notReady) {
-            job.catch(() => {}); // settles later (pooled, or typed failure); nothing to wait for here
-            // QA v5.5 item 2: when this backend's init finishes, clients get tools/list_changed
-            if (this.inflight.has(backend.id)) this.lateAttempt.add(backend.id);
-            console.error(`[mcp-flow] tools/list: backend ${backend.slug} not ready after ${this.listWaitMs} ms; omitted from this listing`);
-            return;
-          }
-          out.push(...got);
-        } catch (err) {
-          console.error(
-            `[mcp-flow] tools/list failed for backend ${backend.slug}:`,
-            publicUpstreamError(err),
-          );
-          if (!(err instanceof BackendUnavailableError) && isTransportOrConnectionError(err)) await this.retire(backend.id);
-        } finally {
-          if (timer) clearTimeout(timer);
-        }
-      }),
-    );
+    const parts = await Promise.all(backends.map((backend) => this.loadBackendTools(backend)));
+    const out = parts.flatMap((part) => part.tools);
 
     // QA v5.6 check 6: a name owned by a longer slug ("a__b__echo" -> "a__b") is never listed for the
     // shorter one ("a", tool "b__echo"): it could not be called. Names stay unique.
@@ -998,7 +1193,83 @@ export class UpstreamPool {
     });
     listed.sort((a, b) => a.name.localeCompare(b.name));
     this.rememberNames(workspaceId, listed.map((tool) => tool.name));
+    const cache = parts.filter((part) => part.source === "cache").length;
+    const fetched = parts.filter((part) => part.source === "fetch").length;
+    const degraded = parts.filter((part) => part.source === "degraded").length;
+    console.error(
+      `[mcp-flow] tools/list: ${listed.length} tools, cache ${cache}, fetched ${fetched}, degraded ${degraded} in ${Date.now() - started} ms`,
+    );
     return listed;
+  }
+
+  /** Per-backend listing state for the workspace. Disabled backends are omitted. */
+  toolListHealth(workspaceId: string): ToolListHealth[] {
+    return this.store.listEnabledBackends(workspaceId).map((backend) => {
+      const cached = this.toolLists.get(backend.id);
+      if (!cached || cached.fingerprint !== toolListFingerprint(backend)) {
+        return { slug: backend.slug, status: "cold", reason: null, ageMs: null };
+      }
+      return {
+        slug: backend.slug,
+        status: cached.status,
+        reason: cached.reason ?? null,
+        ageMs: Date.now() - cached.fetchedAt,
+      };
+    });
+  }
+
+  /**
+   * Fill tool-list caches off the request path. Boot and a half-TTL interval call this.
+   * One backend at a time, with a yield between them, so a refresh cannot stack schema
+   * work across the whole catalog on one event-loop turn.
+   */
+  warmToolLists(): Promise<void> {
+    this.warmChain = this.warmChain.then(() => this.warmOnce()).catch((err) => {
+      console.error(`[mcp-flow] tool list warm: ${publicUpstreamError(err)}`);
+    });
+    return this.warmChain;
+  }
+
+  /** Start the boot warm and the background refresh. Idempotent. Stopped by closeAll. */
+  startToolListMaintenance(): void {
+    if (this.maintenance) return;
+    void this.warmToolLists();
+    const timer = setInterval(() => {
+      void this.warmToolLists();
+    }, TOOL_CACHE_REFRESH_MS);
+    timer.unref();
+    this.maintenance = timer;
+  }
+
+  private enabledBackends(): BackendRecord[] {
+    let rows: { id: string }[];
+    try {
+      rows = this.store.db
+        .prepare(`SELECT DISTINCT workspace_id AS id FROM backends WHERE enabled = 1`)
+        .all() as { id: string }[];
+    } catch {
+      return [];
+    }
+    const out: BackendRecord[] = [];
+    for (const row of rows) {
+      try {
+        out.push(...this.store.listEnabledBackends(row.id));
+      } catch {
+        return out;
+      }
+    }
+    return out;
+  }
+
+  private async warmOnce(): Promise<void> {
+    if (this.closing) return;
+    for (const backend of this.enabledBackends()) {
+      if (this.closing) return;
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      await this.loadBackendTools(backend, TOOL_CACHE_REFRESH_MS);
+    }
   }
 
   /** Every backend slug in the workspace (enabled or not): the set qualified names resolve against. */

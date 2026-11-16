@@ -459,6 +459,10 @@ export function createGatewayServer(deps: GatewayDeps): Server {
       project,
       upstream.backendSlugs(ctx.workspaceId),
     );
+    const degraded = upstream
+      .toolListHealth(ctx.workspaceId)
+      .filter((row) => row.status === "degraded")
+      .map((row) => row.slug);
     store.writeAudit({
       workspaceId: ctx.workspaceId,
       keyId: ctx.keyId,
@@ -467,6 +471,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         count: tools.length,
         project: project?.slug ?? null,
         dynamicTools: dynamic,
+        degraded,
       },
       ip,
     });
@@ -613,6 +618,9 @@ export function createGatewayServer(deps: GatewayDeps): Server {
         const allow = new Set(project.backendSlugs);
         backends = backends.filter((b) => allow.has(b.slug));
       }
+      const toolLists = new Map(
+        upstream.toolListHealth(ctx.workspaceId).map((row) => [row.slug, row]),
+      );
       const payload = {
         project: project?.slug ?? null,
         backends: backends.map((b) => {
@@ -620,6 +628,7 @@ export function createGatewayServer(deps: GatewayDeps): Server {
           const device = deviceId
             ? store.getDevice(ctx.workspaceId, deviceId)
             : null;
+          const listed = toolLists.get(b.slug);
           return {
             slug: b.slug,
             title: b.title,
@@ -629,6 +638,10 @@ export function createGatewayServer(deps: GatewayDeps): Server {
             hasHeaders: b.hasHeaders,
             hasEnv: b.hasEnv,
             url: b.url,
+            toolList: {
+              status: listed?.status ?? "cold",
+              reason: listed?.reason ?? null,
+            },
             runsOn: device
               ? {
                   deviceId: device.id,

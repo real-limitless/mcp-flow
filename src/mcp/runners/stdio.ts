@@ -2,7 +2,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { ListingClient } from "../listing-client.js";
 import {
   getDefaultEnvironment,
   StdioClientTransport,
@@ -404,7 +405,7 @@ async function connectOnce(
   transport.stderr?.on("end", () => passthrough.flush());
   transport.stderr?.on("close", () => passthrough.flush());
 
-  const client = new Client(
+  const client = new ListingClient(
     { name: "mcp-flow-stdio", version: "0.1.0" },
     { capabilities: {} },
   );

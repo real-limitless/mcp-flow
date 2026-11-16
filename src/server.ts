@@ -1,3 +1,4 @@
+import type { Server as HttpServer } from "node:http";
 import type { Duplex } from "node:stream";
 import { createPendingCallNotifier } from "./policy/push-notify.js";
 import { createAdaptorServer } from "@hono/node-server";
@@ -46,11 +47,25 @@ export function heldCallerWaitMs(elapsedMs: number): number {
   return Math.max(0, Math.min(HELD_CALLER_WAIT_MAX_MS, SHUTDOWN_BUDGET_MS - SHUTDOWN_CLOSE_RESERVE_MS - SHUTDOWN_OVERHEAD_ALLOWANCE_MS - SHUTDOWN_HEADROOM_MS - elapsedMs));
 }
 
+/** Apply the configured Node HTTP timeouts. headersTimeout stays above keepAliveTimeout. */
+export function applyHttpServerTimeouts(
+  server: { keepAliveTimeout: number; headersTimeout: number },
+  keepAliveTimeoutMs: number,
+  headersTimeoutMs: number,
+): void {
+  server.keepAliveTimeout = keepAliveTimeoutMs;
+  server.headersTimeout = headersTimeoutMs;
+}
+
 export interface RunningServer {
   store: Store;
   pool: UpstreamPool;
   edgeHub: EdgeHub;
   edgeRouter: EdgeRouter;
+  /** Value actually set on the Node HTTP server. */
+  keepAliveTimeoutMs: number;
+  /** Value actually set on the Node HTTP server. */
+  headersTimeoutMs: number;
   close: () => Promise<void>;
   /**
    * QA V5-F2: graceful stop (SIGTERM/SIGINT). Stops accepting, closes this process's open holds
@@ -195,6 +210,7 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     allowPrivateUrls: cfg.allowPrivateUrls,
     initTimeoutMs: cfg.backendInitTimeoutMs,
     initHardTimeoutMs: cfg.backendInitHardTimeoutMs,
+    listWaitMs: cfg.toolListTimeoutMs,
   });
   const edgeHub = new EdgeHub(store);
   const edgeRouter = new EdgeRouter(store, edgeHub);
@@ -214,6 +230,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     hostname: cfg.host,
     port: cfg.port,
   });
+  const httpServer = nodeServer as HttpServer;
+  applyHttpServerTimeouts(httpServer, cfg.keepAliveTimeoutMs, cfg.headersTimeoutMs);
 
   // V53-F2: count in-flight HTTP requests so shutdown drains every call, including legacy-key
   // /mcp calls that never pass through the policy enforcer. Long-lived GET event streams are not
@@ -314,6 +332,11 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   console.error(`  Edge:   ws://…/v1/edge/connect`);
   console.error(`  UI:     ${url}/admin/`);
   console.error(`  Health: ${url}/health`);
+  console.error(
+    `  HTTP:   keepAliveTimeout ${httpServer.keepAliveTimeout} ms, headersTimeout ${httpServer.headersTimeout} ms`,
+  );
+
+  pool.startToolListMaintenance();
 
   // T2.4: approver notification on one channel (Web Push)
   store.policy.setNotifier(createPendingCallNotifier(store, { approveBaseUrl: cfg.publicUrl || null }));
@@ -336,6 +359,8 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
     pool,
     edgeHub,
     edgeRouter,
+    keepAliveTimeoutMs: httpServer.keepAliveTimeout,
+    headersTimeoutMs: httpServer.headersTimeout,
     url,
     close: () => (closing ??= (async () => {
       clearInterval(sweeper);
