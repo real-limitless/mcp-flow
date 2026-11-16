@@ -149,12 +149,13 @@ export class EdgeRouter {
     };
   }
 
-  async listTools(backend: BackendRecord): Promise<Tool[]> {
+  async listTools(backend: BackendRecord, timeoutMs?: number): Promise<Tool[]> {
     const deviceId = this.resolveDeviceId(backend);
     const resp = await this.hub.rpc(
       deviceId,
       "tools.list",
       this.runtimePayload(backend),
+      timeoutMs,
     );
     const payload = (resp.payload ?? {}) as unknown as EdgeToolsListResult;
     return payload.tools ?? [];
