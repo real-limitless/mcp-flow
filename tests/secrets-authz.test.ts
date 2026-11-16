@@ -123,8 +123,15 @@ describe("secret authz matrix", () => {
     expect(glassList.status).toBe(200);
     expect(glassList.text).toContain("secret://app/hook");
     expect(glassList.text).not.toContain(plain);
+    const glassCreate = await rest("POST", "/v1/secrets", "break-glass-placeholder", {
+      project: "app",
+      name: "portal-made",
+      type: "uuid",
+    });
+    expect(glassCreate.status).toBe(201);
+    expect(glassCreate.text).toContain("secret://app/portal-made");
+    expect(glassCreate.text).not.toContain(plain);
     for (const path of [
-      ["POST", "/v1/secrets", { project: "app", name: "no-break-glass", type: "uuid" }],
       ["POST", "/v1/secrets/rotate", { ref: "secret://app/hook" }],
       ["POST", "/v1/secrets/delete", { ref: "secret://app/hook" }],
     ] as const) {
@@ -187,6 +194,6 @@ describe("secret authz matrix", () => {
     expect(await glass.text()).not.toContain("secret://");
 
     const names = store.db.prepare(`SELECT name FROM mcpflow_secret ORDER BY name`).all() as Array<{ name: string }>;
-    expect(names).toEqual([{ name: "hook" }]);
+    expect(names).toEqual([{ name: "hook" }, { name: "portal-made" }]);
   }, 60_000);
 });

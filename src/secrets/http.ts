@@ -1,6 +1,7 @@
 /**
  * Admin REST for the secrets store.
- * Create, rotate, and delete require a human admin agent.
+ * Create from the portal env admin token generates a sealed value and returns a ref.
+ * Rotate and delete require a human admin agent.
  * GET is that same agent, or the env admin token used by the portal.
  * Legacy api_key and OAuth grants are refused. Responses are refs and metadata.
  * There is no import or reveal route.
@@ -43,19 +44,24 @@ export function registerSecretRoutes(
   };
 
   admin.post("/secrets", async (c) => {
-    const who = actor(c);
-    if (!who) return c.json({ error: "secret routes require a human admin agent" }, 403);
     const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
     if (!body) return c.json({ error: "invalid body" }, 400);
+    const fields = {
+      project: String(body.project ?? ""),
+      name: String(body.name ?? ""),
+      type: String(body.type ?? ""),
+      params: body.params,
+      description: typeof body.description === "string" ? body.description : null,
+    };
+    const auth = c.get("auth");
     try {
-      const out = secrets.create({
-        ...who,
-        project: String(body.project ?? ""),
-        name: String(body.name ?? ""),
-        type: String(body.type ?? ""),
-        params: body.params,
-        description: typeof body.description === "string" ? body.description : null,
-      });
+      if (auth?.kind === "admin" && auth.workspaceId) {
+        const out = secrets.createForPortalAdmin({ workspaceId: auth.workspaceId, ...fields });
+        return c.json(out, 201);
+      }
+      const who = actor(c);
+      if (!who) return c.json({ error: "secret routes require a human admin agent" }, 403);
+      const out = secrets.create({ ...who, ...fields });
       return c.json(out, 201);
     } catch (err) {
       const failed = fail(err);

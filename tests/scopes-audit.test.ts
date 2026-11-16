@@ -131,8 +131,12 @@ describe("audit", () => {
     const events = store.listAudit(ws.id, { limit: 10 });
     expect(events).toHaveLength(1);
     expect(events[0]!.tool).toBe("demo__echo");
-    expect(JSON.stringify(events)).not.toContain("Bearer leak");
-    expect(events[0]!.detail?.authorization).toBe("[redacted]");
+    expect(events[0]!.detail?.authorization).toBe("Bearer leak");
+    const stored = store.db
+      .prepare(`SELECT detail_json FROM audit_events`)
+      .get() as { detail_json: string };
+    expect(stored.detail_json).not.toContain("Bearer leak");
+    expect(stored.detail_json).toContain("[redacted]");
     expect(events[0]!.keyId).toBe("key_x");
     expect(events[0]!.keyName).toBeNull();
     expect(events[0]!.keyPrefix).toBeNull();

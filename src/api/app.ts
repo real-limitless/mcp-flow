@@ -451,6 +451,7 @@ export function createApp(
   admin.patch("/keys/:id", async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as {
+      name?: string;
       scopes?: ApiKeyScopes | null;
       toolPrefixAllowlist?: string[] | null;
       admin?: boolean;
@@ -459,6 +460,14 @@ export function createApp(
       dynamicTools?: boolean;
       dynamicToolsHot?: string[] | null;
     };
+    if (typeof body.name === "string") {
+      try {
+        const renamed = store.renameApiKey(auth.workspaceId, c.req.param("id"), body.name);
+        if (!renamed) return c.json({ error: "not found" }, 404);
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+    }
     let scopes: ApiKeyScopes | null;
     if (body.scopes !== undefined) scopes = body.scopes;
     else if (
@@ -480,11 +489,22 @@ export function createApp(
         dynamicTools: body.dynamicTools,
         dynamicToolsHot: body.dynamicToolsHot,
       });
+    } else if (typeof body.name === "string") {
+      const key = store.listApiKeys(auth.workspaceId).find((row) => row.id === c.req.param("id"));
+      if (!key) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "key.update",
+        detail: { keyId: key.id, name: key.name },
+        ip: clientIp(c),
+      });
+      return c.json({ key });
     } else {
       return c.json(
         {
           error:
-            "scopes, toolPrefixAllowlist, admin, projects, defaultProject, dynamicTools, or dynamicToolsHot required",
+            "name, scopes, toolPrefixAllowlist, admin, projects, defaultProject, dynamicTools, or dynamicToolsHot required",
         },
         400,
       );
@@ -507,15 +527,76 @@ export function createApp(
 
   admin.delete("/keys/:id", (c) => {
     const auth = c.get("auth");
-    const ok = store.revokeApiKey(auth.workspaceId, c.req.param("id"));
+    const id = c.req.param("id");
+    const existing = store.listApiKeys(auth.workspaceId).find((key) => key.id === id);
+    if (!existing) return c.json({ error: "not found" }, 404);
+    if (existing.revokedAt) {
+      const removed = store.deleteRevokedApiKey(auth.workspaceId, id);
+      if (!removed) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        action: "key.delete",
+        detail: { keyId: id, name: existing.name },
+        ip: clientIp(c),
+      });
+      return c.json({ ok: true });
+    }
+    const ok = store.revokeApiKey(auth.workspaceId, id);
     if (!ok) return c.json({ error: "not found" }, 404);
     store.writeAudit({
       workspaceId: auth.workspaceId,
       action: "key.revoke",
-      detail: { keyId: c.req.param("id") },
+      detail: { keyId: id },
       ip: clientIp(c),
     });
     return c.json({ ok: true });
+  });
+
+  admin.patch("/agents/:id", async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as { name?: string };
+    if (typeof body.name !== "string" || !body.name.trim()) {
+      return c.json({ error: "name required" }, 400);
+    }
+    try {
+      const agent = store.identity.renameAgent(auth.workspaceId, c.req.param("id"), body.name);
+      if (!agent) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "agent.rename",
+        detail: { agentId: agent.id, name: agent.name },
+        ip: clientIp(c),
+      });
+      return c.json({ agent });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  admin.delete("/agents/:id", (c) => {
+    const auth = c.get("auth");
+    const id = c.req.param("id");
+    const by =
+      c.get("humanAdmin") ??
+      store.identity.ensureBootstrapAdmin(auth.workspaceId, {
+        name: "bootstrap-admin",
+        owner: "admin",
+      });
+    try {
+      const ok = store.identity.retireAgent(auth.workspaceId, id, by);
+      if (!ok) return c.json({ error: "not found" }, 404);
+      store.writeAudit({
+        workspaceId: auth.workspaceId,
+        keyId: auth.keyId,
+        action: "agent.delete",
+        detail: { agentId: id },
+        ip: clientIp(c),
+      });
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
   });
 
   function respondMint(c: Context<{ Variables: Variables }>, body: MintAgentRequest) {

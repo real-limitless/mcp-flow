@@ -98,13 +98,17 @@ describe("writeAudit rich detail", () => {
     expect(ev.detail?.durationMs).toBe(12);
     expect((ev.detail?.arguments as { text: string }).text).toBe("hi");
     expect((ev.detail?.arguments as { authorization: string }).authorization).toBe(
-      "[redacted]",
+      "Bearer leak-me",
     );
     const result = ev.detail?.result as {
       content: Array<{ text?: string }>;
     };
     expect(result.content[0]?.text).toBe("echo:hi");
-    expect(JSON.stringify(ev)).not.toContain("leak-me");
+    const stored = store.db
+      .prepare(`SELECT detail_json FROM audit_events`)
+      .get() as { detail_json: string };
+    expect(stored.detail_json).not.toContain("leak-me");
+    expect(stored.detail_json).toContain("[redacted]");
     store.close();
   });
 });

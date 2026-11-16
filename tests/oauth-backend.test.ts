@@ -768,6 +768,117 @@ describe("device login when the public redirect is rejected", () => {
   });
 });
 
+describe("oauth reconnect when the saved client lacks the callback", () => {
+  it("starts device login again after Swaybyte rejects the public redirect", async () => {
+    let port = 0;
+    let registers = 0;
+    const httpServer = createServer(async (req, res) => {
+      const origin = `http://127.0.0.1:${port}`;
+      const pathname = new URL(req.url || "/", origin).pathname;
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const send = (status: number, body: unknown) => {
+        res.statusCode = status;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(body));
+      };
+      if (pathname.includes("oauth-protected-resource")) {
+        send(200, { resource: `${origin}/mcp`, authorization_servers: [origin] });
+        return;
+      }
+      if (pathname.includes("oauth-authorization-server")) {
+        send(200, {
+          issuer: origin,
+          authorization_endpoint: `${origin}/authorize`,
+          token_endpoint: `${origin}/token`,
+          registration_endpoint: `${origin}/register`,
+          device_authorization_endpoint: `${origin}/device`,
+          response_types_supported: ["code"],
+          grant_types_supported: [
+            "authorization_code",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:device_code",
+          ],
+          code_challenge_methods_supported: ["S256"],
+          token_endpoint_auth_methods_supported: ["none"],
+        });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/register") {
+        registers += 1;
+        const body = JSON.parse(raw) as { redirect_uris?: string[] };
+        const redirect = body.redirect_uris?.[0] ?? "";
+        if (!redirect.startsWith("http://127.0.0.1")) {
+          const swaybyte = registers > 1;
+          send(400, swaybyte
+            ? { error: "invalid_request", error_description: "redirect_uri is not registered/allowed." }
+            : { error: "invalid_redirect_uri", error_description: `redirect_uri not allowed: ${redirect}` });
+          return;
+        }
+        send(201, {
+          client_id: "dev-client",
+          redirect_uris: body.redirect_uris,
+          grant_types: ["authorization_code", "refresh_token"],
+          response_types: ["code"],
+          token_endpoint_auth_method: "none",
+        });
+        return;
+      }
+      if (req.method === "GET" && pathname === "/authorize") {
+        send(400, { error: "invalid_request", error_description: "redirect_uri is not registered/allowed." });
+        return;
+      }
+      if (req.method === "POST" && pathname === "/device") {
+        send(200, {
+          device_code: "second-device-code",
+          user_code: "WXYZ-1234",
+          verification_uri: `${origin}/verify`,
+          expires_in: 600,
+          interval: 5,
+        });
+        return;
+      }
+      res.statusCode = 404;
+      res.end();
+    });
+    await new Promise<void>((resolve) => httpServer.listen(0, "127.0.0.1", resolve));
+    port = (httpServer.address() as { port: number }).port;
+    cleanups.push(() => closeHttp(httpServer));
+
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-oauth-reconnect-"));
+    dirs.push(dir);
+    const store = new Store(join(dir, "t.db"), master);
+    cleanups.push(async () => store.close());
+    const ws = store.ensureWorkspace("default");
+    const created = store.createBackend(ws.id, {
+      slug: "swaybyte",
+      url: `http://127.0.0.1:${port}/mcp`,
+      transport: "streamable-http",
+      enabled: true,
+      auth: { type: "oauth" },
+    });
+    const backend = store.getBackend(ws.id, created.id)!;
+    const redirectUri = "https://mcp-flow.z.srl/oauth/callback";
+    const first = await startOauthAuthorization({
+      store,
+      backend,
+      redirectUri,
+      allowPrivateUrls: true,
+    });
+    expect(first.mode).toBe("device");
+    const again = await startOauthAuthorization({
+      store,
+      backend: store.getBackend(ws.id, created.id)!,
+      redirectUri,
+      allowPrivateUrls: true,
+    });
+    expect(again.mode).toBe("device");
+    expect(again.userCode).toBe("WXYZ-1234");
+    expect(store.getBackend(ws.id, created.id)?.id).toBe(created.id);
+  });
+});
+
 describe("oauth pool wiring", () => {
   it("does not open a consent URL from an agent call", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mcp-flow-oauth-pool-"));

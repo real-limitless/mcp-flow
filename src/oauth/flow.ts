@@ -112,6 +112,11 @@ export async function startOauthAuthorization(opts: {
     throw new Error(message);
   }
 
+  const registered = secrets?.registeredRedirects;
+  const callbackUnregistered =
+    Array.isArray(registered) &&
+    registered.length > 0 &&
+    !registered.includes(opts.redirectUri);
   if (row.redirectUri && row.redirectUri !== opts.redirectUri) {
     if (clientId && !secrets?.dynamicClient) {
       const message = `Redirect URI changed. Add ${opts.redirectUri} at the provider for client ${clientId}.`;
@@ -124,6 +129,11 @@ export async function startOauthAuthorization(opts: {
         opts.backend.id,
       );
     }
+  } else if (secrets?.dynamicClient && callbackUnregistered) {
+    clearOauthClient(
+      { db: opts.store.db, masterKey: opts.store.masterKey },
+      opts.backend.id,
+    );
   }
 
   setOauthRedirect(opts.store.db, opts.backend.id, opts.redirectUri);
@@ -155,26 +165,67 @@ export async function startOauthAuthorization(opts: {
     allowPrivateUrls: opts.allowPrivateUrls,
   });
 
-  try {
-    const result = await auth(provider, {
-      serverUrl: opts.backend.url,
+  const serverUrl = opts.backend.url;
+  const runAuth = async (active: StoreOauthProvider) => {
+    const result = await auth(active, {
+      serverUrl,
       fetchFn,
       ...(fresh?.scope ? { scope: fresh.scope } : {}),
     });
-    if (result !== "REDIRECT" || !provider.authorizationUrl) {
+    if (result !== "REDIRECT" || !active.authorizationUrl) {
       throw new Error("authorization server did not return a consent URL");
     }
+    return active.authorizationUrl.href;
+  };
+
+  let authorizationUrl: string;
+  try {
+    authorizationUrl = await runAuth(provider);
   } catch (err) {
     if (redirectRejected(err) && deviceGrantSupported(info.authorizationServerMetadata)) {
-      return beginDeviceGrant({
-        store: opts.store,
-        backend: opts.backend,
-        redirectUri: opts.redirectUri,
-        allowPrivateUrls: opts.allowPrivateUrls,
-        info,
-        scope: fresh?.scope ?? row.scope,
-        fetchFn,
-      });
+      const conn = { db: opts.store.db, masterKey: opts.store.masterKey };
+      const held = readOauthSecrets(opts.store.db, opts.store.masterKey, opts.backend.id);
+      const heldRow = getOauthRow(opts.store.db, opts.backend.id);
+      const dynamic = Boolean(held?.dynamicClient);
+      const staticClient = Boolean(heldRow?.clientId && !dynamic);
+      if (!staticClient) {
+        if (dynamic) clearOauthClient(conn, opts.backend.id);
+        if (dynamic) {
+          const retry = new StoreOauthProvider({
+            store: opts.store,
+            backendId: opts.backend.id,
+            workspaceId: opts.backend.workspaceId,
+            slug: opts.backend.slug,
+            redirectUri: opts.redirectUri,
+            interactive: true,
+            allowPrivateUrls: opts.allowPrivateUrls,
+          });
+          try {
+            authorizationUrl = await runAuth(retry);
+            return {
+              mode: "authorization_code",
+              authorizationUrl,
+              redirectUri: opts.redirectUri,
+            };
+          } catch (retryErr) {
+            if (!redirectRejected(retryErr)) {
+              const message = safeOauthMessage(retryErr);
+              setOauthLastError(opts.store.db, opts.backend.id, message);
+              throw new Error(message);
+            }
+            clearOauthClient(conn, opts.backend.id);
+          }
+        }
+        return beginDeviceGrant({
+          store: opts.store,
+          backend: opts.backend,
+          redirectUri: opts.redirectUri,
+          allowPrivateUrls: opts.allowPrivateUrls,
+          info,
+          scope: fresh?.scope ?? row.scope,
+          fetchFn,
+        });
+      }
     }
     const message = safeOauthMessage(err);
     setOauthLastError(opts.store.db, opts.backend.id, message);
@@ -194,7 +245,7 @@ export async function startOauthAuthorization(opts: {
 
   return {
     mode: "authorization_code",
-    authorizationUrl: provider.authorizationUrl.href,
+    authorizationUrl,
     redirectUri: opts.redirectUri,
   };
 }
@@ -204,7 +255,9 @@ const LOOPBACK_DCR_REDIRECT = "http://127.0.0.1/oauth/callback";
 
 function redirectRejected(err: unknown): boolean {
   const raw = err instanceof Error ? err.message : String(err);
-  return /invalid_redirect_uri|redirect_uri not allowed|redirect_uris is required/i.test(raw);
+  return /invalid_redirect_uri|redirect_uris is required|redirect_uri is not registered|redirect_uri(?: is)? not (?:registered\/)?allowed/i.test(
+    raw,
+  );
 }
 
 function deviceGrantSupported(metadata: Record<string, unknown> | undefined): boolean {
@@ -267,6 +320,7 @@ async function beginDeviceGrant(opts: {
       clientId: registered.client_id,
       ...(registered.client_secret ? { clientSecret: registered.client_secret } : {}),
       dynamicClient: true,
+      registeredRedirects: [LOOPBACK_DCR_REDIRECT],
     });
     clientId = registered.client_id;
   }

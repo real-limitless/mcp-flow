@@ -273,6 +273,8 @@ export interface CreateProjectInput {
 }
 
 export interface UpdateProjectInput {
+  /** Lowercase slug. The default project's slug stays `default`. */
+  slug?: string;
   title?: string;
   description?: string | null;
   backendSlugs?: string[];
@@ -439,6 +441,8 @@ export interface CreateBackendInput {
 }
 
 export interface UpdateBackendInput {
+  /** Tool prefix (`slug__tool`). Project membership and policy backend matches follow. */
+  slug?: string;
   title?: string;
   transport?: TransportKind;
   /**

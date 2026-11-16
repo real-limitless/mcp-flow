@@ -409,7 +409,7 @@ describe("secret store", () => {
     store.close();
   });
 
-  it("serves REST to a human admin and refuses break-glass and legacy keys", async () => {
+  it("serves REST to a human admin and the portal token, and refuses legacy keys", async () => {
     const dir = scratch();
     const kekFile = join(dir, "kek");
     write0400(kekFile, randomBytes(32));
@@ -447,9 +447,11 @@ describe("secret store", () => {
     const glass = await app.request("/v1/secrets", {
       method: "POST",
       headers: { authorization: "Bearer break-glass-placeholder", "content-type": "application/json" },
-      body,
+      body: JSON.stringify({ project: "app", name: "portal-hook", type: "uuid" }),
     });
-    expect(glass.status).toBe(403);
+    expect(glass.status).toBe(201);
+    const glassBody = await glass.json() as { ref: string; version: number };
+    expect(glassBody).toEqual({ ref: "secret://app/portal-hook", version: 1 });
     const old = await app.request("/v1/secrets", {
       method: "POST",
       headers: { authorization: `Bearer ${legacy.token}`, "content-type": "application/json" },
