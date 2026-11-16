@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { ListingClient } from "../listing-client.js";
 import {
@@ -25,11 +25,42 @@ export interface StdioRunResult {
 
 /** Volume-backed npm cache so Docker overlayfs does not corrupt npx extracts. */
 export function resolveNpmCacheDir(): string {
-  const explicit = process.env.MCP_FLOW_NPM_CACHE?.trim();
+  return resolveDataDir("MCP_FLOW_NPM_CACHE", "npm-cache", "mcp-flow-npm-cache");
+}
+
+/** Volume-backed uv/pip dirs. uvx and pip extracts corrupt on overlayfs the same way npx does. */
+export function resolveUvCacheDir(): string {
+  return resolveDataDir("MCP_FLOW_UV_CACHE", "uv-cache", "mcp-flow-uv-cache");
+}
+
+export function resolveUvToolDir(): string {
+  return resolveDataDir("MCP_FLOW_UV_TOOL_DIR", "uv-tools", "mcp-flow-uv-tools");
+}
+
+export function resolveUvPythonDir(): string {
+  return resolveDataDir("MCP_FLOW_UV_PYTHON_DIR", "uv-python", "mcp-flow-uv-python");
+}
+
+export function resolvePipCacheDir(): string {
+  return resolveDataDir("MCP_FLOW_PIP_CACHE", "pip-cache", "mcp-flow-pip-cache");
+}
+
+export function resolvePythonUserBase(): string {
+  return resolveDataDir("MCP_FLOW_PYTHONUSERBASE", "pip-user", "mcp-flow-pip-user");
+}
+
+function resolveDataDir(envName: string, leaf: string, tmpLeaf: string): string {
+  const explicit = process.env[envName]?.trim();
   if (explicit) return explicit;
   const data = process.env.MCP_FLOW_DATA_DIR?.trim();
-  if (data) return join(data, "npm-cache");
-  return join(tmpdir(), "mcp-flow-npm-cache");
+  if (data) return join(data, leaf);
+  return join(tmpdir(), tmpLeaf);
+}
+
+function withUserBin(pathValue: string, userBin: string): string {
+  const parts = pathValue.split(delimiter).filter((part) => part.length > 0);
+  if (parts.includes(userBin)) return parts.join(delimiter);
+  return [userBin, ...parts].join(delimiter);
 }
 
 export function isNpxLikeCommand(command: string[]): boolean {
@@ -56,10 +87,20 @@ export function buildStdioEnv(
   extra: Record<string, string> = {},
 ): Record<string, string> {
   const cache = extra.npm_config_cache?.trim() || resolveNpmCacheDir();
+  const uvCache = extra.UV_CACHE_DIR?.trim() || resolveUvCacheDir();
+  const uvTools = extra.UV_TOOL_DIR?.trim() || resolveUvToolDir();
+  const uvPython = extra.UV_PYTHON_INSTALL_DIR?.trim() || resolveUvPythonDir();
+  const pipCache = extra.PIP_CACHE_DIR?.trim() || resolvePipCacheDir();
+  const pythonUserBase = extra.PYTHONUSERBASE?.trim() || resolvePythonUserBase();
+  const userBin = join(pythonUserBase, "bin");
   mkdirSync(cache, { recursive: true });
+  mkdirSync(uvCache, { recursive: true });
+  mkdirSync(uvTools, { recursive: true });
+  mkdirSync(uvPython, { recursive: true });
+  mkdirSync(pipCache, { recursive: true });
+  mkdirSync(pythonUserBase, { recursive: true });
   return {
     ...getDefaultEnvironment(),
-    PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
     npm_config_yes: "true",
     npm_config_update_notifier: "false",
@@ -67,6 +108,13 @@ export function buildStdioEnv(
     npm_config_audit: "false",
     ...extra,
     npm_config_cache: cache,
+    UV_CACHE_DIR: uvCache,
+    UV_TOOL_DIR: uvTools,
+    UV_PYTHON_INSTALL_DIR: uvPython,
+    UV_LINK_MODE: extra.UV_LINK_MODE?.trim() || "copy",
+    PIP_CACHE_DIR: pipCache,
+    PYTHONUSERBASE: pythonUserBase,
+    PATH: withUserBin(extra.PATH?.trim() || process.env.PATH || "", userBin),
   };
 }
 

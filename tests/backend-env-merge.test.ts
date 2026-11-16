@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
-import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -54,15 +53,10 @@ async function bootGateway(): Promise<RunningServer> {
     masterKeyRaw: master,
     adminToken: admin,
     host: "127.0.0.1",
-    port: 0 as unknown as number,
+    port: 0,
     allowPrivateUrls: true,
     workspaceName: "default",
   });
-  const probe = createServer();
-  await new Promise<void>((r) => probe.listen(0, "127.0.0.1", r));
-  const p = (probe.address() as { port: number }).port;
-  await new Promise<void>((r, j) => probe.close((e) => (e ? j(e) : r())));
-  cfg.port = p;
   const running = await startServer(cfg);
   cleanups.push(() => running.close());
   return running;

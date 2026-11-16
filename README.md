@@ -425,6 +425,28 @@ npx mcp-flow backend add --slug local --transport stdio \
   --command npx --command -y --command some-mcp --enable
 npx mcp-flow backend add --slug boxed --transport oci --image ghcr.io/example/mcp:latest
 
+# Python via uvx. The console script can differ from the package name.
+# MSSQL_SERVER=localhost is the gateway container; use host.docker.internal for a database on the host.
+npx mcp-flow backend add --slug mssql --transport stdio \
+  --command uvx --command --from \
+  --command microsoft-sql-server-mcp --command mssql_mcp_server \
+  --env MSSQL_SERVER=host.docker.internal \
+  --env MSSQL_DATABASE=your_database \
+  --env MSSQL_USER=your_username \
+  --env MSSQL_PASSWORD=your_password \
+  --placement central-sandbox --enable
+
+# Python via pip. pip install exits, so install once onto the data volume, then run the script.
+docker compose exec -u node mcp-flow \
+  python3 -m pip install --user microsoft-sql-server-mcp
+npx mcp-flow backend add --slug mssql --transport stdio \
+  --command mssql_mcp_server \
+  --env MSSQL_SERVER=host.docker.internal \
+  --env MSSQL_DATABASE=your_database \
+  --env MSSQL_USER=your_username \
+  --env MSSQL_PASSWORD=your_password \
+  --placement central-sandbox --enable
+
 # Edge device
 npx mcp-flow device enroll -n laptop
 npx mcp-flow edge --url http://127.0.0.1:8787 --token <device-token>
