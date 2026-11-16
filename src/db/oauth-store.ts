@@ -13,6 +13,8 @@ export interface OauthSecrets {
   clientSecret?: string;
   /** True when client_id was issued by dynamic client registration. */
   dynamicClient?: boolean;
+  /** Redirect URIs the authorization server actually registered for this client. */
+  registeredRedirects?: string[];
   tokens?: {
     access_token: string;
     token_type: string;
@@ -111,6 +113,7 @@ function writeSecrets(
   const empty =
     !secrets.clientSecret &&
     !secrets.dynamicClient &&
+    !secrets.registeredRedirects?.length &&
     !secrets.tokens &&
     !secrets.codeVerifier &&
     !secrets.device &&
@@ -423,6 +426,7 @@ export function clearOauthClient(conn: OauthDb, backendId: string): void {
   const secrets = readOauthSecrets(conn.db, conn.masterKey, backendId) ?? {};
   delete secrets.clientSecret;
   delete secrets.dynamicClient;
+  delete secrets.registeredRedirects;
   delete secrets.tokens;
   delete secrets.codeVerifier;
   delete secrets.device;
@@ -472,11 +476,17 @@ export function saveOauthDiscovery(
 export function saveOauthClient(
   conn: OauthDb,
   backendId: string,
-  client: { clientId: string; clientSecret?: string; dynamicClient: boolean },
+  client: {
+    clientId: string;
+    clientSecret?: string;
+    dynamicClient: boolean;
+    registeredRedirects?: string[];
+  },
 ): void {
   mergeOauthSecrets(conn, backendId, (secrets) => {
     if (client.clientSecret) secrets.clientSecret = client.clientSecret;
     secrets.dynamicClient = client.dynamicClient;
+    if (client.registeredRedirects) secrets.registeredRedirects = [...client.registeredRedirects];
   });
   conn.db
     .prepare(

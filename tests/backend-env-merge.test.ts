@@ -1977,9 +1977,15 @@ describe("placement and sandbox shapes", () => {
       .listAudit(ws.id, { limit: 100 })
       .filter((event) => event.action === "tools/call");
     expect(events).toHaveLength(calls.length);
-    const storedNames = events.map((event) => {
-      const args = (event.detail as { arguments?: Record<string, unknown> } | null)
-        ?.arguments;
+    const storedNames = (
+      gw.store.db
+        .prepare(
+          `SELECT detail_json FROM audit_events WHERE workspace_id = ? AND action = 'tools/call'`,
+        )
+        .all(ws.id) as Array<{ detail_json: string }>
+    ).map((row) => {
+      const args = (JSON.parse(row.detail_json) as { arguments?: Record<string, unknown> })
+        .arguments;
       expect(args).toEqual({
         name: expect.any(String),
         arguments: "[redacted]",

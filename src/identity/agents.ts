@@ -285,6 +285,86 @@ export class AgentDirectory {
     return changed;
   }
 
+  renameAgent(workspaceId: string, agentId: string, name: string): { id: string; name: string } | null {
+    const next = name.trim();
+    if (!next || next.length > 128 || /[\r\n]/.test(next)) {
+      throw new Error("name must be 1–128 characters on one line");
+    }
+    const row = this.db
+      .prepare(
+        `SELECT id FROM mcpflow_agent WHERE id = ? AND workspace_id = ? AND hidden_at IS NULL`,
+      )
+      .get(agentId, workspaceId) as { id: string } | undefined;
+    if (!row) return null;
+    try {
+      const res = this.db
+        .prepare(`UPDATE mcpflow_agent SET name = ? WHERE id = ? AND workspace_id = ?`)
+        .run(next, agentId, workspaceId);
+      if (Number(res.changes) !== 1) return null;
+    } catch (err) {
+      if (isUniqueViolation(err)) throw new Error(`an agent named ${next} already exists`);
+      throw err;
+    }
+    try {
+      this.db.prepare(`UPDATE mcpflow_identity_epoch SET epoch = epoch + 1 WHERE id = 1`).run();
+    } catch {
+      /* epoch table is absent on a partial database */
+    }
+    this.bumpVersion();
+    return { id: agentId, name: next };
+  }
+
+  /**
+   * Hide a bot whose keys are already revoked and free its display name.
+   * The row stays so sessions and call history keep their foreign keys.
+   */
+  retireAgent(workspaceId: string, agentId: string, by: string): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT a.id, a.status, a.hidden_at, w.owner_principal_id AS owner
+           FROM mcpflow_agent a
+           JOIN mcpflow_workspace w ON w.id = a.workspace_id
+          WHERE a.id = ? AND a.workspace_id = ?`,
+      )
+      .get(agentId, workspaceId) as
+      | { id: string; status: string; hidden_at: string | null; owner: string }
+      | undefined;
+    if (!row || row.hidden_at) return false;
+    if (row.owner === agentId) throw new Error("cannot delete the bootstrap admin");
+    const live = this.db
+      .prepare(
+        `SELECT count(*) AS n FROM mcpflow_api_key
+          WHERE agent_id = ? AND status IN ('active','rotating')`,
+      )
+      .get(agentId) as { n: number };
+    if (Number(live.n) > 0) throw new Error("revoke the key before deleting it");
+    this.tx(() => {
+      if (row.status !== "revoked") {
+        const res = this.db
+          .prepare(
+            `UPDATE mcpflow_agent SET status = 'revoked', revoked_at = ?, revoked_by = ?, revoked_reason = ?
+             WHERE id = ? AND status <> 'revoked'`,
+          )
+          .run(nowIso(), by, auditText("deleted from portal", REVOKE_REASON_MAX), agentId);
+        if (Number(res.changes) === 1) {
+          this.lifecycle(workspaceId, by, "agent_revoke", { agentId, reason: "deleted from portal" });
+        }
+      }
+      const tombstone = `retired-${agentId}`;
+      this.db
+        .prepare(`UPDATE mcpflow_agent SET name = ?, hidden_at = ? WHERE id = ?`)
+        .run(tombstone, nowIso(), agentId);
+      this.lifecycle(workspaceId, by, "agent_delete", { agentId });
+    });
+    try {
+      this.db.prepare(`UPDATE mcpflow_identity_epoch SET epoch = epoch + 1 WHERE id = 1`).run();
+    } catch {
+      /* epoch table is absent on a partial database */
+    }
+    this.bumpVersion();
+    return true;
+  }
+
   // ---------- resolution (every request) ----------
 
   /** Resolve an `mf_` API key. Sessions go through resolveSession. */

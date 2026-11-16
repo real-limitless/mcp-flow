@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   placement TEXT,
   device_id TEXT,
   detail_json TEXT,
+  detail_enc TEXT,
   ip TEXT
 );
 
@@ -527,7 +528,42 @@ function nullableStr(v: unknown): string | null {
   return String(v);
 }
 
-function mapAuditRow(r: Record<string, unknown>): AuditEvent {
+function parseAuditJson(raw: unknown): Record<string, unknown> | null {
+  if (raw == null || raw === "") return null;
+  try {
+    const value = JSON.parse(String(raw)) as unknown;
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/** Portal view of an audit row. The sealed original wins; older rows stay on the redacted copy. */
+function revealAuditDetail(
+  masterKey: Buffer,
+  r: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const enc = r.detail_enc;
+  if (typeof enc === "string" && enc) {
+    try {
+      const value = unseal<unknown>(masterKey, enc);
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value as Record<string, unknown>;
+      }
+    } catch {
+      /* wrong key or a corrupt blob: show the redacted copy */
+    }
+  }
+  return parseAuditJson(r.detail_json);
+}
+
+function mapAuditRow(
+  r: Record<string, unknown>,
+  masterKey: Buffer,
+): AuditEvent {
   return {
     id: String(r.id),
     ts: String(r.ts),
@@ -540,9 +576,7 @@ function mapAuditRow(r: Record<string, unknown>): AuditEvent {
     tool: r.tool == null ? null : String(r.tool),
     placement: r.placement == null ? null : String(r.placement),
     deviceId: r.device_id == null ? null : String(r.device_id),
-    detail: r.detail_json
-      ? (JSON.parse(String(r.detail_json)) as Record<string, unknown>)
-      : null,
+    detail: revealAuditDetail(masterKey, r),
     ip: r.ip == null ? null : String(r.ip),
   };
 }
@@ -823,6 +857,297 @@ export function toPublicBackend(
   };
 }
 
+function jsonStringArray(raw: unknown): string[] | null {
+  if (typeof raw !== "string" || !raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((item) => String(item));
+  } catch {
+    return null;
+  }
+}
+
+function replaceExact(
+  values: string[],
+  from: string,
+  to: string,
+): { next: string[]; changed: boolean } {
+  let changed = false;
+  const next = values.map((item) => {
+    if (item !== from) return item;
+    changed = true;
+    return to;
+  });
+  return { next, changed };
+}
+
+function replaceToolPrefix(
+  values: string[],
+  from: string,
+  to: string,
+): { next: string[]; changed: boolean } {
+  const oldPrefix = `${from}__`;
+  const newPrefix = `${to}__`;
+  let changed = false;
+  const next = values.map((item) => {
+    if (item !== oldPrefix && !item.startsWith(oldPrefix)) return item;
+    changed = true;
+    return newPrefix + item.slice(oldPrefix.length);
+  });
+  return { next, changed };
+}
+
+function bumpIdentityEpoch(db: DatabaseSync): void {
+  try {
+    db.prepare(`UPDATE mcpflow_identity_epoch SET epoch = epoch + 1 WHERE id = 1`).run();
+  } catch {
+    /* identity epoch is absent on a partial database */
+  }
+}
+
+function backendSlugOrKeep(raw: string | undefined, current: string): string {
+  if (raw === undefined) return current;
+  const slug = raw.trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+    throw new Error(
+      "slug must be lowercase alphanumeric/underscore/hyphen, start with a letter",
+    );
+  }
+  if (slug.includes("__")) {
+    throw new Error('slug must not contain "__" (it separates backend and tool names)');
+  }
+  return slug;
+}
+
+function projectSlugOrKeep(raw: string | undefined, current: string): string {
+  if (raw === undefined) return current;
+  const slug = raw.trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_-]{0,63}$/.test(slug)) {
+    throw new Error("project slug must be lowercase alphanumeric/underscore/hyphen");
+  }
+  return slug;
+}
+
+/** Point stored slug references at a renamed backend. Audit history is left as history. */
+function rewriteBackendSlugRefs(
+  db: DatabaseSync,
+  workspaceId: string,
+  from: string,
+  to: string,
+): void {
+  if (from === to) return;
+  const projects = db
+    .prepare(
+      `SELECT id, backend_slugs_json, tool_prefix_json FROM projects WHERE workspace_id = ?`,
+    )
+    .all(workspaceId) as Array<Record<string, unknown>>;
+  const updateProject = db.prepare(
+    `UPDATE projects SET backend_slugs_json = ?, tool_prefix_json = ?, updated_at = ? WHERE id = ?`,
+  );
+  for (const row of projects) {
+    const slugs = replaceExact(jsonStringArray(row.backend_slugs_json) ?? [], from, to);
+    const prefixes = jsonStringArray(row.tool_prefix_json);
+    const prefixSwap = prefixes
+      ? replaceToolPrefix(prefixes, from, to)
+      : { next: [] as string[], changed: false };
+    if (!slugs.changed && !prefixSwap.changed) continue;
+    updateProject.run(
+      JSON.stringify(slugs.next),
+      prefixSwap.changed && prefixSwap.next.length ? JSON.stringify(prefixSwap.next) : prefixes ? JSON.stringify(prefixes) : null,
+      nowIso(),
+      String(row.id),
+    );
+  }
+  const legacy = db
+    .prepare(
+      `SELECT id, scopes_json FROM api_keys WHERE workspace_id = ? AND scopes_json IS NOT NULL`,
+    )
+    .all(workspaceId) as Array<{ id: string; scopes_json: string }>;
+  const updateLegacy = db.prepare(`UPDATE api_keys SET scopes_json = ? WHERE id = ?`);
+  for (const key of legacy) {
+    let scopes: Record<string, unknown>;
+    try {
+      scopes = JSON.parse(key.scopes_json) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    const list = Array.isArray(scopes.toolPrefixAllowlist)
+      ? scopes.toolPrefixAllowlist.map(String)
+      : null;
+    const hot = Array.isArray(scopes.dynamicToolsHot)
+      ? scopes.dynamicToolsHot.map(String)
+      : null;
+    const swapped = list ? replaceToolPrefix(list, from, to) : { next: [], changed: false };
+    const hotSwap = hot ? replaceToolPrefix(hot, from, to) : { next: [], changed: false };
+    if (!swapped.changed && !hotSwap.changed) continue;
+    if (swapped.changed) scopes.toolPrefixAllowlist = swapped.next;
+    if (hotSwap.changed) scopes.dynamicToolsHot = hotSwap.next;
+    updateLegacy.run(JSON.stringify(scopes), key.id);
+  }
+  try {
+    const versions = db
+      .prepare(
+        `SELECT v.rule_id, v.version, v.match_backends, v.match_tools
+           FROM mcpflow_policy_rule_version v
+           JOIN mcpflow_policy_rule r ON r.id = v.rule_id
+          WHERE r.workspace_id = ?`,
+      )
+      .all(workspaceId) as Array<Record<string, unknown>>;
+    const updateRule = db.prepare(
+      `UPDATE mcpflow_policy_rule_version SET match_backends = ?, match_tools = ? WHERE rule_id = ? AND version = ?`,
+    );
+    for (const row of versions) {
+      const backends = replaceExact(jsonStringArray(row.match_backends) ?? [], from, to);
+      const tools = replaceToolPrefix(jsonStringArray(row.match_tools) ?? [], from, to);
+      if (!backends.changed && !tools.changed) continue;
+      updateRule.run(
+        JSON.stringify(backends.next),
+        JSON.stringify(tools.next),
+        String(row.rule_id),
+        Number(row.version),
+      );
+    }
+    const agentKeys = db
+      .prepare(
+        `SELECT k.id, k.tool_prefix_allowlist AS list
+           FROM mcpflow_api_key k
+           JOIN mcpflow_agent a ON a.id = k.agent_id
+          WHERE a.workspace_id = ? AND k.tool_prefix_allowlist IS NOT NULL`,
+      )
+      .all(workspaceId) as Array<{ id: string; list: string }>;
+    const updateAgentKey = db.prepare(
+      `UPDATE mcpflow_api_key SET tool_prefix_allowlist = ? WHERE id = ?`,
+    );
+    for (const key of agentKeys) {
+      const list = jsonStringArray(key.list);
+      if (!list) continue;
+      const swapped = replaceToolPrefix(list, from, to);
+      if (!swapped.changed) continue;
+      updateAgentKey.run(JSON.stringify(swapped.next), key.id);
+    }
+    db.prepare(
+      `UPDATE mcpflow_project_env_target SET backend_slug = ?
+        WHERE workspace_id = ? AND backend_slug = ?`,
+    ).run(to, workspaceId, from);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(message)) throw err;
+  }
+}
+
+/** Point stored slug references at a renamed project. */
+function rewriteProjectSlugRefs(
+  db: DatabaseSync,
+  workspaceId: string,
+  from: string,
+  to: string,
+): void {
+  if (from === to) return;
+  db.exec("PRAGMA defer_foreign_keys = ON");
+  const agents = db
+    .prepare(
+      `SELECT ap.agent_id FROM mcpflow_agent_project ap
+         JOIN mcpflow_agent a ON a.id = ap.agent_id
+        WHERE a.workspace_id = ? AND ap.project_id = ?`,
+    )
+    .all(workspaceId, from) as Array<{ agent_id: string }>;
+  const insertMembership = db.prepare(
+    `INSERT OR IGNORE INTO mcpflow_agent_project (agent_id, project_id) VALUES (?, ?)`,
+  );
+  for (const row of agents) insertMembership.run(row.agent_id, to);
+  db.prepare(
+    `DELETE FROM mcpflow_api_key_project
+      WHERE project_id = ?
+        AND agent_id IN (SELECT id FROM mcpflow_agent WHERE workspace_id = ?)
+        AND EXISTS (
+          SELECT 1 FROM mcpflow_api_key_project kept
+           WHERE kept.key_id = mcpflow_api_key_project.key_id AND kept.project_id = ?
+        )`,
+  ).run(from, workspaceId, to);
+  db.prepare(
+    `UPDATE mcpflow_api_key_project SET project_id = ?
+      WHERE project_id = ? AND agent_id IN (SELECT id FROM mcpflow_agent WHERE workspace_id = ?)`,
+  ).run(to, from, workspaceId);
+  db.prepare(
+    `UPDATE mcpflow_session SET project_id = ?
+      WHERE project_id = ? AND agent_id IN (SELECT id FROM mcpflow_agent WHERE workspace_id = ?)`,
+  ).run(to, from, workspaceId);
+  db.prepare(
+    `DELETE FROM mcpflow_agent_project
+      WHERE project_id = ? AND agent_id IN (SELECT id FROM mcpflow_agent WHERE workspace_id = ?)`,
+  ).run(from, workspaceId);
+  try {
+    db.prepare(
+      `UPDATE project_sessions SET project_id = ? WHERE workspace_id = ? AND project_id = ?`,
+    ).run(to, workspaceId, from);
+  } catch {
+    /* legacy session table is optional */
+  }
+  try {
+    db.prepare(
+      `UPDATE mcpflow_secret SET project_id = ? WHERE workspace_id = ? AND project_id = ?`,
+    ).run(to, workspaceId, from);
+    db.prepare(
+      `UPDATE mcpflow_project_env_target SET project_id = ? WHERE workspace_id = ? AND project_id = ?`,
+    ).run(to, workspaceId, from);
+    db.prepare(
+      `UPDATE mcpflow_secret_upload SET project_id = ? WHERE workspace_id = ? AND project_id = ?`,
+    ).run(to, workspaceId, from);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(message)) throw err;
+  }
+  const legacy = db
+    .prepare(
+      `SELECT id, scopes_json FROM api_keys WHERE workspace_id = ? AND scopes_json IS NOT NULL`,
+    )
+    .all(workspaceId) as Array<{ id: string; scopes_json: string }>;
+  const updateLegacy = db.prepare(`UPDATE api_keys SET scopes_json = ? WHERE id = ?`);
+  for (const key of legacy) {
+    let scopes: Record<string, unknown>;
+    try {
+      scopes = JSON.parse(key.scopes_json) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    let changed = false;
+    if (Array.isArray(scopes.projects)) {
+      const swapped = replaceExact(scopes.projects.map(String), from, to);
+      if (swapped.changed) {
+        scopes.projects = swapped.next;
+        changed = true;
+      }
+    }
+    if (scopes.defaultProject === from) {
+      scopes.defaultProject = to;
+      changed = true;
+    }
+    if (changed) updateLegacy.run(JSON.stringify(scopes), key.id);
+  }
+  try {
+    const versions = db
+      .prepare(
+        `SELECT v.rule_id, v.version, v.match_projects
+           FROM mcpflow_policy_rule_version v
+           JOIN mcpflow_policy_rule r ON r.id = v.rule_id
+          WHERE r.workspace_id = ?`,
+      )
+      .all(workspaceId) as Array<Record<string, unknown>>;
+    const updateRule = db.prepare(
+      `UPDATE mcpflow_policy_rule_version SET match_projects = ? WHERE rule_id = ? AND version = ?`,
+    );
+    for (const row of versions) {
+      const projects = replaceExact(jsonStringArray(row.match_projects) ?? [], from, to);
+      if (!projects.changed) continue;
+      updateRule.run(JSON.stringify(projects.next), String(row.rule_id), Number(row.version));
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(message)) throw err;
+  }
+}
+
 export class Store {
   readonly db: DatabaseSync;
   readonly masterKey: Buffer;
@@ -946,6 +1271,9 @@ export class Store {
       .all() as Array<{ name: string }>;
     if (!audCols.some((c) => c.name === "device_id")) {
       this.db.exec(`ALTER TABLE audit_events ADD COLUMN device_id TEXT`);
+    }
+    if (!audCols.some((c) => c.name === "detail_enc")) {
+      this.db.exec(`ALTER TABLE audit_events ADD COLUMN detail_enc TEXT`);
     }
 
     // Ensure schema tables exist on older DBs (CREATE IF NOT EXISTS in SCHEMA)
@@ -1144,6 +1472,33 @@ export class Store {
     return { ...toPublicKey(rec), token };
   }
 
+  renameApiKey(workspaceId: string, id: string, name: string): ApiKeyPublic | null {
+    const next = name.trim();
+    if (!next || next.length > 128 || /[\r\n]/.test(next)) {
+      throw new Error("name must be 1–128 characters on one line");
+    }
+    const res = this.db
+      .prepare(
+        `UPDATE api_keys SET name = ? WHERE id = ? AND workspace_id = ?`,
+      )
+      .run(next, id, workspaceId);
+    if (Number(res.changes) === 0) return null;
+    const row = this.db
+      .prepare(`SELECT * FROM api_keys WHERE id = ?`)
+      .get(id) as Record<string, unknown> | undefined;
+    return row ? toPublicKey(rowKey(row)) : null;
+  }
+
+  /** Remove a legacy key that is already revoked. Active keys stay until revoke. */
+  deleteRevokedApiKey(workspaceId: string, id: string): boolean {
+    const res = this.db
+      .prepare(
+        `DELETE FROM api_keys WHERE id = ? AND workspace_id = ? AND revoked_at IS NOT NULL`,
+      )
+      .run(id, workspaceId);
+    return Number(res.changes) > 0;
+  }
+
   updateApiKeyScopes(
     workspaceId: string,
     id: string,
@@ -1214,7 +1569,13 @@ export class Store {
     ip?: string | null;
   }): void {
     let detailJson: string | null = null;
+    let detailEnc: string | null = null;
     if (input.detail) {
+      try {
+        detailEnc = seal(this.masterKey, input.detail);
+      } catch {
+        detailEnc = null;
+      }
       const safe = sanitizeForAudit(input.detail);
       detailJson = JSON.stringify(safe ?? null);
     }
@@ -1222,8 +1583,8 @@ export class Store {
       .prepare(
         `INSERT INTO audit_events (
           id, ts, workspace_id, key_id, action, backend_slug, tool, placement,
-          device_id, detail_json, ip
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          device_id, detail_json, detail_enc, ip
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         newId("aud"),
@@ -1236,6 +1597,7 @@ export class Store {
         auditIdent(input.placement),
         auditIdent(input.deviceId),
         detailJson,
+        detailEnc,
         auditIp(input.ip),
       );
   }
@@ -1247,7 +1609,7 @@ export class Store {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
     const select = `SELECT
           a.id, a.ts, a.workspace_id, a.key_id, a.action, a.backend_slug, a.tool,
-          a.placement, a.device_id, a.detail_json, a.ip,
+          a.placement, a.device_id, a.detail_json, a.detail_enc, a.ip,
           k.name AS key_name, k.prefix AS key_prefix
         FROM audit_events a
         LEFT JOIN api_keys k ON k.id = a.key_id`;
@@ -1268,7 +1630,7 @@ export class Store {
             )
             .all(workspaceId, limit) as Record<string, unknown>[])
     );
-    return rows.map((r) => mapAuditRow(r));
+    return rows.map((r) => mapAuditRow(r, this.masterKey));
   }
 
   createBackend(
@@ -1447,7 +1809,18 @@ export class Store {
     if (!existing) return null;
     validateUpdateSecrets(input);
 
-    const title = input.title ?? existing.title;
+    const nextSlug = backendSlugOrKeep(input.slug, existing.slug);
+    if (nextSlug !== existing.slug) {
+      const taken = this.db
+        .prepare(`SELECT id FROM backends WHERE workspace_id = ? AND slug = ?`)
+        .get(workspaceId, nextSlug) as { id: string } | undefined;
+      if (taken && taken.id !== existing.id) throw new Error("slug already exists");
+    }
+    const title =
+      input.title ??
+      (nextSlug !== existing.slug && existing.title === existing.slug
+        ? nextSlug
+        : existing.title);
     const transport = input.transport ?? existing.transport;
     const url =
       input.url !== undefined ? input.url : existing.url;
@@ -1559,12 +1932,13 @@ export class Store {
       this.db
         .prepare(
           `UPDATE backends SET
-            title = ?, transport = ?, url = ?, image = ?, command_json = ?,
+            slug = ?, title = ?, transport = ?, url = ?, image = ?, command_json = ?,
             headers_enc = ?, env_enc = ?, enabled = ?, tool_allowlist_json = ?,
             placement_json = ?, sandbox_json = ?, connection_id = ?, updated_at = ?
            WHERE id = ?`,
         )
         .run(
+          nextSlug,
           title,
           transport,
           url,
@@ -1598,6 +1972,9 @@ export class Store {
           existing.id,
           "upstream origin changed",
         );
+      }
+      if (nextSlug !== existing.slug) {
+        rewriteBackendSlugRefs(this.db, workspaceId, existing.slug, nextSlug);
       }
       this.db.exec("COMMIT");
     } catch (err) {
@@ -1948,12 +2325,11 @@ export class Store {
   ): Project | null {
     const existing = this.getProject(workspaceId, idOrSlug);
     if (!existing) return null;
-    if (input.isDefault === true) {
-      this.db
-        .prepare(
-          `UPDATE projects SET is_default = 0 WHERE workspace_id = ?`,
-        )
-        .run(workspaceId);
+    const nextSlug = projectSlugOrKeep(input.slug, existing.slug);
+    if (nextSlug !== existing.slug) {
+      if (existing.slug === "default") throw new Error("cannot rename the default project");
+      const taken = this.getProjectBySlug(workspaceId, nextSlug);
+      if (taken && taken.id !== existing.id) throw new Error("slug already exists");
     }
     const title = input.title ?? existing.title;
     const description =
@@ -1968,22 +2344,47 @@ export class Store {
         : existing.toolPrefixAllowlist;
     const isDefault =
       input.isDefault !== undefined ? input.isDefault : existing.isDefault;
-    this.db
-      .prepare(
-        `UPDATE projects SET title = ?, description = ?, backend_slugs_json = ?,
-         tool_prefix_json = ?, is_default = ?, updated_at = ?
-         WHERE id = ? AND workspace_id = ?`,
-      )
-      .run(
-        title,
-        description,
-        JSON.stringify(backendSlugs),
-        toolPrefix?.length ? JSON.stringify(toolPrefix) : null,
-        isDefault ? 1 : 0,
-        nowIso(),
-        existing.id,
-        workspaceId,
-      );
+    const nested = this.db.isTransaction;
+    if (!nested) this.db.exec("BEGIN IMMEDIATE");
+    try {
+      if (input.isDefault === true) {
+        this.db
+          .prepare(`UPDATE projects SET is_default = 0 WHERE workspace_id = ?`)
+          .run(workspaceId);
+      }
+      if (nextSlug !== existing.slug) {
+        rewriteProjectSlugRefs(this.db, workspaceId, existing.slug, nextSlug);
+        bumpIdentityEpoch(this.db);
+        this.identity.bumpVersion();
+      }
+      this.db
+        .prepare(
+          `UPDATE projects SET slug = ?, title = ?, description = ?, backend_slugs_json = ?,
+           tool_prefix_json = ?, is_default = ?, updated_at = ?
+           WHERE id = ? AND workspace_id = ?`,
+        )
+        .run(
+          nextSlug,
+          title,
+          description,
+          JSON.stringify(backendSlugs),
+          toolPrefix?.length ? JSON.stringify(toolPrefix) : null,
+          isDefault ? 1 : 0,
+          nowIso(),
+          existing.id,
+          workspaceId,
+        );
+      if (!nested) this.db.exec("COMMIT");
+    } catch (err) {
+      if (!nested) {
+        try {
+          this.db.exec("ROLLBACK");
+        } catch {
+          /* already rolled back */
+        }
+      }
+      throw err;
+    }
     return this.getProject(workspaceId, existing.id);
   }
 

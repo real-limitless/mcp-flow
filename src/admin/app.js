@@ -530,15 +530,60 @@ function formatKeyProjects(scopes) {
   return `<div class="key-proj-cell">${parts.join(" ")}</div>`;
 }
 
+function botTableHtml(agents) {
+  const rows = agents.length
+    ? agents
+        .map((a) => {
+          const keys = Array.isArray(a.keys) ? a.keys : [];
+          const live = keys.some((k) => k.status === "active" || k.status === "rotating");
+          const keyLine = keys.length
+            ? keys.map((k) => esc(k.status)).join(", ")
+            : "no key";
+          const action = live
+            ? `<button type="button" class="pill-btn danger" data-bot-revoke="${esc(a.id)}">Revoke</button>`
+            : `<button type="button" class="pill-btn danger" data-bot-del="${esc(a.id)}" data-name="${escAttr(a.name)}">Delete</button>`;
+          return `<tr>
+            <td><input data-bot-name value="${escAttr(a.name)}" aria-label="Name for ${escAttr(a.name)}" /></td>
+            <td><span class="pill ${a.status === "active" ? "on" : "off"}">${esc(a.status ?? "")}</span></td>
+            <td class="mono">${keyLine}</td>
+            <td class="row-actions">
+              <button type="button" class="pill-btn" data-bot-rename="${esc(a.id)}">Rename</button>
+              ${action}
+            </td>
+          </tr>`;
+        })
+        .join("")
+    : `<tr><td colspan="4" class="muted">No bots yet. Create a key above.</td></tr>`;
+  return surface(
+    "Bots",
+    `
+      <p class="muted" style="margin-bottom:10px;font-size:12px">
+        Each key you create is a bot. Rename it here. Revoke stops the key. Delete removes a revoked bot from this list and frees the name.
+      </p>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th>name</th><th>status</th><th>keys</th><th></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `,
+    `${agents.length}`,
+  );
+}
+
 async function renderKeys() {
-  const [{ keys }, projRes, connector, grantRes] = await Promise.all([
+  const [{ keys }, projRes, connector, grantRes, agentsRes] = await Promise.all([
     api("/v1/keys"),
     soft("keys", "Projects", api("/v1/projects"), () => ({ projects: [] })),
     api("/v1/oauth/connector"),
     api("/v1/oauth/grants").catch(() => ({ grants: [] })),
+    api("/v1/agents").catch(() => ({ agents: [] })),
   ]);
   const projects = projRes.projects || [];
   const grants = grantRes.grants || [];
+  const agents = (Array.isArray(agentsRes?.agents) ? agentsRes.agents : []).filter(
+    (agent) => agent.kind !== "human",
+  );
 
   $("#tab-keys").innerHTML = `
     ${surface(
@@ -596,6 +641,7 @@ async function renderKeys() {
     `,
       "mf_* · projects",
     )}
+    ${botTableHtml(agents)}
     ${surface(
       "OAuth connector",
       `
@@ -701,7 +747,11 @@ async function renderKeys() {
               )}</td>
               <td class="row-actions">
                 <button type="button" class="pill-btn ghost" data-key-edit="${esc(k.id)}">Edit</button>
-                <button type="button" class="pill-btn danger" data-revoke="${esc(k.id)}">Revoke</button>
+                ${
+                  k.revokedAt
+                    ? `<button type="button" class="pill-btn danger" data-key-purge="${esc(k.id)}">Delete</button>`
+                    : `<button type="button" class="pill-btn danger" data-revoke="${esc(k.id)}">Revoke</button>`
+                }
               </td>
             </tr>`,
                     )
@@ -714,6 +764,10 @@ async function renderKeys() {
       <div id="keyEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px">
         <div class="once-label" style="color:var(--accent-hot)">
           Edit key · <span id="keyEditName"></span>
+        </div>
+        <div class="form-field" style="margin-top:8px;max-width:20rem">
+          <label class="field-label" for="keyEditNameInput">Name</label>
+          <input id="keyEditNameInput" autocomplete="off" />
         </div>
         <p class="muted" style="margin-bottom:8px;font-size:12px">
           Uncheck all projects = allow every project. Default project is used until the agent calls mf_use_project.
@@ -862,6 +916,8 @@ async function renderKeys() {
       $("#keyEdit").hidden = false;
       $("#keyEditId").value = id;
       $("#keyEditName").textContent = k.name;
+      const nameInput = $("#keyEditNameInput");
+      if (nameInput) nameInput.value = k.name;
       $("#keyEditProjGrid").innerHTML = projectCheckboxesHtml(
         projects,
         k.scopes?.projects || [],
@@ -890,6 +946,7 @@ async function renderKeys() {
       await api(`/v1/keys/${id}`, {
         method: "PATCH",
         body: JSON.stringify({
+          name: $("#keyEditNameInput")?.value?.trim() || k.name,
           admin: Boolean(k.scopes?.admin),
           toolPrefixAllowlist: k.scopes?.toolPrefixAllowlist ?? null,
           projects: projSlugs,
@@ -907,6 +964,69 @@ async function renderKeys() {
     btn.addEventListener("click", async () => {
       try {
         await api(`/v1/keys/${btn.getAttribute("data-revoke")}`, { method: "DELETE" });
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-key-purge]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Delete this revoked key from the list?")) return;
+      try {
+        await api(`/v1/keys/${btn.getAttribute("data-key-purge")}`, { method: "DELETE" });
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-bot-rename]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = btn.closest("tr")?.querySelector("[data-bot-name]")?.value?.trim();
+      if (!name) {
+        showErr("name is required");
+        return;
+      }
+      try {
+        showErr("");
+        await api(`/v1/agents/${btn.getAttribute("data-bot-rename")}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        });
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-bot-revoke]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-bot-revoke");
+      const agent = agents.find((row) => row.id === id);
+      const live = (agent?.keys || []).filter((k) => k.status === "active" || k.status === "rotating");
+      if (!live.length) return;
+      if (!confirm(`Revoke ${live.length} key${live.length === 1 ? "" : "s"} for “${agent?.name || "bot"}”?`)) return;
+      try {
+        for (const key of live) {
+          await api(`/v1/agents/${id}/keys/${key.id}`, { method: "DELETE" });
+        }
+        await renderKeys();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-bot-del]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = btn.getAttribute("data-name") || "bot";
+      if (!confirm(`Delete “${name}” from the list? The name can be used again.`)) return;
+      try {
+        await api(`/v1/agents/${btn.getAttribute("data-bot-del")}`, { method: "DELETE" });
         await renderKeys();
       } catch (e) {
         showErr(e.message);
@@ -1706,6 +1826,11 @@ function backendEditHtml(b) {
       Removing an env row deletes that key and leaves the others in place.
     </p>
     <div class="form-grid">
+      <div class="form-field">
+        <label class="field-label" for="beEditSlug">Slug</label>
+        <input id="beEditSlug" class="mono" value="${escAttr(b.slug)}" autocomplete="off" />
+        <span class="dim" style="font-size:11px;margin-top:4px">Tool names use this prefix. Projects and policy matches follow.</span>
+      </div>
       <div class="form-field" style="grid-column: 1 / -1">
         <label class="field-label" for="beEditConnection">Connect via</label>
         <select id="beEditConnection">${connectionOptionsHtml(b.placement?.mode || "remote", b.placement?.deviceId || "", b.connectionId || "")}</select>
@@ -1776,6 +1901,8 @@ function openBackendEditor(b) {
 async function saveBackendEdit(backend, panel, dropped) {
   try {
     const body = {};
+    const slug = panel.querySelector("#beEditSlug")?.value?.trim();
+    if (slug && slug !== backend.slug) body.slug = slug;
     const urlEl = panel.querySelector("#beEditUrl");
     if (urlEl) {
       const url = urlEl.value.trim();
@@ -2036,11 +2163,12 @@ async function renderDevices() {
                 ? devices
                     .map(
                       (d) => `<tr>
-              <td>${esc(d.name)}</td>
+              <td><input data-dev-name value="${escAttr(d.name)}" aria-label="Name for ${escAttr(d.name)}" /></td>
               <td class="mono">${esc(d.id)}</td>
               <td><span class="pill ${d.status === "online" ? "on" : "off"}">${esc(d.status)}</span></td>
               <td class="mono">${esc(JSON.stringify(d.capabilities))}</td>
               <td class="row-actions">
+                <button type="button" class="pill-btn" data-dev-rename="${esc(d.id)}">Rename</button>
                 <button type="button" class="pill-btn danger" data-rmdev="${esc(d.id)}">Revoke</button>
               </td>
             </tr>`,
@@ -2082,6 +2210,25 @@ async function renderDevices() {
     } catch (e) {
       showErr(e.message);
     }
+  });
+  document.querySelectorAll("[data-dev-rename]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const name = btn.closest("tr")?.querySelector("[data-dev-name]")?.value?.trim();
+      if (!name) {
+        showErr("name is required");
+        return;
+      }
+      try {
+        showErr("");
+        await api(`/v1/devices/${btn.getAttribute("data-dev-rename")}`, {
+          method: "PATCH",
+          body: JSON.stringify({ name }),
+        });
+        await renderDevices();
+      } catch (e) {
+        showErr(e.message);
+      }
+    });
   });
   document.querySelectorAll("[data-rmdev]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -2173,6 +2320,16 @@ async function renderProjects() {
       </div>
       <div id="projEdit" class="once-callout" hidden style="border-color: rgba(91,141,239,0.35);margin-top:12px">
         <div class="once-label" style="color:var(--accent-hot)">Edit · <span id="projEditSlug"></span></div>
+        <div class="form-grid" style="margin:10px 0">
+          <div class="form-field">
+            <label class="field-label" for="projEditTitle">Title</label>
+            <input id="projEditTitle" autocomplete="off" />
+          </div>
+          <div class="form-field">
+            <label class="field-label" for="projEditSlugInput">Slug</label>
+            <input id="projEditSlugInput" class="mono" autocomplete="off" />
+          </div>
+        </div>
         <div class="proj-be-grid" id="projEditGrid"></div>
         <div class="row-actions" style="margin-top:12px">
           <button type="button" id="projSaveEdit" class="pill-btn primary">Save</button>
@@ -2227,6 +2384,13 @@ async function renderProjects() {
       $("#projEdit").hidden = false;
       $("#projEditId").value = id;
       $("#projEditSlug").textContent = p.slug;
+      const titleInput = $("#projEditTitle");
+      const slugInput = $("#projEditSlugInput");
+      if (titleInput) titleInput.value = p.title || p.slug;
+      if (slugInput) {
+        slugInput.value = p.slug;
+        slugInput.disabled = p.slug === "default" || p.isDefault;
+      }
       const set = new Set(p.backendSlugs || []);
       $("#projEditGrid").innerHTML = backends
         .map(
@@ -2246,9 +2410,17 @@ async function renderProjects() {
       const backendSlugs = [
         ...document.querySelectorAll("#projEditGrid [data-edit-be]:checked"),
       ].map((el) => el.getAttribute("data-edit-be"));
+      const title = $("#projEditTitle")?.value?.trim();
+      const slugInput = $("#projEditSlugInput");
+      const body = { backendSlugs };
+      if (title) body.title = title;
+      if (slugInput && !slugInput.disabled) {
+        const slug = slugInput.value.trim();
+        if (slug) body.slug = slug;
+      }
       await api(`/v1/projects/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ backendSlugs }),
+        body: JSON.stringify(body),
       });
       await renderProjects();
     } catch (e) {
@@ -2452,7 +2624,7 @@ async function renderAudit() {
       `
       <div class="audit-toolbar">
         <p class="muted" style="margin:0;flex:1">
-          Actor is the API key that performed the action. Click a row to expand request / response (redacted, size-capped).
+          Actor is the API key that performed the action. Click a row to expand the request and the response.
         </p>
         <div class="row-actions">
           <button type="button" class="pill-btn ghost" data-audit-expand-calls>Expand calls</button>
@@ -3712,13 +3884,55 @@ async function renderAccessMapLegacy() {
 }
 
 async function renderSecrets() {
-  const { secrets } = await api("/v1/secrets");
+  const [{ secrets }, projRes] = await Promise.all([
+    api("/v1/secrets"),
+    soft("secrets", "Projects", api("/v1/projects"), () => ({ projects: [] })),
+  ]);
   const rows = Array.isArray(secrets) ? secrets : [];
+  const projects = Array.isArray(projRes?.projects) ? projRes.projects : [];
+  const projectOptions = projects.length
+    ? projects
+        .map(
+          (p) =>
+            `<option value="${escAttr(p.slug)}">${esc(p.title || p.slug)} · ${esc(p.slug)}</option>`,
+        )
+        .join("")
+    : `<option value="default">default</option>`;
   $("#tab-secrets").innerHTML = surface(
     "Secrets",
     `
       <p class="muted" style="margin-bottom:12px">
-        Metadata for secrets created in this workspace. Values stay sealed.
+        Generate a secret for a project. The value stays sealed. A keypair shows its public part.
+      </p>
+      <div class="form-grid">
+        <div class="form-field">
+          <label class="field-label" for="secProject">Project</label>
+          <select id="secProject">${projectOptions}</select>
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="secName">Name</label>
+          <input id="secName" placeholder="db-pass" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <label class="field-label" for="secType">Type</label>
+          <select id="secType">
+            <option value="token">token</option>
+            <option value="password">password</option>
+            <option value="uuid">uuid</option>
+            <option value="keypair">keypair</option>
+          </select>
+        </div>
+        <div class="form-field" style="grid-column:1/-1">
+          <label class="field-label" for="secDesc">Description</label>
+          <input id="secDesc" placeholder="optional" autocomplete="off" />
+        </div>
+        <div class="form-field">
+          <span class="field-label">&nbsp;</span>
+          <button type="button" id="secCreate" class="pill-btn primary">Create secret</button>
+        </div>
+      </div>
+      <p class="muted" style="margin:16px 0 12px">
+        Metadata for secrets in this workspace.
       </p>
       <div class="table-wrap">
         <table class="data-table">
@@ -3759,6 +3973,40 @@ async function renderSecrets() {
     `,
     `${rows.length}`,
   );
+  $("#secCreate")?.addEventListener("click", async () => {
+    try {
+      showErr("");
+      const name = $("#secName")?.value?.trim();
+      if (!name) throw new Error("name is required");
+      const project = $("#secProject")?.value?.trim();
+      if (!project) throw new Error("project is required");
+      const description = $("#secDesc")?.value?.trim();
+      const body = {
+        project,
+        name,
+        type: $("#secType")?.value || "token",
+      };
+      if (description) body.description = description;
+      const created = await api("/v1/secrets", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await renderSecrets();
+      const note = $("#tab-secrets");
+      if (note && created?.ref) {
+        note.insertAdjacentHTML(
+          "afterbegin",
+          `<div class="once-callout"><div class="once-label">Created</div><p class="mono">${esc(created.ref)} · v${esc(created.version)}</p>${
+            created.public_part
+              ? `<pre>${esc(created.public_part)}</pre>`
+              : `<p class="muted">Value stays sealed.</p>`
+          }</div>`,
+        );
+      }
+    } catch (e) {
+      showErr(e.message);
+    }
+  });
 }
 
 async function refresh() {

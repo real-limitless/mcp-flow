@@ -133,7 +133,7 @@ export class SecretDirectory {
     }
   }
 
-  private allowProject(input: SecretActor, project: string): void {
+  private allowProject(input: { allowedProjects: readonly string[] | null }, project: string): void {
     if (!NAME.test(project)) throw new SecretError("invalid project");
     if (input.allowedProjects && !input.allowedProjects.includes(project)) {
       throw new SecretError("project is not permitted", 403);
@@ -166,6 +166,34 @@ export class SecretDirectory {
   }
 
   /**
+   * Generate from the portal env admin token. There is no agent row.
+   * The value is sealed. The response is a ref, a version, and a public part.
+   */
+  createForPortalAdmin(input: {
+    workspaceId: string;
+    project: string;
+    name: string;
+    type: string;
+    params?: unknown;
+    description?: string | null;
+  }): SecretCreated {
+    return this.writeGenerated(
+      { kind: "portal" },
+      {
+        workspaceId: input.workspaceId,
+        keyId: null,
+        agentId: null,
+        allowedProjects: null,
+        project: input.project,
+        name: input.name,
+        type: input.type,
+        params: input.params,
+        description: input.description ?? null,
+      },
+    );
+  }
+
+  /**
    * Generate for a key that already passed secrets:project:write.
    * Not an admin tool and not a reveal.
    */
@@ -179,7 +207,11 @@ export class SecretDirectory {
     return this.writeGenerated(this.actor(input), input);
   }
 
-  private writeGenerated(actor: ActorRow, input: SecretActor & {
+  private writeGenerated(actor: { kind: string }, input: {
+    workspaceId: string;
+    keyId: string | null;
+    agentId: string | null;
+    allowedProjects: readonly string[] | null;
     project: string;
     name: string;
     type: string;

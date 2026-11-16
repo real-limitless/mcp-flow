@@ -87,7 +87,7 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
   // GAP-1
   admin.get("/agents", (c) => {
     const ws = c.get("auth").workspaceId as string;
-    const rows = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? ORDER BY name`).all(ws) as Array<Record<string, unknown>>;
+    const rows = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND hidden_at IS NULL ORDER BY name`).all(ws) as Array<Record<string, unknown>>;
     return c.json({ agents: rows.map((a) => agentRow(store, a)) });
   });
 
@@ -163,7 +163,7 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
     if (ids.length > REACH_BATCH_MAX) return c.json({ error: `at most ${REACH_BATCH_MAX} ids per request` }, 400);
     const { catalog, catalogError } = await loadCatalog(ws);
     const rules = loadActiveRules(store.db, ws);
-    const get = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`);
+    const get = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ? AND hidden_at IS NULL`);
     const agents = [];
     const notFound: string[] = [];
     for (const id of ids) {
@@ -177,7 +177,7 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
   // GAP-1 detail (after /agents/reach)
   admin.get("/agents/:id", (c) => {
     const ws = c.get("auth").workspaceId as string;
-    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
+    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ? AND hidden_at IS NULL`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
     if (!a) return c.json({ error: "not found" }, 404);
     return c.json({ agent: agentRow(store, a) });
   });
@@ -185,7 +185,7 @@ export function registerReadEndpoints(admin: AdminRouter, store: Store, pool: Up
   admin.get("/agents/:id/reach", async (c) => {
     if (!c.get("humanAdmin")) return c.json({ error: "human_admin_required" }, 403);
     const ws = c.get("auth").workspaceId as string;
-    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ?`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
+    const a = store.db.prepare(`SELECT * FROM mcpflow_agent WHERE workspace_id = ? AND id = ? AND hidden_at IS NULL`).get(ws, c.req.param("id")) as Record<string, unknown> | undefined;
     if (!a) return c.json({ error: "not found" }, 404);
     const { catalog, catalogError } = await loadCatalog(ws);
     const r = reachFor(ws, a, c.req.query("project"), catalog, loadActiveRules(store.db, ws));
