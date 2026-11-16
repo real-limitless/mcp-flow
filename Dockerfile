@@ -18,8 +18,37 @@ ENV NODE_ENV=production \
     MCP_FLOW_DATA_DIR=/data \
     MCP_FLOW_KEYRING_DIR=/data/keyring \
     MCP_FLOW_KEK_FILE=/data/kek \
-    npm_config_cache=/data/npm-cache
-RUN mkdir -p /data /data/npm-cache /app/catalog && chown node:node /data /data/npm-cache /app/catalog
+    npm_config_cache=/data/npm-cache \
+    UV_CACHE_DIR=/data/uv-cache \
+    UV_TOOL_DIR=/data/uv-tools \
+    UV_PYTHON_INSTALL_DIR=/data/uv-python \
+    UV_LINK_MODE=copy \
+    PIP_CACHE_DIR=/data/pip-cache \
+    PYTHONUSERBASE=/data/pip-user
+# Bookworm Python 3.11 for pip/venv. uvx downloads a newer CPython when a package requires it.
+# uv image publishes both binaries at /. Pin the release tag; do not float latest.
+ENV PATH="/data/pip-user/bin:${PATH}"
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 python3-pip python3-venv ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.13.8 /uv /uvx /usr/local/bin/
+RUN mkdir -p \
+    /data/npm-cache \
+    /data/uv-cache \
+    /data/uv-tools \
+    /data/uv-python \
+    /data/pip-cache \
+    /data/pip-user \
+    /app/catalog \
+  && chown node:node \
+    /data \
+    /data/npm-cache \
+    /data/uv-cache \
+    /data/uv-tools \
+    /data/uv-python \
+    /data/pip-cache \
+    /data/pip-user \
+    /app/catalog
 COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=build /app/package.json /app/package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules

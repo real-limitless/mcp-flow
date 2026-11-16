@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { Store } from "../src/db/store.js";
 import {
@@ -167,6 +167,81 @@ child.on("exit", (code) => process.exit(code ?? 1));
     expect(result.tools.map((t) => t.name)).toContain("ping");
     await result.client.close();
   }, 20_000);
+});
+
+describe("python cache isolation", () => {
+  const keys = [
+    "MCP_FLOW_DATA_DIR",
+    "MCP_FLOW_UV_CACHE",
+    "MCP_FLOW_UV_TOOL_DIR",
+    "MCP_FLOW_UV_PYTHON_DIR",
+    "MCP_FLOW_PIP_CACHE",
+    "MCP_FLOW_PYTHONUSERBASE",
+  ] as const;
+
+  function save(): Map<string, string | undefined> {
+    return new Map(keys.map((key) => [key, process.env[key]]));
+  }
+
+  function restore(prev: Map<string, string | undefined>): void {
+    for (const [key, value] of prev) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+
+  it("points stdio env at volume-backed uv and pip dirs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-py-"));
+    dirs.push(dir);
+    const prev = save();
+    for (const key of keys) {
+      if (key !== "MCP_FLOW_DATA_DIR") delete process.env[key];
+    }
+    process.env.MCP_FLOW_DATA_DIR = dir;
+    try {
+      const env = buildStdioEnv({});
+      expect(env.UV_CACHE_DIR).toBe(join(dir, "uv-cache"));
+      expect(env.UV_TOOL_DIR).toBe(join(dir, "uv-tools"));
+      expect(env.UV_PYTHON_INSTALL_DIR).toBe(join(dir, "uv-python"));
+      expect(env.PIP_CACHE_DIR).toBe(join(dir, "pip-cache"));
+      expect(env.PYTHONUSERBASE).toBe(join(dir, "pip-user"));
+      expect(env.UV_LINK_MODE).toBe("copy");
+      for (const path of [
+        env.UV_CACHE_DIR,
+        env.UV_TOOL_DIR,
+        env.UV_PYTHON_INSTALL_DIR,
+        env.PIP_CACHE_DIR,
+        env.PYTHONUSERBASE,
+      ]) {
+        expect(existsSync(path)).toBe(true);
+      }
+      expect(env.PATH?.split(delimiter)[0]).toBe(join(dir, "pip-user", "bin"));
+    } finally {
+      restore(prev);
+    }
+  });
+
+  it("honors a backend UV_CACHE_DIR and keeps the user bin on PATH", () => {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-flow-py-"));
+    dirs.push(dir);
+    const prev = save();
+    for (const key of keys) delete process.env[key];
+    process.env.MCP_FLOW_DATA_DIR = dir;
+    const custom = join(dir, "custom-uv");
+    try {
+      const env = buildStdioEnv({
+        UV_CACHE_DIR: custom,
+        UV_LINK_MODE: "hardlink",
+        PATH: "/usr/bin",
+      });
+      expect(env.UV_CACHE_DIR).toBe(custom);
+      expect(existsSync(custom)).toBe(true);
+      expect(env.UV_LINK_MODE).toBe("hardlink");
+      expect(env.PATH?.split(delimiter)).toEqual([join(dir, "pip-user", "bin"), "/usr/bin"]);
+    } finally {
+      restore(prev);
+    }
+  });
 });
 
 describe("central-sandbox stdio", () => {

@@ -31,13 +31,22 @@ function parseEnvFile(text) {
 }
 
 mkdirSync(DATA, { recursive: true });
-mkdirSync(`${DATA}/npm-cache`, { recursive: true });
-if (!nonempty(process.env.MCP_FLOW_NPM_CACHE)) {
-  process.env.MCP_FLOW_NPM_CACHE = `${DATA}/npm-cache`;
+
+/** Named volumes hide image-layer directories, so create them at boot. */
+function ensureCacheDir(flowKey, leaf, runtimeKey) {
+  const dir = `${DATA}/${leaf}`;
+  mkdirSync(dir, { recursive: true });
+  if (!nonempty(process.env[flowKey])) process.env[flowKey] = dir;
+  if (!nonempty(process.env[runtimeKey])) process.env[runtimeKey] = process.env[flowKey];
 }
-if (!nonempty(process.env.npm_config_cache)) {
-  process.env.npm_config_cache = process.env.MCP_FLOW_NPM_CACHE;
-}
+
+ensureCacheDir("MCP_FLOW_NPM_CACHE", "npm-cache", "npm_config_cache");
+ensureCacheDir("MCP_FLOW_UV_CACHE", "uv-cache", "UV_CACHE_DIR");
+ensureCacheDir("MCP_FLOW_UV_TOOL_DIR", "uv-tools", "UV_TOOL_DIR");
+ensureCacheDir("MCP_FLOW_UV_PYTHON_DIR", "uv-python", "UV_PYTHON_INSTALL_DIR");
+ensureCacheDir("MCP_FLOW_PIP_CACHE", "pip-cache", "PIP_CACHE_DIR");
+ensureCacheDir("MCP_FLOW_PYTHONUSERBASE", "pip-user", "PYTHONUSERBASE");
+if (!nonempty(process.env.UV_LINK_MODE)) process.env.UV_LINK_MODE = "copy";
 const file = existsSync(SECRETS)
   ? parseEnvFile(readFileSync(SECRETS, "utf8"))
   : {};
