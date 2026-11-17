@@ -110,6 +110,9 @@ function promptAdminToken() {
 }
 
 function notPermittedMsg(code) {
+  if (code === "origin not allowed" || code === "csrf") {
+    return "This page's address did not match the gateway, so the sign-in request was blocked. Open the portal at its public URL and try again.";
+  }
   return `Not permitted (403${code ? `: ${code}` : ""}). Your key is valid but isn't allowed to do this; you're still signed in.`;
 }
 

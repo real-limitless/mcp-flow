@@ -1,9 +1,9 @@
 /* mcp-flow admin service worker: cache the shell, never /v1 or /mcp. */
-const CACHE = "mcp-flow-admin-v4";
+const CACHE = "mcp-flow-admin-v5";
 const PRECACHE = [
   "/admin/",
-  "/admin/app.js",
-  "/admin/styles.css",
+  "/admin/app.js?v=5",
+  "/admin/styles.css?v=5",
   "/admin/manifest.webmanifest",
   "/admin/icon.svg",
   "/admin/icon-192.png",
