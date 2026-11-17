@@ -11,6 +11,7 @@ import {
   clearPortalCookie,
   clearStateCookie,
   cookieMutationError,
+  publicOrigin,
   readPortalCookie,
   readStateCookie,
   writePortalCookie,
@@ -116,10 +117,11 @@ export function registerPortalRoutes(
 ): void {
   const { cfg, portal } = deps;
 
-  const secure = (c: Context) => deps.requestOrigin(c).startsWith("https://");
+  const secure = (c: Context) =>
+    (c.req.header("origin") ?? deps.requestOrigin(c)).startsWith("https://");
 
   const mutationGuard = (c: Context): Response | null => {
-    const err = cookieMutationError(c, deps.requestOrigin(c));
+    const err = cookieMutationError(c, deps.requestOrigin(c), [publicOrigin(cfg.publicUrl)]);
     if (!err) return null;
     return c.json({ error: err === "origin" ? "origin not allowed" : "csrf" }, 403);
   };

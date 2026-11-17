@@ -49,14 +49,48 @@ export function clearStateCookie(c: Context, secure: boolean): void {
   deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/", secure, sameSite: "Lax" });
 }
 
-/** Cookie-authenticated mutations. Origin is checked only when the browser sent one. */
+/** Browser Origin is this host. A reverse proxy often rewrites the request URL, not the Host header. */
+export function originHostMatches(origin: string, hostHeader: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const host = hostHeader.split(",")[0]?.trim().toLowerCase() ?? "";
+  if (!host || /[/\\\s]/.test(host)) return false;
+  return host === url.host.toLowerCase() || host === url.hostname.toLowerCase();
+}
+
+export function publicOrigin(publicUrl: string): string {
+  const raw = publicUrl.trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Cookie-authenticated mutations. The browser Origin may be the public site
+ * while Node sees an internal http URL behind a proxy. Allow the request
+ * origin, the configured public origin, and an Origin whose host is the Host
+ * header. A cross-site page cannot set that Host.
+ */
 export function cookieMutationError(
   c: Context,
   requestOrigin: string,
+  extraOrigins: string[] = [],
 ): string | null {
   if (c.req.method === "GET" || c.req.method === "HEAD") return null;
   if (c.req.header("x-mcp-flow-request") !== "1") return "csrf";
-  const origin = c.req.header("origin");
-  if (origin && origin !== requestOrigin) return "origin";
-  return null;
+  const origin = c.req.header("origin")?.trim();
+  if (!origin) return null;
+  const allowed = new Set([requestOrigin, ...extraOrigins].filter(Boolean));
+  if (allowed.has(origin)) return null;
+  const host = c.req.header("host");
+  if (host && originHostMatches(origin, host)) return null;
+  return "origin";
 }

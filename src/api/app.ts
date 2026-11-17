@@ -36,7 +36,7 @@ import {
 import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
 import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
 import { hashToken, seal, safeEqualStr } from "../crypto.js";
-import { cookieMutationError, readPortalCookie } from "../portal/cookies.js";
+import { cookieMutationError, publicOrigin, readPortalCookie } from "../portal/cookies.js";
 import {
   adminTokenAccepted,
   createPortal,
@@ -265,6 +265,7 @@ export function createApp(
     try {
       const html = readFileSync(join(adminDir, "index.html"), "utf8");
       c.header("Content-Security-Policy", adminCsp);
+      c.header("Cache-Control", "no-cache");
       return c.html(html);
     } catch {
       return c.text("admin UI not found", 404);
@@ -297,8 +298,10 @@ export function createApp(
         "Content-Type": type,
         "Content-Security-Policy": adminCsp,
       };
-      if (file === "sw.js") {
+      if (file === "sw.js" || file === "app.js" || file === "styles.css") {
         headers["Cache-Control"] = "no-cache";
+      }
+      if (file === "sw.js") {
         headers["Service-Worker-Allowed"] = "/admin/";
       }
       return c.body(buf, 200, headers);
@@ -316,7 +319,7 @@ export function createApp(
       const mapped = session ? sessionAuth(portal, session) : null;
       if (!session || !mapped || mapped.mfaPending) return c.json({ error: "unauthorized" }, 401);
       if (c.req.method !== "GET" && c.req.method !== "HEAD") {
-        const csrf = cookieMutationError(c, requestOrigin(c, cfg.trustProxy));
+        const csrf = cookieMutationError(c, requestOrigin(c, cfg.trustProxy), [publicOrigin(cfg.publicUrl)]);
         if (csrf) return c.json({ error: csrf === "origin" ? "origin not allowed" : "csrf" }, 403);
       }
       c.set("auth", mapped.auth);
