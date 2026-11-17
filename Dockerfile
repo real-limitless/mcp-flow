@@ -55,6 +55,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY docker ./docker
 COPY catalog/schema.json catalog/blocklist.txt ./catalog/
+RUN chmod 755 /app/dist/cli.js && ln -sf /app/dist/cli.js /usr/local/bin/mcp-flow
 USER node
 EXPOSE 8787
 VOLUME ["/data"]
