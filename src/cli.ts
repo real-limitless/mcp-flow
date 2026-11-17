@@ -1669,6 +1669,30 @@ program
     },
   );
 
+const portalCmd = program.command("portal").description("Portal login maintenance on the local database");
+
+portalCmd
+  .command("reset-bootstrap")
+  .description(
+    "Clear platform logins so MCP_FLOW_ADMIN_TOKEN works again. Host SQLite only; there is no HTTP route.",
+  )
+  .option("--db <path>", "sqlite path")
+  .action(async (opts: { db?: string }) => {
+    const cfg = loadConfig({ dbPath: opts.db });
+    if (!cfg.masterKeyRaw) {
+      console.error("MCP_FLOW_MASTER_KEY is required");
+      process.exit(1);
+    }
+    const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
+    try {
+      const { PortalDirectory } = await import("./portal/directory.js");
+      new PortalDirectory(store).resetPlatform();
+    } finally {
+      store.close();
+    }
+    console.log("platform logins disabled; the admin token works again");
+  });
+
 program
   .command("doctor")
   .description("Check local config / db / listen readiness")
@@ -1704,6 +1728,24 @@ program
     try {
       if (cfg.masterKeyRaw) {
         const store = new Store(cfg.dbPath, cfg.masterKeyRaw, storeOpts(cfg));
+        const { PortalDirectory } = await import("./portal/directory.js");
+        const portal = new PortalDirectory(store);
+        const platformLogins = portal.platformEnabled();
+        report.platformLoginsEnabled = platformLogins;
+        if (platformLogins) {
+          const missing = warnings.indexOf("MCP_FLOW_ADMIN_TOKEN missing");
+          if (missing >= 0) warnings.splice(missing, 1);
+          if (cfg.adminToken) {
+            warnings.push("MCP_FLOW_ADMIN_TOKEN is retired and will not be accepted");
+          }
+        }
+        const google = portal.getGoogle();
+        if ((cfg.googleClientId || google?.clientId) && !cfg.publicUrl) {
+          warnings.push("MCP_FLOW_PUBLIC_URL is required for Google sign-in");
+        }
+        if (cfg.googleClientId && !cfg.googleClientSecret && !google?.secretSet) {
+          warnings.push("Google client id is set without a client secret");
+        }
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;
         report.policy = ws.policy;

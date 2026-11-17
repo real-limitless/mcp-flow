@@ -33,6 +33,8 @@ export interface Workspace {
   name: string;
   createdAt: string;
   policy: WorkspacePolicy;
+  /** Set when the bootstrap admin or a platform admin disables this workspace. */
+  disabledAt?: string | null;
 }
 
 export type DeviceSandboxCap = "docker" | "podman" | "none";

@@ -142,7 +142,7 @@ Mint a replacement with `POST /v1/agents` using the same projects and tool prefi
 
 ### Operator key (AI manages the gateway)
 
-Mint a key with `admin: true` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). That key is a human admin agent. Env `MCP_FLOW_ADMIN_TOKEN` remains break-glass for humans/UI.
+Mint a key with `admin: true` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). That key is a human admin agent. Env `MCP_FLOW_ADMIN_TOKEN` is the bootstrap admin for the portal and for `/v1` until **Setup → Enable platform logins**. After that, the token is not accepted. Day-to-day admins sign in with Google and an authenticator code. `npx mcp-flow portal reset-bootstrap` clears that flag on the local database only.
 
 ```bash
 npx mcp-flow key create --name operator --admin --project default
@@ -376,7 +376,7 @@ Tailnet (Headscale or Tailscale): set `TS_AUTHKEY`, `TS_HOSTNAME`, and `TS_LOGIN
 
 ### Admin REST
 
-Operator `/v1/*` routes require `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN`, except `POST /v1/approvals/:id/push-decision` (one-time decide token from a Web Push payload).
+Operator `/v1/*` routes accept `Authorization: Bearer $MCP_FLOW_ADMIN_TOKEN` until platform logins are enabled, or a portal session cookie after Google and TOTP. `POST /v1/approvals/:id/push-decision` stays the one-time decide token from a Web Push payload.
 
 | Method | Path | Notes |
 | --- | --- | --- |

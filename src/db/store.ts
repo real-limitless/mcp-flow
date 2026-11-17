@@ -493,6 +493,7 @@ function rowWorkspace(r: Record<string, unknown>): Workspace {
     name: String(r.name),
     createdAt: String(r.created_at),
     policy: parsePolicy(r.policy_json),
+    disabledAt: r.disabled_at == null || r.disabled_at === "" ? null : String(r.disabled_at),
   };
 }
 
@@ -1152,7 +1153,7 @@ export class Store {
   readonly db: DatabaseSync;
   readonly masterKey: Buffer;
   private readonly backendRetiredListeners = new Set<
-    (workspaceId: string, slug: string) => void
+    (workspaceId: string, slug: string, backendId?: string) => void
   >();
 
   readonly identity: AgentDirectory;
@@ -1399,6 +1400,7 @@ export class Store {
       name,
       createdAt: nowIso(),
       policy: { ...DEFAULT_WORKSPACE_POLICY },
+      disabledAt: null,
     };
     this.db
       .prepare(
@@ -1437,6 +1439,18 @@ export class Store {
       .prepare(`UPDATE workspaces SET policy_json = ? WHERE id = ?`)
       .run(JSON.stringify(next), workspaceId);
     return this.getWorkspace(workspaceId);
+  }
+
+  /** True when the workspace row has been disabled. A missing column reads as false. */
+  workspaceDisabled(id: string): boolean {
+    try {
+      const row = this.db
+        .prepare(`SELECT disabled_at FROM workspaces WHERE id = ?`)
+        .get(id) as { disabled_at: string | null } | undefined;
+      return Boolean(row?.disabled_at);
+    } catch {
+      return false;
+    }
   }
 
   createApiKey(
@@ -1981,17 +1995,17 @@ export class Store {
       this.db.exec("ROLLBACK");
       throw err;
     }
-    this.emitBackendRetired(workspaceId, existing.slug);
+    this.emitBackendRetired(workspaceId, existing.slug, existing.id);
     return this.getBackendPublic(workspaceId, existing.id);
   }
 
   /** Drop cached upstream tool names when a backend is updated, disabled, or deleted. */
-  onBackendRetired(listener: (workspaceId: string, slug: string) => void): void {
+  onBackendRetired(listener: (workspaceId: string, slug: string, backendId?: string) => void): void {
     this.backendRetiredListeners.add(listener);
   }
 
-  private emitBackendRetired(workspaceId: string, slug: string): void {
-    for (const listener of this.backendRetiredListeners) listener(workspaceId, slug);
+  private emitBackendRetired(workspaceId: string, slug: string, backendId?: string): void {
+    for (const listener of this.backendRetiredListeners) listener(workspaceId, slug, backendId);
   }
 
   listSidecars(workspaceId: string): SidecarConnectionPublic[] {
@@ -2034,7 +2048,7 @@ export class Store {
       .prepare(`DELETE FROM backends WHERE id = ? AND workspace_id = ?`)
       .run(existing.id, workspaceId);
     const deleted = Number(res.changes) > 0;
-    if (deleted) this.emitBackendRetired(workspaceId, existing.slug);
+    if (deleted) this.emitBackendRetired(workspaceId, existing.slug, existing.id);
     return deleted;
   }
 

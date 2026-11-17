@@ -53,8 +53,8 @@ describe("(a) workspace creation is ops-only", () => {
     expect(ensureCalls.filter((f) => f.startsWith("src/mcp/") || f.startsWith("src/edge/") || f.startsWith("src/http/"))).toEqual([]);
     expect(ensureCalls.filter((f) => f.startsWith("src/api/"))).toEqual(["src/api/app.ts", "src/api/app.ts"]);
     const api = readFileSync(join(ROOT, "src/api/app.ts"), "utf8");
-    expect(api).toMatch(/cfg\.adminToken && safeEqualStr\(token, cfg\.adminToken\)\) \{\s*const ws = store\.ensureWorkspace\(cfg\.workspaceName\)/);
-    expect(api).toMatch(/safeEqualStr\(credential, cfg\.adminToken\)\) \{\s*approver = \{\s*workspaceId: store\.ensureWorkspace\(cfg\.workspaceName\)\.id/);
+    expect(api).toMatch(/safeEqualStr\(token, cfg\.adminToken\)\) \{\s*if \(!adminTokenAccepted\(portal, cfg, token\)\) return c\.json\(\{ error: "unauthorized" \}, 401\);\s*const ws = store\.ensureWorkspace\(cfg\.workspaceName\)/);
+    expect(api).toMatch(/adminTokenAccepted\(portal, cfg, credential\)\) \{\s*approver = \{\s*workspaceId: store\.ensureWorkspace\(cfg\.workspaceName\)\.id/);
   });
 
   describe("dynamic: every API route and every mf_ tool, as agent / human admin / anonymous, creates no workspace", () => {

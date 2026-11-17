@@ -149,6 +149,25 @@ export class EdgeRouter {
     };
   }
 
+  /** Ask every online device that might still be running this backend to drop it. */
+  async stopRuntime(backend: BackendRecord): Promise<void> {
+    const placement = this.placement(backend);
+    if (placement.mode !== "edge-sandbox" && placement.mode !== "edge-bare") return;
+    const ids = new Set<string>();
+    if (placement.deviceId) ids.add(placement.deviceId);
+    for (const id of this.hub.onlineDeviceIds(backend.workspaceId)) ids.add(id);
+    await Promise.all(
+      [...ids].map(async (deviceId) => {
+        if (!this.hub.isOnline(deviceId)) return;
+        try {
+          await this.hub.rpc(deviceId, "runtime.stop", { backendId: backend.id }, 5_000);
+        } catch {
+          /* the next tools call still restarts when the payload fingerprint changes */
+        }
+      }),
+    );
+  }
+
   async listTools(backend: BackendRecord, timeoutMs?: number): Promise<Tool[]> {
     const deviceId = this.resolveDeviceId(backend);
     const resp = await this.hub.rpc(

@@ -8,6 +8,7 @@ import type { CallToolResult, Tool } from "@modelcontextprotocol/sdk/types.js";
 import { DEFAULT_BACKEND_INIT_HARD_TIMEOUT_MS, DEFAULT_BACKEND_INIT_TIMEOUT_MS } from "../config.js";
 import { type Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
+import { spawnFingerprint } from "./runtime-fingerprint.js";
 import type { BackendRecord, Placement } from "../types.js";
 import { splitQualifiedToolName } from "../types.js";
 import { connectOci } from "./runners/oci.js";
@@ -64,6 +65,8 @@ interface PooledClient {
   deviceId?: string;
   /** Transport closed or failed. The pool entry must not be reused. */
   dead: boolean;
+  /** Env, command, image, and sandbox this process was started with. */
+  spawnFingerprint?: string;
 }
 
 /** Re-list tools on the open client after this age. Do not reconnect. */
@@ -342,8 +345,11 @@ export class UpstreamPool {
     this.stuckBackoffMaxMs = Math.max(this.stuckCooldownMs, opts.stuckBackoffMaxMs ?? DEFAULT_STUCK_BACKOFF_MAX_MS);
     this.crashBackoffMs = opts.crashBackoffMs ?? DEFAULT_CRASH_BACKOFF_MS;
     this.crashBackoffMaxMs = Math.max(this.crashBackoffMs, opts.crashBackoffMaxMs ?? DEFAULT_CRASH_BACKOFF_MAX_MS);
-    store.onBackendRetired((workspaceId, slug) => {
+    store.onBackendRetired((workspaceId, slug, backendId) => {
       this.forgetBackendTools(workspaceId, slug);
+      if (!backendId || !this.edgeRouter) return;
+      const backend = this.store.getBackendById(backendId);
+      if (backend) void this.edgeRouter.stopRuntime(backend);
     });
   }
 
@@ -821,38 +827,62 @@ export class UpstreamPool {
       await this.closeEntry(entry);
       throw new Error(entry.dead ? "Not connected" : "upstream pool is closing");
     }
+    entry.spawnFingerprint = this.fingerprintFor(backend);
     this.pool.set(backend.id, entry);
     return entry;
   }
 
-  private async getClient(backend: BackendRecord): Promise<PooledClient> {
+  /** Env and launch config the next spawn would use. Compared with the live child. */
+  private fingerprintFor(backend: BackendRecord): string {
+    let env: Record<string, string> = {};
+    try {
+      env = applySidecarEnv(this.store.decryptEnv(backend), this.store.egressFor(backend));
+    } catch {
+      env = {};
+    }
+    return spawnFingerprint(backend, env);
+  }
+
+  private async getClient(caller: BackendRecord): Promise<PooledClient> {
+    const backend = this.store.getBackendById(caller.id) ?? caller;
     const retiring = this.retiring.get(backend.id);
     if (retiring) await retiring;
     if (this.closing) throw new Error("upstream pool is closing");
 
     const existing = this.pool.get(backend.id);
-    if (existing && !existing.dead && this.transportAlive(existing)) {
-      if (Date.now() - existing.fetchedAt >= TOOL_CACHE_MS) {
+    const fingerprint = this.fingerprintFor(backend);
+    if (
+      existing &&
+      !existing.dead &&
+      this.transportAlive(existing) &&
+      existing.spawnFingerprint &&
+      existing.spawnFingerprint !== fingerprint
+    ) {
+      await this.retire(backend.id);
+    }
+    const live = this.pool.get(backend.id);
+    if (live && !live.dead && this.transportAlive(live)) {
+      if (Date.now() - live.fetchedAt >= TOOL_CACHE_MS) {
         try {
-          await this.refreshTools(existing);
+          await this.refreshTools(live);
         } catch (err) {
           if (isRequestTimeout(err)) {
             // V53-F4: an open client that stopped answering tools/list is retired, not waited on
-            if (this.pool.get(backend.id) === existing) await this.retire(backend.id);
+            if (this.pool.get(backend.id) === live) await this.retire(backend.id);
             throw this.recordFailure(backend, "init_timeout");
           }
-          if (this.pool.get(backend.id) === existing) await this.retire(backend.id);
+          if (this.pool.get(backend.id) === live) await this.retire(backend.id);
           if (!isTransportOrConnectionError(err)) throw err;
         }
       }
       if (
-        this.pool.get(backend.id) === existing &&
-        !existing.dead &&
-        this.transportAlive(existing)
+        this.pool.get(backend.id) === live &&
+        !live.dead &&
+        this.transportAlive(live)
       ) {
-        return existing;
+        return live;
       }
-    } else if (existing) {
+    } else if (live) {
       await this.retire(backend.id);
     }
 
@@ -1343,6 +1373,7 @@ export class UpstreamPool {
 
     const backend = this.store.getBackend(workspaceId, parsed.slug);
     if (!backend || !backend.enabled) return this.notSent("tool not found");
+    if (this.store.workspaceDisabled(backend.workspaceId)) return this.notSent("tool not found");
 
     const allow = this.allowSet(backend);
     if (allow && !allow.has(parsed.tool)) return this.notSent("tool not found");
