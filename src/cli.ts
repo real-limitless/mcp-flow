@@ -20,6 +20,7 @@ import { scopesHasFields } from "./types.js";
 import { MintAgentError, mintAgentKey } from "./identity/mint-agent.js";
 import { redactLog } from "./log/redact-lines.js";
 import { KeyringError } from "./crypto/keyring.js";
+import { applyVolumeSecrets } from "./volume-secrets.js";
 const program = new Command();
 
 program
@@ -1674,10 +1675,11 @@ const portalCmd = program.command("portal").description("Portal login maintenanc
 portalCmd
   .command("reset-bootstrap")
   .description(
-    "Clear platform logins so MCP_FLOW_ADMIN_TOKEN works again. Host SQLite only; there is no HTTP route.",
+    "Clear platform logins so MCP_FLOW_ADMIN_TOKEN works again. Local SQLite only; there is no HTTP route. Inside the gateway container: node /app/dist/cli.js portal reset-bootstrap",
   )
   .option("--db <path>", "sqlite path")
   .action(async (opts: { db?: string }) => {
+    applyVolumeSecrets();
     const cfg = loadConfig({ dbPath: opts.db });
     if (!cfg.masterKeyRaw) {
       console.error("MCP_FLOW_MASTER_KEY is required");

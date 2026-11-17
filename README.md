@@ -142,7 +142,7 @@ Mint a replacement with `POST /v1/agents` using the same projects and tool prefi
 
 ### Operator key (AI manages the gateway)
 
-Mint a key with `admin: true` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). That key is a human admin agent. Env `MCP_FLOW_ADMIN_TOKEN` is the bootstrap admin for the portal and for `/v1` until **Setup → Enable platform logins**. After that, the token is not accepted. Day-to-day admins sign in with Google and an authenticator code. `npx mcp-flow portal reset-bootstrap` clears that flag on the local database only.
+Mint a key with `admin: true` so an agent can call **`mf_admin_*`** tools on `/mcp` (and the same token works on `/v1/*` REST). That key is a human admin agent. Env `MCP_FLOW_ADMIN_TOKEN` is the bootstrap admin for the portal and for `/v1` until **Setup → Enable platform logins**. After that, the token is not accepted. Day-to-day admins sign in with Google and an authenticator code. Inside the gateway container, `node /app/dist/cli.js portal reset-bootstrap` clears that flag on the local database. The package is not on the public npm registry, so `npx mcp-flow` inside the container cannot install it. If `MCP_FLOW_MASTER_KEY` is empty in that shell, the command reads `/data/secrets.env`.
 
 ```bash
 npx mcp-flow key create --name operator --admin --project default
