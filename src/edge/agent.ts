@@ -12,6 +12,7 @@ import {
   type EdgeToolsCallPayload,
   type EdgeToolsListPayload,
 } from "./protocol.js";
+import { EdgeRuntimeCache } from "./runtime-cache.js";
 
 interface LocalRuntime {
   listTools: () => Promise<Tool[]>;
@@ -31,7 +32,7 @@ export async function runEdgeAgent(opts: {
   name?: string;
 }): Promise<void> {
   const wsUrl = opts.url.replace(/\/$/, "").replace(/^http/, "ws") + "/v1/edge/connect";
-  const runtimes = new Map<string, LocalRuntime>();
+  const runtimes = new EdgeRuntimeCache<LocalRuntime>();
 
   const connect = () => {
     const ws = new WebSocket(wsUrl, {
@@ -114,12 +115,12 @@ export async function runEdgeAgent(opts: {
 
 async function ensureRuntime(
   payload: EdgeToolsListPayload,
-  runtimes: Map<string, LocalRuntime>,
+  runtimes: EdgeRuntimeCache<LocalRuntime>,
 ): Promise<LocalRuntime> {
-  const key = payload.backendId;
-  const existing = runtimes.get(key);
-  if (existing) return existing;
+  return runtimes.resolve(payload, () => startRuntime(payload));
+}
 
+async function startRuntime(payload: EdgeToolsListPayload): Promise<LocalRuntime> {
   const env = payload.env ?? {};
   const mode = payload.mode;
 
@@ -144,7 +145,6 @@ async function ensureRuntime(
         if (run.dispose) await run.dispose();
       },
     };
-    runtimes.set(key, rt);
     return rt;
   }
 
@@ -168,7 +168,6 @@ async function ensureRuntime(
           if (run.dispose) await run.dispose();
         },
       };
-      runtimes.set(key, rt);
       return rt;
     }
     if (payload.command?.length) {
@@ -189,7 +188,6 @@ async function ensureRuntime(
           await run.client.close().catch(() => undefined);
         },
       };
-      runtimes.set(key, rt);
       return rt;
     }
   }
@@ -202,7 +200,7 @@ async function ensureRuntime(
 async function handleRpc(
   method: string,
   payload: Record<string, unknown>,
-  runtimes: Map<string, LocalRuntime>,
+  runtimes: EdgeRuntimeCache<LocalRuntime>,
 ): Promise<Record<string, unknown>> {
   if (method === "tools.list") {
     const p = payload as unknown as EdgeToolsListPayload;
@@ -218,11 +216,7 @@ async function handleRpc(
   }
   if (method === "runtime.stop") {
     const backendId = String(payload.backendId ?? "");
-    const rt = runtimes.get(backendId);
-    if (rt) {
-      await rt.close();
-      runtimes.delete(backendId);
-    }
+    await runtimes.stop(backendId);
     return { ok: true };
   }
   if (method === "runtime.start") {

@@ -2,22 +2,19 @@ const $ = (s) => document.querySelector(s);
 const errEl = $("#err");
 const TOKEN_KEY = "mcp_flow_admin_token";
 
-// R-5: credentials live in sessionStorage at most, never localStorage. Purge
-// any leftover copies an older build (or another tab) may have written.
+// R-5: credentials live in sessionStorage at most, never localStorage. The
+// portal session is an HttpOnly cookie. Purge any leftover admin token.
 try {
   for (const k of ["mcp_flow_admin_token", "mcp_flow_approver_token", "mcp_flow_harness_url"]) {
     globalThis.localStorage?.removeItem(k);
   }
+  sessionStorage.removeItem(TOKEN_KEY);
 } catch {
   /* storage may be blocked; nothing to purge */
 }
 
 function token() {
-  return sessionStorage.getItem(TOKEN_KEY) || "";
-}
-
-function setToken(t) {
-  sessionStorage.setItem(TOKEN_KEY, t);
+  return "";
 }
 
 function showErr(msg) {
@@ -26,17 +23,12 @@ function showErr(msg) {
 }
 
 async function api(path, opts = {}) {
-  const t = token();
-  if (!t) {
-    const err = new Error("Set admin token first");
-    err.code = "no_token";
-    throw err;
-  }
   const res = await fetch(path, {
     ...opts,
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${t}`,
       "Content-Type": "application/json",
+      "X-Mcp-Flow-Request": "1",
       ...(opts.headers || {}),
     },
   });
@@ -53,7 +45,7 @@ async function api(path, opts = {}) {
     // 403 = valid token that isn't permitted: report it, never clear the token.
     // 401: drop ONLY the admin token (memory + sessionStorage), re-prompt in
     // place. No retry with the old token, no reload, tab kept.
-    if (res.status === 401 && token() === t) promptAdminToken();
+    if (res.status === 401) promptAdminToken();
     const err = new Error(
       res.status === 401 ? REPROMPT_MSG : res.status === 403 ? notPermittedMsg(body.error) : code,
     );
@@ -105,23 +97,16 @@ function withIssues(tab, fn) {
 const REPROMPT_MSG = "Expired or invalid key — enter it again";
 
 function promptAdminToken() {
-  sessionStorage.removeItem(TOKEN_KEY);
-  const input = $("#token");
-  if (input) {
-    input.value = "";
-    input.placeholder = "Admin token — expired or invalid, enter it again";
+  const gate = $("#gate");
+  if (!gate) return;
+  gate.hidden = false;
+  const shell = $(".shell");
+  if (shell) shell.hidden = true;
+  const msg = $("#gateErr");
+  if (msg) {
+    msg.hidden = false;
+    msg.textContent = REPROMPT_MSG;
   }
-  let msg = $("#tokenMsg");
-  if (!msg) {
-    msg = document.createElement("p");
-    msg.id = "tokenMsg";
-    msg.className = "pa-warn";
-    msg.setAttribute("role", "alert");
-    $(".auth-row")?.after(msg);
-  }
-  msg.textContent = REPROMPT_MSG;
-  msg.hidden = false;
-  input?.focus();
 }
 
 function notPermittedMsg(code) {
@@ -4027,6 +4012,7 @@ async function refresh() {
     if (tab === "policy-approvals") await renderPolicyApprovals();
     else stopPolicyApprovalsPoll();
     if (tab === "access-map") await renderAccessMap();
+    if (tab === "setup") await renderSetup();
   } catch (e) {
     if (e.status === 403) {
       // Panel-level "not permitted"; token is kept (no logout).
@@ -4113,14 +4099,236 @@ renderBackends = withIssues("backends", renderBackends);
 renderApprovals = withIssues("approvals", renderApprovals);
 renderAccessMapLegacy = withIssues("access-map", renderAccessMapLegacy);
 
-$("#saveToken").addEventListener("click", () => {
-  setToken($("#token").value.trim());
-  const msg = $("#tokenMsg");
-  if (msg) msg.hidden = true;
-  void refresh(); // re-renders the current tab with the new key
-});
 $("#refresh").addEventListener("click", () => void refresh());
-$("#token").value = token();
+$("#wsSwitch")?.addEventListener("change", (ev) => {
+  const id = ev.target.value;
+  void api("/admin/session/workspace", { method: "POST", body: JSON.stringify({ id }) })
+    .then((session) => {
+      applySession(session);
+      void refresh();
+    })
+    .catch((e) => showErr(e.message));
+});
+$("#logout")?.addEventListener("click", () => {
+  void api("/admin/session/logout", { method: "POST", body: "{}" }).finally(() => {
+    location.href = "/admin/";
+  });
+});
+
+function applySession(session) {
+  const shell = $(".shell");
+  const gate = $("#gate");
+  const signedIn = session.state === "bootstrap" || session.state === "user";
+  if (shell) shell.hidden = !signedIn;
+  if (gate) gate.hidden = signedIn;
+  const setup = $("#tabSetup");
+  if (setup) setup.hidden = !session.platformAdmin;
+  const who = $("#who");
+  if (who) {
+    who.textContent = signedIn
+      ? session.state === "bootstrap"
+        ? "Bootstrap admin"
+        : session.email || "Signed in"
+      : "";
+  }
+  const logout = $("#logout");
+  if (logout) logout.hidden = !signedIn;
+  const google = $("#gateGoogleWrap");
+  if (google) google.hidden = !session.googleConfigured;
+  const boot = $("#gateBootstrap");
+  if (boot) boot.hidden = Boolean(session.platformLoginsEnabled) || session.state === "mfa";
+  const mfa = $("#gateMfa");
+  if (mfa) mfa.hidden = session.state !== "mfa";
+  const err = $("#gateErr");
+  const params = new URLSearchParams(location.search);
+  if (err && params.get("portal_error") && session.state === "anonymous") {
+    err.hidden = false;
+    err.textContent = "Sign-in was not accepted.";
+  }
+  if (session.state === "mfa" && !session.mfaEnrolled) void showEnroll();
+  const wsSwitch = $("#wsSwitch");
+  if (wsSwitch) {
+    const list = session.workspaces || [];
+    wsSwitch.hidden = !signedIn || list.length < 2;
+    wsSwitch.innerHTML = list
+      .map((ws) => `<option value="${escAttr(ws.id)}"${session.workspace?.id === ws.id ? " selected" : ""}>${esc(ws.name)}</option>`)
+      .join("");
+  }
+  if (signedIn && document.querySelector("#tab-setup.active")) void renderSetup();
+}
+
+async function showEnroll() {
+  try {
+    const body = await api("/admin/session/mfa/enroll", { method: "POST", body: "{}" });
+    const el = $("#mfaSecret");
+    const help = $("#mfaHelp");
+    if (help) help.textContent = "Add this secret to an authenticator app, then enter the code.";
+    if (el) {
+      el.hidden = false;
+      el.textContent = `${body.secret}\n${body.otpauth}`;
+    }
+  } catch (e) {
+    if (e.status !== 409) showErr(e.message);
+  }
+}
+
+async function renderSetup() {
+  const panel = $("#tab-setup");
+  if (!panel) return;
+  const [google, users, workspaces] = await Promise.all([
+    api("/v1/portal/google"),
+    api("/v1/portal/users"),
+    api("/v1/portal/workspaces"),
+  ]);
+  const workspaceOptions = (selected) =>
+    (workspaces.workspaces || [])
+      .map(
+        (ws) =>
+          `<option value="${escAttr(ws.id)}"${selected.includes(ws.id) ? " selected" : ""}>${esc(ws.name)}</option>`,
+      )
+      .join("");
+  panel.innerHTML = `
+    ${surface(
+      "Google sign-in",
+      `<p class="muted">Redirect URI to register on the Google client: <span class="mono">${esc(google.redirectUri || "Set MCP_FLOW_PUBLIC_URL")}</span></p>
+       <div class="form-grid">
+         <label class="field-label">Client id<input id="gClient" value="${escAttr(google.clientId || "")}" autocomplete="off" /></label>
+         <label class="field-label">Hosted domain<input id="gDomain" value="${escAttr(google.hostedDomain || "")}" placeholder="optional" autocomplete="off" /></label>
+         <label class="field-label">Client secret<input id="gSecret" type="password" placeholder="${google.secretSet ? "leave blank to keep" : "required"}" autocomplete="new-password" /></label>
+       </div>
+       <button type="button" class="pill-btn primary" id="gSave">Save Google</button>`,
+    )}
+    ${surface(
+      "Users",
+      `<div class="form-grid">
+         <label class="field-label">Email<input id="uEmail" autocomplete="off" /></label>
+         <label class="field-label">Workspaces<select id="uWorkspaces" multiple>${workspaceOptions([])}</select></label>
+         <label class="field-label"><input id="uPlatform" type="checkbox" /> Platform admin</label>
+       </div>
+       <button type="button" class="pill-btn primary" id="uAdd">Add user</button>
+       <table class="data"><tbody>${(users.users || [])
+         .map(
+           (u) => `<tr><td class="mono">${esc(u.email)}</td><td>${u.platformAdmin ? "platform" : "admin"}</td><td>${esc(u.status)}</td>
+             <td><button type="button" class="pill-btn ghost" data-user-suspend="${escAttr(u.id)}" data-status="${u.status === "suspended" ? "active" : "suspended"}">${u.status === "suspended" ? "Restore" : "Suspend"}</button></td></tr>`,
+         )
+         .join("")}</tbody></table>`,
+    )}
+    ${surface(
+      "Workspaces",
+      `<div class="form-grid"><label class="field-label">Name<input id="wName" autocomplete="off" /></label></div>
+       <button type="button" class="pill-btn primary" id="wAdd">Create workspace</button>
+       <table class="data"><tbody>${(workspaces.workspaces || [])
+         .map(
+           (ws) => `<tr><td>${esc(ws.name)}</td><td>${ws.disabledAt ? "disabled" : "active"}</td>
+             <td><button type="button" class="pill-btn ghost" data-ws="${escAttr(ws.id)}">${ws.disabledAt ? "Enable" : "Disable"}</button></td></tr>`,
+         )
+         .join("")}</tbody></table>
+       <p class="muted">Enable platform logins retires the admin token. It stays unavailable until a platform admin has finished Google and an authenticator code.</p>
+       <button type="button" class="pill-btn primary" id="enablePlatform" ${google.canEnable ? "" : "disabled"}>Enable platform logins</button>`,
+    )}
+  `;
+  $("#gSave")?.addEventListener("click", () => {
+    void api("/v1/portal/google", {
+      method: "PUT",
+      body: JSON.stringify({
+        clientId: $("#gClient").value,
+        clientSecret: $("#gSecret").value,
+        hostedDomain: $("#gDomain").value,
+      }),
+    }).then(() => renderSetup()).catch((e) => showErr(e.message));
+  });
+  $("#uAdd")?.addEventListener("click", () => {
+    const selected = [...$("#uWorkspaces").selectedOptions].map((o) => o.value);
+    void api("/v1/portal/users", {
+      method: "POST",
+      body: JSON.stringify({
+        email: $("#uEmail").value,
+        platformAdmin: $("#uPlatform").checked,
+        workspaceIds: selected,
+      }),
+    }).then(() => renderSetup()).catch((e) => showErr(e.message));
+  });
+  panel.querySelectorAll("[data-user-suspend]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void api(`/v1/portal/users/${btn.getAttribute("data-user-suspend")}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: btn.getAttribute("data-status") }),
+      }).then(() => renderSetup()).catch((e) => showErr(e.message));
+    });
+  });
+  $("#wAdd")?.addEventListener("click", () => {
+    void api("/v1/portal/workspaces", {
+      method: "POST",
+      body: JSON.stringify({ name: $("#wName").value }),
+    }).then(() => renderSetup()).catch((e) => showErr(e.message));
+  });
+  panel.querySelectorAll("[data-ws]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-ws");
+      const row = (workspaces.workspaces || []).find((ws) => ws.id === id);
+      void api(`/v1/portal/workspaces/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ disabled: !row?.disabledAt }),
+      }).then(() => renderSetup()).catch((e) => showErr(e.message));
+    });
+  });
+  $("#enablePlatform")?.addEventListener("click", () => {
+    if (!confirm("Enable platform logins? The admin token will stop working.")) return;
+    void api("/v1/portal/enable", { method: "POST", body: "{}" })
+      .then(() => {
+        location.href = "/admin/";
+      })
+      .catch((e) => showErr(e.message));
+  });
+}
+
+async function boot() {
+  let session = { state: "anonymous", googleConfigured: false, platformLoginsEnabled: false, platformAdmin: false };
+  try {
+    const res = await fetch("/admin/session", { credentials: "include" });
+    session = await res.json();
+  } catch {
+    session = { state: "anonymous" };
+  }
+  applySession(session);
+  if (session.state === "bootstrap" || session.state === "user") {
+    if (location.hash.startsWith("#approvals")) activateTab("approvals");
+    void refresh();
+  }
+}
+
+$("#gateBootstrap")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  const token = $("#bootToken").value;
+  $("#bootToken").value = "";
+  void api("/admin/bootstrap-login", { method: "POST", body: JSON.stringify({ token }) })
+    .then((session) => {
+      applySession(session);
+      void refresh();
+    })
+    .catch((e) => {
+      const msg = $("#gateErr");
+      if (msg) {
+        msg.hidden = false;
+        msg.textContent = e.message;
+      }
+    });
+});
+
+$("#gateMfa")?.addEventListener("submit", (ev) => {
+  ev.preventDefault();
+  void api("/admin/session/mfa/confirm", {
+    method: "POST",
+    body: JSON.stringify({ totp: $("#mfaCode").value }),
+  })
+    .then((session) => {
+      history.replaceState(null, "", "/admin/");
+      applySession(session);
+      void refresh();
+    })
+    .catch((e) => showErr(e.message));
+});
+
 if (location.hash.startsWith("#approvals")) activateTab("approvals");
-if (token()) void refresh();
+void boot();
 

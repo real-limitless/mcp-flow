@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseRateLimitPerMin } from "./policy/rate-limit.js";
+import { platformLoginsEnabledAt } from "./portal/platform-flag.js";
 import { parseProtectedTargets, type ProtectedTargets } from "./secrets/protected.js";
 
 export interface Config {
@@ -105,6 +106,12 @@ export interface Config {
    * and left out of that listing.
    */
   toolListTimeoutMs: number;
+  /** Seeded into portal_google only when that row does not exist yet. */
+  googleClientId: string;
+  googleClientSecret: string;
+  googleHostedDomain: string;
+  /** Seeded as platform admins on the env workspace only when no portal users exist. */
+  googleAdminEmails: string[];
 }
 
 /**
@@ -377,7 +384,19 @@ export function loadConfig(overrides: Partial<Config> = {}): Config {
     keepAliveTimeoutMs,
     headersTimeoutMs,
     toolListTimeoutMs,
+    googleClientId: overrides.googleClientId ?? env("MCP_FLOW_GOOGLE_CLIENT_ID") ?? "",
+    googleClientSecret: overrides.googleClientSecret ?? env("MCP_FLOW_GOOGLE_CLIENT_SECRET") ?? "",
+    googleHostedDomain: overrides.googleHostedDomain ?? env("MCP_FLOW_GOOGLE_HOSTED_DOMAIN") ?? "",
+    googleAdminEmails: overrides.googleAdminEmails ?? parseEmailList(env("MCP_FLOW_GOOGLE_ADMIN_EMAILS")),
   };
+}
+
+function parseEmailList(raw: string | undefined): string[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 export function requireSecrets(cfg: Config): void {
@@ -386,7 +405,7 @@ export function requireSecrets(cfg: Config): void {
       "MCP_FLOW_MASTER_KEY is required (openssl rand -base64 32)",
     );
   }
-  if (!cfg.adminToken) {
+  if (!cfg.adminToken && !platformLoginsEnabledAt(cfg.dbPath)) {
     throw new Error(
       "MCP_FLOW_ADMIN_TOKEN is required (openssl rand -hex 32)",
     );

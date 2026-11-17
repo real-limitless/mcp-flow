@@ -36,6 +36,15 @@ import {
 import { generateTotpSecret, otpauthUrl } from "../authz/totp.js";
 import { operatorSubject, verifyOperatorTotp } from "../authz/operator.js";
 import { hashToken, seal, safeEqualStr } from "../crypto.js";
+import { cookieMutationError, readPortalCookie } from "../portal/cookies.js";
+import {
+  adminTokenAccepted,
+  createPortal,
+  registerPortalRoutes,
+  registerPortalSetup,
+  sessionAuth,
+  type PortalHooks,
+} from "../portal/http.js";
 import { backendUpdateAuditDetail } from "../audit/backend-update.js";
 import type { Store } from "../db/store.js";
 import { toPublicBackend } from "../db/store.js";
@@ -120,6 +129,10 @@ type Variables = {
   auth: AuthContext;
   /** Set only when the admin caller is a human admin AGENT (not the env token or a legacy scopes.admin key) */
   humanAdmin?: string;
+  /** Env admin token or a pre-cutover bootstrap session. */
+  bootstrap?: boolean;
+  /** Google user allowed to change Google settings, users, and workspaces. */
+  platformAdmin?: boolean;
 };
 
 function placementSandboxError(body: {
@@ -200,12 +213,16 @@ export function createApp(
   cfg: Config,
   pool: UpstreamPool,
   edge?: { edgeHub?: EdgeHub | null; edgeRouter?: EdgeRouter | null },
+  hooks?: PortalHooks,
 ) {
   const app = new Hono<{ Variables: Variables }>();
   const catalogDir = defaultCatalogDir(process.cwd());
   const edgeHub = edge?.edgeHub ?? null;
   const edgeRouter = edge?.edgeRouter ?? null;
   const edgeEnabled = Boolean(edgeHub);
+  const portal = createPortal(store, cfg);
+
+  const adminCsp = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'";
 
   app.use(
     "*",
@@ -247,11 +264,20 @@ export function createApp(
     }
     try {
       const html = readFileSync(join(adminDir, "index.html"), "utf8");
+      c.header("Content-Security-Policy", adminCsp);
       return c.html(html);
     } catch {
       return c.text("admin UI not found", 404);
     }
   });
+  registerPortalRoutes(app, {
+    store,
+    cfg,
+    portal,
+    hooks,
+    requestOrigin: (c) => requestOrigin(c, cfg.trustProxy),
+  });
+
   const adminStatic: Record<string, string> = {
     "app.js": "application/javascript; charset=utf-8",
     "sw.js": "application/javascript; charset=utf-8",
@@ -267,7 +293,10 @@ export function createApp(
     if (!type || !adminDir) return c.text("not found", 404);
     try {
       const buf = readFileSync(join(adminDir, file));
-      const headers: Record<string, string> = { "Content-Type": type };
+      const headers: Record<string, string> = {
+        "Content-Type": type,
+        "Content-Security-Policy": adminCsp,
+      };
       if (file === "sw.js") {
         headers["Cache-Control"] = "no-cache";
         headers["Service-Worker-Allowed"] = "/admin/";
@@ -281,13 +310,32 @@ export function createApp(
   const admin = new Hono<{ Variables: Variables }>();
 
   admin.use("*", async (c, next) => {
+    const cookie = readPortalCookie(c);
+    if (cookie) {
+      const session = portal.resolveSession(cookie);
+      const mapped = session ? sessionAuth(portal, session) : null;
+      if (!session || !mapped || mapped.mfaPending) return c.json({ error: "unauthorized" }, 401);
+      if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+        const csrf = cookieMutationError(c, requestOrigin(c, cfg.trustProxy));
+        if (csrf) return c.json({ error: csrf === "origin" ? "origin not allowed" : "csrf" }, 403);
+      }
+      c.set("auth", mapped.auth);
+      if (mapped.humanAdmin) c.set("humanAdmin", mapped.humanAdmin);
+      if (mapped.bootstrap) c.set("bootstrap", true);
+      if (mapped.platformAdmin) c.set("platformAdmin", true);
+      await next();
+      return;
+    }
+
     const token = bearer(c.req.header("authorization"));
     if (!token) return c.json({ error: "unauthorized" }, 401);
 
-    // Break-glass env admin token
+    // Bootstrap env admin token. Refused everywhere once platform logins are enabled.
     if (cfg.adminToken && safeEqualStr(token, cfg.adminToken)) {
+      if (!adminTokenAccepted(portal, cfg, token)) return c.json({ error: "unauthorized" }, 401);
       const ws = store.ensureWorkspace(cfg.workspaceName);
       c.set("auth", { kind: "admin", workspaceId: ws.id });
+      c.set("bootstrap", true);
       await next();
       return;
     }
@@ -336,6 +384,8 @@ export function createApp(
 
     return c.json({ error: "unauthorized" }, 401);
   });
+
+  registerPortalSetup(admin, { store, cfg, portal });
 
   admin.get("/workspace", (c) => {
     const auth = c.get("auth");
@@ -2048,11 +2098,13 @@ export function createApp(
       );
     const credential = adminToken.trim().replace(/^bearer\s+/i, "").trim();
     let approver: { workspaceId: string; keyId: string | null } | null = null;
-    if (cfg.adminToken && safeEqualStr(credential, cfg.adminToken)) {
+    if (adminTokenAccepted(portal, cfg, credential)) {
       approver = {
         workspaceId: store.ensureWorkspace(cfg.workspaceName).id,
         keyId: null,
       };
+    } else if (cfg.adminToken && safeEqualStr(credential, cfg.adminToken)) {
+      return back("The admin token is retired. Paste an agent key (mf_…) from Keys.");
     } else {
       const key = store.authenticateApiKey(credential);
       if (key) {
