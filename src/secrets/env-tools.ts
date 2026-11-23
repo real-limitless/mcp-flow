@@ -10,6 +10,8 @@ import { EnvTemplateDirectory } from "./env-templates.js";
 import { assertEnvValueSafe, MASK, envKeyNames } from "./env-text.js";
 import { callProjectSecretTool, isProjectSecretTool, PROJECT_SECRET_ADMIN_TOOLS } from "./project-tools.js";
 import type { ProjectSecretDirectory } from "./project-scope.js";
+import { FILE_META_TOOLS, callFileTool, isFileTool, resyncFileSinks } from "./file-tools.js";
+import type { FileTemplateDirectory } from "./file-templates.js";
 
 
 export const ENV_META_TOOLS: Tool[] = [
@@ -70,7 +72,7 @@ export const ENV_META_TOOLS: Tool[] = [
   },
   {
     name: "mf_secret_resync",
-    description: "Re-apply template-tracked env refs whose active secret version advanced.",
+    description: "Re-apply template-tracked env refs and compose file mounts whose active secret version advanced.",
     inputSchema: {
       type: "object",
       properties: {
@@ -81,13 +83,14 @@ export const ENV_META_TOOLS: Tool[] = [
       additionalProperties: false,
     },
   },
+  ...FILE_META_TOOLS,
 ];
 
 export const ENV_ADMIN_TOOLS: Tool[] = [
   ...PROJECT_SECRET_ADMIN_TOOLS,
   {
     name: "mf_admin_env_grant_create",
-    description: "Create an env sink grant. Human admin only.",
+    description: "Create an env and file sink grant for one project, backend, and compose id set. Human admin only.",
     inputSchema: {
       type: "object",
       properties: {
@@ -147,6 +150,7 @@ export interface EnvToolDeps {
   projectSecrets: ProjectSecretDirectory;
   envGrants: EnvGrantDirectory;
   envTemplates: EnvTemplateDirectory;
+  fileTemplates: FileTemplateDirectory;
   protectedTargets: ProtectedTargets;
   provisionTargets: ProtectedTargets;
   callTool: (name: string, args: Record<string, unknown>) => Promise<CallToolResult>;
@@ -266,6 +270,17 @@ export async function callEnvTool(
 
   if (isProjectSecretTool(name)) {
     return callProjectSecretTool(deps, name, args, caller);
+  }
+
+  const fileAuthz = {
+    humanAdmin,
+    authorize: (project: string, backend: string, composeId: string) =>
+      authorizeEnv(deps, caller, humanAdmin, project, backend, composeId),
+    needsProductionApproval: (auth: EnvAuth) => needsProductionApproval(deps, auth),
+    actor: () => secretActor,
+  };
+  if (isFileTool(name)) {
+    return callFileTool(deps, name, args, caller, fileAuthz);
   }
 
   if (name === "mf_env_keys_list") {
@@ -604,7 +619,8 @@ export async function callEnvTool(
         approvals: pending.map((item) => item.approval_id),
       });
     }
-    return pending.length ? { resynced, skipped, pending } : { resynced, skipped };
+    const files = await resyncFileSinks(deps, caller, fileAuthz, filter);
+    return pending.length ? { resynced, skipped, pending, files } : { resynced, skipped, files };
   }
 
   if (name === "mf_admin_env_grant_create") {

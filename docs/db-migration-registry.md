@@ -14,7 +14,9 @@ Shipped migrations `0001`–`0014` are immutable. Never edit their SQL.
 | 0021_env_sink_template | shipped (Secrets phase C) | `mcpflow_env_template` storing ref form only for env resync. DOWN refuses while rows exist. |
 | 0022_project_secret_scope | shipped (issue #74) | `secrets_project_write` on `mcpflow_api_key` (default 0), `mcpflow_project_env_target` (`etg_`), `mcpflow_secret_upload` (`upl_`, token hash only), `mcpflow_project_secret_approval` (`psa_`, refs only). DOWN refuses while a target, ticket, approval, or granted flag remains, then drops the tables and the column. |
 | 0023_agent_key_tool_allowlist | shipped (issue #76) | Nullable `tool_prefix_allowlist` JSON array on `mcpflow_api_key`. Null means no extra tool-prefix filter. DOWN refuses while any key has a list set, then drops the epoch trigger and the column. |
-| 0024 | next free | |
+| 0024_agent_hidden | shipped | `hidden_at` on `mcpflow_agent`. DOWN refuses while any agent is hidden. |
+| 0025_portal_login | shipped | Portal Google login, sessions, and TOTP tables. `workspaces.disabled_at` is added only when that table already exists. |
+| 0026_file_sink_template | shipped (issue #90) | `mcpflow_file_template` stores the ref, path, mount id, and optional env key name for compose file mounts. Grants stay on `mcpflow_secret_sink` / `mcpflow_secret_grant`. DOWN refuses while rows exist. |
 
 ## Connection pragmas
 
@@ -24,6 +26,6 @@ A new empty database also sets `PRAGMA auto_vacuum=INCREMENTAL` before the first
 
 ## Down migrations
 
-A down script that would drop ciphertext must refuse while rows exist. `0015` inserts the payload row count into a guard table whose `CHECK` accepts only zero, then drops `mcpflow_call_payload` and the six `call_audit` columns added by the up migration. `0016` through `0019` use the same guard: each refuses while its secrets tables hold any row, then drops only those tables. `0019` also drops the three `mcpflow_api_key` flag columns after the reveal table is empty. `0022` refuses while a target, upload ticket, approval, or `secrets_project_write` flag remains, then drops those tables and the column. `0023` refuses while any `tool_prefix_allowlist` is set, then drops that column.
+A down script that would drop ciphertext or a secret ref must refuse while rows exist. `0026` uses the same guard: it refuses while `mcpflow_file_template` holds a row, then drops that table. The table has no value column. `0015` inserts the payload row count into a guard table whose `CHECK` accepts only zero, then drops `mcpflow_call_payload` and the six `call_audit` columns added by the up migration. `0016` through `0019` use the same guard: each refuses while its secrets tables hold any row, then drops only those tables. `0019` also drops the three `mcpflow_api_key` flag columns after the reveal table is empty. `0022` refuses while a target, upload ticket, approval, or `secrets_project_write` flag remains, then drops those tables and the column. `0023` refuses while any `tool_prefix_allowlist` is set, then drops that column.
 
 Destroyed secret versions are nulled under `secure_delete`, then the connection runs `wal_checkpoint(TRUNCATE)` and `incremental_vacuum`. That reclaim needs `auto_vacuum=INCREMENTAL`, which new databases already have. An older file still needs the offline `mcp-flow db vacuum` before freed pages return to the OS. The restore drill is documented in `docs/secrets-restore-drill.md`. It is not a startup check.

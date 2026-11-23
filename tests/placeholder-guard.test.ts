@@ -10,6 +10,12 @@ describe("placeholder guard save", () => {
     const ph = "[" + "REDACTED" + "]";
     expect(placeholderWriteBlock("cmp__compose-one", { composeId: ph })).toBeNull();
   });
+  it("treats a compose file mount write as a write", () => {
+    const ph = "[" + "REDACTED" + "]";
+    expect(placeholderWriteBlock("cmp__mounts-create", { mountPath: "/run/secrets/api.key", content: ph })).toBe("placeholder_write");
+    expect(placeholderWriteBlock("cmp__mounts-update", { mountId: "mnt_1", content: ph })).toBe("placeholder_write");
+    expect(placeholderWriteBlock("cmp__mounts-create", { mountPath: "/run/secrets/api.key", content: "ok" })).toBeNull();
+  });
   it("refuses a full-replace save whose env carries the placeholder", () => {
     const ph = "[" + "REDACTED" + "]";
     expect(placeholderWriteBlock("cmp__compose-saveEnvironment", { composeId: "cmp_test_1", env: `KEEP=1\nDB_URL=${ph}` })).toBe("placeholder_write");

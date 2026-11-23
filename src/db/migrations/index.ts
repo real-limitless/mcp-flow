@@ -24,6 +24,7 @@ import { MIGRATION_0022 } from "./0022_project_secret_scope.js";
 import { MIGRATION_0023 } from "./0023_agent_key_tool_allowlist.js";
 import { MIGRATION_0024 } from "./0024_agent_hidden.js";
 import { applyWorkspaceDisabledAt, MIGRATION_0025 } from "./0025_portal_login.js";
+import { MIGRATION_0026 } from "./0026_file_sink_template.js";
 import { tableRebuildPreflight, type PreflightDeps } from "./preflight.js";
 
 export interface Migration {
@@ -78,6 +79,7 @@ export const MIGRATIONS: readonly Migration[] = [
   { id: "0023_agent_key_tool_allowlist", sql: MIGRATION_0023 },
   { id: "0024_agent_hidden", sql: MIGRATION_0024 },
   { id: "0025_portal_login", sql: MIGRATION_0025, after: applyWorkspaceDisabledAt },
+  { id: "0026_file_sink_template", sql: MIGRATION_0026 },
 ];
 
 export const SQLITE_BUSY_TIMEOUT_MS = 5000;
