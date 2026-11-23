@@ -46,6 +46,7 @@ import { FileKekProvider, type KekProvider } from "../crypto/kek.js";
 import { SecretDirectory } from "../secrets/directory.js";
 import { EnvGrantDirectory } from "../secrets/env-grants.js";
 import { EnvTemplateDirectory } from "../secrets/env-templates.js";
+import { FileTemplateDirectory } from "../secrets/file-templates.js";
 import { ProjectSecretDirectory } from "../secrets/project-scope.js";
 import { parseProtectedTargets, type ProtectedTargets } from "../secrets/protected.js";
 import { verifyAutoVacuumOnStartup } from "../secrets/purge.js";
@@ -1163,6 +1164,7 @@ export class Store {
   readonly projectSecrets: ProjectSecretDirectory;
   readonly envGrants: EnvGrantDirectory;
   readonly envTemplates: EnvTemplateDirectory;
+  readonly fileTemplates: FileTemplateDirectory;
   readonly protectedTargets: ProtectedTargets;
   /** Secrets §0.5: mode read at open. New databases are INCREMENTAL (A1). */
   readonly autoVacuum: ReturnType<typeof verifyAutoVacuumOnStartup>;
@@ -1243,6 +1245,7 @@ export class Store {
     );
     this.envGrants = new EnvGrantDirectory(this.db, protectedTargets);
     this.envTemplates = new EnvTemplateDirectory(this.db);
+    this.fileTemplates = new FileTemplateDirectory(this.db);
   }
 
   private migrate(): void {

@@ -187,6 +187,7 @@ export class EnvGrantDirectory {
     if (this.protectedTargets.invalid) return false;
     if (this.protectedTargets.ids.has(input.composeId)) return false;
     // Human admin passes without a grant.
+    // The same row authorizes compose env writes and compose file mounts.
     const row = this.db
       .prepare(
         `SELECT a.kind, a.is_admin, k.status, a.status AS agent_status

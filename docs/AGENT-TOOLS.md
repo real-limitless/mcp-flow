@@ -92,6 +92,17 @@ Do not commit or publish real gateway URLs, keys, or session tokens.
 - `mf_admin_env_grant_list {project?}` — human admin only.
 - `mf_admin_env_grant_revoke {grant_id}` — human admin only.
 
+## Dokploy file sink
+
+Same grant and protected targets as the env sink. No new environment variable. Migration `0026_file_sink_template` runs on startup and stores refs only.
+
+- `mf_secret_file_set {backend, compose_id, project, path, ref? | generate?, name?, env_key?}` — phase B ref, or a human-admin `generate`. Optional `env_key` (`*_FILE`) is set to the path. Returns ref, path, version, and mount id. Never the value.
+- `mf_secret_file_unset {backend, compose_id, project, path}` — removes the mount and that env key when one was stored.
+- `mf_secret_file_list {backend, compose_id, project}` — path, mount id, ref or `***`.
+- `mf_secret_resync` re-applies file mounts after a rotate.
+
+A `toolPrefixAllowlist` must include `mf_secret_file_` for these tools.
+
 ## Project secret scope
 
 `secrets:project:write` is off until a human admin calls `mf_admin_secret_scope_set {key_id, enabled: true}`. The key can then generate and bind secrets only for its own projects. Responses never include a secret value.

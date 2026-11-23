@@ -546,6 +546,23 @@ Values never come back: tool output and audit rows carry key names, masked `***`
 
 Nothing new is required at boot: migration `0021` runs automatically and provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set.
 
+## Dokploy file sink
+
+Some apps read a secret from a file (`*_FILE`) instead of an environment variable. A bot still cannot carry the value: the gateway writes it into a Dokploy compose file mount.
+
+Tools:
+
+- `mf_secret_file_set {backend, compose_id, project, path, ref? | generate?, name?, env_key?}` — `ref` is a phase B `secret://` ref. `generate` (`token`, `password`, or `uuid`) is human-admin only and creates the secret inside the gateway. Optional `env_key` must end in `_FILE`. That call sets the env key to the mount path through the env sink, so every other env line stays as it was. The response is `{ref, path, version, mount_id}` and, when asked, `env_key`. Never the value.
+- `mf_secret_file_unset {backend, compose_id, project, path}` — removes that mount and, when the set call stored one, the matching `*_FILE` key.
+- `mf_secret_file_list {backend, compose_id, project}` — path, mount id, and either the phase B ref or `***`.
+- `mf_secret_resync` also re-applies file mounts whose secret version advanced.
+
+The grant is the existing one: `mf_admin_env_grant_create {project, backend, compose_ids, key_id? | agent_id?}`. One grant covers env keys and file mounts for that project, backend, and compose id set. A human admin does not need a grant. Compose ids in `MCP_FLOW_PROTECTED_TARGETS` are refused for everyone, including admins, and cannot be granted. A key restricted by `toolPrefixAllowlist` must include `mf_secret_file_` to call the file tools, and `mf_secret_file_` does not cover `mf_secret_resync`.
+
+The projects backend tools are Dokploy's mount API: `mounts-listByServiceId`, `mounts-one`, `mounts-create`, `mounts-update`, and `mounts-remove`. A value or an existing file that contains a redaction placeholder is refused. A mount that changes between the two reads is refused and nothing is written.
+
+Nothing new is required at boot. There is no new environment variable. Migration `0026_file_sink_template` runs on startup and stores the ref, path, mount id, and optional env key name. It does not store the value.
+
 ## Project secret scope
 
 An agent key cannot create or bind a secret until a human admin grants `secrets:project:write` on that key. The flag is off by default (`mcpflow_api_key.secrets_project_write = 0`). It does not grant platform admin, reveal, or access to another project.

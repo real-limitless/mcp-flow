@@ -45,6 +45,12 @@ The first gateway start on this release applies migration `0013_call_audit_purge
 - Grants scoped by project/backend/compose id; protected targets refused for everyone.
 - Migration `0021_env_sink_template` runs automatically; provision stays off until `MCP_FLOW_ENV_PROVISION_TARGETS` is set. Values never returned or audited.
 
+## Dokploy file sink
+
+- `mf_secret_file_set`, `mf_secret_file_unset`, and `mf_secret_file_list` write a phase B ref, or a human-admin generated secret, into a Dokploy compose file mount. Optional `*_FILE` env key is set through the env sink. Responses, audit rows, and the template table carry the ref, path, version, and mount id only.
+- The existing env grant (project, backend, compose id) covers file mounts. `MCP_FLOW_PROTECTED_TARGETS` still refuses those compose ids for everyone.
+- Migration `0026_file_sink_template` runs automatically. No new environment variable. Nothing new is required at boot.
+
 ## Project secret scope
 
 - Agent keys can hold `secrets:project:write` (off by default) and generate, upload, and bind secrets for their own project without platform admin.
