@@ -1,9 +1,9 @@
-/* mcp-flow admin service worker: cache the shell, never /v1 or /mcp. */
-const CACHE = "mcp-flow-admin-v5";
+/* mcp-flow admin service worker: cache the shell, never /v1, /mcp, or the OAuth redirects. */
+const CACHE = "mcp-flow-admin-v6";
 const PRECACHE = [
   "/admin/",
-  "/admin/app.js?v=5",
-  "/admin/styles.css?v=5",
+  "/admin/app.js?v=6",
+  "/admin/styles.css?v=6",
   "/admin/manifest.webmanifest",
   "/admin/icon.svg",
   "/admin/icon-192.png",
@@ -34,6 +34,9 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   if (url.pathname.startsWith("/v1/") || url.pathname === "/mcp") return;
   if (!url.pathname.startsWith("/admin")) return;
+  // The Google callback is a cross-site navigation that must set and send the
+  // state cookie itself. Intercepting it can drop that cookie.
+  if (url.pathname === "/admin/oauth" || url.pathname.startsWith("/admin/oauth/")) return;
   event.respondWith(
     fetch(event.request)
       .then((res) => {

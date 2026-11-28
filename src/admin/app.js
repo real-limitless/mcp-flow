@@ -51,6 +51,7 @@ async function api(path, opts = {}) {
     );
     err.status = res.status;
     err.code = code;
+    err.reason = typeof body.reason === "string" ? body.reason : "";
     throw err;
   }
   return body;
@@ -4118,6 +4119,68 @@ $("#logout")?.addEventListener("click", () => {
   });
 });
 
+function googleOffText(session) {
+  if (!session.googleConfigured) {
+    return session.platformLoginsEnabled
+      ? "Google sign-in is not set up. A platform admin has to save a Google client under Setup."
+      : "Google sign-in is not set up. Use the bootstrap admin token, then save a Google client under Setup.";
+  }
+  return "Google sign-in needs MCP_FLOW_PUBLIC_URL set to the https address of this portal.";
+}
+
+function portalSignInMessage(raw, session) {
+  const code = /^[a-z0-9_]{1,40}$/.test(raw || "") ? raw : "";
+  if (code === "google_unconfigured") return googleOffText(session || {});
+  if (code === "public_url") {
+    return "Google sign-in needs MCP_FLOW_PUBLIC_URL set to the https address of this portal.";
+  }
+  const hints = {
+    state_missing: "The sign-in response had no state parameter.",
+    code_missing: "Google did not return an authorization code.",
+    state_cookie: "The browser did not send the sign-in cookie. Open this portal on its public https address and try again.",
+    state_mismatch: "The sign-in response did not match this browser.",
+    state_expired: "The sign-in attempt expired or was already used. Try again.",
+    state_unreadable: "The saved sign-in attempt could not be read. Try again.",
+    provider_denied: "Google did not complete sign-in.",
+    token_exchange: "Google did not accept the authorization code. Check the redirect URI registered for this portal.",
+    token_audience: "The Google token was not issued for this client.",
+    token_issuer: "The Google token issuer was not accepted.",
+    token_expired: "The Google token was expired. Check the gateway clock.",
+    token_rejected: "The Google token was not accepted.",
+    email_unverified: "The Google account email is not verified.",
+    nonce: "The sign-in response did not match this attempt.",
+    identity_conflict: "This Google account does not match the portal user.",
+    unknown_account: "This Google account is not a portal user.",
+    account_mismatch: "This Google account is linked to a different portal user.",
+    hosted_domain: "The Google account is outside the hosted domain configured for this portal.",
+    account_inactive: "This portal user is not active.",
+    no_workspace: "This portal user has no workspace.",
+    workspace_disabled: "This portal user's workspace is disabled.",
+    agent_inactive: "The admin agent for this user is not active.",
+    session_rejected: "The portal could not open a session.",
+    bootstrap_missing: "Enter the bootstrap admin token.",
+    bootstrap_rejected: "That bootstrap token was not accepted.",
+    bootstrap_retired: "Platform logins are on, so the bootstrap token is no longer accepted.",
+    origin: "This page's address did not match the gateway. Open the portal at its public URL and try again.",
+    csrf: "The sign-in request was blocked.",
+  };
+  if (!code) return "Sign-in was not accepted.";
+  const hint = hints[code];
+  return hint ? `Sign-in was not accepted (${code}). ${hint}` : `Sign-in was not accepted (${code}).`;
+}
+
+function bootstrapSignInMessage(reason) {
+  if (reason === "bootstrap_retired") {
+    return "Platform logins are on, so the bootstrap token is no longer accepted. Sign in with Google.";
+  }
+  if (reason === "bootstrap_missing") return "Enter the bootstrap admin token.";
+  if (reason === "origin") {
+    return "This page's address did not match the gateway. Open the portal at its public URL and try again.";
+  }
+  if (reason === "csrf") return "The sign-in request was blocked.";
+  return "That bootstrap token was not accepted (bootstrap_rejected).";
+}
+
 function applySession(session) {
   const shell = $(".shell");
   const gate = $("#gate");
@@ -4136,8 +4199,16 @@ function applySession(session) {
   }
   const logout = $("#logout");
   if (logout) logout.hidden = !signedIn;
+  const googleReady = Boolean(session.googleConfigured && session.redirectUri);
   const google = $("#gateGoogleWrap");
-  if (google) google.hidden = !session.googleConfigured;
+  if (google) google.hidden = !googleReady;
+  const googleOff = $("#gateGoogleOff");
+  if (googleOff) {
+    const portalError = new URLSearchParams(location.search).get("portal_error");
+    const showOff = session.state === "anonymous" && !googleReady && !portalError;
+    googleOff.hidden = !showOff;
+    if (showOff) googleOff.textContent = googleOffText(session);
+  }
   const boot = $("#gateBootstrap");
   if (boot) boot.hidden = Boolean(session.platformLoginsEnabled) || session.state === "mfa";
   const mfa = $("#gateMfa");
@@ -4146,7 +4217,7 @@ function applySession(session) {
   const params = new URLSearchParams(location.search);
   if (err && params.get("portal_error") && session.state === "anonymous") {
     err.hidden = false;
-    err.textContent = "Sign-in was not accepted.";
+    err.textContent = portalSignInMessage(params.get("portal_error"), session);
   }
   if (session.state === "mfa" && !session.mfaEnrolled) void showEnroll();
   const wsSwitch = $("#wsSwitch");
@@ -4313,7 +4384,7 @@ $("#gateBootstrap")?.addEventListener("submit", (ev) => {
       const msg = $("#gateErr");
       if (msg) {
         msg.hidden = false;
-        msg.textContent = e.message;
+        msg.textContent = bootstrapSignInMessage(e.reason);
       }
     });
 });
