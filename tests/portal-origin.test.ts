@@ -6,7 +6,7 @@ import { createApp } from "../src/api/app.js";
 import { loadConfig } from "../src/config.js";
 import { Store } from "../src/db/store.js";
 import { UpstreamPool } from "../src/mcp/upstream.js";
-import { originHostMatches } from "../src/portal/cookies.js";
+import { originHostMatches, portalCookieIsSecure } from "../src/portal/cookies.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -17,6 +17,41 @@ describe("portal origin check", () => {
   it("matches the public host even when the request URL is the container address", () => {
     expect(originHostMatches("https://portal.example", "portal.example")).toBe(true);
     expect(originHostMatches("https://portal.example", "evil.example")).toBe(false);
+  });
+
+  it("marks the sign-in cookie Secure from the public host, not from a cross-site Origin", () => {
+    expect(
+      portalCookieIsSecure({
+        requestOrigin: "http://127.0.0.1:9",
+        publicUrl: "https://portal.example",
+        host: "portal.example",
+      }),
+    ).toBe(true);
+    expect(
+      portalCookieIsSecure({
+        origin: "https://accounts.google.com",
+        requestOrigin: "http://127.0.0.1:8787",
+        publicUrl: "http://127.0.0.1:8787",
+        host: "127.0.0.1:8787",
+      }),
+    ).toBe(false);
+    expect(
+      portalCookieIsSecure({
+        requestOrigin: "http://127.0.0.1:9",
+        publicUrl: "https://portal.example",
+        host: "127.0.0.1:9",
+        forwardedProto: "https",
+        forwardedHost: "portal.example",
+      }),
+    ).toBe(true);
+    expect(
+      portalCookieIsSecure({
+        requestOrigin: "http://127.0.0.1:9",
+        publicUrl: "https://portal.example",
+        host: "127.0.0.1:9",
+        forwardedProto: "https",
+      }),
+    ).toBe(false);
   });
 
   it("accepts a sign-in from the public site while Node sees an internal URL", async () => {

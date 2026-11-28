@@ -63,6 +63,46 @@ export function originHostMatches(origin: string, hostHeader: string): boolean {
   return host === url.host.toLowerCase() || host === url.hostname.toLowerCase();
 }
 
+function headerFirst(value: string | null | undefined): string {
+  return value?.split(",")[0]?.trim() ?? "";
+}
+
+/**
+ * Whether the browser connection is HTTPS, so Set-Cookie may carry Secure.
+ * A TLS proxy makes Node's request URL http. The Google callback's Origin is
+ * accounts.google.com, which is not this site's scheme. A same-site Origin
+ * wins. Otherwise an https request URL, a Host that matches the public https
+ * origin, or X-Forwarded-Host plus X-Forwarded-Proto when they match that origin.
+ */
+export function portalCookieIsSecure(input: {
+  origin?: string | null;
+  requestOrigin: string;
+  publicUrl: string;
+  forwardedProto?: string | null;
+  forwardedHost?: string | null;
+  host?: string | null;
+}): boolean {
+  const requestOrigin = input.requestOrigin.trim();
+  const pub = publicOrigin(input.publicUrl);
+  const host = headerFirst(input.host);
+  const origin = input.origin?.trim() ?? "";
+  if (origin.startsWith("http://") || origin.startsWith("https://")) {
+    const sameSite =
+      origin === requestOrigin ||
+      (pub !== "" && origin === pub) ||
+      (host !== "" && originHostMatches(origin, host));
+    if (sameSite) return origin.startsWith("https://");
+  }
+  if (requestOrigin.startsWith("https://")) return true;
+  if (pub.startsWith("https://")) {
+    if (host && originHostMatches(pub, host)) return true;
+    const forwardedHost = headerFirst(input.forwardedHost);
+    const forwardedProto = headerFirst(input.forwardedProto).toLowerCase();
+    if (forwardedProto === "https" && forwardedHost && originHostMatches(pub, forwardedHost)) return true;
+  }
+  return false;
+}
+
 export function publicOrigin(publicUrl: string): string {
   const raw = publicUrl.trim();
   if (!raw) return "";

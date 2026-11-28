@@ -70,7 +70,7 @@ docs/campaign/        # storyboard frames + styles (design SoT for site)
   pages.yml           # site + catalog-data → GitHub Pages
 ```
 
-Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN` (bootstrap only, retired after platform logins are enabled), optional `MCP_FLOW_GOOGLE_CLIENT_ID` / `MCP_FLOW_GOOGLE_CLIENT_SECRET` / `MCP_FLOW_GOOGLE_ADMIN_EMAILS` to seed the portal, optional `MCP_FLOW_API_KEY` for harnesses.
+Env (see `.env.example`): `MCP_FLOW_MASTER_KEY`, `MCP_FLOW_ADMIN_TOKEN` (bootstrap only, retired after platform logins are enabled), optional Google sign-in (`MCP_FLOW_PUBLIC_URL` plus `MCP_FLOW_GOOGLE_CLIENT_ID` / `MCP_FLOW_GOOGLE_CLIENT_SECRET`, optional `MCP_FLOW_GOOGLE_HOSTED_DOMAIN` and `MCP_FLOW_GOOGLE_ADMIN_EMAILS`) to seed the portal, optional `MCP_FLOW_TRUST_PROXY` behind a TLS proxy, optional `MCP_FLOW_API_KEY` for harnesses. An empty `portal_platform` table means the bootstrap token still works. It does not enable Google.
 
 Compose: `docker compose up --build -d`: gateway + bootstrap + edge (`Dockerfile.edge`: git, gh, `/repos`, `gh` config volume) + Tailscale sidecar. The sidecar's outbound proxy is opt-in per backend (named connection). Do not auto-register GitHub/fs backends: add them in Admin (edge-sandbox → compose-edge). Edge stdio backends use the PATH commands `shell-mcp` and `github-mcp` (global `npm install -g`, or the edge image's `/usr/local/bin` links). Keep the stored command as that name. If a checkout path to `docker/shell-mcp.mjs` is still stored and that file is missing, the edge process starts the helper from the install that is running, including when that process runs as root.
 

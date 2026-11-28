@@ -21,6 +21,7 @@ import { MintAgentError, mintAgentKey } from "./identity/mint-agent.js";
 import { redactLog } from "./log/redact-lines.js";
 import { KeyringError } from "./crypto/keyring.js";
 import { applyVolumeSecrets } from "./volume-secrets.js";
+import { googleRedirectUri, googleSignInWarnings } from "./portal/google.js";
 const program = new Command();
 
 program
@@ -1742,11 +1743,19 @@ program
           }
         }
         const google = portal.getGoogle();
-        if ((cfg.googleClientId || google?.clientId) && !cfg.publicUrl) {
-          warnings.push("MCP_FLOW_PUBLIC_URL is required for Google sign-in");
-        }
-        if (cfg.googleClientId && !cfg.googleClientSecret && !google?.secretSet) {
-          warnings.push("Google client id is set without a client secret");
+        warnings.push(
+          ...googleSignInWarnings({
+            publicUrl: cfg.publicUrl,
+            clientId: cfg.googleClientId || google?.clientId || "",
+            clientSecretConfigured: Boolean(cfg.googleClientSecret) || Boolean(google?.secretSet),
+          }),
+        );
+        if (cfg.publicUrl) {
+          try {
+            report.googleRedirectUri = googleRedirectUri(cfg.publicUrl);
+          } catch {
+            report.googleRedirectUri = null;
+          }
         }
         const ws = store.ensureWorkspace(cfg.workspaceName);
         report.workspace = ws.name;

@@ -154,6 +154,31 @@ Examples of operator tools: `mf_admin_status`, `mf_admin_create_backend`, `mf_ad
 
 Prefer operator keys over pasting the env admin token into IDE config (revocable, audited by key id).
 
+### Google sign-in for the admin
+
+The bootstrap admin token signs in until **Setup → Enable platform logins**. An empty `portal_platform` table means that cutover has not been done, so the bootstrap token still works. It does not mean Google sign-in is on. The Google button is shown only when a client id, a client secret, and `MCP_FLOW_PUBLIC_URL` are all set. Otherwise the sign-in page says Google sign-in is not set up.
+
+| Variable | Required | Default |
+| --- | --- | --- |
+| `MCP_FLOW_PUBLIC_URL` | Yes, for Google | unset. https origin browsers use, no path. http only for localhost |
+| `MCP_FLOW_GOOGLE_CLIENT_ID` | Yes, to seed | unset. Seeds an empty database once |
+| `MCP_FLOW_GOOGLE_CLIENT_SECRET` | Yes, to seed | unset. Seeds an empty database once. Later secret changes are sealed in SQLite |
+| `MCP_FLOW_GOOGLE_HOSTED_DOMAIN` | No | unset. When set, the authorization request sends `hd` and the ID token `hd` claim must match |
+| `MCP_FLOW_GOOGLE_ADMIN_EMAILS` | No | unset. Comma-separated emails seeded as platform admins only while the user table is empty |
+| `MCP_FLOW_TRUST_PROXY` | No | `false`. Set `true` when a proxy terminates TLS and rewrites Host. Forward `X-Forwarded-Proto` and `X-Forwarded-Host` |
+
+Register this exact redirect URI on the Google client (Web application):
+
+```text
+${MCP_FLOW_PUBLIC_URL}/admin/oauth/callback
+```
+
+Example: `https://mcp.example/admin/oauth/callback`.
+
+`npx mcp-flow doctor` prints that redirect URI and warns when the client id, client secret, or public URL is missing. The gateway logs the same gaps at startup. A rejected Google or bootstrap sign-in writes `portal.login_rejected` with a reason code and a log line `portal sign-in rejected kind=… code=…`. The code is also shown on the sign-in page. Tokens and email addresses are not written there.
+
+People who are not seeded have to be added under Setup. Until then Google answers `unknown_account`. After a platform admin finishes Google and an authenticator code, **Enable platform logins** retires the bootstrap token.
+
 ### OAuth login for connectors (Keys)
 
 Clients that ask for an OAuth client id, authorization endpoint, and token endpoint (Grok's custom connector) use the values on **Admin → Keys → OAuth connector**. Leave the client secret empty. Token auth method is `none` (PKCE). Scope `mcp` is an agent; `mcp:admin` is an operator.

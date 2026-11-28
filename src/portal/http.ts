@@ -11,6 +11,7 @@ import {
   clearPortalCookie,
   clearStateCookie,
   cookieMutationError,
+  portalCookieIsSecure,
   publicOrigin,
   readPortalCookie,
   readStateCookie,
@@ -21,10 +22,12 @@ import { PortalDirectory, PortalError, type PortalSession } from "./directory.js
 import {
   beginGoogleAuth,
   exchangeGoogleCode,
+  GoogleSignInError,
   googleRedirectUri,
   verifyGoogleIdToken,
   type GoogleIdentity,
 } from "./google.js";
+import { isPortalSignInCode, safeProviderCode, type PortalSignInCode } from "./signin-codes.js";
 import type { JWTVerifyGetKey } from "jose";
 
 export interface PortalHooks {
@@ -118,7 +121,33 @@ export function registerPortalRoutes(
   const { cfg, portal } = deps;
 
   const secure = (c: Context) =>
-    (c.req.header("origin") ?? deps.requestOrigin(c)).startsWith("https://");
+    portalCookieIsSecure({
+      origin: c.req.header("origin"),
+      requestOrigin: deps.requestOrigin(c),
+      publicUrl: cfg.publicUrl,
+      forwardedProto: c.req.header("x-forwarded-proto"),
+      forwardedHost: c.req.header("x-forwarded-host"),
+      host: c.req.header("host"),
+    });
+
+  const noteRejection = (kind: "google" | "bootstrap", code: string, provider?: string): PortalSignInCode => {
+    const reason: PortalSignInCode = isPortalSignInCode(code) ? code : "token_rejected";
+    const safeProvider = safeProviderCode(provider);
+    console.error(
+      `[mcp-flow] portal sign-in rejected kind=${kind} code=${reason}${safeProvider ? ` provider=${safeProvider}` : ""}`,
+    );
+    try {
+      const ws = deps.store.ensureWorkspace(cfg.workspaceName);
+      deps.store.writeAudit({
+        workspaceId: ws.id,
+        action: "portal.login_rejected",
+        detail: { kind, reason, ...(safeProvider ? { provider: safeProvider } : {}) },
+      });
+    } catch {
+      console.error(`[mcp-flow] portal sign-in audit failed code=${reason}`);
+    }
+    return reason;
+  };
 
   const mutationGuard = (c: Context): Response | null => {
     const err = cookieMutationError(c, deps.requestOrigin(c), [publicOrigin(cfg.publicUrl)]);
@@ -160,13 +189,20 @@ export function registerPortalRoutes(
   });
 
   app.post("/admin/bootstrap-login", async (c) => {
-    const blocked = mutationGuard(c);
-    if (blocked) return blocked;
-    if (portal.platformEnabled()) return c.json({ error: "unauthorized" }, 401);
+    const guard = cookieMutationError(c, deps.requestOrigin(c), [publicOrigin(cfg.publicUrl)]);
+    if (guard) {
+      const reason = noteRejection("bootstrap", guard === "origin" ? "origin" : "csrf");
+      return c.json({ error: guard === "origin" ? "origin not allowed" : "csrf", reason }, 403);
+    }
+    if (portal.platformEnabled()) {
+      const reason = noteRejection("bootstrap", "bootstrap_retired");
+      return c.json({ error: "unauthorized", reason }, 401);
+    }
     const body = (await c.req.json().catch(() => ({}))) as { token?: unknown };
     const token = typeof body.token === "string" ? body.token.trim() : "";
     if (!cfg.adminToken || !token || !safeEqualStr(token, cfg.adminToken)) {
-      return c.json({ error: "unauthorized" }, 401);
+      const reason = noteRejection("bootstrap", token ? "bootstrap_rejected" : "bootstrap_missing");
+      return c.json({ error: "unauthorized", reason }, 401);
     }
     const ws = deps.store.ensureWorkspace(cfg.workspaceName);
     const opened = portal.openBootstrapSession(ws.id);
@@ -268,49 +304,69 @@ export function registerPortalRoutes(
       });
       return sessionView(c, opened.session);
     } catch (err) {
-      if (err instanceof PortalError) return c.json({ error: err.message }, err.status as 400);
+      if (err instanceof PortalError) {
+        if (err.code) noteRejection("google", err.code);
+        return c.json({ error: err.message, ...(err.code ? { reason: err.code } : {}) }, err.status as 400);
+      }
       throw err;
     }
   });
 
   app.get("/admin/oauth/start", (c) => {
+    const fail = (code: PortalSignInCode) => {
+      noteRejection("google", code);
+      return c.redirect(`/admin/?portal_error=${code}`);
+    };
     const google = portal.getGoogle();
     const secret = portal.googleSecret();
-    if (!google?.clientId || !secret) {
-      return c.redirect("/admin/?portal_error=google");
-    }
+    if (!google?.clientId || !secret) return fail("google_unconfigured");
     let redirectUri: string;
     try {
       redirectUri = googleRedirectUri(cfg.publicUrl);
     } catch {
-      return c.redirect("/admin/?portal_error=google");
+      return fail("public_url");
     }
-    const started = beginGoogleAuth({ clientId: google.clientId, redirectUri });
+    const started = beginGoogleAuth({
+      clientId: google.clientId,
+      redirectUri,
+      hostedDomain: google.hostedDomain,
+    });
     portal.saveOAuthState(started);
     writeStateCookie(c, started.state, secure(c));
     return c.redirect(started.url);
   });
 
   app.get("/admin/oauth/callback", async (c) => {
-    const fail = (reason: string) => {
+    const fail = (code: string, provider?: string) => {
+      const reason = noteRejection("google", code, provider);
       clearStateCookie(c, secure(c));
       return c.redirect(`/admin/?portal_error=${encodeURIComponent(reason)}`);
     };
     const state = c.req.query("state") ?? "";
     const code = c.req.query("code") ?? "";
+    const providerError = c.req.query("error") ?? "";
+    if (providerError && !code) return fail("provider_denied", safeProviderCode(providerError));
+    if (!state) return fail("state_missing");
+    if (!code) return fail("code_missing");
     const cookie = readStateCookie(c);
-    if (!state || !code || !cookie || cookie !== state) return fail("state");
-    const saved = portal.takeOAuthState(state);
+    if (!cookie) return fail("state_cookie");
+    if (!safeEqualStr(cookie, state)) return fail("state_mismatch");
+    let saved: ReturnType<PortalDirectory["takeOAuthState"]>;
+    try {
+      saved = portal.takeOAuthState(state);
+    } catch {
+      return fail("state_unreadable");
+    }
     clearStateCookie(c, secure(c));
-    if (!saved) return fail("state");
+    if (!saved) return fail("state_expired");
     const google = portal.getGoogle();
     const secret = portal.googleSecret();
-    if (!google || !secret) return fail("google");
+    if (!google || !secret) return fail("google_unconfigured");
     let redirectUri: string;
     try {
       redirectUri = googleRedirectUri(cfg.publicUrl);
     } catch {
-      return fail("google");
+      return fail("public_url");
     }
     let identity: GoogleIdentity;
     try {
@@ -328,10 +384,11 @@ export function registerPortalRoutes(
         audience: google.clientId,
         jwks: deps.hooks?.jwks,
       });
-    } catch {
-      return fail("denied");
+    } catch (err) {
+      if (err instanceof GoogleSignInError) return fail(err.code, err.provider);
+      return fail("token_rejected");
     }
-    if (!portal.nonceMatches(identity.nonce, saved.nonceHash)) return fail("denied");
+    if (!portal.nonceMatches(identity.nonce, saved.nonceHash)) return fail("nonce");
     try {
       const accepted = portal.acceptGoogleIdentity({
         sub: identity.sub,
@@ -347,8 +404,9 @@ export function registerPortalRoutes(
         detail: { kind: "user", mfa: false },
       });
       return c.redirect("/admin/?mfa=1");
-    } catch {
-      return fail("denied");
+    } catch (err) {
+      if (err instanceof PortalError && err.code) return fail(err.code);
+      return fail("session_rejected");
     }
   });
 }

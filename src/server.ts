@@ -15,6 +15,8 @@ import { EdgeRouter } from "./edge/router.js";
 import { STDIO_GROUP_KILL_BUDGET_MS, killLiveStdioSync } from "./mcp/runners/stdio.js";
 import { INFLIGHT_CLOSE_DEADLINE_MS, UpstreamPool } from "./mcp/upstream.js";
 import { redactLog } from "./log/redact-lines.js";
+import { googleSignInWarnings } from "./portal/google.js";
+import { PortalDirectory } from "./portal/directory.js";
 import { slugClashWarnings } from "./types.js";
 
 /** Docker's 10 s stop timeout: drain + upstream close (connect deadline + process-group kill) fit inside. */
@@ -217,6 +219,14 @@ export async function startServer(cfg: Config, opts: StartOptions = {}): Promise
   pool.setEdgeRouter(edgeRouter);
 
   const app = createApp(store, cfg, pool, { edgeHub, edgeRouter });
+  const google = new PortalDirectory(store).getGoogle();
+  for (const line of googleSignInWarnings({
+    publicUrl: cfg.publicUrl,
+    clientId: cfg.googleClientId || google?.clientId || "",
+    clientSecretConfigured: Boolean(cfg.googleClientSecret) || Boolean(google?.secretSet),
+  })) {
+    console.error(`[mcp-flow] ${line}`);
+  }
 
   // QA V51-F1: once shutdown starts, requests on still-open connections are refused cleanly (503)
   let draining = false;

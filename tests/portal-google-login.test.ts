@@ -190,16 +190,16 @@ describe("portal google login", () => {
     }
 
     const wrongAud = await googleSession("ada@example.com", {}, "other-client");
-    expect(wrongAud.headers.get("location")).toContain("portal_error=denied");
+    expect(wrongAud.headers.get("location")).toContain("portal_error=token_audience");
 
     const unverified = await googleSession("ada@example.com", { email_verified: false });
-    expect(unverified.headers.get("location")).toContain("portal_error=denied");
+    expect(unverified.headers.get("location")).toContain("portal_error=email_unverified");
 
     const wrongHd = await googleSession("ada@example.com", { hd: "other.test" });
-    expect(wrongHd.headers.get("location")).toContain("portal_error=denied");
+    expect(wrongHd.headers.get("location")).toContain("portal_error=hosted_domain");
 
     const unknown = await googleSession("cara@example.com");
-    expect(unknown.headers.get("location")).toContain("portal_error=denied");
+    expect(unknown.headers.get("location")).toContain("portal_error=unknown_account");
 
     const emptyWs = await call(
       "/v1/portal/users",
@@ -212,7 +212,7 @@ describe("portal google login", () => {
     );
     expect(emptyWs.status).toBe(201);
     const noWorkspace = await googleSession("nope@example.com");
-    expect(noWorkspace.headers.get("location")).toContain("portal_error=denied");
+    expect(noWorkspace.headers.get("location")).toContain("portal_error=no_workspace");
 
     const expired = await (async () => {
       const start = await call("/admin/oauth/start");
@@ -228,7 +228,7 @@ describe("portal google login", () => {
         .setIssuer("https://accounts.google.com")
         .setAudience("google-client")
         .setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
-        .setExpirationTime(Math.floor(Date.now() / 1000) - 60)
+        .setExpirationTime(Math.floor(Date.now() / 1000) - 180)
         .sign(privateKey);
       return call(
         `/admin/oauth/callback?code=abc&state=${encodeURIComponent(loc.searchParams.get("state") ?? "")}`,
@@ -236,7 +236,7 @@ describe("portal google login", () => {
         cookieValue(start, "mf_oauth_state"),
       );
     })();
-    expect(expired.headers.get("location")).toContain("portal_error=denied");
+    expect(expired.headers.get("location")).toContain("portal_error=token_expired");
 
     const badIss = await (async () => {
       const start = await call("/admin/oauth/start");
@@ -259,7 +259,7 @@ describe("portal google login", () => {
         cookieValue(start, "mf_oauth_state"),
       );
     })();
-    expect(badIss.headers.get("location")).toContain("portal_error=denied");
+    expect(badIss.headers.get("location")).toContain("portal_error=token_issuer");
 
     const first = await googleSession("ada@example.com");
     expect(first.status).toBe(302);
@@ -291,7 +291,7 @@ describe("portal google login", () => {
       {},
       state,
     );
-    expect(twice.headers.get("location")).toContain("portal_error=state");
+    expect(twice.headers.get("location")).toContain("portal_error=state_expired");
     expect(once.status).toBe(302);
 
     const beforeMfa = await call("/v1/portal/enable", { method: "POST", body: "{}" }, bootCookie);
@@ -380,7 +380,7 @@ describe("portal google login", () => {
       ).status,
     ).toBe(200);
     const blockedBea = await googleSession("bea@example.com");
-    expect(blockedBea.headers.get("location") ?? "").toContain("portal_error");
+    expect(blockedBea.headers.get("location") ?? "").toContain("portal_error=workspace_disabled");
     expect(
       (
         await call(

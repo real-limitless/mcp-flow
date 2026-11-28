@@ -9,13 +9,20 @@ const PRE_MFA_MS = 10 * 60 * 1000;
 const STATE_MS = 10 * 60 * 1000;
 
 export class PortalError extends Error {
+  readonly code: string | undefined;
   constructor(
     message: string,
     readonly status: number,
+    code?: string,
   ) {
     super(message);
     this.name = "PortalError";
+    this.code = code;
   }
+}
+
+function refused(code: string): never {
+  throw new PortalError("sign-in was not accepted", 401, code);
 }
 
 export interface PortalGooglePublic {
@@ -376,31 +383,27 @@ export class PortalDirectory {
     const byEmail = this.db
       .prepare(`SELECT id, google_sub, status FROM portal_user WHERE email = ?`)
       .get(email) as { id: string; google_sub: string | null; status: string } | undefined;
-    if (bySub && byEmail && bySub.id !== byEmail.id) {
-      throw new PortalError("sign-in was not accepted", 401);
-    }
+    if (bySub && byEmail && bySub.id !== byEmail.id) refused("identity_conflict");
     const id = bySub?.id ?? byEmail?.id;
-    if (!id) throw new PortalError("sign-in was not accepted", 401);
-    if (byEmail?.google_sub && byEmail.google_sub !== input.sub && !bySub) {
-      throw new PortalError("sign-in was not accepted", 401);
-    }
+    if (!id) refused("unknown_account");
+    if (byEmail?.google_sub && byEmail.google_sub !== input.sub && !bySub) refused("account_mismatch");
     const google = this.getGoogle();
     if (google?.hostedDomain && input.hostedDomain?.toLowerCase() !== google.hostedDomain.toLowerCase()) {
-      throw new PortalError("sign-in was not accepted", 401);
+      refused("hosted_domain");
     }
     this.db
       .prepare(`UPDATE portal_user SET google_sub = ?, email = ?, updated_at = ? WHERE id = ?`)
       .run(input.sub, email, nowIso(), id);
     const user = this.userById(id);
-    if (!user || user.status !== "active" || user.workspaceIds.length === 0) {
-      throw new PortalError("sign-in was not accepted", 401);
-    }
+    if (!user || user.status !== "active") refused("account_inactive");
+    if (user.workspaceIds.length === 0) refused("no_workspace");
     return { user };
   }
 
   openUserSession(user: PortalUserPublic, mfaOk: boolean): { token: string; session: PortalSession } {
     const workspaceId = user.workspaceIds[0] ?? null;
-    if (!workspaceId) throw new PortalError("sign-in was not accepted", 401);
+    if (!workspaceId) refused("no_workspace");
+    if (this.workspaceDisabled(workspaceId) && !user.platformAdmin) refused("workspace_disabled");
     const agentId = mfaOk ? this.ensureAgent(user.email, workspaceId) : null;
     return this.insertSession({
       kind: "user",
@@ -617,9 +620,7 @@ export class PortalDirectory {
       )
       .get(workspaceId, owner) as { id: string; is_admin: number; status: string } | undefined;
     if (found) {
-      if (found.status !== "active" || found.is_admin !== 1) {
-        throw new PortalError("sign-in was not accepted", 401);
-      }
+      if (found.status !== "active" || found.is_admin !== 1) refused("agent_inactive");
       return found.id;
     }
     const createdBy = this.store.identity.ensureBootstrapAdmin(workspaceId, {
